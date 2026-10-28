@@ -29,6 +29,7 @@ import type { TestTargetFactory } from '../testing/target';
 import type { WorkspaceRecord } from '../workspace/records';
 import { ActorExecutionService } from './contrib/actor_lab/execution';
 import { BehaviorSourceDocuments } from './contrib/behavior_lens/source_documents';
+import { SceneSourceDocuments } from './contrib/scene_editor/source_documents';
 import { WorkspaceToolService } from './services/assistant/tool_service';
 import { ResourceDiagnosticsService } from './services/diagnostics/resource_diagnostics';
 import { BootService } from './services/execution/boot';
@@ -88,6 +89,7 @@ export class StudioWorkbench {
 	public readonly frameNavigation: RuntimeFrameNavigation;
 	public readonly debuggerExecution: RuntimeDebuggerExecution;
 	public readonly behaviorSources: BehaviorSourceDocuments;
+	public readonly sceneSources: SceneSourceDocuments;
 	public readonly tools: WorkspaceToolService;
 	public readonly fault = createRuntimeFaultState();
 	public readonly frame = { outputDrained: false, collectingHistory: true };
@@ -139,6 +141,7 @@ export class StudioWorkbench {
 		this.inspection = new RuntimeInspectionService(runtime, sources, this.guest, this.debugger, execution, runtimeTasks,
 			rewind, this.fault, this.frameNavigation, this.debuggerExecution);
 		this.behaviorSources = new BehaviorSourceDocuments(models, sources.catalog);
+		this.sceneSources = new SceneSourceDocuments(models, sources.catalog);
 		this.tools = new WorkspaceToolService(models, sources, this.diagnostics, this.scenarioRuns, this.inspection,
 			this.frameNavigation, gameCapture, this.luaEvaluation, this.debuggerExecution, this.actorExecution,
 			this.behaviorSources, this.textFileSaves, this.boots, this.hotResumes, this.events, this.gte, this.gpu, clock);

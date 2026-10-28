@@ -1,3 +1,4 @@
+import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import { ProjectContentIndex, type ProjectContentEntry } from '../../ide/workbench/contrib/resources/panel/content_index';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -194,7 +195,7 @@ test('shared animation rows expose their different project namespaces without re
 	});
 	first.previewPackage.img.one = { type: 'image', resid: 'one', source_path: 'res/first/one.png' };
 	second.previewPackage.img.one = { type: 'image', resid: 'one', source_path: 'res/second/one.png' };
-	const models = new EditorTextModelService(), index = new ProjectContentIndex(models, catalog, new BehaviorRegistrationIndex(models, catalog));
+	const models = new EditorTextModelService(), index = new ProjectContentIndex(models, catalog, new BehaviorRegistrationIndex(models, catalog), new SceneSourceDocuments(models, catalog));
 	t.after(() => { index.dispose(); models.clear(); catalog.dispose(); });
 	index.sync();
 	const tree = new ResourceFilesModel(); tree.sync(catalog, 'lua_only', index.entriesByResource, index.revision);

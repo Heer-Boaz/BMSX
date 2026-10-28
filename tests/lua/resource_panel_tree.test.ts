@@ -1,3 +1,4 @@
+import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
@@ -40,7 +41,7 @@ function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.fro
 	const parts = createTestEditorParts(t), group = parts.createDocument().activeGroup;
 	const resourceEditors = createResourceEditorResolver(sources.catalog), editor = { editorParts: parts, resourceEditors, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog)));
+		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
 	const navigation = new EditorNavigationController(sources.catalog, panel, resourceEditors, parts);
 	group.focus();
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();

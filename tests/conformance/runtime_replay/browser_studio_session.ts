@@ -64,7 +64,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	if (sourceInput.kind !== 'code_editor') throw new Error('session: original source input required');
 	const sourceSelection = captureCodeEditorView(sourceInput);
 	const sourceGroup = ide.editor.editorParts.activeGroup;
-	const scene = new SceneEditorInput(model);
+	const scene = new SceneEditorInput(model, ide.editor.sceneEditor.documents);
 	ide.editor.sceneEditor.refresh(scene); selectSceneOutlineRow(scene, 1);
 	ide.editor.editorParts.main.activeGroup.openEditor(scene); await test.frame();
 	for (const [index, presentation] of [[0, 'graph'], [1, 'graph'], [2, 'state-graph']] as const) {

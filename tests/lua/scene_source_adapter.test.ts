@@ -1,7 +1,6 @@
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { resourceIdentityKeyFromParts, type RuntimeResource } from '../../ide/common/resource';
@@ -25,6 +24,12 @@ function luaResource(path: string): RuntimeResource {
 		},
 	};
 }
+
+const POSITION_SOURCE = `local scenes<const> = require('cartlib/world/scene_library')
+scenes.register(ids.room, { objects = {
+	{ member_id = 'first', definition_id = 'sprite', options = { pos = { x = 0, y = 0, z = 0 } } },
+	{ member_id = 'second', definition_id = 'sprite', options = { pos = { x = 4, y = 5, z = 6 } } },
+} })`;
 
 test('scene discovery and projection share unchanged member-alias admission', () => {
 	const source = `local scenes = require('cartlib/world/scene_library')
@@ -79,9 +84,9 @@ publish('other', { objects = {} })`;
 	assert.equal(moved.scenes[0].range.start.line, restored.scenes[0].range.start.line + 1);
 });
 
-test('scene source adapter projects the real Nemesis root without executing Lua', () => {
-	const path = 'carts/nemesis_s/scenes/root.lua';
-	const source = readFileSync(path, 'utf8');
+test('scene source adapter retains independently authored registration and ordered member fields without executing Lua', () => {
+	const path = 'scene.lua';
+	const source = POSITION_SOURCE;
 	const document = buildSceneSourceDocument(
 		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path },
 		buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path })], ['cartlib/world/scene_library'])),
@@ -91,17 +96,9 @@ test('scene source adapter projects the real Nemesis root without executing Lua'
 	const scene = document.scenes[0];
 	assert.equal(scene.resolution, 'complete');
 	assert.equal(scene.id.kind, LuaSyntaxKind.MemberExpression);
-	assert.equal(scene.objects.length, 4);
+	assert.equal(scene.objects.length, 2);
 	assert.deepEqual(scene.objects.map(object => object.field), scene.objectsTable.fields,
 		'a complete projection retains the actual ordered parent fields');
-	assert.deepEqual(
-		scene.objects.map(object => object.kind === 'object' ? document.analysis.chunk.locations.range(object.memberId.span).start.line : -1),
-		[15, 24, 33, 42],
-	);
-	assert.deepEqual(
-		scene.objects.map(object => object.kind === 'object' ? document.analysis.chunk.locations.range(object.position!.x.span).start.line : -1),
-		[20, 29, 38, 47],
-	);
 	assert.ok(scene.objects.every(object => object.kind === 'object'
 		&& object.position!.x.value.kind === LuaSyntaxKind.NumericLiteralExpression
 		&& object.position!.y.value.kind === LuaSyntaxKind.NumericLiteralExpression
@@ -143,9 +140,9 @@ test('scene member moves use the retained parent table and preserve neighbouring
 	assert.equal(model.buffer.getText(), source);
 });
 
-test('scene position edit changes the canonical Nemesis source through its text model', () => {
-	const path = 'carts/nemesis_s/scenes/root.lua';
-	const source = readFileSync(path, 'utf8');
+test('scene position edit changes only its canonical written coordinate and shares document Undo', () => {
+	const path = 'scene.lua';
+	const source = POSITION_SOURCE;
 	const model = new EditorTextModel(luaResource(path), 'lua', source);
 	const document = buildSceneSourceDocument(
 		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path },

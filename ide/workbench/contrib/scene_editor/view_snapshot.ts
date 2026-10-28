@@ -21,7 +21,7 @@ export function captureSceneEditorView(input: SceneEditorInput): SceneEditorView
 		selected: selected === undefined ? undefined : {
 			kind: selected.element.kind,
 			// The retained selection range is mapped even while the pane is hidden.
-			span: { ...input.selectionRange },
+			span: { ...input.authoring.selectionRange },
 			root: { ...(selected.parent === null ? selected : selected.parent).element.span },
 		},
 		collapsed,

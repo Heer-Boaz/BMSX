@@ -24,7 +24,7 @@ function fixture(t: TestContext, additional: readonly (readonly [string, string]
 		['cartlib/actioneffects.lua', 'return {}'], ['cartlib/component/sprite_animation_component.lua', 'return {}'],
 		['content.lua', SOURCE], ...additional,
 	]);
-	const index = new ProjectContentIndex(editorTextModelService, f.sources.catalog, f.editor.behaviorLens.documents.registrations);
+	const index = new ProjectContentIndex(editorTextModelService, f.sources.catalog, f.editor.behaviorLens.documents.registrations, f.editor.sceneEditor.documents);
 	t.after(() => index.dispose()); index.sync();
 	const resource = (path: string) => f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
 	const entries = index.entriesFor(resource('content.lua'));

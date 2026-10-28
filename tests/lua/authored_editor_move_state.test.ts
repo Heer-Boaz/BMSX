@@ -32,7 +32,7 @@ function aemFixture(t: TestContext) {
 test('portable inputs own their move capability without lending it to diagnostic inputs or pane-owned inspections', t => {
 	const f = aemFixture(t), workingCopy = f.firstInput.workingCopy;
 	const behavior = f.editor.behaviorLens.createInput(workingCopy, 'graph');
-	const inputs = [new SceneEditorInput(workingCopy), new CartMapInput(f.model, 'nemesis'),
+	const inputs = [new SceneEditorInput(workingCopy, f.editor.sceneEditor.documents), new CartMapInput(f.model, 'nemesis'),
 		new AnimationEditorInput(workingCopy, workingCopy.resource.contextId), behavior,
 		new LuaProgramInput(workingCopy, 'progression', { start: 0, end: 0 }, f.editor.luaPrograms.guest),
 		new ResourceViewerInput(f.sources.catalog, workingCopy.resource)];

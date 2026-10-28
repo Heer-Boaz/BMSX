@@ -1,13 +1,9 @@
-import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
+import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
-import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
-import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { layoutSceneEditor, measureSceneEditorMinimumWidth } from '../../ide/workbench/contrib/scene_editor/layout';
@@ -27,18 +23,18 @@ import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 
-function scene(path = 'viewport.lua') {
-	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { resid: 'viewport', type: 'lua' } }, 'lua', SCENE_VIEWPORT_SOURCE);
-	const input = new SceneEditorInput(model);
-	installSceneOutline(input, buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SCENE_VIEWPORT_SOURCE, model.resource)], ['cartlib/world/scene_library']))));
+function scene(t: TestContext, path = 'viewport.lua') {
+	const { model, documents } = createSceneSourceFixture(t, SCENE_VIEWPORT_SOURCE, path);
+	const input = new SceneEditorInput(model, documents);
+	installSceneOutline(input);
 	selectSceneOutlineRow(input, 1);
 	return input;
 }
 
 for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} responsive boundary uses measured columns and offset pane bounds`, t => {
 	configureFontVariant(variant);
-	const input = scene();
-	t.after(() => { input.dispose(); input.workingCopy.dispose(); });
+	const input = scene(t);
+	t.after(() => { input.dispose(); });
 	const threshold = 2 * (editorViewState.font.advance('M') * 24 + 8 + colors.SCROLLBAR_WIDTH) + 1;
 	const bounds = { left: 37, top: 49, right: 37 + threshold - 1, bottom: 249 };
 	layoutSceneEditor(input, true, false, bounds);
@@ -73,7 +69,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} responsiv
 });
 
 test('a font change re-evaluates Scene composition without changing the retained compact section', t => {
-	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
+	const input = scene(t); t.after(() => { input.dispose(); });
 	const bounds = { left: 17, top: 31, right: 317, bottom: 200 };
 	configureFontVariant('tiny');
 	input.section = 'details'; layoutSceneEditor(input, true, false, bounds);
@@ -89,7 +85,7 @@ test('a font change re-evaluates Scene composition without changing the retained
 
 test('presentation-only Scene transitions retain source, field draft and both scroll positions', t => {
 	configureFontVariant('tiny');
-	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
+	const input = scene(t); t.after(() => { input.dispose(); });
 	const bounds = { left: 23, top: 37, right: 203, bottom: 72 };
 	input.section = 'details'; layoutSceneEditor(input, true, false, bounds);
 	input.details.scrollbar.setScroll(43);
@@ -118,7 +114,7 @@ test('presentation-only Scene transitions retain source, field draft and both sc
 
 test('a fresh Scene view restores its pending Details scroll after its first compact outline-only layout', t => {
 	configureFontVariant('tiny');
-	const old = scene(); t.after(() => { old.dispose(); old.workingCopy.dispose(); });
+	const old = scene(t); t.after(() => { old.dispose(); });
 	const bounds = { left: 19, top: 33, right: 199, bottom: 68 };
 	old.section = 'details'; layoutSceneEditor(old, true, false, bounds);
 	old.details.scrollbar.setScroll(47);
@@ -126,7 +122,7 @@ test('a fresh Scene view restores its pending Details scroll after its first com
 	old.section = 'outline'; layoutSceneEditor(old, false, false, bounds);
 	const snapshot = captureSceneEditorView(old);
 	assert.equal(snapshot.section, 'outline'); assert.equal(snapshot.detailsScroll, scroll);
-	const fresh = scene(); t.after(() => { fresh.dispose(); fresh.workingCopy.dispose(); });
+	const fresh = scene(t); t.after(() => { fresh.dispose(); });
 	restoreSceneEditorView(fresh, snapshot);
 	layoutSceneEditor(fresh, true, false, bounds);
 	assert.equal(fresh.layout.mode, 'outline'); assert.equal(fresh.details.height, 0);
@@ -145,7 +141,7 @@ test('a fresh Scene view restores its pending Details scroll after its first com
 
 test('replacing selected Scene source with the same member name retires the Details view target', t => {
 	configureFontVariant('tiny');
-	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
+	const input = scene(t); t.after(() => { input.dispose(); });
 	input.section = 'details';
 	const snapshot = captureSceneEditorView(input), selected = snapshot.selected!;
 	const originalLabel = input.outline.rows[input.outline.selectionIndex].element.label;
@@ -154,8 +150,7 @@ test('replacing selected Scene source with the same member name retires the Deta
 	const changes = [{ offset: selected.span.start, deletedLength: selected.span.end - selected.span.start, insertedLength: replacement.length }];
 	input.workingCopy.pushEditOperations([{ offset: selected.span.start, deleteLength: replacement.length, text: replacement }]);
 	mapSceneEditorView(snapshot, changes);
-	const text = input.workingCopy.buffer.getText();
-	installSceneOutline(input, buildSceneSourceDocument(input.workingCopy.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(text, input.workingCopy.resource)], ['cartlib/world/scene_library']))));
+	installSceneOutline(input);
 	restoreSceneEditorView(input, snapshot);
 	assert.equal(selected.span.start, selected.span.end, 'a complete replacement retires the tracked source occurrence');
 	assert.ok(input.outline.rows.some(row => row.element.label === originalLabel), 'a same-named source occurrence still exists');
@@ -164,9 +159,9 @@ test('replacing selected Scene source with the same member name retires the Deta
 	assert.equal(input.layout.mode, 'outline'); assert.equal(input.details.height, 0);
 });
 
-for (const variant of ['tiny', 'msx'] as const) test(`a long authored Scene basename retains compact navigation and More in a narrow ${variant} pane`, () => {
+for (const variant of ['tiny', 'msx'] as const) test(`a long authored Scene basename retains compact navigation and More in a narrow ${variant} pane`, t => {
 	configureFontVariant(variant);
-	const input = scene(`scenes/${'long_authored_scene_'.repeat(12)}.lua`);
+	const input = scene(t, `scenes/${'long_authored_scene_'.repeat(12)}.lua`);
 	const width = variant === 'tiny' ? 78 : 118;
 	layoutSceneEditor(input, true, false, { left: 0, top: 24, right: width, bottom: 276 });
 	const bar = input.actionBar, layout = input.layout, more = bar.overflow!.button;
@@ -181,7 +176,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`a long authored Scene base
 	assert.equal(bar.items.find(item => item.command === 'sceneEditor.details')!.visible, true);
 	assert.equal(bar.items.find(item => item.command === 'sceneEditor.outline')!.visible, false);
 	assert.equal(input.workingCopy.resource.path, `scenes/${'long_authored_scene_'.repeat(12)}.lua`);
-	input.dispose(); input.workingCopy.dispose();
+	input.dispose();
 });
 
 for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
@@ -189,8 +184,8 @@ for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 		configureFontVariant(font);
 		editorViewState.viewportWidth = width; editorViewState.viewportHeight = 288;
 		editorViewState.editorAreaTop = 31; editorViewState.editorAreaBottom = 275;
-		const input = scene(); input.section = 'details';
-		t.after(() => { input.dispose(); input.workingCopy.dispose(); });
+		const input = scene(t); input.section = 'details';
+		t.after(() => { input.dispose(); });
 		layoutSceneEditor(input, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.deepEqual(input.properties.map(property => property.value), [11, -22, 33]);
 		const height = input.details.contentHeight;
@@ -246,7 +241,7 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorViewState.editorAreaTop = 31; editorViewState.editorAreaBottom = 98;
-	const input = scene(); layoutSceneEditor(input, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+	const input = scene(t); layoutSceneEditor(input, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	const parent = inputFocus.createTarget();
 	const controls = input.properties.map(property => {
 		const field = new ValueInput(parent, INTEGER_INPUT_FORMAT, () => assert.fail('paint accepted a value'));
@@ -306,7 +301,7 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 
 test('Scene intrinsic compact minimum uses current font before arrangement and does not demand its internal split', t => {
 	configureFontVariant('tiny');
-	const input = scene(); t.after(() => { input.dispose(); input.workingCopy.dispose(); });
+	const input = scene(t); t.after(() => { input.dispose(); });
 	const bounds = { left: 17, top: 31, right: 717, bottom: 231 };
 	input.section = 'details'; layoutSceneEditor(input, true, false, bounds);
 	const tiny = measureSceneEditorMinimumWidth(), arrangedFont = input.layout.font;

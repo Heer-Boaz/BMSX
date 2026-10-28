@@ -13,7 +13,7 @@ import { EditorPaneSelection } from '../../ide/workbench/services/editor/editor_
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
+import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
@@ -79,7 +79,7 @@ test('input close removes visual destinations from both stacks; resource destina
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
 	resetNavigationHistoryState();
 	const text = code('close.lua');
-	const visual = new SceneEditorInput(text.workingCopy);
+	const visual = new HostErrorInput('retained diagnostic');
 	const back = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1), group);
 	const forward = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(2), group);
 	const resource = new NavigationHistoryEntry({ kind: 'resource', ...text.toResourceEditor() }, new CodeEditorNavigationSelection(text), group);
@@ -225,7 +225,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
 	t.after(initializeNavigationState(group));
 	const origin = code('origin.lua'); group.openEditor(origin);
-	const visual = new SceneEditorInput(origin.workingCopy);
+	const visual = new HostErrorInput('retained diagnostic');
 	group.model.add(visual, { pinned: false });
 	const target = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1), group);
 	navigationState.back.push(target);

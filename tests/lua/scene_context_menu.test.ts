@@ -45,6 +45,60 @@ function accept(f: Fixture, command: EditorCommandId): void {
 	f.key('Home'); for (let row = 0; row < index; row++) if (menu.model.rows[row].enabled) f.key('ArrowDown'); f.key('Enter');
 }
 
+for (const target of ['definition', 'member'] as const) test(`Scene pointer ${target} resolves its authored occurrence after accepting the departing draft`, t => {
+	const f = fixture(t), input = f.input;
+	selectSceneOutlineRow(input, 1); f.pane.update();
+	const field = f.pane.controls[0];
+	assert.equal(field.field.focusTarget.focus(), true);
+	setFieldText(field.field, '42', true);
+	const index = target === 'definition' ? 0 : 2, tree = input.outline, incoming = tree.rows[index], layout = tree.layout;
+	const x = layout.contentLeft + (incoming.depth + (target === 'definition' ? 0.5 : 1.5)) * layout.indentWidth;
+	const y = layout.contentTop + (index - tree.scroll + 0.5) * layout.rowHeight;
+	for (const down of [true, false]) {
+		f.host.clock.advance(10);
+		f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
+			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	}
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 42'));
+	const selection = input.authoring.selection!;
+	if (target === 'definition') {
+		assert.equal(selection.kind, 'scene');
+		assert.equal(input.outline.roots[0].collapsed, true, 'draft acceptance cannot swallow the incoming disclosure gesture');
+	} else {
+		assert.ok(selection.kind === 'member');
+		assert.equal(selection.entry, input.authoring.document!.scenes[0].objects[1],
+			'the click retains its exact mapped member, not the former row index or AST');
+	}
+	assert.equal(field.pending, false);
+});
+
+test('an incoming Scene click cannot replace a newer selection made by its departing draft publication', t => {
+	const f = fixture(t), input = f.input;
+	selectSceneOutlineRow(input, 1); f.pane.update();
+	const field = f.pane.controls[0];
+	assert.equal(field.field.focusTarget.focus(), true);
+	setFieldText(field.field, '42', true);
+	const tree = input.outline, incoming = tree.rows[2], layout = tree.layout;
+	const x = layout.contentLeft + (incoming.depth + 1.5) * layout.indentWidth;
+	const y = layout.contentTop + (2 - tree.scroll + 0.5) * layout.rowHeight;
+	const release = f.model.onDidChangeContent(() => {
+		release();
+		const document = f.editor.sceneEditor.documents.get(f.model);
+		assert.equal(input.authoring.select(document, f.model.version, { kind: 'scene', scene: document.scenes[0] }), true);
+	});
+	t.after(release);
+	for (const down of [true, false]) {
+		f.host.clock.advance(10);
+		f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
+			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
+			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	}
+	f.update();
+	assert.equal(input.authoring.selection?.kind, 'scene');
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 42'));
+});
+
 for (const font of ['tiny', 'msx'] as const) test(`${font} Scene secondary selects the exact row without expanding its disclosure or modifying canonical source`, t => {
 	const f = fixture(t, font), root = f.input.outline.roots[0], initial = root.collapsed, source = f.model.buffer.getText(), version = f.model.version;
 	selectSceneOutlineRow(f.input, 1); f.pane.update(); secondary(f, 0, true);
@@ -137,17 +191,21 @@ for (const change of ['foreign', 'rebind', 'reattach'] as const) test(`Scene phy
 
 test('Scene selection publication describes coherent source bindings and ignores passive refresh or reselection', t => {
 	const f = fixture(t); let changed = 0;
-	t.after(f.input.onDidChangeSelection(() => {
-		changed++; const row = f.input.outline.rows[f.input.outline.selectionIndex].element;
-		assert.equal(f.input.selectionRange.start, row.span.start); assert.equal(f.input.selectionRange.end, row.span.end);
-		assert.equal(f.input.properties[0].value, row.kind === 'member' && row.index === 0 ? 11 : null);
+	t.after(f.input.authoring.onDidChangeSelection(() => {
+		changed++; const selection = f.input.authoring.selection!;
+		assert.ok(selection.kind === 'member');
+		const range = f.input.authoring.document!.analysis.chunk.locations.range(selection.entry.field.span);
+		const start = f.model.buffer.offsetAt(range.start.line - 1, range.start.column - 1);
+		assert.equal(f.input.authoring.selectionRange.start, start);
 	}));
-	selectSceneOutlineRow(f.input, 1); assert.equal(changed, 1); f.pane.update(); selectSceneOutlineRow(f.input, 1); assert.equal(changed, 1);
+	selectSceneOutlineRow(f.input, 1); assert.equal(changed, 1);
+	assert.equal(f.input.properties[0].value, 11);
+	f.pane.update(); selectSceneOutlineRow(f.input, 1); assert.equal(changed, 1);
 });
 
 test('Scene secondary does not overwrite a newer selection made by its publication listener', t => {
 	const f = fixture(t), before = f.model.buffer.getText();
-	const unbind = f.input.onDidChangeSelection(() => { unbind(); selectSceneOutlineRow(f.input, 2); }); t.after(unbind);
+	const unbind = f.input.authoring.onDidChangeSelection(() => { unbind(); selectSceneOutlineRow(f.input, 2); }); t.after(unbind);
 	secondary(f, 1); assert.equal(f.input.outline.selectionIndex, 2); assert.equal(f.editor.contextMenu.visible, false);
 	assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.canUndo, false);
 });
@@ -167,7 +225,7 @@ test('Scene menu retains its exact model mutation without stealing a newer forei
 
 test('Scene secondary consumes selection publication that establishes a newer foreign control', t => {
 	const f = fixture(t), before = f.model.buffer.getText();
-	const unbind = f.input.onDidChangeSelection(() => { unbind(); f.second.focus(); }); t.after(unbind);
+	const unbind = f.input.authoring.onDidChangeSelection(() => { unbind(); f.second.focus(); }); t.after(unbind);
 	secondary(f, 1); assert.equal(f.editor.contextMenu.visible, false); assert.equal(f.input.outline.selectionIndex, 1);
 	assert.ok(inputFocus.admittedTarget === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
 	assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.canUndo, false);
@@ -206,12 +264,15 @@ for (const operation of ['update', 'setOptions', 'getSelection'] as const) test(
 	const selected = f.input.outline.rows[f.input.outline.selectionIndex].element;
 	assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
 	const replacement = new HostErrorInput('replacement'); let publications = 0;
-	const unbind = f.input.onDidChangeSelection(() => {
+	const unbind = f.input.authoring.onDidChangeSelection(() => {
 		unbind(); publications++;
-		if (operation === 'getSelection') selectSceneOutlineRow(f.input, 0);
+		if (operation === 'getSelection') {
+			const document = f.input.authoring.document!;
+			f.input.authoring.select(document, f.model.version, { kind: 'scene', scene: document.scenes[0] });
+		}
 		f.firstGroup.openEditor(replacement);
 	}); t.after(unbind);
-	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, f.input.parsed.locations, f.input.parsed.tokens, selected.entry.field));
+	f.model.pushEditOperations(createLuaTableFieldRemovalEdits(f.model.buffer, f.input.authoring.document!.analysis.chunk.locations, f.input.authoring.document!.analysis.chunk.tokens, selected.entry.field));
 	const edited = f.model.buffer.getText();
 	assert.doesNotThrow(() => {
 		if (operation === 'setOptions') f.pane.setOptions(undefined, navigation);
@@ -221,7 +282,7 @@ for (const operation of ['update', 'setOptions', 'getSelection'] as const) test(
 			assert.ok(captured !== undefined);
 			assert.equal(captured.kind, actual.kind);
 			assert.deepEqual(captured.span, actual.span);
-			assert.deepEqual(captured.span, f.input.selectionRange);
+			assert.deepEqual(captured.span, f.input.authoring.selectionRange);
 		}
 		else f.pane.update();
 	});
@@ -235,7 +296,7 @@ test('Scene history restore stops its retired pane when the restored selection o
 	const navigation = f.pane.getSelection(); t.after(() => navigation.dispose());
 	selectSceneOutlineRow(f.input, 2); f.pane.update();
 	const replacement = new HostErrorInput('replacement'); let publications = 0;
-	const unbind = f.input.onDidChangeSelection(() => {
+	const unbind = f.input.authoring.onDidChangeSelection(() => {
 		unbind(); publications++; f.firstGroup.openEditor(replacement);
 	}); t.after(unbind);
 	assert.doesNotThrow(() => f.pane.setOptions(undefined, navigation));
@@ -255,7 +316,7 @@ test(`${font}/${mode} Scene numeric fields retain section commands and accept th
 	assert.ok(field.focusTarget.getCommand('sceneEditor.details')?.isEnabled());
 	assert.ok(field.focusTarget.getCommand('sceneEditor.outline')?.isEnabled());
 	const source = f.model.buffer.getText();
-	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.document.analysis.chunk.locations.range(f.input.properties[0].field!.value.span));
+	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.authoring.document.analysis.chunk.locations.range(f.input.properties[0].field!.value.span));
 	setFieldText(field, '42', true); assert.equal(f.model.buffer.getText(), source);
 	f.editor.commands.execute('sceneEditor.outline');
 	assert.equal(f.input.section, 'outline'); assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
@@ -291,7 +352,7 @@ test('Scene section navigation accepts its exact draft without overwriting forei
 	const field = f.pane.controls[0].field;
 	assert.equal(field.focusTarget.focus(), true);
 	const source = f.model.buffer.getText();
-	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.document.analysis.chunk.locations.range(f.input.properties[0].field!.value.span));
+	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.authoring.document.analysis.chunk.locations.range(f.input.properties[0].field!.value.span));
 	setFieldText(field, '42', true);
 	let publications = 0;
 	const unbind = f.model.onDidChangeContent(() => { unbind(); publications++; f.second.focus(); }); t.after(unbind);

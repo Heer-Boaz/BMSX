@@ -1,3 +1,4 @@
+import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 import { resourceIdentityKey } from '../../ide/common/resource';
@@ -43,7 +44,7 @@ test('Scene fresh views preserve the selected source occurrence while retaining 
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
-	const controller = new SceneEditorController(sources.catalog);
+	const controller = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	controller.openResource(group, resource);
@@ -55,7 +56,7 @@ test('Scene fresh views preserve the selected source occurrence while retaining 
 	t.after(() => input.dispose());
 	assert.ok(input !== source && input.workingCopy === source.workingCopy);
 	assert.deepEqual(captureSceneEditorView(input), before, 'the selected member and reading position, not a namesake/default scene, are copied');
-	assert.ok(input.outline !== source.outline && input.details !== source.details && input.selectionRange !== source.selectionRange);
+	assert.ok(input.outline !== source.outline && input.details !== source.details && input.authoring.selectionRange !== source.authoring.selectionRange);
 	selectSceneOutlineRow(input, 0);
 	assert.deepEqual(captureSceneEditorView(source), before, 'the new view cannot change its sibling selection');
 	source.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared\n' }]);

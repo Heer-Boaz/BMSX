@@ -1,7 +1,6 @@
-import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
-import test from 'node:test';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
+import test, { type TestContext } from 'node:test';
+import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus } from '../../ide/input/focus';
@@ -9,9 +8,6 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { SceneOptionEditor } from '../../ide/workbench/contrib/scene_editor/option_editor';
 import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
-import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
-import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
-import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
@@ -30,15 +26,16 @@ scenes.register('room', { objects = {
 } })
 `;
 
-function fixture(source = SOURCE) {
+function fixture(t: TestContext, source = SOURCE) {
 	configureFontVariant('tiny');
-	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'room.lua', location: { kind: 'workspace' as const, path: 'room.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'room.lua', source: { resid: 'room', type: 'lua' } }, 'lua', source);
-	const input = new SceneEditorInput(model);
+	const { model, documents } = createSceneSourceFixture(t, source, 'room.lua');
+	const input = new SceneEditorInput(model, documents);
+	t.after(() => input.dispose());
 	let boundSource = '';
 	const refresh = () => {
 		if (boundSource === model.buffer.getText()) return;
 		boundSource = model.buffer.getText();
-		installSceneOutline(input, buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(boundSource, model.resource)], ['cartlib/world/scene_library']))));
+		installSceneOutline(input);
 		selectSceneOutlineRow(input, 1);
 		layoutSceneEditor(input, true, false, { left: 0, top: 24, right: 384, bottom: 276 });
 		editor.bind(input);
@@ -51,7 +48,7 @@ function fixture(source = SOURCE) {
 }
 
 test('scene inspector projects written leaves, expressions and arrays without evaluating them', t => {
-	const f = fixture(); t.after(() => f.editor.clear());
+	const f = fixture(t); t.after(() => f.editor.clear());
 	assert.deepEqual(f.input.optionProperties.map(property => property.label),
 		['color', 'visible', 'imgid', 'region.x', 'region.width', 'items[1]', 'items[2]', "['custom-key']", 'callback']);
 	assert.equal(f.control("['custom-key']").field.text, 'math.max(1, 2)');
@@ -61,7 +58,7 @@ test('scene inspector projects written leaves, expressions and arrays without ev
 });
 
 test('option acceptance edits only its source expression and shares document undo/redo', t => {
-	const f = fixture(); t.after(() => f.editor.clear());
+	const f = fixture(t); t.after(() => f.editor.clear());
 	const edit = (label: string, text: string) => {
 		const control = f.control(label);
 		setFieldText(control.field, text, true);
@@ -84,7 +81,7 @@ test('option acceptance edits only its source expression and shares document und
 });
 
 test('invalid and revoked option drafts cannot damage enclosing Lua or a different source field', t => {
-	const f = fixture(); t.after(() => f.editor.clear());
+	const f = fixture(t); t.after(() => f.editor.clear());
 	const control = f.control('color');
 	for (const text of ['1, visible = false', '17 -- eats the separator', 'math.max(']) {
 		setFieldText(control.field, text, true);
@@ -103,7 +100,7 @@ test('invalid and revoked option drafts cannot damage enclosing Lua or a differe
 
 test('dynamic option builders and empty authored tables remain their actual expression target', t => {
 	for (const value of ['make_options()', '{}']) {
-		const f = fixture(`local scenes = require('cartlib/world/scene_library')\nscenes.register('r', { objects = { { member_id = 'x', definition_id = 'p', options = ${value} } } })`);
+		const f = fixture(t, `local scenes = require('cartlib/world/scene_library')\nscenes.register('r', { objects = { { member_id = 'x', definition_id = 'p', options = ${value} } } })`);
 		t.after(() => f.editor.clear());
 		assert.deepEqual(f.input.optionProperties.map(property => property.label), ['options']);
 		assert.equal(f.control('options').field.text, value);

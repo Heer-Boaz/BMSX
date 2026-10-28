@@ -1,3 +1,4 @@
+import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -68,7 +69,7 @@ test('Resource resize retains its extent while hiding retires only its own captu
 	const sources = createScenarioTestSourceState([]);
 	const panel = new ResourcePanelController(editor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog)));
+		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
 	const sibling = new ProblemsPanelController();
 	t.after(() => { panel.dispose(); sibling.hide(); inputFocus.setTarget(null); pointerCapture.cancel(); });
 	panel.show();

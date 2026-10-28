@@ -1,3 +1,4 @@
+import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import { measureSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
 import { beforeEach, type TestContext } from 'node:test';
@@ -26,6 +27,7 @@ import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { SceneEditorNavigationSelection } from '../../ide/workbench/contrib/scene_editor/navigation_selection';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 beforeEach(() => configureFontVariant('tiny'));
 
@@ -35,7 +37,7 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
 	const first = createTestEditorGroup(), second = createTestEditorGroup();
-	const controller = new SceneEditorController(sources.catalog);
+	const controller = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	t.after(() => {
 		first.dispose(); second.dispose(); inputFocus.setTarget(null);
@@ -46,12 +48,14 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 	assert.ok(left instanceof SceneEditorInput); assert.ok(right instanceof SceneEditorInput);
 	assert.notEqual(left, right); assert.equal(left.workingCopy, right.workingCopy);
 	controller.refresh(left); controller.refresh(right);
+	assert.notEqual(left.authoring, right.authoring, 'independent document views own independent semantic selections');
+	assert.equal(left.authoring.document, right.authoring.document, 'view lifetime does not duplicate shared domain topology');
 	selectSceneOutlineRow(left, 1); selectSceneOutlineRow(right, 0);
 	second.activate(right.id);
-	const siblingRange = { ...right.selectionRange };
+	const siblingRange = { ...right.authoring.selectionRange };
 	const location = controller.getSourceLocation(left);
 	assert.ok(location?.model === left.workingCopy); assert.equal(location.modelVersion, left.workingCopy.version);
-	assert.deepEqual(right.selectionRange, siblingRange);
+	assert.deepEqual(right.authoring.selectionRange, siblingRange);
 	assert.equal(controller.canRemoveSelectedMember(right), false);
 	assert.equal(controller.canMoveSelectedMember(left, 1), true);
 	controller.moveSelectedMember(left, 1);
@@ -76,7 +80,7 @@ test('Scene pane source production and member commands retain their input when a
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
-	const controller = new SceneEditorController(sources.catalog);
+	const controller = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
@@ -131,7 +135,7 @@ scenes.register('incomplete', {})
 		createScenarioTestSourceRecord('unopened.lua', 1, source),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
-	const controller = new SceneEditorController(sources.catalog);
+	const controller = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
@@ -174,8 +178,8 @@ test('Scene definition opening selects the exact table among duplicate semantic 
 	const input = f.group.model.activeTab;
 	assert.ok(input instanceof SceneEditorInput);
 	assert.equal(input.workingCopy, f.model);
-	assert.equal(input.outline.rows[input.outline.selectionIndex].element.scene, input.document.scenes[1]);
-	assert.equal(input.document.scenes.length, 2, 'a registration without an objects table is not an editable definition');
+	assert.equal(input.outline.rows[input.outline.selectionIndex].element.scene, input.authoring.document.scenes[1]);
+	assert.equal(input.authoring.document.scenes.length, 2, 'a registration without an objects table is not an editable definition');
 	const pane = f.group.panes.getPane('scene_editor')!;
 	assert.ok(pane instanceof SceneEditorPane);
 	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
@@ -201,21 +205,21 @@ test('reopening a surviving Scene occurrence keeps its subject and reading; expl
 	t.after(() => history.dispose());
 	pane.controls[0].field.focusTarget.focus();
 	input.details.scrollbar.setScroll(17);
-	const subject = { ...input.selectionRange }, scroll = input.details.scrollTop;
+	const subject = { ...input.authoring.selectionRange }, scroll = input.details.scrollTop;
 	assert.ok(scroll > 0, 'the retained Details reading position is not its initial top');
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
-	assert.deepEqual(input.selectionRange, subject);
+	assert.deepEqual(input.authoring.selectionRange, subject);
 	assert.equal(input.section, 'details');
 	assert.equal(input.details.scrollTop, scroll);
 	assert.equal(pane.controls[0].field.text, '11');
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
-	assert.equal(input.outline.rows[input.outline.selectionIndex].element.scene, input.document.scenes[1]);
+	assert.equal(input.outline.rows[input.outline.selectionIndex].element.scene, input.authoring.document.scenes[1]);
 	assert.equal(pane.controls[0].field.readOnly, true, 'switching to a definition retires the former member control subject');
 	const restored = f.group.openEditor(input, { navigationSelection: history });
 	assert.ok(restored !== undefined); assert.equal(restored.activated, true); assert.equal(restored.generation, f.group.panes.openGeneration);
 	assert.equal(pane.controls[0].field.readOnly, false);
 	assert.equal(pane.controls[0].field.text, '11', 'history restoration rebinds the retained member before accepting another field draft');
-	assert.deepEqual(input.selectionRange, subject);
+	assert.deepEqual(input.authoring.selectionRange, subject);
 	assert.equal(f.group.model.tabs.length, 1);
 });
 
@@ -232,7 +236,7 @@ test('Scene opening settles the attached field draft before consuming its tracke
 	assert.ok(f.ranges[1].start > priorStart, 'accepted source text moves the tracked target before it is consumed');
 	const input = f.group.model.activeTab;
 	assert.ok(input instanceof SceneEditorInput);
-	assert.deepEqual(input.selectionRange, f.ranges[1]);
+	assert.deepEqual(input.authoring.selectionRange, f.ranges[1]);
 	assert.ok(f.model.buffer.getText().includes('x = 123456, y = 12'));
 	assert.equal(pane.controls[0].pending, false);
 });
@@ -267,13 +271,13 @@ test('invalid Scene draft admission leaves the attachment and subject intact wit
 	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
 	pane.controls[0].field.focusTarget.focus();
 	setFieldText(pane.controls[0].field, '-', false);
-	const subject = { ...input.selectionRange }, generation = f.group.panes.openGeneration;
+	const subject = { ...input.authoring.selectionRange }, generation = f.group.panes.openGeneration;
 	assert.equal(editorTextModelService.get(f.unopened), undefined);
 	assert.equal(f.controller.openDefinition(f.group, f.unopened, f.ranges[1]), false);
 	assert.equal(editorTextModelService.get(f.unopened), undefined);
 	assert.deepEqual(f.group.model.tabs, [input]);
 	assert.equal(f.parts.documents.length, 0);
-	assert.deepEqual(input.selectionRange, subject);
+	assert.deepEqual(input.authoring.selectionRange, subject);
 	assert.equal(f.group.panes.openGeneration, generation);
 	assert.equal(f.group.panes.activePane?.input, input);
 	assert.equal(inputFocus.target, pane.controls[0].field.focusTarget);
@@ -292,8 +296,69 @@ for (const edit of ['delete', 'replace'] as const) test(`${edit} retires the Sce
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
 	const input = f.group.model.activeTab;
 	assert.ok(input instanceof SceneEditorInput);
-	const subject = { ...input.selectionRange };
+	const subject = { ...input.authoring.selectionRange };
 	assert.equal(f.controller.openDefinition(f.group, f.resource, retired), false);
-	assert.deepEqual(input.selectionRange, subject);
+	assert.deepEqual(input.authoring.selectionRange, subject);
 	assert.equal(f.group.model.activeTab, input);
+});
+
+test('domain admission cannot hide a revoked provider generation from its retained Scene outline', t => {
+	const source = SCENE_VIEWPORT_SOURCE.replace("require('cartlib/world/scene_library')", "require('bridge')");
+	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['bridge.lua', "return require('cartlib/world/scene_library')"]]);
+	const controller = new SceneEditorController(f.sources.catalog, f.documents), input = new SceneEditorInput(f.model, f.documents);
+	t.after(() => input.dispose());
+	controller.refresh(input); selectSceneOutlineRow(input, 1);
+	const displayed = input.outlineDocument, row = input.outline.rows[1];
+	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
+		f.sources.catalog.resolveResource({ contextId: f.model.resource.contextId, path: 'bridge.lua' })!);
+	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return external' }]);
+	assert.equal(controller.canRemoveSelectedMember(input), false, 'the domain admits the new proof before a view update');
+	assert.notEqual(input.authoring.document, displayed);
+	assert.equal(input.outline.rows[1], row, 'the control still holds its own earlier-generation receipt');
+	assert.equal(selectSceneOutlineRow(input, 1), false, 'old rows cannot borrow the newly admitted document as their proof');
+	controller.refresh(input);
+	assert.equal(input.outlineDocument, input.authoring.document);
+	assert.equal(input.outline.rows.length, 0);
+	assert.equal(input.outline.selectionIndex, -1);
+	assert.ok(input.properties.every(property => property.field === null));
+	assert.equal(f.model.buffer.getText(), source);
+});
+
+test('same-byte replacement retires a row receipt even when its source projection is reused', t => {
+	const f = createSceneSourceFixture(t, SCENE_VIEWPORT_SOURCE), input = new SceneEditorInput(f.model, f.documents);
+	const controller = new SceneEditorController(f.sources.catalog, f.documents);
+	t.after(() => input.dispose());
+	controller.refresh(input); selectSceneOutlineRow(input, 1);
+	const displayed = input.outlineDocument, row = input.outline.rows[1], version = input.outlineSourceVersion;
+	const { start, end } = input.authoring.selectionRange;
+	f.model.pushEditOperations([{ offset: start, deleteLength: end - start, text: f.model.buffer.getTextRange(start, end) }]);
+	assert.equal(input.authoring.selection, undefined);
+	assert.equal(input.authoring.document, displayed, 'identical source retains the shared immutable projection');
+	assert.notEqual(f.model.version, version);
+	assert.equal(selectSceneOutlineRow(input, 1), false, 'an old version cannot reselect a replaced occurrence from identical AST data');
+	controller.refresh(input);
+	assert.notEqual(input.outline.rows[1], row);
+	assert.equal(input.outline.selectionIndex, -1);
+	assert.ok(input.properties.every(property => property.field === null));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE);
+});
+
+test('Scene removal projects rather than clears a newer source selection from its publication callback', t => {
+	const f = definitionOpeningFixture(t);
+	f.controller.openDefinition(f.group, f.resource, f.ranges[0]);
+	const input = f.group.model.activeTab;
+	assert.ok(input instanceof SceneEditorInput);
+	selectSceneOutlineRow(input, 1);
+	const release = f.model.onDidChangeContent(() => {
+		release();
+		const document = f.controller.documents.get(f.model);
+		input.authoring.select(document, f.model.version, { kind: 'scene', scene: document.scenes[1] });
+	});
+	t.after(release);
+	f.controller.removeSelectedMember(input);
+	const selected = input.outline.rows[input.outline.selectionIndex].element;
+	assert.equal(selected.kind, 'scene');
+	assert.equal(selected.scene, input.authoring.document!.scenes[1]);
+	assert.equal(input.authoring.selection?.scene, selected.scene);
+	assert.ok(input.properties.every(property => property.field === null));
 });

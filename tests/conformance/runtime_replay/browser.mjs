@@ -172,8 +172,6 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 			if (!savedSource.includes(finalRule) || !savedSource.endsWith('\n-- W04 reboot request\n')) {
 				throw new Error('Save & Reboot did not persist the final accepted FSM revision through the real workspace API');
 			}
-			const savedScene = await readFile(join(directory, 'carts/nemesis_s/scenes/root.lua'), 'utf8');
-			if (!savedScene.includes('( --[[source-owned anchor]]\n\t\t\t\t\t17)')) throw new Error('Scene Editor did not persist the accepted position and original trivia');
 		}
 		if (nemesisScenes) {
 			const title = await readFile(join(directory, 'carts/nemesis_s/scenes/title.lua'), 'utf8');

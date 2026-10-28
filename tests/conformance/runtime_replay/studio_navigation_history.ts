@@ -131,10 +131,10 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await click(treeView.presentation.actionBar.items[0].bounds);
 	const scene = await openSceneEditor(test);
 	await selectMember(test, scene, 1);
-	const member = scene.selectionRange.start;
+	const member = scene.authoring.selectionRange.start;
 	await click(scene.actionBar.items[0].bounds);
 	await press('AltLeft', 'ArrowLeft');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === scene && scene.selectionRange.start === member && scene.properties[0].value === 44,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === scene && scene.authoring.selectionRange.start === member && scene.properties[0].value === 44,
 		'A03: Scene Source restores member identity and bound properties');
 	await press('AltLeft', 'ArrowRight');
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === model, 'A03: Scene Forward returns to the shared source model');

@@ -19,8 +19,6 @@ export class SceneEditorNavigationSelection extends EditorPaneSelection {
 	}
 
 	public restore(input: SceneEditorInput): void {
-		const { start, end } = input.selectionRange;
 		restoreSceneEditorView(input, this.snapshot);
-		if (start !== input.selectionRange.start || end !== input.selectionRange.end) input.version += 1;
 	}
 }

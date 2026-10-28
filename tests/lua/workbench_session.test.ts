@@ -1,3 +1,4 @@
+import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -72,7 +73,7 @@ function fixture(t: TestContext) {
 	const editorParts = createTestEditorParts(t);
 	const group = editorParts.main.activeGroup;
 	const behavior = new BehaviorLensController(sources, null, new BehaviorSourceDocuments(editorTextModelService, sources.catalog), () => assert.fail('metadata must not start an FSM layout worker'), null, null, null);
-	const scene = new SceneEditorController(sources.catalog);
+	const scene = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const runtime = createTestRuntime(createTestRuntimeRomPayload());
 	const runs = new ScenarioRunService(editorTextModelService, sources, new Map(), runtime.model, () => assert.fail('session recovery must not create test machines'));
 	const scenario = new ScenarioLabController(null, null, null, runs, null);
@@ -111,7 +112,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 		input.view.presentation.position = { scrollX: 37 + index, scrollY: 25 + index, zoom: 0.75 };
 		f.group.model.add(input); return input;
 	});
-	const scene = new SceneEditorInput(f.model); f.scene.refresh(scene); selectSceneOutlineRow(scene, 1);
+	const scene = new SceneEditorInput(f.model, f.scene.documents); f.scene.refresh(scene); selectSceneOutlineRow(scene, 1);
 	scene.position = { outlineScroll: 1, detailsScroll: 17 }; f.group.model.add(scene);
 	const cleanResource = f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'definitions.lua' })!;
 	const cleanModel = editorTextModelService.retain(cleanResource, 'lua', '-- second slot');
@@ -217,10 +218,10 @@ test('source fingerprint is retained by buffer version and shared by views, not 
 
 test('scene memento survives first layout and retains pending coordinates before its pane is attached', t => {
 	const f = fixture(t);
-	const old = new SceneEditorInput(f.model); f.scene.refresh(old); selectSceneOutlineRow(old, 1); layoutSceneEditor(old, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+	const old = new SceneEditorInput(f.model, f.scene.documents); f.scene.refresh(old); selectSceneOutlineRow(old, 1); layoutSceneEditor(old, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	old.details.scrollbar.setScroll(17); old.outline.scroll = 1;
 	const snapshot = JSON.parse(JSON.stringify(captureSceneEditorView(old)));
-	const fresh = new SceneEditorInput(f.model); f.scene.refresh(fresh); restoreSceneEditorView(fresh, snapshot);
+	const fresh = new SceneEditorInput(f.model, f.scene.documents); f.scene.refresh(fresh); restoreSceneEditorView(fresh, snapshot);
 	assert.deepEqual(captureSceneEditorView(fresh), snapshot, 'no hidden default geometry overwrites the pending memento');
 	layoutSceneEditor(fresh, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(fresh.position, undefined); assert.equal(fresh.details.scrollTop, old.details.scrollTop);

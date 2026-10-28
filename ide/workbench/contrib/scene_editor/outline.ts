@@ -4,7 +4,7 @@ import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { luaSourceRangeToTextRange, readLuaExpressionPreview, readLuaSourceRange, readLuaTableFieldInteger } from '../../../language/lua/source_edits';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { sourceTabDescription } from '../../ui/tab/titles';
-import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry } from './model';
+import type { SceneSourceDefinition, SceneSourceEntry } from './model';
 import type { SceneEditorInput } from './editor_input';
 import { collectSceneOptionProperties } from './option_properties';
 
@@ -24,14 +24,19 @@ export type SceneMemberElement = SceneOutlineSource & { readonly kind: 'member';
 export type SceneOutlineElement = SceneOutlineSource & { readonly kind: 'scene' } | SceneMemberElement;
 
 /** Source correspondence belongs to this outline, not to labels or the generic tree. */
-export function installSceneOutline(input: SceneEditorInput, document: SceneSourceDocument): void {
-	input.document = document;
+export function installSceneOutline(input: SceneEditorInput): void {
+	input.authoring.refresh();
+	const first = input.outlineDocument === undefined;
+	const document = input.authoring.document!;
+	input.outlineDocument = document;
+	input.outlineSourceVersion = input.workingCopy.version;
 	const { outline, workingCopy: { buffer } } = input;
 	const previous = new Map<number, WorkbenchTreeNode<SceneOutlineElement>>();
 	for (const root of outline.roots) {
 		if (root.element.span.start !== root.element.span.end) previous.set(root.element.span.start, root);
 	}
 	outline.roots.length = 0;
+	input.outlineRanges.clear();
 	for (const scene of document.scenes) {
 		const span = luaSourceRangeToTextRange(buffer, scene.range);
 		const prior = previous.get(span.start);
@@ -46,6 +51,7 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 			identity: `${sourceTabDescription(input.workingCopy.resource)}:${scene.range.start.line}:${scene.range.start.column}\nScene ${sceneIdentity}\n${detail}`,
 			displayLabel: '', labelClipped: false,
 		}, prior !== undefined && prior.element.span.end === span.end && prior.collapsed);
+		input.outlineRanges.set(root.element, root.element.span);
 		for (let index = 0; index < scene.objects.length; index += 1) {
 			const entry = scene.objects[index];
 			const range = locations.range(entry.field.span);
@@ -55,7 +61,7 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 			const identity = memberId === undefined ? readLuaSourceRange(buffer, locations.range(expression.span)) : memberId;
 			const definition = entry.kind === 'object'
 				? definitionId === undefined ? readLuaSourceRange(buffer, locations.range(entry.definitionId.span)) : definitionId : '';
-			appendWorkbenchTreeNode(outline, root, {
+			const member = appendWorkbenchTreeNode(outline, root, {
 				kind: 'member', scene, entry, index, source: range,
 				span: luaSourceRangeToTextRange(buffer, range),
 				label: memberId === undefined ? readLuaExpressionPreview(buffer, locations, expression) : memberId,
@@ -66,35 +72,40 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 				identity: `${sourceTabDescription(input.workingCopy.resource)}:${range.start.line}:${range.start.column}\nScene ${sceneIdentity}\n${entry.kind === 'object' ? `Member ${identity}\nDefinition ${definition}` : `Composition ${identity}`}`,
 				displayLabel: '', labelClipped: false,
 			});
+			input.outlineRanges.set(member.element, member.element.span);
 		}
 	}
 	rebuildWorkbenchTreeRows(outline, null);
-	let selectionIndex = -1;
-	for (let index = 0; index < outline.rows.length; index += 1) {
-		const span = outline.rows[index].element.span;
-		if (span.start === input.selectionRange.start && span.end === input.selectionRange.end) selectionIndex = index;
-	}
-	if (input.version === 0 && outline.rows.length > 0) selectionIndex = 0;
-	selectSceneOutlineRow(input, selectionIndex);
+	if (first && outline.rows.length > 0) selectSceneOutlineRow(input, 0);
+	else projectSceneSelection(input);
 }
 
 /** Bind only the selected source member; a definition is never a fake member. */
-export function selectSceneOutlineRow(input: SceneEditorInput, index: number): void {
-	const previousStart = input.selectionRange.start, previousEnd = input.selectionRange.end;
-	input.outline.selectionIndex = index;
-	input.outline.hoverIndex = -1;
+export function selectSceneOutlineRow(input: SceneEditorInput, index: number): boolean {
 	const row = input.outline.rows[index]?.element;
-	if (row === undefined) input.section = 'outline';
-	input.selectionRange.start = row === undefined ? 0 : row.span.start;
-	input.selectionRange.end = row === undefined ? 0 : row.span.end;
-	input.optionProperties = row?.kind === 'member' && row.entry.kind === 'object'
-		? collectSceneOptionProperties(input.workingCopy.buffer, input.document.analysis.chunk.locations, row.entry) : [];
+	if (!input.authoring.select(input.outlineDocument!, input.outlineSourceVersion, row === undefined ? undefined : row.kind === 'scene'
+		? { kind: 'scene', scene: row.scene } : { kind: 'member', scene: row.scene, entry: row.entry, index: row.index })) return false;
+	projectSceneSelection(input);
+	return true;
+}
+
+/** Project the domain's admitted selection; this does not select or re-admit old row syntax. */
+export function projectSceneSelection(input: SceneEditorInput): void {
+	const selection = input.authoring.selection, document = input.authoring.document;
+	input.outline.selectionIndex = selection === undefined ? -1 : input.outline.rows.findIndex(row => row.element.scene === selection.scene
+		&& (selection.kind === 'scene' ? row.element.kind === 'scene'
+			: row.element.kind === 'member' && row.element.entry === selection.entry));
+	input.outline.hoverIndex = -1;
+	if (selection === undefined) input.section = 'outline';
+	input.optionProperties = selection?.kind === 'member' && selection.entry.kind === 'object'
+		? collectSceneOptionProperties(input.workingCopy.buffer, document!.analysis.chunk.locations, selection.entry) : [];
 	for (const property of input.properties) {
-		const field = row?.kind === 'member' && row.entry.kind === 'object' && row.entry.position !== null
-			? row.entry.position[property.axis] : null;
+		const field = selection?.kind === 'member' && selection.entry.kind === 'object' && selection.entry.position !== null
+			? selection.entry.position[property.axis] : null;
 		property.field = field;
 		property.value = field === null ? null : readLuaTableFieldInteger(field);
-		property.sourceText = field === null ? 'Lua source' : readLuaSourceRange(input.workingCopy.buffer, input.document.analysis.chunk.locations.range(field.value.span)).replace(/\s+/g, ' ');
+		property.sourceText = field === null ? 'Lua source' : readLuaSourceRange(input.workingCopy.buffer, document!.analysis.chunk.locations.range(field.value.span)).replace(/\s+/g, ' ');
 	}
-	if (input.selectionRange.start !== previousStart || input.selectionRange.end !== previousEnd) input.notifySelectionChanged();
+	input.outlineRevision = input.outlineDocument === document && input.outlineSourceVersion === input.workingCopy.version
+		? input.authoring.revision : -1;
 }

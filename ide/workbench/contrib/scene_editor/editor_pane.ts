@@ -27,7 +27,7 @@ import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput, type SceneEditorSection } from './editor_input';
 import { drawSceneEditor } from './render';
 import { layoutSceneEditor } from './layout';
-import { selectSceneOutlineRow } from './outline';
+import { projectSceneSelection, selectSceneOutlineRow } from './outline';
 import { SceneOptionEditor, type SceneEditorSectionCommands } from './option_editor';
 import type { SceneOptionProperty } from './option_properties';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -82,7 +82,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 			this.identityFeedback.clear();
 			const input = this.input;
 			lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
-			lifetime.add({ dispose: input.onDidChangeSelection(() => contextMenu.hide()) });
+			lifetime.add({ dispose: input.authoring.onDidChangeSelection(() => contextMenu.hide()) });
 		};
 		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => {
 			if (!isKeyJustPressed('Escape', event)) return false;
@@ -124,7 +124,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		}
 		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.details.focusTarget, INTEGER_INPUT_FORMAT, value => {
 			const property = this.input.properties[index];
-			this.input.workingCopy.pushEditOperations(createLuaTableFieldNumberEdits(this.input.workingCopy.buffer, this.input.document.analysis.chunk.locations, property.field!, value)!);
+			this.input.workingCopy.pushEditOperations(createLuaTableFieldNumberEdits(this.input.workingCopy.buffer, this.input.authoring.document!.analysis.chunk.locations, property.field!, value)!);
 		}, () => this.update()));
 		for (const control of this.controls) {
 			control.field.focusTarget.commandContext = this.focusTarget;
@@ -155,10 +155,11 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		// Edit and Undo can return to the retained projection before the next update.
 		// Field bindings must still consume the canonical value after publication.
 		this.unsubscribeContentChange = this.input.workingCopy.onDidChangeContent(() => { this.boundVersion = -1; });
-		this.unsubscribeSelectionChange = this.input.onDidChangeSelection(() => {
+		this.unsubscribeSelectionChange = this.input.authoring.onDidChangeSelection(() => {
 			this.boundVersion = -1;
 			const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
-			if (input.outline.selectionIndex !== -1) return;
+			if (input.authoring.selection !== undefined) return;
+			projectSceneSelection(input);
 			// The empty subject publishes Outline geometry before its Details controls retire.
 			layoutSceneEditor(input, true, true, this.contentBounds);
 			this.options.clear();
@@ -185,7 +186,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		const scope = this.focusTarget.scope, context = scope.contextGeneration;
 		this.controller.refresh(this.input);
 		if (scope.contextGeneration !== context) return;
-		const changed = this.boundVersion !== this.input.version;
+		const changed = this.boundVersion !== this.input.authoring.revision;
 		const layoutChanged = layoutSceneEditor(this.input, changed, false, this.contentBounds);
 		if (changed) {
 			this.bindProperties();
@@ -270,7 +271,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 			const control = this.controls[index];
 			if (property.value !== null) control.setValue(property.value);
 		}
-		this.boundVersion = this.input.version;
+		this.boundVersion = this.input.authoring.revision;
 		this.options.bind(this.input);
 	}
 
@@ -337,20 +338,30 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	}
 
 	private select(index: number, toggle: boolean): boolean {
-		const input = this.input, row = input.outline.rows[index], version = input.workingCopy.version;
+		const input = this.input, incoming = input.outline.rows[index];
+		const span = incoming.element.span, sceneSpan = (incoming.parent ?? incoming).element.span;
+		const intent = input.authoring.selectionRevision;
 		const scope = this.focusTarget.scope, context = scope.contextGeneration;
-		this.focusTarget.focus();
+		if (!this.focusTarget.focus()) return false;
 		const focused = inputFocus.admittedTarget;
-		if (this.input !== input || scope.contextGeneration !== context || input.workingCopy.version !== version
+		if (this.input !== input || scope.contextGeneration !== context || input.authoring.selectionRevision !== intent
 			|| focused === null || !scope.contains(focused.scope)) return false;
 		this.controller.refresh(input);
-		if (input.outline.rows[index] !== row) return false;
+		if (this.input !== input || scope.contextGeneration !== context || input.authoring.selectionRevision !== intent
+			|| span.start === span.end || sceneSpan.start === sceneSpan.end) return false;
+		index = input.outline.rows.findIndex(row => row.element.kind === incoming.element.kind
+			&& row.element.span.start === span.start && row.element.span.end === span.end
+			&& (row.parent ?? row).element.span.start === sceneSpan.start && (row.parent ?? row).element.span.end === sceneSpan.end);
+		if (index === -1) return false;
+		const row = input.outline.rows[index], version = input.workingCopy.version;
 		if (toggle) setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
-		selectSceneOutlineRow(input, index);
+		if (!selectSceneOutlineRow(input, index)) return false;
+		const selected = input.authoring.selection;
 		const current = inputFocus.admittedTarget;
 		if (current === null || !scope.contains(current.scope) || this.input !== input || scope.contextGeneration !== context || input.workingCopy.version !== version
-			|| input.outline.rows[input.outline.selectionIndex] !== row) return false;
-		const contentChanged = this.boundVersion !== input.version;
+			|| selected?.scene !== row.element.scene || selected.kind !== row.element.kind
+			|| selected.kind === 'member' && row.element.kind === 'member' && selected.entry !== row.element.entry) return false;
+		const contentChanged = this.boundVersion !== input.authoring.revision;
 		this.bindProperties();
 		if (scope.contextGeneration !== context) return false;
 		revealWorkbenchListSelection(input.outline);
@@ -367,7 +378,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 			selectFirst: keyboard, invocationOrigin: origin, returnFocus: origin, commandTarget: this.focusTarget,
 			onWillShow: lifetime => {
 				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
-				lifetime.add({ dispose: input.onDidChangeSelection(() => this.contextMenu.hide()) });
+				lifetime.add({ dispose: input.authoring.onDidChangeSelection(() => this.contextMenu.hide()) });
 				if (this.input !== input || input.workingCopy.version !== version || input.outline.rows[input.outline.selectionIndex] !== selected) this.contextMenu.hide(false);
 			},
 		});

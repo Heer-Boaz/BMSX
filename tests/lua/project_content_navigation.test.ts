@@ -78,12 +78,12 @@ test('the real project tree activates all authored kinds and reveals each retain
 	const secondScene = nodes.filter(node => node.element.content.kind === 'scene')[1];
 	const sceneGroup = f.activate(secondScene), scene = sceneGroup.model.activeTab;
 	assert.ok(sceneGroup === chosen); assert.ok(scene instanceof SceneEditorInput);
-	assert.deepEqual(scene.selectionRange, secondScene.element.content.range);
+	assert.deepEqual(scene.authoring.selectionRange, secondScene.element.content.range);
 	const sceneRoot = scene.outline.rows[scene.outline.selectionIndex];
 	assert.equal(sceneRoot.element.kind, 'scene');
 	const memberIndex = scene.outline.rows.findIndex(node => node.parent === sceneRoot);
 	assert.ok(memberIndex >= 0); selectSceneOutlineRow(scene, memberIndex); f.update();
-	const sceneSelection = { ...scene.selectionRange };
+	const sceneSelection = { ...scene.authoring.selectionRange };
 	for (const node of nodes) {
 		const entry = node.element.content;
 		if (entry.kind === 'scene') continue;
@@ -124,10 +124,10 @@ test('the real project tree activates all authored kinds and reveals each retain
 		assert.ok(f.activate(node) === group);
 		assert.ok(group.model.activeTab === input); assert.equal(group.model.tabs.length, total);
 		assert.equal(part.window!.model.minimized, false);
-		assert.ok(sceneGroup.model.tabs.includes(scene)); assert.deepEqual(scene.selectionRange, sceneSelection);
+		assert.ok(sceneGroup.model.tabs.includes(scene)); assert.deepEqual(scene.authoring.selectionRange, sceneSelection);
 	}
 	assert.ok(f.activate(secondScene) === sceneGroup); assert.ok(sceneGroup.model.activeTab === scene);
-	assert.deepEqual(scene.selectionRange, sceneSelection, 'reopening the same scene preserves its selected member');
+	assert.deepEqual(scene.authoring.selectionRange, sceneSelection, 'reopening the same scene preserves its selected member');
 	assert.equal(scene.workingCopy.buffer.getText(), ALL_CONTENT_SOURCE);
 	assert.equal(scene.workingCopy.dirty, false);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles, 'source discovery and navigation never execute authored Lua');

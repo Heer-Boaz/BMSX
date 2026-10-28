@@ -1,3 +1,4 @@
+import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -22,7 +23,7 @@ function fixture(files: Record<string, string>) {
 		...Object.entries(files).map(([path, source]) => createScenarioTestSourceRecord(path, 1, source))]);
 	const models = new EditorTextModelService();
 	const registrations = new BehaviorRegistrationIndex(models, sources.catalog);
-	const index = new ProjectContentIndex(models, sources.catalog, registrations);
+	const index = new ProjectContentIndex(models, sources.catalog, registrations, new SceneSourceDocuments(models, sources.catalog));
 	const resource = (path: string): RuntimeResource => sources.catalog.resolveResource({ contextId, path })!;
 	const model = (path: string) => resolveLuaTextFileModel(models, sources.catalog, resource(path));
 	const dispose = () => { index.dispose(); models.clear(); resetSemanticProjects(models); sources.catalog.dispose(); };

@@ -14,7 +14,7 @@ import type { BehaviorKind, BehaviorRegistrationSource } from '../../behavior_le
 import type { BehaviorRegistrationIndex } from '../../behavior_lens/registration_index';
 import { collectLuaPrograms, type LuaProgramKind, type LuaProgramOccurrence } from '../../lua_program/source';
 import type { SceneSourceDefinition, SceneSourceDocument } from '../../scene_editor/model';
-import { buildSceneSourceDocument } from '../../scene_editor/source';
+import type { SceneSourceDocuments } from '../../scene_editor/source_documents';
 
 type ProjectContentSource = {
 	readonly projectContextId: string;
@@ -49,7 +49,6 @@ type ContextGeneration = {
 	snapshot: LuaSemanticWorkspaceSnapshot | undefined;
 	dirty: boolean;
 	records: readonly EntryRecord[];
-	scenes: ReadonlyMap<string, SceneSourceDocument>;
 };
 
 const EMPTY_ENTRIES: readonly ProjectContentEntry[] = [];
@@ -70,7 +69,7 @@ export class ProjectContentIndex {
 	private readonly changeListeners = new Set<() => void>();
 
 	public constructor(private readonly models: EditorTextModelService, public readonly catalog: WorkspaceSourceCatalog,
-		private readonly registrations: BehaviorRegistrationIndex) {
+		private readonly registrations: BehaviorRegistrationIndex, private readonly sceneDocuments: SceneSourceDocuments) {
 		this.subscriptions = [
 			catalog.onDidChange(() => { this.dirty = true; }),
 			models.onDidAddModel(model => this.admitModel(model)),
@@ -108,7 +107,7 @@ export class ProjectContentIndex {
 				};
 				const releaseInvalidation = project.onDidInvalidate(invalidate), releaseDisposal = project.onWillDispose(invalidate);
 				generation = { project, release: () => { releaseInvalidation(); releaseDisposal(); },
-					dirty: true, snapshot: undefined, records: [], scenes: new Map() };
+					dirty: true, snapshot: undefined, records: [] };
 				this.contexts.set(contextId, generation);
 			}
 			project.synchronizeSources(this.catalog);
@@ -242,12 +241,10 @@ export class ProjectContentIndex {
 			admit({ ...source(owner, registration.occurrenceRange, file, registration.label), kind: registration.behaviorKind, registration }, file);
 		}
 		const animations = new Map<LuaTableConstructorExpression, Set<FileSemanticData | undefined>>();
-		const scenes = new Map<string, SceneSourceDocument>();
 		for (const resource of this.catalog.luaResources) {
 			if (resource.contextId !== contextId) continue;
 			const key = resourceIdentityKey(resource), file = snapshot.getFileData(key)!;
-			const document = buildSceneSourceDocument(resource, snapshot, generation.scenes.get(key));
-			scenes.set(key, document);
+			const document = this.sceneDocuments.getForSnapshot(resource, snapshot);
 			for (const definition of document.scenes) {
 				const idRange = file.chunk.locations.range(definition.id.span);
 				const label = stringLiteralValue(definition.id) ?? file.source.slice(file.chunk.locations.offsetAt(idRange.start), file.chunk.locations.offsetAt(idRange.end) + 1);
@@ -270,7 +267,7 @@ export class ProjectContentIndex {
 		}
 		for (const record of generation.records) if (!used.has(record)) { this.retireRecord(record); changed = true; }
 		if (records.length !== generation.records.length || records.some((record, index) => record !== generation.records[index])) changed = true;
-		generation.records = records; generation.scenes = scenes;
+		generation.records = records;
 		return changed;
 	}
 

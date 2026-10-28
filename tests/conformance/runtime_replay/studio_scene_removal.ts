@@ -1,182 +1,64 @@
-import type { EditorTextModel } from '../../../ide/editor/model/text_model';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
-import { openSceneEditor, selectMember, selectSceneRow } from './studio_scene_source';
+import { openSceneFixture, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
-async function saveAndResume(test: StudioFixture, model: EditorTextModel, expected: string): Promise<void> {
-	const previousMedia = test.ide.sources.currentBlua32Media;
-	await test.press('ControlLeft', 'ShiftLeft', 'KeyS');
-	check(test.ide.editor.actionPrompt.visible,
-		'remove: dirty source requires confirmation before applying');
-	await test.press('Enter');
-	await test.until(() => test.tasks.ready && !test.runtime.completionCallPending() && !test.ide.debugger.plans.mutationActive
-		&& test.ide.sources.currentBlua32Media !== previousMedia, 'remove: normal Save & Hot Resume completes registration');
-	check(!model.dirty && model.lastSavedSource === expected
-		&& test.ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('scenes/root') === expected,
-		'remove: workspace Save and installed source agree');
-}
-
-/** Real Remove hit target, source-command admission, focus, history and live capture retention. */
+/** Source removal, draft settlement and selection retirement do not require a game cart. */
 export async function testSceneMemberRemoval(test: StudioFixture): Promise<void> {
-	const { harness, ide, frame, press, click, cycles, title, guest, runMenuCommand, movePointer, setPointerButton } = test;
-	harness.openLuaSource('scenes/root.lua');
-	const model = harness.getActiveEditorDocument().model;
-	const original = model.buffer.getText();
-	const scene = await openSceneEditor(test);
+	const { ide, frame, press, click, cycles, movePointer, setPointerButton } = test;
+	const { model, scene, close } = await openSceneFixture(test, 'removal');
+	const original = model.buffer.getText(), before = cycles(), media = ide.sources.currentBlua32Media;
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
-	if (!(pane instanceof SceneEditorPane)) throw new Error('remove: actual Scene Editor pane required');
-	const x = pane.controls[0];
-	const field = scene.outline.roots[0].children[2].element.source;
+	if (!(pane instanceof SceneEditorPane)) throw new Error('remove: actual Scene controls required');
+	const x = pane.controls[0], field = scene.outline.roots[0].children[2].element.source;
 	const start = model.buffer.offsetAt(field.start.line - 1, field.start.column - 1);
 	const end = model.buffer.offsetAt(field.end.line - 1, field.end.column);
-	const member = original.slice(start, end);
-	const leading = '-- keep member documentation\n\t\t\t';
-	const trailing = ' -- keep exterior, not a comma token\n\t\t\t';
-	const authoredMember = '(--[[inside removed field]]\n' + member + ')';
-	// Hand-authored syntax fixture, not the visual edit under test.
-	model.pushEditOperations([{ offset: start, deleteLength: end - start, text: leading + authoredMember + trailing }]);
-	await frame();
+	const member = original.slice(start, end), leading = '-- retained documentation\n\t', trailing = ' -- retained exterior comment\n\t';
+	const grouped = '(--[[removed member comment]]\n' + member + ')';
+	model.pushEditOperations([{ offset: start, deleteLength: end - start, text: leading + grouped + trailing }]); await frame();
 	await selectMember(test, scene, 2);
-	const authored = model.buffer.getText();
-	const removed = original.slice(0, start) + leading + trailing + original.slice(end + 1);
+	const authored = model.buffer.getText(), removed = original.slice(0, start) + leading + trailing + original.slice(end + 1);
 	const remove = scene.actionBar.items.find(item => item.command === 'sceneEditor.removeMember')!;
-	const actor = title();
-	const actorX = guest.readStringMember(actor, 'x');
-	const before = cycles();
-	const media = ide.sources.currentBlua32Media;
-	const functionId = 'module:scenes/root/module/decl:root_scene.register';
-	const prior = media.cartridgeSlots[0]!.symbols!;
-	const index = prior.metadata.functionIds.indexOf(functionId);
-	const names = prior.metadata.upvalueBindingsByFunction[index].map(slot => prior.metadata.lexicalDeclarations[slot].name);
-	// Module imports can be statically bound by the compiler. Preserve the real
-	// installed layout below instead of assuming those imports occupy six cells.
-	check(names.includes('root_scene'), 'remove: registration captures its scene identity');
-	const parsed = scene.parsed;
-	const row = scene.outline.roots[0].children[2];
-	for (let index = 0; index < 8; index += 1) await frame();
-	check(scene.parsed === parsed && scene.outline.roots[0].children[2] === row,
-		'remove: action enablement and stable visible frames retain the parse and projection');
-
-	await click(scene.properties[0].bounds);
-	await press('Minus');
-	await click(remove.bounds);
-	check(model.buffer.getText() === authored && x.field.focusTarget.hasFocus && x.error.length > 0,
-		'remove: invalid pending property prevents structural mutation and keeps input focus');
-	await press('Escape');
-	await click(scene.properties[0].bounds);
-	await press('Digit1');
-	await press('Digit8');
+	await click(scene.properties[0].bounds); await press('Minus'); await click(remove.bounds);
+	check(model.buffer.getText() === authored && x.pending && x.field.focusTarget.hasFocus, 'remove: an invalid field draft vetoes source removal');
+	await press('Escape'); await click(scene.properties[0].bounds); await press('Digit1'); await press('Digit8');
 	movePointer(remove.bounds); await frame(); setPointerButton('pointer_primary', true); await frame();
-	check(model.buffer.getText() === authored && x.field.focusTarget.hasFocus && x.pending,
-		'A01: arming Remove does not accept or blur the focused draft');
-	const outline = scene.outline.layout;
-	movePointer({ left: outline.contentLeft, right: outline.contentLeft + 2, top: outline.contentTop, bottom: outline.contentTop + 2 });
+	check(model.buffer.getText() === authored && x.pending, 'remove: arming a toolbar action does not publish its field draft');
+	const layout = scene.outline.layout;
+	movePointer({ left: layout.contentLeft, right: layout.contentRight, top: layout.contentTop, bottom: layout.contentBottom });
 	setPointerButton('pointer_primary', false); await frame();
-	check(model.buffer.getText() === authored && x.field.focusTarget.hasFocus && x.pending,
-		'A01: cancelling a toolbar press retains the field and its unsubmitted value');
+	check(model.buffer.getText() === authored && x.pending, 'remove: cancelling the press retains its unsubmitted field');
 	await click(remove.bounds, 8);
-	check(model.buffer.getText() === removed && scene.outline.roots[0].children.length === 3 && scene.outline.selectionIndex === -1,
-		'remove: one held pointer press removes the grouped member, keeps exterior comments and clears selection');
-	check(x.field.focusTarget.parent!.hasFocus && !x.pending && x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
-		'remove: document pane owns history after deletion, not a detached property draft');
-	await press('Tab');
-	await press('Digit7');
-	check(scene.actionBar.hasFocus && !x.field.focusTarget.hasFocus && model.buffer.getText() === removed,
-		'remove: empty inspector is skipped; the toolbar remains keyboard accessible without an edit route');
-	await click(scene.details.bounds);
-	await press('Tab');
-	check(scene.actionBar.hasFocus && !x.field.focusTarget.hasFocus && model.buffer.getText() === removed,
-		'A02: clicking an empty inspector cannot resurrect the previous member in its focus route');
-	check(cycles() === before && title() === actor && ide.sources.currentBlua32Media === media,
-		'remove: source deletion never mutates the paused machine or disposes the live actor');
-
+	check(model.buffer.getText() === removed && scene.authoring.selection === undefined && x.field.readOnly && !x.pending,
+		'remove: one held action settles the draft, removes complete syntax, keeps exterior trivia and retires selected field authority');
+	await press('Tab'); await press('Digit7');
+	check(model.buffer.getText() === removed && !x.field.focusTarget.hasFocus, 'remove: a retired member has no keyboard edit route');
+	await press('Escape'); // Return from the toolbar to document command context.
 	await press('ControlLeft', 'KeyZ');
-	check(scene.outline.selectionIndex === -1, 'remove: Undo does not invent a selection');
+	check(scene.authoring.selection === undefined, 'remove: Undo restores source without reviving selection');
 	await selectMember(test, scene, 2);
-	check(scene.properties[0].value === 18 && x.field.text === '18' && model.buffer.getText().includes(authoredMember.replace('x = 0', 'x = 18')),
-		'remove: one Undo restores field and punctuation with the accepted draft value and rebinds the control');
+	check(scene.properties[0].value === 18, 'remove: the accepted draft belongs to the preceding source history element');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === authored && x.field.text === '0', 'remove: draft acceptance is a distinct preceding document edit');
-	await press('ControlLeft', 'KeyY');
-	await press('ControlLeft', 'KeyY');
-	check(model.buffer.getText() === removed, 'remove: Redo reproduces the same source deletion');
-	for (const expected of [removed, original, removed, original]) {
-		if (model.buffer.getText() !== expected) {
-			for (let index = 0; index < 3; index += 1) await press('ControlLeft', expected === original ? 'KeyZ' : 'KeyY');
-		}
-		check(model.buffer.getText() === expected, 'remove: ordinary source history supplies the intended revision');
-		await saveAndResume(test, model, expected);
-		const fresh = ide.sources.currentBlua32Media.cartridgeSlots[0]!.symbols!;
-		const currentIndex = fresh.metadata.functionIds.indexOf(functionId);
-		const currentNames = fresh.metadata.upvalueBindingsByFunction[currentIndex].map(slot => fresh.metadata.lexicalDeclarations[slot].name);
-		check(currentNames.join('|') === names.join('|'), 'remove: installed capture slots survive removal and undo without reinterpretation');
-		check(title() === actor && guest.readStringMember(actor, 'x') === actorX,
-			'remove: Hot Resume updates future composition without deleting or repositioning the living actor');
-		await press('ControlRight', 'ShiftRight');
-		await runMenuCommand('pause');
-		harness.openLuaSource('scenes/root.lua');
+	check(model.buffer.getText() === authored, 'remove: another Undo restores the draft predecessor');
+	await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === original, 'remove: setup is an ordinary source edit');
+	const duplicate = original.indexOf("member_id = 'second'") + "member_id = ".length;
+	model.pushEditOperations([{ offset: duplicate, deleteLength: "'second'".length, text: "'first'" }]); await frame();
+	await selectMember(test, scene, 0); await click(remove.bounds);
+	check(scene.outline.roots[0].children.length === 3 && scene.authoring.selection === undefined,
+		'remove: a surviving namesake cannot inherit the deleted member identity');
+	await press('ControlLeft', 'KeyZ');
+	check(scene.authoring.selection === undefined, 'remove: inverse source edits do not resurrect command authority');
+	await press('ControlLeft', 'KeyZ');
+	for (let index = 3; index >= 0; index--) {
+		await selectMember(test, scene, index); await click(remove.bounds);
+		check(scene.outline.roots[0].children.length === index && scene.authoring.selection === undefined,
+			'remove: each accepted deletion leaves no implicit next target');
 	}
-
-	await openSceneEditor(test);
-	await selectMember(test, scene, 2);
-	// The same input remains attached while its code view receives a source edit.
-	harness.openLuaSource('scenes/root.lua');
-	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- preceding source edit\n' }]);
-	await openSceneEditor(test);
-	check(scene.outline.selectionIndex === 3 && scene.outline.roots[0].children[2].element.source.start.line === field.start.line + 1,
-		'remove: a hidden scene view follows its selected source through a preceding code edit');
-	await press('ControlLeft', 'KeyZ');
-	check(scene.outline.selectionIndex === 3, 'remove: inverse source mapping preserves the original member');
-	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n@' }]);
-	await frame();
-	const malformed = model.buffer.getText();
-	check(!ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'remove: recovered source does not admit a structural edit');
-	await click(remove.bounds);
-	check(model.buffer.getText() === malformed, 'remove: disabled action does not rewrite an incomplete document');
-	await press('ControlLeft', 'KeyZ');
-
-	const currentField = scene.outline.roots[0].children[2].element.source;
-	const currentStart = model.buffer.offsetAt(currentField.start.line - 1, currentField.start.column - 1);
-	const currentEnd = model.buffer.offsetAt(currentField.end.line - 1, currentField.end.column);
-	model.pushEditOperations([{ offset: currentStart, deleteLength: currentEnd - currentStart, text: 'make_member()' }]);
-	await frame();
-	await selectMember(test, scene, 2);
-	check(scene.outline.roots[0].element.scene.resolution === 'partial' && !ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'remove: selected dynamic composition remains source-only');
-	await selectMember(test, scene, 0);
-	check(ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'remove: another dynamic entry does not hide a direct member\'s syntax ownership');
-	await press('ControlLeft', 'KeyZ');
-
-	// Removing the first of two equal labels must not select the surviving row.
-	const storyName = 'story.instance_id';
-	model.pushEditOperations([{ offset: original.indexOf(storyName), deleteLength: storyName.length, text: 'intro.instance_id' }]);
-	await frame();
-	await selectMember(test, scene, 0);
-	check(scene.outline.roots[0].children[0].element.label === scene.outline.roots[0].children[1].element.label, 'remove: duplicate-name source fixture');
-	await click(remove.bounds);
-	check(scene.outline.roots[0].children.length === 3 && scene.outline.selectionIndex === -1 && x.field.readOnly,
-		'remove: surviving namesake never inherits selection or property focus');
-	await press('ControlLeft', 'KeyZ');
-	check(scene.outline.roots[0].children.length === 4 && scene.outline.selectionIndex === -1, 'remove: restoring duplicate source keeps selection empty');
-	await selectMember(test, scene, 0);
-	await press('ControlLeft', 'KeyY');
-	check(scene.outline.roots[0].children.length === 3 && scene.outline.selectionIndex === -1 && x.field.readOnly,
-		'remove: document Redo also clears the deleted selection instead of transferring it to a namesake');
-	await press('ControlLeft', 'KeyZ');
-	await press('ControlLeft', 'KeyZ');
-	for (let index = 3; index >= 0; index -= 1) {
-		await selectMember(test, scene, index);
-		await click(remove.bounds);
-		check(scene.outline.roots[0].children.length === index && scene.outline.selectionIndex === -1,
-			'remove: last-member deletion leaves no implicit next target');
-	}
-	check(!ide.editor.commands.isEnabled('sceneEditor.removeMember') && x.field.readOnly,
-		'remove: an empty definition has no member action or editable property');
-	check(scene.outline.roots.length === 1 && scene.outline.rows.length === 1 && scene.outline.rows[0].element.kind === 'scene',
-		'remove: removing the last member preserves the actual empty definition in the outline');
-	await selectSceneRow(test, scene, 0);
-	check(x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
-		'remove: the remaining empty definition can be selected but not mistaken for a removable member');
-	for (let index = 0; index < 4; index += 1) await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === original && !model.dirty, 'remove: all admission fixtures leave the real saved document intact');
+	check(scene.outline.rows.length === 1 && x.field.readOnly && !ide.editor.commands.isEnabled('sceneEditor.removeMember'),
+		'remove: the actual empty declaration remains, without fabricated member commands');
+	for (let index = 0; index < 4; index++) await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === original && !model.dirty, 'remove: all fixture data is restored by canonical history');
+	check(cycles() === before && ide.sources.currentBlua32Media === media, 'remove: source-only removal never mutates installed execution');
+	await close();
 }

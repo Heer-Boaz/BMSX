@@ -421,7 +421,7 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.workbenchScope.commands = this.commands;
 		const workArea = getWorkbenchWorkArea();
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant,
-			new ProjectContentIndex(editorTextModelService, sources.catalog, behaviorSources.registrations));
+			new ProjectContentIndex(editorTextModelService, sources.catalog, behaviorSources.registrations, workbench.sceneSources));
 		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.attachContextMenuSession);
 		this.menubar = new MenubarController(this.contextMenu, this.commands, this.chromeRenderContext);
@@ -557,7 +557,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.editorParts,
 		);
 		this.cartMaps = new CartMapController(this.sources.catalog);
-		this.sceneEditor = new SceneEditorController(this.sources.catalog);
+		this.sceneEditor = new SceneEditorController(this.sources.catalog, workbench.sceneSources);
 		this.animations = new AnimationEditorController(this.sources.catalog);
 		this.actorLab = new ActorLabController(sources, guest, runtime.machine.cpu,
 			this.editorParts, this.navigation, actorExecution, rewind, sources,

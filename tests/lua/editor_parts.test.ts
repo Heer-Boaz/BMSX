@@ -234,7 +234,7 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	const scene = sceneGroup.model.activeTab;
 	assert.ok(scene instanceof SceneEditorInput);
 	selectSceneOutlineRow(scene, 1); f.update();
-	const selection = { ...scene.selectionRange }, scenePane = sceneGroup.panes.activePane!;
+	const selection = { ...scene.authoring.selectionRange }, scenePane = sceneGroup.panes.activePane!;
 	const sourceGroup = parts.splitGroup(sceneGroup, 'right');
 	assert.ok(sourceGroup);
 	sourceGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, resource)); f.update();
@@ -245,7 +245,7 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	assert.equal(parts.activeGroup, sourceGroup);
 	assert.equal(parts.documents.length, 0, 'ordinary Source navigation does not invent a floating host');
 	assert.equal(sceneGroup.model.activeTab, scene); assert.equal(sceneGroup.panes.activePane, scenePane);
-	assert.deepEqual(scene.selectionRange, selection);
+	assert.deepEqual(scene.authoring.selectionRange, selection);
 	const model = source.input.workingCopy, offset = model.buffer.getText().indexOf('x = 11') + 4;
 	assert.equal(source.code.focusTarget.textInput!.replaceText(offset, offset + 2, '17'), true);
 	f.update();
@@ -257,7 +257,7 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	assert.equal(await sourceGroup.close(source.input.id), true);
 	assert.equal(sourceGroup.model.tabs.length, 0);
 	assert.equal(sceneGroup.model.activeTab, scene); assert.equal(sceneGroup.panes.activePane, scenePane);
-	assert.deepEqual(scene.selectionRange, selection);
+	assert.deepEqual(scene.authoring.selectionRange, selection);
 	assert.equal(editorTextModelService.get(resource), model);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
@@ -416,7 +416,7 @@ for (const activation of ['keyboard', 'pointer'] as const) test(`${activation} P
 	const scene = main.activeGroup.model.activeTab!, pane = main.activeGroup.panes.activePane!;
 	assert.ok(scene instanceof SceneEditorInput);
 	selectSceneOutlineRow(scene, 1); f.update();
-	const selection = { ...scene.selectionRange }, cycles = f.host.runtime.machine.scheduler.nowCycles;
+	const selection = { ...scene.authoring.selectionRange }, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'broken.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
 	f.editor.diagnostics.computePending();
@@ -444,7 +444,7 @@ for (const activation of ['keyboard', 'pointer'] as const) test(`${activation} P
 	assert.equal(input.context.view.cursorRow, diagnostic.row); assert.equal(input.context.view.cursorColumn, diagnostic.startColumn);
 	assert.ok(main.activeGroup.model.tabs.includes(scene));
 	assert.notEqual(main.activeGroup.panes.activePane, pane);
-	assert.deepEqual(scene.selectionRange, selection);
+	assert.deepEqual(scene.authoring.selectionRange, selection);
 	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });

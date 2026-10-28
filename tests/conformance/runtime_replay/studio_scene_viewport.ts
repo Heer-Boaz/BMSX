@@ -55,10 +55,10 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	await test.click(scene.properties[0].bounds);
 	await press('Digit9');
 	check(x.pending && x.field.focusTarget.hasFocus, 'scene imports: a real property draft is focused');
-	const document = scene.document, version = scene.version, sourceVersion = model.version;
+	const document = scene.authoring.document, version = scene.authoring.revision, sourceVersion = model.version;
 	provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unchanged API\n' }]);
 	await frame();
-	check(scene.document === document && scene.version === version && x.pending && x.field.focusTarget.hasFocus,
+	check(scene.authoring.document === document && scene.authoring.revision === version && x.pending && x.field.focusTarget.hasFocus,
 		'scene imports: an equivalent dependency edit retains projection, focus and draft');
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return replacement' }]);
 	check(x.commit() && model.version === sourceVersion,

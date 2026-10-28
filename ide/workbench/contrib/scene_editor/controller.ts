@@ -1,6 +1,4 @@
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
-import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
-import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { resourceIdentityEquals, type ResourceIdentity } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
@@ -14,19 +12,19 @@ import type { PreparedEditorInput } from '../../services/editor/editor_opening';
 import { luaSourceLocation } from '../../../language/lua/source_location';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { SceneEditorInput } from './editor_input';
-import { buildSceneSourceDocument } from './source';
-import { installSceneOutline, selectSceneOutlineRow, type SceneMemberElement } from './outline';
+import type { SceneSourceDocuments } from './source_documents';
+import { installSceneOutline } from './outline';
 import { captureSceneEditorView, restoreSceneEditorView } from './view_snapshot';
 import { SceneEditorNavigationSelection } from './navigation_selection';
 
 /** Source projection admission; no world reads or runtime scene ownership. */
 export class SceneEditorController {
-	public constructor(private readonly catalog: WorkspaceSourceCatalog) {}
+	public constructor(private readonly catalog: WorkspaceSourceCatalog, public readonly documents: SceneSourceDocuments) {}
 
 	public readonly createView = (source: SceneEditorInput): SceneEditorInput => {
 		this.refresh(source);
 		const view = captureSceneEditorView(source);
-		const input = new SceneEditorInput(source.workingCopy, this.createView);
+		const input = new SceneEditorInput(source.workingCopy, this.documents, this.createView);
 		this.refresh(input);
 		restoreSceneEditorView(input, view);
 		return input;
@@ -39,7 +37,7 @@ export class SceneEditorController {
 	public openResource(group: EditorGroupView, resource: RuntimeResource, options: EditorTabOpenOptions = {}): void {
 		group.openProducedEditor(() => {
 			const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-			return this.findResource(group, resource) ?? new SceneEditorInput(model, this.createView);
+			return this.findResource(group, resource) ?? new SceneEditorInput(model, this.documents, this.createView);
 		}, options);
 	}
 
@@ -59,7 +57,7 @@ export class SceneEditorController {
 		if (range.start === range.end) return;
 		if (isCurrent?.() === false) return;
 		const retained = this.findResource(group, model.resource);
-		const input = retained ?? new SceneEditorInput(model, this.createView);
+		const input = retained ?? new SceneEditorInput(model, this.documents, this.createView);
 		this.refresh(input);
 		const root = input.outline.roots.find(node => node.element.span.start === range.start && node.element.span.end === range.end);
 		if (root === undefined) {
@@ -81,59 +79,37 @@ export class SceneEditorController {
 
 	public getSourceLocation(input: SceneEditorInput): EditorSourceLocation | undefined {
 		this.refresh(input);
-		const row = input.outline.rows[input.outline.selectionIndex]?.element;
+		const selection = input.authoring.selection, document = input.authoring.document!;
+		const range = selection?.kind === 'scene' ? selection.scene.range : selection === undefined ? undefined
+			: document.analysis.chunk.locations.range(selection.entry.field.span);
 		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId);
-		return luaSourceLocation(project, input.workingCopy, input.document.analysis, row?.source);
+		return luaSourceLocation(project, input.workingCopy, document.analysis, range);
 	}
 
-	/** Current source-command target; definition roots and source-only rows are not members. */
-	private editableMember(input: SceneEditorInput): SceneMemberElement | undefined {
-		this.refresh(input);
-		if (input.workingCopy.readOnly || input.parsed.syntaxError !== null) return undefined;
-		const row = input.outline.rows[input.outline.selectionIndex]?.element;
-		return row?.kind === 'member' && row.entry.kind === 'object' ? row : undefined;
+	public canRemoveSelectedMember(input: SceneEditorInput): boolean {
+		return input.authoring.canRemoveSelectedMember();
 	}
-
-	public canRemoveSelectedMember(input: SceneEditorInput): boolean { return this.editableMember(input) !== undefined; }
 
 	public removeSelectedMember(input: SceneEditorInput): void {
 		// Command admission may have accepted a property draft. Use its new source generation.
-		const row = this.editableMember(input);
-		if (row === undefined) return;
-		input.workingCopy.pushEditOperations(createLuaTableFieldRemovalEdits(input.workingCopy.buffer, input.parsed.locations, input.parsed.tokens, row.entry.field));
-		// Do not let a surviving namesake inherit the removed member's selection.
-		selectSceneOutlineRow(input, -1);
+		if (input.authoring.removeSelectedMember()) {
+			this.refresh(input);
+		}
 	}
 
-
 	public canMoveSelectedMember(input: SceneEditorInput, direction: -1 | 1): boolean {
-		const row = this.editableMember(input);
-		return row !== undefined && row.scene.resolution === 'complete'
-			&& row.index + direction >= 0 && row.index + direction < row.scene.objects.length;
+		return input.authoring.canMoveSelectedMember(direction);
 	}
 
 	public moveSelectedMember(input: SceneEditorInput, direction: -1 | 1): void {
-		const row = this.editableMember(input); // Source-command admission may have accepted a property.
-		if (row === undefined || row.scene.resolution !== 'complete'
-			|| row.index + direction < 0 || row.index + direction >= row.scene.objects.length) return;
-		input.workingCopy.pushEditOperations(createLuaTableFieldMoveEdits(
-			input.workingCopy.buffer, input.document.analysis.chunk, row.scene.objectsTable, row.index, row.index + direction,
-		));
+		if (!input.authoring.moveSelectedMember(direction)) return;
 		this.refresh(input);
 		revealWorkbenchListSelection(input.outline);
 	}
 
 	public refresh(input: SceneEditorInput): void {
-		const model = input.workingCopy;
-		const project = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId);
-		project.synchronizeSources(this.catalog);
-		const snapshot = project.getSnapshot();
-		if (input.sourceRevision === snapshot.revision) return;
-		const document = buildSceneSourceDocument(model.resource, snapshot, input.document);
-		input.sourceRevision = snapshot.revision;
-		if (document === input.document) return;
-		input.parsed = document.analysis.chunk;
-		installSceneOutline(input, document);
-		input.version += 1;
+		input.authoring.refresh();
+		if (input.outlineDocument === input.authoring.document && input.outlineRevision === input.authoring.revision) return;
+		installSceneOutline(input);
 	}
 }

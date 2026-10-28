@@ -1,6 +1,6 @@
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
-import { openSceneEditor, selectMember, selectSceneRow } from './studio_scene_source';
+import { openSceneEditor, openSceneFixture, selectMember, selectSceneRow } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
 async function clickTwistie(test: StudioFixture, input: SceneEditorInput, index: number, heldFrames = 1): Promise<void> {
@@ -10,115 +10,53 @@ async function clickTwistie(test: StudioFixture, input: SceneEditorInput, index:
 	await test.click({ left, right: left + layout.twistieWidth, top, bottom: top + layout.rowHeight }, heldFrames);
 }
 
-/** Actual source-outline topology, empty targets, focus and source correspondence. */
+/** Source hierarchy and selection identity over a test-owned declaration, never a game assembly. */
 export async function testSceneSourceTree(test: StudioFixture): Promise<void> {
-	const { harness, ide, frame, press, click, cycles, title } = test;
-	harness.openLuaSource('scenes/root.lua');
-	const model = harness.getActiveEditorDocument().model;
-	const original = model.buffer.getText();
-	const before = cycles();
-	const actor = title();
-	const media = ide.sources.currentBlua32Media;
-	const scene = await openSceneEditor(test);
-	const tree = scene.outline;
-	const root = tree.roots[0];
-	check(tree.roots.length === 1 && tree.rows.length === 5 && tree.selectionIndex === 0
-		&& root.element.kind === 'scene' && root.children.length === 4, 'tree: initial selection is the actual definition, not an implicit member');
+	const { ide, frame, press, click, cycles } = test;
+	const { model, scene, close } = await openSceneFixture(test, 'tree');
+	const original = model.buffer.getText(), before = cycles(), media = ide.sources.currentBlua32Media;
+	const tree = scene.outline, root = tree.roots[0];
+	check(root.element.kind === 'scene' && root.children.length === 4 && tree.rows[tree.selectionIndex] === root,
+		'tree: a document selects its actual declaration, not an implicit member');
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
-	if (!(pane instanceof SceneEditorPane)) throw new Error('tree: actual Scene Editor pane required');
-	const x = pane.controls[0];
-	check(pane.controls.every(control => control.field.readOnly), 'tree: a definition root has no editable member properties');
-	await press('Tab');
-	await press('Tab');
-	check(scene.actionBar.hasFocus && !x.field.focusTarget.hasFocus, 'tree: Tab skips disabled fields and reaches the toolbar');
-	await press('Escape');
-	for (const command of ['sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown'] as const) {
-		check(!ide.editor.commands.isEnabled(command), 'tree: roots never admit a member command');
-	}
-	const rows = tree.rows;
-	const parsed = scene.parsed;
-	for (let index = 0; index < 8; index += 1) await frame();
-	check(tree.rows === rows && tree.roots[0] === root && tree.rows[3] === root.children[2] && scene.parsed === parsed,
-		'tree: stable frames retain topology, visible rows and syntax');
-	await selectSceneRow(test, scene, 0);
-	check(!root.collapsed, 'tree: label clicks select without toggling expansion');
-	await clickTwistie(test, scene, 0, 8);
-	check(root.collapsed && tree.rows.length === 1 && tree.selectionIndex === 0 && scene.parsed === parsed,
-		'tree: a held twistie press collapses once without rebuilding source topology');
+	if (!(pane instanceof SceneEditorPane)) throw new Error('tree: actual Scene controls required');
+	const x = pane.controls[0], parsed = scene.authoring.document!.analysis.chunk;
+	check(pane.controls.every(control => control.field.readOnly), 'tree: a definition root has no member field authority');
+	for (let frameIndex = 0; frameIndex < 8; frameIndex++) await frame();
+	check(tree.roots[0] === root && scene.authoring.document!.analysis.chunk === parsed, 'tree: unchanged frames retain source and hierarchy identity');
+	await selectSceneRow(test, scene, 0); await clickTwistie(test, scene, 0, 8);
+	check(root.collapsed && tree.rows.length === 1 && tree.rows[tree.selectionIndex] === root, 'tree: a held twistie gesture collapses once');
 	await press('ArrowRight');
-	check(!root.collapsed && tree.selectionIndex === 0, 'tree: first Right expands the selected definition');
+	check(!root.collapsed && tree.rows[tree.selectionIndex] === root, 'tree: the first Right expands the declaration');
 	await press('ArrowRight');
-	check(tree.rows[tree.selectionIndex] === root.children[0] && !x.field.readOnly, 'tree: second Right selects the first actual member');
+	check(tree.rows[tree.selectionIndex] === root.children[0] && !x.field.readOnly, 'tree: the next Right selects the first source member');
 	await press('ArrowLeft');
-	check(tree.rows[tree.selectionIndex] === root && x.field.readOnly, 'tree: Left from a leaf selects its actual parent');
+	check(tree.rows[tree.selectionIndex] === root && x.field.readOnly, 'tree: Left returns to the actual parent');
 	await press('End');
-	check(tree.rows[tree.selectionIndex] === root.children[3], 'tree: End selects the last visible child');
-	await press('Home');
-	check(tree.rows[tree.selectionIndex] === root, 'tree: Home selects the first visible root');
-
-	await selectMember(test, scene, 2);
-	await click(scene.properties[0].bounds);
-	await press('Digit8');
+	check(tree.rows[tree.selectionIndex] === root.children.at(-1), 'tree: End follows visible topology');
+	await selectMember(test, scene, 2); await click(scene.properties[0].bounds); await press('Digit8');
 	await clickTwistie(test, scene, 0);
 	check(tree.roots[0].collapsed && tree.selectionIndex === 0 && x.field.readOnly && !x.pending
-		&& model.buffer.getText() !== original, 'tree: collapse accepts the departing property through ordinary blur and removes hidden edit focus');
+		&& model.buffer.getText() !== original, 'tree: collapse settles the departing member draft and retires hidden field focus');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === original && tree.roots[0].collapsed && tree.selectionIndex === 0,
-		'tree: one document Undo restores the property, not the view expansion');
-	await click(scene.actionBar.items[0].bounds);
-	const context = harness.getActiveEditorDocument();
-	check(context.model === model && context.view.cursorRow === tree.roots[0].element.source.start.line - 1
-		&& context.view.cursorColumn === tree.roots[0].element.source.start.column - 1,
-		'tree: Source navigates to the selected definition in the same working copy');
-	await openSceneEditor(test);
-	check(tree.roots[0].collapsed && tree.selectionIndex === 0, 'tree: returning to the view retains the definition selection and expansion');
-
-	// Additional hand-authored definitions, never installed or executed as a guest graph.
-	const empty = 'scene_library.register(root_scene.id, { objects = {} })\n';
-	const populated = "scene_library.register(root_scene.id, { objects = { { member_id = 'extra', definition_id = 'extra' } } })\n";
-	const partial = "scene_library.register('partial', { objects = { [7] = make_member() } })\n";
-	model.pushEditOperations([{ offset: original.indexOf('return root_scene'), deleteLength: 0, text: empty + populated + partial }]);
+	check(model.buffer.getText() === original && tree.roots[0].collapsed, 'tree: document Undo changes source, not expansion');
+	await click(scene.actionBar.items.find(item => item.command === 'editor.source')!.bounds);
+	check(test.harness.getActiveEditorDocument().model === model, 'tree: Source follows the exact selected declaration resource');
+	check(await openSceneEditor(test) === scene && scene.outline.roots[0].collapsed, 'tree: document navigation retains local expansion');
+	const additional = "scenes.register('fixture.room', { objects = {} })\nscenes.register('fixture.room', { objects = { {member_id='same',definition_id='same'} } })\n";
+	model.pushEditOperations([{ offset: original.indexOf('return {}'), deleteLength: 0, text: additional }]);
 	await frame();
-	check(tree.roots.length === 4 && tree.rows.length === 5 && tree.roots[0].collapsed,
-		'tree: empty and keyed-only definitions remain actual roots alongside collapsed populated definitions');
-	await selectSceneRow(test, scene, 1);
-	check(tree.roots[1].element.kind === 'scene' && tree.roots[1].children.length === 0
-		&& tree.roots[1].element.label === tree.roots[0].element.label && x.field.readOnly,
-		'tree: an empty same-name scene is selectable without a fake member or editable position');
-	await press('ArrowRight');
-	check(tree.selectionIndex === 1 && !tree.roots[1].collapsed, 'tree: Right on an empty root never jumps to the following definition');
-	await clickTwistie(test, scene, 1);
-	check(tree.selectionIndex === 1 && !tree.roots[1].collapsed, 'tree: childless roots have no expansion hit target');
-	await selectSceneRow(test, scene, 4);
-	await selectSceneRow(test, scene, 2);
-	await clickTwistie(test, scene, 2);
-	check(tree.roots[2].collapsed && tree.roots[0].collapsed && tree.rows.length === 4,
-		'tree: equal labels retain independent expansion and exact source selection');
-	await click(scene.actionBar.items[0].bounds);
-	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- hidden outline source shift\n' }]);
-	const nameOffset = model.buffer.getText().indexOf(populated) + 'scene_library.register('.length;
-	model.pushEditOperations([{ offset: nameOffset, deleteLength: 'root_scene.id'.length, text: "'renamed'" }]);
-	await openSceneEditor(test);
-	check(tree.roots[2].element.label === "'renamed'" && tree.roots[2].collapsed && tree.selectionIndex === 2 && tree.roots[0].collapsed,
-		'tree: hidden source shifts and renaming preserve the actual definition, not a label identity');
-	await press('ControlLeft', 'KeyZ');
-	await press('ControlLeft', 'KeyZ');
-	check(tree.roots[2].element.label === tree.roots[0].element.label && tree.roots[2].collapsed && tree.selectionIndex === 2,
-		'tree: inverse source mapping preserves the independently collapsed namesake');
-	const span = tree.roots[2].element.span;
+	const separate = tree.roots[2];
+	check(tree.roots.length === 3 && separate !== tree.roots[0], 'tree: equal declaration names remain independent source occurrences');
+	await selectSceneRow(test, scene, tree.rows.indexOf(separate));
+	const span = separate.element.span;
 	model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: '{ objects = {} }' }]);
 	await frame();
-	check(tree.selectionIndex === -1 && tree.roots[2].children.length === 0 && !tree.roots[2].collapsed && tree.roots[0].collapsed,
-		'tree: replacing a complete definition drops its identity instead of borrowing its name or old collapse state');
+	check(scene.authoring.selection === undefined && tree.roots[2].children.length === 0, 'tree: complete replacement retires selection rather than selecting a namesake');
 	await press('ControlLeft', 'KeyZ');
-	check(tree.selectionIndex === -1 && tree.roots[2].children.length === 1 && !tree.roots[2].collapsed && tree.roots[0].collapsed,
-		'tree: Undo restores source without resurrecting a removed view identity');
+	check(scene.authoring.selection === undefined && tree.roots[2].children.length === 1, 'tree: Undo restores source, not retired selection authority');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === original && !model.dirty && tree.roots.length === 1,
-		'tree: fixtures restore the real cart source through the existing document history');
-	await press('Home');
-	await press('ArrowRight');
-	check(!tree.roots[0].collapsed && tree.rows.length === 5 && cycles() === before && title() === actor && ide.sources.currentBlua32Media === media,
-		'tree: source navigation and hierarchy never advance or mutate the paused machine');
-	console.info('STUDIO: scene source tree, empty definitions and source correspondence passed');
+	check(model.buffer.getText() === original && !model.dirty, 'tree: all fixture edits restore exact source');
+	check(cycles() === before && ide.sources.currentBlua32Media === media, 'tree: source navigation never advances or installs the machine');
+	await close();
 }

@@ -20,7 +20,7 @@ export class SceneOptionEditor {
 	public bind(input: SceneEditorInput): void {
 		this.input = input;
 		const model = input.workingCopy;
-		const locations = input.document.analysis.chunk.locations;
+		const locations = input.authoring.document!.analysis.chunk.locations;
 		let retiring: InputFocusTarget | undefined;
 		while (this.controls.length > input.optionProperties.length) {
 			const target = this.removeLast();
@@ -72,7 +72,7 @@ export class SceneOptionEditor {
 			options: { allowSpace: true, singleLine: true },
 			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
 			format: value => value.edit.text,
-			parse: text => parseLuaFieldValueEdit(this.input!.workingCopy.buffer, this.input!.document.analysis.chunk.locations, this.input!.optionProperties[index].field, text),
+			parse: text => parseLuaFieldValueEdit(this.input!.workingCopy.buffer, this.input!.authoring.document!.analysis.chunk.locations, this.input!.optionProperties[index].field, text),
 		}, value => { this.input!.workingCopy.pushEditOperations([value.edit]); }, this.beforeCommit);
 		control.field.focusTarget.commandContext = this.parent.commandContext;
 		control.field.focusTarget.canFocus = () => this.input !== undefined && this.input.layout.mode !== 'outline' && this.input.outline.selectionIndex >= 0

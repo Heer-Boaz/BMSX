@@ -21,7 +21,7 @@ export class SceneEditorInputSerializer implements EditorInputSerializer<SceneEd
 	public async deserialize(value: string): Promise<SceneEditorInput> {
 		const state: SerializedSceneEditorInput = JSON.parse(value);
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
-		const input = new SceneEditorInput(model, this.controller.createView);
+		const input = new SceneEditorInput(model, this.controller.documents, this.controller.createView);
 		this.controller.refresh(input);
 		if (sameSource) restoreSceneEditorView(input, state.view);
 		else selectSceneOutlineRow(input, -1);

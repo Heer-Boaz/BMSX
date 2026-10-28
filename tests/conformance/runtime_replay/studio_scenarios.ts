@@ -23,7 +23,6 @@ import { runStudioPointerNavigation, type NavigationCart } from './studio_pointe
 import { runStudioWorkflows } from './studio_workflows';
 import { presentBehaviorTreeGraph } from './studio_behavior_graph';
 import { testCapturedSourceReboot } from './studio_source_workflows';
-import { testSceneSourceAfterReboot, presentSceneEditor } from './studio_scene_source';
 import { presentCommandPalette } from './studio_command_palette';
 import { testStudioScenarioOutput } from './studio_scenario_output';
 import { testStudioScenarioExecution } from './studio_scenario_execution';
@@ -73,10 +72,8 @@ export function runStudioScenario(test: StudioFixture, scenario: StudioScenario)
 export async function finishStudioScenario(test: StudioFixture, scenario: StudioScenario): Promise<void> {
 	if (scenario.kind === 'workflows') {
 		await testCapturedSourceReboot(test);
-		await testSceneSourceAfterReboot(test);
 		await testStudioScenarioExecution(test);
 		await testStudioScenarioOutput(test);
-		await presentSceneEditor(test);
 		await presentCommandPalette(test);
 		await presentActionEffects(test);
 		await testStudioPointerCapture(test);

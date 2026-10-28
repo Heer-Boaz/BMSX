@@ -1,278 +1,124 @@
-import { editorTextModelService } from '../../../ide/editor/model/model_service';
-import { getOrCreateSemanticProject } from '../../../ide/editor/contrib/intellisense/semantic/workspace/state';
-import { inputFocus } from '../../../ide/input/focus';
+import { createLuaSourceRegistry, registerLuaSourceRecord } from '../../../ide/runtime/source_registry';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { GX_REGISTER_SOURCE_PATH } from '../../../toolchain/ts/rompack/generated_modules';
-import { buildSceneSourceDocument } from '../../../ide/workbench/contrib/scene_editor/source';
-import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/working_copy/runtime_source_status';
+import { createTestToolingPackage } from '../../helpers/runtime_sources';
+import { createScenarioTestSourceRecord } from '../../helpers/scenario_sources';
+import { SCENE_AUTHORING_SOURCE } from '../../fixtures/studio/scene_authoring';
 import { check, type StudioFixture } from './studio_fixture';
 
+/** Test setup admits source-only data; subsequent interactions use ordinary Studio controls. */
+export async function openSceneFixture(test: StudioFixture, name: string) {
+	const root = `tests/fixtures/studio/scene-authoring/${name}`;
+	const registry = createLuaSourceRegistry(root, 'scene.lua');
+	for (const [path, source, generated] of [
+		['scene.lua', SCENE_AUTHORING_SOURCE, false],
+		['readonly.lua', SCENE_AUTHORING_SOURCE, true],
+		['cartlib/world/scene_library.lua', 'return {}', false],
+	] as const) registerLuaSourceRecord(registry, {
+		...createScenarioTestSourceRecord(path, 1, source, `${root}/${path}`), generated,
+	});
+	const catalog = test.ide.sources.catalog;
+	const context = catalog.admitContext({ admission: { id: `fixture-studio-scene-${name}`, projectRoot: root },
+		programDomain: 'cart', systemContextId: null, luaSources: registry,
+		sourceRoots: [{ path: root, resourcePathPrefix: '', modulePathPrefix: '', structured: true, sourceKind: 'source-only' }],
+		dependencyContextIds: [], previewPackage: createTestToolingPackage(root), previewRom: null, assetSources: [] });
+	const resource = catalog.resolveResource({ contextId: context.id, path: 'scene.lua' })!;
+	await test.ide.editor.navigation.openResource(test.ide.editor.editorParts.editorDestination(test.ide.editor.editorParts.activeGroup), resource);
+	const model = test.harness.getActiveEditorDocument().model;
+	const scene = await openSceneEditor(test);
+	const close = async () => {
+		for (const group of test.ide.editor.editorParts.groups) for (const input of [...group.model.tabs]) {
+			if (input.resource?.contextId === context.id)
+				check(await group.close(input.id), 'scene: a clean fixture retires its temporary editor attachments');
+		}
+		await test.frame();
+	};
+	return { model, scene, resource, readonlyResource: catalog.resolveResource({ contextId: context.id, path: 'readonly.lua' })!, close };
+}
+
 export async function openSceneEditor(test: StudioFixture): Promise<SceneEditorInput> {
-	await test.click(editorChromeState.menuEntryBounds.view);
+	if (!test.ide.editor.menubar.expanded) await test.click(editorChromeState.menuButtonBounds);
+	test.movePointer(editorChromeState.menuEntryBounds.tools);
+	await test.frame();
+	check(test.ide.editor.menubar.activeMenu === 'tools', 'scene: the visible Tools entry opens its menu');
 	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === 'sceneEditor')!;
-	check(item.enabled, 'scene: the actual View menu admits the Lua document');
+	check(item.enabled, 'scene: the actual Tools menu admits the selected source document');
 	await test.clickContextCommand(item.command!);
 	const input = test.ide.editor.editorParts.activeGroup.model.activeTab;
-	if (input.kind !== 'scene_editor') throw new Error('scene: View command must open the Scene Editor');
+	if (input.kind !== 'scene_editor') throw new Error('scene: Tools command must open the Scene Editor');
 	return input;
 }
 
 export async function selectSceneRow(test: StudioFixture, input: SceneEditorInput, index: number): Promise<void> {
+	const row = input.outline.rows[index];
+	check(row !== undefined, 'scene: selection requires an actual authored row');
 	const layout = input.outline.layout;
-	check(index >= input.outline.scroll && index < input.outline.scroll + layout.visibleRowCount && index < input.outline.rows.length,
-		`scene: row ${index} has a visible pointer target`);
 	const top = layout.contentTop + (index - input.outline.scroll) * layout.rowHeight;
 	await test.click({ left: layout.contentLeft, right: layout.contentRight, top, bottom: top + layout.rowHeight });
-	check(input.outline.selectionIndex === index, 'scene: actual tree row is selected by its visible pointer target');
+	check(input.outline.rows[input.outline.selectionIndex] === row, 'scene: pointer selection addresses the requested authored row');
 }
 
 export async function selectMember(test: StudioFixture, input: SceneEditorInput, index: number, sceneIndex = 0): Promise<void> {
 	const member = input.outline.roots[sceneIndex].children[index];
-	const rowIndex = input.outline.rows.indexOf(member);
-	check(rowIndex >= 0 && member.element.kind === 'member', 'scene: requested source member is visible in its own definition');
-	await selectSceneRow(test, input, rowIndex);
+	await selectSceneRow(test, input, input.outline.rows.indexOf(member));
 }
 
-/** Real menu, row, property, focus, history and source-command input on the shipped cart. */
+/** Field drafts, history and same-kind pane reuse over an independent source fixture. */
 export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
-	const { ide, harness, runtime, tasks, until, press, click, frame, runMenuCommand, cycles, title, guest } = test;
-	harness.openLuaSource('scenes/root.lua');
-	const model = harness.getActiveEditorDocument().model;
-	const project = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId);
-	project.synchronizeSources(ide.sources.catalog);
-	const titlePositionField = () => {
-		const document = buildSceneSourceDocument(model.resource, project.getSnapshot());
-		check(document.scenes.length === 1 && document.scenes[0].objects.length === 4, 'scene: actual Nemesis root assembly');
-		const member = document.scenes[0].objects[2];
-		if (member.kind !== 'object' || member.position === null) throw new Error('scene: actual title position field missing');
-		return member.position.x;
-	};
-	const actor = title();
-	const actorX = guest.readStringMember(actor, 'x');
-	const position = cycles();
-	const media = ide.sources.currentBlua32Media;
-	const original = model.buffer.getText();
-	const field = titlePositionField();
-	const range = project.getFileData(model.resource)!.chunk.locations.range(field.value.span);
+	const { ide, frame, press, click, cycles } = test;
+	const { model, scene, readonlyResource, close } = await openSceneFixture(test, 'values');
+	const original = model.buffer.getText(), before = cycles(), media = ide.sources.currentBlua32Media;
+	await selectMember(test, scene, 2);
+	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
+	if (!(pane instanceof SceneEditorPane)) throw new Error('scene: actual field controls required');
+	const x = pane.controls[0], property = scene.properties[0];
+	const range = scene.authoring.document!.analysis.chunk.locations.range(property.field!.value.span);
 	const start = model.buffer.offsetAt(range.start.line - 1, range.start.column - 1);
 	const end = model.buffer.offsetAt(range.end.line - 1, range.end.column);
-	// Simulate hand-authored grouping/trivia, which the old unary-range edit destroyed.
-	const authoredValue = '-( --[[source-owned anchor]]\n\t\t\t\t\t0)';
-	model.pushEditOperations([{ offset: start, deleteLength: end - start, text: authoredValue }]);
+	const grouped = '-( --[[source-owned anchor]]\n\t0)';
+	model.pushEditOperations([{ offset: start, deleteLength: end - start, text: grouped }]);
+	await frame();
 	const authored = model.buffer.getText();
-	await press('ControlLeft', 'KeyS');
-	await until(() => !model.dirty, 'scene: save the hand-authored source fixture before testing a clean-document property edit');
-	const scene = await openSceneEditor(test);
-	check(scene.workingCopy === model && scene.outline.roots[0].children.length === 4, 'scene: visual view shares the actual resource-owned source model');
-	await selectMember(test, scene, 2);
-	const retainedRow = scene.outline.roots[0].children[2];
-	const retainedField = scene.properties[0].field;
-	for (let index = 0; index < 8; index += 1) await frame();
-	check(scene.outline.roots[0].children[2] === retainedRow && scene.properties[0].field === retainedField,
-		'scene: stable visible frames retain the same row and source projection objects');
-	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
-	if (!(pane instanceof SceneEditorPane)) throw new Error('scene: the actual Scene Editor pane must own these controls');
-	const [x, y, z] = pane.controls;
-	const expected = original.slice(0, start) + '( --[[source-owned anchor]]\n\t\t\t\t\t17)' + original.slice(end);
 	await click(scene.properties[0].bounds);
-	check(x.field.focusTarget.hasFocus, 'scene: the physical property hit target receives input focus');
-	await press('Digit1');
-	await press('Digit7');
-	check(x.field.text === '17' && model.buffer.getText() === authored, 'scene: local draft does not rewrite Lua before acceptance');
+	await press('Digit1'); await press('Digit7');
+	check(x.pending && model.buffer.getText() === authored, 'scene: a field draft is not yet a canonical source edit');
 	await press('ControlLeft', 'KeyZ');
-	check(x.field.text === '1' && model.buffer.getText() === authored, 'scene: physical field Undo leaves the document alone');
+	check(x.field.text === '1' && x.pending && model.buffer.getText() === authored, 'scene: draft Undo edits its own input, not the source fixture');
 	await press('ControlLeft', 'KeyY');
-	check(x.field.text === '17', 'scene: field Redo restores the draft');
-	check(!model.dirty && x.pending && ide.editor.commands.isEnabled('save'), 'scene: an unsubmitted property enables Save on a clean document');
-	await press('ControlLeft', 'KeyS');
-	await until(() => !model.dirty, 'scene: Save accepts focused value before capturing the workspace source');
-	check(model.buffer.getText() === expected && model.lastSavedSource === expected, 'scene: only numeric/sign tokens changed, not member expressions or trivia');
-	check(x.field.focusTarget.hasFocus && !x.field.canUndo, 'scene: accepted field resets its local history without losing focus');
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === expected, 'scene: empty draft history never falls through to document Undo');
+	check(x.field.text === '17' && x.pending, 'scene: draft Redo restores only the unsubmitted input');
 	await press('Enter');
+	const expected = original.slice(0, start) + '( --[[source-owned anchor]]\n\t17)' + original.slice(end);
+	check(model.buffer.getText() === expected, 'scene: acceptance preserves authored grouping and comment bytes');
 	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === authored && x.field.text === '0', 'scene: one physical document Undo restores all tokens and rebinds the view');
+	check(model.buffer.getText() === authored, 'scene: document Undo restores the accepted expression in one step');
 	await press('ControlLeft', 'KeyY');
-	check(model.buffer.getText() === expected && x.field.text === '17', 'scene: physical Redo restores the source-preserving property edit');
-
-	await press('Tab');
-	await press('Tab');
-	check(x.field.focusTarget.hasFocus, 'scene: the view focus order enters the first editable property');
-	await press('Minus');
-	await press('Enter');
-	check(x.field.text === '-' && x.field.focusTarget.hasFocus && x.error.length > 0, 'scene: invalid Enter retains the draft with an error');
-	await press('ControlLeft', 'KeyS');
-	await press('ControlLeft', 'ShiftLeft', 'KeyS');
-	check(x.field.text === '-' && x.field.focusTarget.hasFocus && !test.ide.editor.actionPrompt.visible
-		&& model.buffer.getText() === expected && ide.sources.currentBlua32Media === media,
-		'scene: invalid input prevents Save/Hot Resume before source capture or prompt admission');
+	check(model.buffer.getText() === expected, 'scene: document Redo uses the same canonical history');
+	await click(scene.properties[0].bounds); await press('Minus'); await press('Enter');
+	check(x.pending && x.field.focusTarget.hasFocus && model.buffer.getText() === expected, 'scene: invalid acceptance retains the actual draft without a source write');
 	await press('Escape');
-	check(x.field.text === '17' && !x.pending, 'scene: Escape explicitly cancels the draft');
-	await click(scene.properties[0].bounds);
-	await press('Minus');
-	await selectMember(test, scene, 0);
-	check(model.buffer.getText() === expected,
-		'scene: leaving an invalid value explicitly reports rejection without changing either member');
+	await click(scene.properties[0].bounds); await press('Digit9');
+	await click(scene.actionBar.items.find(item => item.command === 'editor.source')!.bounds);
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor'
+		&& test.harness.getActiveEditorDocument().model === model, 'scene: Source opens the exact canonical document after accepting its departing field');
+	check(model.buffer.getText() === expected.replace('\t17)', '\t09)'), 'scene: Source admission accepts only the selected member value');
+	await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === expected, 'scene: code and visual controls share Undo history');
+	check(await openSceneEditor(test) === scene, 'scene: returning to the document reuses its retained view');
 	await selectMember(test, scene, 2);
-
-	await click(scene.properties[1].bounds);
-	await press('Digit2');
-	await press('Tab');
-	check(z.field.focusTarget.hasFocus && scene.properties[1].value === 2, 'scene: Tab accepts the old field before focusing its neighbour');
-	await press('ShiftLeft', 'Tab');
-	check(y.field.focusTarget.hasFocus && y.field.text === '2', 'scene: reverse traversal follows the same retained focus order');
-	await press('Escape');
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === expected && y.field.text === '0', 'scene: field blur creates one source undo operation');
-
-	await click(scene.properties[0].bounds);
-	await press('Digit9');
-	await click(scene.actionBar.items[0].bounds);
-	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && harness.getActiveEditorDocument().model === model,
-		'scene: the real Source action navigates to the same model');
-	check(model.buffer.getText() === expected.replace('\t17)', '\t09)'), 'scene: source navigation accepts the departing control before resource detach');
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === expected, 'scene: code Undo sees the same property history');
-	await press('Tab');
-	check(model.buffer.getText() !== expected, 'scene: code text retains its ordinary Tab editing, not property traversal');
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === expected, 'scene: code Tab edit is undoable in the same document');
-	check(await openSceneEditor(test) === scene && x.field.text === '17', 'scene: returning to the retained visual view rebinds undone source');
-	await click(scene.actionBar.items[0].bounds);
-	const storyName = 'story.instance_id';
-	model.pushEditOperations([{ offset: expected.indexOf(storyName), deleteLength: storyName.length, text: 'intro.instance_id' }]);
-	await openSceneEditor(test);
-	await selectMember(test, scene, 1);
-	check(scene.outline.roots[0].children[0].element.label === scene.outline.roots[0].children[1].element.label
-		&& scene.outline.roots[0].children[0].element.source !== scene.outline.roots[0].children[1].element.source, 'scene: repeated source expressions retain their distinct syntax fields');
-	await click(scene.properties[0].bounds);
-	await press('Digit5');
-	await press('Enter');
-	check(scene.outline.selectionIndex === 2 && scene.properties[0].value === 5, 'scene: accepting a repeated-name member never redirects selection to its namesake');
-	await press('ControlLeft', 'KeyZ');
-	await click(scene.actionBar.items[0].bounds);
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === expected, 'scene: source Undo removes only the duplicate-name fixture');
-	await openSceneEditor(test);
-	await selectMember(test, scene, 2);
-
-	// Arrange an unsupported expression in the same canonical source, never a runtime fallback.
-	await click(scene.actionBar.items[0].bounds);
-	const numericStart = expected.indexOf('17)', start);
-	model.pushEditOperations([
-		{ offset: expected.indexOf('objects = {') + 'objects = {'.length, deleteLength: 0, text: ' [1] = ' },
-		{ offset: numericStart, deleteLength: 2, text: 'origin + 1' },
-	]);
-	const dynamic = model.buffer.getText();
-	await openSceneEditor(test);
-	check(scene.outline.roots[0].element.scene.resolution === 'partial' && scene.outline.roots[0].children.length === 3, 'scene: explicit-key composition is labelled partial, not invented as ordered runtime members');
-	check(x.field.readOnly && scene.properties[0].sourceText.includes('origin + 1'), 'scene: dynamic Lua is shown as source, not evaluated or overwritten');
-	await click(scene.properties[0].bounds);
-	await press('Digit7');
-	check(model.buffer.getText() === dynamic, 'scene: a source-only expression has no numeric input route');
-	await press('Tab');
-	check(y.field.focusTarget.hasFocus, 'scene: focus traversal skips the unsupported property');
-	await press('Escape');
-	await click(scene.actionBar.items[0].bounds);
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === expected, 'scene: source Undo restores the numeric form without executing Lua');
-
-	harness.openLuaSource(GX_REGISTER_SOURCE_PATH);
-	const generated = harness.getActiveEditorDocument().model;
-	const generatedSource = generated.buffer.getText();
-	// A retained projection can be empty (e.g. after deleting its final registration).
-	// Attach explicitly here to test readonly pane lifecycle, not source discovery.
-	ide.editor.sceneEditor.openResource(ide.editor.editorParts.activeGroup, generated.resource);
-	await frame();
-	const readonlyScene = ide.editor.editorParts.activeGroup.model.activeTab;
-	if (readonlyScene.kind !== 'scene_editor') throw new Error('scene: readonly projection was not attached');
-	check(readonlyScene.workingCopy === generated && generated.readOnly && readonlyScene.outline.rows.length === 0,
-		'scene: readonly non-scene source does not invent a scene or an edit route');
-	check(!ide.editor.commands.isEnabled('sceneEditor.removeMember'), 'scene: readonly source does not admit Remove');
-	check(!ide.editor.commands.isEnabled('sceneEditor.moveMemberUp') && !ide.editor.commands.isEnabled('sceneEditor.moveMemberDown'),
-		'scene: readonly source does not admit member movement');
-	await press('Tab');
-	await press('Digit7');
-	await press('ControlLeft', 'KeyZ');
-	check(generated.buffer.getText() === generatedSource && model.buffer.getText() === expected,
-		'scene: readonly view commands never target the previous editable input');
-	harness.openLuaSource('scenes/root.lua');
-	await openSceneEditor(test);
-	check(scene.outline.roots[0].element.scene.resolution === 'complete', 'scene: undoing the source edit restores complete projection');
-	await click(scene.properties[0].bounds);
-	await press('Digit2');
-	await press('Digit2');
-	await test.clickTab(readonlyScene.id);
-	check(ide.editor.editorParts.activeGroup.model.activeTab === readonlyScene && model.buffer.getText() === expected.replace('\t17)', '\t22)')
-		&& generated.buffer.getText() === generatedSource, 'scene: switching inputs of the same retained pane accepts against the departing resource');
-	await test.clickTab(scene.id);
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === expected && x.field.text === '17', 'scene: document history remains attached to the correct resource after pane reuse');
-	await click(scene.properties[0].bounds);
-	await press('Digit1');
-	await press('Digit8');
-	await press('ControlRight', 'ShiftRight');
-	check(!ide.editor.isActive && !x.pending && model.buffer.getText() === expected.replace('\t17)', '\t18)'),
-		'scene: hiding the IDE accepts the departing property, not an implicit guest edit');
-	await press('ControlRight', 'ShiftRight');
-	await press('ControlLeft', 'KeyZ');
-	check(model.buffer.getText() === expected, 'scene: reopening the IDE retains the accepted source history');
-	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'scene: saving a definition does not install it');
-	check(cycles() === position && title() === actor && ide.sources.currentBlua32Media === media,
-		'scene: source edits, focus, view switches, undo/redo and save do not mutate the paused machine');
-
-	await click(scene.properties[0].bounds);
-	await press('Digit1');
-	await press('Digit8');
-	await press('Enter');
-	await click(scene.properties[0].bounds);
-	await press('Digit1');
-	await press('Digit7');
-	check(x.pending && scene.properties[0].value === 18, 'scene: Hot Resume starts with an actual unsubmitted value');
-	const previousMedia = ide.sources.currentBlua32Media;
-	await test.runPaletteCommand('Run: Hot Resume');
-	check(test.ide.editor.actionPrompt.visible
-		&& model.buffer.getText() === expected && !x.pending, 'scene: Hot Resume accepts the field before selecting dirty working copies');
-	await press('Enter');
-	// Save finishes before dispatch queues Hot Resume; initial runtime idleness
-	// does not mean that the accepted prompt has applied its source revision.
-	await until(() => ide.sources.currentBlua32Media !== previousMedia
-		&& tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
-		'scene: edited root definition passes actual Hot Resume and init');
-	check(model.lastSavedSource === expected, 'scene: Save and Resume persisted the accepted field');
-	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('scenes/root') === expected,
-		'scene: actual installed code owns the new source revision');
-	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'applied', 'scene: definition source is now installed');
-	check(title() === actor && guest.readStringMember(actor, 'x') === actorX,
-		'scene: reregistration does not silently move or replace the living actor');
-	await press('ControlRight', 'ShiftRight');
-	await runMenuCommand('pause');
-	harness.openLuaSource('title_screen.lua');
-}
-
-/** The following explicit product reboot must consume the edited composition normally. */
-export async function testSceneSourceAfterReboot(test: StudioFixture): Promise<void> {
-	const { ide, harness, runtime, execution, until, press, runMenuCommand, cycles, title, guest, frame } = test;
-	check(execution.userPaused && ide.editor.isActive, 'scene: explicit reboot retained host pause and source editor');
-	await runMenuCommand('pause');
-	await until(() => cycles() > runtime.timing.cpuHz * 22, 'scene: normal cold boot instantiates the edited root');
-	await press('ControlRight', 'ShiftRight');
-	await runMenuCommand('pause');
-	check(guest.readStringMember(title(), 'x') === 17, 'scene: the real newly instantiated title actor consumes the edited x value');
-	harness.openLuaSource('scenes/root.lua');
-	check(getTextFileRuntimeSourceStatus(ide.sources, harness.getActiveEditorDocument().model) === 'applied',
-		'scene: the reopened source is exactly the composition used by the new world');
-	await frame();
-}
-
-/** Fault-gated screenshot of the actual tiny-font property view at the native IDE resolution. */
-export async function presentSceneEditor(test: StudioFixture): Promise<void> {
-	const input = await openSceneEditor(test);
-	await selectMember(test, input, 2);
-	await test.click(input.properties[0].bounds);
-	check(inputFocus.target?.edit !== undefined && input.properties[0].value === 17, 'scene: the final view shows the actual applied member position');
-	await test.frame();
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), readonlyResource);
+	const readonlyScene = await openSceneEditor(test), readonlyModel = readonlyScene.workingCopy;
+	await selectMember(test, readonlyScene, 2);
+	check(pane.controls.every(control => control.field.readOnly), 'scene: read-only attachment revokes previous writable controls');
+	for (const command of ['sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown'] as const)
+		check(!ide.editor.commands.isEnabled(command), 'scene: read-only membership rejects structural mutations');
+	await press('Tab'); await press('Digit7');
+	check(readonlyModel.buffer.getText() === SCENE_AUTHORING_SOURCE && model.buffer.getText() === expected,
+		'scene: reusing the pane cannot redirect a write into the previous source');
+	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), model.resource);
+	await openSceneEditor(test); await selectMember(test, scene, 2);
+	await press('ControlLeft', 'KeyZ'); await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === original && !model.dirty, 'scene: fixture setup and accepted edits leave no dirty source outside this case');
+	check(cycles() === before && ide.sources.currentBlua32Media === media, 'scene: source-only authoring never executes or installs a cartridge');
+	await close();
 }

@@ -2,7 +2,6 @@ import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
-import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
@@ -13,13 +12,15 @@ import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
-function scene(path: string) {
-	return new SceneEditorInput(new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
+function sourceInput(path: string) {
+	const input = new CodeEditorInput(new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path, source: { type: 'lua', resid: path } }, 'lua', 'return {}'));
+	input.setLabel('shared fixture', path);
+	return input;
 }
 
 test('one group preview replaces only its clean predecessor and keeps its tab position', () => {
 	const group = new EditorTabGroupModel();
-	const first = scene('first.lua'), second = scene('second.lua'), third = scene('third.lua');
+	const first = sourceInput('first.lua'), second = sourceInput('second.lua'), third = sourceInput('third.lua');
 	group.add(first, { pinned: false }); group.add(second);
 	let closed = 0;
 	first.onWillDispose(() => { closed += 1; });
@@ -34,13 +35,13 @@ test('one group preview replaces only its clean predecessor and keeps its tab po
 
 test('editing a shared model promotes its preview; Undo to clean never unpins it', () => {
 	const group = new EditorTabGroupModel();
-	const visual = scene('shared.lua');
-	const code = new CodeEditorInput(visual.workingCopy);
+	const code = sourceInput('shared.lua');
+	const visual = new AemEditorInput(code.workingCopy);
 	group.add(code); group.add(visual, { pinned: false });
 	code.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- edit\n' }]);
 	assert.equal(group.previewTab, null); assert.equal(visual.isDirty(), true);
 	code.workingCopy.undo(); assert.equal(visual.isDirty(), false); assert.equal(group.previewTab, null);
-	const next = scene('next.lua'); group.add(next, { pinned: false });
+	const next = sourceInput('next.lua'); group.add(next, { pinned: false });
 	assert.ok(group.tabs.includes(visual));
 	group.clear();
 	// Disposed input listeners no longer retain the group or publish labels.
@@ -51,14 +52,14 @@ test('editing a shared model promotes its preview; Undo to clean never unpins it
 
 test('already dirty documents cannot become previews; duplicate labels disambiguate at metadata boundaries', () => {
 	const group = new EditorTabGroupModel();
-	const a = scene('a.lua'), b = scene('b.lua');
+	const a = sourceInput('a.lua'), b = sourceInput('b.lua');
 	a.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty\n' }]);
 	group.add(a, { pinned: false }); assert.equal(group.previewTab, null);
-	assert.equal(group.getLabel(a), 'SCENE EDITOR');
+	assert.equal(group.getLabel(a), a.title);
 	group.add(b);
 	assert.match(group.getLabel(a), /a\.lua/); assert.match(group.getLabel(b), /b\.lua/);
 	b.setLabel('renamed', 'new.lua');
-	assert.equal(group.getLabel(a), 'SCENE EDITOR'); assert.equal(group.getLabel(b), 'renamed');
+	assert.equal(group.getLabel(a), a.title); assert.equal(group.getLabel(b), 'renamed');
 	group.clear();
 });
 
@@ -114,7 +115,7 @@ for (const distinction of ['path', 'domain'] as const) test(`same-name audio vie
 });
 
 test('compact-only metadata changes publish once and title assignment preserves both description forms', t => {
-	const group = new EditorTabGroupModel(), first = scene('first.lua'), second = scene('second.lua');
+	const group = new EditorTabGroupModel(), first = sourceInput('first.lua'), second = sourceInput('second.lua');
 	t.after(() => group.clear());
 	first.setLabel('shared', 'first/source', 'first'); second.setLabel('shared', 'second/source', 'second');
 	group.add(first); group.add(second, { pinned: false });
@@ -140,7 +141,7 @@ test('compact-only metadata changes publish once and title assignment preserves 
 });
 
 test('ambiguous compact metadata chooses full metadata for every member rather than introducing mixed-description collisions', t => {
-	const group = new EditorTabGroupModel(), inputs = [scene('first.lua'), scene('second.lua'), scene('third.lua')];
+	const group = new EditorTabGroupModel(), inputs = [sourceInput('first.lua'), sourceInput('second.lua'), sourceInput('third.lua')];
 	t.after(() => group.clear());
 	inputs[0].setLabel('shared', 'third-compact', 'ambiguous');
 	inputs[1].setLabel('shared', 'second/full', 'ambiguous');
@@ -153,7 +154,7 @@ test('ambiguous compact metadata chooses full metadata for every member rather t
 });
 
 test('an intentionally absent compact description keeps the entire duplicate-title group on full metadata', t => {
-	const group = new EditorTabGroupModel(), first = scene('first.lua'), second = scene('second.lua');
+	const group = new EditorTabGroupModel(), first = sourceInput('first.lua'), second = sourceInput('second.lua');
 	t.after(() => group.clear());
 	first.setLabel('shared', 'first/full', ''); second.setLabel('shared', 'second/full', 'compact');
 	group.add(first); group.add(second);
@@ -164,7 +165,7 @@ test('an intentionally absent compact description keeps the entire duplicate-tit
 test('workbench preview replacement detaches the pane before disposal, and history cannot retain a closed preview', t => {
 	const group = createTestEditorGroup();
 	t.after(() => { group.dispose(); });
-	const kept = scene('kept.lua'), first = scene('preview.lua'), next = scene('next.lua');
+	const kept = sourceInput('kept.lua'), first = sourceInput('preview.lua'), next = sourceInput('next.lua');
 	group.openEditor(kept); group.openEditor(first, { pinned: false });
 	let detached = false;
 	first.onWillDispose(() => { detached = group.panes.activePane?.input !== first; });
@@ -178,7 +179,7 @@ test('workbench preview replacement detaches the pane before disposal, and histo
 
 /** A real pending value control is attached to the group's current authored view. */
 function createPreviewDraft(t: TestContext) {
-	const group = createTestEditorGroup(), kept = scene('kept.lua'), current = scene('preview.lua');
+	const group = createTestEditorGroup(), kept = sourceInput('kept.lua'), current = sourceInput('preview.lua');
 	group.openEditor(kept); group.openEditor(current, { pinned: false });
 	let publications = 0;
 	const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, value => {
@@ -196,7 +197,7 @@ function createPreviewDraft(t: TestContext) {
 }
 
 test('preview admission publishes a valid focused draft before replacement can retire its clean model', t => {
-	const f = createPreviewDraft(t), next = scene('next.lua');
+	const f = createPreviewDraft(t), next = sourceInput('next.lua');
 	setFieldText(f.control.field, '2', false);
 	let retired = false;
 	f.current.onWillDispose(() => { retired = true; });
@@ -211,7 +212,7 @@ test('preview admission publishes a valid focused draft before replacement can r
 });
 
 test('invalid preview admission preserves the view and draft and disposes only fresh offered inputs', t => {
-	const f = createPreviewDraft(t), next = scene('next.lua');
+	const f = createPreviewDraft(t), next = sourceInput('next.lua');
 	setFieldText(f.control.field, '-', false);
 	const generation = f.group.panes.openGeneration;
 	let retired = 0, offeredRetired = 0;
@@ -219,7 +220,7 @@ test('invalid preview admission preserves the view and draft and disposes only f
 	next.onWillDispose(() => { offeredRetired += 1; });
 	assert.ok(f.group.openEditor(next, { pinned: false }) === undefined);
 	assert.equal(offeredRetired, 1);
-	const duplicate = new SceneEditorInput(f.current.workingCopy);
+	const duplicate = new CodeEditorInput(f.current.workingCopy);
 	duplicate.onWillDispose(() => { offeredRetired += 1; });
 	assert.ok(f.group.openEditor(duplicate) === undefined);
 	assert.equal(offeredRetired, 2);
@@ -251,7 +252,7 @@ test('preserved-focus opens and activations do not publish another group control
 	const f = createPreviewDraft(t), other = createTestEditorGroup();
 	t.after(() => other.dispose());
 	setFieldText(f.control.field, '2', false);
-	const kept = scene('other-kept.lua'), next = scene('other-preview.lua');
+	const kept = sourceInput('other-kept.lua'), next = sourceInput('other-preview.lua');
 	const keptOpening = other.openEditor(kept, { preserveFocus: true });
 	assert.ok(keptOpening !== undefined); assert.equal(keptOpening.activated, false); assert.equal(keptOpening.generation, other.panes.openGeneration);
 	assert.ok(other.panes.activePane?.input === kept);
@@ -266,7 +267,7 @@ test('preserved-focus opens and activations do not publish another group control
 });
 
 test('resolved opening reports rejected draft admission without attachment or focus transfer', async t => {
-	const f = createPreviewDraft(t), next = scene('resolved.lua');
+	const f = createPreviewDraft(t), next = sourceInput('resolved.lua');
 	setFieldText(f.control.field, '-', false);
 	const back = [...navigationState.back], forward = [...navigationState.forward];
 	let retired = 0;

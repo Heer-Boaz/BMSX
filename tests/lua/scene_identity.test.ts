@@ -1,19 +1,16 @@
+import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { InputFocusService } from '../../ide/input/focus';
 import { api } from '../../ide/runtime/overlay_api';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneOutlineFeedback } from '../../ide/workbench/contrib/scene_editor/feedback';
 import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
-import { buildSceneSourceDocument } from '../../ide/workbench/contrib/scene_editor/source';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
-import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
-import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 
@@ -29,13 +26,12 @@ scenes.register('other room', { objects = {
 
 function scene(t: TestContext, contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0], source = SOURCE) {
 	const path = 'scenes/room.lua';
-	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: path, location: { kind: 'workspace' as const, path }, contextId, path, source: { resid: path, type: 'lua' } }, 'lua', source);
-	const input = new SceneEditorInput(model);
-	const file = buildResourceLuaSemanticFixtureFile(source, model.resource);
-	assert.equal(file.syntaxError, null);
-	installSceneOutline(input, buildSceneSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([file], ['cartlib/world/scene_library']))));
+	const { model, documents } = createSceneSourceFixture(t, source, path, contextId);
+	const input = new SceneEditorInput(model, documents);
+	assert.equal(input.authoring.document!.analysis.syntaxError, null);
+	installSceneOutline(input);
 	selectSceneOutlineRow(input, 1);
-	t.after(() => { input.dispose(); model.dispose(); });
+	t.after(() => { input.dispose(); });
 	return input;
 }
 
@@ -48,7 +44,7 @@ test('Scene semantic captions keep source correspondence and duplicate membershi
 		assert.ok(row.element.identity.includes('scenes/room.lua:' + row.element.source.start.line + ':' + row.element.source.start.column));
 	}
 	assert.notEqual(members[0].element.source.path, otherSlot.outline.rows[1].element.source.path, 'equal human-readable labels do not merge source correspondence from distinct admitted contexts');
-	assert.equal(input.outline.rows[1].element.source, input.document!.analysis.chunk.locations.range(input.document!.scenes[0].objects[0].field.span));
+	assert.equal(input.outline.rows[1].element.source, input.authoring.document!.analysis.chunk.locations.range(input.authoring.document!.scenes[0].objects[0].field.span));
 	assert.equal(input.workingCopy.buffer.getText(), SOURCE);
 });
 
@@ -66,7 +62,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} identifie
 	configureFontVariant(variant);
 	for (const literal of IDENTIFIER_LITERALS) {
 		const source = `local scenes = require('cartlib/world/scene_library')\nscenes.register(${literal.source}, { objects = {\n { member_id = ${literal.source}, definition_id = ${literal.source} },\n} })`;
-		const input = scene(t, TEST_CARTRIDGE_CONTEXT_IDS[0], source), document = input.document!;
+		const input = scene(t, TEST_CARTRIDGE_CONTEXT_IDS[0], source), document = input.authoring.document!;
 		const root = input.outline.roots[0].element, member = input.outline.roots[0].children[0].element;
 		const entry = document.scenes[0].objects[0];
 		assert.ok(entry.kind === 'object');
@@ -86,7 +82,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} identifie
 		assert.equal(root.displayLabel, literal.value); assert.equal(member.displayLabel, literal.value);
 		assert.equal(input.detailsText[0].text, literal.value, 'literal identifier casing and internal spaces survive Details layout');
 		assert.equal(input.detailsText[1].text, literal.value);
-		assert.deepEqual(member.span, span); assert.deepEqual(input.selectionRange, span);
+		assert.deepEqual(member.span, span); assert.deepEqual(input.authoring.selectionRange, span);
 		assert.equal(input.workingCopy.version, version); assert.equal(input.workingCopy.buffer.getText(), source);
 	}
 });
@@ -178,7 +174,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} full iden
 	f.input.outline.scroll--; f.feedback.pointer(f.input, 1, f.point); f.update(); f.paint();
 	assert.deepEqual(f.labels, [], 'stationary hover cannot adopt a row after scroll');
 	f.point.viewportX++; f.feedback.pointer(f.input, 1, f.point); f.update(); f.paint(); assert.ok(f.labels.length > 0);
-	installSceneOutline(f.input, f.input.document!); selectSceneOutlineRow(f.input, 1);
+	installSceneOutline(f.input); selectSceneOutlineRow(f.input, 1);
 	assert.notEqual(f.input.outline.rows[1], member);
 	f.update(); f.paint(); assert.deepEqual(f.labels, [], 'equal labels at the same index cannot inherit another projection identity');
 	layoutSceneEditor(f.input, true, false, f.area);

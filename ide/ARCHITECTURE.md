@@ -202,6 +202,10 @@ address an exact input alongside their concrete control origin; popup projection
 does not change group selection to manufacture that subject.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
+Scene source documents are generation-cached at `contrib/scene_editor/source_documents.ts`
+and shared with project-content discovery. `SceneAuthoringContext` retains source
+correspondence, semantic selection and member editing independently of outline
+rows and document placement; each independent Scene input owns its own context.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
 An input's optional fresh-view capability belongs to its contribution. It creates

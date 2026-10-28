@@ -105,7 +105,7 @@ test('ordinary Source close and reopen restores a plain reading memento in a fre
 	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
 	const f = fixture(t, source), closedView = f.input.context.view;
 	// Another retained source-backed view keeps this dirty document alive through Source close.
-	f.editor.editorParts.main.activeGroup.model.add(new SceneEditorInput(f.model));
+	f.editor.editorParts.main.activeGroup.model.add(new SceneEditorInput(f.model, f.editor.sceneEditor.documents));
 	closedView.cursorRow = 50; closedView.cursorColumn = 8;
 	closedView.selectionAnchor = { row: 49, column: 3 };
 	closedView.scrollRow = 35.5;
@@ -132,7 +132,7 @@ test('explicit Source opening and serialized view state take precedence over the
 	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
 	const f = fixture(t, source);
 	f.view.cursorRow = 50; f.view.cursorColumn = 8; f.view.scrollRow = 35.5;
-	f.editor.editorParts.main.activeGroup.model.add(new SceneEditorInput(f.model));
+	f.editor.editorParts.main.activeGroup.model.add(new SceneEditorInput(f.model, f.editor.sceneEditor.documents));
 	f.editor.editorParts.main.activeGroup.close(f.input.id);
 	const selected = resolveLuaCodeEditorInput(f.sources.catalog, f.model.resource);
 	f.editor.editorParts.main.activeGroup.openEditor(selected, { selection: { row: 5, startColumn: 7, endColumn: 9 } });

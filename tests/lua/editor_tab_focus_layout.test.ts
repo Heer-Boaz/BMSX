@@ -9,7 +9,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
 import * as colors from '../../ide/common/constants';
 import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
-import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { EditorTabStrip } from '../../ide/workbench/ui/tab/control';
 import type { EditorTabDragHandler } from '../../ide/workbench/ui/tab/drag';
@@ -23,7 +23,7 @@ import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 
 /** Geometry assertions exercise the strip's interval-reveal and retained paint contracts. */
 function fixture(t: TestContext, count = 12, variant: 'tiny' | 'msx' = 'tiny') {
-	const model = new EditorTabGroupModel(), copies: EditorTextModel[] = [], inputs: SceneEditorInput[] = [];
+	const model = new EditorTabGroupModel(), copies: EditorTextModel[] = [], inputs: CodeEditorInput[] = [];
 	const font = new EditorFont(variant);
 	let measurements = 0;
 	const context = {
@@ -43,7 +43,7 @@ function fixture(t: TestContext, count = 12, variant: 'tiny' | 'msx' = 'tiny') {
 		const copy = new EditorTextModel({ contextLabel: 'Focus layout', sourceFilePath: path,
 			location: { kind: 'workspace', path }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path,
 			source: { type: 'lua', resid: path } }, 'lua', 'return {}');
-		const input = new SceneEditorInput(copy); input.setLabel(`tab ${index}`, path);
+		const input = new CodeEditorInput(copy); input.setLabel(`tab ${index}`, path);
 		copies.push(copy); inputs.push(input); model.add(input, { pinned: true });
 	}
 	model.activate(inputs[0]);
