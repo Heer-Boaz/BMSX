@@ -5,13 +5,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import type { PolyRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts/render/headless/host_2d';
+import { RectRenderKind, type PolyRenderSubmission, type RectRenderSubmission } from '../../machine/ts/render/shared/submissions';
+import * as colors from '../../ide/common/constants';
 import { InputFocusService } from '../../ide/input/focus';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { api } from '../../ide/runtime/overlay_api';
 import { drawWorkbenchGraph } from '../../ide/workbench/render/graph';
-import { createWorkbenchGraphDisc, createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode, type WorkbenchGraphModel } from '../../ide/workbench/ui/graph/model';
+import { createWorkbenchGraphDisc, createWorkbenchGraphEdge, createWorkbenchGraphLabel, createWorkbenchGraphModel, createWorkbenchGraphNode, GRAPH_NODE_PADDING, type WorkbenchGraphModel } from '../../ide/workbench/ui/graph/model';
 import { GRAPH_ZOOM_MAX, GRAPH_ZOOM_MIN, WorkbenchGraphViewport } from '../../ide/workbench/ui/graph/viewport';
 import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult as Result } from '../../ide/workbench/ui/graph/control';
@@ -124,6 +126,73 @@ test('disc symbols retain their actual pixel silhouette instead of routing to pa
 		const frame = queue.consumeOverlayFrame();
 		assert.ok(!frame.commandKinds.slice(0, frame.commandCount).includes(Host2DKind.Glyphs));
 		assert.equal(disc.insets, insets, 'paint consumes retained geometry without a new raster');
+	}
+});
+
+for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
+	test(`${theme}/${variant} graph disc selection and hover augment its retained filled symbol`, t => {
+		const originalTheme = colors.getActiveIdeThemeVariant();
+		t.after(() => colors.setIdeThemeVariant(originalTheme)); colors.setIdeThemeVariant(theme);
+		const symbolFont = new Font({ variant });
+		const disc = createWorkbenchGraphDisc(symbolFont.lineHeight + GRAPH_NODE_PADDING, 20, 20);
+		const model = createWorkbenchGraphModel(symbolFont, [disc], []);
+		const view = new WorkbenchGraphViewport(model); view.layout(0, 0, 100, 100);
+		const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
+		control.setInput(view); t.after(() => control.dispose());
+		const { presenter, renderer, queue, backend } = createHostOverlayFixture(100, 100);
+		const target = backend.framebufferPixels;
+		let normal: Uint8Array;
+		for (const state of ['normal', 'selected', 'hover'] as const) {
+			view.selection = null;
+			const x = (disc.bounds.left + disc.bounds.right) / 2;
+			const y = (disc.bounds.top + disc.bounds.bottom) / 2;
+			if (state !== 'normal') control.handlePointer({ ...pointer(x, y),
+				justPressedButtons: state === 'selected' ? PointerButton.Primary : 0 }, 0);
+			assert.equal(view.hitTest(x, y), disc, 'decoration retains the pointer hit identity');
+			if (state === 'selected') assert.equal(view.selection, disc);
+			renderer.beginFrame(presenter); api.beginFrame(renderer);
+			drawWorkbenchGraph(view, control.hover, false); renderer.endFrame();
+			const frame = queue.consumeOverlayFrame();
+			beginHeadlessHost2D(backend.hostOverlayContext, target, 100, 100);
+			for (let index = 0; index < frame.commandCount; index++)
+				renderHeadlessHost2DEntry(backend.hostOverlayContext, frame.commandKinds[index], frame.commandRefs[index]);
+			if (state === 'normal') { normal = target.slice(); continue; }
+			// Focused renderer contract: decoration is outside the semantic silhouette.
+			// Compare the actual disc raster, not incidental pane geometry or a UI snapshot.
+			const center = (Math.trunc(y) * 100 + Math.trunc(x)) * 4;
+			assert.deepEqual(target.subarray(center, center + 4), normal!.subarray(center, center + 4),
+				`${state} preserves the semantic body ink, not the selection surface's foreground`);
+			for (let row = disc.bounds.top; row < disc.bounds.bottom; row++) {
+				const start = (row * 100 + disc.bounds.left) * 4;
+				const end = (row * 100 + disc.bounds.right) * 4;
+				assert.deepEqual(target.subarray(start, end), normal!.subarray(start, end),
+					`${state} preserves the filled semantic disc instead of replacing its ink or surface`);
+			}
+			assert.notDeepEqual(target, normal!, 'hover and selection still have visible additive decoration');
+			assert.equal(view.model, model);
+		}
+	});
+}
+
+test('disc selection decoration remains paintable when only its screen-pixel outside frame intersects the viewport', () => {
+	const disc = createWorkbenchGraphDisc(10, 20, 20);
+	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [disc], []));
+	view.layout(0, 0, 100, 100); view.selection = disc;
+	const { presenter, renderer, queue } = createHostOverlayFixture(100, 100);
+	for (const zoom of [0.5, 1, 2]) for (const side of ['left', 'top', 'right', 'bottom']) {
+		view.setZoom(zoom); view.scrollX = 0; view.scrollY = 0;
+		switch (side) {
+			case 'left': view.scrollX = disc.bounds.right * zoom; break;
+			case 'top': view.scrollY = disc.bounds.bottom * zoom; break;
+			case 'right': view.scrollX = disc.bounds.left * zoom - view.bounds.right; break;
+			case 'bottom': view.scrollY = disc.bounds.top * zoom - view.bounds.bottom; break;
+		}
+		renderer.beginFrame(presenter); api.beginFrame(renderer);
+		drawWorkbenchGraph(view, null, false); renderer.endFrame();
+		const frame = queue.consumeOverlayFrame();
+		assert.ok(frame.commandRefs.slice(0, frame.commandCount).some((command, index) =>
+			frame.commandKinds[index] === Host2DKind.Rect && (command as RectRenderSubmission).kind === RectRenderKind.Rect),
+			`${side}/${zoom}x: culling includes the semantic symbol's outside decoration`);
 	}
 });
 
