@@ -19,9 +19,11 @@ const capture = async label => {
 	t.log(`VISUAL ${label}`);
 	t.capture(label);
 };
-// Menu order comes from the actual retained contribution, including eligibility.
-const chooseOverflowCommand = async (bar, command) => {
-	const commands = bar.overflow.items.filter(entry => bar.items.some(item => item.command === entry.command && item.enabled));
+// Menu order and eligibility belong to the actual open popup, including secondary actions.
+const chooseOverflowCommand = async command => {
+	const menu = t.contextMenu();
+	t.assert(menu.visible, 'the actual overflow popup is not open');
+	const commands = menu.model.rows.filter(row => row.command !== undefined && row.enabled);
 	const index = commands.findIndex(entry => entry.command === command);
 	t.assert(index >= 0, `${command} is not an eligible overflow action`);
 	await press('Home');
@@ -81,10 +83,13 @@ const audioSource = audio.workingCopy.buffer.getText();
 await matrix('audio-events', audio);
 t.command('resources');
 await t.frames(3);
-const audioSash = { x: audio.layout.left, y: (audio.layout.top + audio.layout.bottom) / 2 };
+const audioResize = t.resourcePanel().resizeBounds;
+const audioSash = { x: (audioResize.left + audioResize.right) / 2, y: (audioResize.top + audioResize.bottom) / 2 };
+const audioSelection = audio.tree.rows[audio.tree.selectionIndex];
 t.controlInput([{ type: 'pointer', ...audioSash }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 t.controlInput([{ type: 'pointer', x: (audioSash.x + audio.layout.right) / 2, y: audioSash.y }]); await t.frames(2);
 t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+t.assert(audio.tree.rows[audio.tree.selectionIndex] === audioSelection, 'Files resizing leaked a press into the audio property tree');
 await matrix('audio-events-files', audio);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
 // Take real content focus before using keyboard disclosure/feedback navigation.
@@ -114,13 +119,19 @@ await press('Enter');
 await capture('audio-events-more-keyboard');
 await press('Escape');
 t.assert(audio.actionBar.hasFocus, 'dismissing keyboard More did not restore its actual toolbar focus');
+const audioGroup = t.activeEditorGroup();
 await press('Enter');
-await chooseOverflowCommand(audio.actionBar, 'editor.source');
+await chooseOverflowCommand('editor.sourceToSide');
 await t.frames(3);
 const audioCode = t.activeWorkbenchTab();
-t.assert(audioCode.kind === 'code_editor' && audioCode.workingCopy === audio.workingCopy,
-	'overflow Source did not target the original authored audio working copy');
+t.assert(t.activeEditorGroup() !== audioGroup && audioGroup.model.activeTab === audio
+	&& audioCode.kind === 'code_editor' && audioCode.workingCopy === audio.workingCopy,
+	'overflow Source to Side did not open the original authored audio working copy beside its retained visual input');
 t.assert(audio.workingCopy.buffer.getText() === audioSource, 'feedback or overflow actions edited the authored audio source');
+t.command('group.close');
+await t.frames(3);
+t.assert(t.activeEditorGroup() === audioGroup && t.activeWorkbenchTab() === audio,
+	'closing the side Source group did not return to the originating audio view');
 t.command('resources');
 await t.frames(3);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
@@ -143,18 +154,21 @@ t.assert(scenarios.view.testPane.rows[scenarios.view.testPane.selectionIndex].ki
 t.command('scenarioLab.debug');
 for (let frame = 0; frame < 1200 && !scenarios.view.debugger?.stopped; frame++) await t.frames(1);
 t.assert(scenarios.view.debugger?.stopped, 'the selected real test never reached its debugger entry stop');
+const scenarioDebugRun = scenarios.view.resultService.liveRun, originalDebugCaseId = scenarioDebugRun.scopeId;
 await matrix('scenario-debug-entry', scenarios, scenarios.view.layout);
 t.command('resources');
 await t.frames(3);
-const scenarioSash = { x: scenarios.view.layout.left, y: (scenarios.view.layout.top + scenarios.view.layout.bottom) / 2 };
+const scenarioResize = t.resourcePanel().resizeBounds;
+const scenarioSash = { x: (scenarioResize.left + scenarioResize.right) / 2, y: (scenarioResize.top + scenarioResize.bottom) / 2 };
+const scenarioSelection = scenarios.view.testPane.selectedNodeId;
 t.controlInput([{ type: 'pointer', ...scenarioSash }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 t.controlInput([{ type: 'pointer', x: (scenarioSash.x + scenarios.view.layout.right) / 2, y: scenarioSash.y }]); await t.frames(2);
 t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
+t.assert(scenarios.view.testPane.selectedNodeId === scenarioSelection, 'Files resizing leaked a press into Scenario selection');
 await matrix('scenario-debug-files', scenarios, scenarios.view.layout);
 await press('ControlLeft', 'ShiftLeft', 'KeyT');
 // Full membership belongs to the retained row, available through normal focus and hover.
 const scenarioTests = scenarios.view.testPane;
-const originalDebugCaseId = scenarioTests.rows[scenarioTests.selectionIndex].id;
 const disclosureModuleIndex = scenarioTests.rows.findIndex(row => row.kind === 'module' && row.id === encounterModule.id);
 t.assert(disclosureModuleIndex >= 0, 'the actual encounter module is no longer in the current catalog');
 await click(scenarioTests.rows[0].textLeft + 2, scenarioTests.layout.contentTop + scenarioTests.layout.rowHeight / 2);
@@ -183,6 +197,8 @@ await t.frames(3);
 t.assert(t.activeWorkbenchTab() === scenarios && scenarioTests.rows[scenarioTests.selectionIndex].id === actualTestId,
 	'returning from authored Source changed the selected typed case membership');
 // Restore the actual paused test scope before exercising its original results and action bar.
+t.assert(scenarios.view.resultService.liveRun === scenarioDebugRun && scenarios.view.debugger?.stopped,
+	'presentation and authored Source navigation replaced or resumed the stopped test run');
 const originalCaseIndex = scenarioTests.rows.findIndex(row => row.id === originalDebugCaseId);
 t.assert(originalCaseIndex >= 0, 'the originating stopped test case lost its typed membership');
 await press('Home');
@@ -197,14 +213,14 @@ await press('Escape');
 await press('Home');
 t.assert(scenarios.view.focus === 'results' && scenarios.view.resultPane.selectionIndex === 0,
 	'dismissing stopped-test More did not return to its actual result pane');
-await press('Tab');
+t.assert(scenarios.view.split.resizable === false, 'the constrained stopped-test client unexpectedly exposes a resizable sash');
 await press('Tab');
 await press('End');
 t.assert(scenarioBar.hasFocus && scenarioBar.focusedIndex === scenarioBar.items.length,
 	'keyboard navigation did not enter stopped-test More');
 await press('Enter');
 await capture('scenario-debug-more-keyboard');
-await chooseOverflowCommand(scenarioBar, 'scenarioLab.inspectStop');
+await chooseOverflowCommand('scenarioLab.inspectStop');
 await capture('scenario-debug-target-narrow');
 // The target's own composite follows its content. Its final eligible menu action
 // is Close Target; after closing, ordinary navigation must reach the original results.

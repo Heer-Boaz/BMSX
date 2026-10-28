@@ -8,6 +8,7 @@ import { OffscreenMachine } from '../../hosts/common/offscreen_machine';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { RemoteInput } from '../../hosts/common/input/remote';
 import type { TestInput } from '../../ide/testing/input';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
 import { clearBackgroundTasks } from '../../ide/common/background_tasks';
@@ -87,6 +88,64 @@ async function fixture(t: TestContext) {
 	};
 	return { ide, editor, parts, controller, runs, host, sources, targets, firstPart, secondPart, input, module, update, key, select, until };
 }
+
+for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} focus order includes only the actual resizable sash in both directions`, async t => {
+	const f = await fixture(t); f.editor.setFontVariant(variant);
+	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 760, bottom: 290 });
+	f.select('passes');
+	const pane = f.firstPart.activeGroup.panes.activePane!, view = f.input.view, tests = pane.commandTarget;
+	const selected = view.testPane.selectedNodeId;
+	assert.equal(view.split.resizable, true);
+	f.key('Tab'); const results = inputFocus.admittedTarget!;
+	assert.ok(results !== tests); assert.equal(view.focus, 'results');
+	f.key('Tab'); const sash = inputFocus.admittedTarget!;
+	assert.ok(sash !== tests && sash !== results && !view.actionBar.hasFocus);
+	const ratio = view.split.ratio; f.key('ArrowRight'); assert.ok(view.split.ratio > ratio);
+	f.key('Tab'); assert.equal(view.actionBar.hasFocus, true);
+	f.key('Tab'); assert.ok(inputFocus.admittedTarget === tests);
+	f.key('Tab', KeyModifier.shift); assert.equal(view.actionBar.hasFocus, true);
+	f.key('Tab', KeyModifier.shift); assert.ok(inputFocus.admittedTarget === sash);
+	f.key('Tab', KeyModifier.shift); assert.ok(inputFocus.admittedTarget === results);
+	f.key('Tab', KeyModifier.shift); assert.ok(inputFocus.admittedTarget === tests);
+	const requestedRatio = view.split.ratio;
+	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 240, bottom: 290 }); f.update();
+	assert.equal(view.split.resizable, false);
+	f.key('Tab'); assert.ok(inputFocus.admittedTarget === results);
+	f.key('Tab'); assert.equal(view.actionBar.hasFocus, true, 'an unavailable sash cannot redirect forward traversal to its parent list');
+	f.key('Tab'); assert.ok(inputFocus.admittedTarget === tests);
+	f.key('Tab', KeyModifier.shift); assert.equal(view.actionBar.hasFocus, true);
+	f.key('Tab', KeyModifier.shift); assert.ok(inputFocus.admittedTarget === results, 'reverse traversal also omits the unavailable sash');
+	f.key('Tab', KeyModifier.shift); assert.ok(inputFocus.admittedTarget === tests);
+	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 760, bottom: 290 }); f.update();
+	assert.equal(view.split.resizable, true);
+	f.key('Tab'); assert.ok(inputFocus.admittedTarget === results);
+	f.key('Tab'); assert.ok(inputFocus.admittedTarget === sash);
+	assert.ok(pane.input === f.input && f.controller.resolveInput() === f.input);
+	assert.equal(view.testPane.selectedNodeId, selected); assert.equal(view.split.ratio, requestedRatio);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} withholding a focused captured sash retires its gesture and returns to results`, async t => {
+	const f = await fixture(t); f.editor.setFontVariant(variant);
+	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 760, bottom: 290 }); f.select('passes');
+	const pane = f.firstPart.activeGroup.panes.activePane!, view = f.input.view, selected = view.testPane.selectedNodeId;
+	assert.equal(view.split.resizable, true);
+	f.key('Tab'); const results = inputFocus.admittedTarget!;
+	f.key('Tab'); const sash = inputFocus.admittedTarget!;
+	const x = view.split.position, y = (view.split.bounds.top + view.split.bounds.bottom) / 2, ratio = view.split.ratio;
+	const control = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
+	t.after(() => control.release());
+	control.apply([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]);
+	assert.equal(pointerCapture.active, true); assert.ok(inputFocus.admittedTarget === sash);
+	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 240, bottom: 290 }); f.update();
+	assert.equal(view.split.resizable, false);
+	assert.equal(pointerCapture.active, false, 'the unavailable sash no longer owns the physical hold');
+	assert.ok(inputFocus.admittedTarget === results, 'withholding the focused sash returns to its result client');
+	assert.equal(pointerCapture.draining, true);
+	control.apply([{ type: 'button', button: 'primary', down: false }]);
+	assert.equal(pointerCapture.draining, false);
+	f.key('Tab'); assert.equal(view.actionBar.hasFocus, true);
+	assert.ok(pane.input === f.input); assert.equal(view.testPane.selectedNodeId, selected); assert.equal(view.split.ratio, ratio);
+});
 
 test('Scenario move retains actual results, selection and reading state after the former Part closes', async t => {
 	const f = await fixture(t); f.select('passes');

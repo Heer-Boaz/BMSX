@@ -58,8 +58,8 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		return new ScenarioLabNavigationSelection(this.input.view);
 	}
 
-	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly resultsFocus = inputFocus.createTarget(this.focusTarget);
+	private readonly split = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.resultsFocus);
 	private readonly unbindResultsKeyboard = this.resultsFocus.bindKeyboard(input => this.handleKeyboard(input));
 	private readonly unbindResultsGamepad = this.resultsFocus.bindGamepad(input => this.handleGamepad(input));
 	private readonly unbindTestsFocus = this.focusTarget.onDidFocus(() => {
@@ -142,10 +142,8 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		};
 		this.focusTarget.next = this.resultsFocus;
 		this.resultsFocus.previous = this.focusTarget;
-		this.resultsFocus.next = this.split.focusTarget;
 		this.split.focusTarget.previous = this.resultsFocus;
 		this.split.focusTarget.next = this.actionBar.focusTarget;
-		this.actionBar.focusTarget.previous = this.split.focusTarget;
 		this.actionBar.focusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.actionBar.focusTarget;
 	}
@@ -194,6 +192,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	public override layout(bounds: Readonly<RectBounds>): void {
 		super.layout(bounds);
 		prepareScenarioLabLayout(this.input.view, bounds);
+		this.updateFocusOrder();
 	}
 
 	public override update(): void {
@@ -211,6 +210,18 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		this.inspector.update();
 		this.targetInspection.update(view.layout);
 		if (this.inspector.visible) this.inspector.layout(editorViewState.font.renderFont(), measureTextRange, measureText, view.layout);
+		this.updateFocusOrder();
+	}
+
+	/** The actual arranged sash participates only while its two clients can resize. */
+	private updateFocusOrder(): void {
+		const resizable = this.input.view.split.resizable;
+		this.resultsFocus.next = resizable ? this.split.focusTarget : this.actionBar.focusTarget;
+		this.actionBar.focusTarget.previous = resizable ? this.split.focusTarget : this.resultsFocus;
+		if (!resizable) {
+			pointerCapture.cancelTarget(this.split); pointerHover.release(this.split);
+			this.split.focusTarget.release();
+		}
 	}
 
 	private selectedDetailsRow(): ScenarioLabInspectableRow | undefined {
