@@ -102,7 +102,7 @@ test('writes through another import or a captured alias retain source mutation e
 		const project = workspace({ 'main.lua': main, 'definition.lua': provider, 'mutation.lua': mutation });
 		const definition = buildBehaviorSourceDocument({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'main.lua' }, project.getSnapshot()).definitions[0];
 		assert.equal(definition.resolution, 'partial');
-		const query = project.getSnapshot().symbolResolver.writtenSources;
+		const query = project.getSnapshot().symbolResolver.authoredSources;
 		assert.equal(query.tableMutations(), query.tableMutations());
 	}
 });

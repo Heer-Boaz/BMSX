@@ -1,7 +1,7 @@
 import type { FileSemanticData, LuaCallSite, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { getLuaModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression, type LuaTableConstructorExpression, type LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
-import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
+import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
 import { readLuaExpressionPreview, readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -51,13 +51,8 @@ export function collectLuaPrograms(resource: ResourceIdentity, snapshot: LuaSema
 export function luaProgramRoot(occurrence: LuaProgramOccurrence, reader: LuaSourceReader) {
 	const argument = occurrence.call.expression.arguments[0];
 	if (argument === undefined) return;
-	const source = reader.expression(occurrence.file, argument);
-	if (occurrence.kind === 'progression') return source;
-	if (source?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) return;
-	if (reader.snapshot.symbolResolver.writtenSources.tableMutations().has(source.expression)) return;
-	if (source.expression.fields.some(field => field.kind === LuaTableFieldKind.ExpressionKey && staticLuaTableFieldName(field) === null)) return;
-	const program = findNamedLuaTableField(source.expression, 'program');
-	if (program !== null) return reader.expression(source.file, program.value);
+	return occurrence.kind === 'progression' ? reader.expression(occurrence.file, argument)
+		: reader.member(occurrence.file, argument, 'program');
 }
 
 /** Written tables only; recursive/ambiguous/mutated source remains explicit in the view. */
@@ -79,7 +74,7 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 		const value = written?.expression;
 		const table = value?.kind === LuaSyntaxKind.TableConstructorExpression && !active.has(value) ? value : undefined;
 		const owner = written?.file;
-		const structural = table !== undefined && !reader.snapshot.symbolResolver.writtenSources.tableMutations().has(table)
+		const structural = table !== undefined && !reader.snapshot.symbolResolver.authoredSources.tableMutations().has(table)
 			&& table.fields.every(entry => entry.kind !== LuaTableFieldKind.ExpressionKey || staticLuaTableFieldName(entry) !== null);
 		const model = resolveModel(file);
 		const range = file.chunk.locations.range(expression.span);

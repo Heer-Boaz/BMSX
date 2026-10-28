@@ -184,14 +184,19 @@ test('FSM incomplete membership, known mutations and unresolved child bodies nev
 		const f = fixture(`local machines<const> = require('cartlib/fsm/library')\nmachines.register('partial', ${source})`);
 		assert.deepEqual(f.definition.transitions[0].outcomes[0].target, { kind: 'unresolved', reason: expected });
 	}
-	for (const mutation of ['blueprint.states.idle = {}', "handlers.go = '/missing'", "spec.go = '/missing'"]) {
+	for (const [mutation, reason] of [
+		['blueprint.states.idle = {}', 'unknown-states'],
+		["handlers.go = '/missing'", 'partial-source'],
+		["spec.go = '/missing'", 'partial-source'],
+	] as const) {
 		const f = fixture(`local machines<const> = require('cartlib/fsm/library')
 local spec<const> = { go = 'idle' }
 local handlers<const> = { go = spec }
 local blueprint<const> = { states = { idle = {} }, on = handlers }
 ${mutation}
 machines.register('mutated', blueprint)`);
-		assert.deepEqual(f.definition.transitions[0].outcomes[0].target, { kind: 'unresolved', reason: 'partial-source' });
+		// A changed child map revokes membership; a changed handler revokes the binding itself.
+		assert.deepEqual(f.definition.transitions[0].outcomes[0].target, { kind: 'unresolved', reason });
 	}
 	const syntax = fixture(FSM_BEHAVIOR_SOURCE + 'local broken = ');
 	assert.ok(syntax.analysis.syntaxError !== null);

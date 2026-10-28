@@ -118,7 +118,7 @@ export function resolveSourceTable(
 	const table = result?.expression;
 	if (table?.kind !== LuaSyntaxKind.TableConstructorExpression || activeTables.has(table)) return null;
 	let issues = sourceTableIssues(table);
-	if (context.reader.snapshot.symbolResolver.writtenSources.tableMutations().has(table)) issues |= SourceTableIssue.KnownMutation;
+	if (context.reader.snapshot.symbolResolver.authoredSources.directTableMutations().has(table)) issues |= SourceTableIssue.KnownMutation;
 	return {
 		table,
 		file: result!.file,

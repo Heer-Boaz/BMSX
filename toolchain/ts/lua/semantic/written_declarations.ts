@@ -1,17 +1,27 @@
-import { LuaSyntaxKind } from '../syntax/ast';
+import { LuaSyntaxKind, type LuaTableConstructorExpression } from '../syntax/ast';
 import type { FileSemanticData, SymbolID } from './model';
-import { semanticValueSourceKey, type MemberValueEntry, type SemanticValueSource } from './value_graph';
+import { semanticValueSourceKey, type DeclarationValueEntry, type MemberValueEntry, type SemanticValueSource } from './value_graph';
+
+export type LuaWrittenMemberDefinitions = {
+	readonly destinations: ReadonlyMap<string, ReadonlyMap<string, readonly SymbolID[]>>;
+	/** Effective constructor initializers; later duplicate static keys win. */
+	readonly constructors: ReadonlyMap<LuaTableConstructorExpression, ReadonlyMap<string, DeclarationValueEntry>>;
+};
 
 type WrittenDeclarationIndex = {
-	members?: ReadonlyMap<string, ReadonlyMap<string, readonly SymbolID[]>>;
+	definitions?: LuaWrittenMemberDefinitions;
 	readonly answers: Map<string, readonly SymbolID[]>;
 };
 
 const indices = new WeakMap<FileSemanticData, WrittenDeclarationIndex>();
 const NO_DECLARATIONS: readonly SymbolID[] = [];
 
-function indexWrittenDeclarations(file: FileSemanticData): ReadonlyMap<string, ReadonlyMap<string, readonly SymbolID[]>> {
+export function getLuaWrittenMemberDefinitions(file: FileSemanticData): LuaWrittenMemberDefinitions {
+	let index = indices.get(file);
+	if (index === undefined) { index = { answers: new Map() }; indices.set(file, index); }
+	if (index.definitions !== undefined) return index.definitions;
 	const members = new Map<string, Map<string, SymbolID[]>>();
+	const constructors = new Map<LuaTableConstructorExpression, Map<string, DeclarationValueEntry>>();
 	const record = (entry: MemberValueEntry): void => {
 		// Unknown and literal values are not storage identities. Equal values
 		// cannot relate writes through unrelated expressions.
@@ -25,10 +35,18 @@ function indexWrittenDeclarations(file: FileSemanticData): ReadonlyMap<string, R
 		const declarations = names.get(entry.name);
 		if (declarations === undefined) names.set(entry.name, [entry.declId]);
 		else declarations.push(entry.declId);
+		for (const write of file.declarationValuesByDeclaration.get(entry.declId)!) {
+			if (write.syntax.kind !== LuaSyntaxKind.TableConstructorExpression) continue;
+			let fields = constructors.get(write.syntax);
+			if (fields === undefined) { fields = new Map(); constructors.set(write.syntax, fields); }
+			const previous = fields.get(entry.name);
+			if (previous === undefined || previous.index < write.index) fields.set(entry.name, write);
+		}
 	};
 	for (const entry of file.memberValues) record(entry);
 	for (const flow of file.functionValueFlows) for (const entry of flow.members) record(entry);
-	return members;
+	index.definitions = { destinations: members, constructors };
+	return index.definitions;
 }
 
 /**
@@ -61,9 +79,9 @@ export function getLuaWrittenDeclarations(file: FileSemanticData, source: Semant
 			return NO_DECLARATIONS;
 		}
 	}
-	if (index.members === undefined) index.members = indexWrittenDeclarations(file);
+	const members = getLuaWrittenMemberDefinitions(file).destinations;
 	const owner = { root: source.root, steps: source.steps.slice(0, -1) };
-	const direct = index.members.get(semanticValueSourceKey(owner))?.get(step.name);
+	const direct = members.get(semanticValueSourceKey(owner))?.get(step.name);
 	const declarations = direct === undefined ? [] : [...direct];
 	for (const declaration of getLuaWrittenDeclarations(file, owner)) {
 		const writes = file.declarationValuesByDeclaration.get(declaration);
@@ -72,7 +90,7 @@ export function getLuaWrittenDeclarations(file: FileSemanticData, source: Semant
 			const value = write.source;
 			if (value.steps.length !== 0 || value.root.kind !== 'owned'
 				|| value.root.syntax.kind !== LuaSyntaxKind.TableConstructorExpression) continue;
-			const fields = index.members.get(semanticValueSourceKey(value))?.get(step.name);
+			const fields = members.get(semanticValueSourceKey(value))?.get(step.name);
 			if (fields === undefined) continue;
 			for (const field of fields) if (!declarations.includes(field)) declarations.push(field);
 		}

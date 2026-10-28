@@ -119,7 +119,7 @@ function readTable(reader: LuaSourceReader, file: FileSemanticData, expression: 
 	const table = written.expression;
 	return { file: written.file, table, array: table.fields.every(field => field.kind === LuaTableFieldKind.Array),
 		structural: parentStructural && written.file.syntaxError === null
-		&& !reader.snapshot.symbolResolver.writtenSources.tableMutations().has(table)
+		&& !reader.snapshot.symbolResolver.authoredSources.tableMutations().has(table)
 		&& table.fields.every(field => field.kind !== LuaTableFieldKind.ExpressionKey || staticLuaTableFieldName(field) !== null) };
 }
 

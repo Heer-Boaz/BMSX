@@ -11,6 +11,7 @@ import {
 	type FunctionValueFlowEntry,
 } from './value_graph';
 import { LuaWrittenSourceQuery } from './written_sources';
+import { LuaAuthoredSourceQuery } from './authored_sources';
 import { getLuaWrittenDeclarations } from './written_declarations';
 import { LuaDefinitionTypes } from './definition_types';
 import { LuaModuleImportQuery } from './module_import_query';
@@ -59,6 +60,7 @@ export class WorkspaceSymbolResolver {
 	private readonly moduleBindings: LuaProjectModuleBindings;
 	private queryStore?: LuaSemanticQueryStore;
 	private sourceQuery?: LuaWrittenSourceQuery;
+	private authoredSourceQuery?: LuaAuthoredSourceQuery;
 	private moduleImportQuery?: LuaModuleImportQuery;
 	private staticDeclarationQuery?: LuaStaticDeclarations;
 	private readonly referenceTargets: Map<Ref, readonly SymbolID[]> = new Map();
@@ -103,6 +105,11 @@ export class WorkspaceSymbolResolver {
 	public get writtenSources(): LuaWrittenSourceQuery {
 		if (this.sourceQuery === undefined) this.sourceQuery = new LuaWrittenSourceQuery(this.files, this.declarations, this.globalStorage, this.moduleBindings);
 		return this.sourceQuery;
+	}
+
+	public get authoredSources(): LuaAuthoredSourceQuery {
+		if (this.authoredSourceQuery === undefined) this.authoredSourceQuery = new LuaAuthoredSourceQuery(this.files, this.writtenSources);
+		return this.authoredSourceQuery;
 	}
 
 	public get moduleImports(): LuaModuleImportQuery {

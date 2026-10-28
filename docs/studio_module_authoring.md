@@ -80,8 +80,9 @@
 ## Ownership and retained work
 
 Contributions are separated into source projection, schema/templates, controller,
-input, pane and serialization. `ide/language/lua/source_reader.ts` owns written
-Lua resolution; `ide/language/yaml/structured_edits.ts` owns structured text edits.
+input, pane and serialization. The semantic queries own Lua source provenance;
+`ide/language/lua/source_reader.ts` selects and retains those source occurrences
+for authoring. `ide/language/yaml/structured_edits.ts` owns structured text edits.
 The shared property-cell control owns draft/focus/pointer lifetime, not syntax,
 asset state or source history. Views use existing command, menu, tree and model
 services. Source-backed selection/collapse restoration requires matching source
@@ -99,12 +100,41 @@ Typed rule-ID indexes avoid repeated rule/receipt cross-scans. Input scalar cell
 skip unchanged formatting; mutable tables use bounded previews. No guest tick hook,
 heap scan, cartlib debug registry, or per-frame source reconstruction is added.
 
+### Authored members and possible values
+
+A visual editor names written source, not the value a running Lua expression
+will produce. Raw written dependencies keep member reads as boundaries;
+contextual value queries may cross those boundaries to report possible origins
+and call activations. A single possible origin is not an editable-source proof.
+
+Authored member projection retains the base's binding/export provenance, exact
+field-write occurrences and unresolved contributions. Aliases share those
+written dependencies rather than introducing another module or name resolver.
+Competing writes, dynamic keys and unknown owner lanes remain explicit; they
+cannot disappear because their known contributions converge on one initializer.
+Descendant writes also constrain structural edits of the reached constructor,
+not only the outer namespace table. Direct receiver writes remain distinct
+from this aggregate safety evidence: Behavior Lens reports child uncertainty
+without relabelling an unchanged parent list as locally mutated. Constructor
+initialization is not a later storage mutation. Called builders and runtime
+instances stay separate from authored table selection.
+
+The shared source reader consumes this distinction for every contribution.
+Input Bindings, Animation and Scene do not add their own property lookup,
+type-shape fallback, cart exemption or evaluation path. Query results belong to
+the immutable semantic snapshot; canonical models and source edits retain their
+existing document ownership.
+
 ## Production references
 
 - [VS Code debugger variables](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/debug/browser/variablesView.ts):
   stable tree identity, separately retained view state, contextual value editing.
 - [VS Code composite editor serialization](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/common/editor/sideBySideEditorInput.ts):
   restore constituent document inputs before constructing the composite view.
+- [LuaLS variable references](https://github.com/LuaLS/lua-language-server/blob/master/script/vm/variable.lua)
+  and [definition navigation](https://github.com/LuaLS/lua-language-server/blob/master/script/vm/def.lua):
+  lexical owner/field paths retain separate written occurrences; navigation and
+  inferred values are distinct consumers of that evidence.
 - [Unity Input Debugger](https://github.com/Unity-Technologies/InputSystem/blob/develop/Packages/com.unity.inputsystem/InputSystem/Editor/Debugger/InputDebuggerWindow.cs):
   input topology and activity are separate refresh responsibilities.
 - [Godot animation editor](https://github.com/godotengine/godot/blob/master/editor/animation/animation_player_editor_plugin.cpp)

@@ -88,7 +88,7 @@ test('explicit Source selection can own a dynamic receiver without misclassifyin
 	unbind(); model.dispose();
 });
 
-test('producer navigation distinguishes an initializer from a called builder and keeps unresolved results unresolved', () => {
+test('producer navigation retains call boundaries while closed authored members remain values', () => {
 	const file = buildResourceLuaSemanticFixtureFile(`
 		local builders = require('builders')
 		local built = builders.make({ value = 4 })
@@ -106,11 +106,11 @@ test('producer navigation distinguishes an initializer from a called builder and
 	assert.equal(producer.source.file, builder);
 	assert.equal(producer.source.expression.kind, LuaSyntaxKind.FunctionExpression);
 	const value = reader.producer(file, duration.value)!;
-	assert.equal(value.kind, 'definition');
+	assert.equal(value.kind, 'value');
 	assert.equal(value.source.file, builder);
 	assert.equal(readLuaNumberLiteral(value.source.expression), 20);
 	assert.equal(reader.expression(file, frames.value), undefined, 'navigation has not turned a call boundary into a value');
-	assert.equal(reader.expression(file, duration.value), undefined, 'a member definition is navigation, not a closed value proof');
+	assert.equal(readLuaNumberLiteral(reader.expression(file, duration.value)!.expression), 20);
 
 	const ambiguous = buildResourceLuaSemanticFixtureFile('local maker = function() end; maker = unknown; return { frames = maker() }', { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'ambiguous.lua' });
 	const ambiguousReader = new LuaSourceReader(buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([ambiguous], [])));

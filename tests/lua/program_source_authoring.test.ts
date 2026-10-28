@@ -58,6 +58,62 @@ test('imported authored tables stay attached to their original shared models', (
 	assert.equal(model.buffer.getText(), before);
 });
 
+test('member-backed input programs retain their exact authored provider through exports and aliases', () => {
+	const program = "{bindings={{on={press='a[jp]'},go={press={['emit.event']='hit'}}}}}";
+	for (const [provider, member] of [
+		[`return { input = ${program} }`, 'input'],
+		[`return { input = { ignored = true }, input = ${program} }`, 'input'],
+		[`local definitions = {}; definitions.input = ${program}; return definitions`, 'input'],
+		[`local definitions = {}; local alias = definitions; alias.input = ${program}; return definitions`, 'input'],
+		[`local definitions = { settings = { input = ${program} } }; return definitions`, 'settings.input'],
+		[`local definitions = { settings = {} }; definitions.settings.input = ${program}; return definitions`, 'settings.input'],
+	] as const) {
+		const consumer = `local component = require('cartlib/input/actioneffect/actioneffect_component')
+local definitions = require('definitions')
+component.factory({program = definitions.${member}})`;
+		const f = project(consumer, [{ path: 'definitions.lua', source: provider }]);
+		const root = f.tree.roots[0].element, press = f.tree.rows.find(row => row.element.key === '["bindings",1,"on","press"]')!.element;
+		const owner = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' }))!;
+		const address = resourceIdentityKey(owner.identity);
+		assert.equal(root.table!.file.file, address);
+		assert.equal(root.table!.structural, true);
+		assert.equal(press.file.file, address);
+		assert.equal(press.valueExpression!.kind, LuaSyntaxKind.StringLiteralExpression);
+		const before = owner.buffer.getText(), table = root.table!;
+		owner.pushEditOperations(createLuaTableFieldsInsertionEdits(owner.buffer, table.file.chunk, table.table, table.table.fields.length, ["eval = 'first'"]));
+		const edited = project(consumer, [{ path: 'definitions.lua', source: owner.buffer.getText() }]);
+		assert.ok(edited.tree.rows.some(row => row.element.path.length === 1 && row.element.path[0] === 'eval'));
+		assert.equal(f.models.get(f.occurrence.file.file)!.buffer.getText(), consumer, 'editing the provider must not replace its consumer expression');
+		owner.history.undo(owner);
+		assert.equal(owner.buffer.getText(), before);
+	}
+});
+
+test('known member candidates never erase competing writes, dynamic storage or unknown base lanes', () => {
+	for (const provider of [
+		"local definitions={input={bindings={}}}; definitions.input=external; return definitions",
+		"local definitions={input={bindings={}}}; definitions[key]=external; return definitions",
+		"local definitions={input={bindings={}}}; local alias=external or definitions; alias.input={bindings={}}; return definitions",
+		"local definitions=external or {input={bindings={}}}; return definitions",
+		"local definitions={}; local shared={bindings={}}; definitions.input=shared; definitions.input=shared; return definitions",
+		"local definitions={}; definitions.input=definitions.input; return definitions",
+	]) {
+		const f = project("local component=require('cartlib/input/actioneffect/actioneffect_component'); local definitions=require('definitions'); component.factory({program=definitions.input})",
+			[{ path: 'definitions.lua', source: provider }]);
+		assert.equal(f.tree.roots[0].element.table, undefined);
+		assert.equal(f.tree.roots[0].element.warning, true);
+	}
+});
+
+test('member-backed program descendant writes retain the written tables without granting structural editing', () => {
+	const f = project("local component=require('cartlib/input/actioneffect/actioneffect_component'); local definitions=require('definitions'); component.factory({program=definitions.input})", [
+		{ path: 'definitions.lua', source: 'local definitions={input={bindings={}}}; definitions.input.bindings[1]=external; return definitions' },
+	]);
+	assert.equal(f.tree.roots[0].element.table!.structural, false);
+	const bindings = f.tree.rows.find(row => row.element.key === '["bindings"]')!.element;
+	assert.equal(bindings.table!.structural, false);
+});
+
 test('mutated and dynamically constructed programs are not reconstructed into editable defaults', () => {
 	const dynamic = project("local p=require('cartlib/progression'); p.compile_program(build_spec())");
 	assert.equal(dynamic.tree.roots[0].element.table, undefined);

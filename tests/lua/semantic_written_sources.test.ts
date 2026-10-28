@@ -10,7 +10,7 @@ import { runCompiledLua } from './cpu_test_harness';
 function sourceQuery(source: string) {
 	const file = buildLuaFileSemanticData(source, 'sources.lua');
 	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([{ path: file.file, source, analysis: file }]));
-	return { file, query: snapshot.symbolResolver.writtenSources };
+	return { file, query: snapshot.symbolResolver.writtenSources, authored: snapshot.symbolResolver.authoredSources };
 }
 
 function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
@@ -24,7 +24,6 @@ function writtenLines(sources: readonly LuaWrittenSource[]): number[] {
 			case 'call-input': case 'call-callee': return source.file.chunk.locations.range(source.call.expression.span).start.line;
 			case 'function-return': return source.file.chunk.locations.range(source.entry.statement.span).start.line;
 			case 'function-completion': return source.file.chunk.locations.range(source.body.expression.span).start.line;
-			case 'write-receiver': return source.file.chunk.locations.range(source.reference.span).start.line;
 			case 'receiver-input': {
 				assert.ok(source.value.root.kind === 'owned');
 				return source.file.chunk.locations.range(source.value.root.syntax.span).start.line;
@@ -88,7 +87,7 @@ end`;
 });
 
 test('written storage mutations distinguish constructor initialization from later aliased writes', () => {
-	const { file, query } = sourceQuery(`local untouched = { field = 1, 2 }
+	const { file, authored } = sourceQuery(`local untouched = { field = 1, 2 }
 local changed = { nested = {} }
 local alias = changed
 alias.nested[slot] = 3
@@ -96,10 +95,44 @@ return untouched, changed`);
 	const first = file.chunk.body.get(0)!, second = file.chunk.body.get(1)!;
 	assert.ok(first.kind === LuaSyntaxKind.LocalAssignmentStatement && second.kind === LuaSyntaxKind.LocalAssignmentStatement);
 	assert.ok(first.values[0].kind === LuaSyntaxKind.TableConstructorExpression && second.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
-	const mutations = query.tableMutations();
+	const mutations = authored.tableMutations();
 	assert.equal(mutations.has(first.values[0]), false);
 	assert.equal(mutations.has(second.values[0]), true, 'a written descendant mutation makes its ancestor source partial');
-	assert.equal(query.tableMutations(), mutations, 'unchanged queries retain the same set without scanning the workspace again');
+	assert.equal(authored.tableMutations(), mutations, 'unchanged queries retain the same set without scanning the workspace again');
+});
+
+test('computed constructor initialization retains member uncertainty without becoming a later storage mutation', () => {
+	const { file, query, authored } = sourceQuery('local value = { [1] = 0, [key] = 1, field = {} }; return value.field');
+	const declaration = file.chunk.body.get(0)!;
+	assert.ok(declaration.kind === LuaSyntaxKind.LocalAssignmentStatement && declaration.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
+	assert.equal(authored.tableMutations().has(declaration.values[0]), false);
+	assert.equal(authored.directTableMutations().has(declaration.values[0]), false);
+	const returned = file.chunk.body.get(1)! as LuaReturnStatement;
+	const trace = authored.trace(query.expression(file, returned.expressions[0]));
+	assert.equal(trace.terminals.length, 1);
+	assert.ok(trace.boundaries.some(boundary => boundary.reason === 'computed-write'));
+});
+
+test('direct storage writes differ from containing-source structural partiality in either query order', () => {
+	for (const directFirst of [false, true]) {
+		const { file, authored } = sourceQuery(`local leaf = { type = 'wait' }
+local list = { leaf }
+local parent = { children = list }
+leaf.type = other_type
+return parent`);
+		const tables = [0, 1, 2].map(index => {
+			const statement = file.chunk.body.get(index)!;
+			assert.ok(statement.kind === LuaSyntaxKind.LocalAssignmentStatement && statement.values[0].kind === LuaSyntaxKind.TableConstructorExpression);
+			return statement.values[0];
+		});
+		if (directFirst) authored.directTableMutations();
+		const structural = authored.tableMutations(), direct = authored.directTableMutations();
+		assert.equal(direct.has(tables[0]), true);
+		for (const table of tables.slice(1)) assert.equal(direct.has(table), false);
+		for (const table of tables) assert.equal(structural.has(table), true);
+		assert.equal(authored.tableMutations(), structural);
+		assert.equal(authored.directTableMutations(), direct);
+	}
 });
 
 test('bound read values include callees, arguments, literal occurrences and unmodeled computations', () => {

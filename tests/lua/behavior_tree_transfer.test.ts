@@ -60,7 +60,9 @@ test('empty destinations and compatible sharing use actual lists, not visible re
 
 test('same constructor under another occurrence is still the existing same-list reorder, not a reparent', t => {
 	const f = fixture(t, ordinary.replace('children = {}', 'children = from.children'));
-	assert.deepEqual(f.transfer.checkTarget(rootList(f.document, 1)), { kind: 'unavailable', reason: 'list-incomplete' }, 'mutable property expressions are not const constructor provenance');
+	const target = rootList(f.document, 1);
+	assert.ok(target.source.kind === 'section' && target.source.table === f.member.table);
+	assert.deepEqual(f.transfer.checkTarget(target), { kind: 'unavailable', reason: 'same-list' });
 	const shared = fixture(t, `${prelude}
 local list<const> = { leaf, leaf }
 trees.register('origin', { root={ type='sequence', children=list } })
