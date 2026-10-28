@@ -7,6 +7,7 @@ import { WorkbenchSplitControl } from '../../ui/split_control';
 import type { WorkbenchSplitView } from '../../ui/split_view';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
+import { clamp } from '../../../../machine/ts/common/clamp';
 import { COLOR_TAB_BORDER } from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
@@ -88,6 +89,23 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.timelineSlider.focusTarget.commandContext = this.focusTarget;
 		for (const target of [this.focusTarget, this.graph.focusTarget]) {
 			this.bindTransportCommands(target);
+			target.registerCommand('contextMenu', {
+				isEnabled: () => this.hasInput,
+				run: () => {
+					const input = this.input;
+					let x: number, y: number;
+					if (input.presentation === 'graph') {
+						const view = input.stateGraph!.viewport, selected = view.selection;
+						x = selected === null ? view.bounds.left : clamp(view.graphToViewportX(selected.bounds.left), view.bounds.left, view.bounds.right);
+						y = selected === null ? view.bounds.top : clamp(view.graphToViewportY(selected.bounds.bottom), view.bounds.top, view.bounds.bottom);
+					} else {
+						const tree = input.outline;
+						x = tree.layout.contentLeft;
+						y = tree.layout.contentTop + Math.max(0, tree.selectionIndex - (tree.scroll | 0) + 1) * tree.layout.rowHeight;
+					}
+					this.showContextMenu(x, y, target, true);
+				},
+			});
 			target.registerCommand('actorLab.follow', {
 				isEnabled: () => this.hasInput && (this.input.follow.target !== undefined || this.controller.selected(this.input) !== undefined),
 				run: () => {
@@ -105,9 +123,7 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 				run: () => {
 					const bar = this.input.presentation === 'outline' ? this.input.actionBar : this.input.stateGraphActions;
 					const bounds = bar.items.find(item => item.command === 'actorLab.more')!.bounds;
-					this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['actorLab.context'], this.commands, { selectFirst: true, invocationOrigin: target, commandTarget: target,
-						onWillShow: lifetime => lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) }),
-					});
+					this.showContextMenu(bounds.left, bounds.bottom, target, true);
 				},
 			});
 			target.registerCommand('actorLab.select', { isEnabled: () => this.hasInput, run: () => this.actorActions.selectActor(this.input) });
@@ -135,6 +151,18 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 			target.registerCommand('actorLab.outline', { isEnabled: () => this.hasInput && this.input.presentation === 'graph',
 				run: () => { this.controller.openOutline(this.input); this.update(); this.focus(); } });
 		}
+	}
+	/** Every invocation owns one exact selected subject and its physical control lifetime. */
+	private showContextMenu(x: number, y: number, target: InputFocusTarget, keyboard: boolean): void {
+		const input = this.input, graph = input.presentation === 'graph' ? input.stateGraph : undefined;
+		input.interaction.running = false;
+		this.contextMenu.show(x, y, WORKBENCH_MENUS[graph === undefined ? 'actorLab.context' : 'actorLab.stateGraph.context'], this.commands,
+			{ selectFirst: keyboard, invocationOrigin: target, commandTarget: target, onWillShow: lifetime => {
+				const retire = () => this.contextMenu.hide();
+				lifetime.add({ dispose: input.onDidChangeSelection(retire) });
+				if (graph !== undefined) lifetime.add({ dispose: graph.onDidChangeSelection(retire) });
+				lifetime.add({ dispose: this.controller.guest.onDidInvalidate(retire) });
+			} });
 	}
 	private bindTransportCommands(target: InputFocusTarget): void {
 		target.registerCommand('actorLab.playback', {
@@ -291,9 +319,10 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		pointerHover.release(this); this.actions.dispose(); this.graph.dispose(); this.split.dispose(); this.timelineSlider.dispose(); this.scrollbar.cancelPointer(); super.dispose();
 	}
 	public override update(): void {
-		const input = this.input;
+		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
 		const readback = input.dirty;
 		const revealed = this.controller.refresh(input);
+		if (scope.contextGeneration !== context) return;
 		// Controller commands can reconcile before paint; the pane consumes the revision independently.
 		const contentsChanged = revealed || this.renderedTopology !== input.runtime.topologyRevision;
 		this.renderedTopology = input.runtime.topologyRevision;
@@ -414,10 +443,11 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		for (const [key, command] of NAVIGATION) {
 			if (!isKeyDown(key, input)) continue;
 			consumeIdeKey(key, input);
-			this.input.follow.stop();
-			navigateWorkbenchTree(this.input.outline, command);
-			this.input.rememberSelection();
-			this.updateContentLayout();
+			const selected = this.input;
+			selected.follow.stop();
+			navigateWorkbenchTree(selected.outline, command);
+			if (!this.updateContentLayout()) return;
+			selected.rememberSelection();
 			return;
 		}
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.commands.execute('actorLab.details'); }
@@ -474,14 +504,18 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		}
 		if (this.input.presentation === 'graph') {
 			const result = this.graph.handlePointer(snapshot, now);
+			if (result === WorkbenchGraphPointerResult.Rejected) return true;
 			if (snapshot.justPressedButtons !== 0 && result !== WorkbenchGraphPointerResult.Outside) this.input.follow.stop();
-			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate || result === WorkbenchGraphPointerResult.ContextMenu) this.input.stateGraph!.rememberSelection();
+			if (result === WorkbenchGraphPointerResult.Selection || result === WorkbenchGraphPointerResult.Activate || result === WorkbenchGraphPointerResult.ContextMenu) {
+				const input = this.input, graph = input.stateGraph!, selected = graph.viewport.selection;
+				const scope = this.focusTarget.scope, context = scope.contextGeneration;
+				graph.rememberSelection();
+				if (scope.contextGeneration !== context || input.presentation !== 'graph' || input.stateGraph !== graph
+					|| graph.viewport.selection !== selected || inputFocus.admittedTarget !== this.graph.focusTarget) return true;
+			}
 			if (result === WorkbenchGraphPointerResult.Activate) this.commands.execute('actorLab.details');
 			else if (result === WorkbenchGraphPointerResult.ContextMenu) {
-				this.input.interaction.running = false;
-				this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['actorLab.context'], this.commands, { selectFirst: false, commandTarget: this.graph.focusTarget,
-					onWillShow: lifetime => lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) }),
-				});
+				this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.graph.focusTarget, false);
 			}
 			return result !== WorkbenchGraphPointerResult.Outside;
 		}
@@ -489,18 +523,18 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		const index = workbenchListRowIndexAtPosition(this.input.outline, snapshot.viewportX, snapshot.viewportY);
 		if (index < 0) return false;
 		if (justPressed || (snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+			const input = this.input, row = input.outline.rows[index], scope = this.focusTarget.scope, context = scope.contextGeneration;
 			this.focus();
-			this.input.follow.stop();
-			this.input.outline.selectionIndex = index;
-			this.input.rememberSelection();
+			if (scope.contextGeneration !== context || inputFocus.admittedTarget !== this.focusTarget || input.outline.rows[index] !== row) return true;
+			input.follow.stop();
+			input.outline.selectionIndex = index;
+			input.rememberSelection();
+			if (scope.contextGeneration !== context || input.presentation !== 'outline' || inputFocus.admittedTarget !== this.focusTarget
+				|| input.outline.rows[input.outline.selectionIndex] !== row) return true;
 			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
-				this.input.interaction.running = false;
-				this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['actorLab.context'], this.commands, { selectFirst: false, commandTarget: this.focusTarget,
-					onWillShow: lifetime => lifetime.add({ dispose: this.controller.guest.onDidInvalidate(() => this.contextMenu.hide()) }),
-				});
-			} else if (workbenchTreeTwistieContainsPosition(this.input.outline, index, snapshot.viewportX)) {
-				const node = this.input.outline.rows[index];
-				setWorkbenchTreeCollapsed(this.input.outline, index, !node.collapsed);
+				this.showContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget, false);
+			} else if (workbenchTreeTwistieContainsPosition(input.outline, index, snapshot.viewportX)) {
+				setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
 				this.updateContentLayout();
 			}
 		}
@@ -523,8 +557,8 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		for (const [key, direction] of GRAPH_SELECTION_KEYS) {
 			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player); this.input.follow.stop(); view.selectRelative(direction);
-			this.input.stateGraph!.rememberSelection();
 			if (view.selection !== null) view.reveal(view.selection);
+			this.input.stateGraph!.rememberSelection();
 			return;
 		}
 		for (const [key, x, y] of GRAPH_PAN_KEYS) {

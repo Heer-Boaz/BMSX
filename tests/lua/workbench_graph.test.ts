@@ -31,6 +31,38 @@ function pointer(x: number, y: number, pressed = false): PointerInputSnapshot {
 	return { modifiers: KeyModifier.none, spaceDown: false, viewportX: x, viewportY: y, pressedButtons: pressed ? PointerButton.Primary : 0, justPressedButtons: 0, justReleasedButtons: 0, valid: true, insideViewport: true };
 }
 
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const change of ['model', 'input'] as const) test(`graph button ${button} rejects focus publication replacing its captured ${change}`, t => {
+	const { view, a, b } = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	control.setInput(view); view.selection = b;
+	t.after(() => control.dispose());
+	const otherModel = createWorkbenchGraphModel(font, [a, b], []);
+	t.after(control.focusTarget.onDidFocus(() => {
+		if (change === 'model') view.setModel(otherModel, b);
+		else control.setInput(view);
+	}));
+	const snapshot = { ...pointer(22, 22, true), pressedButtons: button, justPressedButtons: button };
+	assert.ok(view.hitTest(snapshot.viewportX, snapshot.viewportY) === a);
+	assert.equal(control.handlePointer(snapshot, 0), Result.Rejected);
+	assert.ok(view.selection === b); assert.equal(capture.active, false);
+});
+
+test('clearing a graph attachment cannot erase the new view admitted by its blur callback', t => {
+	const original = fixture(), replacement = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	control.setInput(original.view); original.view.selection = original.b; replacement.view.selection = replacement.b;
+	control.focusTarget.focus(); t.after(() => control.dispose());
+	let rebound = false;
+	const unbind = control.focusTarget.onDidBlur(() => {
+		unbind(); rebound = true; control.setInput(replacement.view); control.focusTarget.focus();
+	}); t.after(unbind);
+	control.clearInput();
+	assert.equal(rebound, true); assert.ok(focus.admittedTarget === control.focusTarget);
+	const snapshot = { ...pointer(22, 22, true), justPressedButtons: PointerButton.Primary };
+	assert.equal(control.handlePointer(snapshot, 0), Result.Selection);
+	assert.ok(replacement.view.selection === replacement.a && original.view.selection === original.b);
+});
+
 test('disc symbols retain their actual pixel silhouette instead of routing to padded text bounds', () => {
 	const disc = createWorkbenchGraphDisc(11, 20, 20);
 	assert.ok(disc.appearance === 'disc');

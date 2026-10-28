@@ -31,6 +31,7 @@ type StateModel = WorkbenchGraphModel<StateNode, StateEdge>;
 
 /** A projection of the chosen physical FSM, not a match to an authored registration. */
 export class ActorStateGraph {
+	private readonly selectionListeners = new Set<() => void>();
 	public readonly viewport: WorkbenchGraphViewport<StateModel>;
 	public status: 'available' | 'missing' | 'heap-replaced' = 'available';
 	public title = '';
@@ -44,6 +45,10 @@ export class ActorStateGraph {
 	public constructor(target: ActorTarget, font: BFont) {
 		this.target = target;
 		this.viewport = new WorkbenchGraphViewport(createWorkbenchGraphModel<StateNode, StateEdge>(font, [], []));
+	}
+	public onDidChangeSelection(listener: () => void): () => void {
+		this.selectionListeners.add(listener);
+		return () => this.selectionListeners.delete(listener);
 	}
 
 	/** Called only after Actor Lab reacquires its tree; no borrowed object enters this view. */
@@ -143,8 +148,12 @@ export class ActorStateGraph {
 	/** Explicit input replaces any temporarily unavailable selection bookmark. */
 	public rememberSelection(): void {
 		const selected = this.viewport.selection;
-		this.selectionTarget = selected?.kind === 'node' ? selected.target : selected?.child.target;
-		if (selected !== null) this.selectionKind = selected.kind;
+		const target = selected?.kind === 'node' ? selected.target : selected?.child.target;
+		const kind = selected === null ? this.selectionKind : selected.kind;
+		const changed = kind !== this.selectionKind || (target === undefined ? this.selectionTarget !== undefined
+			: this.selectionTarget === undefined || !actorTargetsEqual(target, this.selectionTarget));
+		this.selectionTarget = target; this.selectionKind = kind;
+		if (changed) for (const listener of this.selectionListeners) listener();
 	}
 
 	public selectTarget(target: ActorTarget, kind: 'node' | 'edge' = 'node'): boolean {

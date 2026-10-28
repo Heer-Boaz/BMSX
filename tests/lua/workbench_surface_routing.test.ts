@@ -153,6 +153,276 @@ return { _objects = { actor, other } }` },
 	return { ...f, controller, input, pane, sourceModel };
 }
 
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`Actor row button ${button} admits the exact live subject and contextual action owner`, t => {
+	const { editor, pointer, input, pane, controller } = actorFixture(t);
+	const primary = pane.commandTarget, index = input.outline.rows.findIndex(row => row.element.node.kind === 'state');
+	assert.ok(index >= 0);
+	const subject = input.outline.rows[index].element.node;
+	editor.commands.execute('resources.focus', primary); editor.update(0);
+	assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
+	assert.ok(inputFocus.admittedTarget !== primary);
+	pointer(input.outline.layout.contentRight - 4, input.outline.layout.contentTop + (index + 0.5) * input.outline.layout.rowHeight, button);
+	assert.ok(controller.selected(input) === subject);
+	assert.equal(editor.contextMenu.visible, button === PointerButton.Secondary);
+	if (button === PointerButton.Secondary) assert.ok(editor.contextMenu.invocationOrigin === primary);
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const destination of ['files', 'editor'] as const) test(`Actor row button ${button} cancels its old subject after focus admits ${destination}`, t => {
+	const { editor, host, pointer, input, pane, controller, sourceModel } = actorFixture(t), group = editor.editorParts.main.activeGroup;
+	const primary = pane.commandTarget, selected = controller.selected(input), path = input.selectionPath;
+	const index = input.outline.rows.findIndex(row => row.element.node.kind === 'state');
+	assert.ok(index >= 0 && input.outline.rows[index].element.node !== selected);
+	const source = sourceModel.buffer.getText(), version = sourceModel.version, cycles = host.runtime.machine.scheduler.currentNowCycles();
+	editor.commands.execute('resources.focus', primary); editor.update(0);
+	assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
+	assert.ok(inputFocus.admittedTarget !== primary);
+	let admissions = 0, replacement: GameViewInput | undefined;
+	t.after(primary.onDidFocus(() => {
+		admissions++;
+		if (destination === 'files') editor.commands.execute('resources.focus', primary);
+		else { replacement = new GameViewInput(); group.openEditor(replacement); }
+	}));
+	pointer(input.outline.layout.contentRight - 4, input.outline.layout.contentTop + (index + 0.5) * input.outline.layout.rowHeight, button);
+	assert.equal(admissions, 1);
+	assert.ok(controller.selected(input) === selected && input.selectionPath === path);
+	assert.equal(editor.contextMenu.visible, false);
+	if (destination === 'files') {
+		assert.ok(editor.resourcePanel.isVisible() && inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
+		assert.ok(group.panes.activePane === pane && pane.input === input);
+	} else {
+		assert.ok(group.model.activeTab === replacement && group.panes.activePane?.input === replacement);
+		assert.ok(inputFocus.admittedTarget === group.panes.activePane?.commandTarget);
+	}
+	assert.equal(sourceModel.buffer.getText(), source); assert.equal(sourceModel.version, version);
+	assert.equal(host.runtime.machine.scheduler.currentNowCycles(), cycles);
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const destination of ['files', 'editor'] as const) test(`Actor graph button ${button} cancels stale shared-control mutation after focus admits ${destination}`, t => {
+	const { editor, pointer, input, pane } = actorFixture(t), group = editor.editorParts.main.activeGroup;
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0);
+	const graph = input.stateGraph!, primary = pane.commandTarget;
+	editor.commands.execute('resources.focus', primary); editor.update(0);
+	assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
+	const selected = graph.viewport.selection, offered = graph.viewport.model.nodes.find(node => node !== selected)!;
+	assert.ok(selected !== null && offered !== undefined);
+	graph.viewport.reveal(offered);
+	const x = graph.viewport.graphToViewportX((offered.bounds.left + offered.bounds.right) / 2);
+	const y = graph.viewport.graphToViewportY((offered.bounds.top + offered.bounds.bottom) / 2);
+	assert.ok(graph.viewport.hitTest(x, y) === offered);
+	let admissions = 0, replacement: GameViewInput | undefined;
+	t.after(primary.onDidFocus(() => {
+		admissions++;
+		if (destination === 'files') editor.commands.execute('resources.focus', primary);
+		else { replacement = new GameViewInput(); group.openEditor(replacement); }
+	}));
+	pointer(x, y, button);
+	assert.equal(admissions, 1);
+	assert.ok(graph.viewport.selection === selected, 'the shared graph control cannot mutate its old selection after rejected focus');
+	assert.equal(editor.contextMenu.visible, false); assert.equal(pointerCapture.active, false);
+	if (destination === 'files') {
+		assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
+		assert.ok(group.panes.activePane === pane && pane.input === input);
+	} else {
+		assert.ok(group.model.activeTab === replacement && group.panes.activePane?.input === replacement);
+		assert.ok(inputFocus.admittedTarget === group.panes.activePane?.commandTarget);
+	}
+});
+
+test('Actor outline selection publication ignores semantic reselection and passive refresh', t => {
+	const { editor, input, controller } = actorFixture(t);
+	let publications = 0; t.after(input.onDidChangeSelection(() => { publications++; }));
+	input.rememberSelection(); controller.refresh(input); editor.update(0);
+	assert.equal(publications, 0);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	assert.equal(publications, 1); const path = input.selectionPath;
+	input.rememberSelection();
+	assert.equal(publications, 1); assert.ok(input.selectionPath === path);
+});
+
+test('Actor outline keyboard navigation stops its old layout when selection publication replaces the pane', t => {
+	const { editor, input, pane } = actorFixture(t), group = editor.editorParts.main.activeGroup;
+	pane.focus(); const replacement = new GameViewInput(); let publications = 0;
+	const unbind = input.onDidChangeSelection(() => { unbind(); publications++; group.openEditor(replacement); }); t.after(unbind);
+	editor.dispatchKey(new KeyInputEvent('ArrowDown', KeyModifier.none));
+	editor.dispatchKey(new KeyInputEvent('ArrowDown', KeyModifier.none, false, false));
+	assert.equal(publications, 1);
+	assert.ok(group.model.activeTab === replacement && inputFocus.admittedTarget === group.panes.activePane?.commandTarget);
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const destination of ['files', 'editor', 'selection'] as const) test(`Actor outline button ${button} stops its old continuation after selection publication admits ${destination}`, t => {
+	const { editor, pointer, input, pane } = actorFixture(t), group = editor.editorParts.main.activeGroup;
+	const primary = pane.commandTarget, selected = input.outline.rows[input.outline.selectionIndex];
+	const index = input.outline.rows.findIndex(row => row !== selected && (button === PointerButton.Primary ? row.children.length > 0 && !row.collapsed : row.element.node.kind === 'state'));
+	assert.ok(index >= 0); const offered = input.outline.rows[index], collapsed = offered.collapsed;
+	const newerIndex = input.outline.rows.findIndex(row => row !== offered), newer = input.outline.rows[newerIndex];
+	assert.ok(newer !== undefined);
+	let publications = 0, replacement: GameViewInput | undefined;
+	const unbind = input.onDidChangeSelection(() => {
+		unbind(); publications++; assert.ok(input.outline.rows[input.outline.selectionIndex] === offered);
+		if (destination === 'files') editor.commands.execute('resources.focus', primary);
+		else if (destination === 'editor') { replacement = new GameViewInput(); group.openEditor(replacement); }
+		else { input.outline.selectionIndex = newerIndex; input.rememberSelection(); }
+	});
+	t.after(unbind);
+	const tree = input.outline.layout;
+	const x = button === PointerButton.Primary ? tree.contentLeft + offered.depth * tree.indentWidth + tree.twistieWidth / 2 : tree.contentRight - 4;
+	pointer(x, tree.contentTop + (index + 0.5) * tree.rowHeight, button);
+	assert.equal(publications, 1); assert.equal(editor.contextMenu.visible, false);
+	assert.equal(offered.collapsed, collapsed, 'a selection subscriber can retire the original disclosure continuation');
+	if (destination === 'files') assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
+	else if (destination === 'editor') assert.ok(group.model.activeTab === replacement && inputFocus.admittedTarget === group.panes.activePane?.commandTarget);
+	else assert.ok(input.outline.rows[input.outline.selectionIndex] === newer && inputFocus.admittedTarget === primary);
+});
+
+for (const gesture of ['context', 'activate'] as const) for (const destination of ['files', 'editor', 'selection'] as const) test(`Actor graph ${gesture} stops its old continuation after selection publication admits ${destination}`, t => {
+	const { editor, pointer, input, pane } = actorFixture(t), group = editor.editorParts.main.activeGroup;
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0);
+	const graph = input.stateGraph!, primary = pane.commandTarget, selected = graph.viewport.selection;
+	assert.ok(selected?.kind === 'node');
+	const offered = graph.viewport.model.nodes.find(node => node !== selected)!; assert.ok(offered !== undefined);
+	graph.viewport.reveal(offered);
+	const x = graph.viewport.graphToViewportX((offered.bounds.left + offered.bounds.right) / 2);
+	const y = graph.viewport.graphToViewportY((offered.bounds.top + offered.bounds.bottom) / 2);
+	assert.ok(graph.viewport.hitTest(x, y) === offered);
+	if (gesture === 'activate') {
+		pointer(x, y, PointerButton.Primary); pointer(x, y, 0);
+		assert.ok(graph.viewport.selection === offered); assert.ok(graph.selectTarget(selected.target));
+	}
+	let publications = 0, replacement: GameViewInput | undefined;
+	const unbind = graph.onDidChangeSelection(() => {
+		unbind(); publications++; assert.ok(graph.viewport.selection === offered);
+		if (destination === 'files') editor.commands.execute('resources.focus', primary);
+		else if (destination === 'editor') { replacement = new GameViewInput(); group.openEditor(replacement); }
+		else assert.ok(graph.selectTarget(selected.target));
+	});
+	t.after(unbind);
+	pointer(x, y, gesture === 'context' ? PointerButton.Secondary : PointerButton.Primary);
+	assert.equal(publications, 1); assert.equal(editor.contextMenu.visible, false); assert.equal(input.detailsWindow.open, false);
+	if (destination === 'files') assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
+	else if (destination === 'editor') assert.ok(group.model.activeTab === replacement && inputFocus.admittedTarget === group.panes.activePane?.commandTarget);
+	else assert.ok(graph.viewport.selection === selected && inputFocus.admittedTarget === primary);
+});
+
+for (const presentation of ['outline', 'graph'] as const) test(`Actor ${presentation} menu handoff cannot retarget Details after return focus changes the selected member`, t => {
+	const { editor, pointer, input, pane } = actorFixture(t);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	if (presentation === 'graph') { editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0); }
+	const primary = pane.commandTarget;
+	if (presentation === 'outline') {
+		const tree = input.outline;
+		pointer(tree.layout.contentRight - 4, tree.layout.contentTop + (tree.selectionIndex + 0.5) * tree.layout.rowHeight, PointerButton.Secondary);
+	} else {
+		const view = input.stateGraph!.viewport, selected = view.selection!;
+		pointer(view.graphToViewportX((selected.bounds.left + selected.bounds.right) / 2),
+			view.graphToViewportY((selected.bounds.top + selected.bounds.bottom) / 2), PointerButton.Secondary);
+	}
+	assert.equal(editor.contextMenu.visible, true);
+	editor.contextMenu.model.selectedIndex = editor.contextMenu.model.rows.findIndex(row => row.command === 'actorLab.details');
+	assert.ok(editor.contextMenu.model.selectedIndex >= 0 && editor.contextMenu.model.rows[editor.contextMenu.model.selectedIndex].enabled);
+	let returned = 0;
+	const unbind = primary.onDidFocus(() => {
+		unbind(); returned++;
+		if (presentation === 'outline') { input.outline.selectionIndex = 0; input.rememberSelection(); }
+		else {
+			const graph = input.stateGraph!, other = graph.viewport.model.nodes.find(node => node !== graph.viewport.selection)!;
+			graph.viewport.selection = other; graph.rememberSelection();
+		}
+	});
+	t.after(unbind);
+	editor.contextMenu.accept();
+	assert.equal(returned, 1); assert.equal(editor.contextMenu.visible, false);
+	assert.equal(input.detailsWindow.open, false, 'an accepted old-subject action cannot run against the newly selected member');
+	assert.ok(inputFocus.admittedTarget === primary);
+});
+
+test('retiring Actor menu subject cannot dismiss a newer popup owned by Files during handoff', t => {
+	const { editor, pointer, input, pane } = actorFixture(t), primary = pane.commandTarget;
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	const tree = input.outline;
+	pointer(tree.layout.contentRight - 4, tree.layout.contentTop + (tree.selectionIndex + 0.5) * tree.layout.rowHeight, PointerButton.Secondary);
+	editor.contextMenu.model.selectedIndex = editor.contextMenu.model.rows.findIndex(row => row.command === 'actorLab.details');
+	assert.ok(editor.contextMenu.visible && editor.contextMenu.model.selectedIndex >= 0);
+	let returned = 0;
+	const unbind = primary.onDidFocus(() => {
+		unbind(); returned++;
+		editor.commands.execute('resources.focus', primary);
+		editor.contextMenu.show(0, 0, [{ type: 'command', command: 'resources.focus' }], editor.commands,
+			{ invocationOrigin: editor.resourcePanel.focusTarget, selectFirst: true });
+		input.outline.selectionIndex = 0; input.rememberSelection();
+	});
+	t.after(unbind);
+	editor.contextMenu.accept();
+	assert.equal(returned, 1); assert.equal(input.detailsWindow.open, false);
+	assert.equal(editor.contextMenu.visible, true);
+	assert.ok(editor.contextMenu.invocationOrigin === editor.resourcePanel.focusTarget);
+});
+
+for (const presentation of ['outline', 'graph'] as const) test(`Actor ${presentation} keyboard and More expose the same scoped contextual commands`, t => {
+	const { editor, input, pane } = actorFixture(t);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	if (presentation === 'graph') { editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0); }
+	const primary = pane.commandTarget; pane.focus();
+	for (const [code, modifiers] of [['ContextMenu', KeyModifier.none], ['F10', KeyModifier.shift]] as const) {
+		editor.dispatchKey(new KeyInputEvent(code, modifiers));
+		editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false));
+		assert.equal(editor.contextMenu.visible, true); assert.ok(editor.contextMenu.invocationOrigin === primary);
+		const commands = editor.contextMenu.model.rows.map(row => row.command);
+		assert.equal(commands.includes('graph.zoomIn'), presentation === 'graph');
+		assert.ok(commands.includes(presentation === 'graph' ? 'actorLab.outline' : 'actorLab.stateGraph'));
+		editor.contextMenu.hide();
+		editor.commands.execute('actorLab.more', primary);
+		assert.equal(editor.contextMenu.visible, true); assert.ok(editor.contextMenu.invocationOrigin === primary);
+		assert.deepEqual(editor.contextMenu.model.rows.map(row => row.command), commands);
+		editor.contextMenu.hide();
+	}
+});
+
+test('Actor keyboard graph menu anchors within the visible graph client without replacing its pan or zoom', t => {
+	const { editor, input, pane } = actorFixture(t);
+	input.outline.selectionIndex = input.outline.rows.findIndex(row => row.element.node.kind === 'state'); input.rememberSelection();
+	editor.commands.execute('actorLab.stateGraph', pane.commandTarget); editor.update(0);
+	const graph = input.stateGraph!, view = graph.viewport;
+	view.selection = view.model.nodes[0]; graph.rememberSelection();
+	view.setZoom(8); view.pan(10_000, 10_000);
+	const selected = view.selection!, projectedX = view.graphToViewportX(selected.bounds.left), projectedY = view.graphToViewportY(selected.bounds.bottom);
+	assert.ok(projectedX < view.bounds.left || projectedX > view.bounds.right || projectedY < view.bounds.top || projectedY > view.bounds.bottom);
+	const zoom = view.zoom, x = view.scrollX, y = view.scrollY;
+	const show = editor.contextMenu.show.bind(editor.contextMenu);
+	let anchors = 0;
+	t.mock.method(editor.contextMenu, 'show', (...args: Parameters<typeof show>) => {
+		anchors++;
+		// This is the component's anchor-placement policy, not a workflow pixel oracle.
+		assert.ok(args[0] >= view.bounds.left && args[0] <= view.bounds.right);
+		assert.ok(args[1] >= view.bounds.top && args[1] <= view.bounds.bottom);
+		return show(...args);
+	});
+	editor.commands.execute('contextMenu', pane.commandTarget);
+	assert.equal(anchors, 1); assert.equal(editor.contextMenu.visible, true);
+	assert.equal(view.zoom, zoom); assert.equal(view.scrollX, x); assert.equal(view.scrollY, y);
+});
+
+test('Actor row press cannot reuse an identical input after focus detached and reattached its pane', t => {
+	const { editor, pointer, input, pane, controller } = actorFixture(t), group = editor.editorParts.main.activeGroup;
+	const primary = pane.commandTarget, selected = controller.selected(input), context = primary.scope.contextGeneration;
+	const index = input.outline.rows.findIndex(row => row.element.node.kind === 'state');
+	assert.ok(index >= 0 && input.outline.rows[index].element.node !== selected);
+	editor.commands.execute('resources.focus', primary); editor.update(0);
+	assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
+	let admissions = 0;
+	const unbind = primary.onDidFocus(() => {
+		unbind(); admissions++;
+		group.openEditor(new GameViewInput()); group.openEditor(input);
+	});
+	t.after(unbind);
+	pointer(input.outline.layout.contentRight - 4, input.outline.layout.contentTop + (index + 0.5) * input.outline.layout.rowHeight, PointerButton.Secondary);
+	assert.equal(admissions, 1); assert.ok(primary.scope.contextGeneration > context);
+	assert.ok(group.panes.activePane === pane && pane.input === input);
+	assert.ok(controller.selected(input) === selected && inputFocus.admittedTarget === primary);
+	assert.equal(editor.contextMenu.visible, false);
+});
+
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Actor preview reorientation retains its guest binding and retirement drains the held input`, t => {
 	const { editor, host, pointer, input, pane } = actorFixture(t);
 	editor.setFontVariant(variant); editor.update(0); pane.focus();

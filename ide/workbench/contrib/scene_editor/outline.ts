@@ -80,6 +80,7 @@ export function installSceneOutline(input: SceneEditorInput, document: SceneSour
 
 /** Bind only the selected source member; a definition is never a fake member. */
 export function selectSceneOutlineRow(input: SceneEditorInput, index: number): void {
+	const previousStart = input.selectionRange.start, previousEnd = input.selectionRange.end;
 	input.outline.selectionIndex = index;
 	input.outline.hoverIndex = -1;
 	const row = input.outline.rows[index]?.element;
@@ -95,4 +96,5 @@ export function selectSceneOutlineRow(input: SceneEditorInput, index: number): v
 		property.value = field === null ? null : readLuaTableFieldInteger(field);
 		property.sourceText = field === null ? 'Lua source' : readLuaSourceRange(input.workingCopy.buffer, input.document.analysis.chunk.locations.range(field.value.span)).replace(/\s+/g, ' ');
 	}
+	if (input.selectionRange.start !== previousStart || input.selectionRange.end !== previousEnd) input.notifySelectionChanged();
 }

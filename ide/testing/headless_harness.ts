@@ -14,6 +14,7 @@ import type { RuntimeIdeState } from '../workbench/state';
 import type { StackTraceFrame } from '../runtime/stack_trace';
 import { blua32ToolingImageForDomain } from '../../toolchain/ts/rompack/blua32_media';
 import type { EditorCommandId } from '../common/commands';
+import type { ContextMenuController } from '../workbench/services/context_menu/controller';
 import type { LuaSignatureHelp } from '../../toolchain/ts/lua/semantic/signature_help';
 import type { HotResumeOperation } from '../workbench/services/execution/hot_resume';
 import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
@@ -54,6 +55,7 @@ export type HeadlessIdeHarness = {
 	/** Observe existing UI owners; workflows still deliver gestures through host control input. */
 	getActiveEditorGroup(): Readonly<EditorGroupView>;
 	getResourcePanel(): Readonly<ResourcePanelController>;
+	getContextMenu(): Readonly<Pick<ContextMenuController, 'visible' | 'model' | 'invocationOrigin' | 'returnFocus'>>;
 	/** Full IDE operation: admission releases the queue; completion waits for physical init. */
 	performHotResume(): HotResumeOperation;
 	toggleLuaBreakpoint(path: string, line: number): void;
@@ -104,6 +106,7 @@ export function createHeadlessIdeHarness(
 		getWorkbenchTabs: () => ide.editor.editorParts.activeGroup.model.tabs,
 		getActiveEditorGroup: () => ide.editor.editorParts.activeGroup,
 		getResourcePanel: () => ide.editor.resourcePanel,
+		getContextMenu: () => ide.editor.contextMenu,
 		getHover: (row, column) => {
 			const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 			if (pane?.input.kind !== 'code_editor') return null;

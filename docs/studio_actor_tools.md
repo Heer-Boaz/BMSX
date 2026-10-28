@@ -83,6 +83,10 @@ These interaction patterns inform the view; they do not require guest tracing.
   inspected values. A compact icon toolbar contains actor selection/Back,
   Follow, and More, with full hover/keyboard hints and a checked Follow state;
   instance mutation commands remain in More, the context menu, and the palette.
+  Right-click selects its actual row without toggling disclosure. Context Menu
+  and Shift+F10 expose the same subject actions from the outline or live graph;
+  only the graph menu includes graph return/zoom controls. Selection or guest
+  invalidation retires an open menu rather than redirecting its pending action.
   The toolbar belongs to the hierarchy area. The preview has no permanent
   **Game Frame** strip, and the pane does not repeat **Paused** above content.
 - Switching tree/graph carries the explicit selected instance. The graph model,

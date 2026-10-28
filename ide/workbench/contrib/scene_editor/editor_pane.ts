@@ -36,6 +36,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { SceneOutlineFeedback } from './feedback';
+import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
@@ -45,8 +46,9 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		return this.controller.getSourceLocation(input);
 	}
 	public override getSelection(): SceneEditorNavigationSelection {
-		this.controller.refresh(this.input);
-		return new SceneEditorNavigationSelection(this.input);
+		const input = this.input;
+		this.controller.refresh(input);
+		return new SceneEditorNavigationSelection(input);
 	}
 
 	public readonly controls: readonly ValueInput<number>[];
@@ -61,12 +63,13 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	private sourceHovered = false;
 	private unsubscribeReadOnlyChange!: () => void;
 	private unsubscribeContentChange!: () => void;
+	private unsubscribeSelectionChange!: () => void;
 
 	public constructor(
 		private readonly controller: SceneEditorController,
-		commands: IdeCommandController,
+		private readonly commands: IdeCommandController,
 		private readonly sources: RuntimeSourceState,
-		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
+		private readonly contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>,
 		scope: InputFocusScope,
 	) {
@@ -79,7 +82,9 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		this.actionBar.onDidOpenOverflow = lifetime => {
 			this.actionTooltip.hide(); this.sourceHovered = false;
 			this.identityFeedback.clear();
-			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
+			const input = this.input;
+			lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
+			lifetime.add({ dispose: input.onDidChangeSelection(() => contextMenu.hide()) });
 		};
 		this.details = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => {
 			if (!isKeyJustPressed('Escape', event)) return false;
@@ -91,6 +96,15 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		this.details.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline' && this.input.outline.selectionIndex >= 0
 			&& this.input.details.bounds.left < this.input.details.bounds.right && this.input.details.bounds.top < this.input.details.bounds.bottom;
 		this.details.focusTarget.commandContext = this.focusTarget;
+		for (const origin of [this.focusTarget, this.details.focusTarget]) origin.registerCommand('contextMenu', {
+			isEnabled: () => this.hasInput && this.input.outline.selectionIndex >= 0,
+			run: () => {
+				const input = this.input, tree = input.outline;
+				if (origin === this.focusTarget) revealWorkbenchListSelection(tree);
+				this.openContextMenu(origin === this.focusTarget ? tree.layout.contentLeft + 4 : input.details.bounds.left + 4,
+					origin === this.focusTarget ? tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0) + 1) * tree.layout.rowHeight : input.details.bounds.top + 4, origin, true);
+			},
+		});
 		const sectionCommands: SceneEditorSectionCommands = { details: {
 			isEnabled: () => this.hasInput && this.input.outline.selectionIndex >= 0,
 			run: () => this.showSection('details'),
@@ -102,12 +116,12 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		this.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
 		this.focusTarget.registerCommand('sceneEditor.removeMember', {
 			isEnabled: () => this.hasInput && this.controller.canRemoveSelectedMember(this.input),
-			run: () => { const input = this.input; if (this.focusInput(input)) this.controller.removeSelectedMember(input); },
+			run: () => this.controller.removeSelectedMember(this.input),
 		});
 		for (const [command, direction] of [['sceneEditor.moveMemberUp', -1], ['sceneEditor.moveMemberDown', 1]] as const) {
 			this.focusTarget.registerCommand(command, {
 				isEnabled: () => this.hasInput && this.controller.canMoveSelectedMember(this.input, direction),
-				run: () => { const input = this.input; if (this.focusInput(input)) this.controller.moveSelectedMember(input, direction); },
+				run: () => this.controller.moveSelectedMember(this.input, direction),
 			});
 		}
 		this.controls = POSITION_AXES.map((_axis, index) => new ValueInput(this.details.focusTarget, INTEGER_INPUT_FORMAT, value => {
@@ -141,6 +155,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		// Edit and Undo can return to the retained projection before the next update.
 		// Field bindings must still consume the canonical value after publication.
 		this.unsubscribeContentChange = this.input.workingCopy.onDidChangeContent(() => { this.boundVersion = -1; });
+		this.unsubscribeSelectionChange = this.input.onDidChangeSelection(() => { this.boundVersion = -1; });
 		this.unsubscribeReadOnlyChange = this.input.workingCopy.onDidChangeReadOnly(() => {
 			this.updateControlAdmission();
 			this.bindFocusOrder();
@@ -148,15 +163,20 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	}
 	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: SceneEditorNavigationSelection): void {
 		if (navigationSelection === undefined) return;
+		const scope = this.focusTarget.scope, context = scope.contextGeneration;
 		this.controller.refresh(this.input);
+		if (scope.contextGeneration !== context) return;
 		navigationSelection.restore(this.input);
+		if (scope.contextGeneration !== context) return;
 		this.update();
 	}
 
 	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
 
 	public override update(): void {
+		const scope = this.focusTarget.scope, context = scope.contextGeneration;
 		this.controller.refresh(this.input);
+		if (scope.contextGeneration !== context) return;
 		const changed = this.boundVersion !== this.input.version;
 		const layoutChanged = layoutSceneEditor(this.input, changed, false, this.contentBounds);
 		if (changed) this.bindProperties();
@@ -296,24 +316,47 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		this.actionBar.focusTarget.previous = previous;
 	}
 
-	private select(index: number, toggle: boolean): void {
+	private select(index: number, toggle: boolean): boolean {
+		const input = this.input, row = input.outline.rows[index], version = input.workingCopy.version;
+		const scope = this.focusTarget.scope, context = scope.contextGeneration;
 		this.focusTarget.focus();
-		this.controller.refresh(this.input);
-		if (toggle) setWorkbenchTreeCollapsed(this.input.outline, index, !this.input.outline.rows[index].collapsed);
-		selectSceneOutlineRow(this.input, index);
-		const contentChanged = this.boundVersion !== this.input.version;
+		const focused = inputFocus.admittedTarget;
+		if (this.input !== input || scope.contextGeneration !== context || input.workingCopy.version !== version
+			|| focused === null || !scope.contains(focused.scope)) return false;
+		this.controller.refresh(input);
+		if (input.outline.rows[index] !== row) return false;
+		if (toggle) setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
+		selectSceneOutlineRow(input, index);
+		const current = inputFocus.admittedTarget;
+		if (current === null || !scope.contains(current.scope) || this.input !== input || scope.contextGeneration !== context || input.workingCopy.version !== version
+			|| input.outline.rows[input.outline.selectionIndex] !== row) return false;
+		const contentChanged = this.boundVersion !== input.version;
 		this.bindProperties();
-		revealWorkbenchListSelection(this.input.outline);
-		layoutSceneEditor(this.input, contentChanged, true, this.contentBounds);
+		revealWorkbenchListSelection(input.outline);
+		layoutSceneEditor(input, contentChanged, true, this.contentBounds);
 		this.updateControlAdmission();
 		this.bindFocusOrder();
+		return true;
+	}
+
+	private openContextMenu(x: number, y: number, origin: InputFocusTarget, keyboard = false): void {
+		const input = this.input, version = input.workingCopy.version, selected = input.outline.rows[input.outline.selectionIndex];
+		this.identityFeedback.clear(); this.actionTooltip.hide(); this.sourceHovered = false;
+		this.contextMenu.show(x, y, WORKBENCH_MENUS['sceneEditor.context'], this.commands, {
+			selectFirst: keyboard, invocationOrigin: origin, returnFocus: origin, commandTarget: this.focusTarget,
+			onWillShow: lifetime => {
+				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
+				lifetime.add({ dispose: input.onDidChangeSelection(() => this.contextMenu.hide()) });
+				if (this.input !== input || input.workingCopy.version !== version || input.outline.rows[input.outline.selectionIndex] !== selected) this.contextMenu.hide(false);
+			},
+		});
 	}
 
 	public handleKeyboard(input: KeyInputEvent): void {
 		for (const [code, command] of TREE_NAVIGATION) {
 			if (isKeyDown(code, input)) {
 				consumeIdeKey(code, input);
-				if (navigateWorkbenchTree(this.input.outline, command) !== WorkbenchTreeNavigationResult.None) this.select(this.input.outline.selectionIndex, false);
+				if (navigateWorkbenchTree(this.input.outline, command) !== WorkbenchTreeNavigationResult.None && !this.select(this.input.outline.selectionIndex, false)) return;
 				this.identityFeedback.keyboardSelection(this.input);
 				return;
 			}
@@ -338,6 +381,10 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		this.sourceHovered = point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.layout.sourceBounds);
 		if (this.sourceHovered) { pointerHover.visit(this); if (justPressed) this.focus(); return true; }
 		if (this.actionBar.handlePointer(snapshot)) return true;
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && index >= 0) {
+			if (this.select(index, false)) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget);
+			return true;
+		}
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const control = this.controls[index];
 			const bounds = this.input.properties[index].bounds;
@@ -355,6 +402,16 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 				control.handlePointer(bounds.left + 3, snapshot.viewportX, justPressed, ((snapshot.pressedButtons & PointerButton.Primary) !== 0));
 				return true;
 			}
+		}
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.input.details.bounds)) {
+			const input = this.input, selected = input.outline.rows[input.outline.selectionIndex], version = input.workingCopy.version;
+			const scope = this.focusTarget.scope, context = scope.contextGeneration;
+			this.details.focusTarget.focus();
+			const focused = inputFocus.admittedTarget;
+			if (selected !== undefined && this.input === input && scope.contextGeneration === context && input.workingCopy.version === version
+				&& input.outline.rows[input.outline.selectionIndex] === selected && focused !== null && scope.contains(focused.scope))
+				this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.details.focusTarget);
+			return true;
 		}
 		if (this.details.handlePointer(snapshot)) return true;
 		if (index >= 0) pointerHover.visit(this);
@@ -389,6 +446,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 
 	public override clearInput(): void {
 		this.unsubscribeContentChange();
+		this.unsubscribeSelectionChange();
 		this.unsubscribeReadOnlyChange();
 		pointerHover.release(this);
 		this.actionBar.clearInput();

@@ -13,7 +13,7 @@ import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { GuestInvalidationReason } from '../../../runtime/suspended_guest';
 import type { ActorStateGraph } from './state_graph';
 import { ActorActivityFollow } from './activity_follow';
-import type { ActorNodeIdentity } from './target';
+import { actorPathsEqual, type ActorNodeIdentity } from './target';
 import type { ActorDetails, ActorDetailsSelection } from './details';
 import type { ActorLabTabId } from '../../ui/tab/id';
 import type { ActorLabController } from './controller';
@@ -21,6 +21,7 @@ import { WorkbenchWindowModel } from '../../ui/window/model';
 
 /** View state only. Borrowed rows are released before guest execution. */
 export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab'> {
+	private readonly selectionListeners = new Set<() => void>();
 	public override canMove(destination?: AbstractEditorInput<string, string>): boolean { return destination === undefined; }
 	public get resource(): undefined { return undefined; }
 	public domain: ResourceDomain = 0;
@@ -57,7 +58,11 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public constructor(public readonly controller: ActorLabController, id: ActorLabTabId, title: string,
 		public override readonly serializable: boolean) {
 		super(id, 'actor_lab', title, true);
-		this.onWillDispose(() => { this.interaction.setRuntime(null); this.runtime.dispose(); this.details?.dispose(); });
+		this.onWillDispose(() => { this.selectionListeners.clear(); this.interaction.setRuntime(null); this.runtime.dispose(); this.details?.dispose(); });
+	}
+	public onDidChangeSelection(listener: () => void): () => void {
+		this.selectionListeners.add(listener);
+		return () => this.selectionListeners.delete(listener);
 	}
 	public invalidate(reason: GuestInvalidationReason = 'execution'): void {
 		this.runtime.release();
@@ -79,20 +84,23 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	}
 	/** Explicit view navigation records membership once, never on each CPU slice. */
 	public rememberSelection(): void {
+		const previous = this.selectionPath;
 		let row = this.outline.rows[this.outline.selectionIndex];
-		if (row === undefined) {
-			this.selectionPath = undefined;
-			this.details?.followSelection(this.domain, this.worldHashId, this.actorHashId, undefined, this.runtime);
-			return;
+		if (row === undefined) this.selectionPath = undefined;
+		else {
+			const path: ActorNodeIdentity[] = [];
+			for (;;) {
+				const node = row.element.node;
+				path.push({ hashId: node.hashId, kind: node.kind, key: node.keyIdentity });
+				if (row.parent === null) break;
+				row = row.parent;
+			}
+			this.selectionPath = path.reverse();
 		}
-		const path: ActorNodeIdentity[] = [];
-		for (;;) {
-			const node = row.element.node;
-			path.push({ hashId: node.hashId, kind: node.kind, key: node.keyIdentity });
-			if (row.parent === null) break;
-			row = row.parent;
-		}
-		this.selectionPath = path.reverse();
+		const changed = previous === undefined ? this.selectionPath !== undefined
+			: this.selectionPath === undefined || !actorPathsEqual(previous, this.selectionPath);
+		if (!changed) this.selectionPath = previous;
 		this.details?.followSelection(this.domain, this.worldHashId, this.actorHashId, this.selectionPath, this.runtime);
+		if (changed) for (const listener of this.selectionListeners) listener();
 	}
 }

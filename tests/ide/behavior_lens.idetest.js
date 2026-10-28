@@ -146,6 +146,9 @@ t.capture('behavior-lens-moon-tiny-384x288');
 
 const selectedNode = viewport.selection;
 const selectedRange = selectedNode.source.referenceRange || selectedNode.source.authoredRange;
+// Semantic ranges carry opaque source addresses, not display paths.
+const selectedModel = view.source.models.get(selectedRange.path);
+t.assert(selectedModel !== undefined, 'the selected occurrence has no admitted canonical source');
 const pointerX = viewport.bounds.left + (selectedNode.bounds.left + selectedNode.bounds.right) / 2 - viewport.scrollX;
 const pointerY = viewport.bounds.top + (selectedNode.bounds.top + selectedNode.bounds.bottom) / 2 - viewport.scrollY;
 await clickPointer(pointerX, pointerY);
@@ -160,7 +163,7 @@ await t.frames(4);
 const navigatedTab = t.activeWorkbenchTab();
 t.assert(navigatedTab.kind === 'code_editor' && navigatedTab.id === sourceTabId, 'double click did not return to the owning code input');
 const activeDocument = t.activeEditorDocument();
-t.assert(activeDocument.model.resource.path === selectedRange.path, 'double click navigated to the wrong source resource');
+t.assert(activeDocument.model === selectedModel, 'double click navigated to the wrong canonical source model');
 t.assert(activeDocument.view.cursorRow === selectedRange.start.line - 1, 'double click navigated to the wrong source line');
 t.assert(activeDocument.view.cursorColumn === selectedRange.start.column - 1, 'double click navigated to the wrong source column');
 await releasePointer();
@@ -251,10 +254,14 @@ t.assert(effectView.document.definitions.length === 1, 'Nemesis player source sh
 t.assert(effectView.document.definitions[0].behaviorKind === 'action_effect', 'registration was not recognized as an ActionEffect');
 t.assert(effectView.presentation.kind === 'properties', 'ActionEffect must open its property inspector');
 const properties = effectView.presentation.tree;
-const periodRowIndex = properties.rows.findIndex(row => row.element.kind === 'property' && row.element.source.label.startsWith('period_ms ='));
+const periodRowIndex = properties.rows.findIndex(row => row.element.kind === 'property' && row.element.write?.field.name === 'period_ms');
 t.assert(periodRowIndex >= 0, 'real ActionEffect period is not present in the retained rows');
 await moveSelectionToIndex(properties, periodRowIndex);
+const period = properties.rows[periodRowIndex].element.write;
+const periodRange = period.file.chunk.locations.range(period.field.span);
 t.capture('behavior-lens-player-effect-tiny-384x288');
 await pressKey('Enter');
 t.assert(t.activeEditorDocument().model.resource.path === 'player/actioneffects.lua', 'ActionEffect navigation opened the wrong source');
-t.assert(t.activeEditorDocument().view.cursorRow === 16, 'ActionEffect period navigated to the wrong authored line');
+// Source coordinates are the navigation contract, not a frozen line in the fixture file.
+t.assert(t.activeEditorDocument().view.cursorRow === periodRange.start.line - 1
+	&& t.activeEditorDocument().view.cursorColumn === periodRange.start.column - 1, 'ActionEffect period navigated to the wrong authored occurrence');
