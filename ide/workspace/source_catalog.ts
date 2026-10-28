@@ -215,8 +215,10 @@ export class WorkspaceSourceCatalog {
 					this.luaLocation(retained?.location, source, context.projectRootPath), source.generated ? undefined : source.normalized_source_path));
 			}
 			for (const source of context.assetSources) {
-				if ((source.type !== 'data' && source.type !== 'aem') || !source.source_path) continue;
+				if (source.source_path === undefined) continue;
 				const key = resourceIdentityKeyFromParts(context.id, source.source_path);
+				// Canonical source records own files also present in the packed asset inventory.
+				if (this.resourceByIdentity.has(key)) continue;
 				const retained = previous.get(key);
 				this.retainResource(retained, context.id, source.source_path, source,
 					this.projectLocation(retained?.location, context.projectRootPath, source.source_path),

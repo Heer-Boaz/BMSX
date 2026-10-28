@@ -15,6 +15,7 @@ import { buildRomAssetAddressLinkValuesFromSymbols } from '../../toolchain/ts/ro
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { parseCartridgeIndex } from '../../toolchain/ts/rompack/loader';
 import { BLUA32_SYMBOLS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_symbols';
+import { BLUA32_DIAGNOSTICS_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_diagnostics';
 import { RomSourceStack } from '../../toolchain/ts/rompack/source';
 import {
 	buildBlua32Tail,
@@ -109,6 +110,8 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 
 		const initialPayload = new Uint8Array(await readFile(join(ROOT, 'tail.debug.rom')));
 		const index = await parseCartridgeIndex(initialPayload);
+		for (const id of [BLUA32_IMAGE_ID, BLUA32_SYMBOLS_IMAGE_ID, BLUA32_DIAGNOSTICS_IMAGE_ID])
+			assert.equal(index.entries.find(entry => entry.resid === id)!.source_path, undefined, 'generated records have identity, not a fabricated source file');
 		const imageEntry = index.entries.find(entry => entry.resid === BLUA32_IMAGE_ID)!;
 		const symbolsEntry = index.entries.find(entry => entry.resid === BLUA32_SYMBOLS_IMAGE_ID)!;
 		const sourceEntry = index.entries.find(entry => entry.type === 'lua' && entry.resid === 'entry')!;
@@ -176,6 +179,8 @@ test('BLua32-tail rebuild preserves immutable asset metadata addresses and bytes
 			rebuiltHeader.tocOffset, rebuiltHeader.tocOffset + rebuiltHeader.tocLength,
 		));
 		assert.equal(rebuilt.index.entries.length, physicalDirectory.entries.length);
+		for (const id of [BLUA32_IMAGE_ID, BLUA32_SYMBOLS_IMAGE_ID, BLUA32_DIAGNOSTICS_IMAGE_ID])
+			assert.equal(rebuilt.index.entries.find(entry => entry.resid === id)!.source_path, undefined, 'derived builds preserve generated provenance');
 		for (const entry of rebuilt.index.entries) {
 			const physical = physicalDirectory.entries.find(candidate => candidate.type === entry.type && candidate.resid === entry.resid)!;
 			assert.equal(entry.id_token_lo, physical.id_token_lo, `${entry.resid} publishes its encoded low token`);

@@ -295,7 +295,7 @@ test('authoring catalog keeps loaded data accessible while the BIOS or either ca
 		{ system: [
 			{ resid: 'system-scene', type: 'aem', source_path: 'system/scene.aem' },
 			{ resid: 'system-config', type: 'data', source_path: 'system/config.json' },
-			{ resid: 'compiled-image', type: 'code', source_path: 'compiled.image' },
+			{ resid: 'compiled-image', type: 'code' },
 			{ resid: 'source-less', type: 'data' },
 		], cartridgeSlots: [[
 			{ resid: 'cart-scene', type: 'aem', source_path: 'scenes/cart.aem' },

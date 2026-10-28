@@ -21,6 +21,7 @@ import { applyAllWorkspaceSourceOverrides, applyLuaTextModelSources, discoverWor
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { createTestToolingPackage } from '../helpers/runtime_sources';
 import { buildScenarioMediaFixture } from '../helpers/scenario_media';
+import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 
 function sourceRecord(path: string, modulePath: string, canonicalPath: string, source: string): LuaSourceRecord {
 	return { resid: modulePath, type: 'lua', src: source, base_src: source, base_update_timestamp: 0,
@@ -28,13 +29,44 @@ function sourceRecord(path: string, modulePath: string, canonicalPath: string, s
 		update_timestamp: 0, generated: false, sourceKind: 'project', program_module: false };
 }
 
-function admitSourceFixture(catalog: WorkspaceSourceCatalog, id: string, root: string, records: readonly LuaSourceRecord[], dependencies: readonly string[] = []) {
+function admitSourceFixture(catalog: WorkspaceSourceCatalog, id: string, root: string, records: readonly LuaSourceRecord[], dependencies: readonly string[] = [], assets: readonly RomAsset[] = []) {
 	const registry = createLuaSourceRegistry(root, 'entry.lua');
 	for (const record of records) registerLuaSourceRecord(registry, record);
 	return catalog.admitContext({ admission: { id, projectRoot: root }, programDomain: 'cart', systemContextId: null,
 		luaSources: registry, sourceRoots: [{ path: root, resourcePathPrefix: '', modulePathPrefix: '', structured: true, sourceKind: 'project' }],
-		dependencyContextIds: dependencies, previewPackage: createTestToolingPackage(root), previewRom: null, assetSources: [] });
+		dependencyContextIds: dependencies, previewPackage: createTestToolingPackage(root), previewRom: null, assetSources: assets });
 }
+
+test('file admission consumes source provenance independently of asset type and keeps canonical Lua authority', t => {
+	const catalog = new WorkspaceSourceCatalog(); t.after(() => catalog.dispose());
+	const source = sourceRecord('shared.lua', 'shared', 'cartlib/shared.lua', 'return 1');
+	const assets: RomAsset[] = [
+		{ type: 'bin', resid: 'raw', source_path: 'res/raw.bin' },
+		{ type: 'audio', resid: 'sound', source_path: 'res/sound.wav' },
+		{ type: 'model', resid: 'model', source_path: 'res/model.glb' },
+		{ type: 'image', resid: 'image', source_path: 'res/image.png' },
+		{ type: 'romlabel', resid: 'label', source_path: 'res/label.png' },
+		{ type: 'code', resid: 'assembled', source_path: 'res/program.asm' },
+		{ type: 'code', resid: 'generated-program' },
+		{ type: 'lua', resid: 'packed-shared', source_path: source.source_path },
+	];
+	admitSourceFixture(catalog, 'source-project', 'carts/project', [source], [], assets);
+	assert.equal(catalog.resources.length, 7);
+	for (const asset of assets.slice(0, 6)) {
+		const resource = catalog.resolveResource({ contextId: 'source-project', path: asset.source_path! })!;
+		assert.ok(resource.source === asset);
+		assert.equal(resource.sourceFilePath, `carts/project/${asset.source_path}`);
+		assert.equal(resource.location.kind, 'project');
+	}
+	const lua = catalog.resolveResource({ contextId: 'source-project', path: source.source_path })!;
+	assert.ok(lua.source === source && catalog.luaResources[0] === lua);
+	assert.equal(lua.sourceFilePath, 'cartlib/shared.lua'); assert.equal(lua.location.kind, 'workspace');
+	const retained = [...catalog.resources]; catalog.rebuildResources();
+	assert.ok(retained.every(resource => catalog.resolveResource(resource) === resource));
+	const fork = catalog.fork(); t.after(() => fork.dispose());
+	assert.equal(fork.resources.length, retained.length);
+	assert.equal(fork.resolveResource(lua)!.sourceFilePath, lua.sourceFilePath);
+});
 
 test('working copies share admitted identity, never canonical file provenance or configuration values', t => {
 	const catalog = new WorkspaceSourceCatalog(), models = new EditorTextModelService();

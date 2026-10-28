@@ -1058,7 +1058,6 @@ export function buildRomBlua32Tail(
 				linked.bytes.byteOffset,
 				linked.bytes.byteLength,
 			),
-			source_path: BLUA32_IMAGE_ID,
 		}], true, imageOffset);
 		const tailAssets: RomAsset[] = [];
 		if (options.includeSymbols) {
@@ -1071,7 +1070,6 @@ export function buildRomBlua32Tail(
 					symbolsPayload.byteOffset,
 					symbolsPayload.byteLength,
 				),
-				source_path: BLUA32_SYMBOLS_IMAGE_ID,
 			});
 		}
 		const tailLayout = layoutRomAssetPayloads(
@@ -1123,7 +1121,6 @@ export function buildRomBlua32Tail(
 			linked.bytes.byteOffset,
 			linked.bytes.byteLength,
 		),
-		source_path: BLUA32_IMAGE_ID,
 	}];
 	if (options.includeSymbols) {
 		const symbolsPayload = encodeBlua32SymbolsImage(linked.symbols);
@@ -1135,7 +1132,6 @@ export function buildRomBlua32Tail(
 				symbolsPayload.byteOffset,
 				symbolsPayload.byteLength,
 			),
-			source_path: BLUA32_SYMBOLS_IMAGE_ID,
 		});
 	}
 	return {
@@ -1291,7 +1287,6 @@ export async function finalizeRompack(
 				diagnosticPayload.byteOffset,
 				diagnosticPayload.byteLength,
 			),
-			source_path: BLUA32_DIAGNOSTICS_IMAGE_ID,
 		}], true, diagnosticDirectoryOffset);
 		entries.push(...diagnosticLayout.entries);
 		physicalSpans.push(...diagnosticLayout.ranges);

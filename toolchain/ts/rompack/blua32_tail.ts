@@ -222,7 +222,6 @@ export function buildBlua32Tail(
 		resid: BLUA32_SYMBOLS_IMAGE_ID,
 		type: 'code',
 		buffer: symbolsPayload,
-		source_path: BLUA32_SYMBOLS_IMAGE_ID,
 	}];
 	const toolingLayout = layoutRomAssetPayloads(toolingAssets, true, toolingOffset);
 	entries.push({
@@ -230,7 +229,6 @@ export function buildBlua32Tail(
 		type: 'code',
 		start: imageOffset,
 		end: imageEnd,
-		source_path: BLUA32_IMAGE_ID,
 	});
 	entries.push(...toolingLayout.entries);
 	let diagnosticDirectoryOffset = 0;
@@ -276,7 +274,6 @@ export function buildBlua32Tail(
 			resid: BLUA32_DIAGNOSTICS_IMAGE_ID,
 			type: 'code',
 			buffer: diagnosticPayload,
-			source_path: BLUA32_DIAGNOSTICS_IMAGE_ID,
 		}], true, diagnosticDirectoryOffset);
 		entries.push(...diagnosticLayout.entries);
 		toolingPayloadEnd = diagnosticLayout.payloadEnd;
