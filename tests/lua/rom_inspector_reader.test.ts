@@ -5,7 +5,8 @@ import test, { type TestContext } from 'node:test';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import * as colors from '../../ide/common/constants';
 import type { PointerInputSnapshot } from '../../ide/common/models';
-import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
+import { measureText } from '../../ide/editor/common/text/layout';
+import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -20,6 +21,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
+import { layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ide/workbench/ui/action_bar';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { formatHexDumpRow } from '../../machine/ts/common/byte_hex_string';
 import { INSTRUCTION_BYTES, writeInstruction } from '../../machine/ts/spec/blua32/instruction_format';
@@ -167,7 +169,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'light', snapshot = imageSnapshot()) {
 	const previousTheme = colors.getActiveIdeThemeVariant(), previousCommands = inputFocus.workbenchScope.commands;
-	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
+	configureFontVariant(variant); applyViewportSize({ width: 384, height: 288 }); colors.setIdeThemeVariant(theme);
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	const group = createTestEditorGroup(commands);
@@ -176,7 +178,14 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 	origin.bindKeyboard(() => {});
 	const owner = surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope, getBounds: () => input.layout,
 		getClip: () => input.layout, isVisible: () => true, draw() {} });
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, lifetime => {
+		if (lifetime === undefined) return;
+		lifetime.add(surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: contextMenu.pointerScope,
+			lifetimeOwner: surfaces.findByScope(contextMenu.invocationOrigin!.scope.surfaceScope)!,
+			getBounds: () => contextMenu.model.bounds, getClip: () => area, isVisible: () => contextMenu.visible, draw() {},
+			onRetire: () => { if (!lifetime.isDisposed) { pointerCapture.cancelScope(contextMenu.pointerScope); contextMenu.hide(); } } }));
+	});
+	const quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	const popup: WorkbenchSurface = surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, lifetimeOwner: owner, captureScope: quickInput.pointerScope,
 		getBounds: () => quickInput.layout.bounds, getClip: () => area, isVisible: () => quickInput.visible, draw() {} });
 	const unbind = inputFocus.bindScopeAdmission(scope => {
@@ -209,9 +218,54 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 	t.after(() => { reader.dispose(); quickInput.dispose(); contextMenu.dispose(); popup?.dispose(); inputFocus.setTarget(null);
 		pointerCapture.cancel(); pointerHover.clear(); unbind(); surfaces.dispose(); input.dispose(); group.dispose();
 		inputFocus.workbenchScope.commands = previousCommands; colors.setIdeThemeVariant(previousTheme); });
-	return { group, input, surfaces, owner, origin, commands, sources, opened, quickInput, press, key, select, choose, draw,
+	return { group, input, surfaces, owner, origin, commands, sources, opened, contextMenu, quickInput, press, key, select, choose, draw,
 		get reader() { return reader; }, recreate() { reader.dispose(); reader = createReader(); } };
 }
+
+test('reader More retires preview membership on popup update before the reader lays out its changed document', t => {
+	const f = fixture(t); f.select('a-image'); f.reader.show();
+	const state = f.input.readerViewActions, bounds = state.bounds;
+	// Constrain the retained toolbar through its layout owner, then use its actual More hit target.
+	layoutWorkbenchActionBar(state, bounds.right, bounds.top, bounds.bottom, measureText,
+		editorViewState.font.renderFont(), bounds.right - WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH);
+	f.reader.viewActions.update();
+	const more = state.overflow!.button;
+	assert.equal(more.visible, true);
+	f.reader.viewActions.handlePointer(point(more.bounds.left + 1, more.bounds.top + 1, 1, 1, 1));
+	assert.equal(f.contextMenu.visible, true); assert.equal(inputFocus.admittedTarget, f.contextMenu.focusTarget);
+	assert.ok(f.contextMenu.model.rows.some(row => row.command === 'romInspector.zoom' && row.enabled));
+	const bitmap = f.input.reader.preview;
+	f.input.reader.setView('info');
+	assert.equal(f.commands.isEnabled('romInspector.zoom', f.reader.window.focusTarget), false,
+		'command-capability rejection is independent of popup membership retirement');
+	f.contextMenu.update();
+	assert.equal(f.contextMenu.visible, false, 'the popup must not retain disabled preview-only membership until reader layout');
+	assert.equal(inputFocus.admittedTarget, f.reader.image.focusTarget);
+	assert.equal(f.input.reader.preview, bitmap); assert.equal(f.quickInput.visible, false);
+});
+
+test('an armed reader More command loses its popup lifetime before a changed document receives key release', t => {
+	const f = fixture(t); f.select('a-image'); f.reader.show();
+	const state = f.input.readerViewActions, bounds = state.bounds;
+	layoutWorkbenchActionBar(state, bounds.right, bounds.top, bounds.bottom, measureText,
+		editorViewState.font.renderFont(), bounds.right - WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH);
+	f.reader.viewActions.update();
+	const more = state.overflow!.button;
+	f.reader.viewActions.handlePointer(point(more.bounds.left + 1, more.bounds.top + 1, 1, 1, 1));
+	assert.equal(f.contextMenu.visible, true); assert.equal(inputFocus.admittedTarget, f.contextMenu.focusTarget);
+	const zoom = f.contextMenu.model.rows.findIndex(row => row.command === 'romInspector.zoom');
+	assert.ok(zoom >= 0);
+	f.press('Home');
+	for (let index = 0; index < zoom; index++) f.press('ArrowDown');
+	assert.equal(f.contextMenu.model.rows[f.contextMenu.model.selectedIndex].command, 'romInspector.zoom');
+	f.key('Enter', true);
+	f.input.reader.setView('info');
+	assert.equal(f.commands.isEnabled('romInspector.zoom', f.reader.window.focusTarget), false);
+	f.key('Enter', false);
+	assert.equal(f.contextMenu.visible, false, 'release must retire stale membership, not merely reject its disabled command');
+	assert.equal(inputFocus.admittedTarget, f.reader.image.focusTarget);
+	assert.equal(f.quickInput.visible, false); assert.equal(f.input.reader.imageView.mode, 'fit');
+});
 
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	test(`${variant}/${theme} reader paints exactly one full-width client view with its actual bytes and no second inspector chrome`, t => {

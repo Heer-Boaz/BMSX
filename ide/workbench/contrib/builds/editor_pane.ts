@@ -103,10 +103,7 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 		}
 		if (changed || attached || this.renderedRevision !== input.revision) {
 			this.attachedInput = input; this.renderedRevision = input.revision;
-			for (const item of input.actions.items) {
-				if (item.command === 'buildLog.error' || item.command === 'buildLog.output') item.visible = input.error !== undefined;
-				item.checked = this.isActive(item.command);
-			}
+			for (const item of input.actions.items) item.checked = this.isActive(item.command);
 			layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, layout.top + layout.rowHeight + 8,
 				measureText, editorViewState.font.renderFont(), layout.left + 4);
 			const recipe = `${input.job.request.debug ? 'Debug' : 'Release'} -O${input.job.request.optLevel}`;

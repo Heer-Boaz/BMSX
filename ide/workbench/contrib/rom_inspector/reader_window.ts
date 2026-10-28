@@ -297,8 +297,7 @@ export class RomEntryInspectorWindow {
 		const toolbarBottom = bounds.top + Math.max(font.lineHeight, WORKBENCH_ICON_SIZE) + 6;
 		for (const item of input.readerViewActions.items) {
 			if (item.command === 'romInspector.content') item.label = document.view === 'info' ? 'Properties' : document.view === 'preview' ? 'Preview' : document.subject?.kind === 'function' ? 'Disassembly' : 'Bytes';
-			else if (item.command === 'romInspector.zoom') item.visible = document.view === 'preview';
-			else if (item.command === 'romInspector.collision') { item.visible = document.view === 'preview' && document.hasCollision; item.checked = document.showCollision; }
+			else if (item.command === 'romInspector.collision') item.checked = document.showCollision;
 		}
 		layoutWorkbenchActionBar(input.readerViewActions, bounds.right - 4, bounds.top + 2, toolbarBottom - 2,
 			measureText, font, bounds.left + 4);

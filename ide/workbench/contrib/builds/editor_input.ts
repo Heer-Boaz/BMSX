@@ -5,7 +5,9 @@ import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { WorkspaceBuilds } from '../../services/builds';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { WorkbenchMenu } from '../../ui/menu/model';
 import { WorkbenchTextViewModel } from '../../ui/text_view/model';
+import { BUILD_LOG_TITLE_ACTIONS } from './menus';
 
 export type BuildLogChannel = 'output' | 'error';
 
@@ -16,7 +18,7 @@ export class BuildLogInput extends ReadonlyEditorInput<`build-log:${string}`, 'b
 	public readonly output = new WorkbenchTextViewModel(new PieceTreeBuffer());
 	public error: WorkbenchTextViewModel | undefined;
 	public channel: BuildLogChannel;
-	public readonly actions = createWorkbenchActionBar('buildLog.title', true);
+	public readonly actions = createWorkbenchActionBar(new WorkbenchMenu(BUILD_LOG_TITLE_ACTIONS, this), true);
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public loading = false;
 	public readError: string | undefined;
@@ -31,6 +33,7 @@ export class BuildLogInput extends ReadonlyEditorInput<`build-log:${string}`, 'b
 		this.errorText = job.error;
 		if (job.error !== undefined) this.error = new WorkbenchTextViewModel(new PieceTreeBuffer(job.error));
 		this.channel = job.error === undefined ? 'output' : 'error';
+		this.actions.menu!.refresh();
 		this.disposables.add({ dispose: () => this.request?.abort() });
 	}
 
@@ -52,6 +55,7 @@ export class BuildLogInput extends ReadonlyEditorInput<`build-log:${string}`, 'b
 				else if (this.error === undefined) this.error = new WorkbenchTextViewModel(new PieceTreeBuffer(job.error));
 				else this.error.setBuffer(new PieceTreeBuffer(job.error));
 				this.errorText = job.error;
+				this.actions.menu!.refresh();
 			}
 			this.revision++;
 			const output = await this.builds.log(job.request.requestId, request.signal);

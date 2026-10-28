@@ -1,13 +1,15 @@
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
 import { ReadonlyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
-import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
+import { WorkbenchMenu } from '../../ui/menu/model';
 import type { PropertyInspectorViewState } from '../../ui/property_inspector/model';
 import { Scrollbar } from '../../ui/scrollbar';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import { WorkbenchWindowModel } from '../../ui/window/model';
 import { RomInspectorContentModel } from './content_model';
 import { RomInspectorModel, type RomInspectorSnapshot } from './model';
+import { ROM_READER_CONTENT_ACTIONS } from './menus';
 
 let snapshotSequence = 0;
 
@@ -24,7 +26,7 @@ export class RomInspectorInput extends ReadonlyEditorInput<`rom-inspector:${numb
 	public keyPlacementInitialized = false;
 	public readonly readerWindow = new WorkbenchWindowModel({ left: 0, top: 0, right: 0, bottom: 0 }, 0, 0);
 	public readonly readerActions = createWorkbenchActionBar('romInspector.reader.title');
-	public readonly readerViewActions = createWorkbenchActionBar('romInspector.reader.content', true);
+	public readonly readerViewActions: WorkbenchActionBarState;
 	public readonly readerBytes = new WorkbenchScrollViewport();
 	public readerByteLayout: { lineHeight: number; unitsPerRow: number } | undefined;
 	public readonly readerHorizontal = new Scrollbar('horizontal');
@@ -44,6 +46,7 @@ export class RomInspectorInput extends ReadonlyEditorInput<`rom-inspector:${numb
 		this.setLabel(this.title, 'Mounted ROM snapshot');
 		this.model = new RomInspectorModel(snapshot);
 		this.reader = new RomInspectorContentModel(snapshot);
+		this.readerViewActions = createWorkbenchActionBar(new WorkbenchMenu(ROM_READER_CONTENT_ACTIONS, this.reader), true);
 	}
 	public override dispose(): void {
 		this.reader.dispose();

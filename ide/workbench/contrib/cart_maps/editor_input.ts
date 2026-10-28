@@ -8,12 +8,14 @@ import { WorkingCopyEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { WorkbenchMenu } from '../../ui/menu/model';
 import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
 import { ScrollableWorkbenchTree } from '../../ui/scrollable_tree';
 import { CartMapGrid, type MapGridContent, type MapGridMarker } from './grid';
 import type { PietiousObject, PietiousSource } from './pietious_source';
 import type { NemesisMarker, NemesisSource } from './nemesis_source';
 import { captureCartMapView, restoreCartMapView } from './view_snapshot';
+import { CART_MAP_TITLE_ACTIONS } from './menus';
 
 export type CartMapKind = 'pietious' | 'nemesis';
 export type CartMapSection = 'outline' | 'map';
@@ -69,7 +71,7 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 	public readonly selectionRange: TrackedTextRange = { start: 0, end: 0 };
 	public readonly tree = new ScrollableWorkbenchTree<CartMapTreeElement>();
 	public readonly grid = new CartMapGrid();
-	public readonly actionBar = createWorkbenchActionBar('cartMap.title', true, WORKBENCH_MENUS['editor.source.actions']);
+	public readonly actionBar = createWorkbenchActionBar(new WorkbenchMenu(CART_MAP_TITLE_ACTIONS, this), true, WORKBENCH_MENUS['editor.source.actions']);
 	public readonly fieldBounds = [create_rect_bounds(), create_rect_bounds()] as const;
 	public readonly layout: CartMapLayout = {
 		minimumFont: undefined,

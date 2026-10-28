@@ -74,8 +74,61 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		keybindings.dispose(); pane.clearInput(); inputFocus.setTarget(null); pointerCapture.cancel(); pane.dispose(); surfaces.dispose(); input.dispose(); model.dispose();
 
 	});
-	return { model, input, pane, bounds, layout, press, pointer, keybindings };
+	return { model, input, pane, bounds, layout, press, pointer, keybindings, menu };
 }
+
+test('Cart Map title membership follows arranged clients and retires an armed placement without disabling its command', t => {
+	const f = fixture(t, 'tiny', 78), { input, pane, model } = f;
+	pane.focus();
+	const origin = inputFocus.target!, projection = input.actionBar.menu!, entries = projection.entries, visible = projection.visibleItems;
+	const map = input.actionBar.items.find(item => item.command === 'cartMap.map')!;
+	const outline = input.actionBar.items.find(item => item.command === 'cartMap.outline')!;
+	assert.equal(input.layout.mode, 'outline'); assert.equal(map.visible, true); assert.equal(outline.visible, false);
+	assert.equal(origin.getCommand('cartMap.map')!.isEnabled(), true);
+	const armed = { ...map.bounds };
+	f.pointer((armed.left + armed.right) / 2, (armed.top + armed.bottom) / 2, PointerButton.Primary, PointerButton.Primary);
+	assert.equal(pointerCapture.active, true);
+	f.layout(input.layout.splitMinimumWidth);
+	assert.equal(input.layout.mode, 'split'); assert.equal(map.visible, false); assert.equal(outline.visible, false);
+	assert.equal(origin.getCommand('cartMap.map')!.isEnabled(), true, 'the wide layout changes placement, not navigation capability');
+	assert.equal(pointerCapture.active, false);
+	f.pointer((armed.left + armed.right) / 2, (armed.top + armed.bottom) / 2, 0, 0, PointerButton.Primary);
+	assert.equal(input.section, 'outline');
+	f.layout(78);
+	assert.equal(input.actionBar.items.find(item => item.command === 'cartMap.map'), map);
+	assert.equal(input.actionBar.menu, projection); assert.equal(projection.entries, entries); assert.equal(projection.visibleItems, visible);
+	f.pointer((map.bounds.left + map.bounds.right) / 2, (map.bounds.top + map.bounds.bottom) / 2, 0, PointerButton.Primary, PointerButton.Primary);
+	assert.equal(input.section, 'map'); assert.equal(input.layout.mode, 'map');
+	assert.equal(map.visible, false); assert.equal(outline.visible, true);
+	assert.equal(model.buffer.getText(), SOURCE); assert.equal(model.dirty, false);
+});
+
+test('Cart Map retains supported source secondary actions and an input replacement retires their popup', t => {
+	const f = fixture(t, 'tiny', 384), { input, pane, model, menu } = f;
+	pane.focus();
+	const origin = pane.commandTarget;
+	let sourceOpens = 0;
+	origin.registerCommand('editor.sourceToSide', { isEnabled: () => true, run: () => { sourceOpens++; } });
+	const button = input.actionBar.overflow!.button;
+	assert.equal(button.visible, true, 'source-to-side is a supported secondary placement even when the source primary fits');
+	f.pointer((button.bounds.left + button.bounds.right) / 2, (button.bounds.top + button.bounds.bottom) / 2,
+		0, PointerButton.Primary, PointerButton.Primary);
+	assert.equal(menu.visible, true);
+	assert.equal(menu.model.rows[menu.model.selectedIndex].command, 'editor.sourceToSide');
+	f.press('Enter'); assert.equal(sourceOpens, 1); assert.equal(menu.visible, false);
+	f.pointer((button.bounds.left + button.bounds.right) / 2, (button.bounds.top + button.bounds.bottom) / 2,
+		0, PointerButton.Primary, PointerButton.Primary);
+	assert.equal(menu.visible, true);
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, true));
+	const replacement = input.createView();
+	t.after(() => replacement.dispose());
+	pane.setInput(replacement, f.bounds); pane.update();
+	assert.equal(menu.visible, false);
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.equal(sourceOpens, 1, 'the old input popup cannot transfer an armed key release to a replacement view');
+	assert.notEqual(replacement.actionBar.menu, input.actionBar.menu);
+	assert.equal(replacement.workingCopy, model); assert.equal(model.buffer.getText(), SOURCE); assert.equal(model.dirty, false);
+});
 
 for (const variant of ['tiny', 'msx'] as const) {
 	const minimum = variant === 'tiny' ? 78 : 118;

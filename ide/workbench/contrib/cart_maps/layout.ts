@@ -65,10 +65,6 @@ export function layoutCartMap(input: CartMapInput, bounds: Readonly<RectBounds>,
 		if (mode === 'map') tree.updateLayout(layout.left + PADDING, contentTop, layout.left + PADDING + SCROLLBAR_WIDTH, contentTop, row, indent);
 		else tree.updateLayout(layout.left + PADDING, contentTop,
 			(mode === 'split' ? layout.gridLeft - 1 : layout.right) - PADDING, layout.bottom, row, indent);
-		for (const item of input.actionBar.items) {
-			if (item.command === 'cartMap.map') item.visible = mode === 'outline';
-			else if (item.command === 'cartMap.outline') item.visible = mode === 'map';
-		}
 		layoutWorkbenchActionBar(input.actionBar, layout.right - PADDING, layout.top, layout.top + row,
 			measureText, font.renderFont(), layout.left + PADDING);
 		if (resized || modeChanged || layout.sourceVersion !== input.version) {
