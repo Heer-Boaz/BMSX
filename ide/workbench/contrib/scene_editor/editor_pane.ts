@@ -26,6 +26,8 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput> {
 	public override get commandTarget() { return this.control.commandTarget; }
 	public override get inputScope() { return this.control.inputScope; }
 	public override getSourceLocation() { return this.control.getSourceLocation(); }
+	public override get canOpenSource(): boolean { return this.control.canOpenSource; }
+	public override captureSourceLocation() { return this.control.captureSourceLocation(); }
 	public override getSelection() { return this.control.getSelection(); }
 	protected override activate(): void { this.control.setView(this.input.view, this.contentBounds); }
 	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: SceneEditorNavigationSelection): void {

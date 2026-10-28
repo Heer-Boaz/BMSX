@@ -5,7 +5,7 @@ import { createLuaTableFieldRemovalEdits, luaSourceRangeMatchesTextRange, luaSou
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry } from './model';
 import type { SceneSourceDocuments } from './source_documents';
-import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 
 /** Admission proof for one exact authored declaration, not a name or a document tab. */
@@ -45,6 +45,7 @@ export class SceneAuthoringContext {
 	private documentValue: SceneSourceDocument | undefined;
 	private revisionValue = 0;
 	private selectionRevisionValue = 0;
+	private selectionRequestRevision = 0;
 	public readonly selectionRange: TrackedTextRange = { start: 0, end: 0 };
 	private readonly sceneRange: TrackedTextRange = { start: 0, end: 0 };
 	private selectionValue: SceneAuthoredSelection | undefined;
@@ -85,7 +86,7 @@ export class SceneAuthoringContext {
 	public get availability(): 'available' | 'unavailable' {
 		return this.lifetime.isDisposed || this.subjectScenes !== undefined && this.subjectScenes.length === 0 ? 'unavailable' : 'available';
 	}
-	/** Explicit selection intent, independently of source rebinding or retirement. */
+	/** Selection intent and subject retirement; rebinding the same mapped occurrence preserves authority. */
 	public get selectionRevision(): number { return this.selectionRevisionValue; }
 	public get isCurrent(): boolean {
 		const changed = this.refresh();
@@ -101,12 +102,28 @@ export class SceneAuthoringContext {
 		return this.isCurrent ? this.selectionValue : undefined;
 	}
 
+	/** Capture the source subject before settling a field can publish another selection or retire it. */
+	public captureSourceLocation(): EditorSourceLocationRequest {
+		const intent = this.selectionRevisionValue;
+		const isCurrent = () => !this.lifetime.isDisposed && this.selectionRevisionValue === intent;
+		return {
+			isCurrent,
+			readLocation: () => {
+				if (!isCurrent()) return undefined;
+				const location = this.getSourceLocation();
+				return isCurrent() ? location : undefined;
+			},
+		};
+	}
+
 	public getSourceLocation(): EditorSourceLocation | undefined {
-		if (!this.isCurrent) return undefined;
+		const intent = this.selectionRevisionValue;
+		if (!this.isCurrent || intent !== this.selectionRevisionValue) return undefined;
 		const selection = this.selectionValue, document = this.documentValue!;
 		const range = selection?.kind === 'member' ? document.analysis.chunk.locations.range(selection.entry.field.span)
 			: selection?.scene.range ?? this.subject?.range;
-		return this.documents.getSourceLocation(this.workingCopy, document, range);
+		const location = this.documents.getSourceLocation(this.workingCopy, document, range);
+		return this.isCurrent && intent === this.selectionRevisionValue ? location : undefined;
 	}
 
 	/** Observe mapped source occurrences without semantic admission, selection publication or projected rows. */
@@ -142,14 +159,20 @@ export class SceneAuthoringContext {
 		this.documentValue = document;
 		this.sourceVersion = this.workingCopy.version;
 		this.revisionValue++;
+		let subjectRetired = false;
 		if (this.subjectRange !== undefined) {
+			const previousSubject = this.subject;
 			const subject = this.subjectRange.start === this.subjectRange.end ? undefined
 				: document.scenes.find(scene => luaSourceRangeMatchesTextRange(this.workingCopy.buffer, scene.range, this.subjectRange!));
 			this.subjectScenes!.length = 0;
 			if (subject === undefined) this.subjectRange.start = this.subjectRange.end = 0;
 			else this.subjectScenes!.push(subject);
+			subjectRetired = previousSubject !== undefined && subject === undefined;
 		}
-		if (previous === undefined) return true;
+		if (previous === undefined) {
+			if (subjectRetired) this.selectionChanged();
+			return true;
+		}
 		const { buffer } = this.workingCopy;
 		const scene = document.scenes.find(scene => luaSourceRangeMatchesTextRange(buffer, scene.range, this.sceneRange));
 		if (scene !== undefined && (this.subjectScenes === undefined || scene === this.subject)) {
@@ -170,10 +193,9 @@ export class SceneAuthoringContext {
 
 	/** The selecting control supplies the source generation it actually presented. */
 	public select(document: SceneSourceDocument, sourceVersion: number, selection: SceneAuthoredSelection | undefined): boolean {
-		const intent = this.selectionRevisionValue;
-		if (!this.isCurrent || intent !== this.selectionRevisionValue || document !== this.documentValue || sourceVersion !== this.workingCopy.version) return false;
+		const request = ++this.selectionRequestRevision;
+		if (!this.isCurrent || request !== this.selectionRequestRevision || document !== this.documentValue || sourceVersion !== this.workingCopy.version) return false;
 		if (selection === undefined) {
-			if (this.selectionValue !== undefined) this.selectionRevisionValue++;
 			this.clearSelection();
 			return true;
 		}
@@ -190,10 +212,7 @@ export class SceneAuthoringContext {
 		this.selectionValue = selection;
 		this.sceneRange.start = sceneRange.start; this.sceneRange.end = sceneRange.end;
 		this.selectionRange.start = range.start; this.selectionRange.end = range.end;
-		if (changed) {
-			this.selectionRevisionValue++;
-			this.selectionChanged();
-		}
+		if (changed) this.selectionChanged();
 		return true;
 	}
 
@@ -206,6 +225,7 @@ export class SceneAuthoringContext {
 	}
 
 	private selectionChanged(): void {
+		this.selectionRevisionValue++;
 		this.revisionValue++;
 		for (const listener of this.selectionListeners) listener();
 	}

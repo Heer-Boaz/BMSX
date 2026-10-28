@@ -17,13 +17,17 @@ import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { EditorParts } from '../../services/editor/editor_parts';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
+import type { SourceNavigationOwner, SourceNavigationCaptureOptions } from '../../services/editor/source_navigation';
 
 export type ResourceNavigationOptions = {
 	readonly selection?: EditorTextSelection;
 	readonly preserveFocus?: boolean;
 	readonly editorId?: string;
 	readonly isCurrent?: () => boolean;
+	readonly activationIsCurrent?: () => boolean;
 };
+
+export type SourceNavigationOptions = SourceNavigationCaptureOptions & { readonly placement?: 'default' | 'side' };
 
 export class EditorNavigationController {
 	public constructor(
@@ -34,56 +38,58 @@ export class EditorNavigationController {
 	}
 
 	/** Settle the sender before its contribution selects one canonical source generation. */
-	public openSource(reference: EditorGroupView, readLocation: () => EditorSourceLocation | undefined | Promise<EditorSourceLocation | undefined>,
-		placement: 'default' | 'side' = 'default'): Promise<number | undefined> | undefined {
-		const part = this.parts.partForGroup(reference), pane = reference.panes.activePane;
-		if (part === undefined || part.retired || part.surface.retired || !reference.openingAdmitted || part.operation !== 'none' || pane === null) return;
-		const input = pane.input;
-		let generation = reference.panes.openGeneration;
-		const sourceScope = pane.commandTarget.scope, sourceContext = sourceScope.contextGeneration;
-		const origin = inputFocus.admittedTarget, originScope = origin?.scope, originContext = originScope?.contextGeneration;
+	public openSource(owner: SourceNavigationOwner, options: SourceNavigationOptions = {}): Promise<number | undefined> | undefined {
+		const source = owner.captureSourceNavigation(options);
+		if (source === undefined) return;
+		const reference = source.anchor, part = this.parts.partForGroup(reference);
+		if (part === undefined || part.retired || part.surface.retired || !reference.openingAdmitted || part.operation !== 'none') return;
+		const sourceScope = source.commandTarget.scope;
+		const focusedOrigin = inputFocus.admittedTarget, originScope = focusedOrigin?.scope, originContext = originScope?.contextGeneration;
 		// A source-owned draft may close itself and return to its containing client.
 		const scope = originScope !== undefined && sourceScope.contains(originScope) ? sourceScope : originScope;
+		const attached = (receiver?: EditorGroupView): boolean => source.isCurrent(receiver)
+			&& this.parts.partForGroup(reference) === part && !part.retired && !part.surface.retired && part.operation === 'none'
+			&& reference.openingAdmitted && originScope?.contextGeneration === originContext;
 		const current = (): boolean => {
 			const focused = inputFocus.admittedTarget;
-			return this.parts.partForGroup(reference) === part && !part.retired && !part.surface.retired && part.operation === 'none'
-				&& reference.openingAdmitted && reference.panes.openGeneration === generation && reference.panes.activePane === pane && pane.input === input
-				&& sourceScope.contextGeneration === sourceContext && originScope?.contextGeneration === originContext
+			return attached()
 				&& (focused === null || scope !== undefined && scope.contains(focused.scope));
 		};
-		if (!reference.commitPendingEdit() || !current()) return;
+		const focused = inputFocus.target, edit = focused !== null && sourceScope.contains(focused.commandContext.scope) ? focused.edit : undefined;
+		if (edit?.commit() === false || !current()) return;
 		const focusRevision = inputFocus.revision;
 		const admitLocation = (location: EditorSourceLocation | undefined): Promise<number | undefined> | undefined => {
 			if (location === undefined || !current() || inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
 			const { model, modelVersion, selection } = location;
 			if (model.version !== modelVersion || editorTextModelService.get(model.resource) !== model || this.catalog.resolveResource(model.resource) !== model.resource) return;
-			const destination = placement === 'side' ? this.parts.sideGroup(reference)
+			const destination = options.placement === 'side' ? this.parts.sideGroup(reference)
 				: this.parts.editorDestination(reference, { resource: model.resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
 			if (destination === undefined || !current() || inputFocus.revision !== focusRevision && inputFocus.target !== null
 				|| model.version !== modelVersion || editorTextModelService.get(model.resource) !== model || this.catalog.resolveResource(model.resource) !== model.resource) return;
 			// The receiver owns its opening generation; the sender attachment and source generation remain live until admission.
 			return this.openResource(destination, model.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID,
 				selection: selection === undefined ? undefined : { ...selection, generation: location },
-				isCurrent: () => this.parts.partForGroup(reference) === part && !part.retired && part.operation === 'none'
-					&& reference.openingAdmitted && reference.panes.activePane === pane && pane.input === input
-					&& (destination === reference || reference.panes.openGeneration === generation)
-					&& sourceScope.contextGeneration === sourceContext && originScope?.contextGeneration === originContext
+				isCurrent: () => attached(destination)
 					&& model.version === modelVersion && editorTextModelService.get(model.resource) === model
+					&& this.catalog.resolveResource(model.resource) === model.resource,
+				// Accepted Source retains the canonical model after edits; its generation-bound selection separately admits the caret.
+				activationIsCurrent: () => source.isCurrentAfterHandoff(destination)
+					&& this.parts.partForGroup(reference) === part && !part.retired && !part.surface.retired && part.operation === 'none' && reference.openingAdmitted
+					&& editorTextModelService.get(model.resource) === model
 					&& this.catalog.resolveResource(model.resource) === model.resource });
 		};
-		const location = readLocation();
+		const location = source.readLocation();
 		if (!(location instanceof Promise)) return admitLocation(location);
 		if (!current() || inputFocus.revision !== focusRevision && inputFocus.target !== null) return location.then(() => undefined);
 		// Location IO has a real sender opening receipt, without creating a destination or detaching its control.
-		generation = reference.panes.beginOpen();
-		if (!current()) return location.then(() => undefined);
+		if (!source.beginResolution() || !current()) return location.then(() => undefined);
 		return location.then(admitLocation);
 	}
 
 	/** The attached generation, or undefined when another opening superseded this request. */
 	public async openResource(group: EditorGroupView, resource: RuntimeResource, options?: ResourceNavigationOptions): Promise<number | undefined> {
 		const result = await group.openResolvedEditor(() => this.editorResolver.resolveEditorInput(resource, options?.editorId),
-			{ selection: options?.selection, preserveFocus: options?.preserveFocus, isCurrent: options?.isCurrent });
+			{ selection: options?.selection, preserveFocus: options?.preserveFocus, isCurrent: options?.isCurrent, activationIsCurrent: options?.activationIsCurrent });
 		return result?.generation;
 	}
 
@@ -151,6 +157,7 @@ export class EditorNavigationController {
 				preserveFocus = activation !== inputFocus.revision;
 				if (!withNavigationCaptureSuspended(() => group.openEditor(input, {
 					pinned: false, navigationSelection: target.selection, preserveFocus, isCurrent: () => pending.isCurrent,
+					activationIsCurrent: () => pending.isCurrent,
 				}))) return;
 			}
 			if (!pending.accept()) return;

@@ -129,7 +129,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 			isEnabled: () => this.hasInput && this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
 			run: () => {
 				const input = this.input;
-				void this.navigation.openSource(this.group, () => this.controller.getProducerSourceLocation(input), placement);
+				void this.navigation.openSource(this.group, { readLocation: () => this.controller.getProducerSourceLocation(input), placement });
 			},
 		});
 		this.focusTarget.registerCommand('animation.edit', { isEnabled: () => {

@@ -48,6 +48,8 @@ export class SceneEditorControl {
 		const input = this.view;
 		return input.authoring.getSourceLocation();
 	}
+	public get canOpenSource(): boolean { return this.hasView; }
+	public captureSourceLocation() { return this.hasView ? this.view.authoring.captureSourceLocation() : undefined; }
 	public getSelection(): SceneEditorNavigationSelection {
 		const input = this.view;
 		input.refresh();

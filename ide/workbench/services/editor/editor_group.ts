@@ -32,6 +32,8 @@ import { ELLIPSIS } from '../../../common/text';
 import { TAB_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_SYMBOL, TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN, SCROLLBAR_WIDTH } from '../../../common/constants';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { EditorOpeningRequest, type PreparedEditorInput } from './editor_opening';
+import type { SourceNavigationCaptureOptions, SourceNavigationOrigin } from './source_navigation';
+import type { EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 
 /** The container supplies ancestry and allowable popup extent before controls are constructed. */
 export type EditorGroupPresentation = {
@@ -56,7 +58,10 @@ export function findEditorGroup(target: InputFocusTarget | null): EditorGroupVie
 	return undefined;
 }
 
-export type EditorTabOpenOptions = EditorOpenOptions & EditorPaneOpenOptions;
+export type EditorTabOpenOptions = EditorOpenOptions & EditorPaneOpenOptions & {
+	/** Independent request authority retained through receiver model, control and focus publication. */
+	readonly activationIsCurrent?: () => boolean;
+};
 export type EditorInputOpenResult = { readonly generation: number; readonly activated: boolean };
 export type EditorMoveEvent = { readonly input: EditorInput; readonly destination: EditorGroupView; readonly replacement: EditorInput };
 
@@ -81,6 +86,27 @@ export function editorGroupChromeMinimumHeight(): number {
 
 /** Concrete input, control and tab-strip lifetimes for one independently arranged editor group. */
 export class EditorGroupView {
+	private sourceOpeningRevision = 0;
+	public captureSourceNavigation(options: SourceNavigationCaptureOptions = {}): SourceNavigationOrigin | undefined {
+		const pane = this.panes.activePane;
+		if (!this.openingAdmitted || this.surface.retired || pane === null) return;
+		const source: EditorSourceLocationRequest | undefined = options.readLocation === undefined ? pane.captureSourceLocation() : { readLocation: options.readLocation };
+		if (source === undefined) return;
+		const input = pane.input;
+		const commandTarget = pane.commandTarget, scope = commandTarget.scope, context = scope.contextGeneration;
+		const request = ++this.sourceOpeningRevision;
+		let generation = this.panes.openGeneration;
+		const current = (receiver?: EditorGroupView) => this.openingAdmitted && !this.surface.retired
+			&& this.sourceOpeningRevision === request && this.panes.activePane === pane && pane.input === input
+			&& (receiver === this || this.panes.openGeneration === generation)
+			&& scope.contextGeneration === context && source.isCurrent?.() !== false;
+		return { commandTarget, anchor: this, readLocation: source.readLocation, isCurrent: current,
+			// Same-group admission intentionally retires its producing control; the new receiver receipt and request intent remain authoritative.
+			isCurrentAfterHandoff: receiver => receiver === this
+				? this.openingAdmitted && !this.surface.retired && this.sourceOpeningRevision === request : current(),
+			beginResolution: () => { generation = this.panes.beginOpen(); return current(); } };
+	}
+
 	public captureNavigationEntry(): NavigationHistoryEntry | null {
 		const pane = this.panes.activePane;
 		if (pane === null) return null;
@@ -328,13 +354,14 @@ export class EditorGroupView {
 		const preserveFocus = options.preserveFocus || inputFocus.revision !== focusRevision && inputFocus.target !== null;
 		generation = this.panes.beginOpen();
 		const admit = (): EditorInputOpenResult | undefined => {
-			if (options.navigationSelection?.isDisposed || this.panes.openGeneration !== generation) {
+			// The producer receipt is consumed; receiver continuation must survive these callbacks before any old attachment retires.
+			if (options.activationIsCurrent?.() === false || options.navigationSelection?.isDisposed || this.panes.openGeneration !== generation) {
 				if (this.model.indexOf(input) < 0) input.dispose();
 				return undefined;
 			}
 			if (this.model.findMatching(input) === undefined) {
 				generation = this.panes.clearEditor();
-				if (options.navigationSelection?.isDisposed || this.panes.openGeneration !== generation) {
+				if (options.activationIsCurrent?.() === false || options.navigationSelection?.isDisposed || this.panes.openGeneration !== generation) {
 					if (this.model.indexOf(input) < 0) input.dispose();
 					return undefined;
 				}
@@ -343,7 +370,7 @@ export class EditorGroupView {
 			if (this.panes.openGeneration !== generation) return undefined;
 			// Producer admission is consumed before the receiver retires the old attachment.
 			return this.doActivate(admitted, { selection: options.selection, navigationSelection: options.navigationSelection,
-				preserveFocus: preserveFocus || inputFocus.revision !== focusRevision && inputFocus.target !== null });
+				preserveFocus: preserveFocus || inputFocus.revision !== focusRevision && inputFocus.target !== null, isCurrent: options.activationIsCurrent });
 		};
 		const previous = preserveFocus ? null : beginNavigationCapture();
 		try {
@@ -417,7 +444,6 @@ export class EditorGroupView {
 
 	/** The transfer model already selected this exact member; only its new control is attached here. */
 	public attachTransferredEditor(input: EditorInput, selection?: EditorPaneSelection, preserveFocus = false): void {
-		if (!preserveFocus) navigationState.activeOwner = this;
 		this.panes.openEditor(input, { navigationSelection: selection, preserveFocus });
 	}
 
@@ -435,7 +461,6 @@ export class EditorGroupView {
 		this.model.activate(input);
 		if (options.isCurrent?.() === false || navigationSelection?.isDisposed || this.panes.openGeneration !== generation) { previous?.dispose(); return undefined; }
 		preserveFocus ||= inputFocus.revision !== focusRevision && inputFocus.target !== null;
-		if (!preserveFocus) navigationState.activeOwner = this;
 		const result = this.panes.openEditor(input, { ...options, preserveFocus });
 		if (capture && result?.activated) completeNavigation(previous); else previous?.dispose();
 		return this.model.activeTab === input && this.panes.activePane?.input === input ? result : undefined;

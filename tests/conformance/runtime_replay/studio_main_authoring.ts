@@ -8,6 +8,8 @@ import { check, type StudioFixture } from './studio_fixture';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { WorkspaceSearchInput } from '../../../ide/workbench/contrib/workspace_search/editor_input';
 import { WorkspaceSearchPane } from '../../../ide/workbench/contrib/workspace_search/editor_pane';
+import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
+import { inputFocus } from '../../../ide/input/focus';
 
 /** Standalone renderer workflow over a dedicated test cartridge and independent source fixtures. */
 export async function runStudioMainAuthoring(test: StudioFixture) {
@@ -99,6 +101,8 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		}
 		await press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
+	if (input?.kind !== 'code_editor') throw new Error('main: retained canonical Source required');
+	await testPrimarySourceDestinations(test, input);
 	await testCallHierarchyResult(test, resource.contextId);
 	await testWorkspaceSearchResult(test, resource.contextId);
 	await press('ControlLeft', 'KeyW');
@@ -143,6 +147,63 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'main: source-only authoring never executes or installs a cartridge');
+}
+
+/** Main is the source producer; document placement uses ordinary affinity and explicit side intent. */
+async function testPrimarySourceDestinations(test: StudioFixture, source: CodeEditorInput): Promise<void> {
+	const editor = test.ide.editor, main = editor.mainWorkspace.primary, files = editor.resourcePanel.files.selectedNode;
+	const originalGroup = editor.editorParts.findGroup(source)!;
+	const originalGroups = editor.editorParts.main.groups.length, partCount = editor.editorParts.mostRecentlyActive.length;
+	await test.runPaletteCommand('Window: Move Editor To…');
+	await test.clipboard.writeText('New Editor Window'); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
+	const floating = editor.editorParts.findGroup(source)!;
+	const floatingPart = editor.editorParts.partForGroup(floating);
+	check(floating !== originalGroup && floatingPart.kind === 'document',
+		'main-source: the actual Source view moves to an explicit editor window');
+	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
+	check(editor.mainWorkspace.primary === main, 'main-source: focus does not reselect the authored subject');
+	await test.press('ContextMenu'); await test.clickContextCommand('editor.source');
+	await test.until(() => editor.editorParts.activeGroup === floating, 'main-source: default Source reveals the existing floating text view');
+	check(floating.model.activeTab === source && floating.panes.activePane?.input === source && !originalGroup.model.contains(source)
+		&& editor.editorParts.activePart === floatingPart && floatingPart.surface.visible
+		&& inputFocus.target !== null && floating.focusScope.contains(inputFocus.target.scope)
+		&& editor.editorParts.mostRecentlyActive.length === partCount + 1 && editor.resourcePanel.files.selectedNode === files,
+		'main-source: normal affinity retains the exact moved Source without creating a Main duplicate');
+	// Async admission may finish after the input frame painted; the visual checkpoint observes its next presentation.
+	await test.frame();
+	for (let font = 0; font < 2; font++) {
+		for (let theme = 0; theme < 2; theme++) {
+			check(floating.model.activeTab === source && floating.panes.activePane?.input === source
+				&& editor.editorParts.activePart === floatingPart && floatingPart.surface.visible
+				&& inputFocus.target !== null && floating.focusScope.contains(inputFocus.target.scope),
+				'main-source: font and theme changes preserve the attached, visible and focused Source owner');
+			await test.capture?.(`main-source-affinity-${editor.fontVariant}-theme-${theme}`);
+			await test.press('ControlLeft', 'AltLeft', 'KeyT');
+		}
+		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
+	}
+	await test.runPaletteCommand('Window: Move Editor To…');
+	await test.clipboard.writeText('Main Workspace'); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
+	check(editor.editorParts.findGroup(source) === originalGroup && originalGroup.model.activeTab === source && floating.model.tabs.length === 0,
+		'main-source: moving the same Source back leaves its canonical view in Main');
+	await test.runPaletteCommand('Window: Show Open Windows');
+	await test.clipboard.writeText('Editor'); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
+	check(editor.editorParts.activePart === floatingPart, 'main-source: the window picker can still reveal the empty document host');
+	await test.runPaletteCommand('Window: Close Window');
+	await test.until(() => floatingPart.retired, 'main-source: explicit window close retires the empty floating host');
+	check(editor.editorParts.mostRecentlyActive.length === partCount && originalGroup.model.activeTab === source,
+		'main-source: closing the empty host does not close its moved Source');
+	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
+	await test.press('ContextMenu'); await test.clickContextCommand('editor.sourceToSide');
+	await test.until(() => editor.editorParts.main.groups.length === originalGroups + 1, 'main-source: explicit Source to Side admits a Main neighbor');
+	const side = editor.editorParts.activeGroup, sideSource = side.model.activeTab;
+	check(side !== originalGroup && editor.editorParts.partForGroup(side) === editor.editorParts.main
+		&& sideSource?.kind === 'code_editor' && sideSource.workingCopy === source.workingCopy && sideSource !== source,
+		'main-source: explicit side intent makes an independent text view in the invoking arrangement');
+	await test.runPaletteCommand('Editor Groups: Close Group');
+	check(editor.editorParts.main.groups.length === originalGroups && editor.editorParts.findGroup(source) === originalGroup
+		&& editor.mainWorkspace.primary === main && editor.resourcePanel.files.selectedNode === files,
+		'main-source: closing the explicit side group preserves primary authoring and the original Source');
 }
 
 /** Query and Source use ordinary commands; only initial source-fixture selection is arranged. */

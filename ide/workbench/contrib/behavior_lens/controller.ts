@@ -436,11 +436,11 @@ export class BehaviorLensController {
 		const view = input.view;
 		const result = executeBehaviorLensNavigation(view, command);
 		if (result === BehaviorLensNavigationResult.Activate) {
-			void this.navigation.openSource(group, () => this.getSourceLocation(input));
+			void this.navigation.openSource(group, { readLocation: () => this.getSourceLocation(input) });
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Back) {
-			void this.navigation.openSource(group, () => this.getSourceLocation(input, 'definition'));
+			void this.navigation.openSource(group, { readLocation: () => this.getSourceLocation(input, 'definition') });
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Changed) {

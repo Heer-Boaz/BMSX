@@ -6,7 +6,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../common/editor_inputs';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
-import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import type { EditorFont } from '../../../editor/ui/view/font';
 
 export type EditorPaneClearReason = 'deactivate' | 'move';
@@ -43,6 +43,10 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	public getSourceLocation?(): EditorSourceLocation | undefined | Promise<EditorSourceLocation | undefined>;
 	/** Cheap selection capability; command presentation must not resolve or read source. */
 	public get canOpenSource(): boolean { return this.getSourceLocation !== undefined; }
+	/** Contributions with semantic sub-selection capture its real lifetime before draft publication. */
+	public captureSourceLocation(): EditorSourceLocationRequest | undefined {
+		return this.canOpenSource ? { readLocation: () => this.getSourceLocation!() } : undefined;
+	}
 	private inputValue: TInput | null = null;
 	protected get hasInput(): boolean { return this.inputValue !== null; }
 

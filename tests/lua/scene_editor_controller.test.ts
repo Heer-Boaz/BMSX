@@ -91,7 +91,7 @@ test('Scene pane source production and member commands retain their input when a
 	const bounds = { left: 0, top: 0, right: 384, bottom: 288 }, presentation = createTestGroupPresentation(surfaces, bounds);
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
 		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main, main),
-		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }); main.layout(bounds);
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup); main.layout(bounds);
 	let parts: EditorParts;
 	const contributions = createTestEditorPaneContributions(commands, menu);
 	contributions.scene_editor = { create: group => new SceneEditorPane(commands as IdeCommandController, sources, menu,
@@ -148,7 +148,7 @@ scenes.register('incomplete', {})
 	const bounds = { left: 0, top: 0, right: 384, bottom: height }, presentation = createTestGroupPresentation(surfaces, bounds);
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
 		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main, main),
-		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }); main.layout(bounds);
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup); main.layout(bounds);
 	let parts: EditorParts;
 	const contributions = createTestEditorPaneContributions(commands, menu);
 	contributions.scene_editor = { create: group => new SceneEditorPane(commands as IdeCommandController, sources, menu,

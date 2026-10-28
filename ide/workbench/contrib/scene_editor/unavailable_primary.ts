@@ -15,7 +15,6 @@ import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchMenu, type WorkbenchMenuCommandDefinition } from '../../ui/menu/model';
-import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
 import { measureSceneEditorMinimumWidth } from './layout';
 import type { ScenePrimaryClientOptions } from './primary_client';
 import type { ScenePrimarySnapshot } from './primary_snapshot';
@@ -39,7 +38,7 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 	private attached = false;
 	private disposed = false;
 
-	public constructor(snapshot: ScenePrimarySnapshot, model: EditorTextModel | undefined, options: ScenePrimaryClientOptions) {
+	public constructor(snapshot: ScenePrimarySnapshot, private readonly model: EditorTextModel | undefined, options: ScenePrimaryClientOptions) {
 		this.snapshot = { ...snapshot, subject: { ...snapshot.subject, availability: 'unavailable' } };
 		this.scope = options.scope;
 		this.copies = model === undefined ? [] : [model];
@@ -47,11 +46,6 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 		this.commandTarget.canFocus = () => this.attached && !this.disposed;
 		this.unbindKeyboard = this.commandTarget.bindKeyboard(() => {});
 		if (model !== undefined) {
-			this.commandTarget.registerCommand('editor.source', {
-				isEnabled: () => this.attached,
-				run: () => { void options.navigation.openResource(options.parts.main.activeGroup,
-					model.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID }); },
-			});
 			this.commandTarget.registerCommand('save', {
 				isEnabled: () => this.attached && !model.readOnly,
 				run: () => options.save(model),
@@ -66,6 +60,11 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 	}
 
 	public getWorkingCopies(): readonly EditorTextModel[] { return this.copies; }
+	public get canOpenSource(): boolean { return this.attached && !this.disposed && this.model !== undefined; }
+	public captureSourceLocation() {
+		const model = this.model;
+		return model === undefined ? undefined : { readLocation: () => ({ model, modelVersion: model.version }) };
+	}
 	public get minimumWidth(): number { return measureSceneEditorMinimumWidth(); }
 	public serialize() { return { kind: 'scene' as const, value: JSON.stringify(this.snapshot) }; }
 	public onDidChange(): () => void { return () => {}; }

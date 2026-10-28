@@ -128,6 +128,19 @@ export class IdeCommandController {
 			if (invocation.isEnabled()) invocation.run(originGroup?.focusTarget);
 			return;
 		}
+		if (command === 'editor.source' || command === 'editor.sourceToSide') {
+			if (commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration) return;
+			const placement = command === 'editor.sourceToSide' ? 'side' : 'default';
+			const main = this.editor.mainWorkspace;
+			if (input === undefined && main.isPrimaryTarget(invocationTarget)) {
+				if (main.canOpenSource(invocationTarget!)) void this.editor.navigation.openSource(main, { placement, target: invocationTarget! });
+				return;
+			}
+			const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup, pane = group.panes.activePane;
+			if (pane === null || pane.input !== (input ?? group.model.activeTab) || !pane.canOpenSource) return;
+			void this.editor.navigation.openSource(group, { placement, target: invocationTarget ?? undefined });
+			return;
+		}
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return;
 		const part = this.editor.editorParts.partForGroup(group);
@@ -150,12 +163,6 @@ export class IdeCommandController {
 			|| input !== undefined && !group.model.contains(input)) return;
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
-			case 'editor.source': case 'editor.sourceToSide': {
-				const pane = group.panes.activePane;
-				if (pane === null || pane.input !== editor || !pane.canOpenSource) return;
-				void this.editor.navigation.openSource(group, () => pane.getSourceLocation!(), command === 'editor.sourceToSide' ? 'side' : 'default');
-				return;
-			}
 			case 'window.restoreMinimized': showOpenWindows(this.editor.editorParts, this.editor.quickInput, true); return;
 			case 'window.showAll': showOpenWindows(this.editor.editorParts, this.editor.quickInput); return;
 			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
@@ -450,6 +457,8 @@ export class IdeCommandController {
 		if (implementation === undefined && input === undefined && SOURCE_COMMANDS.has(command)
 			&& focus?.commandContext !== focus) implementation = focus?.commandContext.getCommand(command);
 		if (implementation !== undefined) return implementation.isEnabled();
+		if ((command === 'editor.source' || command === 'editor.sourceToSide') && input === undefined && this.editor.mainWorkspace.isPrimaryTarget(focus))
+			return this.editor.mainWorkspace.canOpenSource(focus!);
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return false;
 		const part = this.editor.editorParts.partForGroup(group);

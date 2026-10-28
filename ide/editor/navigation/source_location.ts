@@ -4,3 +4,11 @@ import type { EditorTextModelGeneration, EditorTextSelection } from './text_sele
 export type EditorSourceLocation = EditorTextModelGeneration & {
 	readonly selection?: EditorTextSelection;
 };
+
+export type EditorSourceLocationReader = () => EditorSourceLocation | undefined | Promise<EditorSourceLocation | undefined>;
+
+/** Passive semantic-intent receipt; capturing it admits no source and publishes no selection. */
+export type EditorSourceLocationRequest = {
+	readonly readLocation: EditorSourceLocationReader;
+	isCurrent?(): boolean;
+};

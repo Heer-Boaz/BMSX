@@ -84,11 +84,15 @@ normalizes and retires an empty group; the final routing leaf remains present.
 Ordinary opening uses actual matching views and the invoking group,
 independently of editor kind; creating a floating part is explicit. Floating
 parts use the shared window container, not another Studio session or workspace.
-Visual panes expose an optional source-location capability: the contribution
-selects the canonical text model, source generation and authored caret. Shared
-editor commands and resource navigation own opening admission, history and
-placement. Ordinary Source follows text-view affinity; explicit Source to Side
-uses a neighbor in the invoking part. Producer/provenance navigation remains a
+Attached clients expose an optional source-location capability: the contribution
+captures its semantic subject before draft settlement, then selects the canonical
+text model, source generation and authored caret. Capability presentation is
+separate from source admission. Document panes and Main's primary client use the
+same navigation owner; the producing attachment is independent of its preferred
+document-group receiver. Shared editor commands and resource navigation own
+opening admission, history and placement. Ordinary Source follows text-view
+affinity; explicit Source to Side uses a neighbor in the invoking part.
+Producer/provenance navigation remains a
 separate contribution action when it names a different subject. A source
 location never reconstructs text from a visual or runtime projection. Opening
 admission retains the requesting attachment; the text-selection consumer
@@ -175,14 +179,17 @@ Unit fixtures have their own entry rather than rebuilding the gameplay program.
 ## State and presentation lifetimes
 
 State belongs to the owner of its meaning, not automatically to the tab, pane or
-window that currently presents it. Canonical text models own source; contribution
-contexts own authored subjects, queries or inspection sessions and their
-meaningful selections and source/session correspondence.
+window that currently presents it. Presentation containment does not establish
+semantic ownership. Canonical text models own source; source-derived projections
+follow their producing model and generation. Contribution contexts own authored
+subjects, queries or inspection sessions and their meaningful selections and
+source/session correspondence.
 Retained view state owns a particular presentation's reading intent. Attached
 controls own focus, drafts, gestures and transient UI; containers own placement
 and membership. Sharing a model does not implicitly share selection or view state.
-These are distinct lifetimes, not a universal state registry or a requirement to
-retain every control after it is hidden.
+Dependencies and explicit consumers determine retention, not whether a tab is
+visible. These are distinct lifetimes, not a universal state registry or a
+requirement to retain every control after it is hidden.
 
 Navigation records a location supplied by the actual active owner: a document
 group or Main's primary contribution. Its bounded shared history owns inert

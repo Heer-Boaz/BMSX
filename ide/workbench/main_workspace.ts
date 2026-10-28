@@ -18,6 +18,9 @@ import { Scrollbar } from './ui/scrollbar';
 import { ScrollbarController } from './ui/scrollbar_controller';
 import { beginNavigationCapture, completeNavigation, NavigationHistoryEntry, navigationState, type PrimaryNavigationLocation } from '../navigation/navigation_history';
 import type { SerializedMainWorkspace, SerializedPrimaryClient } from './common/main_workspace_serialization';
+import type { EditorSourceLocationRequest } from '../editor/navigation/source_location';
+import type { SourceNavigationCaptureOptions, SourceNavigationOrigin } from './services/editor/source_navigation';
+import type { EditorGroupView } from './services/editor/editor_group';
 
 /** A contribution owns its subject, editing context and concrete controls, not a document tab. */
 export interface MainWorkspaceClient {
@@ -25,6 +28,8 @@ export interface MainWorkspaceClient {
 	readonly scope: InputFocusScope;
 	readonly commandTarget: InputFocusTarget;
 	readonly minimumWidth: number;
+	readonly canOpenSource?: boolean;
+	captureSourceLocation?(): EditorSourceLocationRequest | undefined;
 	serialize(): SerializedPrimaryClient;
 	onDidChange(listener: () => void): () => void;
 	captureNavigationLocation(): PrimaryNavigationLocation | undefined;
@@ -98,12 +103,13 @@ export class MainWorkspace {
 	private requestRevision = 0;
 	private presented = true;
 	private resetting = false;
+	private sourceOpeningRevision = 0;
 	public get primary(): MainWorkspaceClient | undefined { return this.primaryValue; }
 
 	public constructor(private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, parent: InputFocusScope,
 		commands: EditorCommandRunner,
 		private readonly requestLayout: () => void, private readonly onPrimaryActivate: () => void,
-		private readonly onDocumentsActivate: (focus: boolean) => void) {
+		private readonly onDocumentsActivate: (focus: boolean) => void, private readonly documentAnchor: () => EditorGroupView) {
 		this.scope = new InputFocusScope(Symbol('main workspace'), parent);
 		this.scope.commands = commands;
 		this.primaryScope = new InputFocusScope(Symbol('main authored client'), this.scope);
@@ -165,6 +171,27 @@ export class MainWorkspace {
 	}
 
 	public onDidChange(listener: () => void): () => void { this.changeListeners.add(listener); return () => this.changeListeners.delete(listener); }
+	/** Claim even retired primary targets; they must never fall through to document authority. */
+	public isPrimaryTarget(target: InputFocusTarget | null): boolean {
+		return target !== null && this.primaryScope.contains(target.commandContext.scope);
+	}
+	public canOpenSource(target: InputFocusTarget): boolean {
+		const client = this.primaryValue;
+		return this.presented && !this.surface.retired && !this.resetting && client !== undefined && this.attached === client
+			&& client.scope.contains(target.commandContext.scope) && client.canOpenSource === true;
+	}
+	public captureSourceNavigation(options: SourceNavigationCaptureOptions = {}): SourceNavigationOrigin | undefined {
+		const client = this.primaryValue;
+		if (client === undefined || !this.canOpenSource(options.target ?? client.commandTarget)) return;
+		const source = client.captureSourceLocation?.();
+		if (source === undefined) return;
+		const commandTarget = client.commandTarget, scope = commandTarget.scope, context = scope.contextGeneration;
+		const generation = ++this.sourceOpeningRevision;
+		const current = () => this.presented && !this.surface.retired && !this.resetting && this.primaryValue === client && this.attached === client
+			&& this.sourceOpeningRevision === generation && scope.contextGeneration === context && source.isCurrent?.() !== false;
+		return { commandTarget, anchor: this.documentAnchor(), readLocation: options.readLocation ?? source.readLocation,
+			isCurrent: current, isCurrentAfterHandoff: current, beginResolution: current };
+	}
 	public onWillDispose(listener: () => void): () => void { this.disposalListeners.add(listener); return () => this.disposalListeners.delete(listener); }
 	private changed(): void { for (const listener of this.changeListeners) listener(); }
 

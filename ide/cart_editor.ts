@@ -460,7 +460,8 @@ export class RuntimeCartEditor implements CartEditor {
 
 		this.mainWorkspace = new MainWorkspace(this.surfaces, chromeSurface, inputFocus.workbenchScope, this.commands,
 			() => this.layoutMainEditor(), () => this.editorParts.activate(this.editorParts.main, this.mainWorkspace),
-			focus => { if (focus) this.editorParts.main.focus(); else this.editorParts.activate(this.editorParts.main); });
+			focus => { if (focus) this.editorParts.main.focus(); else this.editorParts.activate(this.editorParts.main); },
+			() => this.editorParts.main.activeGroup);
 		this.editorParts = new EditorParts({
 			surfaces: this.surfaces, owner: chromeSurface, scope: inputFocus.workbenchScope, workArea,
 			mainPresentation: this.mainWorkspace,
@@ -627,7 +628,7 @@ export class RuntimeCartEditor implements CartEditor {
 		};
 		this.scenePrimaryOptions = {
 			commands: this.commands, sources: this.sources, contextMenu: this.contextMenu, surfaces: this.surfaces,
-			workArea: getWorkbenchWorkArea(), navigation: this.navigation, parts: this.editorParts, main: this.mainWorkspace,
+			workArea: getWorkbenchWorkArea(), main: this.mainWorkspace,
 			restoreNavigation: this.restoreSceneNavigation,
 			save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
 		};

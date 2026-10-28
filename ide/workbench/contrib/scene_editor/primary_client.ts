@@ -1,16 +1,13 @@
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import type { FocusCommand, InputFocusScope } from '../../../input/focus';
+import type { InputFocusScope } from '../../../input/focus';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { MainWorkspace, MainWorkspaceClient } from '../../main_workspace';
 import type { ContextMenuController } from '../../services/context_menu/controller';
-import type { EditorParts } from '../../services/editor/editor_parts';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
-import type { EditorNavigationController } from '../resources/navigation';
-import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
 import { SceneAuthoringContext, type SceneAuthoredSubject } from './authoring_context';
 import type { SceneSourceDocuments } from './source_documents';
 import { captureScenePrimary } from './primary_snapshot';
@@ -31,8 +28,6 @@ export type ScenePrimaryClientOptions = {
 	readonly owner: WorkbenchSurface;
 	readonly workArea: Readonly<RectBounds>;
 	readonly scope: InputFocusScope;
-	readonly navigation: EditorNavigationController;
-	readonly parts: EditorParts;
 	readonly main: MainWorkspace;
 	readonly restoreNavigation: RestoreScenePrimaryBookmark;
 	save(model: EditorTextModel): void;
@@ -50,32 +45,6 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		this.view = new SceneEditorViewState(consumer);
 		this.control = new SceneEditorControl(options.commands, options.sources, options.contextMenu,
 			options.surfaces, options.owner, options.workArea, options.scope);
-		for (const command of ['editor.source', 'editor.sourceToSide'] as const) {
-			const action: FocusCommand = {
-				isEnabled: () => this.control.hasView && consumer.getSourceLocation() !== undefined,
-				run: () => {
-					const intent = consumer.selectionRevision, generation = this.control.inputScope.contextGeneration;
-					const location = consumer.getSourceLocation();
-					if (location === undefined) return;
-					const current = () => consumer.isCurrent && !this.disposed && this.control.hasView
-						&& this.control.inputScope.contextGeneration === generation && consumer.selectionRevision === intent && location.model.version === location.modelVersion;
-					if (!current()) return;
-					const origin = options.parts.main.activeGroup;
-					const target = command === 'editor.source' ? origin : options.parts.sideGroup(origin);
-					if (target === undefined) return;
-					void options.navigation.openResource(target, location.model.resource, {
-						editorId: WORKBENCH_TEXT_EDITOR_ID, selection: location.selection === undefined ? undefined : { ...location.selection, generation: location },
-						isCurrent: current,
-					});
-				},
-				capture: () => {
-					const intent = consumer.selectionRevision, generation = this.control.inputScope.contextGeneration;
-					const current = () => !this.disposed && this.control.inputScope.contextGeneration === generation && consumer.selectionRevision === intent;
-					return { isEnabled: () => current() && action.isEnabled(), run: () => { if (current()) action.run(); } };
-				},
-			};
-			this.control.focusTarget.registerCommand(command, action);
-		}
 		this.control.focusTarget.registerCommand('save', {
 			isEnabled: () => this.control.hasView && !consumer.workingCopy.readOnly,
 			run: () => options.save(consumer.workingCopy),
@@ -91,6 +60,8 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	}
 
 	public get commandTarget() { return this.control.focusTarget; }
+	public get canOpenSource(): boolean { return !this.disposed && this.control.canOpenSource; }
+	public captureSourceLocation() { return this.control.captureSourceLocation(); }
 	public get minimumWidth(): number { return measureSceneEditorMinimumWidth(); }
 	public isCurrent(): boolean { return !this.disposed && this.consumer.isCurrent && this.consumer.availability === 'available'; }
 	public attach(bounds: Readonly<RectBounds>): void { this.control.setView(this.view, bounds); this.control.layout(bounds); }

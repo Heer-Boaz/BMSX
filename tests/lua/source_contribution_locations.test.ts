@@ -90,7 +90,8 @@ for (const kind of ['scene', 'behavior', 'animation'] as const)
 	});
 
 test('generic Source enablement follows the contribution selection capability without producing a location', async t => {
-	const f = fixture(t), { pane } = openVisual(f, 'scene'), source = t.mock.method(pane, 'getSourceLocation');
+	const f = fixture(t), { pane, input } = openVisual(f, 'scene'); assert.ok(input instanceof SceneEditorInput);
+	const source = t.mock.method(input.view.authoring, 'getSourceLocation');
 	assert.equal(pane.canOpenSource, true);
 	let available = false;
 	t.mock.getter(pane, 'canOpenSource', () => available);
