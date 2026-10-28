@@ -3,13 +3,14 @@ import { create_rect_bounds, write_rect_bounds } from '../../../machine/ts/commo
 import { editorCommandTitle } from '../../commands/catalog';
 import type { EditorCommandId } from '../../common/commands';
 import { WORKBENCH_MENUS, type WorkbenchActionMenuId, type WorkbenchMenuCommandItem, type WorkbenchMenuItem } from './menu/registry';
+import type { WorkbenchMenuEntry, WorkbenchMenuPresentation, WorkbenchMenuProjection } from './menu/model';
+import { WorkbenchActionBarPresentation } from './action_bar_presentation';
 import type { BFont } from '../../../machine/ts/render/shared/bitmap_font';
 import { WORKBENCH_ICON_SIZE, type WorkbenchIcon } from './icon';
 
 export const WORKBENCH_ACTION_BAR_ITEM_PADDING_X = 3;
 export const WORKBENCH_ACTION_BAR_ITEM_SPACING = 2;
 export const WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH = WORKBENCH_ICON_SIZE + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2;
-const SECONDARY_GROUP: WorkbenchMenuItem = { type: 'separator' };
 
 export const WORKBENCH_ACTION_BAR_OVERFLOW = Symbol('actionbar overflow');
 export type WorkbenchActionBarAction = EditorCommandId | typeof WORKBENCH_ACTION_BAR_OVERFLOW;
@@ -17,6 +18,7 @@ export type WorkbenchActionBarAction = EditorCommandId | typeof WORKBENCH_ACTION
 export type WorkbenchActionBarItem<Command = EditorCommandId> = {
 	readonly command: Command;
 	readonly menuItem?: WorkbenchMenuCommandItem;
+	readonly menuEntry?: WorkbenchMenuEntry;
 	label: string;
 	tooltip: string;
 	icon?: WorkbenchIcon;
@@ -33,11 +35,14 @@ export type WorkbenchActionBarItem<Command = EditorCommandId> = {
 
 export type WorkbenchActionBarState = {
 	readonly items: readonly WorkbenchActionBarItem[];
+	readonly menu: WorkbenchMenuProjection | undefined;
+	readonly presentation: WorkbenchActionBarPresentation;
 	readonly bounds: RectBounds;
 	readonly overflow?: {
 		readonly button: WorkbenchActionBarItem<typeof WORKBENCH_ACTION_BAR_OVERFLOW>;
 		readonly items: WorkbenchMenuItem[];
 		readonly secondary: readonly WorkbenchMenuItem[] | undefined;
+		readonly secondaryMenu: WorkbenchMenuPresentation | undefined;
 	};
 	layoutRevision: number;
 	hoveredCommand: WorkbenchActionBarAction | null;
@@ -48,33 +53,49 @@ export type WorkbenchActionBarState = {
 	measuredBy: ((text: string) => number) | undefined;
 };
 
-/** Materializes a named menu once into retained view-title action state. */
-export function createWorkbenchActionBar(menuId: WorkbenchActionMenuId, responsive = false, secondary?: readonly WorkbenchMenuItem[]): WorkbenchActionBarState {
-	const menu = WORKBENCH_MENUS[menuId];
-	const items = new Array<WorkbenchActionBarItem>(menu.length);
-	for (let index = 0; index < menu.length; index += 1) {
-		const contribution = menu[index];
-		items[index] = {
+/** Materializes static or context-bound placements once into retained action state. */
+export function createWorkbenchActionBar(source: WorkbenchActionMenuId | WorkbenchMenuProjection, responsive = false,
+	secondary?: readonly WorkbenchMenuItem[] | WorkbenchMenuPresentation): WorkbenchActionBarState {
+	const menu = typeof source === 'string' ? undefined : source;
+	const named = typeof source === 'string' ? WORKBENCH_MENUS[source] : undefined;
+	const count = menu === undefined ? named!.length : menu.entries.length;
+	const items: WorkbenchActionBarItem[] = [];
+	for (let index = 0; index < count; index += 1) {
+		const entry = menu?.entries[index];
+		const contribution = entry === undefined ? named![index] : entry.item;
+		if (contribution.type === 'separator') continue;
+		items.push({
 			command: contribution.command,
 			menuItem: contribution,
+			menuEntry: entry,
 			label: editorCommandTitle(contribution.command, false, true),
 			tooltip: editorCommandTitle(contribution.command, false),
 			icon: contribution.icon,
 			checkedIcon: contribution.checkedIcon,
 			showLabel: contribution.showLabel,
 			bounds: create_rect_bounds(),
-			visible: true,
+			visible: entry === undefined || entry.visible,
 			overflowed: false,
 			enabled: false,
 			checked: false,
 			width: 0,
 			measuredLabel: '',
-		};
+		});
 	}
-	return { items, bounds: create_rect_bounds(), overflow: responsive ? {
-		button: { command: WORKBENCH_ACTION_BAR_OVERFLOW, label: 'More Actions', tooltip: 'More Actions', icon: 'more', bounds: create_rect_bounds(),
-			visible: false, overflowed: false, enabled: true, checked: false, width: 0, measuredLabel: '' }, items: [], secondary,
-	} : undefined, layoutRevision: 0, hoveredCommand: null, pressedCommand: null, focusedIndex: -1, hasFocus: false, measuredFont: null, measuredBy: undefined };
+	let secondaryItems: readonly WorkbenchMenuItem[] | undefined;
+	let secondaryMenu: WorkbenchMenuPresentation | undefined;
+	if (secondary !== undefined) {
+		if ('visibleItems' in secondary) { secondaryMenu = secondary; secondaryItems = secondary.visibleItems; }
+		else secondaryItems = secondary;
+	}
+	const button: WorkbenchActionBarItem<typeof WORKBENCH_ACTION_BAR_OVERFLOW> | undefined = responsive ? {
+		command: WORKBENCH_ACTION_BAR_OVERFLOW, label: 'More Actions', tooltip: 'More Actions', icon: 'more', bounds: create_rect_bounds(),
+		visible: false, overflowed: false, enabled: true, checked: false, width: 0, measuredLabel: '',
+	} : undefined;
+	const presentation = new WorkbenchActionBarPresentation(items, menu, secondaryItems, secondaryMenu, button);
+	return { items, menu, presentation, bounds: create_rect_bounds(), overflow: button === undefined ? undefined : {
+		button, items: presentation.visibleItems, secondary: secondaryItems, secondaryMenu,
+	}, layoutRevision: 0, hoveredCommand: null, pressedCommand: null, focusedIndex: -1, hasFocus: false, measuredFont: null, measuredBy: undefined };
 }
 
 export function layoutWorkbenchActionBar(
@@ -86,8 +107,11 @@ export function layoutWorkbenchActionBar(
 	font: BFont | null,
 	left: number,
 ): void {
+	state.presentation.refresh();
+	let changed = false;
 	const remeasure = state.measuredFont !== font || state.measuredBy !== measure;
 	for (const item of state.items) {
+		if (item.menuEntry !== undefined && item.visible !== item.menuEntry.visible) { item.visible = item.menuEntry.visible; changed = true; }
 		if (item.icon !== undefined && !item.showLabel) {
 			item.width = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, bottom - top);
 		} else if (remeasure || item.measuredLabel !== item.label) {
@@ -99,15 +123,9 @@ export function layoutWorkbenchActionBar(
 	state.measuredFont = font;
 	state.measuredBy = measure;
 	const overflow = state.overflow;
-	let changed = false, firstOverflow = state.items.length;
+	let firstOverflow = state.items.length;
 	if (overflow !== undefined) {
-		let hasSecondary = false;
-		if (overflow.secondary !== undefined) for (const entry of overflow.secondary) {
-			if (entry.type === 'separator') continue;
-			let primary = false;
-			for (const item of state.items) if (item.visible && item.command === entry.command) { primary = true; break; }
-			if (!primary) { hasSecondary = true; break; }
-		}
+		const hasSecondary = state.presentation.hasSecondaryActions();
 		let width = 0, count = 0;
 		for (const item of state.items) if (item.visible) { width += item.width; count++; }
 		width += Math.max(0, count - 1) * WORKBENCH_ACTION_BAR_ITEM_SPACING;
@@ -122,30 +140,14 @@ export function layoutWorkbenchActionBar(
 				if (remaining < 0) { firstOverflow = index; break; }
 			}
 		}
-		let secondary = 0;
 		for (let index = 0; index < state.items.length; index++) {
 			const item = state.items[index], overflowed = item.visible && index >= firstOverflow;
 			if (item.overflowed !== overflowed) { item.overflowed = overflowed; changed = true; }
-			if (overflowed) {
-				if (overflow.items[secondary] !== item.menuItem) { overflow.items[secondary] = item.menuItem!; changed = true; }
-				secondary++;
-			}
 		}
-		let separator: WorkbenchMenuItem | undefined = secondary === 0 ? undefined : SECONDARY_GROUP;
-		if (overflow.secondary !== undefined) for (const entry of overflow.secondary) {
-			if (entry.type === 'separator') { if (secondary !== 0) separator = entry; continue; }
-			let primary = false;
-			for (const item of state.items) if (item.visible && item.command === entry.command) { primary = true; break; }
-			if (primary) continue;
-			if (separator !== undefined) {
-				if (overflow.items[secondary] !== separator) { overflow.items[secondary] = separator; changed = true; }
-				secondary++; separator = undefined;
-			}
-			if (overflow.items[secondary] !== entry) { overflow.items[secondary] = entry; changed = true; }
-			secondary++;
-		}
-		if (overflow.items.length !== secondary) { overflow.items.length = secondary; changed = true; }
-		const visible = secondary !== 0;
+		const revision = state.presentation.revision;
+		state.presentation.updateOverflow();
+		if (revision !== state.presentation.revision) changed = true;
+		const visible = overflow.items.length !== 0;
 		if (overflow.button.visible !== visible) { overflow.button.visible = visible; changed = true; }
 		const button = overflow.button;
 		if (button.bounds.left !== right - button.width || button.bounds.top !== top || button.bounds.right !== right || button.bounds.bottom !== bottom) changed = true;

@@ -4,7 +4,6 @@ import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
-import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -171,17 +170,9 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	private layoutInput(): void {
 		const input = this.input;
 		updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
-		for (const item of input.actionBar.items) {
-			item.visible = item.command === 'luaProgram.authoring' ? input.liveVisible
-				: item.command === 'luaProgram.live' ? !input.liveVisible
-				: item.command === 'luaProgram.add' || item.command === 'luaProgram.edit' ? !input.liveVisible : true;
-		}
 		const header = input.liveVisible ? input.instanceLabel : input.title;
 		const changed = this.headerSource !== header || this.headerLive !== input.liveVisible || this.headerFont !== editorViewState.font;
 		if (changed) this.headerNaturalWidth = measureText(header);
-		let secondary = 0;
-		for (const item of WORKBENCH_MENUS['luaProgram.context']) if (item.type === 'separator' || this.commands.isEnabled(item.command, this.focusTarget)) input.secondaryActions[secondary++] = item;
-		input.secondaryActions.length = secondary;
 		const left = clamp(input.layout.left + 4, input.layout.left, input.layout.right), right = clamp(input.layout.right - 4, left, input.layout.right);
 		const actionLeft = clamp(input.layout.left + this.headerNaturalWidth + 12, left, Math.max(left, right - 4 - Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, input.layout.rowHeight + 4)));
 		layoutWorkbenchActionBar(input.actionBar, right, input.layout.top, Math.min(input.layout.bottom, input.layout.top + input.layout.rowHeight + 4), measureText, editorViewState.font.renderFont(), actionLeft);
@@ -247,8 +238,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		this.pointer.hideFeedback();
 		const input = this.input;
 		input.interaction.running = false;
-		const items = WORKBENCH_MENUS['luaProgram.context'].filter(item => item.type !== 'command' || this.commands.isEnabled(item.command, this.focusTarget));
-		this.contextMenu.show(x, y, items, this.commands, { selectFirst: keyboard, commandTarget: this.focusTarget,
+		this.contextMenu.show(x, y, input.contextActions, this.commands, { selectFirst: keyboard, commandTarget: this.focusTarget,
 			onWillShow: lifetime => lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.contextMenu.hide()) }) });
 	}
 	public handleWheel(event: WheelInputSnapshot): void {

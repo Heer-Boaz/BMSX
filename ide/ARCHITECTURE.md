@@ -268,6 +268,11 @@ destination group and surviving input before retiring the old view.
 
 Shared window/control code owns presentation and input mechanics. Contributions
 own their subjects and register their commands on the appropriate focus target.
+Feature-owned menu definitions bind placement predicates to the retained subject;
+the shared menu projection publishes membership before toolbar geometry. Command
+enablement remains separate from placement, and popup invocation/lifetime stays
+with the context-menu owner. The static menu registry has no domain-state lookup
+or mutable contribution-registration lifecycle.
 `input/` owns keyboard focus and pointer-gesture routing independently of which
 view or physical target happens to be active. Each frontend owns its central
 keybinding controller and pending chord lifetime. Binding metadata supplies

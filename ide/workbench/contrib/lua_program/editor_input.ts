@@ -5,7 +5,8 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
 import { createWorkbenchPropertyTree } from '../../ui/property_tree';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
-import type { WorkbenchMenuItem } from '../../ui/menu/registry';
+import { WorkbenchMenu } from '../../ui/menu/model';
+import { LUA_PROGRAM_TITLE_ACTIONS, LUA_PROGRAM_CONTEXT_ACTIONS } from './menus';
 import type { LuaProgramKind, LuaProgramOccurrence, LuaProgramProperty } from './source';
 import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
@@ -45,8 +46,8 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	public stateHashId = 0;
 	public stateRevision = -1;
 	public status = '';
-	public readonly secondaryActions: WorkbenchMenuItem[] = [];
-	public readonly actionBar = createWorkbenchActionBar('luaProgram.title', true, this.secondaryActions);
+	public readonly contextActions = new WorkbenchMenu(LUA_PROGRAM_CONTEXT_ACTIONS, this);
+	public readonly actionBar = createWorkbenchActionBar(new WorkbenchMenu(LUA_PROGRAM_TITLE_ACTIONS, this), true, this.contextActions);
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null, };
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly programKind: LuaProgramKind, span: TrackedTextRange, guest: SuspendedGuestSession,
 		createView?: (source: LuaProgramInput) => LuaProgramInput) {

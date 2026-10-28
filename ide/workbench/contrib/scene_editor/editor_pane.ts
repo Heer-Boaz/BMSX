@@ -36,7 +36,6 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { SceneOutlineFeedback } from './feedback';
-import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
@@ -364,7 +363,7 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	private openContextMenu(x: number, y: number, origin: InputFocusTarget, keyboard = false): void {
 		const input = this.input, version = input.workingCopy.version, selected = input.outline.rows[input.outline.selectionIndex];
 		this.identityFeedback.clear(); this.actionTooltip.hide(); this.sourceHovered = false;
-		this.contextMenu.show(x, y, WORKBENCH_MENUS['sceneEditor.context'], this.commands, {
+		this.contextMenu.show(x, y, input.contextActions, this.commands, {
 			selectFirst: keyboard, invocationOrigin: origin, returnFocus: origin, commandTarget: this.focusTarget,
 			onWillShow: lifetime => {
 				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });

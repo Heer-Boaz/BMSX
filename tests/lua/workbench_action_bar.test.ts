@@ -222,7 +222,7 @@ test('blur, capture replacement, blocking, lost input and input detach cancel wi
 		() => elsewhere.focus(), () => f.capture.cancel(),
 		() => f.pointer(0, PRIMARY, 0, 0, true), () => f.pointer(0),
 		() => f.bar.clearInput(),
-		() => f.bar.setInput(createWorkbenchActionBar('sceneEditor.title'), f.content),
+		() => f.bar.setInput(createWorkbenchActionBar('window.title'), f.content),
 	]) {
 		f.bar.setInput(f.state, f.content); f.content.focus();
 		f.pointer(0, PRIMARY, PRIMARY); cancel();

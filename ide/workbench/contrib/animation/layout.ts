@@ -96,10 +96,6 @@ export function layoutAnimationEditor(input: AnimationEditorInput, bounds: Reado
 	layout.tracksVisible = expanded || input.activeClient === 'tracks';
 	layout.keysVisible = expanded || input.activeClient === 'keys';
 	layout.detailsVisible = expanded || input.activeClient === 'details';
-	for (const item of input.actionBar.items) {
-		if (item.command === 'animation.addFrame') item.visible = input.document?.family === 'sprite';
-		else if (item.command === 'animation.addTrack' || item.command === 'animation.addKey') item.visible = input.document?.family === 'timeline';
-	}
 	for (const item of input.clientBar.items) item.checked = item.command === `animation.${input.activeClient}`;
 	const selectorRight = bounds.left + PADDING + measured.selectorWidth;
 	layoutWorkbenchActionBar(input.clientBar, selectorRight, bounds.top, bounds.top + rowHeight, measureText, font.renderFont(), bounds.left + PADDING);

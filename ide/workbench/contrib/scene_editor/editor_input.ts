@@ -1,4 +1,5 @@
-import { WORKBENCH_MENUS } from '../../ui/menu/registry';
+import { WorkbenchMenu } from '../../ui/menu/model';
+import { SCENE_TITLE_ACTIONS, SCENE_CONTEXT_ACTIONS } from './menus';
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { LuaChunk, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -37,7 +38,8 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		roots: [], rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1,
 		layout: { contentLeft: 0, contentTop: 0, contentRight: 0, contentBottom: 0, rowHeight: 0, visibleRowCount: 0, indentWidth: 0, twistieWidth: 0 },
 	};
-	public readonly actionBar = createWorkbenchActionBar('sceneEditor.title', true, WORKBENCH_MENUS['sceneEditor.context']);
+	public readonly contextActions = new WorkbenchMenu(SCENE_CONTEXT_ACTIONS, this);
+	public readonly actionBar = createWorkbenchActionBar(new WorkbenchMenu(SCENE_TITLE_ACTIONS, this), true, this.contextActions);
 	private readonly selectionListeners = new Set<() => void>();
 
 	public onDidChangeSelection(listener: () => void): () => void {

@@ -25,6 +25,7 @@ import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
 
@@ -181,8 +182,18 @@ test('a sub-icon toolbar budget clips painted More geometry but keeps keyboard a
 });
 
 test('one More merges the overflowed primary suffix and authored secondary groups without duplicate commands or nested More', () => {
-	const state = createWorkbenchActionBar('animation.title', true, WORKBENCH_MENUS['animation.context']);
-	state.items.find(item => item.command === 'animation.addFrame')!.visible = false;
+	const context = { frames: false };
+	const primary = new WorkbenchMenu([
+		{ type: 'command', command: 'animation.addKey' },
+		{ type: 'command', command: 'animation.addTrack' },
+		{ type: 'command', command: 'animation.addFrame', when: context => context.frames },
+	], context);
+	const state = createWorkbenchActionBar(primary, true, [
+		{ type: 'command', command: 'animation.duplicate' },
+		{ type: 'command', command: 'animation.addFrame' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'editor.source' },
+	]);
 	const font = new Font({ variant: 'msx' }), measure = (text: string) => font.measure(text);
 	for (const width of [384, 118, 78, 384]) {
 		layoutWorkbenchActionBar(state, width - 4, 10, 22, measure, font, 36);

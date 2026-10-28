@@ -31,6 +31,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	private unbindPressBlur: (() => void) | undefined;
 	private readonly cancelPress = () => this.cancelPointer();
 	private layoutRevision = -1;
+	private presentationRevision = -1;
 	private overflowSession: DisposableStore | undefined;
 	private readonly itemCommands: EditorCommandId[] = [];
 
@@ -80,6 +81,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		this.focusTarget.release();
 		this.input = undefined;
 		this.layoutRevision = -1;
+		this.presentationRevision = -1;
 	}
 
 	public dispose(): void {
@@ -103,12 +105,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 
 	/** Revoke disabled attempts even when there is no new pointer or key event. */
 	public update(): void {
+		this.refreshPresentation();
 		const state = this.input!;
-		if (this.layoutRevision !== state.layoutRevision) {
-			this.layoutRevision = state.layoutRevision;
-			this.cancelPointer();
-			if (this.overflowSession !== undefined) this.contextMenu!.hide();
-		}
 		for (const item of state.items) {
 			item.enabled = item.visible && this.commands.isEnabled(item.command, this.focusTarget.commandContext);
 			item.tooltip = editorCommandTitle(item.command, item.checked);
@@ -118,6 +116,18 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		const selected = state.focusedIndex === state.items.length ? state.overflow?.button : state.items[state.focusedIndex];
 		if (state.hasFocus && (selected === undefined || !selected.visible || selected.overflowed || !selected.enabled)) {
 			this.moveFocus(1, state.focusedIndex === state.items.length ? -1 : state.focusedIndex);
+		}
+	}
+
+	/** Physical admission observes source retirement even before the next layout. */
+	private refreshPresentation(): void {
+		const state = this.input!;
+		state.presentation.refresh();
+		if (this.layoutRevision !== state.layoutRevision || this.presentationRevision !== state.presentation.revision) {
+			this.layoutRevision = state.layoutRevision;
+			this.presentationRevision = state.presentation.revision;
+			this.cancelPointer();
+			if (this.overflowSession !== undefined) this.contextMenu!.hide();
 		}
 	}
 
@@ -141,6 +151,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	public onPointerLeave(): void { this.input!.hoveredCommand = null; }
 
 	public handlePointer(snapshot: PointerSnapshot): boolean {
+		this.refreshPresentation();
 		const state = this.input!;
 		const index = this.hitTest(snapshot);
 		const item = index < 0 ? undefined : index === state.items.length ? state.overflow!.button : state.items[index];
@@ -224,7 +235,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	/** Named pane commands and physical More activation share the same owned popup. */
 	public openOverflow(): void {
 		const state = this.input!, overflow = state.overflow!;
-		this.contextMenu!.show(overflow.button.bounds.left, overflow.button.bounds.bottom, overflow.items,
+		this.contextMenu!.show(overflow.button.bounds.left, overflow.button.bounds.bottom, state.presentation,
 			this.commands, { placement: 'below', selectFirst: true, invocationOrigin: this.focusTarget,
 				commandTarget: this.focusTarget.commandContext, onWillShow: session => {
 				this.overflowSession = session;

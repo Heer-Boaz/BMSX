@@ -37,6 +37,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'parent.lua', location: { kind: 'workspace' as const, path: 'parent.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";
@@ -382,6 +383,25 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 		justPressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false }, !secondary, secondary, 0, false);
 	return { pane, input, menu, model, controller, picker, pointer, source, bounds, commands, group };
 }
+
+test('native timeline frames retain Add Frame in context and More independently of sprite title placement', async t => {
+	const source = 'return {frames={{x=1}}}', f = animationPane(t, 'tiny', source);
+	assert.equal(f.input.document!.family, 'timeline');
+	const list = f.input.tracks;
+	f.pointer(list.layout.contentRight - 2, list.layout.contentTop + 0.5 * list.layout.rowHeight);
+	assert.equal(f.menu.visible, true);
+	const index = f.menu.model.rows.findIndex(row => row.command === 'animation.addFrame');
+	assert.ok(index >= 0, 'native frame insertion remains an applicable secondary placement');
+	assert.equal(f.menu.model.rows[index].enabled, true);
+	assert.ok(f.input.actionBar.overflow!.items.some(item => item.type === 'command' && item.command === 'animation.addFrame'));
+	f.menu.model.selectedIndex = index; f.menu.accept();
+	assert.equal(f.picker.visible && f.picker.inputBox, true);
+	setFieldText(f.picker.field, '{x=2}', true); await f.picker.accept();
+	assert.equal(f.input.document!.frames.length, 2);
+	assert.equal(f.input.document!.family, 'timeline');
+	f.model.undo(); f.controller.refresh(f.input);
+	assert.equal(f.model.buffer.getText(), source, 'the ordinary native-frame operation retains canonical source Undo');
+});
 
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} Animation context follows the secondary-hit property, track and key without primary gestures`, t => {
 	const f = animationPane(t, variant), { pane, input, menu, controller } = f;

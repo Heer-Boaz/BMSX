@@ -10,6 +10,7 @@ import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keybo
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { WorkbenchMenuItem } from '../../ui/menu/registry';
+import type { WorkbenchMenuPresentation } from '../../ui/menu/model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { ContextMenuModel, type ContextMenuPlacement } from './model';
 import { layoutContextMenu } from './render';
@@ -41,6 +42,8 @@ type ContextMenuSession = {
 	readonly commandOrigin: InputFocusTarget | null;
 	readonly disposables: DisposableStore;
 	readonly presentation: DisposableStore;
+	readonly menu: WorkbenchMenuPresentation | undefined;
+	readonly menuRevision: number | undefined;
 	contextAdmitted: boolean;
 	unbindOrigin: (() => void) | undefined;
 };
@@ -78,7 +81,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 	public get returnFocus(): InputFocusTarget | null { return this.session!.returnFocus; }
 
 	/** Domain invalidation belongs in onWillShow, before departing focus can publish source changes. */
-	public show(x: number, y: number, items: readonly WorkbenchMenuItem[], commands: ContextMenuCommandRunner,
+	public show(x: number, y: number, source: readonly WorkbenchMenuItem[] | WorkbenchMenuPresentation, commands: ContextMenuCommandRunner,
 		options: ContextMenuOptions = {}): DisposableStore {
 		const request = ++this.requestRevision;
 		const disposables = new DisposableStore();
@@ -97,8 +100,11 @@ export class ContextMenuController implements PointerCaptureTarget {
 		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
 		this.capture.cancel();
 		if (request !== this.requestRevision) { disposables.dispose(); return disposables; }
+		const menu = 'visibleItems' in source ? source : undefined;
+		menu?.refresh();
+		const items = 'visibleItems' in source ? source.visibleItems : source;
 		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: returnOrigin, commandOrigin, disposables, options,
-			presentation: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined };
+			presentation: new DisposableStore(), menu, menuRevision: menu?.revision, contextAdmitted: true, unbindOrigin: undefined };
 		this.session = session;
 		this.focusTarget.scope.interactionOrigin = invocationOrigin?.scope;
 		session.unbindOrigin = commandOrigin?.commandContext.scope.onDidRetireContext(() => {
@@ -158,7 +164,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 
 	public update(): void {
 		const session = this.session;
-		if (session === undefined) return;
+		if (session === undefined || !this.refreshMembership(session)) return;
 		if (this.revision !== this.model.viewport.revision) {
 			this.cancelPointer();
 			this.revision = this.model.viewport.revision;
@@ -179,11 +185,23 @@ export class ContextMenuController implements PointerCaptureTarget {
 		if (this.model.selectedIndex >= 0 && !this.model.rows[this.model.selectedIndex].enabled) this.model.selectNext(1);
 	}
 
+	/** A popup's rows and armed gestures belong to the membership admitted at show. */
+	private refreshMembership(session: ContextMenuSession): boolean {
+		const menu = session.menu;
+		if (menu === undefined) return true;
+		menu.refresh();
+		if (menu.revision === session.menuRevision) return true;
+		if (this.session === session) this.hide();
+		return false;
+	}
+
 	public accept(): void {
+		const session = this.session!;
+		if (!this.refreshMembership(session)) return;
 		const index = this.model.selectedIndex;
 		if (index < 0) return;
 		const command = this.model.rows[index].command!;
-		const session = this.session!, { commands, commandOrigin } = session;
+		const { commands, commandOrigin } = session;
 		const enabled = commands.isEnabled(command, commandOrigin, session.options.editor);
 		if (this.session !== session || !enabled) return;
 		this.requestRevision++;
@@ -200,6 +218,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 	public cancelPointer(): void { this.capture.release(this); this.pressedIndex = -1; this.triggerKey = undefined; }
 
 	public handlePointer(snapshot: PointerSnapshot): boolean {
+		if (!this.refreshMembership(this.session!)) return true;
 		if (!snapshot.valid || !snapshot.insideViewport) return true;
 		const x = snapshot.viewportX;
 		const y = snapshot.viewportY;
@@ -233,12 +252,15 @@ export class ContextMenuController implements PointerCaptureTarget {
 	}
 
 	public handleCapturedPointer(snapshot: PointerSnapshot): void {
+		if (!this.refreshMembership(this.session!)) return;
 		const index = this.model.hitTest(snapshot.viewportX, snapshot.viewportY);
 		this.model.selectedIndex = index === this.pressedIndex ? index : -1;
 	}
 
 	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
+		const session = this.session;
 		this.handleCapturedPointer(snapshot);
+		if (this.session !== session) return;
 		this.cancelPointer();
 		if (this.model.selectedIndex >= 0) this.accept();
 	}
@@ -251,6 +273,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 	}
 
 	public handleKeyboard(input: KeyInputEvent): boolean {
+		if (!this.refreshMembership(this.session!)) { consumeIdeKey(input.code, input); return true; }
 		if (isKeyJustPressed('Escape', input) || isKeyJustPressed('Tab', input)) {
 			consumeIdeKey('Escape', input);
 			consumeIdeKey('Tab', input);

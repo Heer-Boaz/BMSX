@@ -37,7 +37,6 @@ import { AnimationLaneControl } from './lane_control';
 import { layoutAnimationEditor } from './layout';
 import { drawAnimationEditor } from './render';
 import { WorkbenchTooltip } from '../../ui/tooltip';
-import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { EditorNavigationController } from '../resources/navigation';
@@ -320,7 +319,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	private openContextMenu(x: number, y: number, origin: InputFocusTarget, keyboard = false): void {
 		this.keys.cancelPointer(); this.lanes.cancelPointer(); this.propertyPointer.hideFeedback(); this.actionTooltip.hide();
 		const input = this.input;
-		this.contextMenu.show(x, y, WORKBENCH_MENUS['animation.context'], this.commands, { selectFirst: keyboard, invocationOrigin: origin, returnFocus: origin, commandTarget: this.focusTarget,
+		this.contextMenu.show(x, y, input.contextActions, this.commands, { selectFirst: keyboard, invocationOrigin: origin, returnFocus: origin, commandTarget: this.focusTarget,
 			onWillShow: lifetime => { lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.contextMenu.hide()) }); },
 		});
 	}

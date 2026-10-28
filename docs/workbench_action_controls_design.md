@@ -1,4 +1,4 @@
-# Workbench action controls — audit A01
+# Workbench action controls
 
 ## Production contracts studied before implementation
 
@@ -17,8 +17,8 @@ state. A pane-owned `WorkbenchActionBarControl` owns physical interaction and
 attaches to that input-owned state. The existing `PointerCaptureService` owns
 delivery outside the button; `InputFocusService` owns keyboard focus. Rendering
 consumes retained state, using the existing tiny font and theme.
-This slice changes IDE controls only; machine state, guest ABI, cartlib and the
-mirrored TS/C++ runtime representations are unchanged.
+Controls do not own machine state, guest ABI, cartlib or mirrored TS/C++
+runtime representations.
 
 Physical focus and command context are distinct. Each `InputFocusTarget` names
 its command context explicitly (itself by default). A toolbar names its content
@@ -29,7 +29,7 @@ buttons preserve the focused field, including pending-value admission.
 
 Each contribution programs a retained focus order: content/toolbar for Lens,
 outline/scroll area/editable fields/toolbar for Scene (the scroll area is added
-by [A02](workbench_scroll_views_design.md) and skipped for empty content), tests/results/toolbar for Scenario
+by the [scroll container](workbench_scroll_views_design.md) and skipped for empty content), tests/results/toolbar for Scenario
 Lab, impacts/toolbar for Source Edit Review. Tab and Shift+Tab traverse controls;
 toolbar Left/Right and Home/End traverse enabled actions. Escape returns to its
 content control. FSM Up/Down traverse its already-retained nodes and relations;
@@ -64,62 +64,39 @@ the actual painted toolbar, including when every primary has moved to More.
 The popup belongs to the invoking source generation and retires on invalidation.
 It is not a separate contribution command or a second toolbar implementation.
 
-## Evidence gate
+## Contextual placement
 
-Independent control tests cover pointer and keyboard cancellation, disable during
-press, context isolation, reentrant navigation, input replacement and retained
-storage. Actual Studio workflows exercise the shared control in Lens, Scene,
-Scenario Lab and source review, on software, WebGL2 and WebGPU. Compilation alone
-does not close A01. Evidence and any untested limits are recorded below after
-validation. The remaining audit points retain their own gates and are not closed
-by this slice.
+Feature-owned immutable definitions declare `when(context)` over their actual
+retained input or view. A `WorkbenchMenu` binds that context once; binding does
+not evaluate predicates before the input has finished construction. Its retained
+projection owns membership and separator normalization, not the command registry,
+keyboard focus or a second domain-state store. Shared static menus remain
+immutable named contributions.
 
-## Validated implementation — 2026-09-10
+The content/layout producer publishes its mode and source state before the menu
+projection is refreshed and toolbar geometry is arranged. Layout consumes that
+membership instead of inspecting command IDs. The same bound context-menu
+projection supplies the primary overflow and the ordinary context popup;
+placements may have different predicates without redefining the command.
+Visibility is not enablement: an applicable action can remain visible and
+unavailable. Command admission is still checked against the actual invocation.
 
-The four title-action consumers use the shared control; the old hover-only
-pointer helper and feature-owned down-time dispatch have been removed. Focus
-context remains explicit, including when the command palette originates in a
-toolbar. Empty/read-only Scene inspectors skip their fields, not their toolbar.
-Scenario tests/results participate in actual focus traversal rather than a
-parallel feature-local Tab command.
+The toolbar owns overflow as a retained derived menu: its laid-out primary
+suffix plus the applicable secondary placements, deduplicated by command.
+Its revision observes both source menus. Input admission can retract a hidden
+primary immediately; only layout admits a newly visible primary's geometry.
 
-- `tests/lua/workbench_action_bar.test.ts`: 13 independent control/render tests.
-  Combined focus/action-registry/review/scenario selection run: 34 passed.
-- Full `tests/lua/*.test.ts`: 1249 passed, one pre-existing skip.
-- Actual Studio `--studio`: software, WebGL2, WebGPU passed. In particular,
-  Source and Remove cannot execute on down; canceling a Scene toolbar press
-  keeps its draft; a toolbar-origin palette retains graph command availability;
-  Scenario Run/Cancel and document Undo use their existing owners.
-- Actual Studio `--studio-fsm-retarget`: all three renderers passed, including
-  canceled Apply, keyboard-only Apply, impact Source, Discard, source history
-  and live Hot Resume on the retained guest actors.
-- Screenshots at logical 384x288 were inspected: tiny font, focus underline in
-  button padding, no overlapping labels. Hover, pressed, disabled and focus
-  produce distinct retained overlay commands; unchanged renders reuse storage.
-- IDE typecheck, browser Studio debug build, strict architecture boundaries
-  (zero issues), core parity and `git diff --check` passed. The broader tests
-  typecheck retains its 51 existing diagnostics, with no new diagnostics.
+Membership changes have a structural revision even when the final geometry is
+unchanged. A hidden action's armed gesture is revoked; hiding and showing it
+before key-up cannot revive the press. An owned popup retires on a membership
+change without closing a newer unrelated popup or stealing its focus. Existing
+source/context retirement remains independent of presentation membership.
+Unchanged refreshes reuse entry and visible-item storage and do not remeasure
+unchanged labels.
 
-Reproduction (Playwright module location is host-specific):
-
-```sh
-npx tsx --tsconfig tsconfig.base.json --test --import ./tests/lua/test_setup.ts tests/lua/*.test.ts
-BMSX_PLAYWRIGHT_MODULE=/tmp/bmsx-browser-tools/node_modules/playwright/index.mjs \
-  node tests/conformance/runtime_replay/browser.mjs --studio \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-a01/final-studio.png
-BMSX_PLAYWRIGHT_MODULE=/tmp/bmsx-browser-tools/node_modules/playwright/index.mjs \
-  node tests/conformance/runtime_replay/browser.mjs --studio-fsm-retarget \
-  dist/bmsx-bios.debug.rom dist/nemesis_s.debug.rom /tmp/bmsx-a01/final-review.png
-```
-
-Logs/screenshots: `/tmp/bmsx-a01/`. These runs include expected source-fetch 404s
-and deliberate compile/guest-fault cases; they are not claimed as a console
-without error messages. The harness gates unexpected host/guest failures.
-
-The existing independent FSM review benchmark retained rows, measurement results
-and quad storage. Review rendering plus quad submission measured about 22.9/23.1
-microseconds for fixtures with 32/1024 registrations. This is **not** a baseline
-comparison, heap/GC measurement, GPU raster measurement or complete Studio-frame
-budget; audit A08 remains open. The action-control hot path adds no item arrays,
-per-frame subscriptions/closures or source/layout work. Gesture subscriptions
-are created and removed only for actual pointer attempts.
+This separation follows VS Code's
+[menu contribution visibility](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/platform/actions/common/actions.ts),
+[contextual menu projection](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/platform/actions/common/menuService.ts)
+and [menu-driven toolbar](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/platform/actions/browser/toolbar.ts).
+Studio uses typed predicates and its existing control lifetimes, not VS Code's
+context-key service or mutable extension-registration machinery.

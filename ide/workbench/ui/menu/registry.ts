@@ -9,9 +9,9 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.tools'
 	| 'menubar.window';
 
-export type WorkbenchContextMenuId = 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'sceneEditor.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'buildLog.title' | 'window.status' | 'window.title' | 'play.title' | 'animation.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'buildLog.title' | 'window.status' | 'window.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -68,14 +68,11 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'behaviorLens.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.properties.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'aem.title': readonly WorkbenchMenuCommandItem[];
-	readonly 'luaProgram.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'gamePanel.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'runtime.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'editorTabs.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'cartMap.title': readonly WorkbenchMenuCommandItem[];
-	readonly 'animation.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'animation.clients': readonly WorkbenchMenuCommandItem[];
-	readonly 'sceneEditor.title': readonly WorkbenchMenuCommandItem[];
 };
 
 const WINDOW_CONTEXT_ACTIONS: readonly WorkbenchMenuItem[] = [
@@ -189,33 +186,10 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'play.details' },
 	],
-	'animation.title': [
-		{ type: 'command', command: 'animation.addKey' },
-		{ type: 'command', command: 'animation.addTrack' },
-		{ type: 'command', command: 'animation.addFrame' },
-	],
 	'animation.clients': [
 		{ type: 'command', command: 'animation.tracks' },
 		{ type: 'command', command: 'animation.keys' },
 		{ type: 'command', command: 'animation.details' },
-	],
-	'animation.context': [
-		{ type: 'command', command: 'animation.duplicate' },
-		{ type: 'command', command: 'animation.earlier' },
-		{ type: 'command', command: 'animation.later' },
-		{ type: 'command', command: 'animation.addClip' },
-		{ type: 'command', command: 'animation.addFrame' },
-		{ type: 'command', command: 'animation.addProperty' },
-		{ type: 'command', command: 'animation.openClip' },
-		{ type: 'separator' },
-		{ type: 'command', command: 'animation.fit' },
-		{ type: 'command', command: 'animation.snap' },
-		{ type: 'command', command: 'animation.edit' },
-		{ type: 'command', command: 'animation.remove' },
-		{ type: 'command', command: 'editor.source' },
-		{ type: 'command', command: 'editor.sourceToSide' },
-		{ type: 'command', command: 'animation.producerSource' },
-		{ type: 'command', command: 'animation.producerSourceToSide' },
 	],
 	'behaviorLens.graph.actions': [
 		{ type: 'command', command: 'editor.sourceToSide' },
@@ -581,13 +555,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'aem.apply' },
 		{ type: 'command', command: 'aem.testEvent' },
 	],
-	'luaProgram.title': [
-		{ type: 'command', command: 'luaProgram.add' },
-		{ type: 'command', command: 'luaProgram.edit' },
-		{ type: 'command', command: 'editor.source' },
-		{ type: 'command', command: 'luaProgram.live' },
-		{ type: 'command', command: 'luaProgram.authoring' },
-	],
 	'gamePanel.title': [{ type: 'command', command: 'gameView.closePanel', icon: 'close' }],
 	'runtime.title': [
 		{ type: 'command', command: 'stepFrameBack', icon: 'stepBack' },
@@ -606,17 +573,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'aem.apply' },
 		{ type: 'command', command: 'aem.testEvent' },
 	],
-	'luaProgram.context': [
-		{ type: 'command', command: 'luaProgram.add' },
-		{ type: 'command', command: 'luaProgram.edit' },
-		{ type: 'command', command: 'luaProgram.remove' },
-		{ type: 'command', command: 'editor.source' },
-		{ type: 'command', command: 'editor.sourceToSide' },
-		{ type: 'command', command: 'luaProgram.live' },
-		{ type: 'command', command: 'luaProgram.authoring' },
-		{ type: 'command', command: 'luaProgram.selectInstance' },
-		{ type: 'command', command: 'luaProgram.testInput' },
-	],
 	'behaviorLens.properties.title': [
 		{ type: 'command', command: 'editor.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeEffect' },
@@ -631,22 +587,5 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'buildLog.output' },
 		{ type: 'command', command: 'buildLog.refresh', icon: 'refresh' },
 		{ type: 'command', command: 'buildLog.copyAll', icon: 'copy' },
-	],
-	'sceneEditor.context': [
-		{ type: 'command', command: 'sceneEditor.details' },
-		{ type: 'command', command: 'editor.source' },
-		{ type: 'command', command: 'editor.sourceToSide' },
-		{ type: 'separator' },
-		{ type: 'command', command: 'sceneEditor.moveMemberUp' },
-		{ type: 'command', command: 'sceneEditor.moveMemberDown' },
-		{ type: 'command', command: 'sceneEditor.removeMember' },
-	],
-	'sceneEditor.title': [
-		{ type: 'command', command: 'sceneEditor.details', icon: 'info' },
-		{ type: 'command', command: 'sceneEditor.outline', icon: 'back' },
-		{ type: 'command', command: 'editor.source' },
-		{ type: 'command', command: 'sceneEditor.moveMemberUp' },
-		{ type: 'command', command: 'sceneEditor.moveMemberDown' },
-		{ type: 'command', command: 'sceneEditor.removeMember' },
 	],
 };

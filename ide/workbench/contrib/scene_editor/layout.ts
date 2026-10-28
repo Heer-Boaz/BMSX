@@ -53,10 +53,6 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 			clampWorkbenchListScroll(input.outline);
 			layoutSceneOutlineNodes(input.outline.roots, treeLayout);
 		}
-		for (const item of input.actionBar.items) {
-			if (item.command === 'sceneEditor.details') item.visible = mode === 'outline';
-			else if (item.command === 'sceneEditor.outline') item.visible = mode === 'details';
-		}
 		const caption = input.sourceCaption;
 		const iconWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, rowHeight);
 		const actionWidth = mode === 'split' ? iconWidth : iconWidth * 2 + WORKBENCH_ACTION_BAR_ITEM_SPACING;
