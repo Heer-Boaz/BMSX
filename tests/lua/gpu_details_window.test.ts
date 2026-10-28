@@ -272,6 +272,49 @@ for (const variant of ['tiny', 'msx'] as const) test(`GPU ${variant} diagram kee
 	assert.equal(input.selected.sequence, 0);
 });
 
+for (const variant of ['tiny', 'msx'] as const) for (const route of ['direct', 'local command'] as const) test(`GPU ${variant} ${route} View chooser retains its captured observation while the live history wraps`, t => {
+	const f = fixture(t, variant), { input, details, picker, history } = f;
+	input.following = true; details.show();
+	const sequence = input.selected.sequence, cycles = input.selected.cycles, selectionRevision = input.selectionRevision;
+	const words = Array.from(input.selected.words.subarray(0, input.selected.wordCount));
+	if (route === 'direct') details.chooseView();
+	else inputFocus.executeCommand('gpu.view', details.inspector.focusTarget);
+	assert.equal(picker.visible, true);
+	for (const color of [0x44, 0x55, 0x66]) {
+		f.emit(color); input.update(); details.update();
+		assert.equal(picker.visible, true, 'arriving observations cannot retire an in-progress choice for the captured subject');
+		assert.equal(input.selected.sequence, sequence); assert.equal(input.selected.cycles, cycles);
+		assert.equal(input.selectionRevision, selectionRevision);
+		assert.deepEqual(Array.from(input.selected.words.subarray(0, input.selected.wordCount)), words);
+	}
+	assert.ok(history.firstSequence > sequence && history.endSequence > sequence + history.capacity);
+	f.press('ArrowDown'); f.press('Enter'); details.update();
+	assert.equal(picker.visible, false); assert.equal(input.inspectorPage, 'diagram'); assert.equal(input.view, 'geometry');
+	assert.equal(input.selected.sequence, sequence); assert.equal(input.selected.cycles, cycles);
+	assert.deepEqual(Array.from(input.selected.words.subarray(0, input.selected.wordCount)), words);
+});
+
+test('GPU View choice applies in the background when picker blur selects a newer foreground', t => {
+	const f = fixture(t), { input, details, picker } = f;
+	details.show(); const window = details.window.surface;
+	details.chooseView(); assert.equal(picker.visible, true);
+	assert.ok(picker.invocationOrigin === details.inspector.focusTarget);
+	let redirected = false;
+	t.after(picker.field.focusTarget.onDidBlur(() => { redirected = true; f.origin.focus(); }));
+	f.press('ArrowDown'); f.press('Enter'); details.update();
+	assert.equal(redirected, true); assert.equal(picker.visible, false);
+	assert.equal(input.inspectorPage, 'diagram'); assert.equal(input.view, 'geometry');
+	assert.ok(input.detailsWindow.open && details.window.visible && details.window.surface === window);
+	assert.ok(inputFocus.admittedTarget === f.origin);
+});
+
+for (const retirement of ['hide', 'dispose'] as const) test(`GPU View chooser retires with its actual Details ${retirement}`, t => {
+	const f = fixture(t), { details, picker } = f;
+	details.show(); details.chooseView(); assert.equal(picker.visible, true);
+	if (retirement === 'hide') details.window.hide(); else details.dispose();
+	assert.equal(picker.visible, false);
+});
+
 test('GPU selection producer retires its owned chooser and active capture before replacing words, without hiding a newer picker', t => {
 	const f = fixture(t), { input, details } = f; input.inspectorPage = 'diagram'; details.show();
 	const bounds = input.detailsWindow.requestedBounds;

@@ -145,16 +145,21 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input); navigateWorkbenchTree(this.input.tree, command); this.pointer.keyboardSelection(this.input.tree); return;
 		}
-		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); if (this.commands.isEnabled('aem.edit')) this.commands.execute('aem.edit'); }
-		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); if (this.commands.isEnabled('aem.remove')) this.commands.execute('aem.remove'); }
+		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.commands.execute('aem.edit', this.focusTarget); }
+		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); this.commands.execute('aem.remove', this.focusTarget); }
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
-		const result = this.pointer.handle(this.input.tree, snapshot, justPressed, now);
+		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
+		const result = this.pointer.handle(input.tree, snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;
-		if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) this.focus();
+		if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
+			if (this.input !== input || scope.contextGeneration !== context || !this.focusInput(input)) return true;
+			const focused = inputFocus.admittedTarget;
+			if (scope.contextGeneration !== context || focused === null || !scope.contains(focused.scope)) return true;
+		}
 		if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
-		if (result === WorkbenchPropertyPointerResult.Activate && this.commands.isEnabled('aem.edit')) this.commands.execute('aem.edit');
+		if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('aem.edit', this.focusTarget);
 		return true;
 	}
 	private openContextMenu(x: number, y: number, keyboard = false): void {

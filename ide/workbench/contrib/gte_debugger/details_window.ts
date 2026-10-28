@@ -138,6 +138,7 @@ export class GteDetailsWindow {
 	}
 	public chooseView(): void {
 		const input = this.input;
+		input.following = false;
 		this.update();
 		const choices = input.selected.kind === 'normal' ? VIEWS : PLUS_VIEWS;
 		this.quickInput.pick('GTE view', 'Captured properties or diagram', (_origin, lifetime) => {
@@ -145,7 +146,7 @@ export class GteDetailsWindow {
 			lifetime.add({ dispose: () => { if (this.chooser === lifetime) this.chooser = undefined; } });
 			return new TextQuickPickProvider(choices, choices.findIndex(choice => choice.page === input.inspectorPage
 				&& (choice.page === 'properties' || (input.selected.kind === 'normal' ? choice.view === input.view : choice.plane === input.plane))));
-		}, choice => {
+		}, (choice, _modifiers, preserveFocus) => {
 			this.retireClient(); input.inspectorPage = choice.page;
 			if (choice.page === 'diagram') {
 				if (input.view !== choice.view || choice.plane !== undefined && input.plane !== choice.plane) {
@@ -154,7 +155,8 @@ export class GteDetailsWindow {
 				}
 				input.view = choice.view; if (choice.plane !== undefined) input.plane = choice.plane;
 			}
-			this.refreshClient(); this.layoutClient(input.detailsWindow.client); this.focusContent();
+			this.refreshClient(); this.layoutClient(input.detailsWindow.client);
+			if (!preserveFocus) this.focusContent();
 		});
 	}
 	private retireChooser(): void { if (this.chooser !== undefined) this.quickInput.hide(); }

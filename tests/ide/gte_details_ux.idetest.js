@@ -34,6 +34,12 @@ const cycles = t.runtime().machine.scheduler.nowCycles;
 for (let font = 0; font < 2; font++) {
 	const variant = input.layout.font.variant;
 	for (let theme = 0; theme < 2; theme++) {
+		t.command('gte.follow'); await t.frames(2); t.command('gte.view'); await t.frames(2);
+		t.assert(!input.following && input.selected.sequence === sequence, 'View did not hold the inspected command before presenting choices');
+		await capture(`gte-view-${variant}-${theme}-choices`); await press('Escape');
+		t.assert(!input.following && window.open && input.selected.sequence === sequence, 'View cancellation resumed Follow or replaced the observation');
+		t.command('gte.view'); await t.frames(2); await press('ControlLeft', 'Home'); await press('Enter');
+		t.assert(input.inspectorPage === 'properties' && input.selected.sequence === sequence, 'View acceptance changed the captured command');
 		await press('Home'); await capture(`gte-details-${variant}-${theme}-compact`);
 		await press('End');
 		if (theme === 0) {

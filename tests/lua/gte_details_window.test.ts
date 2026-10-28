@@ -204,6 +204,55 @@ test('GTE Source generation changes retire only the Source row activation, not r
 	assert.equal(details.inspector.model.rows[1].textExpanded, false, 'a different captured subject does not inherit Source text disclosure identity');
 });
 
+for (const variant of ['tiny', 'msx'] as const) for (const route of ['direct', 'command'] as const) test(`GTE ${variant} ${route} View chooser pins its captured observation while live history advances`, t => {
+	const f = fixture(t, variant), { input, details, quickInput } = f;
+	input.following = true; details.show();
+	const sequence = input.selected.sequence, revision = input.selectionRevision, registers = input.selected.afterData.slice();
+	if (route === 'direct') details.chooseView();
+	else inputFocus.executeCommand('gte.view', details.inspector.focusTarget);
+	assert.equal(quickInput.visible, true);
+	for (let index = 0; index <= input.history.capacity; index++) {
+		f.issue(); input.update(); f.synchronize(); details.update();
+		assert.equal(quickInput.visible, true);
+		assert.equal(input.selected.sequence, sequence);
+		assert.equal(input.selectionRevision, revision);
+		assert.deepEqual(input.selected.afterData, registers);
+	}
+	assert.ok(input.history.firstSequence > sequence);
+	f.press('ArrowDown'); f.press('Enter'); details.update();
+	assert.equal(quickInput.visible, false); assert.equal(input.inspectorPage, 'diagram');
+	assert.equal(input.selected.sequence, sequence); assert.equal(input.following, false);
+});
+
+test('GTE View choice applies in the background when picker blur admits newer outside focus', t => {
+	const f = fixture(t), { input, details, quickInput } = f;
+	details.show(); details.chooseView();
+	assert.ok(quickInput.invocationOrigin === details.inspector.focusTarget);
+	f.press('ArrowDown');
+	t.after(quickInput.field.focusTarget.onDidBlur(() => f.origin.focus()));
+	f.press('Enter');
+	assert.equal(quickInput.visible, false); assert.equal(input.inspectorPage, 'diagram');
+	assert.equal(details.window.visible, true); assert.equal(input.detailsWindow.open, true);
+	assert.ok(inputFocus.admittedTarget === f.origin);
+});
+
+test('GTE View chooser cancellation retains its pinned evidence and window retirement closes only its own popup', t => {
+	const f = fixture(t), { input, details, quickInput } = f;
+	input.following = true; details.show(); details.chooseView();
+	const sequence = input.selected.sequence;
+	f.press('Escape');
+	assert.equal(quickInput.visible, false);
+	f.issue(); input.update(); f.synchronize(); details.update();
+	assert.equal(input.selected.sequence, sequence); assert.equal(input.following, false);
+	details.chooseView(); details.window.hide();
+	assert.equal(quickInput.visible, false); assert.equal(input.detailsWindow.open, false);
+	details.show(); details.chooseView();
+	quickInput.input('Another owner', '', '', async value => value, () => {}, undefined, { invocationOrigin: f.origin });
+	details.window.hide();
+	assert.equal(quickInput.visible, true);
+	quickInput.hide();
+});
+
 test('GTE selection retires its real view chooser before copying another retained subject', t => {
 	const f = fixture(t), { input, details, quickInput } = f;
 	details.show(); details.chooseView(); assert.equal(quickInput.visible, true);
@@ -283,9 +332,12 @@ return true`;
 
 for (const intent of ['point', 'ArrowRight', 'PageDown'] as const) test(`GTE Diagram ${intent} freezes the captured observation before later Follow frames`, t => {
 	const f = fixture(t), { input, details } = f;
-	input.following = true; details.show();
+	details.show();
 	details.chooseView(); f.press('ArrowDown'); f.press('Enter'); details.update();
-	assert.equal(input.following, true);
+	const chosenSequence = input.selected.sequence;
+	input.following = true;
+	f.issue(); input.update(); f.synchronize(); details.update();
+	assert.ok(input.selected.sequence > chosenSequence);
 	const sequence = input.selected.sequence;
 	if (intent === 'point') {
 		const point = details.diagram.points[1];
@@ -294,7 +346,11 @@ for (const intent of ['point', 'ArrowRight', 'PageDown'] as const) test(`GTE Dia
 			pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0,
 			modifiers: KeyModifier.none, spaceDown: false }, 0);
 		assert.equal(input.selectedPoint, 1);
-	} else f.press(intent);
+	} else {
+		details.diagramControl.focusTarget.focus();
+		assert.ok(details.diagramControl.focusTarget.hasFocus);
+		f.press(intent);
+	}
 	assert.equal(input.following, false);
 	f.issue(); input.update(); f.synchronize(); details.update();
 	assert.equal(input.selected.sequence, sequence, 'the inspected record stays owned while history appends and reuses its ring');

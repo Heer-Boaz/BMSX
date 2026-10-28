@@ -34,7 +34,10 @@ export function showOpenEditors(parts: EditorParts, picker: QuickInputController
 			lifetime.add({ dispose: group.model.onDidChange(changed) });
 		}
 		return provider;
-	}, item => { parts.revealEditor(item.input, item.group); });
+	}, (item, _modifiers, preserveFocus) => {
+		// A foreground navigation choice cannot replace a newer interaction selected during return.
+		if (!preserveFocus) parts.revealEditor(item.input, item.group);
+	});
 }
 
 /** A tabstrip's overflow is local to that concrete group, unlike workspace navigation. */
@@ -54,5 +57,7 @@ export function showGroupOpenEditors(group: EditorGroupView, picker: QuickInputC
 			provider.refresh();
 		}) });
 		return provider;
-	}, item => { group.activate(item.input.id); });
+	}, (item, _modifiers, preserveFocus) => {
+		if (!preserveFocus) group.activate(item.input.id);
+	});
 }

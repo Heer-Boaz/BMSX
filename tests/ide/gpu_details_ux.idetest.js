@@ -35,6 +35,12 @@ await drag(window.bounds.right - 1, window.bounds.bottom - 1, input.layout.right
 for (let font = 0; font < 2; font++) {
 	const variant = input.layout.font.variant;
 	for (let theme = 0; theme < 2; theme++) {
+		t.command('gpu.follow'); await t.frames(2); t.command('gpu.view'); await t.frames(2);
+		t.assert(!input.following && input.selected.sequence === sequence, 'View did not hold the inspected operation before presenting choices');
+		await capture(`gpu-view-${variant}-${theme}-choices`); await press('Escape');
+		t.assert(!input.following && window.open && input.selected.sequence === sequence, 'View cancellation resumed Follow or replaced the observation');
+		t.command('gpu.view'); await t.frames(2); await press('ControlLeft', 'Home'); await press('Enter');
+		t.assert(input.inspectorPage === 'properties' && input.selected.sequence === sequence, 'View acceptance changed the captured operation');
 		await press('Home'); await capture(`gpu-details-${variant}-${theme}-compact`);
 		await press('End');
 		if (theme === 0) {

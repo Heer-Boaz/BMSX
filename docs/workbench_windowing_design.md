@@ -763,6 +763,13 @@ banks. Follow owns changing that subject; Details adds neither another pin nor
 another capture. Placement, close, focus return, empty selection and
 expired-observation behavior follow the GPU window contract.
 
+The GPU and GTE View choosers stop the input's Follow policy before presenting
+choices, retaining the selected observation while new runtime work arrives.
+Accept changes that observation's presentation; Cancel keeps the existing view
+and held observation. Resuming Follow is explicit. An explicit subject change
+or attachment retirement still ends the owning chooser rather than applying its
+choice to a replacement observation.
+
 The Source icon and actionable source row refer only to the instruction observed
 in the selected capture's installed image. PLUS publication refers to its observed
 acceptance source, never a later synchronization instruction. An unobserved or

@@ -16,7 +16,7 @@ export function showOpenWindows(parts: EditorParts, picker: QuickInputController
 				detail: `${input?.description ?? ''}${part === parts.activePart ? ' / active' : ''}${input?.isDirty() ? ' / unsaved changes' : ''}${part.window?.model.minimized ? ' / minimized' : ''}${part.closing ? ' / close decision' : ''}` };
 		});
 		return new TextQuickPickProvider(items);
-	}, item => item.part.focus());
+	}, (item, _modifiers, preserveFocus) => { if (!preserveFocus) item.part.focus(); });
 }
 
 /** Both transfer gestures and commands retain the exact source and destination owners. */
@@ -45,7 +45,9 @@ export function showMoveDestination(parts: EditorParts, picker: QuickInputContro
 		if (source.kind === 'editor' ? parts.canMoveEditor(group, source.input, window) : parts.canMoveGroup(group, window))
 			items.push({ destination: window, label: 'New Editor Window', description: '', detail: '' });
 		return new TextQuickPickProvider(items);
-	}, item => {
+	}, (item, _modifiers, preserveFocus) => {
+		// Placement is a foreground interaction, not an asynchronous source result to attach behind it.
+		if (preserveFocus) return;
 		if (source.kind === 'editor') parts.moveEditor(group, source.input, item.destination);
 		else parts.moveGroup(group, item.destination);
 	}, undefined, { invocationOrigin: origin });

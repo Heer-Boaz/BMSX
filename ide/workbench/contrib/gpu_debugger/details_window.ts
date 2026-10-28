@@ -140,20 +140,22 @@ export class GpuDetailsWindow {
 	}
 
 	public chooseView(): void {
+		this.input.following = false;
 		if (!this.window.visible) this.show();
 		this.update();
 		this.quickInput.pick('GPU view', 'Choose captured operation evidence', (_origin, lifetime) => {
 			this.chooser = lifetime; lifetime.add({ dispose: () => { if (this.chooser === lifetime) this.chooser = undefined; } });
 			return new TextQuickPickProvider(VIEWS, VIEWS.findIndex(choice => choice.page === this.input.inspectorPage
 				&& (choice.view === undefined || choice.view === this.input.view)));
-		}, choice => {
+		}, (choice, _modifiers, preserveFocus) => {
 			this.retireOverflow(); this.contentActions.cancelPointer(); this.retireClient();
 			if (choice.view !== undefined && choice.view !== this.input.view) {
 				this.input.diagram.scrollbar.setScroll(0); this.input.diagramView.section = 0;
 				this.input.diagramView.textOffset = 0; this.input.diagramView.fraction = 0; this.input.diagramView.atEnd = false;
 				this.input.selectedPoint = 0; this.input.view = choice.view;
 			}
-			this.input.inspectorPage = choice.page; this.refreshClient(); this.layoutClient(this.input.detailsWindow.client); this.contentTarget().focus();
+			this.input.inspectorPage = choice.page; this.refreshClient(); this.layoutClient(this.input.detailsWindow.client);
+			if (!preserveFocus) this.contentTarget().focus();
 		});
 	}
 	private retireChooser(): void { if (this.chooser !== undefined) this.quickInput.hide(); }

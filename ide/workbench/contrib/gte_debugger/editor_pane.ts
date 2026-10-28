@@ -179,7 +179,7 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		const input = this.input;
 		switch (command) {
 			case 'gte.follow': input.following = true; break;
-			case 'gte.view': input.following = false; this.details!.show(); this.details!.chooseView(); break;
+			case 'gte.view': this.details!.show(); this.details!.chooseView(); break;
 			case 'gte.filter': this.quickInput.input('Filter GTE events', 'Opcode or PLUS phase; empty shows all', input.filter, async text => text, text => { input.filter = text; input.list.scrollbar.setScroll(0); }); break;
 			case 'gte.clear': input.clear(); break;
 			case 'gte.source': this.openSource(); break;

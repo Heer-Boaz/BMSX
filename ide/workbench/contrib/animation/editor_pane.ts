@@ -310,7 +310,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 			if (list.rows.length !== 0) { this.controller.selectTrack(this.input, index); revealWorkbenchListSelection(list); }
 			return;
 		}
-		if (isKeyJustPressed('Delete', player)) { consumeIdeKey('Delete', player); this.lanes.cancelPointer(); this.commands.execute('animation.remove'); }
+		if (isKeyJustPressed('Delete', player)) { consumeIdeKey('Delete', player); this.lanes.cancelPointer(); this.commands.execute('animation.remove', this.focusTarget); }
 	}
 	private handleDetailsKeyboard(player: KeyInputEvent): void {
 		for (const [key, command] of DETAILS_NAVIGATION) {
@@ -341,12 +341,19 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 			return true;
 		}
 		if (layout.detailsVisible) {
+			const scope = this.focusTarget.scope, context = scope.contextGeneration;
 			const result = this.propertyPointer.handle(input.details, snapshot, justPressed, now);
 			if (result !== WorkbenchPropertyPointerResult.Outside) {
 				if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
+					if (this.input !== input || scope.contextGeneration !== context) return true;
 					this.controller.selectProperty(input, input.details.selectionIndex);
+					if (this.input !== input || scope.contextGeneration !== context) return true;
 					input.activeClient = 'details';
-					if (justPressed) this.detailsFocus.focus();
+					if (justPressed) {
+						this.detailsFocus.focus();
+						const focused = inputFocus.admittedTarget;
+						if (this.input !== input || scope.contextGeneration !== context || focused === null || !scope.contains(focused.scope)) return true;
+					}
 				}
 				if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.detailsFocus);
 				if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('animation.edit', this.focusTarget);

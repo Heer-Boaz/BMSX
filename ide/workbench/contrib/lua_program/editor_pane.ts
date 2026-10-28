@@ -224,21 +224,26 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		if (isKeyJustPressed('Enter', input)) {
 			consumeIdeKey('Enter', input);
 			if (this.input.liveVisible) this.toggleRuntimeProperty();
-			else if (this.commands.isEnabled('luaProgram.edit')) this.commands.execute('luaProgram.edit');
+			else this.commands.execute('luaProgram.edit', this.focusTarget);
 		}
-		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); if (this.commands.isEnabled('luaProgram.remove')) this.commands.execute('luaProgram.remove'); }
+		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); this.commands.execute('luaProgram.remove', this.focusTarget); }
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
-		const result = this.pointer.handle(this.input.liveVisible ? this.input.live : this.input.tree, snapshot, justPressed, now);
+		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
+		const result = this.pointer.handle(input.liveVisible ? input.live : input.tree, snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;
-		if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) this.focus();
+		if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
+			if (this.input !== input || scope.contextGeneration !== context || !this.focusInput(input)) return true;
+			const focused = inputFocus.admittedTarget;
+			if (scope.contextGeneration !== context || focused === null || !scope.contains(focused.scope)) return true;
+		}
 		if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 		if (this.input.liveVisible) {
 			if (result === WorkbenchPropertyPointerResult.Collapse) this.controller.resolveRuntime(this.input);
 			if (result === WorkbenchPropertyPointerResult.Activate) this.toggleRuntimeProperty();
 		}
-		if (result === WorkbenchPropertyPointerResult.Activate && this.commands.isEnabled('luaProgram.edit')) this.commands.execute('luaProgram.edit');
+		if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('luaProgram.edit', this.focusTarget);
 		return true;
 	}
 	private toggleRuntimeProperty(): void {
