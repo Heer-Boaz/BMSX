@@ -27,7 +27,7 @@ import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieC
 import type { CartMapController } from './controller';
 import type { CartMapInput, CartMapLayoutMode, CartMapSection } from './editor_input';
 import { projectCartMap, selectCartMapRow, createCartMapMove } from './source_projection';
-import { layoutCartMap, measureCartMapMinimumWidth } from './layout';
+import { layoutCartMap } from './layout';
 import { drawCartMap } from './render';
 import { CartMapNavigationSelection, restoreCartMapView } from './view_snapshot';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -45,7 +45,6 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		return this.controller.getSourceLocation(input);
 	}
 
-	public override get companionGameMinimumWidth(): number { return measureCartMapMinimumWidth(this.input); }
 	public readonly controls: readonly ValueInput<CartMapCoordinateEdit>[];
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);

@@ -62,6 +62,10 @@ export class RuntimeTimelineControl {
 	public get available(): boolean { return this.binding !== undefined && this.transport !== undefined; }
 	public get requested(): boolean { return this.requestedValue; }
 	public get height(): number { return this.presented ? RuntimeTimelineLayout.height(editorViewState.font.renderFont()) : 0; }
+	/** A prospective input move follows the same exact attachment retirement as setContext. */
+	public heightAfterRetiring(scope: InputFocusScope | undefined): number {
+		return this.binding?.target.scope === scope ? 0 : this.height;
+	}
 	public get visible(): boolean { return this.presented; }
 	public get canHide(): boolean { return this.requestedValue; }
 	public focus(): void {

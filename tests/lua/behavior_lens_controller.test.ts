@@ -1,3 +1,5 @@
+import { measureUnconstrainedEditor } from '../../ide/workbench/services/editor/editor_pane';
+import { measureBehaviorLensEditor } from '../../ide/workbench/contrib/behavior_lens/layout';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { EditorCommandRunner } from '../../ide/common/commands';
@@ -55,14 +57,13 @@ function fixture(t: TestContext, source = SOURCE) {
 	const unused = (): never => assert.fail('This owner regression only opens Behavior Lens views');
 	const createGroup = () => {
 		const group = new EditorGroupView({
-			home: unused, play_session: unused, animation: unused, host_error: unused, build_log: unused,
-			rom_inspector: unused, event_viewer: unused, gpu_debugger: unused, gte_debugger: unused,
-			terminal: unused, conversation_observer: unused, assistant: unused, workspace_edit_review: unused,
-			code_editor: unused, resource_view: unused, aem_editor: unused, lua_program: unused, actor_lab: unused,
-			game_view: unused, cart_map: unused, scene_editor: unused, scenario_lab: unused,
-			behavior_lens: owner => {
-				return new BehaviorLensEditorPane(controller, commands, menu, surfaces, owner.paneSurface, owner.workArea, owner, owner.focusScope, picker);
-			},
+			home: { create: unused, measure: measureUnconstrainedEditor }, play_session: { create: unused, measure: measureUnconstrainedEditor }, animation: { create: unused, measure: measureUnconstrainedEditor }, host_error: { create: unused, measure: measureUnconstrainedEditor }, build_log: { create: unused, measure: measureUnconstrainedEditor },
+			rom_inspector: { create: unused, measure: measureUnconstrainedEditor }, event_viewer: { create: unused, measure: measureUnconstrainedEditor }, gpu_debugger: { create: unused, measure: measureUnconstrainedEditor }, gte_debugger: { create: unused, measure: measureUnconstrainedEditor },
+			terminal: { create: unused, measure: measureUnconstrainedEditor }, conversation_observer: { create: unused, measure: measureUnconstrainedEditor }, assistant: { create: unused, measure: measureUnconstrainedEditor }, workspace_edit_review: { create: unused, measure: measureUnconstrainedEditor },
+			code_editor: { create: unused, measure: measureUnconstrainedEditor }, resource_view: { create: unused, measure: measureUnconstrainedEditor }, aem_editor: { create: unused, measure: measureUnconstrainedEditor }, lua_program: { create: unused, measure: measureUnconstrainedEditor }, actor_lab: { create: unused, measure: measureUnconstrainedEditor },
+			game_view: { create: unused, measure: measureUnconstrainedEditor }, cart_map: { create: unused, measure: measureUnconstrainedEditor }, scene_editor: { create: unused, measure: measureUnconstrainedEditor }, scenario_lab: { create: unused, measure: measureUnconstrainedEditor },
+			behavior_lens: { create: owner => new BehaviorLensEditorPane(controller, commands, menu, surfaces, owner.paneSurface, owner.workArea, owner, owner.focusScope, picker),
+				measure: measureBehaviorLensEditor },
 		}, commands, unused, createTestGroupPresentation(surfaces, BOUNDS));
 		group.panes.layout(BOUNDS);
 		return group;
@@ -128,7 +129,12 @@ test('shared Behavior Lens operations and pane commands consume their concrete v
 });
 
 for (const command of ['behaviorLens.removeChild', 'behaviorLens.inspectRuntimeTree'] as const) test(`${command} cannot act on a reusable pane replacement installed by focus`, t => {
-	const f = fixture(t);
+	const source = SOURCE + `trees.register('replacement.tree', { root = { type = 'sequence', children = {
+	{ type = 'wait', duration_ticks = 3 },
+	{ type = 'wait', duration_ticks = 4 },
+} } })
+`;
+	const f = fixture(t, source);
 	const first = f.controller.openDefinition(f.first, f.registration);
 	assert.ok(first !== undefined);
 	f.controller.openDefinition(f.second, f.registration);
@@ -136,7 +142,7 @@ for (const command of ['behaviorLens.removeChild', 'behaviorLens.inspectRuntimeT
 	first.view.presentation.viewport.selection = first.view.presentation.viewport.model.nodes[0].children[0].children[0];
 	acceptBehaviorGraphSelection(first.view, first.view.presentation);
 	const replacement = f.controller.createInput(first.workingCopy, 'graph');
-	selectBehaviorLensDefinition(replacement.view, replacement.view.document.definitions[0].rowKey);
+	selectBehaviorLensDefinition(replacement.view, replacement.view.document.definitions[1].rowKey);
 	f.first.panes.activePane!.focus();
 	const pane = f.first.panes.activePane, target = inputFocus.target!;
 	const action = target.getCommand(command)!;
@@ -156,7 +162,7 @@ for (const command of ['behaviorLens.removeChild', 'behaviorLens.inspectRuntimeT
 	assert.equal(f.first.panes.activePane, pane, 'the same concrete pane was rebound');
 	assert.equal(pane!.input, replacement);
 	assert.equal(first.workingCopy.version, version);
-	assert.equal(first.workingCopy.buffer.getText(), SOURCE);
+	assert.equal(first.workingCopy.buffer.getText(), source);
 	assert.equal(inspections.mock.callCount(), 0, 'replacement focus does not authorize runtime inspection either');
 });
 

@@ -22,10 +22,13 @@ import { drawWorkbenchSplit } from '../../render/split_view';
 import { Scrollbar } from '../../ui/scrollbar';
 import { ScrollbarController } from '../../ui/scrollbar_controller';
 import { EditorGroupView, findEditorGroup } from './editor_group';
-import type { EditorPaneFactories } from './editor_panes';
+import type { EditorPaneContributions } from './editor_panes';
+import type { EditorPaneConstraints } from './editor_pane';
+import type { EditorInput } from '../../common/editor_inputs';
 import type { CloseEditors } from './editor_close';
 import type { EditorTabDragHandler } from '../../ui/tab/drag';
-import { EditorGroupArrangement, type EditorGroupDirection, type EditorGroupLayout, type EditorGroupSplit } from './group_arrangement';
+import { EditorGroupArrangement, type EditorGroupDirection, type EditorGroupLayout, type EditorGroupSplit, type EditorGroupProjection } from './group_arrangement';
+import type { WorkbenchMainAreaLayout } from '../../common/main_area_layout';
 import type { SerializedEditorPart, SerializedEditorGroupLayout } from './editor_parts_serialization';
 import type { EditorInputSerializers } from './editor_serialization';
 
@@ -39,7 +42,7 @@ type EditorPartOptions = {
 	readonly commands: EditorCommandRunner;
 	readonly contextMenu: ContextMenuController;
 	readonly renderContext: EditorTabStripRenderContext;
-	readonly factories: EditorPaneFactories;
+	readonly contributions: EditorPaneContributions;
 	readonly closeEditors: CloseEditors;
 	readonly dropTarget: EditorTabDragHandler;
 	readonly focusReturn: InputFocusTarget;
@@ -48,7 +51,7 @@ type EditorPartOptions = {
 	onDidChangeGroupMembership(part: EditorPart): void;
 	onDidChange(): void;
 	requestClose(part: EditorPart): void;
-} & ({ readonly kind: 'main' } | {
+} & ({ readonly kind: 'main'; readonly mainArea: WorkbenchMainAreaLayout } | {
 	readonly kind: 'document';
 	requestMinimize(part: EditorPart): void;
 	readonly requestedBounds: Readonly<RectBounds>;
@@ -83,6 +86,11 @@ export class EditorPart {
 	public get closing(): boolean { return this.operationValue === 'close'; }
 	public retired = false;
 	private presentedLayoutRevision = -1;
+	private readingAvailable = false;
+	public get companionAvailable(): boolean { return this.readingAvailable; }
+	private readonly projectedPrimaryBounds = create_rect_bounds();
+	private readonly incomingConstraints: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
+	private readonly successorConstraints: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
 	private readonly viewport = create_rect_bounds();
 	private readonly horizontalTrack = create_rect_bounds();
 	private readonly verticalTrack = create_rect_bounds();
@@ -149,7 +157,7 @@ export class EditorPart {
 		});
 		this.scrollbarControl = new ScrollbarController(this.scrollbars, (kind, scroll) => {
 			this.arrangement.setScroll(kind === 'horizontal' ? scroll : this.arrangement.scrollX,
-				kind === 'vertical' ? scroll : this.arrangement.scrollY); this.layout(this.clientBounds);
+				kind === 'vertical' ? scroll : this.arrangement.scrollY); this.arrange(this.clientBounds);
 		}, pointerCapture);
 		for (const kind of SCROLLBARS) {
 			const bar = this.scrollbars[kind];
@@ -166,7 +174,7 @@ export class EditorPart {
 				const group = findEditorGroup(target), previous = this.activeGroup;
 				if (group !== undefined && group !== null && this.groupSubscriptions.has(group)) this.selectGroup(group);
 				options.onDidActivate(this);
-				if (!this.retired && this.activeGroup !== previous) options.onDidChange();
+				if (!this.retired && this.activeGroup !== previous) { this.relayout(); options.onDidChange(); }
 			}
 		}));
 		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
@@ -174,11 +182,11 @@ export class EditorPart {
 
 	public onDidChangeGroups(listener: () => void): () => void { this.groupListeners.add(listener); return () => this.groupListeners.delete(listener); }
 	private makeGroup(presented = true): EditorGroupView {
-		const group = new EditorGroupView(this.options.factories, this.options.commands,
+		const group = new EditorGroupView(this.options.contributions, this.options.commands,
 			(targets, origin) => this.options.closeEditors(targets, origin, this.actionPrompt), {
 				surfaces: this.options.surfaces, owner: this.clientSurface, focusScope: this.clientScope, dropTarget: this.options.dropTarget,
 				workArea: this.options.workArea, renderContext: this.options.renderContext, contextMenu: this.options.contextMenu,
-				layout: () => { if (!this.retired) this.layout(this.clientBounds); },
+				layout: () => { if (!this.retired) this.relayout(); },
 			}, presented);
 		group.setOpenAdmission(this.operationValue === 'none');
 		this.groupSubscriptions.set(group, [group.onWillFocus(() => this.prepareGroupFocus(group)), group.model.onDidChange(() => {
@@ -191,7 +199,7 @@ export class EditorPart {
 				if (!this.activateGroup(group) || inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
 				this.arrangement.reveal(group); this.reveal(null);
 			}
-			else this.layout(this.clientBounds);
+			else this.relayout();
 		})]);
 		return group;
 	}
@@ -213,9 +221,9 @@ export class EditorPart {
 	/** Explicit placement exposes its leaf independently of keyboard focus or window activation. */
 	public revealGroup(group: EditorGroupView): boolean {
 		if (this.retired || group.surface.retired || !this.groups.includes(group)) return false;
-		this.layout(this.clientBounds);
+		this.relayout();
 		if (this.retired || group.surface.retired || !this.groups.includes(group)) return false;
-		this.arrangement.reveal(group); this.layout(this.clientBounds);
+		this.arrangement.reveal(group); this.relayout();
 		return !this.retired && !group.surface.retired && this.groups.includes(group);
 	}
 	/** The construction owner retains provisional controls without publishing topology. */
@@ -257,7 +265,7 @@ export class EditorPart {
 		if (this.retired) return;
 		this.syncSashes();
 		if (this.retired) return;
-		this.layout(this.clientBounds); if (!this.retired) this.options.onDidChange();
+		this.relayout(); if (!this.retired) this.options.onDidChange();
 	}
 	/** Workspace membership precedes the first visible frame and input admission. */
 	public present(): void {
@@ -266,7 +274,7 @@ export class EditorPart {
 		if (this.retired) return;
 		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
 		if (this.retired) return;
-		this.layout(this.clientBounds);
+		this.relayout();
 	}
 	/** Close/move admission has already settled every input before its empty group retires. */
 	public removeGroup(group: EditorGroupView): boolean {
@@ -286,7 +294,7 @@ export class EditorPart {
 		if (this.retired) return true;
 		this.syncSashes();
 		if (this.retired) return true;
-		this.layout(this.clientBounds);
+		this.relayout();
 		if (!this.retired) this.options.onDidChange();
 		return true;
 	}
@@ -332,7 +340,7 @@ export class EditorPart {
 		else this.window.show(false);
 		if (this.retired || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
 		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
-		this.layout(this.clientBounds);
+		if (this.options.kind === 'document') this.layout(this.clientBounds);
 		if (this.retired || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
 		this.raise();
 		if (modal !== null) this.options.surfaces.raise(modal);
@@ -342,7 +350,9 @@ export class EditorPart {
 	public raise(): void { this.options.surfaces.raise(this.surface); }
 	public setOperation(operation: 'none' | 'close' | 'move'): void {
 		if (operation !== 'none') this.restoreLifetime?.abort();
+		const previous = this.operationValue;
 		this.operationValue = operation; for (const group of this.groups) group.setOpenAdmission(operation === 'none' && !this.surface.retired);
+		if (previous === 'move' && operation === 'none') this.relayout();
 	}
 	private syncSashes(): void {
 		for (const [branch, sash] of this.sashes) if (!this.arrangement.splits.includes(branch)) {
@@ -361,9 +371,84 @@ export class EditorPart {
 			this.sashes.set(branch, { control, surface });
 		}
 	}
-	public layout(bounds: Readonly<RectBounds>): void {
+	public layout(bounds: Readonly<RectBounds>): boolean {
+		this.prepareConstraints();
+		let changed = false;
+		if (this.options.kind === 'main') {
+			const area = this.options.mainArea;
+			const width = this.readingAvailable ? this.arrangement.readingMinimumClientWidth(bounds.bottom - bounds.top, colors.SCROLLBAR_WIDTH) : undefined;
+			changed = area.layout(width, bounds);
+			this.arrangement.useReadingWidths = area.visible;
+			bounds = area.primaryBounds;
+		}
+		return this.arrange(bounds, this.options.kind === 'document') || changed;
+	}
+
+	/** Publication/focus changes request current parent allocation without ticking pane content. */
+	public relayout(): void {
+		if (this.operationValue === 'move') return; // The transfer publishes attachments before parent presentation.
+		if (this.options.kind === 'main') this.options.layoutMain();
+		else this.layout(this.clientBounds);
+	}
+
+	/** The incoming input is measured as a new attachment; the source projects its actual successor. */
+	public writeSplitPreview(source: EditorGroupView, input: EditorInput, reference: EditorGroupView, direction: EditorGroupDirection, target: RectBounds): void {
+		const constraints = this.incomingConstraints;
+		source.measureInput(input, this.options.kind === 'main' && this.options.mainArea.enabled, constraints);
+		const removed = this.arrangement.hasGroup(source) && source.model.tabs.length === 1 ? source : undefined;
+		const projection = this.arrangement.projectSplit(reference, direction, constraints.minimumWidth, constraints.minimumHeight,
+			removed, constraints.companionWidth ?? constraints.minimumWidth);
+		this.writeProjectedPreview(projection, constraints.companionWidth !== undefined, source, input, target);
+	}
+
+	public writeMovePreview(source: EditorGroupView, reference: EditorGroupView, direction: EditorGroupDirection, target: RectBounds): boolean {
+		const constraints = this.incomingConstraints, local = this.arrangement.hasGroup(source);
+		const requested = this.options.kind === 'main' && this.options.mainArea.enabled;
+		if (local) source.measureConstraints(requested, constraints);
+		else source.measureInput(source.model.activeTab, requested, constraints);
+		const projection = this.arrangement.projectMove(local ? source : undefined, reference, direction,
+			constraints.minimumWidth, constraints.minimumHeight, constraints.companionWidth ?? constraints.minimumWidth);
+		if (projection === undefined) return false;
+		this.writeProjectedPreview(projection, constraints.companionWidth !== undefined, source, undefined, target);
+		return true;
+	}
+
+	private writeProjectedPreview(projection: EditorGroupProjection<EditorGroupView>, companionRequested: boolean,
+		source: EditorGroupView, departing: EditorInput | undefined, target: RectBounds): void {
+		const constraints = this.successorConstraints;
+		for (const group of this.groups) if (projection.arrangement.hasGroup(group)) {
+			if (group === source && departing !== undefined) group.measureAfterRemoval(departing, companionRequested, constraints);
+			else group.measureConstraints(companionRequested, constraints);
+			projection.arrangement.setMinimum(group, constraints.minimumWidth, constraints.minimumHeight,
+				constraints.companionWidth ?? constraints.minimumWidth);
+		}
+		let bounds: Readonly<RectBounds> = this.clientBounds, readable = false;
+		if (this.options.kind === 'main') {
+			const area = this.options.mainArea;
+			const width = companionRequested
+				? projection.arrangement.readingMinimumClientWidth(area.availableBounds.bottom - area.availableBounds.top, colors.SCROLLBAR_WIDTH) : undefined;
+			readable = area.writePrimaryBounds(width, this.projectedPrimaryBounds);
+			bounds = this.projectedPrimaryBounds;
+		}
+		copy_rect_bounds(target, projection.layout(bounds, colors.SCROLLBAR_WIDTH, readable));
+	}
+
+	private prepareConstraints(): void {
+		const requested = this.options.kind === 'main' && this.options.mainArea.enabled;
+		this.activeGroup.measureConstraints(requested);
+		const activeWidth = this.activeGroup.companionWidth;
+		this.readingAvailable = activeWidth !== undefined;
+		const maximized = this.arrangement.maximized;
+		for (const group of this.groups) {
+			if (group !== this.activeGroup) group.measureConstraints(this.readingAvailable && (maximized === undefined || maximized === group));
+			const width = group.minimumWidth, height = group.minimumHeight;
+			const reading = group.companionWidth;
+			this.arrangement.setMinimum(group, width, height, reading === undefined ? width : Math.max(width, reading));
+		}
+	}
+
+	private arrange(bounds: Readonly<RectBounds>, notify = true): boolean {
 		copy_rect_bounds(this.clientBounds, bounds);
-		for (const group of this.groups) this.arrangement.setMinimum(group, group.minimumWidth, group.minimumHeight);
 		this.arrangement.layoutClient(bounds, colors.SCROLLBAR_WIDTH);
 		copy_rect_bounds(this.viewport, this.arrangement.bounds);
 		const changed = this.presentedLayoutRevision !== this.arrangement.layoutRevision;
@@ -376,13 +461,16 @@ export class EditorPart {
 			const presented = this.arrangement.maximized === undefined || this.arrangement.maximized === leaf.group;
 			if (changed || leaf.group.tabStrip.needsLayout || leaf.group.presented !== presented) leaf.group.layout(leaf.bounds, leaf.clip, presented);
 		}
-		if (changed) this.options.surfaces.changed();
+		if (changed && notify) this.options.surfaces.changed();
+		return changed;
 	}
 	private drawClient(): void { api.fill_rect(this.clientBounds.left, this.clientBounds.top, this.clientBounds.right, this.clientBounds.bottom, 0, colors.COLOR_FRAME); }
 	public update(deltaSeconds: number): void {
-		if (this.window !== undefined) { this.window.layout(editorViewState.font.renderFont(), measureTextRange, measureText); this.window.update(); }
+		if (this.window !== undefined) {
+			this.window.layout(editorViewState.font.renderFont(), measureTextRange, measureText); this.window.update(); this.layout(this.clientBounds);
+		}
 		for (const group of this.groups) group.update(deltaSeconds);
-		this.layout(this.clientBounds); this.quickInput.update(); this.actionPrompt.update();
+		this.quickInput.update(); this.actionPrompt.update();
 	}
 	public suspend(): void {
 		this.scrollbarControl.cancel();
@@ -403,7 +491,7 @@ export class EditorPart {
 		this.arrangement.setRoot({ kind: 'group', group: retained }); this.groupMru.length = 0; this.groupMru.push(retained); this.activeGroup = retained;
 		this.options.onDidChangeGroupMembership(this);
 		for (const listener of this.groupListeners) listener();
-		this.syncSashes(); this.layout(this.clientBounds); this.options.onDidChange();
+		this.syncSashes(); this.relayout(); this.options.onDidChange();
 	}
 	public async restore(state: SerializedEditorPart, serializers: EditorInputSerializers): Promise<boolean> {
 		if (this.retired || this.surface.retired || this.operationValue !== 'none') return false;
@@ -440,14 +528,14 @@ export class EditorPart {
 			if (lifetime.signal.aborted) return false;
 			this.syncSashes();
 			if (lifetime.signal.aborted) return false;
-			this.layout(this.clientBounds);
+			this.relayout();
 			if (lifetime.signal.aborted) return false;
-			this.arrangement.setScroll(state.scrollX, state.scrollY); this.layout(this.clientBounds);
+			this.arrangement.setScroll(state.scrollX, state.scrollY); this.arrange(this.clientBounds);
 			if (lifetime.signal.aborted) return false;
 			if (state.maximized !== undefined) {
-				this.arrangement.toggleMaximize(this.groups[state.maximized.group]); this.layout(this.clientBounds);
+				this.arrangement.toggleMaximize(this.groups[state.maximized.group]); this.relayout();
 				if (lifetime.signal.aborted) return false;
-				this.arrangement.setScroll(state.maximized.scrollX, state.maximized.scrollY); this.layout(this.clientBounds);
+				this.arrangement.setScroll(state.maximized.scrollX, state.maximized.scrollY); this.arrange(this.clientBounds);
 			}
 		} finally {
 			for (const group of retired) group.dispose();

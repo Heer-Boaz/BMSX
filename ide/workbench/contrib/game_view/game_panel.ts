@@ -1,7 +1,7 @@
 import { InputInteraction } from '../../../input/interaction';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
-import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import type { IdeCommandController } from '../../../commands/controller';
@@ -15,29 +15,24 @@ import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { api } from '../../../runtime/overlay_api';
 import { GAME_FRAME_MINIMUM_WIDTH, GAME_FRAME_MINIMUM_HEIGHT, layoutGameFrame } from '../../common/game_frame';
-import { topMargin } from '../../common/layout';
+import type { WorkbenchMainAreaLayout } from '../../common/main_area_layout';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { drawWorkbenchSplit } from '../../render/split_view';
 import type { EditorPart } from '../../services/editor/editor_part';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { editorChromeState } from '../../ui/chrome_state';
 import { WorkbenchSplitControl } from '../../ui/split_control';
-import { WorkbenchSplitView } from '../../ui/split_view';
 import { GameInputControl } from './game_input';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
-const SPLIT_GAP = 4;
-
 /** A workbench part displaying the existing scanout, never another editor or runtime. */
 export class GamePanel {
-	public enabled = false;
-	public visible = false;
+	public get enabled(): boolean { return this.area.enabled; }
+	public get visible(): boolean { return this.presented && this.area.enabled && this.area.visible; }
+	private presented = false;
 	private attached = false;
-	private readonly bounds = create_rect_bounds();
 	private readonly frame = create_rect_bounds();
-	private readonly split = new WorkbenchSplitView(0.58);
 	private readonly focusTarget: InputFocusTarget;
 	private readonly gameInput: GameInputControl;
 	private readonly runtimeContext = new InputInteraction();
@@ -46,12 +41,13 @@ export class GamePanel {
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly unbindKeyboard: () => void;
 	private measuredFont = editorViewState.font;
+	private layoutRevision = -1;
 	private minimumFont: EditorFont | undefined;
 	private minimumWidth = 0;
 	private minimumHeight = 0;
 	private headerBottom = 0;
 
-	public constructor(private readonly part: EditorPart, private readonly commands: IdeCommandController,
+	public constructor(private readonly part: EditorPart, private readonly area: WorkbenchMainAreaLayout, private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController, recipient: InputRecipient, presenter: VideoPresenter,
 		public readonly focusScope: InputFocusScope) {
 		this.focusTarget = inputFocus.createTarget(null, focusScope);
@@ -71,12 +67,12 @@ export class GamePanel {
 		this.focusTarget.previous = this.gameInput.focusTarget;
 		this.focusTarget.canFocus = () => this.visible;
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.visible,
-			run: () => this.openContextMenu(this.bounds.left, this.bounds.top, true) });
+			run: () => this.openContextMenu(this.area.companionBounds.left, this.area.companionBounds.top, true) });
 	}
 
-	public toggle(): void { if (this.enabled) this.close(); else this.enabled = true; }
+	public toggle(): void { if (this.enabled) this.close(); else this.area.enabled = true; }
 	public close(): void {
-		this.enabled = false;
+		this.area.enabled = false;
 		this.detach();
 	}
 
@@ -89,21 +85,30 @@ export class GamePanel {
 	}
 	private hidePresentation(): void {
 		const ownsFocus = this.focusTarget.hasFocus || this.sash.focusTarget.hasFocus || this.actions.focusTarget.hasFocus || this.gameInput.focusTarget.hasFocus;
-		this.visible = false;
+		this.presented = false;
 		this.gameInput.clearInput();
 		this.sash.clearInput(); this.actions.clearInput(); this.focusTarget.release();
 		if (ownsFocus) this.part.activeGroup.panes.activePane?.focus();
 	}
 	public dispose(): void {
 		this.detach(); this.gameInput.dispose(); this.sash.dispose(); this.actions.dispose(); this.unbindKeyboard();
-		editorChromeState.editorRightInset = 0;
 	}
 
-	/** Publish only a content inset; the physical canvas and tab strip keep their geometry. */
-	public update(): boolean {
-		const pane = this.part.activeGroup.panes.activePane;
-		const minimumClientWidth = this.enabled ? pane?.companionGameMinimumWidth : undefined;
-		const attached = minimumClientWidth !== undefined;
+	/** The view supplies its own font-dependent requirements; its parent allocates both clients. */
+	public prepareLayout(bounds: Readonly<RectBounds>): void {
+		const font = editorViewState.font;
+		if (this.enabled && this.minimumFont !== font) {
+			this.minimumFont = font;
+			const actionWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, font.lineHeight + 2);
+			this.minimumWidth = Math.max(GAME_FRAME_MINIMUM_WIDTH + 8, measureText('GAME') + actionWidth + 12);
+			this.minimumHeight = font.lineHeight + 14 + GAME_FRAME_MINIMUM_HEIGHT;
+		}
+		this.area.prepare(bounds, this.minimumWidth, this.minimumHeight);
+	}
+
+	/** Runtime and input attachment follow the parent's resolved companion presentation. */
+	public update(): void {
+		const attached = this.enabled && this.part.companionAvailable;
 		if (attached !== this.attached) {
 			if (attached) {
 				this.attached = true;
@@ -111,59 +116,41 @@ export class GamePanel {
 				this.focusScope.interaction = null; this.focusScope.runtime = { target: this.focusTarget, interaction: this.runtimeContext };
 			} else this.detach();
 		}
-		const font = editorViewState.font;
-		if (minimumClientWidth !== undefined && this.minimumFont !== font) {
-			this.minimumFont = font;
-			const actionWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, font.lineHeight + 2);
-			this.minimumWidth = Math.max(GAME_FRAME_MINIMUM_WIDTH + 8, measureText('GAME') + actionWidth + 12);
-			this.minimumHeight = font.lineHeight + 14 + GAME_FRAME_MINIMUM_HEIGHT;
-		}
-		// Temporary constraints change presentation, not the user's open/placement intent.
-		const visible = this.enabled && pane !== null && minimumClientWidth !== undefined
-			&& editorViewState.viewportWidth - editorViewState.editorAreaLeft >= minimumClientWidth + this.minimumWidth + SPLIT_GAP
-			&& editorViewState.editorAreaBottom - topMargin() >= this.minimumHeight;
-		if (visible !== this.visible) {
+		const visible = this.area.visible && this.enabled;
+		if (visible !== this.presented) {
 			if (visible) {
-				this.visible = true;
-				this.sash.setInput(this.split); this.actions.setInput(this.actionBar, this.focusTarget); this.gameInput.setInput(this.frame);
+				this.presented = true;
+				this.sash.setInput(this.area.split); this.actions.setInput(this.actionBar, this.focusTarget); this.gameInput.setInput(this.frame);
 			}
 			else this.hidePresentation();
-			this.visible = visible;
 		}
-		const previousInset = editorChromeState.editorRightInset;
-		if (!visible) { editorChromeState.editorRightInset = 0; return previousInset !== 0; }
-		this.split.minimumFirstSize = minimumClientWidth + SPLIT_GAP / 2;
-		this.split.minimumSecondSize = this.minimumWidth + SPLIT_GAP / 2;
-		this.split.layout(editorViewState.editorAreaLeft, topMargin(), editorViewState.viewportWidth, editorViewState.editorAreaBottom);
-		const left = this.split.position + SPLIT_GAP / 2, top = this.split.bounds.top;
-		const right = this.split.bounds.right, bottom = this.split.bounds.bottom;
-		editorChromeState.editorRightInset = editorViewState.viewportWidth - (this.split.position - SPLIT_GAP / 2);
-		if (this.bounds.left !== left || this.bounds.top !== top || this.bounds.right !== right || this.bounds.bottom !== bottom || this.measuredFont !== editorViewState.font) {
-			write_rect_bounds(this.bounds, left, top, right, bottom);
+		if (!visible) return;
+		const { left, top, right, bottom } = this.area.companionBounds;
+		if (this.layoutRevision !== this.area.revision || this.measuredFont !== editorViewState.font) {
+			this.layoutRevision = this.area.revision;
 			this.measuredFont = editorViewState.font;
 			this.headerBottom = top + editorViewState.lineHeight + 6;
 			layoutWorkbenchActionBar(this.actionBar, right - 4, top + 2, this.headerBottom - 2, measureText, editorViewState.font.renderFont(), left + 4);
 			layoutGameFrame(this.frame, left + 4, this.headerBottom + 4, right - 4, bottom - 4);
 		}
 		this.actions.update();
-		return previousInset !== editorChromeState.editorRightInset;
 	}
 
 	public draw(): void {
 		if (!this.visible) return;
-		const bounds = this.bounds, font = editorViewState.font.renderFont();
+		const bounds = this.area.companionBounds, font = editorViewState.font.renderFont();
 		api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		api.fill_rect(bounds.left, bounds.top, bounds.right, this.headerBottom, 0, colors.COLOR_STATUS_BACKGROUND);
 		api.blit_text_inline_with_font('GAME', bounds.left + 4, bounds.top + 2, 0, colors.COLOR_STATUS_TEXT, font);
 		renderWorkbenchActionBar(this.actionBar, font, colors.COLOR_STATUS_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 		api.drawFrame(this.frame.left, this.frame.top, this.frame.right, this.frame.bottom);
 		this.gameInput.draw();
-		drawWorkbenchSplit(this.split, this.sash.hovered || this.sash.focusTarget.hasFocus);
+		drawWorkbenchSplit(this.area.split, this.sash.hovered || this.sash.focusTarget.hasFocus);
 	}
 
 	public handlePointer(snapshot: PointerSnapshot): boolean {
 		if (!this.visible) return false;
-		const inside = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds);
+		const inside = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.area.companionBounds);
 		if (inside && (snapshot.justPressedButtons & PointerButton.Secondary) !== 0
 			&& !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.frame)) {
 			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, false);

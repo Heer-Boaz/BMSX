@@ -7,8 +7,17 @@ import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../common/editor_inputs';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import type { EditorFont } from '../../../editor/ui/view/font';
 
 export type EditorPaneClearReason = 'deactivate' | 'move';
+
+/** Intrinsic constraints of one retained input, independent of any attached control. */
+export type EditorPaneConstraints = { minimumWidth: number; minimumHeight: number; companionWidth: number | undefined };
+
+/** Explicit contribution for clients with no intrinsic floor or optional companion presentation. */
+export function measureUnconstrainedEditor(_input: EditorInput, _font: EditorFont, _companionRequested: boolean, target: EditorPaneConstraints): void {
+	target.minimumWidth = 0; target.minimumHeight = 0; target.companionWidth = undefined;
+}
 
 /** Retained workbench control for one editor-input kind. */
 export abstract class EditorPane<TInput extends EditorInput> {
@@ -17,10 +26,7 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	/** Scope of a concrete control borrowed by this pane, when separate from its group scope. */
 	public get inputScope(): InputFocusScope | undefined { return undefined; }
 	protected contentBounds!: Readonly<RectBounds>;
-	/** Current-font client minimum beside the game; panes already presenting scanout opt out. */
-	public abstract get companionGameMinimumWidth(): number | undefined;
-	/** Components that require a hard client extent publish it here; other clients own compact/scroll presentation. */
-	public get minimumClientWidth(): number { return 0; }
+	/** Attached transient chrome may extend the contribution's intrinsic height; prospective views do not inherit it. */
 	public get minimumClientHeight(): number { return 0; }
 
 	/** Optional selection capability; editors without one still have an input identity. */

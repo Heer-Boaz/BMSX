@@ -739,22 +739,24 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} publis
 	const resultsBudget = editorViewState.charAdvance * 32 + indent * 3 + 10;
 	for (const ratio of [0, 0.15, 5 / 12, 0.85, 1]) {
 		view.split.ratio = ratio;
-		const retained = view.split.ratio, minimum = measureScenarioLabMinimumWidth(view);
+		const retained = view.split.ratio, first = view.split.minimumFirstSize, second = view.split.minimumSecondSize;
+		const minimum = measureScenarioLabMinimumWidth(font);
 		assert.equal(minimum, testsBudget + resultsBudget + 1);
+		assert.equal(view.split.minimumFirstSize, first); assert.equal(view.split.minimumSecondSize, second, 'measurement does not program the live split');
+		prepareScenarioLabLayout(view, { left: 23, top: 31, right: 23 + minimum, bottom: 231 });
 		assert.equal(view.split.minimumFirstSize, testsBudget);
 		assert.equal(view.split.minimumSecondSize, resultsBudget + 1);
-		prepareScenarioLabLayout(view, { left: 23, top: 31, right: 23 + minimum, bottom: 231 });
 		assert.equal(view.split.ratio, retained, 'measuring or arranging does not rewrite user placement intent');
 		assert.ok(view.testPane.layout.contentRight - view.testPane.layout.contentLeft >= testsBudget);
 		assert.ok(view.resultPane.layout.contentRight - view.resultPane.layout.contentLeft >= resultsBudget);
 	}
-	const minimum = measureScenarioLabMinimumWidth(view), width = minimum + 100;
+	const minimum = measureScenarioLabMinimumWidth(font), width = minimum + 100;
 	prepareScenarioLabLayout(view, { left: 23, top: 31, right: 23 + width, bottom: 231 });
 	view.split.resize(0); assert.equal(view.split.ratio, testsBudget / width);
 	view.split.resize(1); assert.equal(view.split.ratio, 1 - (resultsBudget + 1) / width);
-	assert.equal(measureScenarioLabMinimumWidth(view), minimum);
+	assert.equal(measureScenarioLabMinimumWidth(font), minimum);
 	const advance = t.mock.method(font, 'advance');
-	for (let frame = 0; frame < 1000; frame++) measureScenarioLabMinimumWidth(view);
+	for (let frame = 0; frame < 1000; frame++) measureScenarioLabMinimumWidth(font);
 	assert.equal(advance.mock.callCount(), 0);
 });
 

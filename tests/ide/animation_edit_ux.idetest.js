@@ -146,12 +146,11 @@ await showClient('keys');
 const firstKeys = input.keys.range.bounds;
 await click(input.keys.xAt(0), (firstKeys.top + firstKeys.bottom) / 2);
 t.assert(input.trackIndex === 0 && input.keyIndex === 0, 'the first actual authored key did not regain selection after Undo');
-const fullRight = input.layout.bounds.right;
 t.command('gameView.togglePanel'); await t.frames(3);
 for (const variant of ['tiny', 'msx']) {
-	const companionVisible = input.layout.bounds.right !== fullRight;
+	const mainArea = t.mainAreaLayout(), companionVisible = mainArea.visible;
 	if (companionVisible) {
-		const sash = input.layout.bounds.right + 2;
+		const sash = mainArea.split.position;
 		t.controlInput([{ type: 'pointer', x: sash, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 		t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
 		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);

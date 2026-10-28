@@ -24,12 +24,8 @@ import type { AssistantTranscriptSelection } from './transcript_selection';
 export type TranscriptViewInput = { conversation: { readonly entries: readonly AssistantEntry[] }; selection: AssistantTranscriptSelection;
 	viewport: WorkbenchScrollViewport; transcript: AssistantTranscriptProjection; layout: FullWidthWorkbenchLayout };
 const IMAGE_MAX_WIDTH = 180;
-// Preserve a prose reading column; arbitrary character wrapping is not a compact transcript mode.
-const TRANSCRIPT_READING_COLUMNS = 40;
-
 /** Shared transcript focus, layout and interaction; no chat composer or agent controls. */
 export class AssistantTranscriptControl {
-	public get minimumWidth(): number { return editorViewState.charAdvance * TRANSCRIPT_READING_COLUMNS + colors.SCROLLBAR_WIDTH + 16; }
 	public readonly scroll: WorkbenchScrollControl;
 	private input: TranscriptViewInput | undefined;
 	private readonly imageBounds = create_rect_bounds();

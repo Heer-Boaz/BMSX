@@ -3,7 +3,7 @@ import { copyPointerSnapshot } from '../../input/pointer/frame';
 import { CodeEditorTextInput } from '../input/native_text';
 import { RuntimeErrorOverlayPointer } from '../contrib/runtime_error/pointer';
 import { advanceToggleBlink, resetBlinkState } from './view/caret/blink';
-import { CODE_AREA_RIGHT_MARGIN, CURSOR_BLINK_INTERVAL, SCROLLBAR_WIDTH } from '../../common/constants';
+import { CURSOR_BLINK_INTERVAL, SCROLLBAR_WIDTH } from '../../common/constants';
 import type { HostClock } from '../../../hosts/common/clock';
 import { create_rect_bounds, copy_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
 import { clamp } from '../../../machine/ts/common/clamp';
@@ -24,7 +24,7 @@ import { CodeLayout } from './code/layout';
 import type { CodeDocumentProjection } from './code/document_projection';
 import type { EditorFont } from './view/font';
 import type { CodeEditorViewState, InlineEditState, VisualCursor } from './code_editor_state';
-import { computeWrapWidth, getCodeAreaBounds, measureGutterWidth } from './view/view';
+import { computeWrapWidth, getCodeAreaBounds, measureCodeEditorWidth } from './view/view';
 import { handleCodeAreaSelectionPointer } from '../../input/pointer/code/selection';
 import { CodeRowDecorations } from '../render/code_area/decorations';
 import { CompletionRenderState } from '../render/completion';
@@ -54,7 +54,6 @@ export class CodeEditorControl implements PointerCaptureTarget {
 	};
 	public readonly scratch = {
 		contextMenuAnchor: create_rect_bounds(),
-		gutterFont: undefined as EditorFont | undefined, gutterLineCount: -1, measuredGutterWidth: 0,
 		codeAreaBounds: { codeTop: 0, codeBottom: 0, codeLeft: 0, codeRight: 0, gutterLeft: 0, gutterRight: 0, textLeft: 0 },
 		pointerTextPosition: { row: 0, column: 0, injected: false },
 		pointerRowResolution: { visualIndex: 0, segment: null as VisualLineSegment },
@@ -119,7 +118,7 @@ export class CodeEditorControl implements PointerCaptureTarget {
 		const value = this.visualCursorOverride;
 		return value !== null && value.row === this.view.cursorRow && value.column === this.view.cursorColumn ? value : null;
 	}
-	public get minimumWidth(): number { return measureGutterWidth(this) + 2 + this.charAdvance + SCROLLBAR_WIDTH + CODE_AREA_RIGHT_MARGIN; }
+	public get minimumWidth(): number { return measureCodeEditorWidth(this.model, this.font); }
 	public get minimumHeight(): number { return this.lineHeight + (this.view.wordWrapEnabled ? 0 : SCROLLBAR_WIDTH); }
 
 	public setFont(font: EditorFont): void {

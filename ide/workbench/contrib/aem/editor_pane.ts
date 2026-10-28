@@ -22,7 +22,7 @@ import { createStructuredValueEdit } from '../../../language/yaml/structured_edi
 import { aemDocumentFormat } from '../../../../toolchain/ts/rompack/aem';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth } from '../../ui/property_tree';
+import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { WorkbenchPropertyEdit } from '../../ui/property_edit';
@@ -40,8 +40,6 @@ import { AemNavigationSelection } from './navigation_selection';
 import * as colors from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 
-const PROPERTY_NAME_READING_COLUMNS = 12;
-const EXPRESSION_READING_COLUMNS = 20;
 
 export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	public override getSourceLocation(): EditorSourceLocation | undefined {
@@ -50,10 +48,6 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	}
 
 	public override getSelection(): AemNavigationSelection { return new AemNavigationSelection(this.input); }
-	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
-	public override get companionGameMinimumWidth(): number {
-		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS, EXPRESSION_READING_COLUMNS) + 8;
-	}
 
 	private readonly pointer = new WorkbenchPropertyTreePointer(inputFocus, pointerHover, this.focusTarget);
 	private readonly actions: WorkbenchActionBarControl;
@@ -91,14 +85,18 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 			run: () => executeTextHistoryCommand(this.input.workingCopy, direction),
 		});
 	}
-	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.pointer.setInput(this.input.tree); }
+	protected override activate(): void {
+		projectAemSource(this.input);
+		this.actions.setInput(this.input.actionBar, this.focusTarget); this.pointer.setInput(this.input.tree);
+		this.layoutInput();
+	}
 	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: AemNavigationSelection): void {
 		if (navigationSelection === undefined) return;
 		this.edit.close(); this.pointer.clear();
 		navigationSelection.restore(this.input);
 		this.update();
 	}
-	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
+	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.layoutInput(); }
 	public override clearInput(): void { this.edit.close(); this.pointer.clear(); this.actionTooltip.hide(); this.actions.clearInput(); super.clearInput(); }
 	public override dispose(): void { this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
 	private editProperty(): void {
@@ -113,7 +111,17 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		lifetime.add({ dispose: model.onDidChangeContent(() => this.edit.close()) });
 	}
 	public override update(): void {
-		projectAemSource(this.input); updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
+		projectAemSource(this.input);
+		this.layoutInput();
+		this.pointer.updateFeedback();
+		this.edit.update();
+		this.actions.update();
+		const hint = this.actions.tooltipItem;
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
+		else this.actionTooltip.hide();
+	}
+	private layoutInput(): void {
+		updateFullWidthWorkbenchLayout(this.input.layout, this.contentBounds);
 		const { layout, actionBar, tree } = this.input;
 		const font = editorViewState.font.renderFont();
 		const left = clamp(layout.left + 4, layout.left, layout.right), right = clamp(layout.right - 4, left, layout.right);
@@ -127,12 +135,6 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 			pointerHover.release(this.actions);
 			this.actions.focusTarget.release();
 		}
-		this.pointer.updateFeedback();
-		this.edit.update();
-		this.actions.update();
-		const hint = this.actions.tooltipItem;
-		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, font, measureTextRange, measureText, this.workArea);
-		else this.actionTooltip.hide();
 	}
 	public draw(): void {
 		const input = this.input;

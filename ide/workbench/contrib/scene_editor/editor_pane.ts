@@ -26,7 +26,7 @@ import { pointerCapture } from '../../../input/pointer/capture';
 import type { SceneEditorController } from './controller';
 import { POSITION_AXES, type SceneEditorInput, type SceneEditorSection } from './editor_input';
 import { drawSceneEditor } from './render';
-import { layoutSceneEditor, measureSceneEditorMinimumWidth } from './layout';
+import { layoutSceneEditor } from './layout';
 import { selectSceneOutlineRow } from './outline';
 import { SceneOptionEditor, type SceneEditorSectionCommands } from './option_editor';
 import type { SceneOptionProperty } from './option_properties';
@@ -40,7 +40,6 @@ import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 
 /** Concrete editable view: document history here, draft history in each field. */
 export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
-	public override get companionGameMinimumWidth(): number { return measureSceneEditorMinimumWidth(); }
 	public override getSourceLocation(): EditorSourceLocation | undefined {
 		const input = this.input;
 		return this.controller.getSourceLocation(input);

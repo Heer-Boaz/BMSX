@@ -21,6 +21,9 @@ import { stateGraphSelection } from './state_graph_navigation';
 import { createBehaviorLensEffectProperties } from './action_effect_properties';
 
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
+import type { EditorFont } from '../../../editor/ui/view/font';
+import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
+import type { BehaviorLensInput } from './editor_input';
 
 const HEADER_PADDING_X = 4;
 const HEADER_PADDING_Y = 2;
@@ -33,13 +36,18 @@ const OUTLINE_READING_COLUMNS = 32;
 const PROPERTY_NAME_READING_COLUMNS = 12;
 const PROPERTY_VALUE_READING_COLUMNS = 20;
 
-export function measureBehaviorLensMinimumWidth(state: BehaviorLensViewState): number {
+export function measureBehaviorLensMinimumWidth(state: BehaviorLensViewState, font: EditorFont = editorViewState.font): number {
 	const presentation = state.presentation;
-	if (presentation.kind === 'properties') return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(),
+	if (presentation.kind === 'properties') return measureWorkbenchPropertyTreeMinimumWidth(font.renderFont(),
 		PROPERTY_NAME_READING_COLUMNS, PROPERTY_VALUE_READING_COLUMNS) + CONTENT_PADDING_X * 2;
-	if (presentation.kind === 'outline') return editorViewState.charAdvance * OUTLINE_READING_COLUMNS
-		+ editorViewState.charAdvance * TREE_INDENT_COLUMNS * 2 + CONTENT_PADDING_X * 2;
-	return editorViewState.charAdvance * GRAPH_READING_COLUMNS + GRAPH_NODE_PADDING * 2 + SCROLLBAR_WIDTH + CONTENT_PADDING_X * 2;
+	if (presentation.kind === 'outline') return font.charAdvance * OUTLINE_READING_COLUMNS
+		+ font.charAdvance * TREE_INDENT_COLUMNS * 2 + CONTENT_PADDING_X * 2;
+	return font.charAdvance * GRAPH_READING_COLUMNS + GRAPH_NODE_PADDING * 2 + SCROLLBAR_WIDTH + CONTENT_PADDING_X * 2;
+}
+
+export function measureBehaviorLensEditor(input: BehaviorLensInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void {
+	target.minimumWidth = 0; target.minimumHeight = 0;
+	target.companionWidth = companionRequested ? measureBehaviorLensMinimumWidth(input.view, font) : undefined;
 }
 
 export function createBehaviorLensLayout(): BehaviorLensLayout {

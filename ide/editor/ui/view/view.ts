@@ -1,4 +1,6 @@
 import type { CodeEditorControl } from '../code_editor_control';
+import type { EditorTextModel } from '../../model/text_model';
+import type { EditorFont } from './font';
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 
 import * as constants from '../../../common/constants';
@@ -19,23 +21,36 @@ function decimalDigitCount(value: number): number {
 	return digits;
 }
 
-export function getBreakpointLaneWidth(code: CodeEditorControl): number {
-	const width = code.charAdvance + 2;
+export function getBreakpointLaneWidth(font: EditorFont): number {
+	const width = font.charAdvance + 2;
 	return width > 6 ? width : 6;
 }
 
 
-/** Intrinsic gutter measurement is independent of publishing the current code viewport. */
-export function measureGutterWidth(code: CodeEditorControl): number {
-	const lineCount = code.model.buffer.getLineCount();
-	const font = code.font;
-	if (code.scratch.gutterFont !== font || code.scratch.gutterLineCount !== lineCount) {
-		code.scratch.gutterFont = font; code.scratch.gutterLineCount = lineCount;
+const gutterMeasurements = new WeakMap<EditorTextModel, { font: EditorFont; lineCount: number; width: number }>();
+
+/** Intrinsic gutter measurement is shared by retained-input constraints and attached code controls. */
+export function measureGutterWidth(model: EditorTextModel, font: EditorFont): number {
+	const lineCount = model.buffer.getLineCount();
+	let measured = gutterMeasurements.get(model);
+	if (measured === undefined) {
+		measured = { font, lineCount: -1, width: 0 }; gutterMeasurements.set(model, measured);
+	}
+	if (measured.font !== font || measured.lineCount !== lineCount) {
+		measured.font = font; measured.lineCount = lineCount;
 		const computedDigits = decimalDigitCount(lineCount);
 		const digitCount = computedDigits > 2 ? computedDigits : 2;
-		code.scratch.measuredGutterWidth = getBreakpointLaneWidth(code) + 4 + digitCount * font.advance('0');
+		measured.width = getBreakpointLaneWidth(font) + 4 + digitCount * font.advance('0');
 	}
-	return code.scratch.measuredGutterWidth;
+	return measured.width;
+}
+
+// A usable editing column is distinct from the wider comfortable reading budget.
+const CODE_EDITOR_MINIMUM_COLUMNS = 16;
+
+/** The code owner composes text columns (including a caret column), gutter and scroll/right lanes. */
+export function measureCodeEditorWidth(model: EditorTextModel, font: EditorFont, columns = CODE_EDITOR_MINIMUM_COLUMNS + 1): number {
+	return measureGutterWidth(model, font) + 2 + font.charAdvance * columns + constants.SCROLLBAR_WIDTH + constants.CODE_AREA_RIGHT_MARGIN;
 }
 
 export function refreshViewportLayout(code: CodeEditorControl): void {
@@ -58,7 +73,7 @@ export type CodeAreaBounds = {
 export function getCodeAreaBounds(code: CodeEditorControl): CodeAreaBounds {
 	const bounds = code.geometry.clientBounds;
 	const gutterLeft = bounds.left;
-	const gutterRight = gutterLeft + measureGutterWidth(code);
+	const gutterRight = gutterLeft + measureGutterWidth(code.model, code.font);
 	code.scratch.codeAreaBounds.codeTop = bounds.top;
 	code.scratch.codeAreaBounds.codeBottom = bounds.bottom;
 	code.scratch.codeAreaBounds.codeLeft = bounds.left;

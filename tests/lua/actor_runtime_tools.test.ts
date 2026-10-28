@@ -46,7 +46,7 @@ import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submi
 import { RuntimeTimelineControl } from '../../ide/workbench/ui/runtime_timeline_control';
 import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
-import { createTestGroupPresentation, createTestEditorPaneFactories, createTestEditorCloseDependencies } from '../helpers/editor_panes';
+import { createTestGroupPresentation, createTestEditorPaneContributions, createTestEditorCloseDependencies } from '../helpers/editor_panes';
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
@@ -98,7 +98,7 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 	const parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
 		commands: { isEnabled: () => false, execute() {} }, contextMenu, renderContext: presentation.renderContext,
-		factories: createTestEditorPaneFactories(), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
+		contributions: createTestEditorPaneContributions(), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		...createTestEditorCloseDependencies(t, presentation),
 		layoutMain: () => parts.main.layout(presentation.workArea) });
 	const group = parts.main.activeGroup;
@@ -1223,7 +1223,7 @@ return world`);
 	};
 	assert.equal(update(), true);
 	const root = tree.roots[0], component = root.children[0], machine = component.children[0], timeline = root.children[2], effects = root.children[3];
-	assert.deepEqual(component.children.map(node => node.name), ['zulu', 'alpha'], 'machine factories own machine order');
+	assert.deepEqual(component.children.map(node => node.name), ['zulu', 'alpha'], 'machine contributions own machine order');
 	assert.deepEqual(machine.children.map(node => node.name), ['concurrent', 'idle']);
 	const ids = f.guest.readStringMember(machine.value, 'state_ids') as Table;
 	assert.deepEqual([ids.getInteger(1), ids.getInteger(2)].map(value => f.guest.formatValue(value)), ['idle', 'concurrent'], 'display order does not rewrite runtime traversal');

@@ -21,7 +21,10 @@ import test from 'node:test';
 
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
-import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
+import { EditorPane, measureUnconstrainedEditor, type EditorPaneConstraints } from '../../ide/workbench/services/editor/editor_pane';
+import type { EditorPaneContribution } from '../../ide/workbench/services/editor/editor_panes';
+import { EditorFont } from '../../ide/editor/ui/view/font';
+import { measureSourceEditor } from '../../ide/workbench/contrib/code_editor/constraints';
 import { createTestGroupPresentation } from '../helpers/editor_panes';
 import { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
 import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
@@ -38,7 +41,6 @@ import type { StudioBuildJob } from '../../hosts/common/studio_builds';
 
 class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public override get commandTarget() { return this.focusTarget; }
-	public override get companionGameMinimumWidth(): undefined { return undefined; }
 
 	public readonly focusTarget: InputFocusTarget;
 	private readonly unbindKeyboard: () => void;
@@ -126,43 +128,43 @@ function resourceInput(): ResourceViewerInput {
 	return new ResourceViewerInput(createScenarioTestSourceState([]).catalog, { contextLabel: 'Fixture project', sourceFilePath: 'image.png', location: { kind: 'workspace' as const, path: 'image.png' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'image.png', source: { type: 'image', resid: 'image' } });
 }
 
-function createEditorPanes() {
+function createEditorPanes(measureCode: EditorPaneContribution<CodeEditorInput>['measure'] = measureUnconstrainedEditor) {
 	let codePane: RecordingEditorPane<CodeEditorInput>;
 	let resourcePane: RecordingEditorPane<ResourceViewerInput>;
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const group = new EditorGroupView({
-		home: group => new RecordingEditorPane<HomeInput>(group.focusScope),
-		play_session: group => new RecordingEditorPane(group.focusScope),
-		animation: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope),
-		host_error: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(group.focusScope),
-		build_log: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(group.focusScope),
-		rom_inspector: group => new RecordingEditorPane<RomInspectorInput>(group.focusScope),
-		event_viewer: group => new RecordingEditorPane<EventViewerInput>(group.focusScope),
-		gte_debugger: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(group.focusScope),
-		gpu_debugger: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(group.focusScope),
-		terminal: group => new RecordingEditorPane<TerminalInput>(group.focusScope),
-		actor_lab: group => new RecordingEditorPane<ActorLabInput>(group.focusScope),
-		game_view: group => new RecordingEditorPane<GameViewInput>(group.focusScope),
-		conversation_observer: group => new RecordingEditorPane<ConversationObserverInput>(group.focusScope),
-		aem_editor: group => new RecordingEditorPane<AemEditorInput>(group.focusScope),
-		lua_program: group => new RecordingEditorPane<LuaProgramInput>(group.focusScope),
-		assistant: group => new RecordingEditorPane<AssistantInput>(group.focusScope),
-		workspace_edit_review: group => new RecordingEditorPane<WorkspaceEditReviewInput>(group.focusScope),
-		code_editor: group => {
+		home: { create: group => new RecordingEditorPane<HomeInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		play_session: { create: group => new RecordingEditorPane(group.focusScope), measure: measureUnconstrainedEditor },
+		animation: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope), measure: measureUnconstrainedEditor },
+		host_error: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(group.focusScope), measure: measureUnconstrainedEditor },
+		build_log: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(group.focusScope), measure: measureUnconstrainedEditor },
+		rom_inspector: { create: group => new RecordingEditorPane<RomInspectorInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		event_viewer: { create: group => new RecordingEditorPane<EventViewerInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		gte_debugger: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(group.focusScope), measure: measureUnconstrainedEditor },
+		gpu_debugger: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(group.focusScope), measure: measureUnconstrainedEditor },
+		terminal: { create: group => new RecordingEditorPane<TerminalInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		actor_lab: { create: group => new RecordingEditorPane<ActorLabInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		game_view: { create: group => new RecordingEditorPane<GameViewInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		conversation_observer: { create: group => new RecordingEditorPane<ConversationObserverInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		aem_editor: { create: group => new RecordingEditorPane<AemEditorInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		lua_program: { create: group => new RecordingEditorPane<LuaProgramInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		assistant: { create: group => new RecordingEditorPane<AssistantInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		workspace_edit_review: { create: group => new RecordingEditorPane<WorkspaceEditReviewInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		code_editor: { create: group => {
 			codeFactoryCount += 1;
 			codePane = new RecordingEditorPane<CodeEditorInput>(group.focusScope);
 			return codePane;
-		},
-		resource_view: group => {
+		}, measure: measureCode },
+		resource_view: { create: group => {
 			resourceFactoryCount += 1;
 			resourcePane = new RecordingEditorPane<ResourceViewerInput>(group.focusScope);
 			return resourcePane;
-		},
-		behavior_lens: group => new RecordingEditorPane<BehaviorLensInput>(group.focusScope),
-		scenario_lab: group => new RecordingEditorPane<ScenarioLabInput>(group.focusScope),
-		scene_editor: group => new RecordingEditorPane<SceneEditorInput>(group.focusScope),
-		cart_map: group => new RecordingEditorPane<CartMapInput>(group.focusScope),
+		}, measure: measureUnconstrainedEditor },
+		behavior_lens: { create: group => new RecordingEditorPane<BehaviorLensInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		scenario_lab: { create: group => new RecordingEditorPane<ScenarioLabInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		scene_editor: { create: group => new RecordingEditorPane<SceneEditorInput>(group.focusScope), measure: measureUnconstrainedEditor },
+		cart_map: { create: group => new RecordingEditorPane<CartMapInput>(group.focusScope), measure: measureUnconstrainedEditor },
 	}, { isEnabled: () => false, execute() {} }, async targets => {
 		for (const { group, input } of targets) group.removeEditor(input);
 		return true;
@@ -175,6 +177,30 @@ function createEditorPanes() {
 		resourceFactoryCount: () => resourceFactoryCount,
 	};
 }
+
+test('registry measures a retained input with caller font and storage without creating or attaching its pane', t => {
+	const offered = codeInput('code:0\0a.lua'), active = resourceInput(), font = new EditorFont('msx');
+	const target: EditorPaneConstraints = { minimumWidth: -1, minimumHeight: -1, companionWidth: -1 };
+	let calls = 0, requested = true;
+	const harness = createEditorPanes((input, measuredFont, companionRequested, result) => {
+		calls++;
+		assert.equal(input, offered); assert.equal(measuredFont, font); assert.equal(companionRequested, requested); assert.equal(result, target);
+		measureSourceEditor(input, measuredFont, companionRequested, result);
+	});
+	t.after(() => { harness.group.dispose(); offered.dispose(); offered.workingCopy.dispose(); inputFocus.setTarget(null); });
+	harness.group.openEditor(active);
+	const pane = harness.group.panes.activePane, focus = inputFocus.admittedTarget, generation = harness.group.panes.openGeneration;
+	const version = offered.workingCopy.version, text = offered.workingCopy.buffer.getText();
+	harness.group.panes.measure(offered, font, requested, target);
+	assert.ok(target.minimumWidth > 0 && target.minimumHeight > 0 && target.companionWidth! > target.minimumWidth);
+	requested = false;
+	harness.group.panes.measure(offered, font, requested, target);
+	assert.equal(target.companionWidth, undefined); assert.equal(calls, 2);
+	assert.equal(harness.codeFactoryCount(), 0); assert.equal(harness.group.panes.getPane('code_editor'), undefined);
+	assert.equal(harness.group.panes.activePane, pane); assert.equal(harness.group.model.activeTab, active);
+	assert.equal(harness.group.panes.openGeneration, generation); assert.equal(inputFocus.admittedTarget, focus);
+	assert.equal(offered.workingCopy.version, version); assert.equal(offered.workingCopy.buffer.getText(), text);
+});
 
 test('an attached input receives its current layout before its control can acquire focus', t => {
 	const harness = createEditorPanes();

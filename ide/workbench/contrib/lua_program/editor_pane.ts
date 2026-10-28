@@ -23,7 +23,7 @@ import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../languag
 import { readLuaSourceRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
-import { layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth } from '../../ui/property_tree';
+import { layoutWorkbenchPropertyTree } from '../../ui/property_tree';
 import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { WorkbenchPropertyEdit } from '../../ui/property_edit';
@@ -41,9 +41,6 @@ import type { ActionStringTester } from '../scenario_lab/actionstring';
 import { truncateMeasuredText } from '../../../common/text';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 
-const PROPERTY_NAME_READING_COLUMNS = 12;
-const SOURCE_VALUE_READING_COLUMNS = 20;
-const RUNTIME_VALUE_READING_COLUMNS = 24;
 
 export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInput> {
 	public override getSourceLocation(): EditorSourceLocation | undefined {
@@ -51,11 +48,6 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		return this.controller.getSourceLocation(input);
 	}
 
-	// A root property keeps a meaningful source name and expression, including its tree/control lanes.
-	public override get companionGameMinimumWidth(): number {
-		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS,
-			this.input.liveVisible ? RUNTIME_VALUE_READING_COLUMNS : SOURCE_VALUE_READING_COLUMNS) + 8;
-	}
 
 	private readonly pointer = new WorkbenchPropertyTreePointer(inputFocus, pointerHover, this.focusTarget);
 	private readonly actions: WorkbenchActionBarControl;
@@ -144,7 +136,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		this.unbindInteraction = interaction.onDidChange(bindRuntime);
 		this.actions.setInput(this.input.actionBar, this.focusTarget); this.update();
 	}
-	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.update(); }
+	public override layout(bounds: Readonly<RectBounds>): void { super.layout(bounds); this.layoutInput(); }
 	public override get commandTarget(): InputFocusTarget { return this.focusTarget.canFocus!() ? this.focusTarget : this.actions.focusTarget; }
 	public override clearInput(reason: EditorPaneClearReason = 'deactivate'): void {
 		if (reason !== 'move') this.input.interaction.running = false;
@@ -168,6 +160,15 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	}
 	public override update(): void {
 		this.controller.refresh(this.input); this.controller.refreshRuntime(this.input);
+		this.layoutInput();
+		this.pointer.updateFeedback();
+		this.edit.update();
+		this.actions.update();
+		const hint = this.actions.tooltipItem;
+		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
+		else this.actionTooltip.hide();
+	}
+	private layoutInput(): void {
 		const input = this.input;
 		updateFullWidthWorkbenchLayout(input.layout, this.contentBounds);
 		for (const item of input.actionBar.items) {
@@ -201,12 +202,6 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 			pointerHover.release(this.actions);
 			this.actions.focusTarget.release();
 		}
-		this.pointer.updateFeedback();
-		this.edit.update();
-		this.actions.update();
-		const hint = this.actions.tooltipItem;
-		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
-		else this.actionTooltip.hide();
 	}
 	public draw(): void {
 		const input = this.input;

@@ -20,12 +20,8 @@ import { layoutResourceViewer, type ResourceViewerLayout } from './viewer';
 import type { ResourceViewerContent } from './model';
 
 // Metadata names and values need a reading column even when the image itself can shrink.
-const RESOURCE_READING_COLUMNS = 32;
 
 export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceViewerInput> {
-	public override get companionGameMinimumWidth(): number {
-		return editorViewState.charAdvance * RESOURCE_READING_COLUMNS + constants.SCROLLBAR_WIDTH + 8;
-	}
 
 	public override getSelection(): ResourceViewerNavigationSelection {
 		return new ResourceViewerNavigationSelection(this.input.view.scroll);

@@ -12,7 +12,7 @@ import { dragScrollSpeed } from '../../ui/drag_scroll';
 import type { EditorTabDragHandler, EditorDropSource } from '../../ui/tab/drag';
 import type { WorkbenchSurface } from '../windows/model';
 import type { WorkbenchSurfaceService } from '../windows/service';
-import { editorGroupChromeMinimumWidth, editorGroupChromeMinimumHeight, type EditorGroupView } from './editor_group';
+import type { EditorGroupView } from './editor_group';
 import type { EditorOpenDestination, EditorParts } from './editor_parts';
 
 const SPLIT_EDGE_FRACTION = 1 / 3;
@@ -244,14 +244,17 @@ export class EditorDropTarget implements EditorTabDragHandler {
 				if (target === source && (drag.kind === 'group' || source!.model.tabs.length === 1)) return;
 				this.splitDestination.group = target;
 				this.splitDestination.direction = edge === left ? 'left' : edge === right ? 'right' : edge === top ? 'up' : 'down';
-				const sourcePart = source === undefined ? undefined : this.parts.partForGroup(source), targetPart = this.parts.partForGroup(target);
-				if (drag.kind === 'group') {
-					if (!targetPart.arrangement.writeMovePreview(sourcePart === targetPart ? source : undefined, target,
-						this.splitDestination.direction, source!.minimumWidth, source!.minimumHeight, this.preview)) return;
-				} else targetPart.arrangement.writeSplitPreview(target, this.splitDestination.direction,
-					drag.kind === 'opening' ? editorGroupChromeMinimumWidth() : source!.minimumWidth,
-					drag.kind === 'opening' ? editorGroupChromeMinimumHeight() : source!.minimumHeight,
-					sourcePart === targetPart && source!.model.tabs.length === 1 ? source : undefined, this.preview);
+				const targetPart = this.parts.partForGroup(target);
+				if (drag.kind === 'opening') {
+					// Unresolved openings name a destination region, not a measured pane.
+					copy_rect_bounds(this.preview, bounds);
+					if (this.splitDestination.direction === 'left') this.preview.right = (bounds.left + bounds.right) / 2;
+					else if (this.splitDestination.direction === 'right') this.preview.left = (bounds.left + bounds.right) / 2;
+					else if (this.splitDestination.direction === 'up') this.preview.bottom = (bounds.top + bounds.bottom) / 2;
+					else this.preview.top = (bounds.top + bounds.bottom) / 2;
+				} else if (drag.kind === 'group') {
+					if (!targetPart.writeMovePreview(source!, target, this.splitDestination.direction, this.preview)) return;
+				} else targetPart.writeSplitPreview(source!, drag.input, target, this.splitDestination.direction, this.preview);
 				this.intention = this.splitDestination;
 			} else if (target !== source) {
 				this.groupDestination.group = target; this.groupDestination.index = undefined;

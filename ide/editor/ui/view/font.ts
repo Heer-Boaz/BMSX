@@ -7,6 +7,7 @@ export class EditorFont {
 	private readonly styles = new Map<FontStyle, Font>();
 	private readonly itemCache: Map<string, FontGlyph> = new Map();
 	private readonly _variant: FontVariant;
+	private columnAdvance: number | undefined;
 
 	constructor(variant: FontVariant = DEFAULT_FONT_VARIANT) {
 		this._variant = variant;
@@ -36,6 +37,9 @@ export class EditorFont {
 	public get lineHeight(): number {
 		return this.renderFontOwner().lineHeight;
 	}
+
+	/** Fixed reading-column budgets share the same immutable font measurement. */
+	public get charAdvance(): number { return this.columnAdvance ??= this.advance('M'); }
 
 	/** Text-editor width uses fixed tab expansion and no advance for line separators. */
 	public readonly measureTextRange = (text: string, start: number, end: number): number => {

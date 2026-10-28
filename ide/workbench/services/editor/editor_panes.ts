@@ -1,14 +1,20 @@
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../common/editor_inputs';
-import type { EditorPane, EditorPaneClearReason } from './editor_pane';
+import type { EditorPane, EditorPaneClearReason, EditorPaneConstraints } from './editor_pane';
+import type { EditorFont } from '../../../editor/ui/view/font';
 import type { EditorGroupView, EditorInputOpenResult } from './editor_group';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 
-export type EditorPaneFactories = {
-	[TKind in EditorInputKind]: (group: EditorGroupView) => EditorPane<Extract<EditorInput, { kind: TKind }>>;
+export type EditorPaneContribution<TInput extends EditorInput> = {
+	create(group: EditorGroupView): EditorPane<TInput>;
+	measure(input: TInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void;
+};
+
+export type EditorPaneContributions = {
+	[TKind in EditorInputKind]: EditorPaneContribution<Extract<EditorInput, { kind: TKind }>>;
 };
 
 export type EditorPaneOpenOptions = {
@@ -55,8 +61,14 @@ export class EditorPanes {
 	}
 
 	public readonly focusScope: InputFocusScope;
-	public constructor(private readonly factories: EditorPaneFactories, private readonly group: EditorGroupView) {
+	public constructor(private readonly contributions: EditorPaneContributions, private readonly group: EditorGroupView) {
 		this.focusScope = group.focusScope;
+	}
+
+	/** Measuring a retained input never constructs or attaches its editor control. */
+	public measure(input: EditorInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void {
+		const contribution: EditorPaneContribution<EditorInput> = this.contributions[input.kind];
+		contribution.measure(input, font, companionRequested, target);
 	}
 
 	/** Retire captured selections before the attached control and input are detached. */
@@ -141,7 +153,7 @@ export class EditorPanes {
 	private getOrCreatePane(input: EditorInput): EditorPane<EditorInput> {
 		let pane = this.panes.get(input.kind);
 		if (pane === undefined) {
-			pane = this.factories[input.kind](this.group);
+			pane = this.contributions[input.kind].create(this.group);
 			this.panes.set(input.kind, pane);
 		}
 		return pane;

@@ -270,7 +270,6 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		}
 		this.detailsWindow.update();
 	}
-	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	public override get commandTarget(): InputFocusTarget { return this.boundGraph === undefined ? this.focusTarget : this.graph.focusTarget; }
 	public override getSelection(): ActorLabNavigationSelection {
 		if (this.inspector.visible) {

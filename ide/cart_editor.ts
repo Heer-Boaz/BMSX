@@ -3,6 +3,24 @@ import { WorkbenchInteraction } from './workbench/services/execution/interaction
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { HomeInput } from './workbench/contrib/home/editor_input';
 import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
+import { measureUnconstrainedEditor } from './workbench/services/editor/editor_pane';
+import { measureSourceEditor } from './workbench/contrib/code_editor/constraints';
+import { measureAnimationEditorConstraints } from './workbench/contrib/animation/layout';
+import { measureAemEditor } from './workbench/contrib/aem/constraints';
+import { measureLuaProgramEditor } from './workbench/contrib/lua_program/constraints';
+import { measureBehaviorLensEditor } from './workbench/contrib/behavior_lens/layout';
+import { measureScenarioLabEditor } from './workbench/contrib/scenario_lab/layout';
+import { measureCartMapEditor } from './workbench/contrib/cart_maps/layout';
+import { measureSceneEditor } from './workbench/contrib/scene_editor/layout';
+import { measureEventViewerEditor } from './workbench/contrib/events/layout';
+import { measureRomInspectorEditor } from './workbench/contrib/rom_inspector/constraints';
+import { measureGteDebuggerEditor } from './workbench/contrib/gte_debugger/constraints';
+import { measureGpuDebuggerEditor } from './workbench/contrib/gpu_debugger/constraints';
+import { measureResourceViewerEditor } from './workbench/contrib/resources/constraints';
+import { measureHostErrorEditor } from './workbench/contrib/host_error/constraints';
+import { measureWorkspaceEditReviewEditor } from './workbench/contrib/edit_review/constraints';
+import { measureBuildLogEditor } from './workbench/contrib/builds/constraints';
+import { measureTranscriptEditor } from './workbench/contrib/assistant/constraints';
 import { workspaceState } from './workbench/workspace/state';
 import { type PointerInputEvent, type WheelInputEvent } from '../hosts/common/input/pointer_event';
 import type { DisposableStore } from './common/lifecycle';
@@ -426,24 +444,24 @@ export class RuntimeCartEditor implements CartEditor {
 			surfaces: this.surfaces, owner: chromeSurface, scope: inputFocus.workbenchScope, workArea,
 			commands: this.commands, contextMenu: this.contextMenu, renderContext: this.chromeRenderContext,
 			layoutMain: () => this.layoutMainEditor(),
-			focusReturn: this.resourcePanel.focusTarget, factories: {
-			home: group => new HomeEditorPane(this.commands, group.focusScope),
-			play_session: group => new PlayEditorPane(this.commands, this.play, this.contextMenu, this.navigation, group,
-				this.editorParts.partForGroup(group).quickInput, group.focusScope),
-			animation: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput, this.navigation),
-			host_error: group => new HostErrorPane(group.focusScope),
-			build_log: group => new BuildLogPane(this.clipboard, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
-			rom_inspector: group => new RomInspectorPane(this.commands, this.sources, this.navigation, this.editorParts.partForGroup(group).quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
-			event_viewer: group => new EventViewerPane(this.editorParts.partForGroup(group).quickInput, this.commands, frameNavigation, this.contextMenu,
-				this.surfaces, group.paneSurface, group.workArea, group.focusScope),
-			gpu_debugger: group => new GpuDebuggerPane(this.editorParts.partForGroup(group).quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
-			gte_debugger: group => new GteDebuggerPane(this.editorParts.partForGroup(group).quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope),
-			terminal: group => new TerminalPane(this.terminal, input, presenter, group.focusScope, workbench.transport),
-			conversation_observer: group => new ConversationObserverPane(decodeImage, this.surfaces, group.paneSurface, this.commands, group.focusScope),
-			assistant: group => new AssistantPane(this.clipboard, group, this.editorParts.partForGroup(group).quickInput, this.assistantCommands, decodeImage,
-				this.surfaces, group.paneSurface, this.commands, this.contextMenu, group.workArea, group.focusScope),
-			workspace_edit_review: group => new WorkspaceEditReviewPane(group, this.editorParts.partForGroup(group).quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
-			code_editor: group => new CodeEditorPane(
+			focusReturn: this.resourcePanel.focusTarget, contributions: {
+			home: { create: group => new HomeEditorPane(this.commands, group.focusScope), measure: measureUnconstrainedEditor },
+			play_session: { create: group => new PlayEditorPane(this.commands, this.play, this.contextMenu, this.navigation, group,
+				this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
+			animation: { create: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput, this.navigation), measure: measureAnimationEditorConstraints },
+			host_error: { create: group => new HostErrorPane(group.focusScope), measure: measureHostErrorEditor },
+			build_log: { create: group => new BuildLogPane(this.clipboard, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureBuildLogEditor },
+			rom_inspector: { create: group => new RomInspectorPane(this.commands, this.sources, this.navigation, this.editorParts.partForGroup(group).quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope), measure: measureRomInspectorEditor },
+			event_viewer: { create: group => new EventViewerPane(this.editorParts.partForGroup(group).quickInput, this.commands, frameNavigation, this.contextMenu,
+				this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureEventViewerEditor },
+			gpu_debugger: { create: group => new GpuDebuggerPane(this.editorParts.partForGroup(group).quickInput, this.commands, frameNavigation, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureGpuDebuggerEditor },
+			gte_debugger: { create: group => new GteDebuggerPane(this.editorParts.partForGroup(group).quickInput, this.commands, frameNavigation, this.contextMenu, this.sources, this.navigation, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope), measure: measureGteDebuggerEditor },
+			terminal: { create: group => new TerminalPane(this.terminal, input, presenter, group.focusScope, workbench.transport), measure: measureUnconstrainedEditor },
+			conversation_observer: { create: group => new ConversationObserverPane(decodeImage, this.surfaces, group.paneSurface, this.commands, group.focusScope), measure: measureTranscriptEditor },
+			assistant: { create: group => new AssistantPane(this.clipboard, group, this.editorParts.partForGroup(group).quickInput, this.assistantCommands, decodeImage,
+				this.surfaces, group.paneSurface, this.commands, this.contextMenu, group.workArea, group.focusScope), measure: measureTranscriptEditor },
+			workspace_edit_review: { create: group => new WorkspaceEditReviewPane(group, this.editorParts.partForGroup(group).quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureWorkspaceEditReviewEditor },
+			code_editor: { create: group => new CodeEditorPane(
 				group.focusScope,
 				group,
 				this,
@@ -454,21 +472,21 @@ export class RuntimeCartEditor implements CartEditor {
 				this.runtime,
 				this.debuggerState,
 				this.clock,
-			),
-			resource_view: group => new ResourceViewerEditorPane(group.focusScope),
-			aem_editor: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.editorParts.partForGroup(group).quickInput),
-			lua_program: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput),
-			behavior_lens: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput),
-			actor_lab: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea,
-				group, this.editorParts.partForGroup(group).quickInput, group.focusScope),
-			game_view: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope),
-			cart_map: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu),
-			scene_editor: group => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope),
-			scenario_lab: group => new ScenarioLabEditorPane(
+			), measure: measureSourceEditor },
+			resource_view: { create: group => new ResourceViewerEditorPane(group.focusScope), measure: measureResourceViewerEditor },
+			aem_editor: { create: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureAemEditor },
+			lua_program: { create: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureLuaProgramEditor },
+			behavior_lens: { create: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureBehaviorLensEditor },
+			actor_lab: { create: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea,
+				group, this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
+			game_view: { create: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope), measure: measureUnconstrainedEditor },
+			cart_map: { create: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu), measure: measureCartMapEditor },
+			scene_editor: { create: group => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureSceneEditor },
+			scenario_lab: { create: group => new ScenarioLabEditorPane(
 				this.scenarioLab,
 				this.commands,
 				this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group,
-				this.editorParts.partForGroup(group).quickInput, group.focusScope),
+				this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureScenarioLabEditor },
 		}, saves: textFileSaves, models: editorTextModelService, prompt: this.actionPrompt,
 		});
 		this.windowStatus = new WorkbenchWindowStatus(this.editorParts, this.commands, this.surfaces, chromeSurface, this.rootSurfaceBounds);
@@ -529,7 +547,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.sources.catalog,
 		);
 
-		this.gamePanel = new GamePanel(this.editorParts.main, this.commands, this.contextMenu, input, presenter,
+		this.gamePanel = new GamePanel(this.editorParts.main, this.editorParts.mainArea, this.commands, this.contextMenu, input, presenter,
 			new InputFocusScope(this.chromeScope, this.editorParts.main.scope));
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.clipboard);
 		this.navigation = new EditorNavigationController(
@@ -759,14 +777,19 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.handleGamepad(playerInput);
 	}
 
-	private layoutMainPart(): void { this.editorParts.main.layout(getWorkbenchEditorBounds()); }
+	private layoutMainPart(): boolean { return this.editorParts.main.layout(getWorkbenchEditorBounds()); }
 
-	private layoutMainEditor(): void {
+	private prepareWorkbenchLayout(): boolean {
 		let layoutChanged = refreshWorkbenchLayout();
 		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
-		if (this.gamePanel.update()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
-		if (layoutChanged) this.surfaces.changed();
-		this.layoutMainPart();
+		this.gamePanel.prepareLayout(getWorkbenchEditorBounds());
+		return layoutChanged;
+	}
+
+	private layoutMainEditor(): void {
+		const chromeChanged = this.prepareWorkbenchLayout(), clientsChanged = this.layoutMainPart();
+		this.gamePanel.update();
+		if (chromeChanged || clientsChanged) this.surfaces.changed();
 	}
 
 	public update(deltaSeconds: number): void {
@@ -904,6 +927,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const previousVariant = editorViewState.fontVariant;
 		configureFontVariant(variant);
 		this.resourcePanel.setFontMetrics(editorViewState.font);
+		this.layoutMainEditor();
 		if (editorViewState.fontVariant !== previousVariant) {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.Font);
 		}
@@ -1020,8 +1044,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (!this.isAvailable) {
 			return;
 		}
-		refreshWorkbenchLayout();
-		this.layoutMainPart();
+		this.layoutMainEditor();
 		this.editorParts.main.clear();
 		editorRuntimeState.initialized = true;
 	}

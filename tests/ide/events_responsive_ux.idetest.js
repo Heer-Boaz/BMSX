@@ -41,7 +41,7 @@ const row = () => ({ left: input.viewport.bounds.left, right: input.viewport.bou
 	top: input.viewport.bounds.top, bottom: input.viewport.bounds.top + input.layout.rowHeight });
 const focusFirst = async () => { await click(row()); await press('Home'); t.assert(input.projection.rows[input.selected] === first, 'ordinary list navigation selected another captured event'); };
 const resize = async () => {
-	t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+	t.controlInput([{ type: 'pointer', x: t.mainAreaLayout().split.position, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 	t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 };
@@ -73,9 +73,8 @@ for (const font of ['tiny', 'msx']) {
 	for (const theme of ['light', 'dark']) {
 		t.command('gameView.closePanel'); await t.frames(3);
 		await capture(`events-${font}-${theme}-wide-subject`);
-		const fullRight = input.layout.right;
 		t.command('gameView.togglePanel'); await t.frames(3);
-		const companion = input.layout.right < fullRight;
+		const companion = t.mainAreaLayout().visible;
 		if (companion) await resize();
 		const phase = companion ? 'companion' : 'full-preview-unavailable';
 		await focusFirst(); await capture(`events-${font}-${theme}-${phase}-subject`);

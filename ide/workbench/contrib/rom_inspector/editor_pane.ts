@@ -1,5 +1,4 @@
 import type { EditorGroupView } from '../../services/editor/editor_group';
-import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../../common/constants';
@@ -48,11 +47,9 @@ const SORTS: { label: string; description: string; detail: string; sort: RomInsp
 ];
 
 // Entry names share a row with byte sizes; the next line retains category and address.
-const ENTRY_READING_COLUMNS = 36;
 
 /** Native workbench controls over one immutable packed-image input. */
 export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput> {
-	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * ENTRY_READING_COLUMNS + SCROLLBAR_WIDTH + 12; }
 
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigate(input));

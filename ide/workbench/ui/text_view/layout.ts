@@ -1,10 +1,13 @@
 import { ScratchBuffer } from '../../../../machine/ts/common/scratchbuffer';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import { TAB_SPACES } from '../../../common/constants';
+import { SCROLLBAR_WIDTH, TAB_SPACES } from '../../../common/constants';
 import { expandTabs, forEachWrappedMeasuredRange } from '../../../common/text';
 import type { EditorFont } from '../../../editor/ui/view/font';
 
 export const TEXT_VIEW_PADDING = 4;
+
+/** Read diagnostics as short source lines, not stacks of wrapped word fragments. */
+export function measureWorkbenchTextViewMinimumWidth(font: EditorFont): number { return font.charAdvance * 48 + SCROLLBAR_WIDTH + TEXT_VIEW_PADDING * 2; }
 
 export type WorkbenchTextViewLine = {
 	start: number;

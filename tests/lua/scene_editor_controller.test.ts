@@ -1,3 +1,4 @@
+import { measureSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
 import { beforeEach, type TestContext } from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
@@ -10,7 +11,7 @@ import { SceneEditorController } from '../../ide/workbench/contrib/scene_editor/
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
-import { createTestEditorGroup, createTestEditorPaneFactories, createTestEditorCloseDependencies, createTestGroupPresentation } from '../helpers/editor_panes';
+import { createTestEditorGroup, createTestEditorPaneContributions, createTestEditorCloseDependencies, createTestGroupPresentation } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
@@ -84,11 +85,11 @@ test('Scene pane source production and member commands retain their input when a
 	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
 	const bounds = { left: 0, top: 0, right: 384, bottom: 288 }, presentation = createTestGroupPresentation(surfaces, bounds);
 	let parts: EditorParts;
-	const factories = createTestEditorPaneFactories();
-	factories.scene_editor = group => new SceneEditorPane(controller, commands as IdeCommandController, sources, menu,
-		surfaces, group.paneSurface, bounds, group.focusScope);
+	const contributions = createTestEditorPaneContributions();
+	contributions.scene_editor = { create: group => new SceneEditorPane(controller, commands as IdeCommandController, sources, menu,
+		surfaces, group.paneSurface, bounds, group.focusScope), measure: measureSceneEditor };
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds,
-		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
+		commands, contextMenu: menu, renderContext: presentation.renderContext, contributions,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		layoutMain: () => parts.main.layout(bounds),
 		...createTestEditorCloseDependencies(t, presentation),
@@ -138,11 +139,11 @@ scenes.register('incomplete', {})
 	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
 	const bounds = { left: 0, top: 0, right: 384, bottom: height }, presentation = createTestGroupPresentation(surfaces, bounds);
 	let parts: EditorParts;
-	const factories = createTestEditorPaneFactories();
-	factories.scene_editor = group => new SceneEditorPane(controller, commands as IdeCommandController, sources, menu,
-		surfaces, group.paneSurface, bounds, group.focusScope);
+	const contributions = createTestEditorPaneContributions();
+	contributions.scene_editor = { create: group => new SceneEditorPane(controller, commands as IdeCommandController, sources, menu,
+		surfaces, group.paneSurface, bounds, group.focusScope), measure: measureSceneEditor };
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds,
-		commands, contextMenu: menu, renderContext: presentation.renderContext, factories,
+		commands, contextMenu: menu, renderContext: presentation.renderContext, contributions,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		layoutMain: () => parts.main.layout(bounds),
 		...createTestEditorCloseDependencies(t, presentation),

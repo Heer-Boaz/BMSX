@@ -73,7 +73,6 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		this.focusTarget.registerCommand('pause', { isEnabled: () => commands.isEnabled('runtime.playback', this.focusTarget),
 			run: () => commands.execute('runtime.playback', this.focusTarget) });
 	}
-	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	protected override activate(): void {
 		const interaction = this.input.interaction;
 		this.focusTarget.scope.interaction = interaction;

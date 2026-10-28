@@ -29,7 +29,7 @@ import {
 import type { EditorCommandRunner } from '../../../common/commands';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { drawBehaviorLens } from './render';
-import { prepareBehaviorLensLayout, measureBehaviorLensMinimumWidth } from './layout';
+import { prepareBehaviorLensLayout } from './layout';
 import { BehaviorLensPointer, BehaviorLensPointerResult } from './pointer';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { acceptEffectPropertySelection } from './action_effect_properties';
@@ -57,7 +57,6 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		const input = this.input;
 		return this.controller.getSourceLocation(input);
 	}
-	public override get companionGameMinimumWidth(): number { return measureBehaviorLensMinimumWidth(this.input.view); }
 
 	public override getSelection(): BehaviorLensNavigationSelection {
 		this.controller.updateView(this.input);

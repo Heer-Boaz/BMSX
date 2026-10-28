@@ -7,7 +7,7 @@ import type { ContextMenuController } from '../context_menu/controller';
 import type { WorkbenchSurface } from '../windows/model';
 import type { WorkbenchSurfaceService } from '../windows/service';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
-import type { EditorPaneFactories } from './editor_panes';
+import type { EditorPaneContributions } from './editor_panes';
 import { WorkbenchWindowModel, WINDOW_HEADER_VERTICAL_PADDING, WINDOW_RESIZE_MARGIN, type WindowPlacement } from '../../ui/window/model';
 import { EditorCloseController } from './editor_close';
 import type { TextFileSaveService } from '../working_copy/text_file_save';
@@ -24,6 +24,7 @@ import { EditorPart } from './editor_part';
 import { serializeEditorPart } from './editor_part_serialization';
 import type { EditorGroupDirection } from './group_arrangement';
 import { EditorOpeningRequest, type PreparedEditorInput, type ProspectiveEditorOpenSource } from './editor_opening';
+import { WorkbenchMainAreaLayout } from '../../common/main_area_layout';
 
 export type EditorMoveDestination =
 	| { readonly kind: 'group'; readonly group: EditorGroupView; readonly index?: number }
@@ -42,7 +43,7 @@ export type EditorPartsOptions = {
 	readonly commands: EditorCommandRunner;
 	readonly contextMenu: ContextMenuController;
 	readonly renderContext: EditorTabStripRenderContext;
-	readonly factories: EditorPaneFactories;
+	readonly contributions: EditorPaneContributions;
 	readonly saves: TextFileSaveService;
 	readonly models: EditorTextModelService;
 	readonly prompt: ActionPrompt;
@@ -58,6 +59,7 @@ export type EditorDocumentOptions = {
 
 /** Frontend membership and opening destinations over one shared workspace. */
 export class EditorParts {
+	public readonly mainArea = new WorkbenchMainAreaLayout();
 	public readonly main: EditorPart;
 	public readonly closeController: EditorCloseController;
 	public readonly dropTarget: EditorDropTarget;
@@ -88,7 +90,7 @@ export class EditorParts {
 	public constructor(private readonly options: EditorPartsOptions) {
 		this.closeController = new EditorCloseController(this.groupList, options.saves, options.prompt, options.models);
 		this.dropTarget = new EditorDropTarget(this, options.surfaces, options.owner, options.workArea);
-		this.main = new EditorPart({ ...options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'main', initialOperation: 'none', presented: true, onDidActivate: part => this.activate(part),
+		this.main = new EditorPart({ ...options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'main', mainArea: this.mainArea, initialOperation: 'none', presented: true, onDidActivate: part => this.activate(part),
 			onDidChangeGroupMembership: part => this.syncGroupMembership(part),
 			onDidChange: () => this.changed(), requestClose: part => { void this.close(part); } });
 		this.activePart = this.main;
@@ -236,7 +238,7 @@ export class EditorParts {
 		const focusRevision = inputFocus.revision;
 		const maximized = part.arrangement.maximized;
 		if (maximized !== undefined) part.arrangement.toggleMaximize(maximized);
-		part.layout(part.clientBounds);
+		part.relayout();
 		if (this.owners.get(reference) !== part || part.retired || !reference.openingAdmitted || part.operation !== 'none'
 			|| reference.panes.openGeneration !== generation || part.arrangement.topologyRevision !== topology || scope?.contextGeneration !== context
 			|| part.arrangement.maximized !== undefined
@@ -424,6 +426,10 @@ export class EditorParts {
 					target.attachTransferredEditor(receiver, selection, true);
 					if (this.owners.get(source) !== sourcePart || this.owners.get(target) !== targetPart || source.paneSurface.retired || target.paneSurface.retired
 						|| movingActive && source.panes.openGeneration !== sourceAttachment || target.model.activeTab !== receiver || target.panes.activePane?.input !== receiver) return false;
+					if (inputFocus.revision === focusRevision || inputFocus.target === null) targetPart.selectGroup(target);
+					sourcePart.removeGroup(source);
+					if (this.owners.get(target) !== targetPart || target.paneSurface.retired
+						|| target.model.activeTab !== receiver || target.panes.activePane?.input !== receiver) return false;
 					if (!targetPart.revealGroup(target)) return false;
 					return handoff;
 				});
@@ -448,7 +454,6 @@ export class EditorParts {
 			}
 		});
 		if (movedTo === false) return false;
-		if (this.owners.get(source) === sourcePart) sourcePart.removeGroup(source);
 		const targetPart = this.owners.get(movedTo.group);
 		if (targetPart === undefined || movedTo.group.paneSurface.retired || movedTo.group.model.activeTab !== movedTo.input
 			|| movedTo.group.panes.activePane?.input !== movedTo.input) return false;

@@ -5,9 +5,8 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import * as colors from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { api } from '../../ide/runtime/overlay_api';
-import { getWorkbenchEditorBounds, refreshWorkbenchLayout, topMargin } from '../../ide/workbench/common/layout';
+import { topMargin, bottomMargin } from '../../ide/workbench/common/layout';
 import { drawEditorGroupWatermark } from '../../ide/workbench/render/editor_group_watermark';
-import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
@@ -16,7 +15,7 @@ configureFontVariant('tiny');
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
 	const previous = { width: editorViewState.viewportWidth, height: editorViewState.viewportHeight,
-		left: editorViewState.editorAreaLeft, inset: editorChromeState.editorRightInset, variant: editorViewState.font.variant,
+		variant: editorViewState.font.variant,
 		theme: colors.getActiveIdeThemeVariant() };
 	configureFontVariant(variant); colors.setIdeThemeVariant(theme);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
@@ -24,16 +23,13 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', theme: string) {
 	t.after(() => {
 		configureFontVariant(previous.variant); colors.setIdeThemeVariant(previous.theme);
 		editorViewState.viewportWidth = previous.width; editorViewState.viewportHeight = previous.height;
-		editorViewState.editorAreaLeft = previous.left; editorChromeState.editorRightInset = previous.inset; refreshWorkbenchLayout();
 	});
 	const draw = (left: number, width: number, height = 288) => {
-		editorViewState.editorAreaLeft = left; editorChromeState.editorRightInset = 384 - left - width;
-		editorViewState.viewportHeight = height; refreshWorkbenchLayout();
-		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(getWorkbenchEditorBounds()); overlay.renderer.endFrame();
+		const bounds = { left, top: topMargin(), right: left + width, bottom: height - bottomMargin() };
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawEditorGroupWatermark(bounds); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
 			glyphs.push(frame.commandRefs[index] as GlyphRenderSubmission);
-		const bounds = getWorkbenchEditorBounds();
 		for (const glyph of glyphs) {
 			assert.ok(glyph.x >= bounds.left + 4 && glyph.x + editorViewState.font.measure(glyph.items as string) <= bounds.right - 4,
 				`complete hint escaped ${width}px editor group: ${glyph.items}`);

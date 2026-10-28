@@ -7,7 +7,7 @@ import { editorRuntimeState } from '../../../ide/editor/common/runtime_state';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
 import { EditorTextModel } from '../../../ide/editor/model/text_model';
 import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
-import { EditorPane } from '../../../ide/workbench/services/editor/editor_pane';
+import { EditorPane, measureUnconstrainedEditor } from '../../../ide/workbench/services/editor/editor_pane';
 import { EditorGroupView } from '../../../ide/workbench/services/editor/editor_group';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../../ide/workbench/ui/graph/control';
 import type { WorkbenchGraphViewport } from '../../../ide/workbench/ui/graph/viewport';
@@ -22,7 +22,6 @@ type GraphFixtureView = { view: WorkbenchGraphViewport; dragSource?: WorkbenchGr
 
 class GraphFixturePane extends EditorPane<CodeEditorInput> {
 	public override get commandTarget() { return this.graph.focusTarget; }
-	public override get companionGameMinimumWidth(): undefined { return undefined; }
 
 	public readonly graph: WorkbenchGraphControl;
 	public result = WorkbenchGraphPointerResult.Outside;
@@ -66,11 +65,11 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 	let pane!: GraphFixturePane;
 	const inputViews = new Map(inputs.map((input, index) => [input, views[index]]));
 	const unused = (): never => { throw new Error('Only the domain-free fixture is registered in this editor group'); };
-	const group = new EditorGroupView({ play_session: () => { throw new Error('Play is not part of the graph viewport fixture'); },
-		home: unused,
-		code_editor: group => pane = new GraphFixturePane(inputViews, group.focusScope), behavior_lens: unused, resource_view: unused, scenario_lab: unused, scene_editor: unused, cart_map: unused,
-		animation: unused, host_error: unused, build_log: unused,
-		rom_inspector: unused, event_viewer: unused, gte_debugger: unused, gpu_debugger: unused, terminal: unused, actor_lab: unused, game_view: unused, workspace_edit_review: unused, assistant: unused, aem_editor: unused, lua_program: unused, conversation_observer: unused }, { isEnabled: () => false, execute() {} }, async targets => {
+	const group = new EditorGroupView({ play_session: { create: unused, measure: measureUnconstrainedEditor },
+		home: { create: unused, measure: measureUnconstrainedEditor },
+		code_editor: { create: group => pane = new GraphFixturePane(inputViews, group.focusScope), measure: measureUnconstrainedEditor }, behavior_lens: { create: unused, measure: measureUnconstrainedEditor }, resource_view: { create: unused, measure: measureUnconstrainedEditor }, scenario_lab: { create: unused, measure: measureUnconstrainedEditor }, scene_editor: { create: unused, measure: measureUnconstrainedEditor }, cart_map: { create: unused, measure: measureUnconstrainedEditor },
+		animation: { create: unused, measure: measureUnconstrainedEditor }, host_error: { create: unused, measure: measureUnconstrainedEditor }, build_log: { create: unused, measure: measureUnconstrainedEditor },
+		rom_inspector: { create: unused, measure: measureUnconstrainedEditor }, event_viewer: { create: unused, measure: measureUnconstrainedEditor }, gte_debugger: { create: unused, measure: measureUnconstrainedEditor }, gpu_debugger: { create: unused, measure: measureUnconstrainedEditor }, terminal: { create: unused, measure: measureUnconstrainedEditor }, actor_lab: { create: unused, measure: measureUnconstrainedEditor }, game_view: { create: unused, measure: measureUnconstrainedEditor }, workspace_edit_review: { create: unused, measure: measureUnconstrainedEditor }, assistant: { create: unused, measure: measureUnconstrainedEditor }, aem_editor: { create: unused, measure: measureUnconstrainedEditor }, lua_program: { create: unused, measure: measureUnconstrainedEditor }, conversation_observer: { create: unused, measure: measureUnconstrainedEditor } }, { isEnabled: () => false, execute() {} }, async targets => {
 		for (const { group, input } of targets) group.removeEditor(input);
 		return true;
 	}, createTestGroupPresentation());

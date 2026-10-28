@@ -30,8 +30,9 @@ import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import type { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import type { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import type { ScenarioLabInput } from '../../ide/workbench/contrib/scenario_lab/editor_input';
-import { EditorPane } from '../../ide/workbench/services/editor/editor_pane';
-import type { EditorPaneFactories } from '../../ide/workbench/services/editor/editor_panes';
+import { EditorPane, type EditorPaneConstraints } from '../../ide/workbench/services/editor/editor_pane';
+import type { EditorFont } from '../../ide/editor/ui/view/font';
+import type { EditorPaneContributions } from '../../ide/workbench/services/editor/editor_panes';
 import { EditorGroupView, type EditorGroupPresentation } from '../../ide/workbench/services/editor/editor_group';
 import type { CloseEditors } from '../../ide/workbench/services/editor/editor_close';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
@@ -69,7 +70,6 @@ export function createTestGroupPresentation(surfaces = new WorkbenchSurfaceServi
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public override get commandTarget() { return this.focusTarget; }
-	public override get companionGameMinimumWidth(): undefined { return undefined; }
 
 	private readonly focusTarget: InputFocusTarget;
 	private readonly unbindKeyboard: () => void;
@@ -156,14 +156,14 @@ export function createTestEditorCloseDependencies(t: TestContext, presentation: 
 export function createTestEditorParts(
 	t: TestContext,
 	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
-	factories: EditorPaneFactories = createTestEditorPaneFactories(),
+	contributions: EditorPaneContributions = createTestEditorPaneContributions(),
 	workArea?: Readonly<RectBounds>,
 ): EditorParts {
 	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces, workArea);
 	const contextMenu = presentation.contextMenu;
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
-		commands, contextMenu, renderContext: presentation.renderContext, factories, ...createTestEditorCloseDependencies(t, presentation),
+		commands, contextMenu, renderContext: presentation.renderContext, contributions, ...createTestEditorCloseDependencies(t, presentation),
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		layoutMain: () => parts.main.layout(presentation.workArea),
 	});
@@ -178,36 +178,41 @@ export function createTestEditorGroup(
 	closeEditors: CloseEditors = retireTestEditors,
 	presentation: EditorGroupPresentation = createTestGroupPresentation(),
 ): EditorGroupView {
-	return new EditorGroupView(createTestEditorPaneFactories(codePane), commands, closeEditors, presentation);
+	return new EditorGroupView(createTestEditorPaneContributions(codePane), commands, closeEditors, presentation);
 }
 
-/** Parts and standalone groups use the same real group-local pane factories. */
-export function createTestEditorPaneFactories(
+/** Mechanical test inputs explicitly declare no intrinsic contribution constraints. */
+function measureTestEditor(_input: EditorInput, _font: EditorFont, _companionRequested: boolean, target: EditorPaneConstraints): void {
+	target.minimumWidth = 0; target.minimumHeight = 0; target.companionWidth = undefined;
+}
+
+/** Parts and standalone groups use the same real group-local pane contributions. */
+export function createTestEditorPaneContributions(
 	codePane?: (scope: InputFocusScope, group: EditorGroupView) => EditorPane<CodeEditorInput>,
-): EditorPaneFactories {
+): EditorPaneContributions {
 	return {
-		home: group => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(group.focusScope, activateViewInput),
-		play_session: group => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(group.focusScope, activateViewInput),
-		animation: group => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope, activateViewInput),
-		host_error: group => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(group.focusScope, activateViewInput),
-		build_log: group => new TestEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(group.focusScope, activateViewInput),
-		rom_inspector: group => new TestEditorPane<RomInspectorInput>(group.focusScope, activateViewInput),
-		event_viewer: group => new TestEditorPane<EventViewerInput>(group.focusScope, activateViewInput),
-		gte_debugger: group => new TestEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(group.focusScope, activateViewInput),
-		gpu_debugger: group => new TestEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(group.focusScope, activateViewInput),
-		terminal: group => new TestEditorPane<TerminalInput>(group.focusScope, activateViewInput),
-		actor_lab: group => new TestEditorPane<ActorLabInput>(group.focusScope, activateViewInput),
-		game_view: group => new TestEditorPane<GameViewInput>(group.focusScope, activateViewInput),
-		conversation_observer: group => new TestEditorPane<ConversationObserverInput>(group.focusScope, activateViewInput),
-		assistant: group => new TestEditorPane<AssistantInput>(group.focusScope, activateViewInput),
-		workspace_edit_review: group => new TestEditorPane<WorkspaceEditReviewInput>(group.focusScope, activateViewInput),
-		code_editor: group => codePane === undefined ? new TestCodeEditorPane(group.focusScope) : codePane(group.focusScope, group),
-		resource_view: group => new ResourceViewerEditorPane(group.focusScope),
-		aem_editor: group => new TestEditorPane<AemEditorInput>(group.focusScope, activateViewInput),
-		lua_program: group => new TestEditorPane<LuaProgramInput>(group.focusScope, activateViewInput),
-		behavior_lens: group => new TestEditorPane<BehaviorLensInput>(group.focusScope, activateViewInput),
-		scenario_lab: group => new TestEditorPane<ScenarioLabInput>(group.focusScope, activateViewInput),
-		scene_editor: group => new TestEditorPane<SceneEditorInput>(group.focusScope, activateViewInput),
-		cart_map: group => new TestEditorPane<CartMapInput>(group.focusScope, activateViewInput),
+		home: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		play_session: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		animation: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		host_error: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'host_error' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		build_log: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'build_log' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		rom_inspector: { create: group => new TestEditorPane<RomInspectorInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		event_viewer: { create: group => new TestEditorPane<EventViewerInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		gte_debugger: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'gte_debugger' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		gpu_debugger: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'gpu_debugger' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		terminal: { create: group => new TestEditorPane<TerminalInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		actor_lab: { create: group => new TestEditorPane<ActorLabInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		game_view: { create: group => new TestEditorPane<GameViewInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		conversation_observer: { create: group => new TestEditorPane<ConversationObserverInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		assistant: { create: group => new TestEditorPane<AssistantInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		workspace_edit_review: { create: group => new TestEditorPane<WorkspaceEditReviewInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		code_editor: { create: group => codePane === undefined ? new TestCodeEditorPane(group.focusScope) : codePane(group.focusScope, group), measure: measureTestEditor },
+		resource_view: { create: group => new ResourceViewerEditorPane(group.focusScope), measure: measureTestEditor },
+		aem_editor: { create: group => new TestEditorPane<AemEditorInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		lua_program: { create: group => new TestEditorPane<LuaProgramInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		behavior_lens: { create: group => new TestEditorPane<BehaviorLensInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		scenario_lab: { create: group => new TestEditorPane<ScenarioLabInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		scene_editor: { create: group => new TestEditorPane<SceneEditorInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
+		cart_map: { create: group => new TestEditorPane<CartMapInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 	};
 }

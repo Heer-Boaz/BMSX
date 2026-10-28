@@ -17,6 +17,8 @@ import {
 } from './projection';
 import type { ScenarioResultState } from '../../../testing/scenario/result_service';
 import { scenarioTestIdentity } from './labels';
+import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
+import type { ScenarioLabInput } from './editor_input';
 import {
 	type ScenarioLabLayout,
 	type ScenarioLabPaneLayout,
@@ -36,17 +38,19 @@ const RESULT_READING_COLUMNS = 32;
 let minimumFont: EditorFont | undefined;
 let testsMinimumWidth = 0, resultsMinimumWidth = 0;
 
-export function measureScenarioLabMinimumWidth(state: ScenarioLabViewState): number {
-	const font = editorViewState.font;
+export function measureScenarioLabMinimumWidth(font: EditorFont = editorViewState.font): number {
 	if (minimumFont !== font) {
 		minimumFont = font;
-		const indent = Math.max(editorViewState.charAdvance * TREE_INDENT_COLUMNS, WORKBENCH_ICON_SIZE + 2);
-		testsMinimumWidth = editorViewState.charAdvance * TEST_READING_COLUMNS + indent * 3 + PANE_PADDING_X * 2 + 2;
-		resultsMinimumWidth = editorViewState.charAdvance * RESULT_READING_COLUMNS + indent * 3 + PANE_PADDING_X * 2 + 2;
+		const indent = Math.max(font.charAdvance * TREE_INDENT_COLUMNS, WORKBENCH_ICON_SIZE + 2);
+		testsMinimumWidth = font.charAdvance * TEST_READING_COLUMNS + indent * 3 + PANE_PADDING_X * 2 + 2;
+		resultsMinimumWidth = font.charAdvance * RESULT_READING_COLUMNS + indent * 3 + PANE_PADDING_X * 2 + 2;
 	}
-	state.split.minimumFirstSize = testsMinimumWidth;
-	state.split.minimumSecondSize = resultsMinimumWidth + 1;
 	return testsMinimumWidth + resultsMinimumWidth + 1;
+}
+
+export function measureScenarioLabEditor(_input: ScenarioLabInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void {
+	target.minimumWidth = 0; target.minimumHeight = 0;
+	target.companionWidth = companionRequested ? measureScenarioLabMinimumWidth(font) : undefined;
 }
 
 export function createScenarioLabLayout(): ScenarioLabLayout {
@@ -217,7 +221,9 @@ export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Re
 	const layout = state.layout;
 	if (updateFullWidthWorkbenchLayout(layout, bounds) || state.splitRevision !== state.split.revision) {
 		layout.toolbarBottom = layout.top + editorViewState.lineHeight + TOOLBAR_PADDING_Y * 2;
-		measureScenarioLabMinimumWidth(state);
+		measureScenarioLabMinimumWidth(editorViewState.font);
+		state.split.minimumFirstSize = testsMinimumWidth;
+		state.split.minimumSecondSize = resultsMinimumWidth + 1;
 		state.split.layout(layout.left, layout.toolbarBottom + 1, layout.right, layout.bottom);
 		state.splitRevision = state.split.revision;
 		const testPaneRight = state.split.position;

@@ -16,6 +16,8 @@ import type { LogOutput } from '../../hosts/common/log';
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId } from '../common/commands';
 import type { EditorInput } from '../workbench/common/editor_inputs';
+import type { EditorPaneConstraints } from '../workbench/services/editor/editor_pane';
+import { editorViewState } from '../editor/ui/view/state';
 import type { EditorActionRequest } from './action_request';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
 import { executeEditorViewCommand, isEditorViewCommand } from './view';
@@ -74,6 +76,7 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 ]);
 
 export class IdeCommandController {
+	private readonly editorConstraints: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
 	public constructor(
 		private readonly editor: CartEditor,
 		private readonly sources: RuntimeSourceState,
@@ -532,7 +535,11 @@ export class IdeCommandController {
 			case 'runtime.resume':
 				return transport?.available === true && transport.rewind.active && transport.navigation.active === undefined
 					&& transport.playbackEnabled;
-			case 'gameView.togglePanel': return this.editor.isActive && group.panes.activePane?.companionGameMinimumWidth !== undefined;
+			case 'gameView.togglePanel': {
+				if (!this.editor.isActive || editor === null) return false;
+				group.panes.measure(editor, editorViewState.font, true, this.editorConstraints);
+				return this.editorConstraints.companionWidth !== undefined;
+			}
 			case 'gameView.closePanel': return this.editor.gamePanel.enabled;
 			case 'runtime.playback': return transport?.playbackEnabled === true;
 			case 'scenarioLab.play':

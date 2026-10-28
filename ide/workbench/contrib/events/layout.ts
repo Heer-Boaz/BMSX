@@ -5,9 +5,16 @@ import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import { updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import type { EventViewerInput } from './editor_input';
+import type { EditorFont } from '../../../editor/ui/view/font';
+import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
 
 // Event identity has priority; Timeline and Tick can move into Details.
 export const EVENT_READING_COLUMNS = 16;
+
+export function measureEventViewerEditor(_input: EventViewerInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void {
+	target.minimumWidth = 0; target.minimumHeight = 0;
+	target.companionWidth = companionRequested ? font.charAdvance * EVENT_READING_COLUMNS + SCROLLBAR_WIDTH + 4 : undefined;
+}
 
 export type EventViewerLayout = FullWidthWorkbenchLayout & {
 	compact: boolean;

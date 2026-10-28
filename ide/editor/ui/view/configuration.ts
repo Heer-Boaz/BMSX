@@ -23,7 +23,7 @@ export function configureFontVariant(variant: FontVariant): void {
 	editorViewState.fontVariant = variant;
 	editorViewState.font = font;
 	editorViewState.lineHeight = font.lineHeight;
-	editorViewState.charAdvance = font.advance('M');
+	editorViewState.charAdvance = font.charAdvance;
 	editorViewState.spaceAdvance = font.advance(' ');
 	fieldMetrics.spaceAdvance = editorViewState.spaceAdvance;
 	editorViewState.inlineFieldMetricsRef = fieldMetrics;

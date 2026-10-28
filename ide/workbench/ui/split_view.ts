@@ -22,8 +22,11 @@ export class WorkbenchSplitView {
 	public get end(): number { return this.orientation === 'horizontal' ? this.bounds.right : this.bounds.bottom; }
 	public get resizable(): boolean { return this.end - this.start > this.minimumFirstSize + this.minimumSecondSize; }
 	public get position(): number {
-		return clamp(Math.trunc(this.start + (this.end - this.start) * this.ratio),
-			this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
+		return this.positionFor(this.start, this.end, this.minimumFirstSize, this.minimumSecondSize);
+	}
+	/** Project the retained preference into another admitted interval without changing this split. */
+	public positionFor(start: number, end: number, minimumFirstSize: number, minimumSecondSize: number): number {
+		return clamp(Math.trunc(start + (end - start) * this.ratio), start + minimumFirstSize, end - minimumSecondSize);
 	}
 	public layout(left: number, top: number, right: number, bottom: number): void { write_rect_bounds(this.bounds, left, top, right, bottom); }
 	public resize(ratio: number): void {

@@ -23,7 +23,7 @@ import { CodeEditorControl } from '../../../editor/ui/code_editor_control';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { onDidChangeEditorFont } from '../../../editor/ui/view/configuration';
 import { getClipboardText, cutClipboardText, pasteText } from '../../../editor/editing/text_editing_and_selection';
-import { getCodeAreaBounds, handlePointerAutoScroll, measureGutterWidth, scrollHorizontally, scrollRows } from '../../../editor/ui/view/view';
+import { getCodeAreaBounds, handlePointerAutoScroll, scrollHorizontally, scrollRows } from '../../../editor/ui/view/view';
 import { resolveCodeAreaViewport } from '../../../editor/ui/code/area_viewport';
 import { ensureCursorVisible } from '../../../editor/ui/view/caret/view';
 import { clearExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
@@ -62,7 +62,6 @@ import { handleSourceInput } from './input/keyboard/text_input';
 import { buildStatusLeftInfo } from '../../render/status_bar_info';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 
-const SOURCE_READING_COLUMNS = 48;
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
 /** One group's retained Source widget and its concrete editor-bound contributions. */
@@ -91,12 +90,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 
 	public override get inputScope(): InputFocusScope { return this.code.focusTarget.scope; }
 	public override get commandTarget() { return this.code.focusTarget; }
-	public override get minimumClientWidth(): number { return this.code.minimumWidth; }
 	public override get minimumClientHeight(): number { return this.bars.minimumHeight; }
-	public override get companionGameMinimumWidth(): number {
-		return measureGutterWidth(this.code) + 2 + this.code.charAdvance * (SOURCE_READING_COLUMNS + 1)
-			+ constants.SCROLLBAR_WIDTH + constants.CODE_AREA_RIGHT_MARGIN;
-	}
 
 	public readonly part: EditorPart;
 	public constructor(scope: InputFocusScope, public readonly group: EditorGroupView, public readonly editor: CartEditor,

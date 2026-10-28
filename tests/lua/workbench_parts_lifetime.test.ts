@@ -972,7 +972,8 @@ test('Home is an ordinary retained workspace editor and closing all editors leav
 	assert.equal(home.resource, undefined);
 	assert.equal(home.isDirty(), false);
 	assert.ok(f.editor.editorParts.main.activeGroup.panes.activePane!.input === home);
-	assert.equal(f.editor.editorParts.main.activeGroup.panes.activePane!.companionGameMinimumWidth, undefined);
+	f.editor.editorParts.main.activeGroup.measureConstraints(true);
+	assert.equal(f.editor.editorParts.main.activeGroup.companionWidth, undefined);
 	const serialized = f.editor.editorInputSerializers.home.serialize(home);
 	assert.equal(serialized, '', 'the attached workspace, not saved cartridge identity, supplies the Home subject');
 	f.editor.editorParts.main.activeGroup.activate(f.input.id);

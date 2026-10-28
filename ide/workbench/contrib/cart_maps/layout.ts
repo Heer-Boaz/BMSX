@@ -7,22 +7,39 @@ import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import type { CartMapInput, CartMapLayoutMode } from './editor_input';
+import type { EditorFont } from '../../../editor/ui/view/font';
+import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
+import { measureCartMapGrid } from './grid';
 
 const PADDING = 4;
 
-/** Current-font constraints are available before arrangement, including the retained compact section. */
-export function measureCartMapMinimumWidth(input: CartMapInput): number {
-	const { layout, grid } = input, font = editorViewState.font;
-	if (layout.minimumFont !== font) {
-		layout.minimumFont = font;
+type CartMapMetrics = { readonly axisLabelWidth: number; readonly fieldMinimumWidth: number; readonly outlineMinimumWidth: number;
+	readonly mapMinimumWidth: number; readonly splitMinimumWidth: number };
+const measurements = new WeakMap<EditorFont, CartMapMetrics>();
+
+function measureCartMap(font: EditorFont): CartMapMetrics {
+	let measured = measurements.get(font);
+	if (measured === undefined) {
 		const indent = Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2);
-		layout.axisLabelWidth = Math.max(font.advance('X'), font.advance('Y'));
-		layout.fieldMinimumWidth = measureText('-2147483648') + font.advance(' ') + 6;
-		layout.outlineMinimumWidth = editorViewState.charAdvance * 14 + indent * 2 + SCROLLBAR_WIDTH + PADDING * 2;
-		layout.mapMinimumWidth = Math.max(grid.minimumWidth, layout.fieldMinimumWidth + layout.axisLabelWidth + PADDING) + PADDING * 2;
-		layout.splitMinimumWidth = layout.outlineMinimumWidth + layout.mapMinimumWidth + 1;
+		const axisLabelWidth = Math.max(font.advance('X'), font.advance('Y'));
+		const fieldMinimumWidth = font.measureTextRange('-2147483648', 0, 11) + font.advance(' ') + 6;
+		const outlineMinimumWidth = font.charAdvance * 14 + indent * 2 + SCROLLBAR_WIDTH + PADDING * 2;
+		const mapMinimumWidth = Math.max(measureCartMapGrid(font).minimumWidth, fieldMinimumWidth + axisLabelWidth + PADDING) + PADDING * 2;
+		measured = { axisLabelWidth, fieldMinimumWidth, outlineMinimumWidth, mapMinimumWidth, splitMinimumWidth: outlineMinimumWidth + mapMinimumWidth + 1 };
+		measurements.set(font, measured);
 	}
-	return input.section === 'map' ? layout.mapMinimumWidth : layout.outlineMinimumWidth;
+	return measured;
+}
+
+/** Current-font constraints are independent of the input's last arranged pixel cache. */
+export function measureCartMapMinimumWidth(input: CartMapInput, font: EditorFont = editorViewState.font): number {
+	const measured = measureCartMap(font);
+	return input.section === 'map' ? measured.mapMinimumWidth : measured.outlineMinimumWidth;
+}
+
+export function measureCartMapEditor(input: CartMapInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void {
+	target.minimumWidth = 0; target.minimumHeight = 0;
+	target.companionWidth = companionRequested ? measureCartMapMinimumWidth(input, font) : undefined;
 }
 
 /** A split exists only while both clients fit their measured reading/editing budget. */
@@ -31,7 +48,11 @@ export function layoutCartMap(input: CartMapInput, bounds: Readonly<RectBounds>,
 	const resized = updateFullWidthWorkbenchLayout(input.layout, bounds), { layout, tree, grid } = input;
 	const font = editorViewState.font, row = layout.rowHeight + PADDING;
 	const indent = resized ? Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2) : tree.layout.indentWidth;
-	measureCartMapMinimumWidth(input);
+	if (layout.minimumFont !== font) {
+		const measured = measureCartMap(font);
+		layout.minimumFont = font; layout.axisLabelWidth = measured.axisLabelWidth; layout.fieldMinimumWidth = measured.fieldMinimumWidth;
+		layout.outlineMinimumWidth = measured.outlineMinimumWidth; layout.mapMinimumWidth = measured.mapMinimumWidth; layout.splitMinimumWidth = measured.splitMinimumWidth;
+	}
 	const width = layout.right - layout.left;
 	const mode = width >= layout.splitMinimumWidth ? 'split' : input.section;
 	const modeChanged = mode !== layout.mode, measured = resized || changed || modeChanged;

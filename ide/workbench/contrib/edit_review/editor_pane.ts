@@ -33,13 +33,9 @@ import type { PointerHoverTarget } from '../../../input/pointer/hover';
 import type { DisposableStore } from '../../../common/lifecycle';
 
 // Keep a short source line readable beside the preview, rather than wrapping a diff into fragments.
-const REVIEW_READING_COLUMNS = 48;
 
 /** Source review shares the ordinary authoring pause, without borrowing guest state. */
 export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEditReviewInput> implements PointerHoverTarget {
-	public override get companionGameMinimumWidth(): number {
-		return editorViewState.charAdvance * REVIEW_READING_COLUMNS + colors.SCROLLBAR_WIDTH + 8;
-	}
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	private readonly tooltip = new WorkbenchTooltip();

@@ -363,7 +363,7 @@ test('a requested primary GamePanel supplies Timeline beside Source without coup
 	assert.ok(f.editor.gamePanel.focusScope.runtime?.interaction.transport === f.editor.commands.transport);
 	assert.ok(f.editor.gamePanel.focusScope.runtime?.interaction.transport!.navigation === f.editor.commands.transport.navigation);
 	assert.equal(timeline.available, false); assert.equal(timeline.requested, false); assert.equal(timeline.visible, false);
-	const bounds = getWorkbenchEditorBounds(), x = bounds.right + 6, y = bounds.top + 1;
+	const bounds = f.editor.editorParts.mainArea.companionBounds, x = bounds.left + 6, y = bounds.top + 1;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Secondary, pressedButtons: PointerButton.Secondary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 0 });
 	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Secondary,

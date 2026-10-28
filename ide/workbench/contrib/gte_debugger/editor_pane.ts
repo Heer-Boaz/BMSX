@@ -1,5 +1,4 @@
 import type { EditorGroupView } from '../../services/editor/editor_group';
-import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
@@ -43,10 +42,8 @@ const COMMANDS = ['gte.follow', 'gte.view', 'gte.details', 'gte.source', 'gte.go
 const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as const;
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'] as const;
 // Keep a command identity and sequence readable beside the observed scanout.
-const COMMAND_READING_COLUMNS = 32;
 
 export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
-	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * COMMAND_READING_COLUMNS + SCROLLBAR_WIDTH + 12; }
 
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event));

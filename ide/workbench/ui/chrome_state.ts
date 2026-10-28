@@ -6,7 +6,6 @@ type EditorChromeState = {
 	topBarBounds: RectBounds;
 	menuButtonBounds: RectBounds;
 	menuBarHeight: number;
-	editorRightInset: number;
 	menuEntryBounds: Record<MenuId, RectBounds>;
 };
 
@@ -14,7 +13,6 @@ export const editorChromeState: EditorChromeState = {
 	topBarBounds: create_rect_bounds(),
 	menuButtonBounds: create_rect_bounds(),
 	menuBarHeight: 0,
-	editorRightInset: 0,
 	menuEntryBounds: {
 		file: create_rect_bounds(),
 		edit: create_rect_bounds(),

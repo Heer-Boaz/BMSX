@@ -24,7 +24,6 @@ const ICON_GAP = 5;
 
 /** A retained action page: existing controls own command admission, focus and physical gestures. */
 export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
-	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	private readonly actions: readonly WorkbenchActionBarControl[];
 	private attachedInput: HomeInput | undefined;

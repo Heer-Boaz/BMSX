@@ -37,7 +37,6 @@ export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 			&& this.contentBounds.left < this.contentBounds.right && this.contentBounds.top < this.contentBounds.bottom,
 			run: () => this.openContextMenu(this.contentBounds.left, this.contentBounds.top, true) });
 	}
-	public override get companionGameMinimumWidth(): undefined { return undefined; }
 	protected override activate(): void {
 		const interaction = this.input.interaction;
 		interaction.setRuntime(this.commands.transport, interaction.running);

@@ -9,6 +9,7 @@ type EditorGroupGeometry = {
 	readonly clip: RectBounds;
 	minimumWidth: number;
 	minimumHeight: number;
+	readingWidth: number;
 	visible: boolean;
 };
 
@@ -24,7 +25,7 @@ export type EditorGroupSplit<T> = EditorGroupGeometry & {
 	first: EditorGroupNode<T>;
 	second: EditorGroupNode<T>;
 	resizable: boolean;
-	/** Last requested sash preference consumed by layout. */
+	/** Last requested sash preference observed by the arrangement owner. */
 	arrangedRevision: number;
 };
 
@@ -38,6 +39,32 @@ export type EditorGroupLayout<T> = { readonly kind: 'group'; readonly group: T }
 	readonly first: EditorGroupLayout<T>;
 	readonly second: EditorGroupLayout<T>;
 };
+
+/** A prospective layout always starts from the live owner's normal scroll intent, not an earlier hover reveal. */
+export class EditorGroupProjection<T> {
+	private readonly allocation = create_rect_bounds();
+	private scrollbarSize = 0;
+	private readingWidths = false;
+	private arranged = false;
+	private arrangedRevision = -1;
+
+	public constructor(public readonly arrangement: EditorGroupArrangement<T | symbol>, public readonly target: EditorGroupLeaf<T | symbol>,
+		private readonly normalScrollX: number, private readonly normalScrollY: number) {}
+
+	/** Only the parent supplies allocation/tier; this model owns projected scroll and target reveal. */
+	public layout(bounds: Readonly<RectBounds>, scrollbarSize: number, useReadingWidths: boolean): Readonly<RectBounds> {
+		const allocation = this.allocation;
+		if (this.arranged && this.arrangedRevision === this.arrangement.revision && allocation.left === bounds.left && allocation.top === bounds.top && allocation.right === bounds.right && allocation.bottom === bounds.bottom
+			&& this.scrollbarSize === scrollbarSize && this.readingWidths === useReadingWidths) return this.target.clip;
+		copy_rect_bounds(allocation, bounds); this.scrollbarSize = scrollbarSize; this.readingWidths = useReadingWidths; this.arranged = true;
+		this.arrangement.useReadingWidths = useReadingWidths;
+		this.arrangement.layoutClient(bounds, scrollbarSize);
+		this.arrangement.setScroll(this.normalScrollX, this.normalScrollY);
+		this.arrangement.reveal(this.target.group);
+		this.arrangedRevision = this.arrangement.revision;
+		return this.target.clip;
+	}
+}
 
 /** One part's retained topology, constraint propagation and clipped layout viewport. */
 export class EditorGroupArrangement<T> {
@@ -62,11 +89,10 @@ export class EditorGroupArrangement<T> {
 	private normalScrollYValue = 0;
 	private dirty = true;
 	private minimaDirty = true;
-	private readonly clientBounds = create_rect_bounds();
+	private readingWidths = false;
 	private readonly clientViewport = create_rect_bounds();
-	private scrollbarSize = 0;
-	private dropPreview: { revision: number; layoutRevision: number; source: T | undefined; reference: T; direction: EditorGroupDirection;
-		width: number; height: number; removed: T | undefined; bounds: RectBounds } | undefined;
+	private dropProjection: { revision: number; normalScrollX: number; normalScrollY: number; source: T | undefined; reference: T; direction: EditorGroupDirection;
+		width: number; height: number; readingWidth: number; removed: T | undefined; projection: EditorGroupProjection<T> } | undefined;
 
 	public constructor(initial: T) {
 		this.rootValue = this.createLeaf(initial);
@@ -77,6 +103,7 @@ export class EditorGroupArrangement<T> {
 	public get groups(): readonly T[] { return this.groupValues; }
 	public get leaves(): readonly EditorGroupLeaf<T>[] { return this.leafValues; }
 	public get splits(): readonly EditorGroupSplit<T>[] { return this.splitValues; }
+	public hasGroup(group: T): boolean { return this.leavesByGroup.has(group); }
 	public get maximized(): T | undefined { return this.maximizedValue; }
 	public get scrollX(): number { return this.scrollXValue; }
 	public get scrollY(): number { return this.scrollYValue; }
@@ -97,15 +124,27 @@ export class EditorGroupArrangement<T> {
 		if (this.minimaDirty) { this.measure(this.rootValue); this.minimaDirty = false; }
 		return this.maximizedValue === undefined ? this.rootValue : this.leavesByGroup.get(this.maximizedValue)!;
 	}
-	public get minimumWidth(): number { return this.layoutRoot.minimumWidth; }
+	public get minimumWidth(): number { const node = this.layoutRoot; return this.readingWidths ? node.readingWidth : node.minimumWidth; }
+	public get hardMinimumWidth(): number { return this.layoutRoot.minimumWidth; }
+	public get readingMinimumWidth(): number { return this.layoutRoot.readingWidth; }
 	public get minimumHeight(): number { return this.layoutRoot.minimumHeight; }
+	public get useReadingWidths(): boolean { return this.readingWidths; }
+	public set useReadingWidths(value: boolean) {
+		if (this.readingWidths === value) return;
+		this.readingWidths = value; this.dirty = true; this.revision++;
+	}
+	/** A fitted reading viewport still reserves the lane required by hard vertical overflow. */
+	public readingMinimumClientWidth(height: number, scrollbarSize: number): number {
+		const node = this.layoutRoot;
+		return node.readingWidth + (node.minimumHeight > height ? scrollbarSize : 0);
+	}
 	public get maxScrollX(): number { return Math.max(0, this.contentWidth - (this.bounds.right - this.bounds.left)); }
 	public get maxScrollY(): number { return Math.max(0, this.contentHeight - (this.bounds.bottom - this.bounds.top)); }
 
-	public setMinimum(group: T, width: number, height: number): void {
+	public setMinimum(group: T, width: number, height: number, readingWidth = width): void {
 		const leaf = this.leavesByGroup.get(group)!;
-		if (leaf.minimumWidth === width && leaf.minimumHeight === height) return;
-		leaf.minimumWidth = width; leaf.minimumHeight = height;
+		if (leaf.minimumWidth === width && leaf.minimumHeight === height && leaf.readingWidth === readingWidth) return;
+		leaf.minimumWidth = width; leaf.minimumHeight = height; leaf.readingWidth = readingWidth;
 		this.minimaDirty = this.dirty = true; this.revision++;
 	}
 
@@ -201,7 +240,6 @@ export class EditorGroupArrangement<T> {
 
 	/** The retained arrangement owns overflow viewport resolution for layout and drop projection. */
 	public layoutClient(bounds: Readonly<RectBounds>, scrollbarSize: number): boolean {
-		copy_rect_bounds(this.clientBounds, bounds); this.scrollbarSize = scrollbarSize;
 		const minimumWidth = this.minimumWidth, minimumHeight = this.minimumHeight;
 		const width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
 		let horizontal = minimumWidth > width, vertical = minimumHeight > height;
@@ -213,41 +251,39 @@ export class EditorGroupArrangement<T> {
 		return this.layout(this.clientViewport);
 	}
 
-	/** Project the same split/removal/minimum/reveal operations without publishing live topology. */
-	public writeSplitPreview(reference: T, direction: EditorGroupDirection, width: number, height: number,
-		removed: T | undefined, target: RectBounds): void {
-		this.writePreview(undefined, reference, direction, width, height, removed, target);
+	/** Prepare topology and constraints before the parent allocates the projected client rectangle. */
+	public projectSplit(reference: T, direction: EditorGroupDirection, width: number, height: number,
+		removed: T | undefined, readingWidth = width): EditorGroupProjection<T> {
+		return this.project(undefined, reference, direction, width, height, removed, readingWidth);
 	}
 
 	/** An existing local group moves as a leaf; an incoming group occupies a new split. */
-	public writeMovePreview(source: T | undefined, reference: T, direction: EditorGroupDirection, width: number, height: number, target: RectBounds): boolean {
-		if (source === reference) return false;
-		this.writePreview(source, reference, direction, width, height, undefined, target);
-		return true;
+	public projectMove(source: T | undefined, reference: T, direction: EditorGroupDirection, width: number, height: number, readingWidth = width): EditorGroupProjection<T> | undefined {
+		if (source === reference) return undefined;
+		return this.project(source, reference, direction, width, height, undefined, readingWidth);
 	}
 
-	private writePreview(source: T | undefined, reference: T, direction: EditorGroupDirection, width: number, height: number,
-		removed: T | undefined, target: RectBounds): void {
-		const cached = this.dropPreview;
-		if (cached !== undefined && cached.revision === this.revision && cached.layoutRevision === this.layoutRevision
-			&& cached.source === source && cached.reference === reference && cached.direction === direction && cached.width === width && cached.height === height && cached.removed === removed) {
-			copy_rect_bounds(target, cached.bounds); return;
-		}
+	private project(source: T | undefined, reference: T, direction: EditorGroupDirection, width: number, height: number,
+		removed: T | undefined, readingWidth: number): EditorGroupProjection<T> {
+		this.consumeSplitRevisions();
+		const cached = this.dropProjection;
+		if (cached !== undefined && cached.revision === this.revision && cached.normalScrollX === this.normalScrollX && cached.normalScrollY === this.normalScrollY
+			&& cached.source === source && cached.reference === reference && cached.direction === direction && cached.width === width && cached.height === height
+			&& cached.readingWidth === readingWidth && cached.removed === removed) return cached.projection;
 		const added = source === undefined ? Symbol('prospective editor group') : source, projection = new EditorGroupArrangement<T | symbol>(reference);
 		const project = (node: EditorGroupNode<T>): EditorGroupLayout<T | symbol> => node.kind === 'group'
 			? { kind: 'group', group: node.group }
 			: { kind: 'split', orientation: node.split.orientation, ratio: node.split.ratio, first: project(node.first), second: project(node.second) };
 		projection.setRoot(project(this.rootValue));
-		for (const leaf of this.leafValues) projection.setMinimum(leaf.group, leaf.minimumWidth, leaf.minimumHeight);
+		for (const leaf of this.leafValues) projection.setMinimum(leaf.group, leaf.minimumWidth, leaf.minimumHeight, leaf.readingWidth);
 		if (source === undefined) projection.split(reference, added, direction);
 		else projection.move(source, reference, direction);
-		projection.setMinimum(added, width, height);
+		projection.setMinimum(added, width, height, readingWidth);
 		if (removed !== undefined) projection.remove(removed);
-		projection.layoutClient(this.clientBounds, this.scrollbarSize);
-		projection.setScroll(this.normalScrollX, this.normalScrollY); projection.reveal(added);
-		const bounds = projection.leavesByGroup.get(added)!.clip;
-		copy_rect_bounds(target, bounds);
-		this.dropPreview = { revision: this.revision, layoutRevision: this.layoutRevision, source, reference, direction, width, height, removed, bounds: { ...bounds } };
+		projection.useReadingWidths = this.readingWidths;
+		const result = new EditorGroupProjection<T>(projection, projection.leavesByGroup.get(added)!, this.normalScrollX, this.normalScrollY);
+		this.dropProjection = { revision: this.revision, normalScrollX: this.normalScrollX, normalScrollY: this.normalScrollY, source, reference, direction, width, height, readingWidth, removed, projection: result };
+		return result;
 	}
 
 	/** Unchanged layout only compares retained invalidation/geometry words. */
@@ -256,12 +292,10 @@ export class EditorGroupArrangement<T> {
 			|| bounds.right !== this.bounds.right || bounds.bottom !== this.bounds.bottom) {
 			copy_rect_bounds(this.bounds, bounds); this.dirty = true;
 		}
-		for (const branch of this.splits) if (branch.arrangedRevision !== branch.split.revision) {
-			branch.arrangedRevision = branch.split.revision; this.dirty = true; this.revision++;
-		}
+		this.consumeSplitRevisions();
 		if (!this.dirty) return false;
 		const node = this.layoutRoot;
-		this.contentWidth = Math.max(this.bounds.right - this.bounds.left, node.minimumWidth);
+		this.contentWidth = Math.max(this.bounds.right - this.bounds.left, this.readingWidths ? node.readingWidth : node.minimumWidth);
 		this.contentHeight = Math.max(this.bounds.bottom - this.bounds.top, node.minimumHeight);
 		this.scrollXValue = clamp(this.scrollXValue, 0, this.maxScrollX);
 		this.scrollYValue = clamp(this.scrollYValue, 0, this.maxScrollY);
@@ -282,14 +316,21 @@ export class EditorGroupArrangement<T> {
 	}
 
 	private createLeaf(group: T): EditorGroupLeaf<T> {
-		return { kind: 'group', group, bounds: create_rect_bounds(), clip: create_rect_bounds(), minimumWidth: 0, minimumHeight: 0, visible: false };
+		return { kind: 'group', group, bounds: create_rect_bounds(), clip: create_rect_bounds(), minimumWidth: 0, minimumHeight: 0, readingWidth: 0, visible: false };
+	}
+
+	/** Ratio intent can change before either live geometry or a drop projection is requested. */
+	private consumeSplitRevisions(): void {
+		for (const branch of this.splits) if (branch.arrangedRevision !== branch.split.revision) {
+			branch.arrangedRevision = branch.split.revision; this.dirty = true; this.revision++;
+		}
 	}
 
 	private createSplit(first: EditorGroupNode<T>, second: EditorGroupNode<T>, orientation: 'horizontal' | 'vertical', ratio: number): EditorGroupSplit<T> {
 		const split = new WorkbenchSplitView(0.5, orientation);
 		split.ratio = ratio;
 		return { kind: 'split', first, second, split, bounds: split.bounds, clip: create_rect_bounds(), sashBounds: create_rect_bounds(),
-			minimumWidth: 0, minimumHeight: 0, visible: false, resizable: false, arrangedRevision: split.revision };
+			minimumWidth: 0, minimumHeight: 0, readingWidth: 0, visible: false, resizable: false, arrangedRevision: split.revision };
 	}
 
 	private restoreNode(layout: EditorGroupLayout<T>): EditorGroupNode<T> {
@@ -314,7 +355,7 @@ export class EditorGroupArrangement<T> {
 	}
 
 	private reindex(): void {
-		this.dropPreview = undefined;
+		this.dropProjection = undefined;
 		this.groupValues.length = this.leafValues.length = this.splitValues.length = 0;
 		this.leavesByGroup.clear(); this.parents.clear(); this.index(this.rootValue);
 		this.minimaDirty = this.dirty = true; this.revision++; this.topologyRevision++;
@@ -334,9 +375,11 @@ export class EditorGroupArrangement<T> {
 		this.measure(node.first); this.measure(node.second);
 		if (node.split.orientation === 'horizontal') {
 			node.minimumWidth = node.first.minimumWidth + WORKBENCH_SPLIT_SIZE + node.second.minimumWidth;
+			node.readingWidth = node.first.readingWidth + WORKBENCH_SPLIT_SIZE + node.second.readingWidth;
 			node.minimumHeight = Math.max(node.first.minimumHeight, node.second.minimumHeight);
 		} else {
 			node.minimumWidth = Math.max(node.first.minimumWidth, node.second.minimumWidth);
+			node.readingWidth = Math.max(node.first.readingWidth, node.second.readingWidth);
 			node.minimumHeight = node.first.minimumHeight + WORKBENCH_SPLIT_SIZE + node.second.minimumHeight;
 		}
 	}
@@ -346,8 +389,8 @@ export class EditorGroupArrangement<T> {
 		let clipBounds = node.bounds;
 		if (node.kind === 'split') {
 			const halfSash = WORKBENCH_SPLIT_SIZE / 2, horizontal = node.split.orientation === 'horizontal';
-			node.split.minimumFirstSize = (horizontal ? node.first.minimumWidth : node.first.minimumHeight) + halfSash;
-			node.split.minimumSecondSize = (horizontal ? node.second.minimumWidth : node.second.minimumHeight) + halfSash;
+			node.split.minimumFirstSize = (horizontal ? this.readingWidths ? node.first.readingWidth : node.first.minimumWidth : node.first.minimumHeight) + halfSash;
+			node.split.minimumSecondSize = (horizontal ? this.readingWidths ? node.second.readingWidth : node.second.minimumWidth : node.second.minimumHeight) + halfSash;
 			const position = node.split.position;
 			node.resizable = node.split.resizable;
 			if (horizontal) {

@@ -9,7 +9,8 @@ import { EditorTabStrip } from '../../ui/tab/control';
 import type { EditorTabDragHandler } from '../../ui/tab/drag';
 import type { EditorTabId } from '../../ui/tab/id';
 import type { EditorInput } from '../../common/editor_inputs';
-import { EditorPanes, type EditorPaneFactories, type EditorPaneOpenOptions } from './editor_panes';
+import type { EditorPaneConstraints } from './editor_pane';
+import { EditorPanes, type EditorPaneContributions, type EditorPaneOpenOptions } from './editor_panes';
 import type { EditorPaneSelection } from './editor_selection';
 import type { CloseEditors } from './editor_close';
 import type { WorkbenchSurface } from '../windows/model';
@@ -93,6 +94,9 @@ export class EditorGroupView {
 	public readonly tabScope = Symbol('editor-tabs');
 	public readonly tabFocusTarget: InputFocusTarget;
 	public readonly panes: EditorPanes;
+	private readonly constraints: EditorPaneConstraints = {
+		minimumWidth: editorGroupChromeMinimumWidth(), minimumHeight: editorGroupChromeMinimumHeight(), companionWidth: undefined,
+	};
 	public readonly tabStrip: EditorTabStrip;
 	public readonly surface: WorkbenchSurface;
 	public readonly paneSurface: WorkbenchSurface;
@@ -120,7 +124,7 @@ export class EditorGroupView {
 	private readonly disposeListeners = new Set<() => void>();
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
 
-	public constructor(factories: EditorPaneFactories, private readonly commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
+	public constructor(contributions: EditorPaneContributions, private readonly commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
 		presentation: EditorGroupPresentation, presented = true) {
 		this.presented = presented;
 		this.surfaceService = presentation.surfaces;
@@ -157,7 +161,7 @@ export class EditorGroupView {
 			getBounds: () => this.bounds, getClip: () => this.clip, draw() {},
 			handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
 		});
-		this.panes = new EditorPanes(factories, this);
+		this.panes = new EditorPanes(contributions, this);
 		this.tabStrip = new EditorTabStrip(this.model, this.tabLayoutContext, commands, this.tabFocusTarget,
 			(id, preserveFocus) => this.activate(id, undefined, undefined, preserveFocus), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget, presentation.contextMenu);
 		this.tabSurface = presentation.surfaces.attach({
@@ -228,9 +232,36 @@ export class EditorGroupView {
 		return inputFocus.target !== null && this.focusScope.contains(inputFocus.target.scope);
 	}
 	public get minimumWidth(): number {
-		return Math.max(editorGroupChromeMinimumWidth(), this.panes.activePane?.minimumClientWidth ?? 0);
+		return this.constraints.minimumWidth;
 	}
-	public get minimumHeight(): number { return this.tabStrip.minimumHeight + Math.max(editorViewState.lineHeight, this.panes.activePane?.minimumClientHeight ?? 0) + this.timeline.height + 2; }
+	public get minimumHeight(): number { return this.constraints.minimumHeight; }
+	public get companionWidth(): number | undefined { return this.constraints.companionWidth; }
+
+	/** A prospective attachment owns intrinsic content and fresh chrome, never another pane's inline bars or timeline. */
+	public measureInput(input: EditorInput | null, companionRequested: boolean, target: EditorPaneConstraints): void {
+		if (input === null) {
+			target.minimumWidth = target.minimumHeight = 0; target.companionWidth = undefined;
+		} else this.panes.measure(input, editorViewState.font, companionRequested, target);
+		target.minimumWidth = Math.max(editorGroupChromeMinimumWidth(), target.minimumWidth);
+		target.minimumHeight = this.tabStrip.minimumHeight + Math.max(editorViewState.lineHeight, target.minimumHeight) + 2;
+		if (target.companionWidth !== undefined) target.companionWidth = Math.max(target.minimumWidth, target.companionWidth);
+	}
+
+	/** Current attachment adds only its actual live extensions to the input-owned intrinsic constraints. */
+	public measureConstraints(companionRequested: boolean, target: EditorPaneConstraints = this.constraints): void {
+		this.measureInput(this.model.activeTab, companionRequested, target);
+		target.minimumHeight = Math.max(target.minimumHeight,
+			this.tabStrip.minimumHeight + (this.panes.activePane?.minimumClientHeight ?? 0) + 2) + this.timeline.height;
+	}
+
+	/** Removing the active input retires its attached controls; another tab keeps the current attachment intact. */
+	public measureAfterRemoval(input: EditorInput, companionRequested: boolean, target: EditorPaneConstraints): void {
+		if (this.model.activeTab !== input) this.measureConstraints(companionRequested, target);
+		else {
+			this.measureInput(this.model.activeAfterRemoval(input), companionRequested, target);
+			target.minimumHeight += this.timeline.heightAfterRetiring(this.panes.activePane?.inputScope);
+		}
+	}
 	public layout(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds>, presented = true): void {
 		this.presented = presented; copy_rect_bounds(this.bounds, bounds); copy_rect_bounds(this.clip, clip);
 		const timelineTop = Math.max(bounds.top, bounds.bottom - this.timeline.height);

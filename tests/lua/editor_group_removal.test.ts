@@ -11,7 +11,7 @@ import { findEditorGroup } from '../../ide/workbench/services/editor/editor_grou
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
 import type { EditorInputSerializers } from '../../ide/workbench/services/editor/editor_serialization';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
-import { createTestEditorPaneFactories, createTestGroupPresentation, createTestEditorCloseDependencies } from '../helpers/editor_panes';
+import { createTestEditorPaneContributions, createTestGroupPresentation, createTestEditorCloseDependencies } from '../helpers/editor_panes';
 
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
@@ -19,7 +19,7 @@ function fixture(t: TestContext) {
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
 		commands: { isEnabled: () => false, execute() {} }, contextMenu: presentation.contextMenu,
-		renderContext: presentation.renderContext, factories: createTestEditorPaneFactories(),
+		renderContext: presentation.renderContext, contributions: createTestEditorPaneContributions(),
 		...createTestEditorCloseDependencies(t, presentation),
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope), layoutMain: () => parts.main.layout(presentation.workArea),
 	});

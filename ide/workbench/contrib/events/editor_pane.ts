@@ -1,4 +1,3 @@
-import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
@@ -33,7 +32,7 @@ import type { HistoricalEvent } from '../../../runtime/event_history';
 import type { DisposableStore } from '../../../common/lifecycle';
 import type { EventViewerInput } from './editor_input';
 import { EVENT_HISTORY_LABEL, EventViewerPresentation, eventClipboardText, eventProperties } from './presentation';
-import { layoutEventViewer, EVENT_READING_COLUMNS } from './layout';
+import { layoutEventViewer } from './layout';
 import { drawEventViewer } from './render';
 import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
 
@@ -42,7 +41,6 @@ const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as 
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'] as const;
 
 export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
-	public override get companionGameMinimumWidth(): number { return editorViewState.charAdvance * EVENT_READING_COLUMNS + SCROLLBAR_WIDTH + 4; }
 
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigate(input));

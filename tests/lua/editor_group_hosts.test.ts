@@ -108,7 +108,13 @@ test('revealing and maximizing real Source groups publishes every resolved arran
 	first.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	const second = parts.splitGroup(first, 'right'); assert.ok(second);
 	second.openEditor(new CodeEditorInput(f.secondInput.workingCopy));
-	for (const group of main.groups) t.mock.getter(group.panes.activePane!, 'minimumClientWidth', () => 500);
+	// The layout regression programs the child contribution's declared floor, not an attached pane cache.
+	for (const group of main.groups) {
+		const measure = group.panes.measure.bind(group.panes);
+		t.mock.method(group.panes, 'measure', (input, font, requested, target) => {
+			measure(input, font, requested, target); target.minimumWidth = 500;
+		});
+	}
 	f.update();
 	const published = () => {
 		for (const leaf of main.arrangement.leaves) if (leaf.visible) {

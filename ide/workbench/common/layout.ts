@@ -217,7 +217,7 @@ export function bottomMargin(): number {
 export function refreshWorkbenchLayout(): boolean {
 	const inset = editorViewState.editorAreaLeft;
 	const left = inset > 0 ? inset + RESOURCE_PANEL_DIVIDER_DRAG_MARGIN : 0, top = topMargin();
-	const right = Math.max(left, editorViewState.viewportWidth - editorChromeState.editorRightInset);
+	const right = Math.max(left, editorViewState.viewportWidth);
 	const bottom = Math.max(top, editorViewState.viewportHeight - bottomMargin());
 	editorViewState.editorAreaTop = top;
 	editorViewState.editorAreaBottom = bottom;

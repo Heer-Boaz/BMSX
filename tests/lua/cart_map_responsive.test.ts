@@ -15,6 +15,8 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { EditorCommandKeybindingController } from '../../ide/input/keyboard/global_bindings';
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
 import { CartMapPane } from '../../ide/workbench/contrib/cart_maps/editor_pane';
+import { measureCartMapEditor } from '../../ide/workbench/contrib/cart_maps/layout';
+import type { EditorPaneConstraints } from '../../ide/workbench/services/editor/editor_pane';
 import { projectCartMap, selectCartMapRow } from '../../ide/workbench/contrib/cart_maps/source_projection';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
@@ -320,20 +322,26 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 }
 
 for (const variant of ['tiny', 'msx'] as const) test(`Cart Map ${variant} intrinsic admission uses retained section and new font before pane arrangement`, t => {
-	const f = fixture(t, variant, 700), { input, pane } = f;
+	const f = fixture(t, variant, 700), { input } = f;
+	const measured: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
 	assert.equal(input.layout.mode, 'split');
 	input.section = 'outline';
-	assert.equal(pane.companionGameMinimumWidth, input.layout.outlineMinimumWidth);
+	measureCartMapEditor(input, editorViewState.font, true, measured);
+	assert.equal(measured.companionWidth, input.layout.outlineMinimumWidth);
 	input.section = 'map';
-	assert.equal(pane.companionGameMinimumWidth, input.layout.mapMinimumWidth);
-	const arrangedFont = input.layout.font;
+	measureCartMapEditor(input, editorViewState.font, true, measured);
+	assert.equal(measured.companionWidth, input.layout.mapMinimumWidth);
+	const arrangedFont = input.layout.font, arrangedMinimum = input.layout.mapMinimumWidth, minimumFont = input.layout.minimumFont;
 	configureFontVariant(variant === 'tiny' ? 'msx' : 'tiny');
-	const width = pane.companionGameMinimumWidth;
+	measureCartMapEditor(input, editorViewState.font, true, measured);
+	const width = measured.companionWidth!;
 	assert.equal(input.layout.font, arrangedFont, 'intrinsic measurement does not pretend that pane arrangement has run');
 	assert.equal(input.layout.mode, 'split'); assert.equal(input.section, 'map');
-	assert.equal(width, input.layout.mapMinimumWidth);
+	assert.equal(input.layout.mapMinimumWidth, arrangedMinimum); assert.equal(input.layout.minimumFont, minimumFont);
 	assert.ok(width >= input.grid.minimumWidth + 8, 'the selected compact map retains eight complete cells and its lanes');
 	const read = t.mock.method(f.model.buffer, 'getText'), advance = t.mock.method(editorViewState.font, 'advance');
-	for (let frame = 0; frame < 1000; frame++) assert.equal(pane.companionGameMinimumWidth, width);
+	for (let frame = 0; frame < 1000; frame++) {
+		measureCartMapEditor(input, editorViewState.font, true, measured); assert.equal(measured.companionWidth, width);
+	}
 	assert.equal(read.mock.callCount(), 0); assert.equal(advance.mock.callCount(), 0);
 });

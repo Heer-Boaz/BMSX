@@ -27,7 +27,7 @@ export function renderCodeArea(code: CodeEditorControl,
 
 	drawCodeAreaBackground(viewport);
 	const font = code.font.renderFont();
-	drawCodeAreaChrome(code, viewport, breakpointsForChunk, font, getBreakpointLaneWidth(code));
+	drawCodeAreaChrome(code, viewport, breakpointsForChunk, font, getBreakpointLaneWidth(code.font));
 	api.pushClipRect(viewport.textLeft, viewport.codeTop, viewport.contentRight, viewport.contentBottom);
 
 	const activeGotoHighlight = code.gotoHoverHighlight;

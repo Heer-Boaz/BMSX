@@ -10,6 +10,7 @@ import { layoutWorkbenchPropertyTree, measureWorkbenchPropertyTreeMinimumWidth }
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import type { AnimationEditorInput } from './editor_input';
 import type { AnimationKeyControl } from './key_control';
+import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
 
 const PADDING = 4;
 const SASH_SPACE = 8;
@@ -73,6 +74,12 @@ export function measureAnimationEditor(font: EditorFont): AnimationEditorMetrics
 	};
 	measurements.set(font, measured);
 	return measured;
+}
+
+export function measureAnimationEditorConstraints(_input: AnimationEditorInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void {
+	const measured = measureAnimationEditor(font);
+	target.minimumWidth = measured.compactWidth; target.minimumHeight = measured.compactHeight;
+	target.companionWidth = companionRequested ? measured.compactWidth : undefined;
 }
 
 /** Only visible clients receive geometry. Hidden client state and the user's requested sash ratios stay retained. */

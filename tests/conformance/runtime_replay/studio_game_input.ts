@@ -4,7 +4,6 @@ import { IO_INP_KEYS, IO_INP_PADS, IO_INP_POINTER_BUTTONS } from '../../../machi
 import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { inputFocus } from '../../../ide/input/focus';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
-import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import type { ActorLabEditorPane } from '../../../ide/workbench/contrib/actor_lab/editor_pane';
 import { runtimeWorld } from '../../../ide/workbench/contrib/actor_lab/runtime';
 import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection';
@@ -69,8 +68,9 @@ export async function runStudioGameInput(test: StudioFixture) {
 	harness.openLuaSource('cart.lua');
 	await runPaletteCommand('View: Toggle Game Panel');
 	check(ide.editor.gamePanel.visible && execution.executionBlocked(), 'source editor owns the hold while its game panel is unfocused');
-	const panelCenter = { left: editorViewState.viewportWidth - editorChromeState.editorRightInset / 2,
-		right: editorViewState.viewportWidth - editorChromeState.editorRightInset / 2 + 1,
+	const panel = ide.editor.editorParts.mainArea.companionBounds;
+	const panelCenter = { left: (panel.left + panel.right) / 2,
+		right: (panel.left + panel.right) / 2 + 1,
 		top: (view.layout.top + editorViewState.editorAreaBottom) / 2, bottom: (view.layout.top + editorViewState.editorAreaBottom) / 2 + 1 };
 	await click(panelCenter);
 	check(inputFocus.target?.guestInput?.bounds !== undefined && !execution.executionBlocked() && ide.editor.guestInputRecipient !== null,
@@ -192,7 +192,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	const actorPane = ide.editor.editorParts.activeGroup.panes.activePane as ActorLabEditorPane;
 	const inspector = actorPane.inspector, details = actor.details;
-	check(actorPane.companionGameMinimumWidth === undefined && inspector.visible && actor.detailsWindow.open && actorPane.detailsWindow.visible,
+	check(!ide.editor.gamePanel.visible && inspector.visible && actor.detailsWindow.open && actorPane.detailsWindow.visible,
 		'instance Details attach as a separate floating window over the full game preview');
 	await press('ArrowDown');
 	const selectedProperty = inspector.model.rows[inspector.model.selectionIndex].element.label;
@@ -287,7 +287,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	check(actorPane.detailsWindow.visible && JSON.stringify(actor.detailsWindow.requestedBounds) === resizedRequest,
 		'reopening restores the same requested window placement instead of an old split');
 	await press('Escape');
-	check(actorPane.companionGameMinimumWidth === undefined && inspector.visible && actor.detailsWindow.open,
+	check(!ide.editor.gamePanel.visible && inspector.visible && actor.detailsWindow.open,
 		'Escape returns focus to the tree without closing modeless Details');
 	const detailsReturnFocus = inputFocus.target;
 	await runPaletteCommand('Actor Lab: Inspect Instance');

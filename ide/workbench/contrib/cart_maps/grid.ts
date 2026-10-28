@@ -16,6 +16,18 @@ export type MapGridContent = { readonly rows: readonly (readonly string[])[]; re
 export type CartMapGridPosition = { readonly x: number; readonly y: number };
 export type CartMapGridViewState = CartMapGridPosition & { readonly reveal?: CartMapGridPosition };
 
+const gridMeasurements = new WeakMap<EditorFont, { readonly cellSize: number; readonly minimumWidth: number }>();
+
+/** Eight complete authored cells plus the retained scrollbar lane, before any grid is attached. */
+export function measureCartMapGrid(font: EditorFont): { readonly cellSize: number; readonly minimumWidth: number } {
+	let measured = gridMeasurements.get(font);
+	if (measured === undefined) {
+		const cellSize = Math.max(font.charAdvance + 2, font.lineHeight + 2);
+		measured = { cellSize, minimumWidth: cellSize * 8 + SCROLLBAR_WIDTH }; gridMeasurements.set(font, measured);
+	}
+	return measured;
+}
+
 /** Two-dimensional authored-cell viewport. Neither layout nor paint reads YAML or the guest. */
 export class CartMapGrid {
 	public readonly bounds = create_rect_bounds();
@@ -23,8 +35,6 @@ export class CartMapGrid {
 	public readonly vertical = new Scrollbar('vertical');
 	private readonly track = create_rect_bounds();
 	public cellSize = 0;
-	private measuredFont: EditorFont | undefined;
-	private measuredCellSize = 0;
 	private visible = false;
 	private positionX = 0;
 	private positionY = 0;
@@ -74,16 +84,7 @@ export class CartMapGrid {
 	public selected: MapGridMarker | undefined;
 
 	/** Eight complete authored cells plus the retained scrollbar lane. */
-	public get minimumWidth(): number { return this.measureCellSize() * 8 + SCROLLBAR_WIDTH; }
-
-	private measureCellSize(): number {
-		const font = editorViewState.font;
-		if (this.measuredFont !== font) {
-			this.measuredFont = font;
-			this.measuredCellSize = Math.max(font.advance('M') + 2, editorViewState.lineHeight + 2);
-		}
-		return this.measuredCellSize;
-	}
+	public get minimumWidth(): number { return measureCartMapGrid(editorViewState.font).minimumWidth; }
 
 	public captureView(): CartMapGridViewState {
 		if (this.visible && !this.restorePending) this.capturePosition();
@@ -108,7 +109,7 @@ export class CartMapGrid {
 			this.vertical.layout(this.track, 0, 0, 0);
 			return;
 		}
-		this.cellSize = this.measureCellSize();
+		this.cellSize = measureCartMapGrid(editorViewState.font).cellSize;
 		write_rect_bounds(this.track, bounds.left, bounds.bottom, bounds.right, bottom);
 		this.horizontal.layout(this.track, (this.endX - this.minX) * this.cellSize,
 			bounds.right - bounds.left, this.positionX * this.cellSize, this.minX * this.cellSize);

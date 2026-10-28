@@ -12,13 +12,20 @@ import { clampWorkbenchListScroll, layoutWorkbenchList } from '../../ui/list_vie
 import type { WorkbenchTreeLayout, WorkbenchTreeNode } from '../../ui/tree_view';
 import type { SceneEditorInput } from './editor_input';
 import type { SceneOutlineElement } from './outline';
+import type { EditorFont } from '../../../editor/ui/view/font';
+import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
 
 const PADDING = 4;
 const CLIENT_READING_COLUMNS = 24;
 
 /** Either retained compact section keeps one readable column and its scroll lane. */
-export function measureSceneEditorMinimumWidth(): number {
-	return editorViewState.charAdvance * CLIENT_READING_COLUMNS + PADDING * 2 + constants.SCROLLBAR_WIDTH;
+export function measureSceneEditorMinimumWidth(font: EditorFont = editorViewState.font): number {
+	return font.charAdvance * CLIENT_READING_COLUMNS + PADDING * 2 + constants.SCROLLBAR_WIDTH;
+}
+
+export function measureSceneEditor(_input: SceneEditorInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void {
+	target.minimumWidth = 0; target.minimumHeight = 0;
+	target.companionWidth = companionRequested ? measureSceneEditorMinimumWidth(font) : undefined;
 }
 
 /** Measure content on invalidation; a scroll only projects the retained field rectangles. */

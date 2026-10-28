@@ -63,10 +63,19 @@ Internal membership projections settle before external topology/model events;
 retiring group authority is separate from history handoff and final disposal. An
 `EditorPart` owns real groups, local active/MRU state, retained client bounds,
 Quick Input and decision dialogs. `group_arrangement.ts` owns the retained split
-tree, intrinsic minimum extents, overflow viewport, constrained drop previews and
-temporary group maximization.
+tree, hard and reading minimum extents, overflow viewport, constrained drop
+previews and temporary group maximization. Both constraint tiers use the same
+tree; an optional companion must fit the presented arrangement's reading
+budget, not only its active group. `common/main_area_layout.ts` owns allocation
+between Main's primary arrangement and companion, including the shared sash.
+It does not resize the physical viewport or encode allocation as a chrome inset.
 Each `EditorGroupView` owns its tabs, panes, content/timeline geometry and input
-scope. Editor and whole-group gestures use the shared drop target for local and foreign
+scope. Pane contributions measure retained inputs with the supplied font without
+constructing or attaching controls. Groups add their actual attached chrome;
+drop projections measure the incoming attachment and the source's model-selected
+successor. Parent allocation precedes the frame's content update, and routing
+publication follows allocation of both primary and companion clients.
+Editor and whole-group gestures use the shared drop target for local and foreign
 positions; actual surface presentation ancestry decides eligibility. Host
 admission and a group-local close decision are independent gates.
 The shared close owner settles drafts, working copies and Saves before the part
