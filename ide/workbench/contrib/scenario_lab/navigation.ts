@@ -59,21 +59,7 @@ const NAVIGATION_CHANGED: ScenarioLabNavigationResult = { kind: 'changed' };
 
 export function updateScenarioLabStatus(state: ScenarioLabViewState): void {
 	const debug = state.debugger;
-	const live = debug !== undefined && (debug.status === 'stopped' || debug.status === 'running');
-	for (const item of state.actionBar.items) {
-		let visible: boolean;
-		switch (item.command) {
-			case 'scenarioLab.continue': case 'scenarioLab.inspectStop': visible = live && debug.stopped; break;
-			case 'scenarioLab.stepInto': case 'scenarioLab.stepOver': case 'scenarioLab.stepOut': visible = live && debug.canResume(Mode.StepInto); break;
-			case 'scenarioLab.pause': visible = live && !debug.stopped; break;
-			case 'scenarioLab.breakpoints': visible = live; break;
-			case 'scenarioLab.revealRun': visible = state.resultService.runs.length !== 0; break;
-			case 'scenarioLab.cancel': visible = state.runActive; break;
-			case 'scenarioLab.debug': case 'scenarioLab.debugWithCompanion': visible = !state.runActive && selectedScenarioTestNode(state)?.kind === 'test'; break;
-			default: visible = !state.runActive;
-		}
-		if (item.visible !== visible) { item.visible = visible; state.actionsDirty = true; }
-	}
+	if (state.actionBar.presentation.refresh()) state.actionsDirty = true;
 	if (debug !== undefined && (debug.status === 'stopped' || debug.status === 'running')) {
 		state.status.info = `TEST DEBUG / ${debug.status.toUpperCase()} / ${debug.phase.toUpperCase()}${debug.reason === undefined ? '' : ` / ${debug.reason.toUpperCase()}`}`;
 		state.status.dirty = true;

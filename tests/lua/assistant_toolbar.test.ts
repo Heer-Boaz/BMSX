@@ -52,6 +52,9 @@ class TranscriptProducer extends AssistantConversation {
 	public proposal(proposal: WorkspaceEditProposal): void { this.append('proposal', proposal.title, proposal); }
 	public reset(): void { this.resetTranscript(); }
 	public running(): void { this.state = 'running'; this.changed(); }
+	public status(state: AssistantConversation['state'], queued = this.queued): void {
+		this.state = state; this.queued = queued; this.changed();
+	}
 }
 
 function fixture(t: TestContext) {
@@ -128,7 +131,10 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 	let time = 0;
 	const pointer = (rect: Readonly<RectBounds>, held = 0, down = 0, up = 0) => {
 		const snapshot = point(rect, held, down, up);
-		if (!pointerCapture.dispatch(snapshot, false, ++time)) toolbar.control.handlePointer(snapshot);
+		if (!pointerCapture.dispatch(snapshot, false, ++time, menu.visible ? menu.pointerScope : undefined)) {
+			if (menu.visible) menu.handlePointer(snapshot);
+			else toolbar.control.handlePointer(snapshot);
+		}
 	};
 	const open = (keyboard = false) => {
 		if (keyboard) { toolbar.control.focusTarget.focus(); press('End'); press('Enter'); }
@@ -200,6 +206,98 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 				f.open(true); f.press('Escape'); assert.equal(inputFocus.target, f.toolbar.control.focusTarget);
 			}
 		}
+	});
+
+test('turn placement retains disabled applicable actions and follows queue, command and queue-editor context', t => {
+	const f = toolbarFixture(t);
+	const cases = [
+		{ state: 'ready', queued: false, draft: '', editing: undefined,
+			visible: ['assistant.send'], enabled: [] },
+		{ state: 'running', queued: false, draft: '', editing: undefined,
+			visible: ['assistant.stop', 'assistant.queue', 'assistant.direct'], enabled: ['assistant.stop'] },
+		{ state: 'starting', queued: false, draft: '', editing: undefined,
+			visible: ['assistant.send', 'assistant.stop'], enabled: [] },
+		{ state: 'stopping', queued: false, draft: 'Next prompt', editing: undefined,
+			visible: ['assistant.send', 'assistant.stop'], enabled: ['assistant.send'] },
+		{ state: 'ready', queued: true, draft: 'Next prompt', editing: undefined,
+			visible: ['assistant.queue'], enabled: ['assistant.queue'] },
+		{ state: 'ready', queued: true, draft: '/help', editing: undefined,
+			visible: ['assistant.send'], enabled: ['assistant.send'] },
+		{ state: 'ready', queued: true, draft: 'Edited prompt', editing: 'waiting',
+			visible: ['assistant.send'], enabled: ['assistant.send'] },
+		{ state: 'running', queued: true, draft: 'Edited prompt', editing: 'waiting',
+			visible: ['assistant.send', 'assistant.stop'], enabled: ['assistant.send', 'assistant.stop'] },
+		{ state: 'running', queued: true, draft: '/help', editing: undefined,
+			visible: ['assistant.send', 'assistant.stop'], enabled: ['assistant.send', 'assistant.stop'] },
+		{ state: 'running', queued: true, draft: 'Next prompt', editing: undefined,
+			visible: ['assistant.stop', 'assistant.queue', 'assistant.direct'], enabled: ['assistant.stop', 'assistant.queue', 'assistant.direct'] },
+	] as const;
+	for (const entry of cases) {
+		f.conversation.status(entry.state, entry.queued ? [{ id: 'waiting', text: 'Waiting prompt' }] : []);
+		f.input.editingQueuedId = entry.editing; setFieldText(f.input.draft, entry.draft, false); f.toolbar.update(false);
+		assert.deepEqual(f.input.turnActions.items.filter(item => item.visible).map(item => item.command), entry.visible,
+			'context chooses placements, including applicable actions whose command owner currently disables them');
+		assert.deepEqual(f.input.turnActions.items.filter(item => item.visible && item.enabled).map(item => item.command), entry.enabled,
+			'command capability is evaluated separately from contextual placement');
+	}
+});
+
+for (const activation of ['pointer', 'keyboard'] as const)
+	test(`${activation} Direct retires a prompt attempt when the draft becomes a command before layout`, t => {
+		const f = toolbarFixture(t);
+		f.conversation.running(); setFieldText(f.input.draft, 'Steer this turn', false); f.toolbar.update(false);
+		const direct = f.input.turnActions.items.find(item => item.command === 'assistant.direct')!;
+		if (activation === 'pointer') f.pointer(direct.bounds, PointerButton.Primary, PointerButton.Primary);
+		else { f.toolbar.control.focusTarget.focus(); f.press('End'); f.key('Enter', true); }
+		assert.equal(f.input.turnActions.pressedCommand, 'assistant.direct');
+		setFieldText(f.input.draft, '/help', false);
+		assert.equal(f.parent.getCommand('assistant.direct')!.isEnabled(), true,
+			'the command owner still enables a nonempty draft; placement owns prompt applicability');
+		if (activation === 'pointer') f.pointer(direct.bounds, 0, 0, PointerButton.Primary);
+		else f.key('Enter', false);
+		assert.equal(f.input.turnActions.pressedCommand, null);
+		assert.deepEqual(f.executed, [], 'an old prompt gesture cannot submit the new command draft directly');
+		assert.equal(direct.visible, false);
+		const send = f.input.turnActions.items.find(item => item.command === 'assistant.send')!;
+		assert.equal(send.visible, false, 'a newly applicable action has no admitted geometry until layout');
+		f.toolbar.update(false);
+		if (activation === 'pointer') f.pointer(send.bounds, PointerButton.Primary, PointerButton.Primary, PointerButton.Primary);
+		else { f.press('Home'); f.press('Enter'); }
+		assert.deepEqual(f.executed, ['assistant.send'], 'the command draft requires a fresh Send gesture');
+	});
+
+test('Direct keyup cannot revive an attempt after prompt-command-prompt publication without layout', t => {
+	const f = toolbarFixture(t);
+	f.conversation.running(); setFieldText(f.input.draft, 'Original prompt', false); f.toolbar.update(false);
+	f.toolbar.control.focusTarget.focus(); f.press('End'); f.key('Enter', true);
+	assert.equal(f.input.turnActions.pressedCommand, 'assistant.direct');
+	setFieldText(f.input.draft, '/help', false); setFieldText(f.input.draft, 'Another prompt', false);
+	assert.equal(f.parent.getCommand('assistant.direct')!.isEnabled(), true);
+	f.key('Enter', false);
+	assert.equal(f.input.turnActions.pressedCommand, null);
+	assert.deepEqual(f.executed, [], 'equal final membership does not revive a gesture retired by a published command draft');
+	assert.equal(inputFocus.target, f.toolbar.control.focusTarget);
+	f.toolbar.update(false); f.press('End'); f.press('Enter');
+	assert.deepEqual(f.executed, ['assistant.direct'], 'a fresh gesture may steer with the final prompt');
+});
+
+for (const activation of ['pointer', 'keyboard'] as const)
+	test(`${activation} overflow Direct cannot accept changed draft membership before toolbar layout`, t => {
+		const f = toolbarFixture(t);
+		f.conversation.running(); setFieldText(f.input.draft, 'Steer this turn', false); f.layout(78); f.open(activation === 'keyboard');
+		const row = f.menu.model.rows.find(item => item.command === 'assistant.direct')!;
+		const bounds = { ...f.menu.model.viewport.bounds,
+			top: f.menu.model.viewport.offsetTop + row.top, bottom: f.menu.model.viewport.offsetTop + row.bottom };
+		if (activation === 'pointer') f.pointer(bounds, PointerButton.Primary, PointerButton.Primary);
+		else { f.press('End'); f.key('Enter', true); }
+		assert.equal(f.menu.model.rows[f.menu.model.selectedIndex].command, 'assistant.direct');
+		setFieldText(f.input.draft, '/help', false);
+		assert.equal(f.parent.getCommand('assistant.direct')!.isEnabled(), true);
+		if (activation === 'pointer') f.pointer(bounds, 0, 0, PointerButton.Primary);
+		else f.key('Enter', false);
+		assert.deepEqual(f.executed, [], 'popup acceptance rechecks placement independently of command capability');
+		assert.equal(f.menu.visible, false, 'the old popup owns the previous draft membership');
+		assert.equal(inputFocus.target, activation === 'keyboard' ? f.toolbar.control.focusTarget : f.parent);
 	});
 
 test('Review pointer and keyboard holds retire before exact proposal selection or publication changes', t => {

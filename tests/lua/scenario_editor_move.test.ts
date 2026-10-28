@@ -20,8 +20,9 @@ import { api } from '../../ide/runtime/overlay_api';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { ScenarioLabInput } from '../../ide/workbench/contrib/scenario_lab/editor_input';
 import { ScenarioLabEditorPane } from '../../ide/workbench/contrib/scenario_lab/editor_pane';
+import { RuntimeDebuggerResumeMode as Mode } from '../../ide/runtime/source_debugger';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
-import { selectScenarioLabTestRow, selectScenarioLabResultRow, toggleScenarioLabResultRow } from '../../ide/workbench/contrib/scenario_lab/navigation';
+import { scenarioLabCommandEnabled, selectScenarioLabTestRow, selectScenarioLabResultRow, toggleScenarioLabResultRow } from '../../ide/workbench/contrib/scenario_lab/navigation';
 import { captureScenarioLabTestView } from '../../ide/workbench/contrib/scenario_lab/view_snapshot';
 import { loadRomToolingMedia } from '../../toolchain/ts/rompack/media';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH, type ScenarioMediaFixture } from '../helpers/scenario_media';
@@ -89,6 +90,63 @@ async function fixture(t: TestContext) {
 	};
 	return { ide, editor, parts, controller, runs, host, sources, targets, firstPart, secondPart, input, module, update, key, select, until };
 }
+
+test('Scenario title follows the real run and source-step context without granting guest time', async t => {
+	const f = await fixture(t); f.select('waits');
+	const view = f.input.view, actions = view.actionBar, title = actions.menu!, origin = f.firstPart.activeGroup.panes.activePane!.commandTarget;
+	const items = actions.items, entries = title.entries, visible = title.visibleItems;
+	const debugAction = items.find(action => action.command === 'scenarioLab.debug')!, cancel = items.find(action => action.command === 'scenarioLab.cancel')!;
+	const continueAction = items.find(action => action.command === 'scenarioLab.continue')!, inspectStop = items.find(action => action.command === 'scenarioLab.inspectStop')!;
+	const pause = items.find(action => action.command === 'scenarioLab.pause')!;
+	const initialRevision = title.revision;
+	f.editor.commands.execute('scenarioLab.debug', origin);
+	assert.equal(view.runActive, true);
+	assert.ok(title.revision > initialRevision, 'asynchronous preparation publishes its running title state immediately');
+	assert.equal(debugAction.visible, false);
+	assert.equal(cancel.menuEntry!.visible, true);
+	await f.until(() => f.runs.debugger?.stopped === true);
+	const debug = f.runs.debugger!, run = f.runs.results.liveRun!, target = f.runs.session!.execution!.target;
+	assert.equal(debug.reason, 'entry');
+	assert.equal(continueAction.visible, true);
+	assert.equal(inspectStop.visible, true);
+	for (const command of ['scenarioLab.stepInto', 'scenarioLab.stepOver', 'scenarioLab.stepOut'] as const)
+		assert.equal(items.find(action => action.command === command)!.visible, false, 'a runner boundary has no source stop to step');
+	f.editor.commands.execute('scenarioLab.inspectStop', origin);
+	const pane = f.firstPart.activeGroup.panes.activePane!;
+	assert.ok(pane instanceof ScenarioLabEditorPane);
+	const inspection = pane.targetInspection.model!.inspection, cycles = target.runtime.machine.scheduler.nowCycles;
+	const entry = debug.sources.catalog.find(source => source.domain === 0 && source.path === 'entry.lua')!;
+	assert.equal(debug.sources.setBreakpoints(entry.source, [2])[0].status, 'bound');
+	f.editor.commands.execute('scenarioLab.continue', origin);
+	assert.equal(debug.status, 'running');
+	assert.equal(inspection.available, false, 'title command execution expires the borrowed entry stop before another CPU grant');
+	assert.equal(target.runtime.machine.scheduler.nowCycles, cycles);
+	assert.equal(continueAction.visible, false);
+	f.update();
+	assert.equal(pause.visible, true);
+	await f.until(() => debug.stopped);
+	assert.equal(debug.reason, 'breakpoint');
+	assert.equal(debug.canResume(Mode.StepInto), true);
+	for (const command of ['scenarioLab.stepInto', 'scenarioLab.stepOver', 'scenarioLab.stepOut'] as const)
+		assert.equal(items.find(action => action.command === command)!.visible, true, 'a stopped source context admits the source-step action group');
+	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.stepInto'), debug.canResume(Mode.StepInto));
+	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.stepOver'), debug.canResume(Mode.StepOver));
+	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.stepOut'), debug.canResume(Mode.StepOut));
+	const stoppedRevision = title.revision, stoppedCycles = target.runtime.machine.scheduler.nowCycles;
+	for (let frame = 0; frame < 10; frame++) f.update();
+	assert.equal(title.revision, stoppedRevision);
+	assert.equal(target.runtime.machine.scheduler.nowCycles, stoppedCycles);
+	f.runs.cancel(run);
+	await f.until(() => !f.runs.active);
+	assert.equal(view.runActive, false);
+	assert.equal(cancel.visible, false);
+	assert.equal(pause.visible, false);
+	assert.equal(inspectStop.visible, false);
+	assert.equal(debugAction.visible, true);
+	assert.equal(actions.items, items);
+	assert.equal(title.entries, entries);
+	assert.equal(title.visibleItems, visible);
+});
 
 for (const foreignFocus of ['before-inspection', 'after-inspection'] as const)
 	test(`a borrowed Scenario stop keeps its pointer action origin with foreign focus ${foreignFocus}`, async t => {

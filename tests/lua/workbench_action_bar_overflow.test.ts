@@ -30,13 +30,7 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
 
 const PRIMARY = PointerButton.Primary;
-const ACTION_MENUS = ['aem.title', 'scenarioLab.title', 'scenarioLab.target'] as const;
-const SCENARIO_STATES: readonly (readonly EditorCommandId[])[] = [
-	['scenarioLab.play', 'scenarioLab.run', 'scenarioLab.debug', 'scenarioLab.rerun', 'scenarioLab.revealRun'],
-	['scenarioLab.continue', 'scenarioLab.breakpoints', 'scenarioLab.inspectStop', 'scenarioLab.revealRun', 'scenarioLab.cancel'],
-	['scenarioLab.continue', 'scenarioLab.stepInto', 'scenarioLab.stepOver', 'scenarioLab.stepOut', 'scenarioLab.breakpoints',
-		'scenarioLab.inspectStop', 'scenarioLab.revealRun', 'scenarioLab.cancel'],
-];
+const ACTION_MENUS = ['aem.title', 'scenarioLab.target'] as const;
 
 for (const variant of ['tiny', 'msx'] as const) for (const domain of ['gpu', 'gte'] as const) {
 	test(`${domain} history actions stay bounded and every inspector action is reachable once in ${variant}`, () => {
@@ -62,25 +56,21 @@ for (const variant of ['tiny', 'msx'] as const) for (const menu of ACTION_MENUS)
 		const state = createWorkbenchActionBar(menu, true), font = new Font({ variant });
 		let measurements = 0;
 		const measure = (text: string) => { measurements++; return font.measure(text); };
-		const visibility = menu === 'scenarioLab.title' ? SCENARIO_STATES : [state.items.map(item => item.command)];
-		for (const visible of visibility) {
-			for (const item of state.items) item.visible = visible.includes(item.command);
-			const authored = state.items.filter(item => item.visible);
-			// The layout contract is the supplied free interval, not a particular pane's caption text.
-			for (const width of [384, 192, 128, 80, 512]) for (const left of [4, 96]) {
-				layoutWorkbenchActionBar(state, width - 4, 2, font.lineHeight + 6, measure, font, left);
-				const primary = state.items.filter(item => item.visible && !item.overflowed), secondary = state.overflow!.items;
-				assert.deepEqual([...primary.map(item => item.command), ...secondary.filter(item => item.type === 'command').map(item => item.command)], authored.map(item => item.command));
-				assert.deepEqual(primary, authored.slice(0, primary.length), 'overflow removes a trailing suffix, not arbitrary actions');
-				for (const item of primary) assert.ok(item.bounds.left >= left && item.bounds.right <= width - 4);
-				assert.equal(state.overflow!.button.visible, secondary.length !== 0);
-				assert.ok(state.bounds.left >= Math.min(left, width - 4));
-				const oldMeasurements = measurements, oldRevision = state.layoutRevision, retained = state.overflow!.items;
-				for (let frame = 0; frame < 30; frame++) layoutWorkbenchActionBar(state, width - 4, 2, font.lineHeight + 6, measure, font, left);
-				assert.equal(measurements, oldMeasurements, 'clean frames reuse action measurements');
-				assert.equal(state.layoutRevision, oldRevision); assert.equal(state.overflow!.items, retained);
-				assert.deepEqual(state.items.filter(item => item.visible), authored, 'layout never rewrites domain visibility');
-			}
+		const authored = state.items;
+		// The layout contract is the supplied free interval, not a particular pane's caption text.
+		for (const width of [384, 192, 128, 80, 512]) for (const left of [4, 96]) {
+			layoutWorkbenchActionBar(state, width - 4, 2, font.lineHeight + 6, measure, font, left);
+			const primary = state.items.filter(item => item.visible && !item.overflowed), secondary = state.overflow!.items;
+			assert.deepEqual([...primary.map(item => item.command), ...secondary.filter(item => item.type === 'command').map(item => item.command)], authored.map(item => item.command));
+			assert.deepEqual(primary, authored.slice(0, primary.length), 'overflow removes a trailing suffix, not arbitrary actions');
+			for (const item of primary) assert.ok(item.bounds.left >= left && item.bounds.right <= width - 4);
+			assert.equal(state.overflow!.button.visible, secondary.length !== 0);
+			assert.ok(state.bounds.left >= Math.min(left, width - 4));
+			const oldMeasurements = measurements, oldRevision = state.layoutRevision, retained = state.overflow!.items;
+			for (let frame = 0; frame < 30; frame++) layoutWorkbenchActionBar(state, width - 4, 2, font.lineHeight + 6, measure, font, left);
+			assert.equal(measurements, oldMeasurements, 'clean frames reuse action measurements');
+			assert.equal(state.layoutRevision, oldRevision); assert.equal(state.overflow!.items, retained);
+			assert.deepEqual(state.items.filter(item => item.visible), authored, 'layout never rewrites domain visibility');
 		}
 	});
 }

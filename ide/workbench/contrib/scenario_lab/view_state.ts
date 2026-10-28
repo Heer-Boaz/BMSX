@@ -12,12 +12,17 @@ import type { ScenarioResultService } from '../../../testing/scenario/result_ser
 import type { ScenarioTestCollection } from '../../../testing/scenario/test_collection';
 import type {
 	ScenarioLabPaneState,
+	ScenarioLabResultPaneState,
 	ScenarioLabResultRow,
+	ScenarioLabTestPaneState,
 	ScenarioLabTestRow,
 	ScenarioLabViewState,
 } from './view_model';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { WorkbenchMenu } from '../../ui/menu/model';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
+import { SCENARIO_LAB_TITLE_ACTIONS } from './menus';
+import type { TestDebugger } from '../../../testing/debugger';
 
 function createScenarioLabPaneState<Row>(): ScenarioLabPaneState<Row> {
 	return {
@@ -30,46 +35,48 @@ function createScenarioLabPaneState<Row>(): ScenarioLabPaneState<Row> {
 	};
 }
 
+class ScenarioLabView implements ScenarioLabViewState {
+	public debugger: TestDebugger | undefined;
+	public actionsDirty = true;
+	public readonly testPane: ScenarioLabTestPaneState = {
+		...createScenarioLabPaneState<ScenarioLabTestRow>(),
+		collapsedNodeIds: new Set(),
+		selectedNodeId: null,
+		rowsDirty: true,
+		projectedRevision: -1,
+	};
+	public readonly resultPane: ScenarioLabResultPaneState = {
+		...createScenarioLabPaneState<ScenarioLabResultRow>(),
+		expandedResultIds: new Set(),
+		projectedRevision: -1,
+		projectedNodeId: null,
+		newestRunId: null,
+	};
+	public focus: ScenarioLabViewState['focus'] = 'tests';
+	public pendingReveal = false;
+	public readonly split = new WorkbenchSplitView(5 / 12);
+	public splitRevision = -1;
+	public readonly layout = createScenarioLabLayout();
+	public readonly actionBar = createWorkbenchActionBar(new WorkbenchMenu(SCENARIO_LAB_TITLE_ACTIONS, this), true, WORKBENCH_MENUS['scenarioLab.context']);
+	public readonly status = {
+		info: '',
+		renderedInfo: '',
+		dirty: true,
+	};
+	public lastPointerClickTimeMs = 0;
+	public lastPointerClickRowId: string | null = null;
+
+	public constructor(public readonly collection: ScenarioTestCollection, public readonly resultService: ScenarioResultService,
+		public runActive: boolean) {}
+}
+
 /** Creates one retained Scenario Lab editor input with its projection invariants installed. */
 export function createScenarioLabViewState(
 	collection: ScenarioTestCollection,
 	results: ScenarioResultService,
 	runActive: boolean,
 ): ScenarioLabViewState {
-	const view: ScenarioLabViewState = {
-		debugger: undefined,
-		actionsDirty: true,
-		collection,
-		resultService: results,
-		testPane: {
-			...createScenarioLabPaneState<ScenarioLabTestRow>(),
-			collapsedNodeIds: new Set(),
-			selectedNodeId: null,
-			rowsDirty: true,
-			projectedRevision: -1,
-		},
-		resultPane: {
-			...createScenarioLabPaneState<ScenarioLabResultRow>(),
-			expandedResultIds: new Set(),
-			projectedRevision: -1,
-			projectedNodeId: null,
-			newestRunId: null,
-		},
-		focus: 'tests',
-		runActive,
-		pendingReveal: false,
-		split: new WorkbenchSplitView(5 / 12),
-		splitRevision: -1,
-		layout: createScenarioLabLayout(),
-		actionBar: createWorkbenchActionBar('scenarioLab.title', true, WORKBENCH_MENUS['scenarioLab.context']),
-		status: {
-			info: '',
-			renderedInfo: '',
-			dirty: true,
-		},
-		lastPointerClickTimeMs: 0,
-		lastPointerClickRowId: null,
-	};
+	const view = new ScenarioLabView(collection, results, runActive);
 	rebuildScenarioLabTestRows(view);
 	refreshScenarioLabProjection(view);
 	updateScenarioLabStatus(view);

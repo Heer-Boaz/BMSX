@@ -19,6 +19,7 @@ export class AssistantTurnToolbar {
 	private readonly tooltip = new WorkbenchTooltip();
 	private input: AssistantInput | undefined;
 	private unbindProposal: (() => void) | undefined;
+	private menuRevision = -1;
 
 	public constructor(commands: EditorCommandRunner, parent: InputFocusTarget, focusContent: () => void,
 		private readonly menu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
@@ -43,19 +44,13 @@ export class AssistantTurnToolbar {
 	}
 
 	public update(layoutChanged: boolean): void {
-		const input = this.input!, { conversation, layout } = input;
-		let changed = layoutChanged;
-		const queuedSend = (conversation.state === 'running' || conversation.queued.length > 0)
-			&& !input.draft.text.startsWith('/') && input.editingQueuedId === undefined;
-		for (const item of input.turnActions.items) {
-			const visible = item.command === 'assistant.send' ? !queuedSend : item.command === 'assistant.queue' ? queuedSend
-				: item.command === 'assistant.direct' ? queuedSend && conversation.state === 'running'
-					: item.command === 'assistant.stop' ? conversation.state === 'running' || conversation.state === 'starting' || conversation.state === 'stopping'
-						: input.selection.proposal !== undefined;
-			if (item.visible !== visible) { item.visible = visible; changed = true; }
+		const input = this.input!, { layout } = input, menu = input.turnActions.menu!;
+		menu.refresh();
+		if (layoutChanged || this.menuRevision !== menu.revision) {
+			this.menuRevision = menu.revision;
+			layoutWorkbenchActionBar(input.turnActions, layout.right - 4, input.footerTop - layout.rowHeight - 4,
+				input.footerTop, measureText, editorViewState.font.renderFont(), layout.left + 4);
 		}
-		if (changed) layoutWorkbenchActionBar(input.turnActions, layout.right - 4, input.footerTop - layout.rowHeight - 4,
-			input.footerTop, measureText, editorViewState.font.renderFont(), layout.left + 4);
 		this.control.update();
 		const item = this.control.tooltipItem;
 		if (item !== undefined && !this.menu.visible) this.tooltip.show(item.tooltip, item.bounds,
@@ -68,6 +63,7 @@ export class AssistantTurnToolbar {
 		this.control.clearInput();
 		this.tooltip.detach();
 		this.input = undefined;
+		this.menuRevision = -1;
 	}
 
 	public dispose(): void { this.clearInput(); this.control.dispose(); }

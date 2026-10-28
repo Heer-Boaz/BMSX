@@ -60,8 +60,8 @@ test('weighted command keybindings resolve the contextual Scenario Lab F5 action
 });
 
 test('named workbench menu materializes one retained generic action bar', () => {
-	const expected = WORKBENCH_MENUS['scenarioLab.title'].map(item => item.command);
-	const actionBar = createWorkbenchActionBar('scenarioLab.title');
+	const expected = WORKBENCH_MENUS['window.title'].map(item => item.command);
+	const actionBar = createWorkbenchActionBar('window.title');
 	const firstBounds = actionBar.items[0].bounds;
 	layoutWorkbenchActionBar(actionBar, 200, 10, 20, text => text.length * 4, null, 0);
 

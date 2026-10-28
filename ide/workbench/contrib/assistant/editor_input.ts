@@ -9,19 +9,21 @@ import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { AssistantConversation } from '../../services/assistant/conversation';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { WorkbenchMenu } from '../../ui/menu/model';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 import { AssistantTranscriptProjection } from './projection';
 import { MarkdownSource } from '../../../common/markdown/source';
 import { AssistantFooter } from './footer';
 import { AssistantTranscriptSelection } from './transcript_selection';
+import { ASSISTANT_TURN_ACTIONS } from './menus';
 
 /** Ephemeral view state; the workspace owns the conversation across pane switches. */
 export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'> {
 	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
-	public readonly turnActions = createWorkbenchActionBar('assistant.turn', true);
+	public readonly turnActions = createWorkbenchActionBar(new WorkbenchMenu(ASSISTANT_TURN_ACTIONS, this), true);
 	public readonly lifetime = new AbortController();
-	public editingQueuedId: string | undefined;
+	private editingQueuedIdValue: string | undefined;
 	public commandPending = false;
 	public readonly attachments = new AssistantAttachments();
 	public readonly draft = new TextField<ResourceIdentity>();
@@ -44,18 +46,30 @@ export class AssistantInput extends ReadonlyEditorInput<'assistant', 'assistant'
 	public activitySecond = -1;
 	public activityText = '';
 	public activityLabel = '';
+	public get editingQueuedId(): string | undefined { return this.editingQueuedIdValue; }
+	public set editingQueuedId(value: string | undefined) {
+		if (value === this.editingQueuedIdValue) return;
+		this.editingQueuedIdValue = value;
+		this.turnActions.menu!.refresh();
+	}
 	public constructor(public readonly conversation: AssistantConversation) {
 		super('assistant', 'assistant', 'CODEX', true);
 		this.disposables.add({ dispose: this.draft.onDidChangeText(() => { this.draftHasText = this.draft.text.trim().length > 0;
 			this.referenceStyles = this.draft.annotations.map(span => ({ from: span.from, to: span.to, style: TextStyle.Link }));
-			this.draftMarkdown.update(this.draft.text, this.referenceStyles); }) });
+			this.draftMarkdown.update(this.draft.text, this.referenceStyles);
+			this.turnActions.menu!.refresh(); }) });
 		this.disposables.add({ dispose: conversation.onDidChange((index, kind) => {
 			if (kind === 'reset') { this.selection.select(undefined); this.transcript.reset(); }
 			else if (kind === 'proposal' || kind === 'text') this.transcript.invalidate(conversation.entries[index]);
 			if (kind === 'reset') { this.editingQueuedId = undefined; }
 			if (conversation.accountRefreshing) this.editingQueuedId = undefined;
-			if (kind === 'text' && conversation.entries[index]?.kind === 'proposal') this.selection.select(conversation.entries[index]);
+			if (kind === 'text' && conversation.entries[index]?.kind === 'proposal') {
+				this.selection.select(conversation.entries[index]);
+				this.turnActions.menu!.refresh();
+			}
+			if (kind === 'state' || kind === 'reset') this.turnActions.menu!.refresh();
 		}) });
+		this.turnActions.menu!.refresh();
 		this.disposables.add({ dispose: () => { this.lifetime.abort(); this.attachments.clear(); } });
 	}
 }

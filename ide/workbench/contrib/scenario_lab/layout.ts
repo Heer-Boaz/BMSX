@@ -218,6 +218,7 @@ function layoutScenarioLabPane<Row>(
 /** Refreshes the retained projection and geometry only at owner revision boundaries. */
 export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Readonly<RectBounds>): ScenarioLabLayout {
 	refreshScenarioLabProjection(state);
+	if (state.actionBar.presentation.refresh()) state.actionsDirty = true;
 	const layout = state.layout;
 	if (updateFullWidthWorkbenchLayout(layout, bounds) || state.splitRevision !== state.split.revision) {
 		layout.toolbarBottom = layout.top + editorViewState.lineHeight + TOOLBAR_PADDING_Y * 2;
