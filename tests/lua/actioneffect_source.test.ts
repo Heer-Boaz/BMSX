@@ -105,6 +105,18 @@ fx.register_effect('empty', {})`).definitions;
 	assert.equal(empty.resolution, 'complete');
 });
 
+test('proven effect keys share semantic membership and last-key-wins completeness with their typed fields', () => {
+	const [effect] = document(`local fx<const> = require('cartlib/actioneffects')
+local cadence<const> = 'period_ms'
+fx.register_effect('keys', { period_ms = 10, [cadence] = 20, ['required_' .. 'tags'] = { 'ready' } })`).definitions;
+	assert.ok(effect.behaviorKind === 'action_effect' && effect.body !== null);
+	assert.equal(effect.resolution, 'complete');
+	assert.equal(effect.body.issues, SourceTableIssue.None);
+	assert.deepEqual(effect.body.fields.map(field => field.kind === 'unknown' ? 'unknown' : field.name), ['period_ms', 'required_tags']);
+	assert.equal(effect.body.fields[0].field, effect.body.table.fields[1]);
+	assert.equal(effect.body.fields[1].kind, 'list');
+});
+
 test('effect fields in a reused initializer follow their own registration through hidden edits and Undo', () => {
 	const model = new EditorTextModel(resource, 'lua', ACTIONEFFECT_SOURCE);
 	const view = createBehaviorLensViewState(document(ACTIONEFFECT_SOURCE), model, 'outline', assert.fail);

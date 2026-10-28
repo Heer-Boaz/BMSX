@@ -15,7 +15,8 @@ import { collectLuaPrograms, projectLuaProgram, type LuaProgramProperty } from '
 import { createWorkbenchPropertyTree } from '../../ide/workbench/ui/property_tree';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldsInsertionEdits, formatLuaTableFieldSource, validateLuaTableFieldExpression } from '../../ide/language/lua/table_field_insertion';
-import { createLuaTableFieldRemovalEdits } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldRemovalEdits, readLuaExpressionPreview, readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { parseLuaFieldValueEdit } from '../../ide/language/lua/field_value_edit';
 import { newLuaSource } from '../../ide/workbench/contrib/resources/create/source_templates';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { programEntryTemplate, programFieldTemplates } from '../../ide/workbench/contrib/lua_program/schema';
@@ -39,6 +40,49 @@ test('program source recognition resolves cartlib imports and reexports rather t
 	assert.equal(collectLuaPrograms({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' }, f.snapshot).length, 1);
 	assert.equal(f.occurrence.kind, 'progression');
 	assert.equal(f.tree.rows.length, 4);
+});
+
+test('program property values display proved decoded strings while retaining exact authored expressions', () => {
+	const values = [
+		["'ready'", 'ready'],
+		['"say \\"Hi\\""', 'say "Hi"'],
+		["[=[O'Brien`Fx]=]", "O'Brien`Fx"],
+		["''", ''],
+		['alias', 'aliased'],
+		['names.event', 'hit`event'],
+		['prefix .. names.event', '/hit`event'],
+		["'part' .. '-' .. 'suffix'", 'part-suffix'],
+	] as const;
+	const source = `local p=require('cartlib/progression')
+local names=require('names')
+local alias='aliased'
+local prefix='/'
+p.compile_program({rules={${values.map(([expression]) => `{id=${expression}}`).join(',')}},filters={},handlers={}})`;
+	const f = project(source, [{ path: 'names.lua', source: "return { event = 'hit`event' }" }]);
+	assert.equal(f.occurrence.file.syntaxError, null);
+	for (let index = 0; index < values.length; index++) {
+		const [expression, value] = values[index];
+		const property = f.tree.rows.find(row => row.element.key === JSON.stringify(['rules', index + 1, 'id']))!.element;
+		const model = f.models.get(property.file.file)!;
+		// Exact value content is the projection's data contract, including empty strings and embedded punctuation.
+		assert.equal(property.value, value);
+		assert.equal(property.expression, property.field!.value, 'display does not replace the authored AST with a synthesized literal');
+		assert.equal(readLuaSourceRange(model.buffer, property.file.chunk.locations.range(property.expression.span)), expression);
+		assert.equal(readLuaExpressionPreview(model.buffer, property.file.chunk.locations, property.expression), expression,
+			'source-expression preview remains a source representation');
+	}
+	assert.equal(f.models.get(f.occurrence.file.file)!.buffer.getText(), source);
+});
+
+test('program properties keep unknown and non-string expressions as their original source previews', () => {
+	const expressions = ["external or 'fallback'", "make_id('shown')", 'names.unknown', "'/' .. 3", '17', 'false'];
+	const f = project(`local p=require('cartlib/progression'); local names=require('names');
+p.compile_program({rules={${expressions.map(expression => `{id=${expression}}`).join(',')}},filters={},handlers={}})`,
+	[{ path: 'names.lua', source: 'return external' }]);
+	for (let index = 0; index < expressions.length; index++) {
+		const property = f.tree.rows.find(row => row.element.key === JSON.stringify(['rules', index + 1, 'id']))!.element;
+		assert.equal(property.value, expressions[index], 'unproved expressions keep their source punctuation, not a guessed semantic value');
+	}
 });
 
 test('imported authored tables stay attached to their original shared models', () => {
@@ -127,7 +171,16 @@ test('input actionstrings resolve written constants and preserve the original ex
 	const press = f.tree.rows.find(row => row.element.key === '["bindings",1,"on","press"]')!.element;
 	assert.equal(press.expression.kind, LuaSyntaxKind.IdentifierExpression);
 	assert.equal(press.valueExpression!.kind, LuaSyntaxKind.StringLiteralExpression);
+	assert.equal(press.value, 'a[jp]');
 	assert.equal(press.table, undefined);
+	const model = f.models.get(press.file.file)!, before = model.buffer.getText();
+	assert.equal(readLuaSourceRange(model.buffer, press.file.chunk.locations.range(press.field!.value.span)), 'pattern');
+	const edit = parseLuaFieldValueEdit(model.buffer, press.file.chunk.locations, press.field!, "'b[jp]'");
+	assert.ok('value' in edit);
+	model.pushEditOperations([edit.value.edit]);
+	assert.ok(model.buffer.getText().includes("local pattern='a[jp]'"), 'editing the displayed value cannot overwrite its aliased provider');
+	assert.ok(model.buffer.getText().includes("on={press='b[jp]'}"));
+	model.history.undo(model); assert.equal(model.buffer.getText(), before);
 });
 
 test('input component records never become invented programs and later program keys win', () => {

@@ -6,7 +6,6 @@ import {
 	behaviorSourceFieldSegment,
 	buildExpressionProperty,
 	buildTableArraySection,
-	collectNamedFields,
 	createSourceNode,
 	describeExpression,
 	type BehaviorRecognizerContext,
@@ -20,7 +19,7 @@ export function buildActionEffectBody(
 ): { body: ActionEffectSourceBody; children: readonly BehaviorSourceNode[] } {
 	const children: BehaviorSourceNode[] = [];
 	const fields: ActionEffectSourceField[] = [];
-	const authored = collectNamedFields(resolved.table);
+	const authored = resolved.fields;
 	for (let index = 0; index < authored.length; index += 1) {
 		const entry = authored[index];
 		const field = entry.field;

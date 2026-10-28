@@ -29,6 +29,57 @@ function fixture(source = BEHAVIOR_SOURCE_FIXTURE) {
 	return { model, document, definition, project };
 }
 
+// Exact captions are the value/source boundary under test, not incidental UI wording.
+for (const [expression, value] of [
+	["'charge'", 'charge'],
+	['"ChArGe"', 'ChArGe'],
+	['[=[ChArGe]=]', 'ChArGe'],
+	['"O\'Brien`Fx"', "O'Brien`Fx"],
+	["''", ''],
+	["prefix .. 'ArGe'", 'ChArGe'],
+] as const) test(`BT graph captions consume decoded strings while source details retain ${expression}`, t => {
+	const source = `local trees<const> = require('cartlib/behaviour_tree/library')
+local prefix<const> = 'Ch'
+trees.register('Fixture.Tree', { root = { type = 'timeline', timeline_id = ${expression} } })`;
+	const f = fixture(source);
+	t.after(() => f.model.dispose());
+	assert.ok(f.definition.root?.kind === 'node');
+	const graph = projectBehaviorTreeGraph(f.definition, font);
+	assert.deepEqual(graph.nodesBySource.get(f.definition.root.rowKey)!.lines, ['TIMELINE', `TIMELINE_ID=${value}`]);
+	const field = f.definition.root.summary[0];
+	assert.equal(readLuaSourceRange(f.model.buffer, f.definition.root.file.chunk.locations.range(field.field.value.span)), expression);
+	assert.equal(f.model.buffer.getText(), source);
+	assert.equal(f.model.dirty, false);
+});
+
+test('BT structure consumes the same proven computed names as its membership certificate', t => {
+	const source = `local trees<const> = require('cartlib/behaviour_tree/library')
+local root_key<const> = 'root'
+local type_key<const> = 'type'
+local child_key<const> = 'child'
+trees.register('Fixture.Tree', { [root_key] = {
+	[type_key] = 'weighted_' .. 'random_selector', ['cho' .. 'ices'] = {
+		{ ['wei' .. 'ght'] = 3, [child_key] = { type = 'wait', duration_ticks = timers.delay } },
+	},
+} })`;
+	const f = fixture(source);
+	t.after(() => f.model.dispose());
+	assert.equal(f.definition.resolution, 'complete');
+	assert.ok(f.definition.root?.kind === 'node');
+	assert.equal(f.definition.root.nodeType, 'weighted_random_selector');
+	const branch = f.definition.root.branches[0];
+	assert.ok(branch.role === 'choices');
+	assert.equal(branch.entries.length, 1);
+	const choice = branch.entries[0].node;
+	assert.ok(choice.kind === 'section' && choice.child.kind === 'node');
+	assert.equal(choice.child.nodeType, 'wait');
+	assert.equal(readLuaSourceRange(f.model.buffer, choice.file.chunk.locations.range(choice.weight!.value.span)), '3');
+	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, font));
+	assert.deepEqual(graph.nodesBySource.get(choice.child.rowKey)!.lines, ['WAIT', 'CHOICE  W=3', 'DURATION_TICKS=TIMERS.DELAY']);
+	assert.equal(f.model.buffer.getText(), source);
+	assert.equal(f.model.dirty, false);
+});
+
 test('graph projects one registration, original child order, distinct shared uses and typed attachment details', () => {
 	const f = fixture();
 	const graph = layoutBehaviorTreeGraph(projectBehaviorTreeGraph(f.definition, font));

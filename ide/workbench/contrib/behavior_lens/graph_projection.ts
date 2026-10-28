@@ -22,7 +22,7 @@ export function projectBehaviorTreeGraph(
 	function card(source: BehaviorSourceNode, text: string, parent: BehaviorGraphNode | null,
 		details: BehaviorGraphDetail[], range: LuaSourceRange, connectionSource = source,
 		member: BehaviorTreeSourceMember | null = null): BehaviorGraphNode {
-		const node: BehaviorGraphNode = { ...createWorkbenchGraphNode(font, source.preserveLabelCase ? text : uppercaseOutsideStrings(text), 0, 0),
+		const node: BehaviorGraphNode = { ...createWorkbenchGraphNode(font, text, 0, 0),
 			source, parent, member, details, children: [] };
 		nodes.push(node);
 		nodesBySource.set(source.rowKey, node);
@@ -38,10 +38,11 @@ export function projectBehaviorTreeGraph(
 		member: BehaviorTreeSourceMember | null = null): void {
 		let text = role;
 		if (source.kind === 'node') {
-			text = source.nodeType === null ? '<DYNAMIC TYPE>' : source.nodeType;
+			text = source.nodeType === null ? '<DYNAMIC TYPE>' : source.nodeType.toUpperCase();
 			if (role.length > 0) text += `\n${role}`;
-			if (source.summary.length > 0) text += `\n${source.summary}`;
-			if (source.referenceLabel.length > 0) text += `\n${source.referenceLabel}`;
+			for (const entry of source.summary) text += `\n${entry.name.toUpperCase()}=${entry.stringValue === undefined
+				? uppercaseOutsideStrings(describeExpression(entry.field.value)) : entry.stringValue}`;
+			if (source.referenceLabel.length > 0) text += `\n${uppercaseOutsideStrings(source.referenceLabel)}`;
 			const relationships = new Set<LuaTableField>();
 			for (const branch of source.branches) relationships.add(branch.field);
 			for (const group of source.attachments) relationships.add(group.field);
@@ -59,7 +60,8 @@ export function projectBehaviorTreeGraph(
 				}
 			}
 		} else {
-			text = role.length === 0 ? source.label : `${role}\n${source.label}`;
+			const label = source.preserveLabelCase ? source.label : uppercaseOutsideStrings(source.label);
+			text = role.length === 0 ? label : `${role}\n${label}`;
 			appendBehaviorGraphSourceDetails(details, source, 'UNRESOLVED');
 		}
 		if (source.resolution !== 'complete') text += '\n?';
@@ -71,21 +73,22 @@ export function projectBehaviorTreeGraph(
 		const members = indexBehaviorTreeMembers(definition);
 		const details: BehaviorGraphDetail[] = [];
 		if (definition.blackboard !== null) appendBehaviorGraphSourceDetails(details, definition.blackboard, 'BLACKBOARD');
-		const root = card(definition, definition.label + (definition.root === null ? '\n? NO STATIC ROOT' : ''), null,
+		const root = card(definition, (definition.preserveLabelCase ? definition.label : uppercaseOutsideStrings(definition.label))
+			+ (definition.root === null ? '\n? NO STATIC ROOT' : ''), null,
 			details, definition.occurrenceRange);
 		if (definition.root !== null) behavior(definition.root, root, '', definition.root.occurrenceRange);
 		while (pending.length > 0) {
 			const { source, node } = pending.pop()!;
 			for (const branch of source.branches) {
 				if (branch.role !== 'children' && branch.role !== 'choices') {
-					behavior(branch.node, node, branch.role, branch.file.chunk.locations.range(branch.field.value.span));
+					behavior(branch.node, node, branch.role.toUpperCase(), branch.file.chunk.locations.range(branch.field.value.span));
 					continue;
 				}
 				// A warning inside one member does not revoke the enclosing list's order.
 				if (branch.source.kind === 'dynamic' || branch.source.issues !== SourceTableIssue.None) {
 					const details: BehaviorGraphDetail[] = [];
 					appendBehaviorGraphSourceDetails(details, branch.source, branch.role);
-					card(branch.source, `${branch.role}\n? PARTIAL MEMBERSHIP`, node, details, branch.file.chunk.locations.range(branch.field.value.span));
+					card(branch.source, `${branch.role.toUpperCase()}\n? PARTIAL MEMBERSHIP`, node, details, branch.file.chunk.locations.range(branch.field.value.span));
 					continue;
 				}
 				if (branch.role === 'children') {
@@ -107,7 +110,7 @@ export function projectBehaviorTreeGraph(
 						let label = 'CHOICE';
 						if (choice.weight !== null) {
 							const weight = describeExpression(choice.weight.value);
-							label += `  W=${weight}`;
+								label += `  W=${uppercaseOutsideStrings(weight)}`;
 							details.push({ label: 'weight', description: weight, detail: 'CHOICE', range: choice.file.chunk.locations.range(choice.weight.value.span) });
 						} else label += '  W=?';
 						if (choice.issues !== SourceTableIssue.None) label += ' ? SOURCE';

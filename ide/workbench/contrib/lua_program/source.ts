@@ -79,7 +79,8 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 		const model = resolveModel(file);
 		const range = file.chunk.locations.range(expression.span);
 		const element: LuaProgramProperty = { kind: table === undefined ? 'property' : 'group', key, path, label,
-			value: table === undefined ? readLuaExpressionPreview(model.buffer, file.chunk.locations, expression) : `${table.fields.length} fields`,
+			value: table === undefined ? reader.stringValue(file, expression)
+				?? readLuaExpressionPreview(model.buffer, file.chunk.locations, expression) : `${table.fields.length} fields`,
 			description: `${model.resource.path}:${range.start.line}${table !== undefined && !structural ? ' / Dynamic table: edit written fields; structural editing unavailable.' : ''}`,
 			warning: written === undefined || table !== undefined && !structural, displayLabel: '', displayValue: '', displayValueLeft: 0,
 			file, expression, valueExpression: value, inlineEditable: range.start.line === range.end.line, field, container,

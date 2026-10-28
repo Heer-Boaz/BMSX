@@ -3,11 +3,10 @@ import type { LuaWrittenExpression } from '../../../../toolchain/ts/lua/semantic
 import { LuaSyntaxKind, type LuaExpression, type LuaFunctionExpression, type LuaReturnStatement } from '../../../../toolchain/ts/lua/syntax/ast';
 import { parseFsmStatePath, type FsmStatePath } from '../../../../toolchain/ts/cartlib/fsm/state_path';
 import { walkLuaAst } from '../../../../toolchain/ts/lua/syntax/ast/traversal';
-import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { BehaviorSourceRowKey } from './model';
 import type { StateMachineScope, StateMachineSourceBody, StateMachineSourceEntry, StateMachineSourceOutcome, StateMachineSourceTransition } from './state_machine_model';
 import { bindStateMachineSourcePath, indexStateMachineScopes } from './state_machine_scope';
-import { SourceTableIssue, type BehaviorRecognizerContext } from './source';
+import { findNamedSourceField, SourceTableIssue, type BehaviorRecognizerContext } from './source';
 
 /** Bind one registration, once per source generation; never scan unrelated functions or machines. */
 export function buildStateMachineRelations(context: BehaviorRecognizerContext, rootKey: BehaviorSourceRowKey, body: StateMachineSourceBody): {
@@ -20,13 +19,14 @@ export function buildStateMachineRelations(context: BehaviorRecognizerContext, r
 	const callbackReturns = new Map<LuaFunctionExpression, readonly LuaReturnStatement[]>();
 	const paths = new Map<string, FsmStatePath>();
 	const resolve = (file: FileSemanticData, expression: LuaExpression) => context.reader.expression(file, expression);
+	const stringValue = (file: FileSemanticData, expression: LuaExpression) => context.reader.stringValue(file, expression);
 	const bindPath = (scope: StateMachineScope, text: string) => {
 		let path = paths.get(text);
 		if (path === undefined) { path = parseFsmStatePath(text); paths.set(text, path); }
 		return bindStateMachineSourcePath(root, scope, path);
 	};
 	for (const scope of scopes) {
-		appendEntries(scope, resolve, entries);
+		appendEntries(scope, resolve, stringValue, entries);
 		for (const slot of scope.body.slots) {
 			// start() enters root children, not the root entering_state callback.
 			if (slot.kind === 'enter' && scope.parent === null) continue;
@@ -38,7 +38,7 @@ export function buildStateMachineRelations(context: BehaviorRecognizerContext, r
 			const bindingComplete = scope.bindingsComplete && slot.bindingComplete && (spec === null || spec.issues === SourceTableIssue.None);
 			if (spec !== null) {
 				// compile_transition unwraps .go once, not recursively through nested tables.
-				const go = findNamedLuaTableField(spec.table, 'go');
+				const go = findNamedSourceField(spec, 'go');
 				if (go === null) {
 					outcomes.push({ proof: { kind: 'direct', file: bindingFile, expression: binding }, value: undefined, valueFile: undefined,
 						target: { kind: 'unresolved', reason: bindingComplete ? 'invalid-value' : 'partial-source' } });
@@ -57,7 +57,7 @@ export function buildStateMachineRelations(context: BehaviorRecognizerContext, r
 					returns = collectCallbackReturns(value);
 					callbackReturns.set(value, returns);
 				}
-				appendCallbackReturns(scope, bindingFile, binding, valueFile!, value, returns, resolve, bindPath, bindingComplete, outcomes);
+				appendCallbackReturns(scope, bindingFile, binding, valueFile!, value, returns, resolve, stringValue, bindPath, bindingComplete, outcomes);
 				if (returns.length === 0) outcomes.push({ proof: direct, value, valueFile, target: bindingComplete
 					? { kind: 'no-path', reason: 'no-return' } : { kind: 'unresolved', reason: 'partial-source' } });
 			} else if (!bindingComplete) {
@@ -66,10 +66,12 @@ export function buildStateMachineRelations(context: BehaviorRecognizerContext, r
 				outcomes.push({ proof: direct, value, valueFile, target: { kind: 'no-path', reason: 'nil' } });
 			} else if (slot.kind === 'enter' && value?.kind === LuaSyntaxKind.BooleanLiteralExpression && !value.value) {
 				outcomes.push({ proof: direct, value, valueFile, target: { kind: 'no-path', reason: 'false' } });
-			} else if (slot.kind !== 'enter' && slot.kind !== 'update' && value?.kind === LuaSyntaxKind.StringLiteralExpression) {
-				outcomes.push({ proof: direct, value, valueFile, target: value.value === 'no_op' ? { kind: 'no-path', reason: 'no-op' }
-					: bindPath(scope, value.value) });
 			} else {
+				const text = slot.kind === 'enter' || slot.kind === 'update' ? undefined : stringValue(bindingFile, binding);
+				if (text !== undefined) {
+					outcomes.push({ proof: direct, value, valueFile, target: text === 'no_op' ? { kind: 'no-path', reason: 'no-op' } : bindPath(scope, text) });
+					continue;
+				}
 				outcomes.push({ proof: direct, value, valueFile, target: { kind: 'unresolved', reason:
 					value === undefined || value.kind === LuaSyntaxKind.IdentifierExpression || value.kind === LuaSyntaxKind.MemberExpression
 						|| value.kind === LuaSyntaxKind.IndexExpression || value.kind === LuaSyntaxKind.CallExpression ? 'unknown-callback' : 'invalid-value' } });
@@ -79,19 +81,21 @@ export function buildStateMachineRelations(context: BehaviorRecognizerContext, r
 	return { scopes, entries, transitions };
 }
 
-function appendEntries(scope: StateMachineScope, resolve: (file: FileSemanticData, expression: LuaExpression) => LuaWrittenExpression | undefined, entries: StateMachineSourceEntry[]): void {
+function appendEntries(scope: StateMachineScope, resolve: (file: FileSemanticData, expression: LuaExpression) => LuaWrittenExpression | undefined,
+	stringValue: (file: FileSemanticData, expression: LuaExpression) => string | undefined, entries: StateMachineSourceEntry[]): void {
 	const states = scope.body.states;
 	const field = scope.body.initial;
 	if (field !== null || states !== null && (states.kind === 'dynamic' || states.entries.length > 0)) {
 		let target: StateMachineSourceEntry['target'];
 		const value = field === null ? undefined : resolve(scope.body.file, field.value)?.expression;
+		const text = field === null ? undefined : stringValue(scope.body.file, field.value);
 		if (!scope.bindingsComplete) target = { kind: 'unresolved', reason: 'partial-source' };
 		else if (field === null || value?.kind === LuaSyntaxKind.NilLiteralExpression
 			|| value?.kind === LuaSyntaxKind.BooleanLiteralExpression && !value.value) target = { kind: 'unresolved', reason: 'implicit-initial' };
-		else if (value?.kind !== LuaSyntaxKind.StringLiteralExpression) target = { kind: 'unresolved', reason: 'dynamic-value' };
+		else if (text === undefined) target = { kind: 'unresolved', reason: 'dynamic-value' };
 		else if (!scope.membersComplete) target = { kind: 'unresolved', reason: 'unknown-states' };
 		else {
-			const child = scope.children.get(value.value);
+			const child = scope.children.get(text);
 			target = child === undefined ? { kind: 'unresolved', reason: 'missing-state' }
 				: child === null ? { kind: 'unresolved', reason: 'unknown-states' } : { kind: 'state', rowKey: child.rowKey };
 		}
@@ -121,6 +125,7 @@ function collectCallbackReturns(callback: LuaFunctionExpression): readonly LuaRe
 function appendCallbackReturns(scope: StateMachineScope, file: FileSemanticData, binding: LuaExpression,
 	callbackFile: FileSemanticData, callback: LuaFunctionExpression, returns: readonly LuaReturnStatement[],
 	resolve: (file: FileSemanticData, expression: LuaExpression) => LuaWrittenExpression | undefined,
+	stringValue: (file: FileSemanticData, expression: LuaExpression) => string | undefined,
 	bindPath: (scope: StateMachineScope, text: string) => StateMachineSourceOutcome['target'],
 	bindingComplete: boolean, outcomes: StateMachineSourceOutcome[]): void {
 	for (const statement of returns) {
@@ -128,13 +133,14 @@ function appendCallbackReturns(scope: StateMachineScope, file: FileSemanticData,
 		const expression = statement.expressions[0];
 		const resolved = expression === undefined ? undefined : resolve(callbackFile, expression);
 		const value = resolved?.expression;
+		const text = expression === undefined ? undefined : stringValue(callbackFile, expression);
 		let target: StateMachineSourceOutcome['target'];
 		if (!bindingComplete) target = { kind: 'unresolved', reason: 'partial-source' };
 		else if (expression === undefined) target = { kind: 'no-path', reason: 'no-return' };
 		else if (value?.kind === LuaSyntaxKind.NilLiteralExpression) target = { kind: 'no-path', reason: 'nil' };
 		else if (value?.kind === LuaSyntaxKind.BooleanLiteralExpression && !value.value) target = { kind: 'no-path', reason: 'false' };
-		else if (value?.kind === LuaSyntaxKind.StringLiteralExpression) target = value.value === 'no_op'
-			? { kind: 'no-path', reason: 'no-op' } : bindPath(scope, value.value);
+		else if (text !== undefined) target = text === 'no_op'
+			? { kind: 'no-path', reason: 'no-op' } : bindPath(scope, text);
 		else target = { kind: 'unresolved', reason: 'dynamic-value' };
 		outcomes.push({ proof, value, valueFile: resolved?.file, target });
 	}

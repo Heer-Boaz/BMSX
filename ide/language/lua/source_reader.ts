@@ -1,4 +1,4 @@
-import { LuaSyntaxKind, type LuaExpression } from '../../../toolchain/ts/lua/syntax/ast';
+import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import { writtenSourceExpression, type LuaWrittenExpression } from '../../../toolchain/ts/lua/semantic/written_sources';
 import type { LuaAuthoredSourceTrace } from '../../../toolchain/ts/lua/semantic/authored_sources';
@@ -10,6 +10,7 @@ export class LuaSourceReader {
 	public readonly files = new Set<FileSemanticData>();
 	public syntaxComplete = true;
 	private readonly traces = new Set<LuaAuthoredSourceTrace>();
+	private readonly strings = new Map<LuaWrittenExpression, string | undefined>();
 
 	public constructor(public readonly snapshot: LuaSemanticWorkspaceSnapshot) {}
 
@@ -17,6 +18,29 @@ export class LuaSourceReader {
 	public expression(file: FileSemanticData, expression: LuaExpression): LuaWrittenExpression | undefined {
 		const query = this.snapshot.symbolResolver.writtenSources;
 		return this.resolve(this.snapshot.symbolResolver.authoredSources.trace(query.expression(file, expression)));
+	}
+
+	/** Static string proof over authored sources, without synthesizing a literal or executing Lua. */
+	public stringValue(file: FileSemanticData, expression: LuaExpression): string | undefined {
+		const source = this.snapshot.symbolResolver.writtenSources.expression(file, expression);
+		if (this.strings.has(source)) return this.strings.get(source);
+		// Recursive authored aliases remain unknown; repeated queries share this source-generation cache.
+		this.strings.set(source, undefined);
+		const trace = this.snapshot.symbolResolver.authoredSources.trace(source);
+		const resolved = this.resolve(trace)?.expression;
+		let value: string | undefined;
+		if (resolved?.kind === LuaSyntaxKind.StringLiteralExpression) value = resolved.value;
+		else if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'unknown-value') {
+			const boundary = trace.boundaries[0].source;
+			const syntax = writtenSourceExpression(boundary);
+			if (syntax?.kind === LuaSyntaxKind.BinaryExpression && syntax.operator === LuaBinaryOperator.Concat) {
+				const left = this.stringValue(boundary.file, syntax.left);
+				const right = this.stringValue(boundary.file, syntax.right);
+				if (left !== undefined && right !== undefined) value = left + right;
+			}
+		}
+		this.strings.set(source, value);
+		return value;
 	}
 
 	/** Select a field's authored source independently of mutation in the field's descendants. */

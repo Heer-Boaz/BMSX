@@ -55,6 +55,13 @@ export type BehaviorTreeSourceAttachmentGroup = {
 	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorTreeSourceAttachment | BehaviorDynamicSourceNode>[];
 };
 
+/** A primary authored field and its proven string value, separate from expression spelling. */
+export type BehaviorTreeSourceSummaryField = {
+	readonly name: string;
+	readonly field: LuaTableField;
+	readonly stringValue: string | undefined;
+};
+
 /** The very same occurrence object that the outline displays, with typed relationships. */
 export type BehaviorTreeSourceNode = BehaviorDynamicSourceNode | (BehaviorSourceNode & {
 	readonly kind: 'node';
@@ -64,8 +71,7 @@ export type BehaviorTreeSourceNode = BehaviorDynamicSourceNode | (BehaviorSource
 	readonly issues: SourceTableIssue;
 	readonly nodeType: string | null;
 	readonly referenceLabel: string;
-	/** Authored primary fields, not an evaluated runtime value. */
-	readonly summary: string;
+	readonly summary: readonly BehaviorTreeSourceSummaryField[];
 	readonly branches: readonly BehaviorTreeSourceBranch[];
 	readonly attachments: readonly BehaviorTreeSourceAttachmentGroup[];
 });

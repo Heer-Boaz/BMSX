@@ -1,24 +1,22 @@
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaExpression, LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
-import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
-import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
 import type { BehaviorSourceNode } from './model';
 import type { StateMachineSourceSlot } from './state_machine_model';
 import { appendBehaviorSourcePath, behaviorSourceFieldSegment, buildResolvedTableSection, buildTableArraySection,
-	collectNamedFields, createDynamicNode, createSourceNode, describeExpression, describeResolvedSourceTable,
+	createDynamicNode, createSourceNode, describeExpression, describeResolvedSourceTable, findNamedSourceField,
 	resolveSourceTable, SourceTableIssue, type BehaviorRecognizerContext, type NamedSourceField, type ResolvedSourceTable } from './source';
 
 export function appendFsmEventSection(
 	context: BehaviorRecognizerContext,
 	file: FileSemanticData,
 	path: string,
-	owner: LuaTableConstructorExpression,
+	owner: ResolvedSourceTable,
 	activeTables: Set<LuaTableConstructorExpression>,
 	children: BehaviorSourceNode[],
 	slots: StateMachineSourceSlot[],
 ): void {
 	const fieldName = 'on';
-	const field = findNamedLuaTableField(owner, fieldName);
+	const field = findNamedSourceField(owner, fieldName);
 	if (!field) {
 		return;
 	}
@@ -28,7 +26,7 @@ export function appendFsmEventSection(
 		return;
 	}
 	const eventNodes: BehaviorSourceNode[] = [];
-	const events = collectNamedFields(resolved.table);
+	const events = resolved.fields;
 	for (let index = 0; index < events.length; index += 1) {
 		const event = events[index];
 		const { source, spec } = buildFsmEvent(
@@ -67,8 +65,8 @@ function buildFsmEvent(
 		: (event.keyKind === 'numeric' ? 'partial' : 'unresolved');
 	const handler = resolveSourceTable(context, file, event.field.value, activeTables);
 	if (handler) {
-		const go = findNamedLuaTableField(handler.table, 'go');
-		const emitter = findNamedLuaTableField(handler.table, 'emitter');
+		const go = findNamedSourceField(handler, 'go');
+		const emitter = findNamedSourceField(handler, 'emitter');
 		let detail = go ? `go=${describeExpression(go.value)}` : '';
 		if (emitter) {
 			const emitterDetail = `emitter=${describeExpression(emitter.value)}`;
@@ -105,12 +103,12 @@ export function appendInputHandlers(
 	context: BehaviorRecognizerContext,
 	file: FileSemanticData,
 	path: string,
-	owner: LuaTableConstructorExpression,
+	owner: ResolvedSourceTable,
 	activeTables: Set<LuaTableConstructorExpression>,
 	children: BehaviorSourceNode[],
 	slots: StateMachineSourceSlot[],
 ): void {
-	const field = findNamedLuaTableField(owner, 'input_event_handlers');
+	const field = findNamedSourceField(owner, 'input_event_handlers');
 	if (!field) {
 		return;
 	}
@@ -139,10 +137,10 @@ function buildInputHandler(
 	if (!resolved) {
 		return { spec: null, source: createDynamicNode(context, file, path, 'dynamic input handler', expression) };
 	}
-	const pattern = findNamedLuaTableField(resolved.table, 'pattern');
-	const go = findNamedLuaTableField(resolved.table, 'go');
-	const playerIndex = findNamedLuaTableField(resolved.table, 'player_index');
-	const emitter = findNamedLuaTableField(resolved.table, 'emitter');
+	const pattern = findNamedSourceField(resolved, 'pattern');
+	const go = findNamedSourceField(resolved, 'go');
+	const playerIndex = findNamedSourceField(resolved, 'player_index');
+	const emitter = findNamedSourceField(resolved, 'emitter');
 	let detail = go ? `go=${describeExpression(go.value)}` : '';
 	if (playerIndex) {
 		const suffix = `player=${describeExpression(playerIndex.value)}`;
@@ -152,7 +150,7 @@ function buildInputHandler(
 		const suffix = `emitter=${describeExpression(emitter.value)}`;
 		detail = detail.length > 0 ? `${detail} | ${suffix}` : suffix;
 	}
-	const patternName = pattern === null ? undefined : stringLiteralValue(pattern.value);
+	const patternName = pattern === null ? undefined : context.reader.stringValue(resolved.file, pattern.value);
 	return { spec: resolved, source: createSourceNode(context, path, {
 		kind: 'event',
 		label: patternName !== undefined ? patternName : pattern === null ? '<unresolved input>' : describeExpression(pattern.value),
@@ -166,16 +164,16 @@ function buildInputHandler(
 }
 
 /** Timeline identity may be computed; its completion slot still has authored source. */
-export function appendFsmTimelines(context: BehaviorRecognizerContext, file: FileSemanticData, path: string, owner: LuaTableConstructorExpression,
+export function appendFsmTimelines(context: BehaviorRecognizerContext, file: FileSemanticData, path: string, owner: ResolvedSourceTable,
 	active: Set<LuaTableConstructorExpression>, children: BehaviorSourceNode[], slots: StateMachineSourceSlot[]): void {
-	const field = findNamedLuaTableField(owner, 'timelines');
+	const field = findNamedSourceField(owner, 'timelines');
 	if (field === null) return;
 	const resolved = resolveSourceTable(context, file, field.value, active);
 	if (resolved === null) {
 		children.push(createDynamicNode(context, file, path, 'dynamic timelines', field.value));
 		return;
 	}
-	const entries = collectNamedFields(resolved.table);
+	const entries = resolved.fields;
 	const nodes: BehaviorSourceNode[] = [];
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
@@ -188,7 +186,7 @@ export function appendFsmTimelines(context: BehaviorRecognizerContext, file: Fil
 		}
 		const source = buildResolvedTableSection(context, entryPath, label, table, resolved.file.chunk.locations.range(entry.field.span));
 		nodes.push(source);
-		const finished = findNamedLuaTableField(source.table, 'on_finished');
+		const finished = findNamedSourceField(table, 'on_finished');
 		if (finished !== null) slots.push({ file: source.file, kind: 'timeline-finished', source, field: finished, value: finished.value,
 			spec: resolveSourceTable(context, source.file, finished.value, active),
 			bindingComplete: source.issues === SourceTableIssue.None && (resolved.issues & SourceTableIssue.KnownMutation) === 0 });

@@ -36,6 +36,7 @@ export type BehaviorRecognizerContext = {
 export type ResolvedSourceTable = {
 	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
+	readonly fields: readonly NamedSourceField[];
 	readonly referenceRange: LuaSourceRange | null;
 	readonly referenceLabel: string;
 	readonly issues: SourceTableIssue;
@@ -47,6 +48,7 @@ export type BehaviorSourceTableSection = BehaviorDynamicSourceNode | (BehaviorSo
 	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
 	readonly issues: SourceTableIssue;
+	readonly fields: readonly NamedSourceField[];
 });
 
 export type SourceNodeInput = {
@@ -117,10 +119,12 @@ export function resolveSourceTable(
 	const result = context.reader.expression(file, expression);
 	const table = result?.expression;
 	if (table?.kind !== LuaSyntaxKind.TableConstructorExpression || activeTables.has(table)) return null;
-	let issues = sourceTableIssues(table);
+	const fields = resolveSourceFields(context.reader, result!.file, table);
+	let issues = sourceTableIssues(fields);
 	if (context.reader.snapshot.symbolResolver.authoredSources.directTableMutations().has(table)) issues |= SourceTableIssue.KnownMutation;
 	return {
 		table,
+		fields,
 		file: result!.file,
 		referenceRange: table === expression ? null : file.chunk.locations.range(expression.span),
 		referenceLabel: table === expression ? '' : describeExpression(expression),
@@ -178,6 +182,41 @@ export function collectNamedFields(table: LuaTableConstructorExpression): NamedS
 		});
 	}
 	return fields;
+}
+
+/** Source-key proofs, including collisions between literal and aliased string keys. */
+function resolveSourceFields(reader: LuaSourceReader, file: FileSemanticData, table: LuaTableConstructorExpression): NamedSourceField[] {
+	const fields = collectNamedFields(table);
+	let resolvedKeys = false;
+	for (let index = 0; index < fields.length; index += 1) {
+		const entry = fields[index];
+		if (entry.keyKind !== 'computed' || entry.field.kind !== LuaTableFieldKind.ExpressionKey) continue;
+		const name = reader.stringValue(file, entry.field.key);
+		if (name === undefined) continue;
+		fields[index] = { ...entry, name, keyKind: 'named' };
+		resolvedKeys = true;
+	}
+	if (resolvedKeys) {
+		const lastIndexByName = new Map<string, number>();
+		for (let index = 0; index < fields.length; index += 1) {
+			if (fields[index].name !== null) lastIndexByName.set(fields[index].name!, index);
+		}
+		let count = 0;
+		for (let index = 0; index < fields.length; index += 1) {
+			const entry = fields[index];
+			if (entry.name === null || lastIndexByName.get(entry.name) === index) fields[count++] = entry;
+		}
+		fields.length = count;
+	}
+	return fields;
+}
+
+/** Lookup uses the same proven key identities as membership and source completeness. */
+export function findNamedSourceField(source: { readonly fields: readonly NamedSourceField[] }, name: string): LuaTableField | null {
+	for (let index = source.fields.length - 1; index >= 0; index -= 1) {
+		if (source.fields[index].name === name) return source.fields[index].field;
+	}
+	return null;
 }
 
 export function collectArrayFields(table: LuaTableConstructorExpression): LuaTableField[] {
@@ -284,7 +323,7 @@ export function buildNamedTableSection(
 export function buildResolvedTableSection(
 	context: BehaviorRecognizerContext, path: string, label: string, resolved: ResolvedSourceTable, authoredRange: LuaSourceRange,
 ): Extract<BehaviorSourceTableSection, { kind: 'section' }> {
-	const fields = collectNamedFields(resolved.table);
+	const fields = resolved.fields;
 	const children: BehaviorSourceNode[] = [];
 	for (let index = 0; index < fields.length; index += 1) {
 		const entry = fields[index];
@@ -321,6 +360,7 @@ export function buildResolvedTableSection(
 		table: resolved.table,
 		file: resolved.file,
 		issues: resolved.issues,
+		fields: resolved.fields,
 		label: resolved.resolution === 'complete'
 			? `${label} (${children.length})`
 			: `${label} (${children.length} authored)`,
@@ -346,7 +386,7 @@ export function buildTableArraySection(
 		return createDynamicNode(context, file, path, `unresolved ${label}`, expression);
 	}
 	const entries = collectArrayFields(resolved.table);
-	const keyedFields = collectNamedFields(resolved.table);
+	const keyedFields = resolved.fields;
 	const children: BehaviorSourceNode[] = [];
 	for (let index = 0; index < entries.length; index += 1) {
 		children.push(buildChild(
@@ -401,6 +441,7 @@ export function buildTableArraySection(
 		table: resolved.table,
 		file: resolved.file,
 		issues: resolved.issues,
+		fields: resolved.fields,
 		label: resolved.resolution === 'complete'
 			? `${label} (${entries.length})`
 			: `${label} (${children.length} authored)`,
@@ -430,17 +471,11 @@ export function buildExpressionProperty(
 	});
 }
 
-function sourceTableIssues(table: LuaTableConstructorExpression): SourceTableIssue {
+function sourceTableIssues(fields: readonly NamedSourceField[]): SourceTableIssue {
 	let issues = SourceTableIssue.None;
-	for (let index = 0; index < table.fields.length; index += 1) {
-		const field = table.fields[index];
-		if (field.kind !== LuaTableFieldKind.ExpressionKey
-			|| field.key.kind === LuaSyntaxKind.StringLiteralExpression) {
-			continue;
-		}
-		issues |= field.key.kind === LuaSyntaxKind.NumericLiteralExpression
-			? SourceTableIssue.NumericKey
-			: SourceTableIssue.ComputedKey;
+	for (const field of fields) {
+		if (field.keyKind === 'numeric') issues |= SourceTableIssue.NumericKey;
+		else if (field.keyKind === 'computed') issues |= SourceTableIssue.ComputedKey;
 	}
 	return issues;
 }

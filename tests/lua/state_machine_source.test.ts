@@ -43,6 +43,115 @@ function context(f: ReturnType<typeof fixture>): BehaviorRecognizerContext {
 		anchor: '', registrationRange: f.definition.occurrenceRange, sourceIncomplete: f.analysis.syntaxError !== null, behaviorKind: 'state_machine' };
 }
 
+test('FSM binds constant state identities and only its authored possible paths', () => {
+	const source = `local machines<const> = require('cartlib/fsm/library')
+local text_object_state_idle<const> = 'idle'
+local text_object_state_typing<const> = 'typing'
+local start<const> = 'type.start'
+local reveal<const> = 'type.reveal'
+local step<const> = 'type.step'
+machines.register('constant-paths', {
+ initial = text_object_state_idle,
+ on = {
+  [start] = '/' .. text_object_state_typing,
+  [reveal] = function(owner)
+   if owner.active then return '/' .. text_object_state_idle end
+  end,
+ },
+ states = {
+  [text_object_state_idle] = {},
+  [text_object_state_typing] = { on = {
+   [step] = function(owner)
+    if owner:advance() then
+     owner:finish()
+     return '/' .. text_object_state_idle
+    end
+   end,
+  } },
+ },
+})`;
+	const f = fixture(source), root = f.definition;
+	const idle = stateAt(root, 'idle'), typing = stateAt(root, 'typing');
+	assert.deepEqual(root.scopes.map(scope => scope.name), [undefined, 'idle', 'typing']);
+	assert.equal(root.resolution, 'complete');
+	assert.deepEqual(root.entries.map(entry => entry.target), [{ kind: 'state', rowKey: idle.rowKey }]);
+	assert.deepEqual(root.transitions.map(transition => ({
+		origin: transition.origin.rowKey, event: transition.slot.source.label,
+		targets: transition.outcomes.map(outcome => outcome.target.kind === 'path' ? outcome.target.target : outcome.target),
+	})), [
+		{ origin: root.rowKey, event: 'type.start', targets: [typing.rowKey] },
+		{ origin: root.rowKey, event: 'type.reveal', targets: [idle.rowKey] },
+		{ origin: typing.rowKey, event: 'type.step', targets: [idle.rowKey] },
+	]);
+	const start = root.transitions[0].outcomes[0];
+	assert.ok(start.proof.kind === 'direct');
+	assert.equal(f.read(start.proof.expression), "'/' .. text_object_state_typing", 'path proof retains the actual expression, not a synthesized literal');
+	assert.equal(f.model.buffer.getText(), source);
+	assert.equal(f.model.dirty, false);
+});
+
+test('FSM string-key aliases and concatenations use semantic last-key-wins identity without flattening scopes', () => {
+	const f = fixture(`local machines<const> = require('cartlib/fsm/library')
+local idle<const> = 'Idle'
+local active<const> = 'Active'
+local active_alias<const> = active
+local destination<const> = '/' .. active_alias
+local shared<const> = { initial = idle, states = { [idle] = {}, [active] = {} } }
+machines.register('keys', { initial = 'I' .. 'dle', on = { start = destination }, states = {
+ [idle] = { on = { removed = '/missing' } },
+ ['Idle'] = {},
+ [active] = { on = { replaced = '/missing' } },
+ [active_alias] = { on = { reset = '/' .. idle } },
+ left = shared, right = shared,
+} })`);
+	const root = f.definition, idle = stateAt(root, 'Idle'), active = stateAt(root, 'Active');
+	assert.equal(root.resolution, 'complete');
+	assert.deepEqual(root.body!.states!.kind === 'resolved' && root.body!.states!.entries.map(entry => entry.name), ['Idle', 'Active', 'left', 'right']);
+	assert.deepEqual(root.entries[0].target, { kind: 'state', rowKey: idle.rowKey });
+	assert.deepEqual(root.transitions.map(transition => transition.slot.source.label), ['start', 'reset']);
+	assert.ok(root.transitions[0].outcomes[0].target.kind === 'path');
+	assert.equal(root.transitions[0].outcomes[0].target.target, active.rowKey);
+	assert.notEqual(stateAt(root, 'left', 'Idle').rowKey, stateAt(root, 'right', 'Idle').rowKey);
+	assert.equal(idle.body!.table.fields.length, 0,
+		'the surviving key owns its actual authored state rather than an earlier namesake');
+});
+
+test('FSM structural fields and transition specs consume the same proven key identities as state maps', () => {
+	const f = fixture(`local machines<const> = require('cartlib/fsm/library')
+local idle<const> = 'idle'
+local on<const> = 'on'
+local go<const> = 'go'
+machines.register('structural', { ['ini' .. 'tial'] = 'id' .. 'le', ['sta' .. 'tes'] = {
+ [idle] = { [on] = { ['sta' .. 'rt'] = { [go] = '/' .. 'active' } } },
+ active = {},
+} })`);
+	const root = f.definition, idle = stateAt(root, 'idle'), active = stateAt(root, 'active');
+	assert.equal(root.resolution, 'complete');
+	assert.deepEqual(root.entries[0].target, { kind: 'state', rowKey: idle.rowKey });
+	assert.equal(root.transitions.length, 1);
+	assert.equal(root.transitions[0].origin.rowKey, idle.rowKey);
+	assert.equal(root.transitions[0].slot.source.label, 'start');
+	const target = root.transitions[0].outcomes[0].target;
+	assert.ok(target.kind === 'path');
+	assert.equal(target.target, active.rowKey);
+});
+
+test('FSM unknown keys and imperative callbacks never become guessed topology or transitions', () => {
+	const f = fixture(`local machines<const> = require('cartlib/fsm/library')
+local name = 'idle'
+name = 'active'
+machines.register('unknown', { initial = 'idle', on = {
+ imperative = function(owner) owner:go('/idle') end,
+ dynamic = function(owner) return '/' .. owner.destination end,
+}, states = { idle = {}, [name] = {}, [external] = {} } })`);
+	assert.equal(f.definition.body!.states!.kind, 'resolved');
+	assert.equal(f.definition.scopes[0].membersComplete, false);
+	assert.deepEqual(f.definition.entries[0].target, { kind: 'unresolved', reason: 'unknown-states' });
+	assert.deepEqual(f.definition.transitions.map(transition => transition.outcomes.map(outcome => outcome.target)), [
+		[{ kind: 'no-path', reason: 'no-return' }], [{ kind: 'unresolved', reason: 'dynamic-value' }],
+	]);
+});
+
 test('FSM containment, guards and transitions refer to the same authored occurrences, not names or outline labels', () => {
 	const f = fixture();
 	const root = f.definition;

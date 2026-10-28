@@ -103,7 +103,7 @@ function buildDefinition(
 	if (context.behaviorKind === 'behavior_tree') {
 		const body = resolved === null
 			? { root: null, blackboard: null, children: input.children }
-			: buildBehaviorTreeDefinition(context, resolved.file, resolved.table, activeTables);
+			: buildBehaviorTreeDefinition(context, resolved, activeTables);
 		return createSourceNode(context, definitionPath, { ...input, ...body });
 	}
 	if (context.behaviorKind === 'state_machine') {
