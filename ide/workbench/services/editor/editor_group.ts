@@ -274,8 +274,8 @@ export class EditorGroupView {
 		if (!this.presented || !rects_intersect(this.tabStrip.layoutState.bounds, this.clip)) pointerCapture.cancelScope(this.tabScope);
 		if (!this.presented || !rects_intersect(this.timelineBounds, this.clip)) pointerCapture.cancelScope(this.timeline.focusScope.surfaceScope);
 		const focused = inputFocus.target;
-		// Logical overflow is retained; actual unavailable controls must publish blur.
-		if (focused !== null && this.surfaceService.isInContext(focused.scope.surfaceScope, this.surface.captureScope) && inputFocus.admittedTarget === null) inputFocus.setTarget(null);
+		// Retire the unavailable control; its declared containing control may still be eligible.
+		if (focused !== null && this.surfaceService.isInContext(focused.scope.surfaceScope, this.surface.captureScope) && inputFocus.admittedTarget === null) focused.release();
 
 	}
 	public update(deltaSeconds: number): void {

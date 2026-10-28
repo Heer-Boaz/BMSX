@@ -16,6 +16,11 @@ const input = t.activeWorkbenchTab();
 t.assert(input.kind === 'scene_editor' && input.workingCopy.resource.path === 'scenes/end_demo.lua', 'the actual shipped Scene source did not open');
 const model = input.workingCopy, source = model.buffer.getText(), cycles = t.runtime().machine.scheduler.nowCycles;
 const selected = () => input.outline.rows[input.outline.selectionIndex]?.element;
+// Track the shipped terminal authored member through current source projections, not its display label.
+const last = input.outline.rows[input.outline.rows.length - 1].element;
+t.assert(last.kind === 'member' && last.entry.kind === 'object', 'the shipped Scene must end in an authored object member');
+const sceneIndex = input.document.scenes.indexOf(last.scene), memberIndex = last.index;
+const isCurtain = element => element?.kind === 'member' && element.scene === input.document.scenes[sceneIndex] && element.index === memberIndex;
 const unchanged = () => {
 	t.assert(model.buffer.getText() === source, 'navigation, resizing or a cancelled draft changed canonical Scene source');
 	t.assert(t.runtime().machine.scheduler.nowCycles === cycles, 'responsive Scene interaction advanced the paused guest');
@@ -28,10 +33,11 @@ const clickAction = async command => {
 };
 const selectCurtain = async () => {
 	t.command('sceneEditor.outline'); await t.frames(2); await press('Home'); await press('End');
-	t.assert(selected()?.label === "'curtain'", 'ordinary outline navigation did not select the actual curtain member');
+	t.assert(isCurtain(selected()), 'ordinary outline navigation did not select the actual curtain member');
 };
 const resize = async x => {
-	t.controlInput([{ type: 'pointer', x: input.layout.right + 2, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+	t.assert(t.mainAreaLayout().visible, 'the requested companion must expose its actual sash before resizing');
+	t.controlInput([{ type: 'pointer', x: t.mainAreaLayout().split.position, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 	t.controlInput([{ type: 'pointer', x, y: 80 }]); await t.frames(2);
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 };
@@ -41,7 +47,7 @@ const outlineOnly = () => {
 		'Details navigation is buried in overflow or replaced by text');
 };
 const detailsOnly = () => {
-	t.assert(input.layout.mode === 'details' && input.section === 'details' && selected()?.label === "'curtain'", 'compact Details lost its actual selected member');
+	t.assert(input.layout.mode === 'details' && input.section === 'details' && isCurtain(selected()), 'compact Details lost its actual selected member');
 	t.assert(action('sceneEditor.outline').icon === 'back' && action('sceneEditor.outline').visible && !action('sceneEditor.outline').overflowed,
 		'Back navigation is buried in overflow or has no actual icon');
 };
@@ -59,7 +65,7 @@ const sourceReturn = async () => {
 	t.assert(code.context.view.cursorRow === expected.start.line - 1 && code.context.view.cursorColumn === expected.start.column - 1,
 		'Source navigated to another member instead of its retained source range');
 	t.command('sceneEditor'); await t.frames(3);
-	t.assert(t.activeWorkbenchTab() === input && selected()?.label === "'curtain'", 'Source return replaced the retained Scene input or selected another member');
+	t.assert(t.activeWorkbenchTab() === input && isCurtain(selected()), 'Source return replaced the retained Scene input or selected another member');
 };
 t.assert(input.layout.mode === 'split', 'the full viewport did not retain its ordinary wide presentation');
 await selectCurtain(); await capture('scene-responsive-wide-split');
@@ -86,7 +92,7 @@ for (let font = 0; font < 2; font++) {
 		const oldListPoint = { left: input.layout.left + 15, right: input.layout.left + 17,
 			top: input.details.bounds.top + 3, bottom: input.details.bounds.top + 5 };
 		await click(oldListPoint);
-		t.assert(selected()?.label === "'curtain'", 'an old outline rectangle changed the subject while Details alone was visible');
+		t.assert(isCurtain(selected()), 'an old outline rectangle changed the subject while Details alone was visible');
 		await focusX(); await press('Digit9'); unchanged();
 		await press('Escape'); detailsOnly(); unchanged();
 		await capture(`scene-responsive-${variant}-theme-${theme}-draft-cancelled-in-details`);
@@ -118,10 +124,10 @@ for (let font = 0; font < 2; font++) {
 	await focusX();
 	for (const code of ['Digit1', 'Digit2', 'Digit3']) await press(code);
 	await resize(300); unchanged();
-	t.assert(t.activeWorkbenchTab() === input && input.section === 'details' && selected()?.label === "'curtain'",
+	t.assert(t.activeWorkbenchTab() === input && input.section === 'details' && isCurtain(selected()),
 		'physical resizing replaced the input or its pending field subject');
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
-	t.assert(t.activeWorkbenchTab() === input && input.section === 'details' && selected()?.label === "'curtain'",
+	t.assert(t.activeWorkbenchTab() === input && input.section === 'details' && isCurtain(selected()),
 		'font reflow replaced the input or its pending field subject');
 	unchanged(); await capture(`scene-responsive-${variant}-pending-draft-other-font`);
 	await press('ControlLeft', 'ShiftLeft', 'KeyT'); unchanged();
@@ -130,7 +136,7 @@ for (let font = 0; font < 2; font++) {
 	await press('ControlLeft', 'ShiftLeft', 'KeyZ'); unchanged();
 	await resize(50); detailsOnly(); unchanged();
 	await press('Digit4'); await press('Enter');
-	t.assert(model.buffer.getText() === edited && input.properties[0].value === 1234 && selected()?.label === "'curtain'",
+	t.assert(model.buffer.getText() === edited && input.properties[0].value === 1234 && isCurtain(selected()),
 		'resize/font change lost the concrete field, draft history, source generation or numeric suffix');
 	await capture(`scene-responsive-${variant}-accepted-original-field`);
 	const acceptedSelection = { ...input.selectionRange };
@@ -152,7 +158,7 @@ for (let font = 0; font < 2; font++) {
 	await capture(`scene-responsive-${variant}-field-command-accepted-outline`);
 	await press('ControlLeft', 'KeyZ'); outlineOnly(); unchanged();
 	await press('ControlLeft', 'KeyY'); outlineOnly();
-	t.assert(model.buffer.getText() === source.slice(0, start) + '5' + source.slice(end) && selected()?.label === "'curtain'",
+	t.assert(model.buffer.getText() === source.slice(0, start) + '5' + source.slice(end) && isCurtain(selected()),
 		'Outline keyboard Redo did not restore the accepted source field and actual selected member');
 	await press('ControlLeft', 'KeyZ'); outlineOnly(); unchanged();
 	await press('Enter'); detailsOnly();
@@ -167,7 +173,7 @@ for (let font = 0; font < 2; font++) {
 	const remove = action('sceneEditor.removeMember');
 	t.assert(remove.visible && !remove.overflowed && remove.enabled, 'wide Remove is not physically reachable');
 	await click(remove.bounds);
-	t.assert(input.section === 'outline' && input.outline.selectionIndex === -1 && input.outline.rows.every(row => row.element.label !== "'curtain'"),
+	t.assert(input.section === 'outline' && input.outline.selectionIndex === -1 && input.outline.rows.every(row => !isCurtain(row.element)),
 		'removing the actual member did not retire Details or selected a same-index replacement');
 	t.assert(input.document !== undefined && model.buffer.getText() !== source, 'removal did not publish a valid canonical source change');
 	await capture(`scene-responsive-${variant}-removed-member`);

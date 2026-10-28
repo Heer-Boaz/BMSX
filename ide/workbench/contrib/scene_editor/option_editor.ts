@@ -21,7 +21,11 @@ export class SceneOptionEditor {
 		this.input = input;
 		const model = input.workingCopy;
 		const locations = input.document.analysis.chunk.locations;
-		while (this.controls.length > input.optionProperties.length) this.removeLast();
+		let retiring: InputFocusTarget | undefined;
+		while (this.controls.length > input.optionProperties.length) {
+			const target = this.removeLast();
+			if (target.hasFocus) retiring = target;
+		}
 		for (let index = 0; index < input.optionProperties.length; index += 1) {
 			const property = input.optionProperties[index];
 			const field = property.field;
@@ -34,25 +38,33 @@ export class SceneOptionEditor {
 			control.field.focusTarget.next = null;
 		}
 		this.updateControlAdmission(input);
+		retiring?.release();
 	}
 
 	public updateControlAdmission(input: SceneEditorInput): void {
 		const bounds = input.details.bounds;
 		const available = input.layout.mode !== 'outline' && input.outline.selectionIndex >= 0
 			&& bounds.left < bounds.right && bounds.top < bounds.bottom;
+		let retiring: InputFocusTarget | undefined;
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const control = this.controls[index];
 			control.field.readOnly = input.workingCopy.readOnly || !input.optionProperties[index].editable;
 			if (control.field.readOnly || !available) {
 				control.cancel();
-				control.field.focusTarget.release();
+				if (control.field.focusTarget.hasFocus) retiring = control.field.focusTarget;
 			}
 		}
+		retiring?.release();
 	}
 
 	public clear(): void {
-		while (this.controls.length > 0) this.removeLast();
+		let retiring: InputFocusTarget | undefined;
+		while (this.controls.length > 0) {
+			const target = this.removeLast();
+			if (target.hasFocus) retiring = target;
+		}
 		this.input = undefined;
+		retiring?.release();
 	}
 
 	private append(index: number): void {
@@ -71,11 +83,11 @@ export class SceneOptionEditor {
 		this.controls.push(control);
 	}
 
-	private removeLast(): void {
+	private removeLast(): InputFocusTarget {
 		this.unbindFocus.pop()!();
 		const control = this.controls.pop()!;
 		control.cancel();
-		control.field.focusTarget.release();
 		control.dispose();
+		return control.field.focusTarget;
 	}
 }

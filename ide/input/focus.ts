@@ -139,9 +139,7 @@ export class InputFocusTarget {
 
 	/** Only the control losing focus may release it; hiding another view must not steal it. */
 	public release(): void {
-		if (this.hasFocus) {
-			this.owner.setTarget(this.parent);
-		}
+		this.owner.releaseTarget(this);
 	}
 
 	public registerCommand(command: EditorCommandId, implementation: FocusCommand): void {
@@ -286,7 +284,7 @@ export class InputFocusService {
 	/** Publish after blur; report completion only for the original, unsuperseded concrete request. */
 	public setTarget(target: InputFocusTarget | null, present?: () => void): boolean {
 		const requested = target;
-		target = this.resolveTarget(target);
+		if (present === undefined) target = this.resolveTarget(target);
 		if (present === undefined && target !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(target.scope)) return false;
 		const revision = ++this.focusRevision;
 		this.pendingTargetValue = target;
@@ -294,6 +292,10 @@ export class InputFocusService {
 		if (previous === target) {
 			present?.();
 			if (revision !== this.focusRevision) return false;
+			if (target !== null && this.admittedTarget === null) {
+				this.releaseTarget(target);
+				return false;
+			}
 			this.pendingTargetValue = null;
 			if (target !== null) this.activateInteraction(target);
 			if (revision !== this.focusRevision) return false;
@@ -316,6 +318,14 @@ export class InputFocusService {
 		if (revision !== this.focusRevision) return false;
 		this.notifyTargetChanged();
 		return revision === this.focusRevision && this.targetValue === requested;
+	}
+
+	/** Ending a control follows its declared return chain, including presentation eligibility. */
+	public releaseTarget(target: InputFocusTarget): void {
+		if (this.targetValue !== target) return;
+		let next = this.resolveTarget(target.parent);
+		while (next !== null && this.scopeAdmission !== undefined && !this.scopeAdmission(next.scope)) next = this.resolveTarget(next.parent);
+		this.setTarget(next);
 	}
 
 	/** A retired inline control returns to its containing focus scope. */

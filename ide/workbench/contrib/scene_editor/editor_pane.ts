@@ -130,6 +130,8 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		for (const control of this.controls) {
 			control.field.focusTarget.commandContext = this.focusTarget;
 			control.field.focusTarget.canFocus = () => this.details.focusTarget.canFocus!() && !control.field.readOnly;
+			control.field.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
+			control.field.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
 		}
 		this.unbindFieldFocus = [
 			this.focusTarget.onDidFocus(() => { this.input.section = 'outline'; }),
@@ -154,10 +156,18 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		// Edit and Undo can return to the retained projection before the next update.
 		// Field bindings must still consume the canonical value after publication.
 		this.unsubscribeContentChange = this.input.workingCopy.onDidChangeContent(() => { this.boundVersion = -1; });
-		this.unsubscribeSelectionChange = this.input.onDidChangeSelection(() => { this.boundVersion = -1; });
+		this.unsubscribeSelectionChange = this.input.onDidChangeSelection(() => {
+			this.boundVersion = -1;
+			const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
+			if (input.outline.selectionIndex !== -1) return;
+			// The empty subject publishes Outline geometry before its Details controls retire.
+			layoutSceneEditor(input, true, true, this.contentBounds);
+			this.options.clear();
+			if (scope.contextGeneration !== context) return;
+			if (this.updateControlAdmission()) this.bindFocusOrder();
+		});
 		this.unsubscribeReadOnlyChange = this.input.workingCopy.onDidChangeReadOnly(() => {
-			this.updateControlAdmission();
-			this.bindFocusOrder();
+			if (this.updateControlAdmission()) this.bindFocusOrder();
 		});
 	}
 	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: SceneEditorNavigationSelection): void {
@@ -178,9 +188,12 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		if (scope.contextGeneration !== context) return;
 		const changed = this.boundVersion !== this.input.version;
 		const layoutChanged = layoutSceneEditor(this.input, changed, false, this.contentBounds);
-		if (changed) this.bindProperties();
+		if (changed) {
+			this.bindProperties();
+			if (scope.contextGeneration !== context) return;
+		}
 		if (changed || layoutChanged) {
-			this.updateControlAdmission();
+			if (!this.updateControlAdmission()) return;
 			this.bindFocusOrder();
 		}
 		if (layoutChanged) {
@@ -225,12 +238,16 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 	}
 
 	private showSection(section: SceneEditorSection): void {
-		if (inputFocus.target?.edit?.commit() === false) return;
-		this.input.section = section;
-		this.identityFeedback.clear();
-		this.update();
-		if (section === 'details' && this.details.focusTarget.canFocus!()) this.details.focusTarget.focus();
-		else this.focus();
+		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
+		const revision = inputFocus.revision;
+		if (inputFocus.target?.edit?.commit() === false || scope.contextGeneration !== context || inputFocus.revision !== revision) return;
+		const target = section === 'details' ? this.details.focusTarget : this.focusTarget;
+		inputFocus.setTarget(target, () => {
+			if (scope.contextGeneration !== context) return;
+			input.section = section;
+			this.identityFeedback.clear();
+			this.update();
+		});
 	}
 
 	private revealProperty(index: number): void {
@@ -254,12 +271,15 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 			const control = this.controls[index];
 			if (property.value !== null) control.setValue(property.value);
 		}
-		this.options.bind(this.input);
 		this.boundVersion = this.input.version;
+		this.options.bind(this.input);
 	}
 
 	/** Source authority and the containing client can change without a new projection. */
-	private updateControlAdmission(): void {
+	private updateControlAdmission(): boolean {
+		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
+		const focused = inputFocus.target;
+		let retiring: InputFocusTarget | undefined;
 		const available = this.details.focusTarget.canFocus!();
 		const outlineAvailable = this.focusTarget.canFocus!();
 		const actionsAvailable = this.actionBar.focusTarget.canFocus!();
@@ -270,22 +290,24 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 		}
 		if (!available) this.details.cancelPointer();
 		if (!outlineAvailable) {
-			this.input.outline.hoverIndex = -1;
+			input.outline.hoverIndex = -1;
 			this.identityFeedback.clear();
 			pointerHover.release(this);
 		}
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const control = this.controls[index];
-			control.field.readOnly = this.input.workingCopy.readOnly || this.input.properties[index].value === null;
+			control.field.readOnly = input.workingCopy.readOnly || input.properties[index].value === null;
 			if (control.field.readOnly || !available) {
 				control.cancel();
-				control.field.focusTarget.release();
+				if (focused === control.field.focusTarget) retiring = focused;
 			}
 		}
-		this.options.updateControlAdmission(this.input);
-		if (!available) this.details.focusTarget.release();
-		if (!outlineAvailable) this.focusTarget.release();
-		if (!actionsAvailable) this.actionBar.focusTarget.release();
+		if (!available && focused === this.details.focusTarget || !outlineAvailable && focused === this.focusTarget
+			|| !actionsAvailable && focused === this.actionBar.focusTarget) retiring = focused;
+		this.options.updateControlAdmission(input);
+		if (scope.contextGeneration !== context) return false;
+		retiring?.release();
+		return scope.contextGeneration === context;
 	}
 
 	/** Presentation changes rewire navigation, never rebind a source draft or its history. */
@@ -331,9 +353,10 @@ export class SceneEditorPane extends WorkbenchViewEditorPane<SceneEditorInput> {
 			|| input.outline.rows[input.outline.selectionIndex] !== row) return false;
 		const contentChanged = this.boundVersion !== input.version;
 		this.bindProperties();
+		if (scope.contextGeneration !== context) return false;
 		revealWorkbenchListSelection(input.outline);
 		layoutSceneEditor(input, contentChanged, true, this.contentBounds);
-		this.updateControlAdmission();
+		if (!this.updateControlAdmission()) return false;
 		this.bindFocusOrder();
 		return true;
 	}

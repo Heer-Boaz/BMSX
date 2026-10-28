@@ -60,6 +60,59 @@ test('incoming presentation follows outgoing draft publication and precedes focu
 	assert.equal(notifications, 1, 'presentation is inside the focus transition, not a blur-to-null and refocus workaround');
 });
 
+test('a requested presentation makes its concrete target eligible before focus-return resolution', () => {
+	const focus = new InputFocusService(), outgoing = focus.createTarget(), parent = focus.createTarget(), incoming = focus.createTarget(parent);
+	let visible = false, blurred = false;
+	incoming.canFocus = () => visible;
+	outgoing.onDidBlur(next => { assert.ok(next === incoming); blurred = true; });
+	outgoing.focus();
+	assert.equal(focus.setTarget(incoming, () => {
+		assert.equal(blurred, true); assert.equal(focus.target, null); assert.ok(focus.pendingTarget === incoming);
+		visible = true;
+	}), true);
+	assert.ok(focus.admittedTarget === incoming); assert.equal(focus.pendingTarget, null);
+});
+
+test('outgoing blur can supersede a hidden target without presenting or focusing its declared parent', () => {
+	const focus = new InputFocusService(), outgoing = focus.createTarget(), parent = focus.createTarget(), incoming = focus.createTarget(parent), newer = focus.createTarget();
+	incoming.canFocus = () => false;
+	outgoing.focus(); outgoing.onDidBlur(next => { assert.ok(next === incoming); newer.focus(); });
+	let presentations = 0;
+	assert.equal(focus.setTarget(incoming, () => { presentations++; }), false);
+	assert.equal(presentations, 0); assert.ok(focus.admittedTarget === newer);
+	assert.equal(focus.pendingTarget, null);
+});
+
+test('same-target presentation resolves a control that remains ineligible through its declared return chain', () => {
+	const focus = new InputFocusService(), parent = focus.createTarget(), child = focus.createTarget(parent);
+	let eligible = true, blurs = 0, notifications = 0;
+	child.canFocus = () => eligible;
+	child.onDidBlur(next => { blurs++; assert.ok(next === parent); });
+	child.focus(); eligible = false;
+	focus.onDidChangeTarget(() => { notifications++; });
+	assert.equal(focus.setTarget(child, () => {}), false);
+	assert.ok(focus.admittedTarget === parent); assert.equal(focus.pendingTarget, null);
+	assert.equal(blurs, 1); assert.equal(notifications, 1);
+});
+
+test('same-target presentation can restore eligibility without blurring the retained control', () => {
+	const focus = new InputFocusService(), child = focus.createTarget();
+	let eligible = true, blurs = 0;
+	child.canFocus = () => eligible; child.onDidBlur(() => { blurs++; });
+	child.focus(); eligible = false;
+	assert.equal(focus.setTarget(child, () => { eligible = true; }), true);
+	assert.ok(focus.admittedTarget === child); assert.equal(focus.pendingTarget, null); assert.equal(blurs, 0);
+});
+
+test('same-target presentation ending surface admission retires focus rather than completing an inadmitted request', () => {
+	const focus = new InputFocusService(), parent = focus.createTarget(), child = focus.createTarget(parent, new InputFocusScope());
+	let shown = true;
+	focus.bindScopeAdmission(scope => scope !== child.scope || shown);
+	child.focus();
+	assert.equal(focus.setTarget(child, () => { shown = false; }), false);
+	assert.ok(focus.admittedTarget === parent); assert.equal(focus.pendingTarget, null);
+});
+
 test('a newer focus owner during outgoing blur prevents stale incoming presentation', () => {
 	const focus = new InputFocusService(), outgoing = focus.createTarget(), incoming = focus.createTarget(), newer = focus.createTarget();
 	outgoing.focus(); outgoing.onDidBlur(() => newer.focus());

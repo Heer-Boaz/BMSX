@@ -15,7 +15,8 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
-import { createLuaTableFieldRemovalEdits } from '../../ide/language/lua/source_edits';
+import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
@@ -241,4 +242,64 @@ test('Scene history restore stops its retired pane when the restored selection o
 	assert.equal(publications, 1); assert.ok(f.firstGroup.model.activeTab === replacement);
 	assert.ok(inputFocus.admittedTarget === f.firstGroup.panes.activePane?.commandTarget);
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
+for (const font of ['tiny', 'msx'] as const) for (const mode of ['split', 'compact'] as const)
+test(`${font}/${mode} Scene numeric fields retain section commands and accept their exact draft before leaving Details`, t => {
+	const f = fixture(t, font);
+	if (mode === 'compact') { f.firstBounds.right = 160; f.update(); }
+	selectSceneOutlineRow(f.input, 1); f.pane.update();
+	f.editor.commands.execute('sceneEditor.details', f.pane.commandTarget);
+	const field = f.pane.controls[0].field;
+	assert.equal(field.focusTarget.focus(), true);
+	assert.ok(field.focusTarget.getCommand('sceneEditor.details')?.isEnabled());
+	assert.ok(field.focusTarget.getCommand('sceneEditor.outline')?.isEnabled());
+	const source = f.model.buffer.getText();
+	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.document.analysis.chunk.locations.range(f.input.properties[0].field!.value.span));
+	setFieldText(field, '42', true); assert.equal(f.model.buffer.getText(), source);
+	f.editor.commands.execute('sceneEditor.outline');
+	assert.equal(f.input.section, 'outline'); assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+	// Exact source is the data-integrity contract of accepting this concrete numeric draft.
+	assert.equal(f.model.buffer.getText(), source.slice(0, range.start) + '42' + source.slice(range.end));
+});
+
+test('an invalid numeric draft blocks Scene section navigation without publishing a view or source change', t => {
+	const f = fixture(t); selectSceneOutlineRow(f.input, 1); f.pane.update();
+	f.editor.commands.execute('sceneEditor.details', f.pane.commandTarget);
+	const field = f.pane.controls[0].field; field.focusTarget.focus();
+	const source = f.model.buffer.getText(), version = f.model.version;
+	setFieldText(field, 'not an integer', true);
+	f.editor.commands.execute('sceneEditor.outline');
+	assert.equal(f.input.section, 'details'); assert.ok(inputFocus.admittedTarget === field.focusTarget);
+	assert.equal(field.text, 'not an integer'); assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
+});
+
+test('Scene section presentation cannot overwrite newer foreign focus established by the departing field', t => {
+	const f = fixture(t); selectSceneOutlineRow(f.input, 1); f.pane.update();
+	f.editor.commands.execute('sceneEditor.details', f.pane.commandTarget);
+	const field = f.pane.controls[0].field; field.focusTarget.focus();
+	const source = f.model.buffer.getText(), version = f.model.version;
+	const unbind = field.focusTarget.onDidBlur(() => { unbind(); f.second.focus(); }); t.after(unbind);
+	f.editor.commands.execute('sceneEditor.outline');
+	assert.ok(inputFocus.admittedTarget === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
+	assert.equal(f.input.section, 'details'); assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
+});
+
+test('Scene section navigation accepts its exact draft without overwriting foreign focus established by source publication', t => {
+	const f = fixture(t); selectSceneOutlineRow(f.input, 1); f.pane.update();
+	f.editor.commands.execute('sceneEditor.details', f.pane.commandTarget);
+	const field = f.pane.controls[0].field;
+	assert.equal(field.focusTarget.focus(), true);
+	const source = f.model.buffer.getText();
+	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.document.analysis.chunk.locations.range(f.input.properties[0].field!.value.span));
+	setFieldText(field, '42', true);
+	let publications = 0;
+	const unbind = f.model.onDidChangeContent(() => { unbind(); publications++; f.second.focus(); }); t.after(unbind);
+	f.editor.commands.execute('sceneEditor.outline');
+	// Exact source is the data-integrity contract of the accepted numeric draft.
+	assert.equal(f.model.buffer.getText(), source.slice(0, range.start) + '42' + source.slice(range.end));
+	assert.equal(field.focusTarget.edit!.pending, false); assert.equal(f.model.canUndo, true);
+	assert.equal(publications, 1);
+	assert.ok(inputFocus.admittedTarget === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
+	assert.equal(f.input.section, 'details');
 });
