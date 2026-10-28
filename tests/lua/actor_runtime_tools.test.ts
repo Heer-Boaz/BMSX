@@ -96,9 +96,10 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	const transport = new RuntimeTransport(runtime, f.execution, f.rewind, f.frameNavigation, () => f.actorExecution.canExecute);
 	const presentation = createTestGroupPresentation(), surfaces = presentation.surfaces;
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+	const commands = { isEnabled: () => false, execute() {} };
 	const parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
-		commands: { isEnabled: () => false, execute() {} }, contextMenu, renderContext: presentation.renderContext,
-		contributions: createTestEditorPaneContributions(), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
+		commands, contextMenu, renderContext: presentation.renderContext,
+		contributions: createTestEditorPaneContributions(commands, contextMenu), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		...createTestEditorCloseDependencies(t, presentation),
 		layoutMain: () => parts.main.layout(presentation.workArea) });
 	const group = parts.main.activeGroup;

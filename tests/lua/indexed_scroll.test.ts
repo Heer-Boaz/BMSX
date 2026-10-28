@@ -21,6 +21,7 @@ import { drawWorkbenchPropertyTree } from '../../ide/workbench/render/property_t
 import { resourcePanelIndexAtRelativeY } from '../../ide/workbench/contrib/resources/panel/navigation';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { ResourceViewerEditorPane } from '../../ide/workbench/contrib/resources/editor_pane';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { inputFocus } from '../../ide/input/focus';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
@@ -68,9 +69,10 @@ test('property and resource rendering preserves the actual retained fractional r
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('rows.lua', 1,
 		Array.from({ length: 80 }, (_, index) => `-- row ${index}`).join('\n'))]);
 	const input = new ResourceViewerInput(sources.catalog, sources.catalog.luaResources[0]);
-	const pane = new ResourceViewerEditorPane(inputFocus.workbenchScope);
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const pane = new ResourceViewerEditorPane(inputFocus.workbenchScope, { isEnabled: () => false, execute() {} }, menu);
 	pane.setInput(input, { left: 0, top: 0, right: 240, bottom: 160 });
-	t.after(() => { pane.clearInput(); pane.dispose(); input.dispose(); });
+	t.after(() => { pane.clearInput(); pane.dispose(); input.dispose(); menu.dispose(); });
 	for (let step = 0; step < 6; step++) pane.handleWheel({ viewportX: 5, viewportY: 5,
 		valid: true, insideViewport: true, deltaX: 0, deltaY: 0.25, modifiers: 0 });
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);

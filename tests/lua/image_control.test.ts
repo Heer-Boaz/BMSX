@@ -183,6 +183,23 @@ test('a rejected image focus request consumes its press without starting a pan',
 	assert.equal(f.view.horizontal.getScroll(), 200); assert.equal(f.view.vertical.getScroll(), 100);
 });
 
+test('shared image commands address only their attached viewport and become unavailable on retirement', t => {
+	const f = fixture(t), other = fixture(t);
+	f.focus.executeCommand('image.zoomIn', f.control.focusTarget); assert.equal(f.view.mode, 2); assert.equal(other.view.mode, 1);
+	f.focus.executeCommand('image.actualSize', f.control.focusTarget); assert.equal(f.view.mode, 1);
+	f.focus.executeCommand('image.zoomOut', f.control.focusTarget); assert.equal(f.view.mode, 0.5);
+	f.focus.executeCommand('image.fit', f.control.focusTarget); assert.equal(f.view.mode, 'fit');
+	for (const command of ['image.zoomIn', 'image.zoomOut', 'image.fit', 'image.actualSize'] as const) {
+		assert.equal(f.control.focusTarget.getCommand(command)!.isEnabled(), true);
+	}
+	f.control.clearInput();
+	for (const command of ['image.zoomIn', 'image.zoomOut', 'image.fit', 'image.actualSize'] as const) {
+		assert.equal(f.control.focusTarget.getCommand(command)!.isEnabled(), false);
+		f.focus.executeCommand(command, f.control.focusTarget);
+	}
+	assert.equal(f.view.mode, 'fit'); assert.equal(other.view.mode, 1);
+});
+
 for (const change of ['detach', 'replace', 'same-view rebind', 'scope retirement'] as const)
 test(`image focus-entry ${change} consumes the old press without capturing or panning another attachment`, t => {
 	const f = fixture(t), primary = PointerButton.Primary;

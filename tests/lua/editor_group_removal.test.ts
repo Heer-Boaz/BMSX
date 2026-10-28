@@ -16,10 +16,11 @@ import { createTestEditorPaneContributions, createTestGroupPresentation, createT
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
 	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces);
+	const commands = { isEnabled: () => false, execute() {} };
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
-		commands: { isEnabled: () => false, execute() {} }, contextMenu: presentation.contextMenu,
-		renderContext: presentation.renderContext, contributions: createTestEditorPaneContributions(),
+		commands, contextMenu: presentation.contextMenu,
+		renderContext: presentation.renderContext, contributions: createTestEditorPaneContributions(commands, presentation.contextMenu),
 		...createTestEditorCloseDependencies(t, presentation),
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope), layoutMain: () => parts.main.layout(presentation.workArea),
 	});

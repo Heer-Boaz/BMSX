@@ -32,6 +32,15 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 			if (!keyboard?.(input)) this.handleKeyboard(input);
 		});
 		this.unbindBlur = this.focusTarget.onDidBlur(this.cancelPointer);
+		for (const [command, scale] of [['image.fit', 'fit'], ['image.actualSize', 1]] as const) this.focusTarget.registerCommand(command, {
+			isEnabled: () => this.input !== null,
+			isChecked: () => this.input?.mode === scale,
+			run: () => { this.cancelPointer(); this.input!.setScale(scale); },
+		});
+		for (const [command, steps] of [['image.zoomIn', 1], ['image.zoomOut', -1]] as const) this.focusTarget.registerCommand(command, {
+			isEnabled: () => this.input !== null,
+			run: () => { this.cancelPointer(); this.input!.zoomBySteps(steps); },
+		});
 	}
 
 	public setInput(input: WorkbenchImageViewport): void {

@@ -123,6 +123,8 @@ export type EditorCommandId =
 	| 'graph.zoomIn'
 	| 'graph.zoomOut'
 	| 'graph.resetZoom'
+	| 'image.fit' | 'image.actualSize' | 'image.zoomIn' | 'image.zoomOut'
+	| 'resourceViewer.preview' | 'resourceViewer.info'
 	| 'editor.source' | 'editor.sourceToSide'
 	| 'behaviorLens.details'
 	| 'behaviorLens.inspectRuntimeEffect'

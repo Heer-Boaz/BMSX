@@ -1,4 +1,6 @@
 import type { RuntimeResource } from '../../../common/resource';
+import type { RomAsset } from '../../../../toolchain/ts/rompack/assets';
+import type { RomToolingLayer } from '../../../../toolchain/ts/rompack/loader';
 
 export type ResourceViewerContent = {
 	resource: RuntimeResource;
@@ -6,14 +8,17 @@ export type ResourceViewerContent = {
 	error: string;
 	title: string;
 	image?: {
-		asset_id: string;
-		width: number;
-		height: number;
+		readonly asset: RomAsset;
+		readonly rom: RomToolingLayer | null;
 	};
 };
+
+export type ResourceViewerContentView = 'preview' | 'info';
 
 /** Input-owned view state survives replacement of the source-derived content. */
 export type ResourceViewerState = {
 	readonly content: ResourceViewerContent;
 	scroll: number;
+	scrollLeft: number;
+	contentView: ResourceViewerContentView;
 };

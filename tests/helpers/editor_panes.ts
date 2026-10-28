@@ -156,14 +156,14 @@ export function createTestEditorCloseDependencies(t: TestContext, presentation: 
 export function createTestEditorParts(
 	t: TestContext,
 	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
-	contributions: EditorPaneContributions = createTestEditorPaneContributions(),
+	contributions?: EditorPaneContributions,
 	workArea?: Readonly<RectBounds>,
 ): EditorParts {
 	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces, workArea);
 	const contextMenu = presentation.contextMenu;
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
-		commands, contextMenu, renderContext: presentation.renderContext, contributions, ...createTestEditorCloseDependencies(t, presentation),
+		commands, contextMenu, renderContext: presentation.renderContext, contributions: contributions ?? createTestEditorPaneContributions(commands, contextMenu), ...createTestEditorCloseDependencies(t, presentation),
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		layoutMain: () => parts.main.layout(presentation.workArea),
 	});
@@ -178,7 +178,7 @@ export function createTestEditorGroup(
 	closeEditors: CloseEditors = retireTestEditors,
 	presentation: EditorGroupPresentation = createTestGroupPresentation(),
 ): EditorGroupView {
-	return new EditorGroupView(createTestEditorPaneContributions(codePane), commands, closeEditors, presentation);
+	return new EditorGroupView(createTestEditorPaneContributions(commands, presentation.contextMenu, codePane), commands, closeEditors, presentation);
 }
 
 /** Mechanical test inputs explicitly declare no intrinsic contribution constraints. */
@@ -188,6 +188,8 @@ function measureTestEditor(_input: EditorInput, _font: EditorFont, _companionReq
 
 /** Parts and standalone groups use the same real group-local pane contributions. */
 export function createTestEditorPaneContributions(
+	commands: EditorCommandRunner,
+	contextMenu: ContextMenuController,
 	codePane?: (scope: InputFocusScope, group: EditorGroupView) => EditorPane<CodeEditorInput>,
 ): EditorPaneContributions {
 	return {
@@ -207,7 +209,7 @@ export function createTestEditorPaneContributions(
 		assistant: { create: group => new TestEditorPane<AssistantInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		workspace_edit_review: { create: group => new TestEditorPane<WorkspaceEditReviewInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		code_editor: { create: group => codePane === undefined ? new TestCodeEditorPane(group.focusScope) : codePane(group.focusScope, group), measure: measureTestEditor },
-		resource_view: { create: group => new ResourceViewerEditorPane(group.focusScope), measure: measureTestEditor },
+		resource_view: { create: group => new ResourceViewerEditorPane(group.focusScope, commands, contextMenu), measure: measureTestEditor },
 		aem_editor: { create: group => new TestEditorPane<AemEditorInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		lua_program: { create: group => new TestEditorPane<LuaProgramInput>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		behavior_lens: { create: group => new TestEditorPane<BehaviorLensInput>(group.focusScope, activateViewInput), measure: measureTestEditor },

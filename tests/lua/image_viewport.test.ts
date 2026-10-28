@@ -3,6 +3,17 @@ import { test } from 'node:test';
 import { SCROLLBAR_WIDTH } from '../../ide/common/constants';
 import { WorkbenchImageViewport } from '../../ide/workbench/ui/image_viewport';
 
+test('image reading mementos restore after actual layout and never share a mutable viewport', () => {
+	const original = new WorkbenchImageViewport(); original.setImage(800, 600); original.layout(0, 0, 203, 103);
+	original.setScale(2); original.pan(80, 55);
+	const state = original.saveState();
+	const copy = new WorkbenchImageViewport(); copy.setImage(800, 600); copy.layout(10, 20, 213, 123); copy.restoreState(state);
+	assert.deepEqual(copy.saveState(), state);
+	copy.pan(15, 20); assert.deepEqual(original.saveState(), state);
+	original.setScale('fit'); const fit = original.saveState(); copy.restoreState(fit);
+	assert.equal(copy.mode, 'fit'); assert.equal(copy.horizontal.getScroll(), 0); assert.equal(copy.vertical.getScroll(), 0);
+});
+
 test('image Fit contains original pixels, caps magnification and reserves both scrollbar gutters', () => {
 	const viewport = new WorkbenchImageViewport();
 	viewport.setImage(800, 400);

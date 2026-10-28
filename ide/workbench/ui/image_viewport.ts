@@ -6,6 +6,8 @@ import { Scrollbar } from './scrollbar';
 
 const IMAGE_ZOOM_LEVELS = [1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16] as const;
 
+export type WorkbenchImageViewState = { readonly scale: 'fit' | number; readonly scrollLeft: number; readonly scrollTop: number };
+
 /** Original image pixels stay unchanged; scrollbars own scaled host-pixel offsets. */
 export class WorkbenchImageViewport {
 	public readonly bounds = create_rect_bounds();
@@ -22,6 +24,17 @@ export class WorkbenchImageViewport {
 
 	public get scale(): number { return this.scaleValue; }
 	public get mode(): 'fit' | number { return this.scaleMode; }
+
+	public saveState(): WorkbenchImageViewState {
+		return { scale: this.scaleMode, scrollLeft: this.horizontal.getScroll(), scrollTop: this.vertical.getScroll() };
+	}
+
+	/** Restore reading state after the containing client has supplied its actual extent. */
+	public restoreState(state: WorkbenchImageViewState): void {
+		this.setScale(state.scale);
+		this.horizontal.setScroll(state.scrollLeft);
+		this.vertical.setScroll(state.scrollTop);
+	}
 
 	/** Each axis centers fitting content and scrolls oversized content. */
 	public get transform(): Readonly<HostOverlayTransform> {
