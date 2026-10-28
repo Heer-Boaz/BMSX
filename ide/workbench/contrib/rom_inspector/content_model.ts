@@ -67,7 +67,8 @@ export class RomInspectorContentModel {
 			{ warning: false, label: 'Stored bytes', value: `${row.byteLength} (${row.sizeText})`, description: row.kind === 'asset' ? 'Includes metadata' : '' });
 		const range = this.selectedRange;
 		if (range !== undefined) this.propertyRows.push({ warning: false, label: `Selected ${range.kind} range`, value: `${formatNumberAsHex(range.start, 8)} .. ${formatNumberAsHex(range.end, 8)}`, description: 'File offsets; end exclusive' });
-		if (row.sourcePath !== undefined) this.propertyRows.push({ warning: false, label: 'Authored source', value: row.sourcePath, description: 'Current source may differ' });
+		const source = row.kind === 'function' ? row.sourceModule : row.sourcePath;
+		if (source !== undefined) this.propertyRows.push({ warning: false, label: row.kind === 'function' ? 'Module' : 'Authored source', value: source, description: 'Current source may differ' });
 		if (range?.kind === 'header') {
 			const header = this.snapshot.header;
 			this.propertyRows.push(

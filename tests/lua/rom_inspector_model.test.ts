@@ -49,6 +49,7 @@ function inspector(assets: RomAsset[]): RomInspectorModel {
 test('asset content selects every retained physical range without replacing its source context', () => {
 	const model = inspector([modelAsset]);
 	const row = model.selection!;
+	assert.ok(row.kind === 'asset');
 	const content = new RomInspectorContentModel(model.snapshot); content.setSubject(row);
 	assert.deepEqual(content.ranges.map(range => [range.kind, range.start, range.end]), [
 		['data', 72, 88], ['metadata', 144, 160], ['model-texture', 88, 104], ['collision', 104, 128],
@@ -61,7 +62,7 @@ test('asset content selects every retained physical range without replacing its 
 		content.selectRange(index);
 		assert.strictEqual(content.selectedRange, content.ranges[index]);
 		assert.strictEqual(model.selection, row);
-		assert.equal(model.selection.sourcePath, 'res/model.glb');
+		assert.equal(row.sourcePath, 'res/model.glb');
 	}
 	assert.equal(modelAsset.buffer, undefined);
 });
@@ -261,7 +262,7 @@ test('preview changes retain decoded pixels and collision paths until selection 
 	assert.equal(release.mock.callCount(), 1);
 	assert.equal(releaseSecond.mock.callCount(), 1);
 	model.setMode('structure'); model.select(model.rows.findIndex(row => row.asset === sprite)); content.setSubject(model.selection);
-	assert.equal(content.subject.kind, 'section'); assert.equal(content.subject.asset, sprite);
+	assert.ok(content.subject.kind === 'section'); assert.equal(content.subject.asset, sprite);
 	assert.equal(content.canPreviewImage, false, 'a physical image collision section is not a logical image preview');
 	assert.equal(content.view, 'info'); assert.equal(content.preview, undefined);
 	assert.deepEqual(content.ranges, [{ kind: 'collision', start: collisionStart, end: collisionEnd }]);
@@ -351,5 +352,5 @@ test('a generated function with an instruction source does not acquire an invent
 	assert.equal(row.image!.symbols!.metadata.functionDefinitions[0], null);
 	assert.deepEqual(blua32SourceRangeAtPc(row.image!.symbols!, row.image!.layout.header.textAddress,
 		row.image!.layout.functions[0].codeAddress), instructionSource, 'the fixture must retain a real, different instruction-source relation');
-	assert.equal(row.sourcePath, undefined, 'Source is the function declaration, never its inlined instruction mapping');
+	assert.equal(row.sourceModule, undefined, 'Source is the function declaration, never its inlined instruction mapping');
 });

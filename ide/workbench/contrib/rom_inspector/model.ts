@@ -41,15 +41,19 @@ type RomInspectorRowFacts = {
 	readonly asset?: RomAsset;
 	readonly functionIndex?: number;
 	readonly image?: Blua32ToolingImage;
-	readonly sourcePath?: string;
 	readonly searchText: string;
 	readonly sizeText: string;
 };
+export type RomInspectorFunctionRow = RomInspectorRowFacts & {
+	readonly kind: 'function';
+	readonly image: Blua32ToolingImage;
+	readonly functionIndex: number;
+	readonly sourceModule?: string;
+};
 export type RomInspectorRow = RomInspectorRowFacts & (
-	| { readonly kind: 'asset'; readonly asset: RomAsset }
-	| { readonly kind: 'section' }
-	| { readonly kind: 'function'; readonly image: Blua32ToolingImage; readonly functionIndex: number }
-);
+	| { readonly kind: 'asset'; readonly asset: RomAsset; readonly sourcePath?: string }
+	| { readonly kind: 'section'; readonly sourcePath?: string }
+) | RomInspectorFunctionRow;
 
 /** Immutable packed-media facts and retained table projection. No runtime execution state. */
 export class RomInspectorModel {
@@ -65,7 +69,7 @@ export class RomInspectorModel {
 	public selected = -1;
 	public revision = 0;
 	public code: Blua32ToolingImage | null | undefined;
-	public functions: readonly RomInspectorRow[] = [];
+	public functions: readonly RomInspectorFunctionRow[] = [];
 	private selectedRow: RomInspectorRow | undefined;
 
 	public constructor(public readonly snapshot: RomInspectorSnapshot) {
@@ -115,12 +119,12 @@ export class RomInspectorModel {
 		if (this.code === null) return;
 		const code = this.code;
 		const base = snapshot.domain === -1 ? SYSTEM_ROM_BASE : CART_ROM_BASE;
-		this.functions = code.layout.functions.map<RomInspectorRow>((fn, functionIndex) => {
+		this.functions = code.layout.functions.map<RomInspectorFunctionRow>((fn, functionIndex) => {
 			const label = code.symbols === null ? formatNumberAsHex(fn.address, 8) : code.symbols.metadata.functionIds[functionIndex];
-			const sourcePath = code.symbols === null ? undefined : code.symbols.metadata.functionDefinitions[functionIndex]?.path;
+			const sourceModule = code.symbols === null ? undefined : code.symbols.metadata.functionDefinitions[functionIndex]?.path;
 			return { kind: 'function', image: code, label, type: 'function', category: ROM_CATEGORIES.blua32, byteLength: fn.codeByteCount, start: fn.codeAddress - base, end: fn.codeAddress + fn.codeByteCount - base,
 				ranges: [{ kind: 'instructions', start: fn.codeAddress - base, end: fn.codeAddress + fn.codeByteCount - base }],
-				functionIndex, sourcePath, searchText: `${label} ${sourcePath ?? ''}`.toLowerCase(), sizeText: formatByteSize(fn.codeByteCount) };
+				functionIndex, sourceModule, searchText: `${label} ${sourceModule ?? ''}`.toLowerCase(), sizeText: formatByteSize(fn.codeByteCount) };
 		});
 	}
 	public project(): void {

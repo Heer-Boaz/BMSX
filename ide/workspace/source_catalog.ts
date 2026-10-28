@@ -149,7 +149,7 @@ export class WorkspaceSourceCatalog {
 		return bindings;
 	}
 
-	public resolveModule(contextId: string, specifier: string): ResourceIdentity | undefined {
+	public resolveModule(contextId: string, specifier: string): RuntimeResource | undefined {
 		const address = this.getModuleBindings(contextId).get(specifier);
 		return address === undefined ? undefined : this.resourceByIdentity.get(address);
 	}

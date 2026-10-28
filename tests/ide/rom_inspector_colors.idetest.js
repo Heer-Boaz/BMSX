@@ -128,7 +128,7 @@ const keyWorkflow = async (variant, theme) => {
 		t.assert(action.visible && !action.overflowed && action.icon !== undefined && action.icon !== 'info', 'Map Key has no distinct directly reachable native legend icon');
 		await click((action.bounds.left + action.bounds.right) / 2, (action.bounds.top + action.bounds.bottom) / 2);
 	} else await keyPalette();
-	t.assert(rom.keyWindow.open && !rom.keyWindow.collapsed, 'opening the requested key did not attach its expanded modeless window');
+	t.assert(rom.keyWindow.open && rom.keyWindow.placement === 'normal', 'opening the requested key did not attach its normal modeless window');
 	t.assert(rom.mapBounds.left === map.left && rom.mapBounds.right === map.right && rom.mapBounds.top === map.top && rom.mapBounds.bottom === map.bottom
 		&& rom.list.bounds.left === list.left && rom.list.bounds.right === list.right && rom.list.bounds.top === list.top && rom.list.bounds.bottom === list.bottom,
 		'the on-demand key reserved another permanent header or reduced the ROM workspace');
@@ -141,28 +141,28 @@ const keyWorkflow = async (variant, theme) => {
 	t.assert(rom.model.selected === rom.model.rows.length - 1, 'Escape from the key did not return keyboard input to the ROM list');
 	await press('Home');
 	if (theme === 1) {
-		const collapse = keyActions('window.collapse');
-		await click((collapse.bounds.left + collapse.bounds.right) / 2, (collapse.bounds.top + collapse.bounds.bottom) / 2);
-		t.assert(rom.keyWindow.collapsed && rom.keyWindow.bounds.bottom === rom.keyWindow.header.bottom, 'the key did not collapse to its actual titlebar');
-		await capture(`rom-key-collapsed-${variant}`);
+		const maximize = keyActions('window.maximize');
+		await click((maximize.bounds.left + maximize.bounds.right) / 2, (maximize.bounds.top + maximize.bounds.bottom) / 2);
+		t.assert(rom.keyWindow.placement === 'maximized' && rom.keyWindow.open, 'the key did not maximize as its actual retained tool window');
+		await capture(`rom-key-maximized-${variant}`);
 		const requested = { ...rom.keyWindow.requestedBounds };
 		t.openLuaSource('cart.lua'); await t.frames(2);
-		t.assert(t.activeWorkbenchTab().context.model === model && rom.keyWindow.open && rom.keyWindow.collapsed,
+		t.assert(t.activeWorkbenchTab().context.model === model && rom.keyWindow.open && rom.keyWindow.placement === 'maximized',
 			'switching editors lost the original source or cleared the retained key intent');
 		await capture(`rom-key-detached-${variant}`);
-		t.assert(await openCartridge() === rom && rom.keyWindow.open && rom.keyWindow.collapsed,
-			'reactivating the snapshot did not restore its exact collapsed key');
+		t.assert(await openCartridge() === rom && rom.keyWindow.open && rom.keyWindow.placement === 'maximized',
+			'reactivating the snapshot did not restore its exact maximized key');
 		t.assert(rom.keyWindow.requestedBounds.left === requested.left && rom.keyWindow.requestedBounds.top === requested.top
 			&& rom.keyWindow.requestedBounds.right === requested.right && rom.keyWindow.requestedBounds.bottom === requested.bottom,
 			'editor detachment replaced the retained key placement');
-		await click((collapse.bounds.left + collapse.bounds.right) / 2, (collapse.bounds.top + collapse.bounds.bottom) / 2);
-		t.assert(!rom.keyWindow.collapsed, 'the retained key could not expand after editor reactivation');
+		await click((maximize.bounds.left + maximize.bounds.right) / 2, (maximize.bounds.top + maximize.bounds.bottom) / 2);
+		t.assert(rom.keyWindow.placement === 'normal' && rom.keyWindow.open, 'the retained key could not restore after editor reactivation');
 	}
 	const close = keyActions('window.hide');
 	await click((close.bounds.left + close.bounds.right) / 2, (close.bounds.top + close.bounds.bottom) / 2);
 	t.assert(!rom.keyWindow.open, 'the actual window close action did not clear the key open intent');
 	await keyPalette();
-	t.assert(!rom.keyWindow.collapsed, 'ordinary key reopening changed its retained expanded presentation');
+	t.assert(rom.keyWindow.placement === 'normal', 'ordinary key reopening changed its retained normal placement');
 	await click((close.bounds.left + close.bounds.right) / 2, (close.bounds.top + close.bounds.bottom) / 2);
 	t.assert(!rom.keyWindow.open, 'the reopened key did not close through its actual chrome');
 	unchanged();
@@ -269,10 +269,13 @@ const readerImage = async (variant, theme) => {
 	await filterAssets();
 	t.assert(rom.reader.subject === subject && rom.reader.selectedRange === range && rom.reader.preview === bitmap,
 		'catalog filtering, sorting or mode switching retargeted the held reader');
-	await readerAction('window.collapse');
-	t.assert(rom.readerWindow.collapsed && rom.reader.preview === bitmap, 'collapse discarded the reader resource');
-	if (theme === 1) await capture(`rom-reader-collapsed-${variant}`);
-	await readerAction('window.collapse');
+	await readerAction('window.maximize');
+	t.assert(rom.readerWindow.placement === 'maximized' && rom.reader.preview === bitmap
+		&& rom.reader.subject === subject && rom.reader.selectedRange === range, 'maximize replaced the held reader resource or physical range');
+	if (theme === 1) await capture(`rom-reader-maximized-${variant}`);
+	await readerAction('window.maximize');
+	t.assert(rom.readerWindow.placement === 'normal' && rom.reader.preview === bitmap
+		&& rom.reader.subject === subject && rom.reader.selectedRange === range, 'restore replaced the held reader resource or physical range');
 	await readerAction('window.hide');
 	t.assert(!rom.readerWindow.open && rom.reader.preview === bitmap && rom.reader.subject === subject, 'Hide disposed the held reader document');
 	t.command('romInspector.inspect'); await t.frames(2);
@@ -318,19 +321,19 @@ for (let font = 0; font < 2; font++) {
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 t.assert(fonts.size === 2, 'the actual font command did not exercise both native font layouts');
-const authoredRecord = t.sourceState().cartridgeSlots[0].luaSources.records.find(record => record.source_path === model.resource.path);
+const authoredRecord = t.sourceState().catalog.resolveLuaSource(model.resource).record;
 t.assert(authoredRecord !== undefined, 'the canonical cart source has no installed Lua source record');
 await filterCatalog(authoredRecord.module_path, 'code');
 const definitions = rom.model.code.symbols.metadata.functionDefinitions;
 for (const row of rom.model.functions)
-	t.assert(row.sourcePath === definitions[row.functionIndex]?.path, 'a function Source follows an inlined first instruction instead of its declaring definition');
-t.assert(rom.model.functions.some(row => row.sourcePath !== undefined) && rom.model.functions.some(row => row.sourcePath === undefined),
+	t.assert(row.sourceModule === definitions[row.functionIndex]?.path, 'a function Source follows an inlined first instruction instead of its declaring definition');
+t.assert(rom.model.functions.some(row => row.sourceModule !== undefined) && rom.model.functions.some(row => row.sourceModule === undefined),
 	'the real program did not exercise both authored and generated function source admission');
-const functionIndex = rom.model.rows.findIndex(row => row.kind === 'function' && row.sourcePath === authoredRecord.module_path);
+const functionIndex = rom.model.rows.findIndex(row => row.kind === 'function' && row.sourceModule === authoredRecord.module_path);
 t.assert(functionIndex >= 0, 'the compiled module has no function mapped to the original authored source');
 for (let index = 0; index < functionIndex; index++) await press('ArrowDown');
 const fn = rom.model.selection;
-t.assert(fn.kind === 'function' && fn.sourcePath === authoredRecord.module_path, 'the actual compiled cart function did not retain its installed module source identity');
+t.assert(fn.kind === 'function' && fn.sourceModule === authoredRecord.module_path, 'the actual compiled cart function did not retain its installed module source identity');
 await press('Enter');
 t.assert(rom.readerWindow.open && rom.reader.subject === fn && rom.reader.view === 'bytes' && rom.reader.instructions.length > 0,
 	'the reader did not display the selected function from its own captured program image');
@@ -339,9 +342,9 @@ await press('PageDown'); await press('ArrowRight');
 const instructionScroll = rom.readerBytes.scrollTop, instructionHorizontal = rom.readerHorizontal.getScroll();
 t.assert(instructionScroll > 0, 'Page Down did not navigate the actual function instruction viewport');
 await readerAction('romInspector.hold');
-await readerAction('window.collapse'); await readerAction('window.collapse');
+await readerAction('window.maximize'); await readerAction('window.maximize');
 t.assert(rom.readerBytes.scrollTop === instructionScroll && rom.readerHorizontal.getScroll() === instructionHorizontal,
-	'collapse changed the held function instruction viewport');
+	'maximize/restore changed the held function instruction viewport');
 await press('Escape');
 await filterCatalog('konami', 'assets');
 t.assert(rom.model.selection !== fn && rom.reader.subject === fn && rom.reader.selectedRange === fn.ranges[0],
@@ -418,11 +421,11 @@ for (let font = 0; font < 2; font++) {
 	await press('Home'); await press('ArrowRight'); await press('PageDown');
 	const imageX = viewport.horizontal.getScroll(), imageY = viewport.vertical.getScroll();
 	t.assert(viewport.mode === 16 && imageX > 0 && imageY > 0, 'the actual image zoom and page controls did not navigate the snapshot pixels');
-	await readerAction('window.collapse'); await readerAction('window.collapse'); await readerAction('window.hide');
+	await readerAction('window.maximize'); await readerAction('window.maximize'); await readerAction('window.hide');
 	await press('Enter');
 	t.assert(rom.reader.preview === image && rom.reader.subject === imageSubject && viewport.mode === 16
 		&& viewport.horizontal.getScroll() === imageX && viewport.vertical.getScroll() === imageY,
-		'collapse or Hide/reopen replaced the image bitmap or its retained zoom/pan');
+		'maximize/restore or Close/reopen replaced the image bitmap or its retained zoom/pan');
 	await readerAction('window.hide');
 	if (font === 0) {
 		await filterCatalog('blua32', 'structure');

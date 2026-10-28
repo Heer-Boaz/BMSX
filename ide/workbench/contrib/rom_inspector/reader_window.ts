@@ -143,9 +143,10 @@ export class RomEntryInspectorWindow {
 	}
 
 	private source() {
-		const path = this.input.reader.subject?.sourcePath;
-		if (path === undefined) return undefined;
-		return this.sources.catalog.resolveResource({ contextId: this.input.snapshot.sourceContextId, path });
+		const row = this.input.reader.subject, contextId = this.input.snapshot.sourceContextId;
+		if (row === undefined) return undefined;
+		if (row.kind === 'function') return row.sourceModule === undefined ? undefined : this.sources.catalog.resolveModule(contextId, row.sourceModule);
+		return row.sourcePath === undefined ? undefined : this.sources.catalog.resolveResource({ contextId, path: row.sourcePath });
 	}
 
 	public isEnabled(command: EditorCommandId): boolean {

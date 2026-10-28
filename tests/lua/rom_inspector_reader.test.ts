@@ -31,7 +31,11 @@ import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompa
 import { encodeDirect16GxUpload } from '../../toolchain/ts/rompack/gp0_encode';
 import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
 import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../../toolchain/ts/rompack/system_texture';
-import { linkRawTestSystemBlua32 } from '../helpers/blua32';
+import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
+import { linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
+import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
+import { parseLuaChunk } from './cpu_test_harness';
+import { createActualSourcePanes } from '../helpers/source_panes';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -40,6 +44,59 @@ const area = { left: 0, top: 24, right: 384, bottom: 274 };
 const point = (x: number, y: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({
 	viewportX: x, viewportY: y, valid: true, insideViewport: true, modifiers: KeyModifier.none, spaceDown: false,
 	pressedButtons: held, justPressedButtons: down, justReleasedButtons: up,
+});
+
+for (const client of ['catalog', 'held reader'] as const) test(`ROM ${client} Source resolves its compiled module and rejects a generated function without a declaration`, async t => {
+	const source = "local dependency = require('game/dependency'); return function() return dependency() end";
+	const dependency = 'return function() return 42 end';
+	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'game'),
+		[{ path: 'game/dependency', source: dependency, chunk: parseLuaChunk(dependency, 'game/dependency') }],
+		{ entrySource: source, programDomain: 'system', optLevel: 0 });
+	const linked = linkTestSystemBlua32(compiled);
+	const directory = await loadRomAssetList(linked.romBytes, 'system');
+	const f = createActualSourcePanes(t, false, [['game.lua', source], ['game/dependency.lua', dependency]]);
+	const contextId = f.sources.systemContextId;
+	const resource = f.sources.catalog.resolveResource({ contextId, path: 'game.lua' })!;
+	assert.ok(f.sources.catalog.resolveModule(contextId, 'game') === resource);
+	assert.equal(f.sources.catalog.resolveResource({ contextId, path: 'game' }), undefined);
+	const input = new RomInspectorInput({ domain: -1, sourceContextId: contextId, label: 'Compiled game',
+		rom: linked.romBytes, header: parseCartHeader(linked.romBytes), assets: directory.entries });
+	f.firstGroup.openEditor(input); input.model.setMode('code'); f.update();
+	const fn = input.model.functions.find(row => row.kind === 'function'
+		&& row.image.symbols!.metadata.functionDefinitions[row.functionIndex]?.path === 'game');
+	assert.ok(fn?.kind === 'function');
+	const pane = f.firstGroup.panes.activePane!;
+	const generated = input.model.functions.find(row => row.image.symbols!.metadata.functionDefinitions[row.functionIndex] === null);
+	assert.ok(generated !== undefined); input.model.select(input.model.rows.indexOf(generated)); f.update();
+	let generatedOrigin = pane.commandTarget;
+	if (client === 'held reader') {
+		f.editor.commands.execute('romInspector.inspect', generatedOrigin); f.update(); generatedOrigin = inputFocus.admittedTarget!;
+		assert.ok(input.reader.subject === generated);
+	}
+	assert.equal(f.editor.commands.isEnabled('romInspector.source', generatedOrigin), false);
+	if (client === 'held reader') f.editor.commands.execute('window.hide', generatedOrigin);
+	input.model.select(input.model.rows.indexOf(fn)); f.update();
+	let origin = pane.commandTarget;
+	if (client === 'held reader') {
+		f.editor.commands.execute('romInspector.inspect', origin); f.update(); origin = inputFocus.admittedTarget!;
+		f.editor.commands.execute('romInspector.hold', origin);
+		f.editor.commands.execute('romInspector.structure', pane.commandTarget); f.update();
+		assert.ok(input.readerHeld && input.reader.subject === fn && input.model.selection !== fn);
+	}
+	const operations: Promise<number | undefined>[] = [];
+	const open = f.editor.navigation.openResource.bind(f.editor.navigation);
+	const requests = t.mock.method(f.editor.navigation, 'openResource', (...args: Parameters<EditorNavigationController['openResource']>) => {
+		const operation = open(...args); operations.push(operation); return operation;
+	});
+	f.editor.commands.execute('romInspector.source', origin);
+	assert.equal(operations.length, 1, 'the actual Source capability must admit the compiled module rather than searching for a resource named game');
+	assert.ok(requests.mock.calls[0].arguments[0] === f.firstGroup && requests.mock.calls[0].arguments[1] === resource);
+	assert.notEqual(await operations[0], undefined);
+	const code = f.firstGroup.model.activeTab!;
+	assert.ok(code.kind === 'code_editor' && code.workingCopy.resource === resource);
+	assert.equal(code.workingCopy.buffer.getText(), source);
+	assert.ok(f.ide.models.get(resource) === code.workingCopy);
+	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
 });
 
 function imageSnapshot(): RomInspectorSnapshot {
