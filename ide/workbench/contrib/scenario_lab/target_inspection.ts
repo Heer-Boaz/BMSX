@@ -72,7 +72,7 @@ export class ScenarioTargetInspection {
 		this.pointer.setInput(this.model.tree);
 		this.headerFont = undefined;
 		for (const item of this.bar.items) item.visible = item.command === 'scenarioLab.details' || item.command === 'scenarioLab.closeTarget'
-			|| inspection.state.role === 'live-test' && this.commands.isEnabled(item.command);
+			|| inspection.state.role === 'live-test' && this.commands.isEnabled(item.command, this.parent);
 		this.unbindInspection = inspection.onDidDispose(() => this.hide());
 		this.actions.setInput(this.bar, this.focus);
 		this.focus.focus();
@@ -110,12 +110,12 @@ export class ScenarioTargetInspection {
 	}
 	public isEnabled(command: EditorCommandId): boolean {
 		return this.model !== undefined && (command === 'scenarioLab.closeTarget'
-			|| (command === 'scenarioLab.details' ? this.model.tree.selectionIndex >= 0 : this.commands.isEnabled(command)));
+			|| (command === 'scenarioLab.details' ? this.model.tree.selectionIndex >= 0 : this.commands.isEnabled(command, this.parent)));
 	}
 	public execute(command: EditorCommandId): void {
 		if (command === 'scenarioLab.closeTarget') this.hide();
 		else if (command === 'scenarioLab.details') this.openDetails();
-		else this.commands.execute(command);
+		else this.commands.execute(command, this.parent);
 	}
 
 	private openDetails(): void {

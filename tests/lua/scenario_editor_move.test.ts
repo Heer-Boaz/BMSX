@@ -16,6 +16,7 @@ import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { api } from '../../ide/runtime/overlay_api';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { ScenarioLabInput } from '../../ide/workbench/contrib/scenario_lab/editor_input';
 import { ScenarioLabEditorPane } from '../../ide/workbench/contrib/scenario_lab/editor_pane';
@@ -88,6 +89,45 @@ async function fixture(t: TestContext) {
 	};
 	return { ide, editor, parts, controller, runs, host, sources, targets, firstPart, secondPart, input, module, update, key, select, until };
 }
+
+for (const foreignFocus of ['before-inspection', 'after-inspection'] as const)
+	test(`a borrowed Scenario stop keeps its pointer action origin with foreign focus ${foreignFocus}`, async t => {
+		const f = await fixture(t); f.select('waits'); f.key('Tab');
+		const origin = inputFocus.target!, pane = f.firstPart.activeGroup.panes.activePane!;
+		assert.ok(pane instanceof ScenarioLabEditorPane);
+		f.editor.commands.execute('scenarioLab.debug', origin);
+		await f.until(() => f.runs.debugger?.stopped === true);
+		const debug = f.runs.debugger!, target = f.runs.session!.execution!.target;
+		f.secondPart.activeGroup.openEditor(new GameViewInput());
+		const foreign = f.secondPart.activeGroup.panes.activePane!.commandTarget;
+		if (foreignFocus === 'after-inspection') origin.focus();
+		f.editor.commands.execute('scenarioLab.inspectStop', origin); f.update();
+		const inspection = pane.targetInspection.model!.inspection;
+		f.secondPart.activeGroup.panes.activePane!.focus(); f.update();
+		assert.ok(inputFocus.target === foreign);
+		const cycles = target.runtime.machine.scheduler.nowCycles, authoringCycles = f.host.runtime.machine.scheduler.nowCycles;
+
+		// Target the first actually painted stop action, without a label or fixed-coordinate assertion.
+		const borders = t.mock.method(api, 'blit_rect');
+		f.ide.overlayRenderer.beginFrame(f.host.presenter); api.beginFrame(f.ide.overlayRenderer);
+		pane.targetInspection.draw(); f.ide.overlayRenderer.endFrame();
+		const [left, top, right, bottom] = borders.mock.calls[0].arguments;
+		borders.mock.restore();
+		const pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
+		t.after(() => pointer.release());
+		pointer.apply([{ type: 'pointer', x: (left + right) / 2, y: (top + bottom) / 2 },
+			{ type: 'button', button: 'primary', down: true }]);
+		assert.ok(inputFocus.target === foreign, 'pointer admission keeps the foreign editor keyboard focus');
+		pointer.apply([{ type: 'button', button: 'primary', down: false }]);
+
+		assert.equal(debug.status, 'running', 'the painted Continue action resumes its borrowed debugger, not the focused group');
+		assert.equal(inspection.available, false, 'resuming retires the borrowed stop before another CPU grant');
+		assert.equal(pane.targetInspection.model, undefined);
+		assert.ok(inputFocus.target === foreign, 'retiring another group inspection does not steal keyboard focus');
+		assert.ok(f.runs.session!.execution!.target === target);
+		assert.equal(target.runtime.machine.scheduler.nowCycles, cycles);
+		assert.equal(f.host.runtime.machine.scheduler.nowCycles, authoringCycles);
+	});
 
 for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} focus order includes only the actual resizable sash in both directions`, async t => {
 	const f = await fixture(t); f.editor.setFontVariant(variant);
