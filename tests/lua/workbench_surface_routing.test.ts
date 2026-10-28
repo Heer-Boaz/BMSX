@@ -1,6 +1,7 @@
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { compileEventHistoryFixture, eventHistoryRuntime } from '../helpers/event_history';
 import { findEditorGroup } from '../../ide/workbench/services/editor/editor_group';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
@@ -19,6 +20,11 @@ import { pointerHover } from '../../ide/input/pointer/hover';
 import { GameInputControl } from '../../ide/workbench/contrib/game_view/game_input';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
+import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
+import { eventClipboardText } from '../../ide/workbench/contrib/events/presentation';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { createInputControllerSnapshot, InputControllerSampleContext } from '../../machine/ts/machine/devices/input/contracts';
 import { encodeSignedFix16 } from '../../machine/ts/machine/common/numeric';
 import { InputChannel } from '../../hosts/common/input/channel';
@@ -84,10 +90,10 @@ import { acceptEffectPropertySelection } from '../../ide/workbench/contrib/behav
 const PROMPT_REQUEST: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
 	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
 
-function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: LuaSourceRegistry }) {
-	const host = createHostFrameFixture(authored === undefined ? undefined : createTestRuntime(authored.image.romBytes));
+function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: LuaSourceRegistry }, observed?: ReturnType<typeof eventHistoryRuntime>) {
+	const host = createHostFrameFixture(observed === undefined ? authored === undefined ? undefined : createTestRuntime(authored.image.romBytes) : observed.runtime);
 	if (authored !== undefined) host.runtime.boot();
-	const sources = authored === undefined ? createTestRuntimeSourceState({ records: [], path2lua: {}, module2lua: {}, entrySourcePath: '',
+	const sources = observed !== undefined ? observed.sources : authored === undefined ? createTestRuntimeSourceState({ records: [], path2lua: {}, module2lua: {}, entrySourcePath: '',
 		projectRootPath: '', can_boot_from_source: false, revision: 0 }, [null, null], SYSTEM_RESOURCE_DOMAIN)
 		: createTestSystemImageRuntimeSourceState(authored.image.romBytes, authored.registry);
 	if (authored !== undefined) sources.currentBlua32Media = {
@@ -118,6 +124,169 @@ function fixture(t: TestContext, authored?: { image: TestBlua32Image; registry: 
 	const extent = { left: 0, top: 0, right: 384, bottom: 288 };
 	return { ide, editor, host, pointer, extent, sources };
 }
+
+let eventImages: ReturnType<typeof compileEventHistoryFixture> | undefined;
+
+/** Actual observed guest events and a real departing Source client share the same workbench runtime. */
+function eventFixture(t: TestContext) {
+	eventImages ??= compileEventHistoryFixture();
+	const observed = eventHistoryRuntime(eventImages), f = fixture(t, undefined, observed);
+	f.ide.boots.didReplaceMachine(); f.editor.interaction.setActive(true);
+	assert.equal(observed.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	const emitFunction = observed.cpu.getGlobalByKey(observed.cpu.stringPool.find('emit_for_viewer')!) as Closure;
+	const emit = (count: number) => {
+		observed.cpu.beginCompletionCall(emitFunction, [count]);
+		assert.equal(observed.cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
+	};
+	emit(4);
+	const group = f.editor.editorParts.main.activeGroup, input = new EventViewerInput(f.editor.events);
+	group.openEditor(input); f.editor.update(0); input.selected = 0;
+	assert.equal(input.projection.rows.length, 4);
+	const pane = group.panes.activePane!, source = 'return 42\n';
+	registerLuaSourceRecord(f.sources.catalog.getContext(f.sources.systemContextId).luaSources,
+		createScenarioTestSourceRecord('event-pointer-origin.lua', 1, source, 'event-pointer-origin.lua'));
+	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'event-pointer-origin.lua' })!;
+	const sourcePart = f.editor.editorParts.createDocument({ requestedBounds: { left: 200, top: 36, right: 384, bottom: 270 } });
+	const sourceGroup = sourcePart.activeGroup, sourceInput = resolveLuaCodeEditorInput(f.sources.catalog, resource);
+	sourceGroup.openEditor(sourceInput); f.editor.update(0);
+	const sourcePane = sourceGroup.panes.activePane!;
+	sourcePane.focus(); assert.ok(inputFocus.admittedTarget === sourcePane.commandTarget);
+	return { ...f, group, input, pane, sourcePart, sourceGroup, sourceInput, sourcePane, source, emit };
+}
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`Events button ${button} cannot mutate or publish a menu after departing Source blur replaces its real pane`, t => {
+	const f = eventFixture(t), replacement = new HostErrorInput('newer document');
+	const selected = f.input.projection.rows[f.input.selected], version = f.sourceInput.workingCopy.version;
+	const cycles = f.host.runtime.machine.scheduler.nowCycles;
+	let callbacks = 0;
+	const unbind = f.sourcePane.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.group.openEditor(replacement); });
+	t.after(unbind);
+	assert.doesNotThrow(() => f.pointer(f.input.viewport.bounds.left + 4,
+		f.input.viewport.offsetTop + 1.5 * f.input.layout.rowHeight, button));
+	assert.equal(callbacks, 1); assert.ok(f.input.projection.rows[f.input.selected] === selected);
+	assert.equal(f.editor.contextMenu.visible, false);
+	assert.ok(f.group.model.activeTab === replacement && f.group.panes.activePane!.input === replacement);
+	assert.ok(inputFocus.admittedTarget === f.group.panes.activePane!.commandTarget);
+	assert.equal(f.sourceInput.workingCopy.buffer.getText(), f.source); assert.equal(f.sourceInput.workingCopy.version, version);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (const admission of ['files', 'reattach', 'rebind'] as const)
+test(`Events button ${button} rejects its old row when Source blur admits ${admission}`, t => {
+	const f = eventFixture(t), selected = f.input.projection.rows[f.input.selected];
+	const generation = f.pane.inputScope!.contextGeneration;
+	const replacement = admission === 'rebind' ? new EventViewerInput(f.editor.events) : f.input;
+	let callbacks = 0;
+	const unbind = f.sourcePane.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		if (admission === 'files') f.editor.commands.execute('resources.focus', f.pane.commandTarget);
+		else {
+			if (admission === 'reattach') f.group.panes.clearEditor();
+			f.group.openEditor(replacement);
+		}
+	});
+	t.after(unbind);
+	assert.doesNotThrow(() => f.pointer(f.input.viewport.bounds.left + 4,
+		f.input.viewport.offsetTop + 1.5 * f.input.layout.rowHeight, button));
+	assert.equal(callbacks, 1); assert.ok(f.input.projection.rows[f.input.selected] === selected);
+	assert.equal(f.editor.contextMenu.visible, false); assert.ok(f.group.panes.activePane === f.pane);
+	if (admission === 'files') {
+		assert.ok(f.pane.input === f.input && inputFocus.admittedTarget === f.editor.resourcePanel.focusTarget);
+		assert.equal(f.pane.inputScope!.contextGeneration, generation);
+	} else {
+		assert.ok(f.pane.input === replacement && f.group.model.contains(f.input));
+		assert.ok(f.pane.inputScope!.contextGeneration > generation);
+		assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+	}
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`Events button ${button} keeps an admitted exact row through an unrelated sibling rebind`, t => {
+	const f = eventFixture(t), offered = f.input.projection.rows[1], replacement = new HostErrorInput('unrelated document');
+	let callbacks = 0;
+	const unbind = f.sourcePane.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.sourceGroup.openEditor(replacement, { preserveFocus: true }); });
+	t.after(unbind);
+	f.pointer(f.input.viewport.bounds.left + 4, f.input.viewport.offsetTop + 1.5 * f.input.layout.rowHeight, button);
+	assert.equal(callbacks, 1); assert.ok(f.input.projection.rows[f.input.selected] === offered);
+	assert.ok(f.sourceGroup.model.activeTab === replacement && f.group.panes.activePane === f.pane);
+	assert.equal(f.editor.contextMenu.visible, button === PointerButton.Secondary);
+	if (button === PointerButton.Secondary) assert.ok(f.editor.contextMenu.invocationOrigin === f.pane.commandTarget);
+	else assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`Events button ${button} publishes the exact admitted evidence and its actual clipboard owner`, async t => {
+	const f = eventFixture(t), offered = f.input.projection.rows[1], client = f.pane.commandTarget;
+	const x = f.input.viewport.bounds.left + 4, y = f.input.viewport.offsetTop + 1.5 * f.input.layout.rowHeight;
+	f.pointer(x, y, button); f.pointer(x, y, 0);
+	assert.ok(f.input.projection.rows[f.input.selected] === offered);
+	assert.equal(f.editor.contextMenu.visible, button === PointerButton.Secondary);
+	if (button === PointerButton.Secondary) {
+		assert.ok(f.editor.contextMenu.invocationOrigin === client && f.editor.contextMenu.focusTarget.commandContext === client);
+		assert.ok(f.editor.contextMenu.model.rows.find(row => row.command === 'events.details')!.enabled);
+		f.editor.dispatchKey(new KeyInputEvent('Escape', KeyModifier.none));
+		f.editor.dispatchKey(new KeyInputEvent('Escape', KeyModifier.none, false, false));
+	}
+	assert.ok(inputFocus.admittedTarget === client);
+	f.editor.commands.execute('copy', client);
+	assert.equal((await f.editor.clipboard.read()).text, eventClipboardText(offered), 'clipboard bytes identify the actually selected immutable event, not the departing Source or prior row');
+	assert.equal(f.sourceInput.workingCopy.buffer.getText(), f.source);
+});
+
+test('Events admitted empty body keeps selection absent and still exposes its filter menu', t => {
+	const f = eventFixture(t), client = f.pane.commandTarget;
+	f.pointer(f.input.viewport.bounds.left + 4, f.input.viewport.offsetTop + 6.5 * f.input.layout.rowHeight, PointerButton.Secondary);
+	assert.equal(f.input.selected, -1); assert.equal(f.editor.contextMenu.visible, true);
+	assert.ok(f.editor.contextMenu.invocationOrigin === client);
+	assert.equal(f.editor.contextMenu.model.rows.find(row => row.command === 'events.details')!.enabled, false);
+	assert.equal(f.editor.contextMenu.model.rows.find(row => row.command === 'events.filter')!.enabled, true);
+});
+
+test('Events secondary press rejects a replaced projection slot without publishing a new empty-body menu', t => {
+	const f = eventFixture(t);
+	let callbacks = 0;
+	const unbind = f.sourcePane.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++; f.input.filter = 'no-such-event'; f.input.selected = -1; f.input.update();
+	});
+	t.after(unbind);
+	f.pointer(f.input.viewport.bounds.left + 4, f.input.viewport.offsetTop + 1.5 * f.input.layout.rowHeight, PointerButton.Secondary);
+	assert.equal(callbacks, 1); assert.equal(f.input.projection.rows.length, 0); assert.equal(f.input.selected, -1);
+	assert.equal(f.editor.contextMenu.visible, false); assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+});
+
+test('Events secondary press rejects cleared history before the next pane projection update', t => {
+	const f = eventFixture(t), generation = f.editor.events.generation;
+	let callbacks = 0;
+	const unbind = f.sourcePane.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.editor.events.clear(); });
+	t.after(unbind);
+	f.pointer(f.input.viewport.bounds.left + 4, f.input.viewport.offsetTop + 1.5 * f.input.layout.rowHeight, PointerButton.Secondary);
+	assert.equal(callbacks, 1); assert.ok(f.editor.events.generation > generation);
+	assert.equal(f.editor.contextMenu.visible, false, 'a stale projected row must not acquire popup focus even for the interval before normal frame projection');
+	assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
+	f.editor.update(0); assert.equal(f.input.selected, -1); assert.equal(f.input.projection.rows.length, 0);
+});
+
+test('Events secondary press retains its exact evidence when blur appends another real observation elsewhere', t => {
+	const f = eventFixture(t), offered = f.input.projection.rows[1], generation = f.editor.events.generation;
+	let callbacks = 0;
+	const unbind = f.sourcePane.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.emit(1); f.input.update(); });
+	t.after(unbind);
+	f.pointer(f.input.viewport.bounds.left + 4, f.input.viewport.offsetTop + 1.5 * f.input.layout.rowHeight, PointerButton.Secondary);
+	assert.equal(callbacks, 1); assert.equal(f.editor.events.generation, generation);
+	assert.equal(f.input.projection.rows.length, 5); assert.ok(f.input.projection.rows[f.input.selected] === offered);
+	assert.equal(f.editor.contextMenu.visible, true); assert.ok(f.editor.contextMenu.invocationOrigin === f.pane.commandTarget);
+});
+
+test('Events scrollbar press scrolls without accepting Source focus or changing its selected evidence', t => {
+	const f = eventFixture(t); f.emit(80); f.editor.update(0);
+	f.sourcePart.window!.model.setRequestedBounds({ left: 4, top: 36, right: 188, bottom: 270 });
+	f.sourcePart.window!.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
+	const track = f.input.viewport.scrollbar.getTrack(), selected = f.input.projection.rows[f.input.selected];
+	const before = f.input.viewport.scrollTop, x = (track.left + track.right) / 2, y = track.bottom - 2;
+	let blurs = 0; t.after(f.sourcePane.commandTarget.onDidBlur(() => { blurs++; }));
+	f.pointer(x, y, PointerButton.Primary); f.pointer(x, y, 0);
+	assert.ok(f.input.viewport.scrollTop > before); assert.equal(blurs, 0);
+	assert.ok(f.input.projection.rows[f.input.selected] === selected && inputFocus.admittedTarget === f.sourcePane.commandTarget);
+	assert.equal(f.editor.contextMenu.visible, false); assert.equal(pointerCapture.active, false);
+});
 
 /** Compiled guest membership and the production Actor pane, not a substituted input/focus control. */
 function actorFixture(t: TestContext) {

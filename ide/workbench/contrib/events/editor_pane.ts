@@ -261,20 +261,28 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input;
 		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
-		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.viewport.bounds)) {
+		const inside = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.viewport.bounds);
+		const pressed = inside && (justPressed || secondary);
+		if (pressed) {
+			const index = Math.trunc((snapshot.viewportY - input.viewport.offsetTop) / input.layout.rowHeight), record = input.projection.rows[index];
+			const target = this.scroll.focusTarget, scope = target.scope, context = scope.contextGeneration, historyGeneration = input.history.generation;
+			target.focus();
+			if (scope.contextGeneration !== context || inputFocus.admittedTarget !== target
+				|| input.history.generation !== historyGeneration || input.projection.rows[index] !== record) return true;
+			input.selected = record === undefined ? -1 : index;
+		}
+		if (inside) {
 			if (snapshot.viewportX !== this.pointerX || snapshot.viewportY !== this.pointerY || justPressed || secondary) this.keyboardFeedback = false;
 			this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY; this.hovered = true;
 			pointerHover.visit(this);
 		}
-		if ((justPressed || secondary) && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, input.viewport.bounds)) {
-			const index = Math.trunc((snapshot.viewportY - input.viewport.offsetTop) / input.layout.rowHeight);
-			input.selected = index < input.projection.rows.length ? index : -1;
+		if (pressed) {
 			if (secondary) {
-				this.focus();
 				this.tooltip.hide();
-				this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['events.context'], this);
-				return true;
+				this.contextMenu.show(snapshot.viewportX, snapshot.viewportY, WORKBENCH_MENUS['events.context'], this,
+					{ invocationOrigin: this.scroll.focusTarget });
 			}
+			return true;
 		}
 		return this.scroll.handlePointer(snapshot);
 	}
