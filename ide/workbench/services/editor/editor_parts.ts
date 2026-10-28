@@ -1,4 +1,4 @@
-import { navigationState, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
+import { beginNavigationCapture, completeNavigation, navigationState, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
@@ -23,11 +23,16 @@ import type { SerializedDocumentEditorPart, SerializedEditorParts } from './edit
 import { EditorPart } from './editor_part';
 import { serializeEditorPart } from './editor_part_serialization';
 import type { EditorGroupDirection } from './group_arrangement';
+import { EditorOpeningRequest, type PreparedEditorInput, type ProspectiveEditorOpenSource } from './editor_opening';
 
 export type EditorMoveDestination =
 	| { readonly kind: 'group'; readonly group: EditorGroupView; readonly index?: number }
 	| { readonly kind: 'split'; readonly group: EditorGroupView; readonly direction: EditorGroupDirection }
 	| { readonly kind: 'window'; readonly requestedBounds?: Readonly<RectBounds> };
+
+export type EditorOpenDestination =
+	| Exclude<EditorMoveDestination, { kind: 'window' }>
+	| { readonly kind: 'window'; readonly reference: EditorGroupView; readonly requestedBounds?: Readonly<RectBounds> };
 
 export type EditorPartsOptions = {
 	readonly surfaces: WorkbenchSurfaceService;
@@ -77,6 +82,8 @@ export class EditorParts {
 	public get activeGroup(): EditorGroupView { return this.activePart.activeGroup; }
 	public get mostRecentlyActive(): readonly EditorPart[] { return this.mru; }
 	public get minimizedCount(): number { return this.minimizedDocumentCount; }
+	private get defaultDocumentWidth(): number { return Math.round((this.options.workArea.right - this.options.workArea.left) * 0.86); }
+	private get defaultDocumentHeight(): number { return Math.round((this.options.workArea.bottom - this.options.workArea.top) * 0.86); }
 
 	public constructor(private readonly options: EditorPartsOptions) {
 		this.closeController = new EditorCloseController(this.groupList, options.saves, options.prompt, options.models);
@@ -100,10 +107,10 @@ export class EditorParts {
 	public groupForSurface(surface: WorkbenchSurface): EditorGroupView | undefined { return this.groupsBySurface.get(surface); }
 	public groupForModel(model: EditorTabGroupModel): EditorGroupView | undefined { return this.groupsByModel.get(model); }
 	/** Floating a view preserves its client extent; the window owner resolves chrome and work-area placement. */
-	public writeNewDocumentBounds(source: EditorGroupView, x: number, y: number, target: RectBounds): void {
+	public writeNewDocumentBounds(source: EditorGroupView | undefined, x: number, y: number, target: RectBounds): void {
 		const headerHeight = editorViewState.font.lineHeight + WINDOW_HEADER_VERTICAL_PADDING;
-		const width = source.bounds.right - source.bounds.left + WINDOW_RESIZE_MARGIN * 2;
-		const height = source.bounds.bottom - source.bounds.top + headerHeight + WINDOW_RESIZE_MARGIN;
+		const width = source === undefined ? this.defaultDocumentWidth : source.bounds.right - source.bounds.left + WINDOW_RESIZE_MARGIN * 2;
+		const height = source === undefined ? this.defaultDocumentHeight : source.bounds.bottom - source.bounds.top + headerHeight + WINDOW_RESIZE_MARGIN;
 		const left = x - Math.round(width / 2), top = y - Math.round(headerHeight / 2);
 		write_rect_bounds(this.newDocumentRequest, left, top, left + width, top + height);
 		this.newDocumentPlacement.writePlacementBounds('normal', this.options.workArea, target, this.newDocumentRequest);
@@ -158,7 +165,7 @@ export class EditorParts {
 	private constructDocument({ requestedBounds, placement = 'normal', minimized = false }: EditorDocumentOptions,
 		initialOperation: 'none' | 'move'): EditorPart {
 		const area = this.options.workArea;
-		const width = Math.round((area.right - area.left) * 0.86), height = Math.round((area.bottom - area.top) * 0.86);
+		const width = this.defaultDocumentWidth, height = this.defaultDocumentHeight;
 		const offset = 8 * (this.documentParts.length % 4 + 1);
 		return new EditorPart({ ...this.options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'document', placement, minimized, initialOperation, presented: false,
 			focusReturn: this.main.focusTarget,
@@ -265,6 +272,72 @@ export class EditorParts {
 		const part = this.owners.get(source), generation = source.panes.openGeneration;
 		if (part === undefined || part.retired || part.surface.retired || !source.openingAdmitted || part.operation !== 'none' || !source.commitPendingEdit() || source.panes.openGeneration !== generation) return undefined;
 		return part.splitGroup(source, direction);
+	}
+
+	public canOpenAt(destination: EditorOpenDestination): boolean {
+		const reference = destination.kind === 'window' ? destination.reference : destination.group;
+		const part = this.owners.get(reference);
+		return part !== undefined && !part.retired && !part.surface.retired && !reference.surface.retired
+			&& reference.openingAdmitted && part.operation === 'none';
+	}
+
+	/** Resolve into an owned but unpublished receiver; no existing input is moved or used as a temporary attachment. */
+	public async openAt(source: ProspectiveEditorOpenSource, destination: EditorOpenDestination): Promise<EditorInput | undefined> {
+		if (!this.canOpenAt(destination)) return;
+		const reference = destination.kind === 'window' ? destination.reference : destination.group;
+		const part = this.owners.get(reference)!, generation = reference.panes.openGeneration, focusRevision = inputFocus.revision;
+		if (!source.isCurrent() || reference.panes.openGeneration !== generation || !this.canOpenAt(destination)) return;
+		if (!reference.commitPendingEdit() || !source.isCurrent() || reference.panes.openGeneration !== generation || !this.canOpenAt(destination)) return;
+		const current = () => source.isCurrent() && this.owners.get(reference) === part && !part.retired && !part.surface.retired
+			&& part.operation === 'none';
+		const opening = EditorOpeningRequest.begin(reference, { pinned: true, preserveFocus: true,
+			index: destination.kind === 'group' ? destination.index : undefined, isCurrent: current });
+		if (opening === undefined) return;
+		let departure = beginNavigationCapture();
+		let targetPart: EditorPart | undefined, receiver: EditorGroupView | undefined, prepared: PreparedEditorInput | undefined;
+		let published = destination.kind === 'group';
+		try {
+			targetPart = destination.kind === 'window' ? this.constructDocument({ requestedBounds: destination.requestedBounds }, 'none') : part;
+			receiver = destination.kind === 'group' ? reference : destination.kind === 'split' ? part.createGroup() : targetPart.activeGroup;
+			if (!published) {
+				// Pane constructors consume the real construction owner, before its leaf/window is publicly arranged.
+				this.owners.set(receiver, targetPart);
+				receiver.setOpenAdmission(true);
+			}
+			if (!opening.isCurrent) return;
+			prepared = await source.resolve(receiver);
+			const input = opening.admit(prepared?.input, prepared?.options, receiver);
+			if (input === undefined) return;
+			const receipt = receiver.panes.openGeneration;
+			if (destination.kind !== 'group' && !opening.isCurrent) return;
+			if (destination.kind === 'split') {
+				part.adoptGroup(receiver, reference, destination.direction);
+				published = true;
+				part.publishGroups();
+			} else if (destination.kind === 'window') {
+				published = true;
+				this.publishDocument(targetPart);
+			}
+			if (this.owners.get(receiver) !== targetPart || targetPart.retired || receiver.surface.retired
+				|| receiver.panes.openGeneration !== receipt || receiver.model.activeTab !== input) return;
+			if (inputFocus.revision === focusRevision || inputFocus.target === null) {
+				if (!targetPart.revealGroup(receiver) || this.owners.get(receiver) !== targetPart
+					|| receiver.panes.openGeneration !== receipt || receiver.model.activeTab !== input) return;
+				if (inputFocus.revision !== focusRevision && inputFocus.target !== null) return input;
+				if (!receiver.focus() || receiver.panes.openGeneration !== receipt || receiver.model.activeTab !== input) return;
+				const previous = departure;
+				departure = null;
+				completeNavigation(previous);
+			}
+			return input;
+		} finally {
+			prepared?.dispose?.();
+			opening.dispose(); departure?.dispose();
+			if (!published && receiver !== undefined && targetPart !== undefined) {
+				this.owners.delete(receiver);
+				if (destination.kind === 'window') targetPart.dispose(); else targetPart.discardGroup(receiver);
+			}
+		}
 	}
 
 	public canMoveEditor(source: EditorGroupView, input: EditorInput, destination: EditorMoveDestination): boolean {

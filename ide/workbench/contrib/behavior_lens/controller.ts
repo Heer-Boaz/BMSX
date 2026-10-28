@@ -11,6 +11,7 @@ import type { EditorSourceLocation } from '../../../editor/navigation/source_loc
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
+import type { PreparedEditorInput } from '../../services/editor/editor_opening';
 import { BehaviorLensInput } from './editor_input';
 import {
 	selectBehaviorLensDefinition,
@@ -119,25 +120,30 @@ export class BehaviorLensController {
 	}
 
 	public openDefinition(group: EditorGroupView, registration: BehaviorRegistrationSource, options: EditorTabOpenOptions = {}): BehaviorLensInput | undefined {
-		return group.openProducedEditor(() => {
+		return group.openPreparedEditor(() => {
 			const resource = this.sources.catalog.resolveResource(registration.resource)!;
 			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
-			if (options.isCurrent?.() === false) return undefined;
-			const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
-			let input = this.findDefinition(group, resource, registration.behaviorKind, occurrence);
-			if (input === undefined) {
-				input = this.createInput(model,
-					registration.behaviorKind === 'behavior_tree' ? 'graph'
-						: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph');
-				if (options.isCurrent?.() === false) { input.dispose(); return undefined; }
-				const view = input.view;
-				selectBehaviorLensDefinition(view, registration.rowKey);
-				view.sourceMatchRowKeys.add(registration.rowKey);
-				input.updateDefinition();
-			}
-			// Reopening a surviving occurrence preserves its selection and viewport.
-			return input;
+			return this.prepareDefinition(group, model, registration, options.isCurrent);
 		}, options);
+	}
+
+	public prepareDefinition(group: EditorGroupView, model: EditorTextModel, registration: BehaviorRegistrationSource,
+		isCurrent?: () => boolean): PreparedEditorInput<BehaviorLensInput> | undefined {
+		if (isCurrent?.() === false) return undefined;
+		const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
+		let input = this.findDefinition(group, model.resource, registration.behaviorKind, occurrence);
+		if (input === undefined) {
+			input = this.createInput(model,
+				registration.behaviorKind === 'behavior_tree' ? 'graph'
+					: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph');
+			if (isCurrent?.() === false) { input.dispose(); return undefined; }
+			const view = input.view;
+			selectBehaviorLensDefinition(view, registration.rowKey);
+			view.sourceMatchRowKeys.add(registration.rowKey);
+			input.updateDefinition();
+		}
+		// Reopening a surviving occurrence preserves its selection and viewport.
+		return { input };
 	}
 
 	/** Source-derived input creation is independent of group admission and pane layout. */

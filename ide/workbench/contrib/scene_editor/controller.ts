@@ -4,11 +4,13 @@ import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { resourceIdentityEquals, type ResourceIdentity } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { RuntimeResource } from '../../../common/resource';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
+import type { PreparedEditorInput } from '../../services/editor/editor_opening';
 import { luaSourceLocation } from '../../../language/lua/source_location';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { SceneEditorInput } from './editor_input';
@@ -45,19 +47,27 @@ export class SceneEditorController {
 	public openDefinition(group: EditorGroupView, resource: RuntimeResource, range: Readonly<TrackedTextRange>): boolean {
 		const generation = group.panes.openGeneration;
 		if (!group.commitPendingEdit() || group.panes.openGeneration !== generation) return false;
+		return group.openPreparedEditor(() => {
+			const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
+			return this.prepareDefinition(group, model, range);
+		}) !== undefined;
+	}
+
+	public prepareDefinition(group: EditorGroupView, model: EditorTextModel, range: Readonly<TrackedTextRange>,
+		isCurrent?: () => boolean): PreparedEditorInput<SceneEditorInput> | undefined {
 		// Read after admission: accepting the attached draft may move or retire it.
-		if (range.start === range.end) return false;
-		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-		const retained = this.findResource(group, resource);
+		if (range.start === range.end) return;
+		if (isCurrent?.() === false) return;
+		const retained = this.findResource(group, model.resource);
 		const input = retained ?? new SceneEditorInput(model, this.createView);
 		this.refresh(input);
 		const root = input.outline.roots.find(node => node.element.span.start === range.start && node.element.span.end === range.end);
 		if (root === undefined) {
 			if (retained === undefined) input.dispose();
-			return false;
+			return;
 		}
 		const selected = input.outline.rows[input.outline.selectionIndex];
-		if (selected !== undefined && (selected.parent ?? selected) === root) return group.openEditor(input);
+		if (selected !== undefined && (selected.parent ?? selected) === root) return { input };
 		const view = captureSceneEditorView(input);
 		const selection = new SceneEditorNavigationSelection(input, {
 			...view,
@@ -66,11 +76,7 @@ export class SceneEditorController {
 			outlineScroll: input.outline.rows.indexOf(root),
 			detailsScroll: 0,
 		});
-		try {
-			return group.openEditor(input, { navigationSelection: selection });
-		} finally {
-			selection.dispose();
-		}
+		return { input, options: { navigationSelection: selection }, dispose: () => selection.dispose() };
 	}
 
 	public getSourceLocation(input: SceneEditorInput): EditorSourceLocation | undefined {

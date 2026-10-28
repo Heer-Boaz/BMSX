@@ -145,6 +145,10 @@ source and semantic-project lifetimes; canonical working copies map occurrence
 ranges. The file tree owns disclosure and presentation, while contribution
 controllers own exact-subject editor lookup and opening. Browsing neither
 executes Lua nor creates a second source or asset database.
+Files gestures retain prospective resource/declaration openings independently of
+retained editor transfers. The shared drop target projects placement; Files owns
+source admission and contribution resolution, and editor parts own new receiver
+construction and publication. Hover does not create inputs or routing groups.
 
 `workspace/source_catalog.ts` owns admitted source contexts, resource identities
 and their explicit module/asset bindings independently of installed media.

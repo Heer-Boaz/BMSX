@@ -86,6 +86,8 @@ export async function runIdeTest(options: IdeTestRunnerOptions): Promise<void> {
 		activeCodeContext: () => options.ide.getActiveCodeContext(),
 		activeEditorDocument: () => options.ide.getActiveEditorDocument(),
 		workbenchTabs: () => options.ide.getWorkbenchTabs(),
+		activeEditorGroup: () => options.ide.getActiveEditorGroup(),
+		resourcePanel: () => options.ide.getResourcePanel(),
 		isCartActive: () => options.ide.isCartActive(),
 		waitForCart,
 		frames: waitFrames,

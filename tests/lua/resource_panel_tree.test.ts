@@ -10,6 +10,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerHover } from '../../ide/input/pointer/hover';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 import { registerLuaSourceRecord, type LuaSourceRecord } from '../../ide/runtime/source_registry';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
@@ -67,9 +68,12 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Files pointer d
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false };
 	assert.equal(handleResourcePanelPointer(panel, pointer, true), true);
 	assert.equal(node.collapsed, false); assert.equal(open.mock.callCount(), 0);
-	assert.equal(panel.files.selectedNode, node); assert.equal(panel.isFocused(), true);
+	assert.ok(panel.files.selectedNode === node); assert.equal(panel.isFocused(), true);
 	pointer.viewportX = layout.contentLeft - panel.hscroll + metrics.indentWidth + editorViewState.font.advance(' ');
 	assert.equal(handleResourcePanelPointer(panel, pointer, true), true);
+	assert.equal(open.mock.callCount(), 0); assert.equal(pointerCapture.active, true);
+	assert.equal(pointerCapture.dispatch({ ...pointer, pressedButtons: 0, justPressedButtons: 0,
+		justReleasedButtons: PointerButton.Primary }, false, 1), true);
 	assert.equal(open.mock.callCount(), 1); assert.equal(open.mock.calls[0].arguments[1], node.element.resource);
 });
 

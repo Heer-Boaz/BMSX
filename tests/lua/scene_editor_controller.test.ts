@@ -210,7 +210,8 @@ test('reopening a surviving Scene occurrence keeps its subject and reading; expl
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
 	assert.equal(input.outline.rows[input.outline.selectionIndex].element.scene, input.document.scenes[1]);
 	assert.equal(pane.controls[0].field.readOnly, true, 'switching to a definition retires the former member control subject');
-	assert.equal(f.group.openEditor(input, { navigationSelection: history }), true);
+	const restored = f.group.openEditor(input, { navigationSelection: history });
+	assert.ok(restored !== undefined); assert.equal(restored.activated, true); assert.equal(restored.generation, f.group.panes.openGeneration);
 	assert.equal(pane.controls[0].field.readOnly, false);
 	assert.equal(pane.controls[0].field.text, '11', 'history restoration rebinds the retained member before accepting another field draft');
 	assert.deepEqual(input.selectionRange, subject);

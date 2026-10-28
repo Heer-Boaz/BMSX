@@ -59,7 +59,9 @@ function beginGroupDrag(f: Fixture, source: EditorGroupView): void {
 function openThird(f: Fixture, group: EditorGroupView): CodeEditorInput {
 	const input = resolveLuaCodeEditorInput(f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'third.lua' })!);
-	assert.equal(group.openEditor(input, { pinned: false }), true);
+	const opened = group.openEditor(input, { pinned: false });
+	assert.ok(opened !== undefined); assert.equal(opened.activated, true); assert.equal(opened.generation, group.panes.openGeneration);
+	assert.ok(group.panes.activePane?.input === input);
 	f.editor.update(0);
 	return input;
 }

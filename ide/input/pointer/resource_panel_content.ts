@@ -37,8 +37,13 @@ export function handleResourcePanelPointer(
 			|| resourcePanel.focusTarget.scope.contextGeneration !== context
 			|| mode === 'resources' && resourcePanel.files.revision !== revision) return true;
 		if (hoverIndex >= 0) {
-			resourcePanel.setSelectionIndex(hoverIndex);
-			openResourcePanelSelection(resourcePanel, hoverIndex, snapshot.viewportX, isAltDown(snapshot));
+			const kind = mode === 'resources' ? resourcePanel.files.tree.rows[hoverIndex].element.kind : undefined;
+			if ((kind === 'file' || kind === 'definition') && !resourcePanel.isDisclosureHit(hoverIndex, snapshot.viewportX)) {
+				resourcePanel.beginResourceDrag(hoverIndex, snapshot);
+			} else {
+				resourcePanel.setSelectionIndex(hoverIndex);
+				openResourcePanelSelection(resourcePanel, hoverIndex, snapshot.viewportX, isAltDown(snapshot));
+			}
 		}
 	}
 	return true;

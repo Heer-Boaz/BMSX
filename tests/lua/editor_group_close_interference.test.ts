@@ -37,7 +37,7 @@ for (const phase of ['decision', 'Save'] as const)
 			assert.equal(f.editor.editorParts.closeController.isPending(input), true);
 			const offered = new HomeInput(null); let retired = 0;
 			offered.onWillDispose(() => { retired++; });
-			assert.equal(closing.openEditor(offered), false, 'host admission cannot override the group-owned close');
+			assert.ok(closing.openEditor(offered) === undefined, 'host admission cannot override the group-owned close');
 			assert.equal(retired, 1); assert.equal(closing.openingAdmitted, false);
 			assert.ok(closing.model.activeTab === input && receiver.model.activeTab === f.secondInput);
 			assert.equal(input.workingCopy.buffer.getText(), source); assert.equal(input.workingCopy.version, version);

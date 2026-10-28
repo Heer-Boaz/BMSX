@@ -2,6 +2,7 @@ import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/tab
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityEquals, type ResourceDomain, type ResourceIdentity, type RuntimeResource } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
+import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
@@ -13,6 +14,7 @@ import type { SuspendedGuestSession } from '../../../runtime/suspended_guest';
 import { luaSourceLocation } from '../../../language/lua/source_location';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
+import type { PreparedEditorInput } from '../../services/editor/editor_opening';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { collectLuaPrograms, projectLuaProgram, type LuaProgramKind, type LuaProgramOccurrence } from './source';
@@ -83,20 +85,24 @@ export class LuaProgramController {
 			&& input.occurrenceRange.start === range.start && input.occurrenceRange.end === range.end);
 	}
 	public openOccurrence(group: EditorGroupView, occurrence: LuaProgramOccurrence, options: EditorTabOpenOptions = {}): LuaProgramInput | undefined {
-		return group.openProducedEditor(() => {
+		return group.openPreparedEditor(() => {
 			const resource = this.sources.catalog.resolveResource(occurrence.resource)!;
 			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
-			if (options.isCurrent?.() === false) return;
-			const project = getOrCreateSemanticProject(editorTextModelService, occurrence.resource.contextId);
-			if (project.getFileData(model.identity)?.revision !== occurrence.file.revision) return;
-			const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
-			let input = this.findOccurrence(group, resource, occurrence.kind, span);
-			if (input === undefined) {
-				input = new LuaProgramInput(model, occurrence.kind, span, this.guest, this.createView);
-				this.refresh(input);
-			}
-			return input;
+			return this.prepareOccurrence(group, model, occurrence, options.isCurrent);
 		}, options);
+	}
+	public prepareOccurrence(group: EditorGroupView, model: EditorTextModel, occurrence: LuaProgramOccurrence,
+		isCurrent?: () => boolean): PreparedEditorInput<LuaProgramInput> | undefined {
+		if (isCurrent?.() === false) return;
+		const project = getOrCreateSemanticProject(editorTextModelService, occurrence.resource.contextId);
+		if (project.getFileData(model.identity)?.revision !== occurrence.file.revision) return;
+		const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
+		let input = this.findOccurrence(group, model.resource, occurrence.kind, span);
+		if (input === undefined) {
+			input = new LuaProgramInput(model, occurrence.kind, span, this.guest, this.createView);
+			this.refresh(input);
+		}
+		return { input };
 	}
 	public refreshRuntime(input: LuaProgramInput): void {
 		// Reconcile at the requested position, not an intermediate replay checkpoint.

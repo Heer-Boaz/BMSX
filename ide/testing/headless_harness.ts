@@ -20,6 +20,8 @@ import { getActiveCodeTabContext } from '../workbench/ui/code_tab/contexts';
 import type { CodeHoverTooltip } from '../editor/contrib/hover/state';
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
 import type { EditorInput } from '../workbench/common/editor_inputs';
+import type { EditorGroupView } from '../workbench/services/editor/editor_group';
+import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
 import type {
 	RecordedLogMessage,
 	RecordingLogOutput,
@@ -49,6 +51,9 @@ export type HeadlessIdeHarness = {
 	getActiveCodeContext(): Readonly<CodeTabContext> | null;
 	getActiveEditorDocument(): Readonly<CodeEditorContext> | null;
 	getWorkbenchTabs(): readonly EditorInput[];
+	/** Observe existing UI owners; workflows still deliver gestures through host control input. */
+	getActiveEditorGroup(): Readonly<EditorGroupView>;
+	getResourcePanel(): Readonly<ResourcePanelController>;
 	/** Full IDE operation: admission releases the queue; completion waits for physical init. */
 	performHotResume(): HotResumeOperation;
 	toggleLuaBreakpoint(path: string, line: number): void;
@@ -97,6 +102,8 @@ export function createHeadlessIdeHarness(
 			return pane?.input.kind === 'code_editor' ? (pane as CodeEditorPane).code : null;
 		},
 		getWorkbenchTabs: () => ide.editor.editorParts.activeGroup.model.tabs,
+		getActiveEditorGroup: () => ide.editor.editorParts.activeGroup,
+		getResourcePanel: () => ide.editor.resourcePanel,
 		getHover: (row, column) => {
 			const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 			if (pane?.input.kind !== 'code_editor') return null;

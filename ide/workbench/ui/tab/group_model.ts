@@ -20,7 +20,7 @@ import type { ScenarioLabInput } from '../../contrib/scenario_lab/editor_input';
 import { DisposableStore } from '../../../common/lifecycle';
 import type { EditorInputSerializer, EditorInputSerializers, SerializedEditorGroup, SerializedEditorInput, PersistentEditorInput } from '../../services/editor/editor_serialization';
 
-export type EditorOpenOptions = { readonly pinned?: boolean };
+export type EditorOpenOptions = { readonly pinned?: boolean; readonly index?: number };
 export type EditorTabGroupChange = 'editors' | 'active' | 'label' | 'dirty' | 'pin';
 export type EditorTransferPublication = { readonly input: EditorInput; publish(): void };
 export type EditorGroupTransferEntry = { readonly input: EditorInput; readonly receiver: EditorInput };
@@ -145,10 +145,12 @@ export class EditorTabGroupModel {
 			return existing;
 		}
 		const preview = options.pinned === false && tab.closable && !tab.isDirty();
-		let index = this.editorTabs.length;
+		let index = options.index ?? this.editorTabs.length;
 		if (preview && this.previewEditor !== null) {
-			index = this.indexOf(this.previewEditor);
-			this.removeAt(index);
+			const previous = this.indexOf(this.previewEditor);
+			this.removeAt(previous);
+			if (options.index === undefined) index = previous;
+			else if (previous < index) index--;
 		}
 		this.editorTabs.splice(index, 0, tab);
 		if (preview) this.previewEditor = tab;

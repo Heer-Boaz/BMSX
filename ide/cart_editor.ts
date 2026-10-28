@@ -776,6 +776,7 @@ export class RuntimeCartEditor implements CartEditor {
 		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
 		this.menubar.update();
 		this.layoutMainEditor();
+		this.resourcePanel.update(editorRuntimeState.currentTimeMs);
 		this.editorParts.update(deltaSeconds);
 		this.windowStatus.update(inputFocus.admittedTarget?.guestInput !== undefined, this.fault.hostFrameFailure !== undefined);
 		problemsPanel.update();

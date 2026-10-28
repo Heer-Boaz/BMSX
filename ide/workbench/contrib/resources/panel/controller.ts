@@ -3,7 +3,7 @@ import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds, write_rect_bounds, point_in_rect } from '../../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
-import type { PointerSnapshot } from '../../../../common/models';
+import type { PointerInputSnapshot, PointerSnapshot } from '../../../../common/models';
 import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import type { Scrollbar } from '../../../ui/scrollbar';
@@ -44,19 +44,24 @@ import {
 import {
 	refreshResourcePanelCallHierarchyState,
 } from './refresh';
-import type { ResourceIdentity } from '../../../../common/resource';
+import { resourceIdentityKey, type ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { inputFocus, type InputFocusTarget } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
 import type { ProjectContentIndex } from './content_index';
-import { openProjectContent, resolveProjectContentDestination } from './open_actions';
+import { findProjectContentEditor, openProjectContent, prepareProjectContent, resolveProjectContentDestination } from './open_actions';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation, type WorkbenchTreeNode } from '../../../ui/tree_view';
 import type { FileElement } from './files_model';
 import { ResourcePanelContextMenu } from './context_menu';
 import { findEditorGroup } from '../../../services/editor/editor_group';
+import { ResourcePanelDrag } from './drag';
+import { editorTextModelService } from '../../../../editor/model/model_service';
+import { editorRuntimeState } from '../../../../editor/common/runtime_state';
+import { isAltDown } from '../../../../input/keyboard/key_input';
+import type { ProspectiveEditorOpenSource } from '../../../services/editor/editor_opening';
 
 export type ResourcePanelItemMetrics = {
 	fontVariant: FontVariant | null;
@@ -140,6 +145,8 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	private resizeStartRatio = 0;
 	private readonly unbindKeyboard: () => void;
 	private readonly contextMenu: ResourcePanelContextMenu;
+	private drag: ResourcePanelDrag | undefined;
+	private readonly unbindModelClear: () => void;
 
 	constructor(
 		private readonly editor: CartEditor,
@@ -158,6 +165,9 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		this.focusTarget.canFocus = () => this.isVisible();
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
 		this.contextMenu = new ResourcePanelContextMenu(editor, catalog, content, this);
+		this.unbindModelClear = editorTextModelService.onWillClear(() => {
+			this.drag?.cancel(); this.focusTarget.scope.retireContext();
+		});
 		this.focusTarget.registerCommand('resources.openToSide', {
 			isEnabled: () => {
 				const kind = this.files.selectedNode?.element.kind;
@@ -175,8 +185,10 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	public dispose(): void {
-		this.hide(); this.focusTarget.release(); this.unbindKeyboard(); this.content.dispose();
+		this.hide(); this.focusTarget.release(); this.unbindKeyboard(); this.unbindModelClear(); this.content.dispose();
 	}
+
+	public update(now: number): void { this.drag?.advance(now); }
 
 	public handleScrollbarPointer(snapshot: PointerSnapshot): boolean {
 		return this.isVisible() && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.bounds)
@@ -212,6 +224,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	togglePanel(): void { this.visible ? this.hide() : this.show(); }
 
 	show(): void {
+		this.drag?.cancel();
 		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		pointerHover.release(this);
 		this.files.tree.hoverIndex = -1;
@@ -223,6 +236,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	showCallHierarchy(model: CallHierarchyModel): void {
+		this.drag?.cancel();
 		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		pointerHover.release(this);
 		this.widthRatio = clampResourcePanelRatio(this.widthRatio);
@@ -261,6 +275,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	hide(): void {
+		this.drag?.cancel();
 		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		this.scrollbarController.cancel();
 		pointerHover.release(this);
@@ -273,6 +288,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	toggleFilterMode(): void {
+		this.drag?.cancel();
 		if (this.mode !== 'resources') {
 			showEditorMessage('Filter is unavailable in call hierarchy view.', 'warning', 2.4);
 			return;
@@ -306,6 +322,36 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		this.selectionIndex = next;
 		this.hoverIndex = -1;
 		this.ensureSelectionVisible();
+	}
+
+	/** Press retains a real tree subject; neither hover nor a pending click produces an editor. */
+	public beginResourceDrag(index: number, snapshot: PointerInputSnapshot): void {
+		const node = this.files.tree.rows[index], element = node.element;
+		if (element.kind !== 'file' && element.kind !== 'definition') return;
+		this.setSelectionIndex(index);
+		const resource = element.kind === 'file' ? element.resource : element.content.ownerResource;
+		const entry = element.kind === 'definition' ? element.content : undefined;
+		const key = resourceIdentityKey(resource), context = this.focusTarget.scope.contextGeneration;
+		const invoking = this.editor.editorParts.activeGroup;
+		const editorId = entry === undefined ? this.editor.resourceEditors.getEditorId(resource) : undefined;
+		const identity = entry === undefined ? { resource, editorId: editorId! } : undefined;
+		const source: ProspectiveEditorOpenSource = {
+			kind: 'opening',
+			isCurrent: () => (entry === undefined || this.content.isCurrent(entry)) && this.isVisible() && this.mode === 'resources'
+				&& this.focusTarget.scope.contextGeneration === context && this.catalog.resourceByIdentity.get(key) === resource,
+			findExisting: group => entry === undefined ? group.model.findByResourceEditor(identity!)
+				: findProjectContentEditor(this.editor, entry, group),
+			resolve: entry === undefined ? async () => ({ input: await this.editor.resourceEditors.resolveEditorInput(resource, editorId) })
+				: group => prepareProjectContent(this.editor, this.content, entry, group, source.isCurrent),
+		};
+		this.drag ??= new ResourcePanelDrag(this.editor.editorParts.dropTarget);
+		this.drag.begin(source, snapshot, editorRuntimeState.currentTimeMs, released => {
+			if (!this.focusTarget.hasFocus) return;
+			const hit = this.indexAtPosition(released.viewportX, released.viewportY);
+			if (hit < 0 || this.files.tree.rows[hit] !== node || this.isDisclosureHit(hit, released.viewportX)) return;
+			this.setSelectionIndex(hit);
+			this.openSelected(isAltDown(released) ? 'side' : 'default', invoking.focusTarget);
+		});
 	}
 
 	isDisclosureHit(index: number, viewportX: number): boolean {

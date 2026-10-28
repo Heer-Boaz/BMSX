@@ -2,7 +2,7 @@ import type { EditorPaneSelection } from './editor_selection';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../common/editor_inputs';
 import type { EditorPane, EditorPaneClearReason } from './editor_pane';
-import type { EditorGroupView } from './editor_group';
+import type { EditorGroupView, EditorInputOpenResult } from './editor_group';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
@@ -74,7 +74,7 @@ export class EditorPanes {
 		return this.panes.get(kind) as EditorPane<Extract<EditorInput, { kind: TKind }>> | undefined;
 	}
 
-	public openEditor(input: EditorInput, options: EditorPaneOpenOptions = {}): void {
+	public openEditor(input: EditorInput, options: EditorPaneOpenOptions = {}): EditorInputOpenResult | undefined {
 		const { selection, navigationSelection, preserveFocus } = options;
 		const focusRevision = inputFocus.revision;
 		this.openGenerationValue += 1;
@@ -104,7 +104,9 @@ export class EditorPanes {
 			if (this.activePaneValue !== pane || pane.input !== input) return;
 		}
 		if (!reusing && this.layoutRevision === layoutRevision) pane.layout(this.contentBounds);
-		if (!preserveFocus && (inputFocus.revision === focusRevision || inputFocus.target === null)) pane.focus();
+		const activated = !preserveFocus && (inputFocus.revision === focusRevision || inputFocus.target === null);
+		if (activated) pane.focus();
+		return { generation: this.openGenerationValue, activated };
 	}
 
 	/** The receipt names this clear, independently of openings performed by its observers. */

@@ -11,6 +11,7 @@ import { resourceIdentityEquals, resourceIdentityKey, type ResourceIdentity, typ
 import type { LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
+import type { PreparedEditorInput } from '../../services/editor/editor_opening';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { luaSourceLocation } from '../../../language/lua/source_location';
@@ -114,23 +115,29 @@ export class AnimationEditorController {
 	}
 
 	public openDefinition(group: EditorGroupView, contextId: string, definition: AnimationDefinitionSource, options: EditorTabOpenOptions = {}): AnimationEditorInput | undefined {
-		return group.openProducedEditor(() => {
+		return group.openPreparedEditor(() => {
 			const project = getOrCreateSemanticProject(editorTextModelService, contextId);
 			const resource = this.catalog.resolveResource(project.getResourceIdentity(definition.file.file))!;
 			const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-			if (options.isCurrent?.() === false || project.getFileData(model.identity)?.revision !== definition.file.revision) return;
-			const range = luaSourceRangeToTextRange(model.buffer, definition.file.chunk.locations.range(definition.table.span));
-			let input = this.findDefinition(group, contextId, resource, range, definition.consumer?.file);
-			if (input === undefined) {
-				input = new AnimationEditorInput(model, contextId, range, definition.label, definition.consumer?.file, this.createView);
-				if (definition.consumer !== undefined) {
-					const consumer = this.catalog.resolveResource(project.getResourceIdentity(definition.consumer.file))!;
-					input.sourceModels.set(definition.consumer.file, resolveLuaTextFileModel(editorTextModelService, this.catalog, consumer));
-				}
-				this.refresh(input);
-			}
-			return input;
+			return this.prepareDefinition(group, model, contextId, definition, options.isCurrent);
 		}, options);
+	}
+
+	public prepareDefinition(group: EditorGroupView, model: EditorTextModel, contextId: string, definition: AnimationDefinitionSource,
+		isCurrent?: () => boolean): PreparedEditorInput<AnimationEditorInput> | undefined {
+		const project = getOrCreateSemanticProject(editorTextModelService, contextId);
+		if (isCurrent?.() === false || project.getFileData(model.identity)?.revision !== definition.file.revision) return;
+		const range = luaSourceRangeToTextRange(model.buffer, definition.file.chunk.locations.range(definition.table.span));
+		let input = this.findDefinition(group, contextId, model.resource, range, definition.consumer?.file);
+		if (input === undefined) {
+			input = new AnimationEditorInput(model, contextId, range, definition.label, definition.consumer?.file, this.createView);
+			if (definition.consumer !== undefined) {
+				const consumer = this.catalog.resolveResource(project.getResourceIdentity(definition.consumer.file))!;
+				input.sourceModels.set(definition.consumer.file, resolveLuaTextFileModel(editorTextModelService, this.catalog, consumer));
+			}
+			this.refresh(input);
+		}
+		return { input };
 	}
 
 	public openResource(group: EditorGroupView, resource: RuntimeResource, options: EditorTabOpenOptions = {}): AnimationEditorInput | undefined {

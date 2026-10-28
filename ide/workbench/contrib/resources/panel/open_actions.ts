@@ -7,6 +7,30 @@ import type { ProjectContentEntry, ProjectContentIndex } from './content_index';
 import { editorTextModelService } from '../../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../../editor/model/text_model';
 import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
+import type { EditorInput } from '../../../common/editor_inputs';
+import type { PreparedEditorInput } from '../../../services/editor/editor_opening';
+
+/** Contribution identity is shared by ordinary affinity and explicit resource-drop feedback. */
+export function findProjectContentEditor(editor: CartEditor, entry: ProjectContentEntry, group: EditorGroupView): EditorInput | undefined {
+	return entry.kind === 'scene' ? editor.sceneEditor.findResource(group, entry.ownerResource)
+		: entry.kind === 'animation' ? editor.animations.findDefinition(group, entry.projectContextId, entry.ownerResource, entry.range, entry.definition.consumer?.file)
+			: entry.kind === 'progression' || entry.kind === 'input' ? editor.luaPrograms.findOccurrence(group, entry.ownerResource, entry.kind, entry.range)
+				: editor.behaviorLens.findDefinition(group, entry.ownerResource, entry.kind, entry.range);
+}
+
+/** Resolve canonical source before reading the tracked entry's current contribution facts. */
+export function prepareProjectContent(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry,
+	group: EditorGroupView, isCurrent: () => boolean): PreparedEditorInput | undefined {
+	const model = resolveLuaTextFileModel(editorTextModelService, index.catalog, entry.ownerResource);
+	if (!isCurrent()) return;
+	switch (entry.kind) {
+		case 'scene': return editor.sceneEditor.prepareDefinition(group, model, entry.range, isCurrent);
+		case 'behavior_tree': case 'state_machine': case 'action_effect':
+			return editor.behaviorLens.prepareDefinition(group, model, entry.registration, isCurrent);
+		case 'progression': case 'input': return editor.luaPrograms.prepareOccurrence(group, model, entry.occurrence, isCurrent);
+		case 'animation': return editor.animations.prepareDefinition(group, model, entry.projectContextId, entry.definition, isCurrent);
+	}
+}
 
 /** Resolve contribution affinity while the invoking owner is known, not after popup focus returns. */
 export function resolveProjectContentDestination(editor: CartEditor, entry: ProjectContentEntry, invoking: EditorGroupView): EditorGroupView {
@@ -14,13 +38,7 @@ export function resolveProjectContentDestination(editor: CartEditor, entry: Proj
 	search: for (const part of editor.editorParts.mostRecentlyActive) {
 		if (part.operation !== 'none') continue;
 		for (const group of part.mostRecentlyActiveGroups) {
-			const existing = entry.kind === 'scene'
-				? editor.sceneEditor.findResource(group, entry.ownerResource)
-				: entry.kind === 'animation'
-					? editor.animations.findDefinition(group, entry.projectContextId, entry.ownerResource, entry.range, entry.definition.consumer?.file)
-					: entry.kind === 'progression' || entry.kind === 'input'
-						? editor.luaPrograms.findOccurrence(group, entry.ownerResource, entry.kind, entry.range)
-						: editor.behaviorLens.findDefinition(group, entry.ownerResource, entry.kind, entry.range);
+			const existing = findProjectContentEditor(editor, entry, group);
 			if (existing === undefined) continue;
 			if (group === invoking) { destination = group; break search; }
 			destination ??= group;

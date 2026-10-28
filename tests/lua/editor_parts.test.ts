@@ -280,7 +280,7 @@ test('local dirty close preserves an invalid sibling draft and revokes asynchron
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput); assert.equal(f.firstPart.window!.visible, true);
 	const refused = new CodeEditorInput(f.secondInput.workingCopy);
 	let refusedDisposed = false; refused.onWillDispose(() => { refusedDisposed = true; });
-	assert.equal(f.firstGroup.openEditor(refused), false); assert.equal(refusedDisposed, true);
+	assert.ok(f.firstGroup.openEditor(refused) === undefined); assert.equal(refusedDisposed, true);
 	f.firstPart.actionPrompt.close('cancel', false);
 	assert.equal(await closing, false); assert.equal(f.firstPart.retired, false);
 	assert.equal(draft.pending, true); assert.ok(inputFocus.target === draft.field.focusTarget);
@@ -294,7 +294,10 @@ test('local dirty close preserves an invalid sibling draft and revokes asynchron
 	assert.ok(inputFocus.target === f.firstPart.actionPrompt.focusTarget, 'own window chrome belongs to its local decision family');
 	f.key('Escape'); assert.equal(await chromeClose, false);
 	const fresh = new CodeEditorInput(f.secondInput.workingCopy);
-	assert.equal(f.firstGroup.openEditor(fresh, { preserveFocus: true }), true, 'Cancel reopens new admission without reviving old requests');
+	const freshOpening = f.firstGroup.openEditor(fresh, { preserveFocus: true });
+	assert.ok(freshOpening !== undefined, 'Cancel reopens new admission without reviving old requests');
+	assert.equal(freshOpening.activated, false); assert.equal(freshOpening.generation, f.firstGroup.panes.openGeneration);
+	assert.ok(f.firstGroup.panes.activePane?.input === fresh);
 	f.editor.editorParts.clear();
 	let retiredResolved = false;
 	assert.equal(await f.firstGroup.openResolvedEditor(() => { retiredResolved = true; return new CodeEditorInput(f.secondInput.workingCopy); }), undefined);

@@ -2,16 +2,18 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import { copy_rect_bounds, create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot } from '../../../common/models';
 import { COLOR_FOCUS_BORDER } from '../../../common/constants';
+import { extractErrorMessage } from '../../../common/errors';
+import { showEditorMessage } from '../../../common/feedback_state';
 import { isAltDown } from '../../../input/keyboard/key_input';
 import { copyPointerInputSnapshot } from '../../../input/pointer/frame';
 import { api } from '../../../runtime/overlay_api';
 import { drawWorkbenchWindowPlacement } from '../../render/window';
 import { dragScrollSpeed } from '../../ui/drag_scroll';
-import type { EditorTabDragHandler, EditorTabDragSource } from '../../ui/tab/drag';
+import type { EditorTabDragHandler, EditorDropSource } from '../../ui/tab/drag';
 import type { WorkbenchSurface } from '../windows/model';
 import type { WorkbenchSurfaceService } from '../windows/service';
-import type { EditorGroupView } from './editor_group';
-import type { EditorMoveDestination, EditorParts } from './editor_parts';
+import { editorGroupChromeMinimumWidth, editorGroupChromeMinimumHeight, type EditorGroupView } from './editor_group';
+import type { EditorOpenDestination, EditorParts } from './editor_parts';
 
 const SPLIT_EDGE_FRACTION = 1 / 3;
 
@@ -23,12 +25,12 @@ export class EditorDropTarget implements EditorTabDragHandler {
 	private readonly windowBounds = create_rect_bounds();
 	private readonly groupDestination = { kind: 'group' as const, group: null! as EditorGroupView, index: undefined as number | undefined };
 	private readonly splitDestination = { kind: 'split' as const, group: null! as EditorGroupView, direction: 'left' as 'left' | 'right' | 'up' | 'down' };
-	private readonly windowDestination = { kind: 'window' as const, requestedBounds: this.windowBounds };
+	private readonly windowDestination = { kind: 'window' as const, reference: null! as EditorGroupView, requestedBounds: this.windowBounds };
 	private source: EditorGroupView | undefined;
-	private dragSource: EditorTabDragSource | undefined;
+	private dragSource: EditorDropSource | undefined;
 	private snapshot: PointerInputSnapshot | undefined;
-	private intention: EditorMoveDestination | undefined;
-	private destination: EditorMoveDestination | undefined;
+	private intention: EditorOpenDestination | undefined;
+	private destination: EditorOpenDestination | undefined;
 	private insertion = false;
 	private targetGroup: EditorGroupView | undefined;
 	private tabTarget: EditorGroupView | undefined;
@@ -57,13 +59,15 @@ export class EditorDropTarget implements EditorTabDragHandler {
 		});
 	}
 
-	public update(drag: EditorTabDragSource, snapshot: PointerInputSnapshot, now: number, scroll: boolean): void {
-		const source = this.findSource(drag);
-		if (source === undefined) return;
+	public update(drag: EditorDropSource, snapshot: PointerInputSnapshot, now: number, scroll: boolean): void {
+		if (!this.setSource(drag)) return;
+		drag = this.dragSource!;
+		const source = this.source;
 		if (this.snapshot === undefined) this.snapshot = { ...snapshot };
 		else copyPointerInputSnapshot(this.snapshot, snapshot);
 		const retained = this.snapshot;
 		this.resolve(source, drag, retained);
+		if (this.dragSource !== drag) return;
 		if (this.scrollTime === undefined) this.scrollTime = now;
 		if (!scroll) return;
 		const elapsed = (now - this.scrollTime) / 1000;
@@ -82,25 +86,28 @@ export class EditorDropTarget implements EditorTabDragHandler {
 
 	/** All hosts publish their layouts before shared feedback projects the completed frame. */
 	public refresh(): void {
-		const source = this.source, drag = this.dragSource, snapshot = this.snapshot;
-		if (source === undefined || drag === undefined || snapshot === undefined) return;
-		if (this.findSource(drag) === undefined) return;
-		this.resolve(source, drag, snapshot);
+		const drag = this.dragSource, snapshot = this.snapshot;
+		if (drag === undefined || snapshot === undefined || !this.setSource(drag)) return;
+		this.resolve(this.source, drag, snapshot);
 	}
 
 	/** A physical release resolves current coverage again before central retained-input admission. */
-	public drop(drag: EditorTabDragSource, snapshot: PointerInputSnapshot, _now: number): void {
-		const source = this.findSource(drag);
-		if (source === undefined) return;
+	public drop(drag: EditorDropSource, snapshot: PointerInputSnapshot, _now: number): void {
+		if (!this.setSource(drag)) return;
+		drag = this.dragSource!;
+		const source = this.source;
 		this.hitRevision = -1; this.resolved.valid = false;
 		this.resolve(source, drag, snapshot);
+		if (this.dragSource !== drag) return;
 		// The admitted release request survives callback-driven feedback changes during handoff.
-		const destination: EditorMoveDestination | undefined = this.destination === undefined ? undefined
-			: this.destination.kind === 'window' ? { kind: 'window', requestedBounds: { ...this.windowBounds } } : { ...this.destination };
+		const destination: EditorOpenDestination | undefined = this.destination === undefined ? undefined
+			: this.destination.kind === 'window' ? { kind: 'window', reference: this.windowDestination.reference, requestedBounds: { ...this.windowBounds } } : { ...this.destination };
 		this.clear();
 		if (destination !== undefined) {
-			if (drag.kind === 'editor') this.parts.moveEditor(source, drag.input, destination);
-			else this.parts.moveGroup(source, destination);
+			if (drag.kind === 'opening') void this.parts.openAt(drag, destination)
+				.catch(error => showEditorMessage(extractErrorMessage(error), 'error', 4));
+			else if (drag.kind === 'editor') this.parts.moveEditor(source!, drag.input, destination);
+			else this.parts.moveGroup(source!, destination);
 		}
 	}
 
@@ -108,22 +115,29 @@ export class EditorDropTarget implements EditorTabDragHandler {
 		this.source = undefined; this.dragSource = undefined; this.snapshot = undefined; this.destination = undefined; this.intention = undefined;
 		this.setScrollTarget(undefined);
 		this.targetGroup = undefined; this.tabTarget = undefined; this.insertionGroup = undefined;
-		this.groupDestination.group = null!; this.splitDestination.group = null!;
+		this.groupDestination.group = null!; this.splitDestination.group = null!; this.windowDestination.reference = null!;
 		this.scrollTime = undefined; this.hit = null; this.hitRevision = -1; this.resolved.valid = false;
 	}
 
 	public dispose(): void { this.clear(); this.feedback.dispose(); }
 
-	private findSource(drag: EditorTabDragSource): EditorGroupView | undefined {
+	private setSource(drag: EditorDropSource): boolean {
+		if (drag.kind === 'opening') {
+			if (this.dragSource !== drag) { this.clear(); this.dragSource = drag; }
+			const current = drag.isCurrent();
+			if (this.dragSource !== drag) return false;
+			if (!current) { this.clear(); return false; }
+			return true;
+		}
 		const retained = this.dragSource;
-		if (retained?.kind === drag.kind && retained.model === drag.model
+		if (retained !== undefined && retained.kind !== 'opening' && retained.kind === drag.kind && retained.model === drag.model
 			&& (retained.kind === 'group' || drag.kind === 'editor' && retained.input === drag.input)
-			&& this.parts.groupForModel(drag.model) === this.source && (drag.kind === 'group' || drag.model.contains(drag.input))) return this.source;
+			&& this.parts.groupForModel(drag.model) === this.source && (drag.kind === 'group' || drag.model.contains(drag.input))) return true;
 		this.clear();
 		const source = this.parts.groupForModel(drag.model);
-		if (source === undefined || drag.kind === 'editor' && !drag.model.contains(drag.input)) return undefined;
+		if (source === undefined || drag.kind === 'editor' && !drag.model.contains(drag.input)) return false;
 		this.source = source; this.dragSource = drag;
-		return source;
+		return true;
 	}
 
 	private setScrollTarget(group: EditorGroupView | undefined): void {
@@ -133,32 +147,35 @@ export class EditorDropTarget implements EditorTabDragHandler {
 		if (group !== undefined) group.tabStrip.dropTargeted = true;
 	}
 
-	private resolve(source: EditorGroupView, drag: EditorTabDragSource, snapshot: PointerInputSnapshot): void {
+	private resolve(source: EditorGroupView | undefined, drag: EditorDropSource, snapshot: PointerInputSnapshot): void {
 		const cached = this.resolved, target = this.targetGroup;
-		const sourceLayout = this.parts.partForGroup(source).arrangement.layoutRevision;
+		const sourceLayout = source === undefined ? -1 : this.parts.partForGroup(source).arrangement.layoutRevision;
 		const targetLayout = target === undefined || this.parts.groupForSurface(target.surface) !== target ? -1 : this.parts.partForGroup(target).arrangement.layoutRevision;
 		const scroll = target === undefined ? 0 : Math.round(target.tabStrip.scrollbar.getScroll());
 		if (!cached.valid || cached.x !== snapshot.viewportX || cached.y !== snapshot.viewportY || cached.modifiers !== snapshot.modifiers
 			|| cached.inside !== (snapshot.valid && snapshot.insideViewport) || cached.surfaces !== this.surfaces.revision
-			|| cached.sourceModel !== source.model.revision || cached.sourceGeneration !== source.panes.openGeneration || cached.sourceLayout !== sourceLayout
+			|| cached.sourceModel !== (source?.model.revision ?? -1) || cached.sourceGeneration !== (source?.panes.openGeneration ?? -1) || cached.sourceLayout !== sourceLayout
 			|| cached.targetModel !== target?.model.revision || cached.targetGeneration !== target?.panes.openGeneration || cached.targetLayout !== targetLayout
 			|| cached.stripLayout !== target?.tabStrip.layoutState.revision || cached.scroll !== scroll) {
 			this.resolveIntention(source, drag, snapshot);
+			if (this.dragSource !== drag) return;
 			const resolved = this.targetGroup;
 			cached.valid = true; cached.x = snapshot.viewportX; cached.y = snapshot.viewportY; cached.modifiers = snapshot.modifiers;
 			cached.inside = snapshot.valid && snapshot.insideViewport; cached.surfaces = this.surfaces.revision;
-			cached.sourceModel = source.model.revision; cached.sourceGeneration = source.panes.openGeneration; cached.sourceLayout = sourceLayout;
+			cached.sourceModel = source?.model.revision ?? -1; cached.sourceGeneration = source?.panes.openGeneration ?? -1; cached.sourceLayout = sourceLayout;
 			cached.targetModel = resolved?.model.revision; cached.targetGeneration = resolved?.panes.openGeneration;
 			cached.targetLayout = resolved === undefined ? -1 : this.parts.partForGroup(resolved).arrangement.layoutRevision;
 			cached.stripLayout = resolved?.tabStrip.layoutState.revision; cached.scroll = resolved === undefined ? 0 : Math.round(resolved.tabStrip.scrollbar.getScroll());
 		}
-		const admitted = this.intention !== undefined && (drag.kind === 'editor'
-			? this.parts.canMoveEditor(source, drag.input, this.intention) : this.parts.canMoveGroup(source, this.intention));
-		this.destination = admitted ? this.intention : undefined;
+		const intention = this.intention;
+		const admitted = intention !== undefined && (drag.kind === 'opening' ? drag.isCurrent() && this.parts.canOpenAt(intention)
+			: drag.kind === 'editor' ? this.parts.canMoveEditor(source!, drag.input, intention) : this.parts.canMoveGroup(source!, intention));
+		if (this.dragSource !== drag) return;
+		this.destination = admitted ? intention : undefined;
 		this.setScrollTarget(this.destination === undefined ? undefined : this.tabTarget);
 	}
 
-	private resolveIntention(source: EditorGroupView, drag: EditorTabDragSource, snapshot: PointerInputSnapshot): void {
+	private resolveIntention(source: EditorGroupView | undefined, drag: EditorDropSource, snapshot: PointerInputSnapshot): void {
 		this.intention = undefined; this.insertion = false; this.targetGroup = undefined; this.tabTarget = undefined;
 		if (!snapshot.valid || !snapshot.insideViewport) return;
 		const x = snapshot.viewportX, y = snapshot.viewportY;
@@ -179,12 +196,14 @@ export class EditorDropTarget implements EditorTabDragHandler {
 		if (!overTabs && !point_in_rect(x, y, body)) return;
 		if (isAltDown(snapshot)) {
 			this.parts.writeNewDocumentBounds(source, x, y, this.windowBounds);
+			this.windowDestination.reference = target;
 			copy_rect_bounds(this.preview, this.windowBounds);
 			this.intention = this.windowDestination;
 		} else if (overTabs) {
 			if (drag.kind === 'group' && target === source) return;
 			this.groupDestination.group = target;
-			const existing = drag.kind === 'editor' ? target.model.findById(drag.input.id) : undefined;
+			const existing = drag.kind === 'opening' ? drag.findExisting(target) : drag.kind === 'editor' ? target.model.findById(drag.input.id) : undefined;
+			if (this.dragSource !== drag) return;
 			if (target !== source && existing !== undefined) {
 				this.groupDestination.index = undefined;
 				const bounds = tabs.items.peek(target.model.indexOf(existing)).bounds;
@@ -222,15 +241,17 @@ export class EditorDropTarget implements EditorTabDragHandler {
 			const top = (y - bounds.top) / height, bottom = (bounds.bottom - y) / height;
 			const edge = Math.min(left, right, top, bottom);
 			if (edge < SPLIT_EDGE_FRACTION) {
-				if (target === source && (drag.kind === 'group' || source.model.tabs.length === 1)) return;
+				if (target === source && (drag.kind === 'group' || source!.model.tabs.length === 1)) return;
 				this.splitDestination.group = target;
 				this.splitDestination.direction = edge === left ? 'left' : edge === right ? 'right' : edge === top ? 'up' : 'down';
-				const sourcePart = this.parts.partForGroup(source), targetPart = this.parts.partForGroup(target);
+				const sourcePart = source === undefined ? undefined : this.parts.partForGroup(source), targetPart = this.parts.partForGroup(target);
 				if (drag.kind === 'group') {
 					if (!targetPart.arrangement.writeMovePreview(sourcePart === targetPart ? source : undefined, target,
-						this.splitDestination.direction, source.minimumWidth, source.minimumHeight, this.preview)) return;
-				} else targetPart.arrangement.writeSplitPreview(target, this.splitDestination.direction, source.minimumWidth, source.minimumHeight,
-					sourcePart === targetPart && source.model.tabs.length === 1 ? source : undefined, this.preview);
+						this.splitDestination.direction, source!.minimumWidth, source!.minimumHeight, this.preview)) return;
+				} else targetPart.arrangement.writeSplitPreview(target, this.splitDestination.direction,
+					drag.kind === 'opening' ? editorGroupChromeMinimumWidth() : source!.minimumWidth,
+					drag.kind === 'opening' ? editorGroupChromeMinimumHeight() : source!.minimumHeight,
+					sourcePart === targetPart && source!.model.tabs.length === 1 ? source : undefined, this.preview);
 				this.intention = this.splitDestination;
 			} else if (target !== source) {
 				this.groupDestination.group = target; this.groupDestination.index = undefined;

@@ -206,7 +206,7 @@ test('opening lifetime denial runs before input production and never disposes a 
 	f.firstInput.onWillDispose(() => { disposed = true; });
 	assert.equal(await f.firstGroup.openResolvedEditor(() => { reads++; return new CodeEditorInput(f.model); }, { isCurrent: () => false }), undefined);
 	assert.equal(reads, 0); assert.equal(f.firstGroup.panes.openGeneration, generation);
-	assert.equal(f.firstGroup.openEditor(f.firstInput, { isCurrent: () => false }), false);
+	assert.ok(f.firstGroup.openEditor(f.firstInput, { isCurrent: () => false }) === undefined);
 	assert.equal(disposed, false); assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 });
 
@@ -216,7 +216,7 @@ test('direct opening lifetime is rechecked after the actual destination draft be
 	const control = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => { current = false; });
 	t.after(() => control.dispose());
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
-	assert.equal(f.firstGroup.openEditor(candidate, { isCurrent: () => current }), false);
+	assert.ok(f.firstGroup.openEditor(candidate, { isCurrent: () => current }) === undefined);
 	assert.equal(control.pending, false); assert.equal(disposed, 1);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.firstGroup.panes.activePane?.input === f.firstInput);
 });

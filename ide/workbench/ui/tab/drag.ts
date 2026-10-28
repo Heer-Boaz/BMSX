@@ -6,11 +6,14 @@ import { copyPointerInputSnapshot } from '../../../input/pointer/frame';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { EditorTabGroupModel } from './group_model';
 import type { EditorInput } from '../../common/editor_inputs';
+import type { ProspectiveEditorOpenSource } from '../../services/editor/editor_opening';
 
 /** An editor retains its exact input; a group retains its actual live model. */
 export type EditorTabDragSource =
 	| { readonly kind: 'editor'; readonly model: EditorTabGroupModel; readonly input: EditorInput }
 	| { readonly kind: 'group'; readonly model: EditorTabGroupModel };
+
+export type EditorDropSource = EditorTabDragSource | ProspectiveEditorOpenSource;
 
 export type TabDragState = PointerInputSnapshot & {
 	readonly source: EditorTabDragSource;
@@ -22,8 +25,8 @@ export type TabDragState = PointerInputSnapshot & {
 
 /** Workbench admission, targeting and feedback for every group's physical tab gesture. */
 export interface EditorTabDragHandler {
-	update(source: EditorTabDragSource, snapshot: PointerInputSnapshot, now: number, scroll: boolean): void;
-	drop(source: EditorTabDragSource, snapshot: PointerInputSnapshot, now: number): void;
+	update(source: EditorDropSource, snapshot: PointerInputSnapshot, now: number, scroll: boolean): void;
+	drop(source: EditorDropSource, snapshot: PointerInputSnapshot, now: number): void;
 	clear(): void;
 }
 

@@ -131,7 +131,7 @@ not an editable asset schema or an isolated preview contract.
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
 | Hierarchy and Details | Scene's outline/options project authored membership; Actor Lab independently inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations before Studio can offer that kind of hierarchy. |
-| Project content browser | `contrib/resources/panel/files_model.ts` retains project/shared/generated file trees. `content_index.ts` projects recognized Scene, BT, FSM, ActionEffect, progression, input-binding and animation occurrences as file children, using existing source/semantic owners. File activation keeps the registered default editor; declaration activation opens its exact subject in the appropriate tool. | Dragging unopened files/declarations into an editor destination needs a Files-owned row gesture and opening admission, distinct from retained-editor transfer; sizing cannot assume an existing source group. Thumbnail browsing, richer asset-type filters, collections and cross-project migration are separate Studio capabilities. Epic's [Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine) distinguishes these operations from the level viewport. |
+| Project content browser | `contrib/resources/panel/files_model.ts` retains project/shared/generated file trees. `content_index.ts` projects recognized Scene, BT, FSM, ActionEffect, progression, input-binding and animation occurrences as file children, using existing source/semantic owners. File activation keeps the registered default editor; declaration activation opens its exact subject in the appropriate tool. Files-owned single-row drags use shared group/split/floating placement with prospective opening admission, independently of retained-editor transfer. | Multiple selection and batch resource operations, thumbnail browsing, richer asset-type filters, collections and cross-project migration are separate Studio capabilities. Epic's [Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine) distinguishes these operations from the level viewport. |
 | Constructive authoring | Source templates create animation, sprite-animation, ActionEffect, progression, input and AEM resources. Scene and Behavior Lens edit admitted existing declarations and list members, including duplicating written BT children. | Guided creation of Scene, prefab, BT and FSM declarations, adding Scene members/FSM states and inserting BT node kinds from templates or a palette, including into empty branches, are missing Studio operations over existing cartlib domains. These require source-preserving edits and occurrence identity, but need not wait for a spatial viewport or introduce another asset format. |
 | Content lifecycle and dependencies | Resource navigation, new-source creation, file import, source-symbol references and canonical model editing exist. | Rename/move/duplicate/delete and folder operations need workspace file authority plus document, recovery and reference lifetimes. Asset dependencies/used-by and reference repair need domain-aware source relationships, not string replacement or an assumption that Lua symbol references cover asset IDs. These are more basic Studio gaps than collections or cross-project migration. VS Code's [file actions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/files/browser/fileActions.contribution.ts) and Epic's [Reference Viewer](https://dev.epicgames.com/documentation/en-us/unreal-engine/reference-viewer-in-unreal-engine) expose these as distinct operations. |
 | Project/session entry | Project creation, Build Jobs, admitted source contexts and workspace recovery already have owners. | Selecting/opening/replacing a project in the frontend and starting without an execution target remain distinct lifecycle capabilities. Creating a cartridge or building it must not silently substitute for attaching its source workspace. The existing source-admission boundary, not an installed socket, owns that identity. |
@@ -268,6 +268,29 @@ coalesced receivers before changing membership; publication exposes the complete
 source/destination topology and active groups, not a sequence of half-moves.
 Cancel leaves topology and source unchanged. A move does not invoke
 an additional-view factory or serialize/reopen its input.
+
+Files contributes a prospective opening, not a retained editor or group transfer.
+Its source is an exact admitted resource or authored occurrence. Press selects
+the row; release without a drag performs its ordinary opening with the captured
+invoking group, unless a newer foreground interaction has taken over. Crossing the drag
+threshold publishes feedback, without resolving an input or creating a group.
+The same physical drop target supplies tab insertion, center opening, edge split
+and explicit Alt-floating. Unresolved openings use the group chrome's intrinsic
+minimum and the window owner's new-document extent, not another editor's bounds.
+An explicit drop addresses that exact receiver rather than following editor MRU
+affinity. Files resolves the file's registered editor or the declaration's own
+contribution; the placement owner does not classify source syntax.
+
+An accepted drop keeps the captured source authority alive through resolution
+and group admission. The destination owns draft publication, opening generation,
+coalescence, navigation and focus. Resolution precedes publication of a new
+split or floating host. Abandoning an unpublished receiver disposes its own
+construction, not an existing editor. Source retirement, Escape or loss of
+capture cancels the hold; its later release cannot become a click or opening.
+Dropped inputs are kept open. A matching retained receiver preserves its tab
+position; a new input consumes the advertised insertion gap at the tab-model
+owner. Moving retained inputs remains a separate operation over the same target
+geometry.
 
 Moving a leaf within the same part rearranges its existing group instance;
 its group lifetime and pending openings remain valid. Cross-part group transfer
