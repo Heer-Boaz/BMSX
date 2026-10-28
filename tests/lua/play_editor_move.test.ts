@@ -164,6 +164,39 @@ test('Play chrome intent moves independently of guest input and Reset replaces o
 	await f.secondPart.activeGroup.close(input.id); await next.closeOperation; assert.equal(next.closed, true);
 });
 
+test('Play More belongs to its invoking toolbar while another Part retains keyboard focus', async t => {
+	const f = await fixture(t), play = f.editor.play;
+	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 384, bottom: 290 });
+	f.secondPart.window!.model.setRequestedBounds({ left: 400, top: 32, right: 800, bottom: 290 });
+	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, handle = input.handle; await f.ready(handle);
+	const pane = f.firstPart.activeGroup.panes.activePane!;
+	f.secondPart.activeGroup.openEditor(new GameViewInput()); f.update();
+	const foreign = inputFocus.target!, menu = f.editor.contextMenu;
+	assert.ok(foreign === f.secondPart.activeGroup.panes.activePane!.commandTarget);
+	const cycles = handle.session!.target.runtime.machine.scheduler.nowCycles;
+	const pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
+	t.after(() => pointer.release());
+	const more = input.actionBar.items.find(item => item.command === 'play.more')!.bounds;
+	pointer.apply([{ type: 'pointer', x: (more.left + more.right) / 2, y: (more.top + more.bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }]);
+	assert.ok(inputFocus.target === foreign, 'toolbar admission does not replace another Part keyboard focus');
+	pointer.apply([{ type: 'button', button: 'primary', down: false }]);
+	assert.equal(menu.visible, true);
+	assert.ok(menu.returnFocus === foreign, 'invocation ownership does not replace the original keyboard focus return');
+	const popup = f.editor.surfaces.findByScope(menu.pointerScope)!;
+
+	f.editor.editorParts.minimize(f.secondPart); f.update();
+	assert.equal(menu.visible, true, 'minimizing an unrelated keyboard-focus owner cannot retire the Play popup');
+	assert.equal(popup.retired, false);
+	assert.ok(menu.invocationOrigin!.commandContext === pane.commandTarget);
+	assert.ok(popup.lifetimeOwner === f.firstPart.activeGroup.paneSurface, 'the popup belongs to the toolbar pane, not the foreign focused pane');
+	f.editor.editorParts.minimize(f.firstPart); f.update();
+	assert.equal(menu.visible, false, 'withholding the invoking toolbar retires its physical popup');
+	assert.equal(popup.retired, true);
+	assert.equal(handle.session!.target.runtime.machine.scheduler.nowCycles, cycles);
+	assert.equal(handle.closed, false);
+});
+
 test('late Play preparation failure stays on its captured view and never activates an unrelated window', async t => {
 	const f = await fixture(t), play = f.editor.play;
 	const at = SCENE.indexOf("require('game')");

@@ -58,7 +58,8 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		});
 		this.focusTarget.registerCommand('play.more', { isEnabled: () => this.hasInput, run: () => {
 			const bounds = this.input.actionBar.items.find(item => item.command === 'play.more')!.bounds;
-			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['play.context'], commands, { selectFirst: true, commandTarget: this.focusTarget });
+			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['play.context'], commands,
+				{ selectFirst: true, invocationOrigin: this.actions.focusTarget, commandTarget: this.focusTarget });
 		} });
 		this.focusTarget.registerCommand('play.details', { isEnabled: () => this.hasInput, run: () => {
 			this.details.show({ title: 'Play session', items: describePlaySession(this.input.handle),

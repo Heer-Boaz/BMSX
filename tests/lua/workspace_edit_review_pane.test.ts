@@ -4,6 +4,7 @@ import test, { type TestContext } from 'node:test';
 import { setImmediate } from 'node:timers/promises';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { RemoteInput } from '../../hosts/common/input/remote';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
@@ -22,11 +23,15 @@ import { WorkspaceEditReviewPane } from '../../ide/workbench/contrib/edit_review
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
 import { WorkspaceSourceContext } from '../../ide/workbench/services/working_copy/source_context';
+import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
+import { workspaceCanonicalSourceCache } from '../../ide/workspace/cache';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { parseLuaChunk } from './cpu_test_harness';
+import { createActualSourcePanes } from '../helpers/source_panes';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 function fixture(t: TestContext) {
 	const source = `-- retained authoring bytes: λ\n${Array.from({ length: 36 }, (_, i) => `-- captured consumer ${i}`).join('\n')}\nreturn 'before'`;
@@ -134,6 +139,74 @@ test('Source picker admission owns settlement before outgoing focus can publish 
 	f.press('Enter');
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
 	assert.equal(f.editor.editorParts.main.activeGroup.model.activeTab, review);
+});
+
+test('pointer Source keeps the review picker alive when an unrelated focused Part closes its source', async t => {
+	const f = createActualSourcePanes(t), model = f.firstInput.workingCopy;
+	const proposal = new WorkspaceEditProposal('Retained source origin', new WorkspaceSourceContext(editorTextModelService, f.sources.catalog), {
+		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: 0, text: '-- proposed\n' }] }]]),
+	});
+	const review = new WorkspaceEditReviewInput(proposal, { summary: 'Captured source', items: [{ label: 'Declaration', value: 'alpha',
+		description: 'The captured authoring source', location: { model, version: model.version, offset: 6 } }] });
+	f.firstGroup.openEditor(review); f.update(); f.second.focus();
+	const foreign = inputFocus.target!, pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
+	t.after(() => pointer.release());
+	const source = review.actionBar.items.find(item => item.command === 'workspaceEditReview.source')!;
+	assert.equal(source.visible && !source.overflowed, true);
+	pointer.apply([{ type: 'pointer', x: (source.bounds.left + source.bounds.right) / 2, y: (source.bounds.top + source.bounds.bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }]);
+	assert.ok(inputFocus.target === foreign, 'pointer admission does not replace the unrelated keyboard focus');
+	pointer.apply([{ type: 'button', button: 'primary', down: false }]); f.update();
+	const picker = f.firstPart.quickInput;
+	assert.equal(picker.visible, true);
+	const tab = f.secondGroup.tabStrip.layoutState.items.peek(f.secondGroup.model.indexOf(f.secondInput));
+	pointer.apply([{ type: 'pointer', x: (tab.bounds.left + tab.bounds.right) / 2, y: (tab.bounds.top + tab.bounds.bottom) / 2 }]); f.update();
+	pointer.apply([{ type: 'pointer', x: (tab.closeBounds.left + tab.closeBounds.right) / 2, y: (tab.closeBounds.top + tab.closeBounds.bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+	await setImmediate(); f.update();
+	assert.equal(f.secondGroup.model.tabs.includes(f.secondInput), false);
+	assert.ok(f.firstGroup.model.activeTab === review && proposal.state === 'pending');
+	assert.equal(picker.visible, true, 'the review picker does not borrow the foreign source attachment lifetime');
+	f.firstPart.focus(); f.key('Enter'); await setImmediate(); f.update();
+	assert.equal(f.firstGroup.model.activeTab, f.firstInput);
+	assert.equal(f.first.code.view.cursorRow, 0); assert.equal(f.first.code.view.cursorColumn, 6);
+	assert.equal(model.buffer.getText(), f.source); assert.equal(model.canUndo, false);
+	assert.equal(proposal.state, 'pending');
+});
+
+test('delayed physical Apply creates and reveals source without taking a newer Part keyboard focus', async t => {
+	const write = Promise.withResolvers<void>(), files = new MemoryWorkspaceFiles();
+	t.after(() => write.resolve());
+	await openWorkspaceRecords(files); t.after(closeWorkspaceRecords);
+	const originalWrite = files.write.bind(files);
+	t.mock.method(files, 'write', async (path, record, overwrite) => { await write.promise; await originalWrite(path, record, overwrite); });
+	const f = createActualSourcePanes(t), path = 'created_from_review.lua', contents = 'return 42\n';
+	t.after(() => workspaceCanonicalSourceCache.delete(path));
+	const proposal = new WorkspaceEditProposal('Create authored source', new WorkspaceSourceContext(editorTextModelService, f.sources.catalog), {
+		kind: 'create', request: { contextId: f.sources.systemContextId, relativePath: path, contents }, catalog: f.sources.catalog, clock: f.host.clock,
+	});
+	const review = new WorkspaceEditReviewInput(proposal);
+	f.firstGroup.openEditor(review); f.update();
+	const cycles = f.host.runtime.machine.scheduler.nowCycles;
+	const pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
+	t.after(() => pointer.release());
+	const apply = review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!;
+	pointer.apply([{ type: 'pointer', x: (apply.bounds.left + apply.bounds.right) / 2, y: (apply.bounds.top + apply.bounds.bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+	assert.equal(proposal.state, 'applying'); assert.equal(files.records.has(path), false);
+	const bounds = f.second.code.geometry.presentedBounds;
+	pointer.apply([{ type: 'pointer', x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 },
+		{ type: 'button', button: 'primary', down: true }, { type: 'button', button: 'primary', down: false }]);
+	const foreign = f.second.commandTarget;
+	assert.ok(inputFocus.target === foreign);
+	write.resolve(); await setImmediate(); f.update();
+	assert.equal(proposal.state, 'applied'); assert.equal(files.records.get(path)!.contents, contents);
+	const created = f.firstGroup.model.activeTab!;
+	assert.ok(created.kind === 'code_editor' && created.workingCopy.resource.path === path);
+	assert.equal(created.workingCopy.buffer.getText(), contents); assert.equal(created.workingCopy.dirty, false);
+	assert.ok(inputFocus.target === foreign, 'completion reveals the created source without taking the newer keyboard focus');
+	assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.firstGroup.model.tabs.includes(review));
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
 test('Discard settles retained evidence without editing and closing that tab does not close its canonical working copy', t => {

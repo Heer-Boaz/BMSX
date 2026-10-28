@@ -21,6 +21,7 @@ import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { WorkspaceEditReviewInput } from './editor_input';
 import { layoutEditReviewRows } from './projection';
 import type { EditorGroupView } from '../../services/editor/editor_group';
+import { EditorOpeningRequest } from '../../services/editor/editor_opening';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -117,17 +118,24 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 			this.sourcePicker = lifetime;
 			lifetime.add({ dispose: () => { if (this.sourcePicker === lifetime) this.sourcePicker = undefined; } });
 			lifetime.add({ dispose: input.proposal.onDidSettle(() => this.quickInput.hide()) });
-		});
+		}, { invocationOrigin: this.focusTarget });
 	}
 	private reveal(models: readonly EditorTextModel[]): void {
 		for (const model of models) this.group.openEditor(new CodeEditorInput(model));
 	}
 	private async apply(input: WorkspaceEditReviewInput): Promise<void> {
+		const opening = input.proposal.kind === 'create' ? EditorOpeningRequest.begin(this.group, {
+			isCurrent: () => this.hasInput && this.input === input,
+		}) : undefined;
+		if (input.proposal.kind === 'create' && opening === undefined) return;
 		try {
-			const models = await input.proposal.apply();
-			if (this.hasInput && this.input === input) this.reveal(models);
+			const result = input.proposal.apply();
+			if (result instanceof Promise) opening!.admit(new CodeEditorInput((await result)[0]));
+			else if (this.hasInput && this.input === input) this.reveal(result);
 		} catch (error) {
 			showEditorMessage(error instanceof Error ? error.message : String(error), 'warning', 4);
+		} finally {
+			opening?.dispose();
 		}
 	}
 	public override update(): void {
