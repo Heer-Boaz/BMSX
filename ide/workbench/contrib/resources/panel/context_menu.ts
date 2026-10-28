@@ -8,7 +8,7 @@ import { WORKBENCH_TEXT_EDITOR_ID } from '../../code_editor/editor_input';
 import type { ResourcePanelController } from './controller';
 import type { ProjectContentIndex } from './content_index';
 import type { FileElement } from './files_model';
-import { openProjectContent, openProjectContentSource, resolveProjectContentDestination } from './open_actions';
+import { editProjectContentInMain, openProjectContent, openProjectContentSource, resolveProjectContentDestination } from './open_actions';
 
 /** Files owns its captured tree subject; shared popup code owns the interaction. */
 export class ResourcePanelContextMenu {
@@ -38,9 +38,12 @@ export class ResourcePanelContextMenu {
 			&& (element.kind === 'definition' ? content.isCurrent(element.content)
 				: resource !== undefined ? catalog.resolveResource(resource) === resource : catalog.contexts.has(element.contextId));
 		const base = WORKBENCH_MENUS[resource === undefined ? 'resources.disclosure.context' : hasSource ? 'resources.open.context' : 'resources.resource.context'];
-		const items = resource !== undefined && node.expandable ? [...base, ...WORKBENCH_MENUS['resources.disclosure.context']] : base;
+		const opening = element.kind === 'definition' && element.content.kind === 'scene'
+			? [...base, { type: 'command' as const, command: 'resources.editInMain' as const }] : base;
+		const items = resource !== undefined && node.expandable ? [...opening, ...WORKBENCH_MENUS['resources.disclosure.context']] : opening;
 		editor.contextMenu.show(x, y, items, {
 			isEnabled: command => current() && (command === 'resources.open' ? resource !== undefined
+				: command === 'resources.editInMain' ? element.kind === 'definition' && element.content.kind === 'scene'
 				: command === 'resources.openToSide' ? resource !== undefined && sideCurrent()
 				: command === 'resources.source' ? hasSource : command === 'resources.sourceToSide' ? hasSource && sideCurrent()
 				: command === 'resources.disclosure' && node.expandable),
@@ -49,6 +52,10 @@ export class ResourcePanelContextMenu {
 				// A newer foreground interaction wins; it never supplies this action's destination.
 				if (!origin.hasFocus || !current()) return;
 				switch (command) {
+					case 'resources.editInMain': {
+						if (element.kind === 'definition' && element.content.kind === 'scene') void editProjectContentInMain(editor, content, element.content, origin);
+						break;
+					}
 					case 'resources.open': case 'resources.openToSide': {
 						const target = command === 'resources.open' ? destination : sideCurrent() ? editor.editorParts.sideGroup(invoking) : undefined;
 						if (target === undefined || !origin.hasFocus || !current()) return;

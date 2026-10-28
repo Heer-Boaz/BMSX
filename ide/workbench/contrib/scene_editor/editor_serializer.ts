@@ -14,7 +14,7 @@ export class SceneEditorInputSerializer implements EditorInputSerializer<SceneEd
 		private readonly controller: SceneEditorController) {}
 
 	public serialize(input: SceneEditorInput): string {
-		const state: SerializedSceneEditorInput = { source: captureTextFileModel(input.workingCopy), view: captureSceneEditorView(input) };
+		const state: SerializedSceneEditorInput = { source: captureTextFileModel(input.workingCopy), view: captureSceneEditorView(input.view) };
 		return JSON.stringify(state);
 	}
 
@@ -22,9 +22,9 @@ export class SceneEditorInputSerializer implements EditorInputSerializer<SceneEd
 		const state: SerializedSceneEditorInput = JSON.parse(value);
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
 		const input = new SceneEditorInput(model, this.controller.documents, this.controller.createView);
-		this.controller.refresh(input);
-		if (sameSource) restoreSceneEditorView(input, state.view);
-		else selectSceneOutlineRow(input, -1);
+		input.view.refresh();
+		if (sameSource) restoreSceneEditorView(input.view, state.view);
+		else selectSceneOutlineRow(input.view, -1);
 		return input;
 	}
 }

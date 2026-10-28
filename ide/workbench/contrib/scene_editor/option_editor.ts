@@ -2,7 +2,7 @@ import { ValueInput } from '../../../editor/ui/inline/value_input';
 import type { FocusCommand, InputFocusTarget } from '../../../input/focus';
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
-import type { SceneEditorInput } from './editor_input';
+import type { SceneEditorViewState } from './view_state';
 import type { SceneOptionProperty } from './option_properties';
 
 export type SceneEditorSectionCommands = { readonly outline: FocusCommand; readonly details: FocusCommand };
@@ -11,15 +11,15 @@ export type SceneEditorSectionCommands = { readonly outline: FocusCommand; reado
 export class SceneOptionEditor {
 	public readonly controls: ValueInput<LuaFieldValueEdit>[] = [];
 	private readonly unbindFocus: (() => void)[] = [];
-	private input: SceneEditorInput | undefined;
+	private input: SceneEditorViewState | undefined;
 
 	public constructor(private readonly parent: InputFocusTarget,
 		private readonly beforeCommit: () => void, private readonly reveal: (property: SceneOptionProperty, index: number) => void,
 		private readonly sectionCommands: SceneEditorSectionCommands) {}
 
-	public bind(input: SceneEditorInput): void {
+	public bind(input: SceneEditorViewState): void {
 		this.input = input;
-		const model = input.workingCopy;
+		const model = input.authoring.workingCopy;
 		const locations = input.authoring.document!.analysis.chunk.locations;
 		let retiring: InputFocusTarget | undefined;
 		while (this.controls.length > input.optionProperties.length) {
@@ -41,14 +41,14 @@ export class SceneOptionEditor {
 		retiring?.release();
 	}
 
-	public updateControlAdmission(input: SceneEditorInput): void {
+	public updateControlAdmission(input: SceneEditorViewState): void {
 		const bounds = input.details.bounds;
 		const available = input.layout.mode !== 'outline' && input.outline.selectionIndex >= 0
 			&& bounds.left < bounds.right && bounds.top < bounds.bottom;
 		let retiring: InputFocusTarget | undefined;
 		for (let index = 0; index < this.controls.length; index += 1) {
 			const control = this.controls[index];
-			control.field.readOnly = input.workingCopy.readOnly || !input.optionProperties[index].editable;
+			control.field.readOnly = input.authoring.workingCopy.readOnly || !input.optionProperties[index].editable;
 			if (control.field.readOnly || !available) {
 				control.cancel();
 				if (control.field.focusTarget.hasFocus) retiring = control.field.focusTarget;
@@ -72,8 +72,8 @@ export class SceneOptionEditor {
 			options: { allowSpace: true, singleLine: true },
 			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
 			format: value => value.edit.text,
-			parse: text => parseLuaFieldValueEdit(this.input!.workingCopy.buffer, this.input!.authoring.document!.analysis.chunk.locations, this.input!.optionProperties[index].field, text),
-		}, value => { this.input!.workingCopy.pushEditOperations([value.edit]); }, this.beforeCommit);
+			parse: text => parseLuaFieldValueEdit(this.input!.authoring.workingCopy.buffer, this.input!.authoring.document!.analysis.chunk.locations, this.input!.optionProperties[index].field, text),
+		}, value => { this.input!.authoring.workingCopy.pushEditOperations([value.edit]); }, this.beforeCommit);
 		control.field.focusTarget.commandContext = this.parent.commandContext;
 		control.field.focusTarget.canFocus = () => this.input !== undefined && this.input.layout.mode !== 'outline' && this.input.outline.selectionIndex >= 0
 			&& this.input.details.bounds.left < this.input.details.bounds.right && this.input.details.bounds.top < this.input.details.bounds.bottom && !control.field.readOnly;

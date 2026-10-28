@@ -181,3 +181,79 @@ for (const change of ['selection', 'source', 'provider'] as const) test(`admissi
 	assert.equal(context.removeSelectedMember(), false, 'the older mutation cannot acquire a new target during admission');
 	assert.equal(f.model.buffer.getText(), admittedSource, 'notification effects are retained without applying stale source coordinates');
 });
+
+function primaryFixture(t: TestContext) {
+	const f = fixture(t), context = new SceneAuthoringContext(f.model, f.documents,
+		{ document: f.document, sourceVersion: f.model.version, scene: f.document.scenes[1] });
+	t.after(() => context.dispose());
+	return { ...f, context };
+}
+
+test('a primary Scene context retains one exact declaration independently of document and member selection', t => {
+	const f = primaryFixture(t), context = f.context, scene = f.document.scenes[1];
+	assert.equal(context.availability, 'available');
+	assert.deepEqual(context.scenes, [scene]);
+	assert.equal(context.subject, scene);
+	assert.equal(context.selection, undefined);
+	assert.equal(context.select(f.document, f.model.version, { kind: 'scene', scene: f.document.scenes[0] }), false);
+	assert.equal(context.select(f.document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
+	f.first.select(f.document, f.model.version, { kind: 'scene', scene: f.document.scenes[0] });
+	assert.equal(context.subject, scene, 'an independent document selection is not primary subject selection');
+	assert.equal(context.removeSelectedMember(), true);
+	context.refresh();
+	assert.equal(context.selection, undefined);
+	assert.equal(context.subject, context.document!.scenes[1]);
+	assert.equal(context.availability, 'available', 'member retirement cannot retire the containing authored subject');
+	assert.deepEqual(context.getWorkingCopies(), [f.model]);
+});
+
+test('an exact primary declaration follows source movement but never adopts a same-named replacement or Undo', t => {
+	const f = primaryFixture(t), context = f.context;
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);
+	context.refresh();
+	assert.equal(context.subject, context.document!.scenes[1]);
+	assert.equal(context.scenes.length, 1);
+	const source = f.model.buffer.getText(), range = context.subject!.range;
+	const start = f.model.buffer.offsetAt(range.start.line - 1, range.start.column - 1);
+	const end = f.model.buffer.offsetAt(range.end.line - 1, range.end.column);
+	f.model.pushEditOperations([{ offset: start, deleteLength: end - start, text: source.slice(start, end) }]);
+	context.refresh();
+	assert.equal(context.availability, 'unavailable');
+	assert.equal(context.subject, undefined);
+	assert.equal(context.scenes.length, 0);
+	assert.equal(context.document!.scenes.length, 2, 'the shared projection is neither filtered nor reconstructed');
+	f.model.undo(); context.refresh();
+	assert.equal(context.availability, 'unavailable');
+	assert.equal(context.subject, undefined, 'source history does not revive retired primary authority');
+	assert.equal(context.select(context.document!, f.model.version, { kind: 'scene', scene: context.document!.scenes[1] }), false);
+	assert.deepEqual(context.getWorkingCopies(), [f.model]);
+	const location = context.getSourceLocation();
+	assert.equal(location!.model, f.model);
+	assert.equal(location!.selection, undefined, 'unavailable authored subject can still navigate the surviving canonical file');
+});
+
+test('primary admission rejects a stale declaration proof even when its semantic document was reused', t => {
+	const f = fixture(t), document = f.document, sourceVersion = f.model.version;
+	// Equal-byte full replacement retains the semantic proof but retires source occurrences.
+	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: SOURCE }]);
+	assert.equal(f.documents.get(f.model), document, 'semantic proof is reused for equal source bytes');
+	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion, scene: document.scenes[1] });
+	t.after(() => context.dispose());
+	assert.equal(context.availability, 'unavailable');
+	assert.equal(context.scenes.length, 0);
+	assert.equal(context.selection, undefined);
+});
+
+test('context source navigation resolves its own canonical source generation without a document control', t => {
+	const f = primaryFixture(t), context = f.context;
+	const location = context.getSourceLocation()!;
+	assert.equal(location.model, f.model);
+	assert.equal(location.selection!.row, f.document.scenes[1].range.start.line - 1);
+	const scene = context.subject!;
+	context.select(context.document!, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- prefix\n' }]);
+	const next = context.getSourceLocation()!;
+	assert.equal(next.modelVersion, f.model.version);
+	assert.equal(next.selection!.row, context.document!.analysis.chunk.locations.range(context.subject!.objects[0].field.span).start.line - 1);
+	assert.equal(f.first.selection, undefined);
+});

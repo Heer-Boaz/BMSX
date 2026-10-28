@@ -65,7 +65,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	const sourceSelection = captureCodeEditorView(sourceInput);
 	const sourceGroup = ide.editor.editorParts.activeGroup;
 	const scene = new SceneEditorInput(model, ide.editor.sceneEditor.documents);
-	ide.editor.sceneEditor.refresh(scene); selectSceneOutlineRow(scene, 1);
+	scene.view.refresh(); selectSceneOutlineRow(scene.view, 1);
 	ide.editor.editorParts.main.activeGroup.openEditor(scene); await test.frame();
 	for (const [index, presentation] of [[0, 'graph'], [1, 'graph'], [2, 'state-graph']] as const) {
 		const input = ide.editor.behaviorLens.createInput(model, presentation);
@@ -109,7 +109,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	check(JSON.stringify(captureCodeEditorView(sourceInput)) === JSON.stringify(sourceSelection), 'session: opening visual panes preserves code cursor and selection');
 	check(model.buffer.getText() === SOURCE, 'session: creating views never changes the canonical source');
 	return { parts: ide.editor.editorParts.serialize(ide.editor.editorInputSerializers), source: SOURCE, savedSource,
-		scene: captureSceneEditorView(scene), fsm: captureBehaviorLensView(fsm) };
+		scene: captureSceneEditorView(scene.view), fsm: captureBehaviorLensView(fsm) };
 }
 
 async function restore(test: StudioFixture, expected: SessionExpectation): Promise<void> {
@@ -148,11 +148,11 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	const scene = ide.editor.editorParts.main.activeGroup.model.tabs.find(input => input.kind === 'scene_editor')!;
 	if (scene.kind !== 'scene_editor') throw new Error('session: scene input required');
 	await test.clickTab(scene.id);
-	check(JSON.stringify(captureSceneEditorView(scene)) === JSON.stringify(expected.scene), 'session: cold scene layout preserves selected source member');
+	check(JSON.stringify(captureSceneEditorView(scene.view)) === JSON.stringify(expected.scene), 'session: cold scene layout preserves selected source member');
 	// Pagehide observes accepted model state, not the current inline draft.
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('session: actual SceneEditorPane required');
-	const field = pane.controls[0].field;
+	const field = pane.control.controls[0].field;
 	field.focusTarget.focus(); setFieldText(field, '-', true); // invalid draft, not an accepted source edit
 	const version = model.version;
 	persistWorkspaceSessionLocally();

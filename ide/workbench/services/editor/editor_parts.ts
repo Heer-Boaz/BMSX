@@ -9,7 +9,7 @@ import type { WorkbenchSurfaceService } from '../windows/service';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
 import type { EditorPaneContributions } from './editor_panes';
 import { WorkbenchWindowModel, WINDOW_HEADER_VERTICAL_PADDING, WINDOW_RESIZE_MARGIN, type WindowPlacement } from '../../ui/window/model';
-import { EditorCloseController } from './editor_close';
+import { EditorCloseController, type WorkingCopyConsumer } from './editor_close';
 import type { TextFileSaveService } from '../working_copy/text_file_save';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { ActionPrompt } from '../../contrib/modal/action_prompt';
@@ -20,11 +20,12 @@ import type { EditorInput } from '../../common/editor_inputs';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
 import type { EditorInputSerializers } from './editor_serialization';
 import type { SerializedDocumentEditorPart, SerializedEditorParts } from './editor_parts_serialization';
-import { EditorPart } from './editor_part';
+import { EditorPart, type MainEditorPresentation } from './editor_part';
 import { serializeEditorPart } from './editor_part_serialization';
 import type { EditorGroupDirection } from './group_arrangement';
 import { EditorOpeningRequest, type PreparedEditorInput, type ProspectiveEditorOpenSource } from './editor_opening';
 import { WorkbenchMainAreaLayout } from '../../common/main_area_layout';
+import { TextEditorInput } from '../../common/editor_input';
 
 export type EditorMoveDestination =
 	| { readonly kind: 'group'; readonly group: EditorGroupView; readonly index?: number }
@@ -39,6 +40,7 @@ export type EditorPartsOptions = {
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly owner: WorkbenchSurface;
 	readonly scope: InputFocusScope;
+	readonly mainPresentation: MainEditorPresentation;
 	readonly workArea: Readonly<RectBounds>;
 	readonly commands: EditorCommandRunner;
 	readonly contextMenu: ContextMenuController;
@@ -49,6 +51,7 @@ export type EditorPartsOptions = {
 	readonly prompt: ActionPrompt;
 	readonly focusReturn: InputFocusTarget;
 	layoutMain(): void;
+	workingCopyConsumers?(): Iterable<WorkingCopyConsumer>;
 };
 
 export type EditorDocumentOptions = {
@@ -88,13 +91,18 @@ export class EditorParts {
 	private get defaultDocumentHeight(): number { return Math.round((this.options.workArea.bottom - this.options.workArea.top) * 0.86); }
 
 	public constructor(private readonly options: EditorPartsOptions) {
-		this.closeController = new EditorCloseController(this.groupList, options.saves, options.prompt, options.models);
+		this.closeController = new EditorCloseController(() => this.workingCopyConsumers(), options.saves, options.prompt, options.models);
 		this.dropTarget = new EditorDropTarget(this, options.surfaces, options.owner, options.workArea);
 		this.main = new EditorPart({ ...options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'main', mainArea: this.mainArea, initialOperation: 'none', presented: true, onDidActivate: part => this.activate(part),
 			onDidChangeGroupMembership: part => this.syncGroupMembership(part),
 			onDidChange: () => this.changed(), requestClose: part => { void this.close(part); } });
 		this.activePart = this.main;
 		this.register(this.main);
+	}
+
+	private *workingCopyConsumers(): Iterable<WorkingCopyConsumer> {
+		for (const group of this.groupList) for (const input of group.model.tabs) if (input instanceof TextEditorInput) yield input;
+		if (this.options.workingCopyConsumers !== undefined) yield* this.options.workingCopyConsumers();
 	}
 
 	public onDidChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }

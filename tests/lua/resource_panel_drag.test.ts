@@ -168,7 +168,7 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} declaration drop pres
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- tracked prefix\n' }]); f.update();
 	const text = model.buffer.getText(), version = model.version;
 	pointer(f, target, 'release'); assert.equal(f.open.mock.callCount(), 1); const input = await f.open.mock.calls[0].result;
-	assert.ok(input?.kind === 'scene_editor' && input.workingCopy === model && input.authoring.selectionRange.start === entry.range.start && input.authoring.selectionRange.end === entry.range.end);
+	assert.ok(input?.kind === 'scene_editor' && input.workingCopy === model && input.view.authoring.selectionRange.start === entry.range.start && input.view.authoring.selectionRange.end === entry.range.end);
 	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version); assert.equal(model.canUndo, true);
 });
 

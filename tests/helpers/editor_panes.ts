@@ -38,6 +38,7 @@ import type { CloseEditors } from '../../ide/workbench/services/editor/editor_cl
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
+import { MainWorkspace } from '../../ide/workbench/main_workspace';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { drawEditorText } from '../../ide/editor/render/text_renderer';
@@ -161,13 +162,17 @@ export function createTestEditorParts(
 ): EditorParts {
 	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces, workArea);
 	const contextMenu = presentation.contextMenu;
+	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
+		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main));
+	main.layout(presentation.workArea);
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
+		mainPresentation: main,
 		commands, contextMenu, renderContext: presentation.renderContext, contributions: contributions ?? createTestEditorPaneContributions(commands, contextMenu), ...createTestEditorCloseDependencies(t, presentation),
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
-		layoutMain: () => parts.main.layout(presentation.workArea),
+		layoutMain: () => { main.layout(presentation.workArea); parts.main.layout(main.documentBounds); },
 	});
-	t.after(() => { parts.dispose(); contextMenu.dispose(); surfaces.dispose(); });
+	t.after(() => { parts.dispose(); main.dispose(); contextMenu.dispose(); surfaces.dispose(); });
 	return parts;
 }
 

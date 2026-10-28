@@ -6,16 +6,17 @@ import { editorKeybindingStrokeLabel, resolveEditorCommandKeybinding, type Edito
 import { consumeIdeKey } from './key_input';
 import { KeyModifier, type KeyInputEvent } from '../../../hosts/common/input/text';
 
-/** Local capability presence owns dispatch even while disabled; it cannot fall through. */
+/** One application command route owns draft settlement and the captured local subject. */
 function runKeybinding(binding: EditorCommandKeybinding, event: KeyInputEvent, commands: EditorCommandRunner | undefined, target: InputFocusTarget | null): void {
 	consumeIdeKey(event.code, event);
-	const command = target?.getCommand(binding.command);
-	if (command !== undefined) {
-		// Presence owns the binding, even when local history is disabled.
-		if (command.isEnabled()) command.run();
-	} else {
-		commands!.execute(binding.command, target);
+	if (commands !== undefined) {
+		commands.execute(binding.command, target);
+		return;
 	}
+	// Without an application owner, resolution has admitted the actual local capability.
+	const command = target!.getCommand(binding.command)!;
+	const invocation = command.capture === undefined ? command : command.capture();
+	if (invocation !== undefined && invocation.isEnabled()) invocation.run();
 }
 
 const CHORD_TIMEOUT_MS = 5000;

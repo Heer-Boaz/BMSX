@@ -48,6 +48,7 @@ import { updateFullWidthWorkbenchLayout } from '../../ide/workbench/common/layou
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import { createTestGroupPresentation, createTestEditorPaneContributions, createTestEditorCloseDependencies } from '../helpers/editor_panes';
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
+import { MainWorkspace } from '../../ide/workbench/main_workspace';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
@@ -97,7 +98,10 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	const presentation = createTestGroupPresentation(), surfaces = presentation.surfaces;
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 	const commands = { isEnabled: () => false, execute() {} };
+	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
+		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main)); main.layout(presentation.workArea);
 	const parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
+		mainPresentation: main,
 		commands, contextMenu, renderContext: presentation.renderContext,
 		contributions: createTestEditorPaneContributions(commands, contextMenu), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		...createTestEditorCloseDependencies(t, presentation),

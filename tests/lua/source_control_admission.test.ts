@@ -58,8 +58,8 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 	t.after(async () => {
 		const pane = editor.editorParts.main.activeGroup.panes.activePane;
 		if (pane instanceof SceneEditorPane) {
-			for (const control of pane.controls) control.cancel();
-			for (const control of pane.options.controls) control.cancel();
+			for (const control of pane.control.controls) control.cancel();
+			for (const control of pane.control.options.controls) control.cancel();
 		}
 		inputFocus.cancelInput();
 		problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null);
@@ -83,7 +83,7 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		const input = editor.editorParts.main.activeGroup.model.activeTab!, pane = editor.editorParts.main.activeGroup.panes.activePane!;
 		assert.ok(input.kind === 'scene_editor' && pane instanceof SceneEditorPane);
 		press('Home'); press('ArrowDown'); press('Enter');
-		assert.equal(input.outline.rows[input.outline.selectionIndex].element.kind, 'member');
+		assert.equal(input.view.outline.rows[input.view.outline.selectionIndex].element.kind, 'member');
 		return { input, pane };
 	};
 	return { editor, model, press, unchanged, scene };
@@ -91,7 +91,7 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 
 for (const kind of ['position', 'option'] as const) test(`Scene ${kind} draft loses source authority immediately on readonly metadata publication`, t => {
 	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { pane } = f.scene();
-	const control = kind === 'position' ? pane.controls[0] : pane.options.controls[0];
+	const control = kind === 'position' ? pane.control.controls[0] : pane.control.options.controls[0];
 	control.field.focusTarget.focus(); assert.ok(inputFocus.admittedTarget === control.field.focusTarget);
 	assert.equal(f.editor.textTarget!.replaceText(0, control.field.text.length, '9'), true);
 	assert.equal(control.pending, true); f.unchanged();
@@ -104,12 +104,12 @@ for (const kind of ['position', 'option'] as const) test(`Scene ${kind} draft lo
 });
 
 test('covering the Scene detail client retires its draft without publishing through blur', t => {
-	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { input, pane } = f.scene(), control = pane.controls[0];
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { input, pane } = f.scene(), control = pane.control.controls[0];
 	control.field.focusTarget.focus();
 	assert.equal(f.editor.textTarget!.replaceText(0, control.field.text.length, '9'), true);
 	assert.equal(control.pending, true);
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
-	assert.equal(input.details.height, 0, 'the actual Problems layout must cover the source client');
+	assert.equal(input.view.details.height, 0, 'the actual Problems layout must cover the source client');
 	assert.ok(inputFocus.admittedTarget !== control.field.focusTarget);
 	assert.equal(control.pending, false); f.unchanged();
 	f.press('Enter'); f.press('Digit8'); f.unchanged();
@@ -122,10 +122,10 @@ for (const target of ['outline', 'actions'] as const) test(`a fully covered Scen
 	f.press('Escape');
 	if (target === 'actions') f.press('Tab', KeyModifier.shift);
 	assert.ok(inputFocus.admittedTarget !== null);
-	assert.equal(input.actionBar.hasFocus, target === 'actions');
+	assert.equal(input.view.actionBar.hasFocus, target === 'actions');
 	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
 	assert.ok(inputFocus.admittedTarget === null, 'no covered Scene control retains keyboard admission');
-	assert.equal(input.actionBar.hasFocus, false);
+	assert.equal(input.view.actionBar.hasFocus, false);
 	f.press('Delete'); f.unchanged();
 	problemsPanel.hide(); f.editor.update(0);
 	f.press('Delete'); f.unchanged();

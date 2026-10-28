@@ -6,10 +6,10 @@ import type { ValueInput } from '../../../editor/ui/inline/value_input';
 import { drawValueInput } from '../../../editor/ui/inline/value_input_render';
 import { api } from '../../../runtime/overlay_api';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
-import type { SceneEditorInput } from './editor_input';
+import type { SceneEditorViewState } from './view_state';
 import type { LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 
-export function drawSceneEditor(input: SceneEditorInput, controls: readonly ValueInput<number>[], optionControls: readonly ValueInput<LuaFieldValueEdit>[], outlineFocused: boolean, detailsFocused: boolean): void {
+export function drawSceneEditor(input: SceneEditorViewState, controls: readonly ValueInput<number>[], optionControls: readonly ValueInput<LuaFieldValueEdit>[], outlineFocused: boolean, detailsFocused: boolean): void {
 	const { layout, outline } = input;
 	const font = editorViewState.font.renderFont();
 	const color = constants.COLOR_RESOURCE_VIEWER_TEXT;
@@ -23,7 +23,7 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 	if (layout.mode !== 'outline') api.blit_text_inline_with_font(layout.detailsTitle, layout.detailsLeft + 4, layout.top + rowHeight + 2, 0, color, font);
 	if (layout.mode !== 'details') {
 		api.pushClipRect(outline.layout.contentLeft, outline.layout.contentTop, outline.layout.contentRight, outline.layout.contentBottom);
-		if (outline.roots.length === 0) api.blit_text_inline_with_font('NO DIRECT SCENE DEFINITIONS', outline.layout.contentLeft, outline.layout.contentTop + 2, 0, color, font);
+		if (outline.roots.length === 0) api.blit_text_inline_with_font(input.authoring.availability === 'unavailable' ? 'UNAVAILABLE' : 'NO DIRECT SCENE DEFINITIONS', outline.layout.contentLeft, outline.layout.contentTop + 2, 0, color, font);
 		const firstRow = outline.scroll | 0;
 		const end = Math.min(outline.rows.length, firstRow + outline.layout.visibleRowCount);
 		for (let index = firstRow; index < end; index += 1) {
@@ -54,7 +54,7 @@ export function drawSceneEditor(input: SceneEditorInput, controls: readonly Valu
 				const property = input.properties[index];
 				if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
 				api.blit_text_inline_with_font(property.label, bounds.left + 4, property.bounds.top + 2, 0, color, font);
-				if (property.value !== null && !input.workingCopy.readOnly) drawValueInput(controls[index], property.bounds);
+				if (property.value !== null && !input.authoring.workingCopy.readOnly) drawValueInput(controls[index], property.bounds);
 				else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_DESCRIPTION_TEXT, font);
 			}
 			for (let index = 0; index < optionControls.length; index += 1) {

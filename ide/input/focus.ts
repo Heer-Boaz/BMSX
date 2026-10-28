@@ -25,10 +25,15 @@ export type InputRuntimeContext = {
 	readonly interaction: InputInteraction;
 };
 
-export type FocusCommand = {
+export type FocusCommandInvocation = {
 	isEnabled(): boolean;
-	isChecked?(): boolean;
 	run(editorContext?: InputFocusTarget): void;
+};
+
+export type FocusCommand = FocusCommandInvocation & {
+	isChecked?(): boolean;
+	/** Capture this invocation's actual subject before draft publication can select another. */
+	capture?(): FocusCommandInvocation | undefined;
 };
 
 /** A concrete control's unsubmitted value, never a pane-wide success stub. */
@@ -340,9 +345,9 @@ export class InputFocusService {
 
 	public executeCommand(command: EditorCommandId, target: InputFocusTarget | null = this.targetValue): void {
 		const implementation = this.getCommand(command, target);
-		if (implementation !== undefined && implementation.isEnabled()) {
-			implementation.run();
-		}
+		if (implementation === undefined) return;
+		const invocation = implementation.capture === undefined ? implementation : implementation.capture();
+		if (invocation !== undefined && invocation.isEnabled()) invocation.run();
 	}
 
 	public handleKeyboard(input: KeyInputEvent): void {

@@ -8,7 +8,7 @@ import type { IdeCommandController } from '../../../commands/controller';
 import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorFont } from '../../../editor/ui/view/font';
-import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -25,6 +25,8 @@ import { WorkbenchSplitControl } from '../../ui/split_control';
 import { GameInputControl } from './game_input';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
+import type { WorkbenchSurface } from '../../services/windows/model';
+import type { WorkbenchSurfaceService } from '../../services/windows/service';
 
 /** A workbench part displaying the existing scanout, never another editor or runtime. */
 export class GamePanel {
@@ -46,12 +48,14 @@ export class GamePanel {
 	private minimumWidth = 0;
 	private minimumHeight = 0;
 	private headerBottom = 0;
+	private readonly surface: WorkbenchSurface;
 
 	public constructor(private readonly part: EditorPart, private readonly area: WorkbenchMainAreaLayout, private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController, recipient: InputRecipient, presenter: VideoPresenter,
-		public readonly focusScope: InputFocusScope) {
+		public readonly focusScope: InputFocusScope, surfaces: WorkbenchSurfaceService) {
 		this.focusTarget = inputFocus.createTarget(null, focusScope);
-		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
+		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
+			new InputFocusScope(Symbol('game companion sash'), focusScope));
 		this.gameInput = new GameInputControl(this.focusTarget, recipient, { kind: 'direct', presenter }, commands.transport);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focusTarget.focus());
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => {
@@ -68,6 +72,24 @@ export class GamePanel {
 		this.focusTarget.canFocus = () => this.visible;
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.visible,
 			run: () => this.openContextMenu(this.area.companionBounds.left, this.area.companionBounds.top, true) });
+		this.surface = surfaces.attach({ role: 'content', lifetimeOwner: part.surface, presentationParent: part.surface,
+			captureScope: focusScope.surfaceScope, isVisible: () => this.visible,
+			getBounds: () => this.area.companionBounds, getClip: () => this.area.availableBounds, draw: () => this.draw(),
+			handlePointer: snapshot => { this.handlePointer(snapshot); },
+			handleWheel: event => {
+				const focused = inputFocus.admittedTarget, guest = focused?.guestInput;
+				return guest === undefined || focused!.scope.surfaceScope !== focusScope.surfaceScope
+					|| !point_in_rect(event.viewportX, event.viewportY, guest.bounds);
+			},
+			onRetire: () => { pointerCapture.cancelScope(focusScope.surfaceScope); this.detach(); },
+		});
+		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: part.surface,
+			captureScope: this.sash.focusTarget.scope.surfaceScope, isVisible: () => this.visible,
+			getBounds: () => this.area.sashBounds, getClip: () => this.area.availableBounds,
+			draw: () => drawWorkbenchSplit(this.area.split, this.sash.hovered || this.sash.focusTarget.hasFocus),
+			handlePointer: snapshot => { this.sash.handlePointer(snapshot); }, handleWheel: () => true,
+			onRetire: () => { pointerCapture.cancelScope(this.sash.focusTarget.scope.surfaceScope); this.sash.clearInput(); },
+		});
 	}
 
 	public toggle(): void { if (this.enabled) this.close(); else this.area.enabled = true; }
@@ -91,7 +113,7 @@ export class GamePanel {
 		if (ownsFocus) this.part.activeGroup.panes.activePane?.focus();
 	}
 	public dispose(): void {
-		this.detach(); this.gameInput.dispose(); this.sash.dispose(); this.actions.dispose(); this.unbindKeyboard();
+		this.surface.dispose(); this.gameInput.dispose(); this.sash.dispose(); this.actions.dispose(); this.unbindKeyboard();
 	}
 
 	/** The view supplies its own font-dependent requirements; its parent allocates both clients. */
@@ -145,7 +167,6 @@ export class GamePanel {
 		renderWorkbenchActionBar(this.actionBar, font, colors.COLOR_STATUS_TEXT, colors.COLOR_HEADER_BUTTON_TEXT_DISABLED);
 		api.drawFrame(this.frame.left, this.frame.top, this.frame.right, this.frame.bottom);
 		this.gameInput.draw();
-		drawWorkbenchSplit(this.area.split, this.sash.hovered || this.sash.focusTarget.hasFocus);
 	}
 
 	public handlePointer(snapshot: PointerSnapshot): boolean {
@@ -156,7 +177,7 @@ export class GamePanel {
 			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, false);
 			return true;
 		}
-		if (this.sash.handlePointer(snapshot) || this.actions.handlePointer(snapshot)) {
+		if (this.actions.handlePointer(snapshot)) {
 			return true;
 		}
 		if (!inside) return false;

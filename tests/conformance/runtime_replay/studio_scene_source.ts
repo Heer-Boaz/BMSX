@@ -51,17 +51,17 @@ export async function openSceneEditor(test: StudioFixture): Promise<SceneEditorI
 }
 
 export async function selectSceneRow(test: StudioFixture, input: SceneEditorInput, index: number): Promise<void> {
-	const row = input.outline.rows[index];
+	const row = input.view.outline.rows[index];
 	check(row !== undefined, 'scene: selection requires an actual authored row');
-	const layout = input.outline.layout;
-	const top = layout.contentTop + (index - input.outline.scroll) * layout.rowHeight;
+	const layout = input.view.outline.layout;
+	const top = layout.contentTop + (index - input.view.outline.scroll) * layout.rowHeight;
 	await test.click({ left: layout.contentLeft, right: layout.contentRight, top, bottom: top + layout.rowHeight });
-	check(input.outline.rows[input.outline.selectionIndex] === row, 'scene: pointer selection addresses the requested authored row');
+	check(input.view.outline.rows[input.view.outline.selectionIndex] === row, 'scene: pointer selection addresses the requested authored row');
 }
 
 export async function selectMember(test: StudioFixture, input: SceneEditorInput, index: number, sceneIndex = 0): Promise<void> {
-	const member = input.outline.roots[sceneIndex].children[index];
-	await selectSceneRow(test, input, input.outline.rows.indexOf(member));
+	const member = input.view.outline.roots[sceneIndex].children[index];
+	await selectSceneRow(test, input, input.view.outline.rows.indexOf(member));
 }
 
 /** Field drafts, history and same-kind pane reuse over an independent source fixture. */
@@ -72,15 +72,15 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('scene: actual field controls required');
-	const x = pane.controls[0], property = scene.properties[0];
-	const range = scene.authoring.document!.analysis.chunk.locations.range(property.field!.value.span);
+	const x = pane.control.controls[0], property = scene.view.properties[0];
+	const range = scene.view.authoring.document!.analysis.chunk.locations.range(property.field!.value.span);
 	const start = model.buffer.offsetAt(range.start.line - 1, range.start.column - 1);
 	const end = model.buffer.offsetAt(range.end.line - 1, range.end.column);
 	const grouped = '-( --[[source-owned anchor]]\n\t0)';
 	model.pushEditOperations([{ offset: start, deleteLength: end - start, text: grouped }]);
 	await frame();
 	const authored = model.buffer.getText();
-	await click(scene.properties[0].bounds);
+	await click(scene.view.properties[0].bounds);
 	await press('Digit1'); await press('Digit7');
 	check(x.pending && model.buffer.getText() === authored, 'scene: a field draft is not yet a canonical source edit');
 	await press('ControlLeft', 'KeyZ');
@@ -94,11 +94,11 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === authored, 'scene: document Undo restores the accepted expression in one step');
 	await press('ControlLeft', 'KeyY');
 	check(model.buffer.getText() === expected, 'scene: document Redo uses the same canonical history');
-	await click(scene.properties[0].bounds); await press('Minus'); await press('Enter');
+	await click(scene.view.properties[0].bounds); await press('Minus'); await press('Enter');
 	check(x.pending && x.field.focusTarget.hasFocus && model.buffer.getText() === expected, 'scene: invalid acceptance retains the actual draft without a source write');
 	await press('Escape');
-	await click(scene.properties[0].bounds); await press('Digit9');
-	await click(scene.actionBar.items.find(item => item.command === 'editor.source')!.bounds);
+	await click(scene.view.properties[0].bounds); await press('Digit9');
+	await click(scene.view.actionBar.items.find(item => item.command === 'editor.source')!.bounds);
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor'
 		&& test.harness.getActiveEditorDocument().model === model, 'scene: Source opens the exact canonical document after accepting its departing field');
 	check(model.buffer.getText() === expected.replace('\t17)', '\t09)'), 'scene: Source admission accepts only the selected member value');
@@ -109,7 +109,7 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), readonlyResource);
 	const readonlyScene = await openSceneEditor(test), readonlyModel = readonlyScene.workingCopy;
 	await selectMember(test, readonlyScene, 2);
-	check(pane.controls.every(control => control.field.readOnly), 'scene: read-only attachment revokes previous writable controls');
+	check(pane.control.controls.every(control => control.field.readOnly), 'scene: read-only attachment revokes previous writable controls');
 	for (const command of ['sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown'] as const)
 		check(!ide.editor.commands.isEnabled(command), 'scene: read-only membership rejects structural mutations');
 	await press('Tab'); await press('Digit7');

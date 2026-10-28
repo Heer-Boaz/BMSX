@@ -40,13 +40,15 @@ primary subject. All document editor kinds use the same opening, tab, split and
 placement operations. Floating is explicit. Home can be opened or closed in
 those groups without changing the primary context or project attachment.
 
-The existing frontend has a permanent `EditorParts.main` and real split groups,
-but that part is an ordinary tab host. Files is a toggleable shell panel that
-can also present command results; Scene hierarchy and Details belong to a
-Scene document input. There is no separate retained primary authored context
-or main-workspace composition owner. The optional Game companion displays
-existing runtime scanout and depends on the active Main editor's layout
-capability. None of these owners alone implements the target diagram.
+The frontend's `MainWorkspace` composes a retained primary authored client and
+the permanent `EditorParts.main` document arrangement in one presentation
+family. An explicit Scene declaration action supplies the first primary client;
+its hierarchy and Details use the same Scene controls as independent documents,
+with a separate work context. The optional Game companion remains nested with
+the documents and displays existing runtime scanout. Files is still a toggleable
+shell panel that can also present command results. Primary-context restoration,
+navigation destinations and permanent project browsing remain separate gaps in
+the target diagram; document-group persistence does not supply them.
 
 The existing Scene tool is a source-backed outline/property editor. Its Lua
 resource may contain several scene declarations. Neither the running game frame
@@ -158,11 +160,11 @@ not an editable asset schema or an isolated preview contract.
 
 | Workflow | Existing BMSX owners | Missing capability or boundary |
 | --- | --- | --- |
-| Main workspace and document editors | `services/editor/editor_parts.ts`, `editor_part.ts` and `group_arrangement.ts` compose real split groups, group-aware opening, retained-input moves and local sessions over shared documents; `editor_drop_target.ts` shares editor and whole-group insertion, split drops and explicit canvas floating through retained-input admission. | The permanent Main tab host does not supply the primary authored context or persistent composition of content, primary work, contextual hierarchy/Details, secondary editors and output/tools. These target owners must use the existing group/window machinery. Native host windows remain a separate host boundary. |
+| Main workspace and document editors | `main_workspace.ts` owns the permanent presentation family and primary/document allocation, with an explicitly selected Scene context as its first authored client. `services/editor/editor_parts.ts`, `editor_part.ts` and `group_arrangement.ts` compose real split groups, group-aware opening, retained-input moves and local sessions over shared documents; `editor_drop_target.ts` shares editor and whole-group insertion, split drops and explicit canvas floating through retained-input admission. | Primary-context recovery and navigation destinations, persistent project browsing and output/tool activity composition must complete the workspace contract without another group/window registry. Native host windows remain a separate host boundary. |
 | Window navigation and additional views | The Window menu exposes main-workspace activation, an MRU window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping uses the shared placement/drag/keyboard contract below without moving editors or their inputs. Editor docking uses the group-transfer contract below; native host-window integration is separate. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
-| Hierarchy and Details | Scene's document-local outline/options project authored membership; Actor Lab independently inspects runtime actors/components. | Main needs context-bound hierarchy/Details independent of secondary document selections. Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations. |
+| Hierarchy and Details | Scene outline/options controls project authored membership in independent documents and over Main's exact primary context. Actor Lab separately inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations. Other primary domains need their own source-backed hierarchy and editing capabilities, not a global document-selection alias. |
 | Project content browser | `contrib/resources/panel/files_model.ts` retains project/shared/generated file trees. `content_index.ts` projects recognized Scene, BT, FSM, ActionEffect, progression, input-binding and animation occurrences as file children, using existing source/semantic owners. File/declaration activation opens its default/exact document editor; Files drags use shared group/split/floating placement. | Persistent project browsing must remain distinct from the panel's command-results mode and from explicitly selecting a primary authored subject. Multiple selection, batch operations, thumbnails, richer filters, collections and cross-project migration are separate capabilities. Epic's [Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine) distinguishes these operations from the level viewport. |
 | Constructive authoring | Source templates create animation, sprite-animation, ActionEffect, progression, input and AEM resources. Scene and Behavior Lens edit admitted existing declarations and list members, including duplicating written BT children. | Guided creation of Scene, prefab, BT and FSM declarations, adding Scene members/FSM states and inserting BT node kinds from templates or a palette, including into empty branches, are missing Studio operations over existing cartlib domains. These require source-preserving edits and occurrence identity, but need not wait for a spatial viewport or introduce another asset format. |
 | Content lifecycle and dependencies | Resource navigation, new-source creation, file import, source-symbol references and canonical model editing exist. | Rename/move/duplicate/delete and folder operations need workspace file authority plus document, recovery and reference lifetimes. Asset dependencies/used-by and reference repair need domain-aware source relationships, not string replacement or an assumption that Lua symbol references cover asset IDs. These are more basic Studio gaps than collections or cross-project migration. VS Code's [file actions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/files/browser/fileActions.contribution.ts) and Epic's [Reference Viewer](https://dev.epicgames.com/documentation/en-us/unreal-engine/reference-viewer-in-unreal-engine) expose these as distinct operations. |
@@ -1163,6 +1165,12 @@ consumers. Existing source inputs expose `getWorkingCopies()`; an independent
 primary context participates directly, not through a hidden editor input.
 Closing an editor window applies that operation to its groups' retained
 contexts; replacing/clearing the primary subject applies it to that context.
+A prepared incoming context retains source correspondence for its request.
+Its working copies participate in that replacement's release decision, so
+switching between declarations of the same dirty document does not discard it.
+Until admission, the candidate is not a surviving authoring consumer for an
+unrelated document close. Cancelling the request therefore cannot strand dirty
+source whose final admitted editor was allowed to close without a decision.
 One dirty-close decision is required per working copy whose final retained
 authoring consumer would retire. Save/Discard/Cancel is presented through the
 existing prompt UI and executed through working-copy/recovery owners before
@@ -1186,14 +1194,13 @@ Save/close completion does not take focus from an unrelated active part. Focus
 return belongs to the still-admitted invoking context, not to a stale global
 active-pane pointer.
 
-`EditorCloseController` already owns document last-view decisions, composite
-working copies and re-admission after awaited work. The target close boundary
-must account for the real primary-context consumer alongside actual group
-membership. Closing the last secondary tab must not discard a model still
-edited in Main; replacing Main must not discard a model retained by a document.
-This extends working-copy close ownership, not a second close registry or a
-dummy group/input. Part-local prompt/session admission extends the existing
-prompt presentation rather than replacing its policy.
+`EditorCloseController` owns document last-view decisions and primary-context
+release, composite working copies and re-admission after awaited work. It derives
+surviving authoring consumers from actual group membership and Main's admitted
+context. Closing the last secondary tab cannot discard a model still edited in
+Main; replacing Main cannot discard a model retained by a document. There is no
+second close registry or dummy group/input. Part-local prompt/session admission
+uses the existing prompt presentation and its focus policy.
 
 Minimization or temporary covering retains views, working copies and reading
 positions while revoking unavailable input. Pending field drafts follow their

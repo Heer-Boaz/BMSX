@@ -9,9 +9,6 @@ export function handleEditorChromePointerDispatch(
 	snapshot: PointerSnapshot,
 	justPressed: boolean,
 ): boolean {
-	if (editor.gamePanel.handlePointer(snapshot)) {
-		return true;
-	}
 	if (!snapshot.valid) return true;
 	if (point_in_rect(snapshot.viewportX, snapshot.viewportY, getWorkbenchConnectionBounds())) {
 		if (justPressed) editor.commands.execute('server.connection');

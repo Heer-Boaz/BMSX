@@ -66,8 +66,9 @@ Quick Input and decision dialogs. `group_arrangement.ts` owns the retained split
 tree, hard and reading minimum extents, overflow viewport, constrained drop
 previews and temporary group maximization. Both constraint tiers use the same
 tree; an optional companion must fit the presented arrangement's reading
-budget, not only its active group. `common/main_area_layout.ts` owns allocation
-between Main's primary arrangement and companion, including the shared sash.
+budget, not only its active group. `common/main_area_layout.ts` owns the nested
+allocation between Main's document arrangement and optional Game companion,
+including their shared sash.
 It does not resize the physical viewport or encode allocation as a chrome inset.
 Each `EditorGroupView` owns its tabs, panes, content/timeline geometry and input
 scope. Pane contributions measure retained inputs with the supplied font without
@@ -106,8 +107,8 @@ sash lanes. Outer window/popup placement retains the reserved shell extent;
 Main clipping does not retire independently promoted surfaces. Logical surface
 lifetime and physical input admission are distinct. Workspace Open Editors
 projects every actual input/group/part from membership, while tab overflow remains group-local. Owned inspectors stay
-in their window/modal presentation family. Status consumes the actual active
-group rather than a background Main pane. Shared window models retain
+in their window/modal presentation family. Status consumes the actual primary
+client or document control context rather than a background Main pane. Shared window models retain
 normal requested intent separately from normal/snapped/maximized arrangement
 and independently minimized visibility. Window gesture drafts are presentation,
 not persisted placement; only a completed drop publishes new intent.
@@ -202,10 +203,21 @@ address an exact input alongside their concrete control origin; popup projection
 does not change group selection to manufacture that subject.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
+`workbench/main_workspace.ts` owns Main's permanent presentation family and the
+allocation between a retained primary authored client and the document region.
+`EditorParts.main` is its document child; the Game companion is nested with that
+child, not painted or routed through shell chrome. Parent reveal precedes child
+focus admission when the composition overflows. Main is unbound until an explicit
+contribution action supplies a primary subject. Ordinary document navigation does
+not replace it. Hiding Studio detaches its controls, not its retained work context.
 Scene source documents are generation-cached at `contrib/scene_editor/source_documents.ts`
 and shared with project-content discovery. `SceneAuthoringContext` retains source
 correspondence, semantic selection and member editing independently of outline
-rows and document placement; each independent Scene input owns its own context.
+rows and document placement. A primary context scopes one exact declaration;
+independent Scene inputs retain their own contexts over shared source models.
+`SceneEditorViewState` retains presentation and `SceneEditorControl` owns concrete
+focus, fields, gestures and transients. A document pane adapts that control to a
+group; `ScenePrimaryClient` attaches it directly to Main without an editor input.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
 An input's optional fresh-view capability belongs to its contribution. It creates
@@ -227,9 +239,13 @@ Play inputs own exact physical handles and admitted transport bindings. A
 handle replacement retires old control authority before publishing its new
 subject; moving the view does not close that target. Scenario result/run owners
 likewise remain independent of their pane and opening destination.
-`EditorCloseController` admits user closes across the frontend's groups, including
-composite working copies and last-view Save/Discard/Cancel decisions. It rechecks
-canonical state and surviving views after awaited decisions or writes.
+`EditorCloseController` shares Save/Discard/Cancel admission between document
+close and retained-context release. Surviving working-copy consumers derive from
+actual group inputs and Main's admitted context, not a reference-count registry.
+A prepared replacement participates only in its own release decision; it does
+not suppress an unrelated document's final-consumer decision before admission.
+The close owner rechecks canonical state and consumers after awaited decisions or
+writes; final view/context retirement belongs to the admitted composition owner.
 `TextFileSaveService` owns accepted writes and their captured source snapshots;
 it does not build or install assets. Explicit execution operations own those
 changes and retain their selected target/image through asynchronous work.
@@ -281,6 +297,12 @@ or mutable contribution-registration lifecycle.
 view or physical target happens to be active. Each frontend owns its central
 keybinding controller and pending chord lifetime. Binding metadata supplies
 resolution and shortcut presentation; pane handlers do not own chord state.
+Keyboard commands use the admitted application runner; isolated controls without
+one execute only their own capabilities. Native field commands and semantic
+source commands remain distinct. A source command can use its explicit client
+context without borrowing the active document group. Contribution-owned command
+capture retains invocation subject and control lifetime before draft publication;
+UI enablement does not construct those invocations.
 
 ## Workbench Quick Input
 

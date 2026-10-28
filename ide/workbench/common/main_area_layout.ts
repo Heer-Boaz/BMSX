@@ -1,5 +1,5 @@
 import { clear_rect_bounds, copy_rect_bounds, create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
-import { WorkbenchSplitView } from '../ui/split_view';
+import { WorkbenchSplitView, WORKBENCH_SPLIT_SIZE } from '../ui/split_view';
 
 export const WORKBENCH_MAIN_AREA_GAP = 4;
 
@@ -8,6 +8,7 @@ export class WorkbenchMainAreaLayout {
 	public readonly availableBounds = create_rect_bounds();
 	public readonly primaryBounds = create_rect_bounds();
 	public readonly companionBounds = create_rect_bounds();
+	public readonly sashBounds = create_rect_bounds();
 	public readonly split = new WorkbenchSplitView(0.58);
 	public enabled = false;
 	public visible = false;
@@ -37,9 +38,12 @@ export class WorkbenchMainAreaLayout {
 			this.split.minimumFirstSize = primaryMinimumWidth! + WORKBENCH_MAIN_AREA_GAP / 2;
 			this.split.minimumSecondSize = this.companionMinimumWidth + WORKBENCH_MAIN_AREA_GAP / 2;
 			this.split.layout(available.left, available.top, available.right, available.bottom);
+			write_rect_bounds(this.sashBounds, this.split.position - WORKBENCH_SPLIT_SIZE / 2, available.top,
+				this.split.position + WORKBENCH_SPLIT_SIZE / 2, available.bottom);
 		} else {
 			changed = changed || companion.left !== 0 || companion.top !== 0 || companion.right !== 0 || companion.bottom !== 0;
 			clear_rect_bounds(companion);
+			clear_rect_bounds(this.sashBounds);
 		}
 		if (changed) this.revision++;
 		return changed;

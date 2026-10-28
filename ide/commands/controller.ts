@@ -105,6 +105,28 @@ export class IdeCommandController {
 		if (originGroup === null) return;
 		const originPart = this.editor.editorParts.partForTarget(invocationTarget);
 		if (originPart === null) return;
+		let implementation = input === undefined ? target?.getCommand(command) : undefined;
+		if (implementation === undefined && input === undefined && SOURCE_COMMANDS.has(command)
+			&& invocationTarget?.commandContext !== target) implementation = invocationTarget?.commandContext.getCommand(command);
+		if (implementation !== undefined) {
+			const invocation = implementation.capture === undefined ? implementation : implementation.capture();
+			if (invocation === undefined) return;
+			// A concrete widget owns its draft even when it is not an editor-group
+			// child. Resolving the later active group must not choose this authority.
+			const scope = originGroup?.focusScope ?? invocationTarget?.commandContext.scope;
+			const attachment = originGroup?.panes.openGeneration;
+			if (SOURCE_COMMANDS.has(command)) {
+				const focused = inputFocus.target;
+				const edit = focused !== null && scope?.contains(focused.scope) ? focused.edit : undefined;
+				if (edit !== undefined) {
+					if (!edit.commit() || attachment !== originGroup?.panes.openGeneration) return;
+					if (inputFocus.target !== null && !scope!.contains(inputFocus.target.scope)) return;
+				}
+			}
+			if (commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration) return;
+			if (invocation.isEnabled()) invocation.run(originGroup?.focusTarget);
+			return;
+		}
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return;
 		const part = this.editor.editorParts.partForGroup(group);
@@ -125,11 +147,6 @@ export class IdeCommandController {
 		}
 		if (commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration
 			|| input !== undefined && !group.model.contains(input)) return;
-		const implementation = input === undefined ? target?.getCommand(command) : undefined;
-		if (implementation !== undefined) {
-			if (implementation.isEnabled()) implementation.run(group.focusTarget);
-			return;
-		}
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
 			case 'editor.source': case 'editor.sourceToSide': {
@@ -141,6 +158,8 @@ export class IdeCommandController {
 			case 'window.restoreMinimized': showOpenWindows(this.editor.editorParts, this.editor.quickInput, true); return;
 			case 'window.showAll': showOpenWindows(this.editor.editorParts, this.editor.quickInput); return;
 			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
+			case 'workspace.focusPrimary': this.editor.mainWorkspace.focusPrimary(); return;
+			case 'workspace.clearPrimary': void this.editor.mainWorkspace.clearPrimary(this.editor.editorParts.closeController, target); return;
 			case 'window.newEditor': this.editor.editorParts.createDocument().focus(); return;
 			case 'group.close': void this.editor.editorParts.closeGroup(group, target); return;
 			case 'group.move':
@@ -426,14 +445,16 @@ export class IdeCommandController {
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(focus);
 		if (originPart === null) return false;
+		let implementation = input === undefined ? focus?.getCommand(command) : undefined;
+		if (implementation === undefined && input === undefined && SOURCE_COMMANDS.has(command)
+			&& focus?.commandContext !== focus) implementation = focus?.commandContext.getCommand(command);
+		if (implementation !== undefined) return implementation.isEnabled();
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return false;
 		const part = this.editor.editorParts.partForGroup(group);
 		const selected = this.runTargets.selected;
 		const local = focus?.scope.runtimeOwner?.runtime?.interaction;
 		const transport = local === undefined ? selected?.transport : local.transport;
-		const implementation = input === undefined ? focus?.getCommand(command) : undefined;
-		if (implementation !== undefined) return implementation.isEnabled();
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
 			case 'editor.source': case 'editor.sourceToSide': {
@@ -441,6 +462,7 @@ export class IdeCommandController {
 				return group.openingAdmitted && pane !== null && pane.input === editor && pane.getSourceLocation !== undefined;
 			}
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
+			case 'workspace.focusPrimary': case 'workspace.clearPrimary': return this.editor.mainWorkspace.primary !== undefined;
 			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
 			case 'group.close': return this.editor.editorParts.canCloseGroup(group);
 			case 'group.move': return this.editor.editorParts.canMoveGroup(group, { kind: 'window' })

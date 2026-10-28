@@ -46,7 +46,7 @@ export async function runStudio2025Scenes(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const reopened = await openScene(test, 'dialogue', 4);
 	await selectMember(test, reopened, 1);
-	check(reopened.properties[1].value === 104, 'saved text placement survives gameplay and reopening');
+	check(reopened.view.properties[1].value === 104, 'saved text placement survives gameplay and reopening');
 	console.info('STUDIO: 2025 dialogue/combat/transition scene authoring, save, reboot and playback PASS');
 	return { hostFrames: test.observations.hostFrames, textY: 104, monsterX: 216 };
 }

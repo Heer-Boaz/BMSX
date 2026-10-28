@@ -4,7 +4,7 @@ import { DisposableStore } from '../../../common/lifecycle';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import { findEditorGroup, type EditorGroupView } from './editor_group';
-import { inputFocus, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { TextEditorInput } from '../../common/editor_input';
 import type { EditorInput } from '../../common/editor_inputs';
 import { sourceTabDescription } from '../../ui/tab/titles';
@@ -15,12 +15,26 @@ import type { TextFileSaveService } from '../working_copy/text_file_save';
 export type EditorCloseTarget = { readonly group: EditorGroupView; readonly input: EditorInput };
 export type CloseEditors = (targets: readonly EditorCloseTarget[], origin?: InputFocusTarget | null, prompt?: ActionPrompt) => Promise<boolean>;
 
+export interface WorkingCopyConsumer { getWorkingCopies(): readonly EditorTextModel[] }
+
+/** A real retained context is retired by its composition owner inside final admission. */
+export type WorkingCopyReleaseTarget = {
+	readonly consumer: WorkingCopyConsumer;
+	/** Incoming retention belongs to this replacement, not globally admitted UI membership. */
+	readonly replacement?: WorkingCopyConsumer;
+	readonly scope: InputFocusScope;
+	isCurrent(): boolean;
+	retire(): void;
+};
+
 type DiscardIntent = { readonly version: number; readonly readOnly: boolean };
 const TRANSFER = Symbol('editor input transfer');
 
 type CloseOperation = {
 	readonly targets: readonly EditorCloseTarget[];
 	readonly inputs: ReadonlySet<EditorInput>;
+	readonly consumers: ReadonlySet<WorkingCopyConsumer>;
+	readonly release: WorkingCopyReleaseTarget | undefined;
 	readonly origin: InputFocusTarget | null;
 	readonly decisionUI: ActionPrompt;
 	readonly lifetime: DisposableStore;
@@ -32,12 +46,12 @@ type CloseOperation = {
 
 /** Workspace close admission owns decisions and writes; groups own the final view retirement. */
 export class EditorCloseController {
-	private readonly pending = new Map<EditorInput, CloseOperation | typeof TRANSFER>();
+	private readonly pending = new Map<EditorInput | WorkingCopyConsumer, CloseOperation | typeof TRANSFER>();
 	private readonly operations = new Set<CloseOperation>();
 	private disposed = false;
 	private readonly unbindWorkspace: () => void;
 
-	public constructor(private readonly groups: readonly EditorGroupView[],
+	public constructor(private readonly getConsumers: () => Iterable<WorkingCopyConsumer>,
 		private readonly saves: TextFileSaveService, private readonly prompt: ActionPrompt, models: EditorTextModelService) {
 		this.unbindWorkspace = models.onWillClear(() => {
 			for (const operation of this.operations) this.cancel(operation);
@@ -62,12 +76,14 @@ export class EditorCloseController {
 		if (this.disposed) return Promise.resolve(false);
 		const distinct: EditorCloseTarget[] = [];
 		const inputs = new Set<EditorInput>();
+		const consumers = new Set<WorkingCopyConsumer>();
 		const waiting = new Set<CloseOperation>();
 		for (const target of targets) {
 			if (target.group.model.findById(target.input.id) !== target.input || !target.input.closable) return Promise.resolve(false);
 			if (inputs.has(target.input)) continue;
 			inputs.add(target.input);
 			distinct.push(target);
+			if (target.input instanceof TextEditorInput) consumers.add(target.input);
 			const pending = this.pending.get(target.input);
 			if (pending === TRANSFER) return Promise.resolve(false);
 			if (pending !== undefined) waiting.add(pending);
@@ -82,15 +98,41 @@ export class EditorCloseController {
 				return this.close(distinct.filter(target => target.group.model.findById(target.input.id) === target.input), origin, decisionUI);
 			});
 		}
-		const operation: CloseOperation = { targets: distinct, inputs, origin, decisionUI,
+		const operation: CloseOperation = { targets: distinct, inputs, consumers, release: undefined, origin, decisionUI,
 			lifetime: new DisposableStore(), discards: new Map(), result: Promise.withResolvers<boolean>(),
 			cancelled: false, prompt: undefined };
-		this.operations.add(operation);
 		for (const target of distinct) {
-			this.pending.set(target.input, operation);
 			operation.lifetime.add({ dispose: target.group.onWillDispose(() => this.cancel(operation)) });
 			operation.lifetime.add({ dispose: target.input.onWillDispose(() => this.cancel(operation)) });
 		}
+		return this.start(operation);
+	};
+
+	/** Replacing or clearing a retained context uses the same final-consumer decision loop as tab close. */
+	public release(target: WorkingCopyReleaseTarget, origin: InputFocusTarget | null = inputFocus.target,
+		decisionUI: ActionPrompt = this.prompt): Promise<boolean> {
+		if (this.disposed || !target.isCurrent()) return Promise.resolve(false);
+		const pending = this.pending.get(target.consumer);
+		if (pending === TRANSFER) return Promise.resolve(false);
+		if (pending !== undefined) return pending.result.promise;
+		const operation: CloseOperation = { targets: [], inputs: new Set(), consumers: new Set([target.consumer]),
+			release: target, origin, decisionUI, lifetime: new DisposableStore(), discards: new Map(),
+			result: Promise.withResolvers<boolean>(), cancelled: false, prompt: undefined };
+		return this.start(operation);
+	}
+
+	/** A newer composition request revokes the old decision without waiting for its prompt or Save. */
+	public cancelRelease(consumer: WorkingCopyConsumer): void {
+		const operation = this.pending.get(consumer);
+		if (operation === undefined || operation === TRANSFER || operation.release === undefined) return;
+		this.pending.delete(consumer);
+		this.cancel(operation);
+	}
+
+	private start(operation: CloseOperation): Promise<boolean> {
+		this.operations.add(operation);
+		for (const input of operation.inputs) this.pending.set(input, operation);
+		if (operation.release !== undefined) this.pending.set(operation.release.consumer, operation);
 		void this.performClose(operation).then(closed => {
 			this.finish(operation);
 			operation.result.resolve(closed);
@@ -99,7 +141,7 @@ export class EditorCloseController {
 			operation.result.reject(error);
 		});
 		return operation.result.promise;
-	};
+	}
 
 	public dispose(): void {
 		this.disposed = true;
@@ -110,20 +152,21 @@ export class EditorCloseController {
 	/** Composite membership and other views are read again after every awaited decision or write. */
 	private lastWorkingCopies(operation: CloseOperation): Set<EditorTextModel> {
 		const models = new Set<EditorTextModel>();
-		for (const { input } of operation.targets) if (input instanceof TextEditorInput) {
-			for (const model of input.getWorkingCopies()) models.add(model);
+		for (const consumer of operation.consumers) for (const model of consumer.getWorkingCopies()) models.add(model);
+		for (const consumer of this.getConsumers()) {
+			if (operation.consumers.has(consumer)) continue;
+			for (const model of consumer.getWorkingCopies()) models.delete(model);
 		}
-		for (const group of this.groups) for (const input of group.model.tabs) {
-			if (operation.inputs.has(input) || !(input instanceof TextEditorInput)) continue;
-			for (const model of input.getWorkingCopies()) models.delete(model);
-		}
+		const replacement = operation.release?.replacement;
+		if (replacement !== undefined) for (const model of replacement.getWorkingCopies()) models.delete(model);
 		return models;
 	}
 
 	private async performClose(operation: CloseOperation): Promise<boolean> {
-		if (this.commitDraft(operation.targets, operation.origin) === 'failed') return false;
+		if (this.commitDraft(operation.targets, operation.origin, operation.release?.scope) === 'failed') return false;
 		if (operation.cancelled || operation.targets.some(target => target.group.model.findById(target.input.id) !== target.input)) return false;
 		while (!operation.cancelled) {
+			if (operation.release?.isCurrent() === false) return false;
 			const models = this.lastWorkingCopies(operation);
 			let undecided: EditorTextModel | undefined;
 			for (const model of models) if (model.dirty) {
@@ -151,7 +194,7 @@ export class EditorCloseController {
 				operation.prompt = request;
 				const choice = await operation.decisionUI.show(request, operation.origin);
 				operation.prompt = undefined;
-				if (operation.cancelled || choice === 'cancel') return false;
+				if (operation.cancelled || operation.release?.isCurrent() === false || choice === 'cancel') return false;
 				if (!this.lastWorkingCopies(operation).has(model) || !model.dirty) continue;
 				if (model.version !== version || model.readOnly !== readOnly) continue;
 				if (choice === 'primary') {
@@ -173,9 +216,10 @@ export class EditorCloseController {
 			}
 			if (write !== undefined) { await write; continue; }
 
-			const draft = this.commitDraft(operation.targets, operation.origin);
+			const draft = this.commitDraft(operation.targets, operation.origin, operation.release?.scope);
 			if (draft === 'failed') return false;
 			if (draft === 'committed') continue;
+			if (operation.cancelled || operation.release?.isCurrent() === false) return false;
 			let discarded = false;
 			for (const model of models) if (model.dirty) {
 				model.revert();
@@ -186,6 +230,7 @@ export class EditorCloseController {
 			if (discarded) continue;
 
 			operation.lifetime.dispose();
+			operation.release?.retire();
 			for (const { group, input } of operation.targets) {
 				if (group.model.findById(input.id) === input) group.removeEditor(input, operation.inputs);
 			}
@@ -194,12 +239,12 @@ export class EditorCloseController {
 		return false;
 	}
 
-	private commitDraft(targets: readonly EditorCloseTarget[], origin: InputFocusTarget | null): 'none' | 'committed' | 'failed' {
+	private commitDraft(targets: readonly EditorCloseTarget[], origin: InputFocusTarget | null, scope?: InputFocusScope): 'none' | 'committed' | 'failed' {
 		const focused = inputFocus.target;
 		for (const target of [focused, origin]) {
 			if (target?.edit?.pending !== true) continue;
 			const group = findEditorGroup(target);
-			if (!targets.some(view => view.group === group && view.input === group.model.activeTab)) continue;
+			if (scope?.contains(target.scope) !== true && !targets.some(view => view.group === group && view.input === group.model.activeTab)) continue;
 			return target.edit.commit() ? 'committed' : 'failed';
 		}
 		return 'none';
@@ -214,6 +259,8 @@ export class EditorCloseController {
 	private finish(operation: CloseOperation): void {
 		operation.lifetime.dispose();
 		this.operations.delete(operation);
-		for (const { input } of operation.targets) this.pending.delete(input);
+		for (const input of operation.inputs) if (this.pending.get(input) === operation) this.pending.delete(input);
+		const consumer = operation.release?.consumer;
+		if (consumer !== undefined && this.pending.get(consumer) === operation) this.pending.delete(consumer);
 	}
 }

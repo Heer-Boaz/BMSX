@@ -21,7 +21,11 @@ function fixture(t: TestContext) {
 	const local: EditorCommandId[] = [], global: EditorCommandId[] = [], enabled = new Set<EditorCommandId>();
 	for (const command of WINDOW_COMMANDS) target.registerCommand(command, { isEnabled: () => true, run: () => { local.push(command); } });
 	const commands: EditorCommandRunner = {
-		isEnabled: command => enabled.has(command), execute: command => { global.push(command); },
+		isEnabled: command => enabled.has(command),
+		execute(command, origin) {
+			if (origin?.getCommand(command) !== undefined) focus.executeCommand(command, origin);
+			else global.push(command);
+		},
 	};
 	const key = (code: string, modifiers = KeyModifier.none, down = true, repeat = false) => {
 		const event = new KeyInputEvent(code, modifiers, repeat, down);

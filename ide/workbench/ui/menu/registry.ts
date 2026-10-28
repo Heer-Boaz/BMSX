@@ -455,6 +455,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'menubar.window': [
 		{ type: 'command', command: 'window.focusMain' },
+		{ type: 'command', command: 'workspace.focusPrimary' },
+		{ type: 'command', command: 'workspace.clearPrimary' },
 		{ type: 'command', command: 'window.showAll' },
 		{ type: 'command', command: 'window.restoreMinimized' },
 		{ type: 'separator' },

@@ -1,7 +1,7 @@
 import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { selectSceneOutlineRow, type SceneOutlineElement } from './outline';
-import type { SceneEditorInput, SceneEditorSection } from './editor_input';
+import type { SceneEditorViewState, SceneEditorSection } from './view_state';
 
 export type SceneEditorViewSnapshot = {
 	readonly section: SceneEditorSection;
@@ -11,7 +11,7 @@ export type SceneEditorViewSnapshot = {
 	readonly detailsScroll: number;
 };
 
-export function captureSceneEditorView(input: SceneEditorInput): SceneEditorViewSnapshot {
+export function captureSceneEditorView(input: SceneEditorViewState): SceneEditorViewSnapshot {
 	const selected = input.outline.rows[input.outline.selectionIndex];
 	const collapsed: TrackedTextRange[] = [];
 	for (const root of input.outline.roots) if (root.collapsed) collapsed.push({ ...root.element.span });
@@ -38,7 +38,7 @@ export function mapSceneEditorView(snapshot: SceneEditorViewSnapshot, changes: r
 	for (const span of snapshot.collapsed) mapTrackedTextRange(span, changes);
 }
 
-export function restoreSceneEditorView(input: SceneEditorInput, snapshot: SceneEditorViewSnapshot): void {
+export function restoreSceneEditorView(input: SceneEditorViewState, snapshot: SceneEditorViewSnapshot): void {
 	const selected = snapshot.selected;
 	let node: WorkbenchTreeNode<SceneOutlineElement> | null = null;
 	for (const root of input.outline.roots) {

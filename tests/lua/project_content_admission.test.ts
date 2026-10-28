@@ -144,7 +144,7 @@ for (const kind of KINDS) for (const edit of ['move', 'remove'] as const)
 		assert.ok(input instanceof SceneEditorInput || input instanceof BehaviorLensInput || input instanceof LuaProgramInput || input instanceof AnimationEditorInput);
 		assert.ok(input.workingCopy === f.model);
 		assert.equal(f.entry.range.start, range.start + '-- admitted field\n'.length);
-		if (input instanceof SceneEditorInput) assert.deepEqual(input.authoring.selectionRange, f.entry.range);
+		if (input instanceof SceneEditorInput) assert.deepEqual(input.view.authoring.selectionRange, f.entry.range);
 		else if (input instanceof LuaProgramInput) assert.deepEqual(input.occurrenceRange, f.entry.range);
 		else if (input instanceof AnimationEditorInput) assert.deepEqual(input.definitionRange, f.entry.range);
 		else {

@@ -112,8 +112,8 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 		input.view.presentation.position = { scrollX: 37 + index, scrollY: 25 + index, zoom: 0.75 };
 		f.group.model.add(input); return input;
 	});
-	const scene = new SceneEditorInput(f.model, f.scene.documents); f.scene.refresh(scene); selectSceneOutlineRow(scene, 1);
-	scene.position = { outlineScroll: 1, detailsScroll: 17 }; f.group.model.add(scene);
+	const scene = new SceneEditorInput(f.model, f.scene.documents); scene.view.refresh(); selectSceneOutlineRow(scene.view, 1);
+	scene.view.position = { outlineScroll: 1, detailsScroll: 17 }; f.group.model.add(scene);
 	const cleanResource = f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'definitions.lua' })!;
 	const cleanModel = editorTextModelService.retain(cleanResource, 'lua', '-- second slot');
 	const clean = new CodeEditorInput(cleanModel); f.group.model.add(clean, { pinned: false });
@@ -218,14 +218,14 @@ test('source fingerprint is retained by buffer version and shared by views, not 
 
 test('scene memento survives first layout and retains pending coordinates before its pane is attached', t => {
 	const f = fixture(t);
-	const old = new SceneEditorInput(f.model, f.scene.documents); f.scene.refresh(old); selectSceneOutlineRow(old, 1); layoutSceneEditor(old, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-	old.details.scrollbar.setScroll(17); old.outline.scroll = 1;
-	const snapshot = JSON.parse(JSON.stringify(captureSceneEditorView(old)));
-	const fresh = new SceneEditorInput(f.model, f.scene.documents); f.scene.refresh(fresh); restoreSceneEditorView(fresh, snapshot);
-	assert.deepEqual(captureSceneEditorView(fresh), snapshot, 'no hidden default geometry overwrites the pending memento');
-	layoutSceneEditor(fresh, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-	assert.equal(fresh.position, undefined); assert.equal(fresh.details.scrollTop, old.details.scrollTop);
-	assert.equal(fresh.outline.selectionIndex, 1); assert.deepEqual(fresh.properties.map(p => p.value), [11, -22, 33]);
+	const old = new SceneEditorInput(f.model, f.scene.documents); old.view.refresh(); selectSceneOutlineRow(old.view, 1); layoutSceneEditor(old.view, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+	old.view.details.scrollbar.setScroll(17); old.view.outline.scroll = 1;
+	const snapshot = JSON.parse(JSON.stringify(captureSceneEditorView(old.view)));
+	const fresh = new SceneEditorInput(f.model, f.scene.documents); fresh.view.refresh(); restoreSceneEditorView(fresh.view, snapshot);
+	assert.deepEqual(captureSceneEditorView(fresh.view), snapshot, 'no hidden default geometry overwrites the pending memento');
+	layoutSceneEditor(fresh.view, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+	assert.equal(fresh.view.position, undefined); assert.equal(fresh.view.details.scrollTop, old.view.details.scrollTop);
+	assert.equal(fresh.view.outline.selectionIndex, 1); assert.deepEqual(fresh.view.properties.map(p => p.value), [11, -22, 33]);
 	assert.equal(f.model.dirty, false); old.dispose(); fresh.dispose();
 });
 

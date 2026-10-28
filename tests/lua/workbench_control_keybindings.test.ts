@@ -418,7 +418,10 @@ function fixture(t: TestContext, scope = new InputFocusScope(Symbol('control')),
 	control.setValue('123456'); control.field.focusTarget.focus();
 	const commands: EditorCommandRunner = {
 		isEnabled(command) { checked.push(command); return command !== 'scenarioLab.run'; },
-		execute(command) { executed.push(command); },
+		execute(command, target) {
+			if (target?.getCommand(command) !== undefined) inputFocus.executeCommand(command, target);
+			else executed.push(command);
+		},
 	};
 	inputFocus.workbenchScope.commands = commands;
 	t.after(() => { keybindings.dispose(); control.cancel(); inputFocus.setTarget(null); control.dispose(); inputFocus.workbenchScope.commands = undefined; });

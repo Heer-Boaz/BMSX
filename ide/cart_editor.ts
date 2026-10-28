@@ -1,5 +1,6 @@
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
+import { MainWorkspace } from './workbench/main_workspace';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { HomeInput } from './workbench/contrib/home/editor_input';
 import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
@@ -88,6 +89,11 @@ import { ContextMenuController } from './workbench/services/context_menu/control
 import { drawContextMenu, layoutContextMenu } from './workbench/services/context_menu/render';
 import type { GraphLayoutEngineFactory } from './workbench/services/graph_layout/engine';
 import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
+import { SceneAuthoringContext, type SceneAuthoredSubject } from './workbench/contrib/scene_editor/authoring_context';
+import { ScenePrimaryClient } from './workbench/contrib/scene_editor/primary_client';
+import type { EditorTextModel } from './editor/model/text_model';
+import type { InputFocusTarget } from './input/focus';
+import { saveTextFileFromCommand } from './commands/source_save';
 import { QuickInputController } from './workbench/services/quick_input/controller';
 import { SceneEditorPane } from './workbench/contrib/scene_editor/editor_pane';
 import type { Input } from '../hosts/common/input/manager';
@@ -209,11 +215,13 @@ export type CartEditor = TextInputHost & {
 	readonly gamePanel: GamePanel;
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorParts: EditorParts;
+	readonly mainWorkspace: MainWorkspace;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
 	readonly cartMaps: CartMapController;
 	readonly sceneEditor: SceneEditorController;
+	openSceneInMain(model: EditorTextModel, subject: SceneAuthoredSubject, origin: InputFocusTarget): Promise<boolean>;
 	readonly animations: AnimationEditorController;
 	readonly actorLab: ActorLabController;
 	readonly actionPrompt: ActionPrompt;
@@ -269,6 +277,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly keybindings: EditorCommandKeybindingController;
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
+	public readonly mainWorkspace: MainWorkspace;
 	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly surfaces: WorkbenchSurfaceService;
 	private readonly chromeScope = Symbol('workbench chrome');
@@ -324,6 +333,7 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unsubscribeDiagnosticsChanged: () => void;
 	private readonly unbindHostInput: () => void;
 	private readonly unbindNavigation: () => void;
+	private readonly unbindWorkspaceModels: () => void;
 	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
 	private readonly unbindSourceStop: () => void;
@@ -440,8 +450,12 @@ export class RuntimeCartEditor implements CartEditor {
 			onRetire: () => pointerCapture.cancelScope(this.chromeScope),
 		});
 
+		this.mainWorkspace = new MainWorkspace(this.surfaces, chromeSurface, inputFocus.workbenchScope, this.commands,
+			() => this.layoutMainEditor(), () => this.editorParts.activate(this.editorParts.main));
 		this.editorParts = new EditorParts({
 			surfaces: this.surfaces, owner: chromeSurface, scope: inputFocus.workbenchScope, workArea,
+			mainPresentation: this.mainWorkspace,
+			workingCopyConsumers: () => this.mainWorkspace.workingCopyConsumers(),
 			commands: this.commands, contextMenu: this.contextMenu, renderContext: this.chromeRenderContext,
 			layoutMain: () => this.layoutMainEditor(),
 			focusReturn: this.resourcePanel.focusTarget, contributions: {
@@ -481,7 +495,7 @@ export class RuntimeCartEditor implements CartEditor {
 				group, this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
 			game_view: { create: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope), measure: measureUnconstrainedEditor },
 			cart_map: { create: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu), measure: measureCartMapEditor },
-			scene_editor: { create: group => new SceneEditorPane(this.sceneEditor, this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureSceneEditor },
+			scene_editor: { create: group => new SceneEditorPane(this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureSceneEditor },
 			scenario_lab: { create: group => new ScenarioLabEditorPane(
 				this.scenarioLab,
 				this.commands,
@@ -490,6 +504,7 @@ export class RuntimeCartEditor implements CartEditor {
 		}, saves: textFileSaves, models: editorTextModelService, prompt: this.actionPrompt,
 		});
 		this.windowStatus = new WorkbenchWindowStatus(this.editorParts, this.commands, this.surfaces, chromeSurface, this.rootSurfaceBounds);
+		this.unbindWorkspaceModels = editorTextModelService.onWillClear(() => this.mainWorkspace.reset());
 
 		this.surfaces.attach({
 			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourceResizeScope,
@@ -548,7 +563,7 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 
 		this.gamePanel = new GamePanel(this.editorParts.main, this.editorParts.mainArea, this.commands, this.contextMenu, input, presenter,
-			new InputFocusScope(this.chromeScope, this.editorParts.main.scope));
+			new InputFocusScope(Symbol('game companion'), this.editorParts.main.scope), this.surfaces);
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.clipboard);
 		this.navigation = new EditorNavigationController(
 			this.sources.catalog,
@@ -694,6 +709,19 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 	public get fontVariant(): FontVariant { return editorViewState.fontVariant; }
 
+	public openSceneInMain(model: EditorTextModel, subject: SceneAuthoredSubject, origin: InputFocusTarget): Promise<boolean> {
+		return this.mainWorkspace.openPrimary((surface, scope) => {
+			const context = new SceneAuthoringContext(model, this.workbench.sceneSources, subject);
+			if (!context.isCurrent || context.availability !== 'available') { context.dispose(); return undefined; }
+			return new ScenePrimaryClient(context, {
+				commands: this.commands, sources: this.sources, contextMenu: this.contextMenu,
+				surfaces: this.surfaces, owner: surface, workArea: getWorkbenchWorkArea(), scope,
+				navigation: this.navigation, parts: this.editorParts,
+				save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
+			});
+		}, this.editorParts.closeController, origin);
+	}
+
 	public activate(): void {
 		this.menubar.cancelAlt();
 		const wasActive = this.isActive;
@@ -709,6 +737,7 @@ export class RuntimeCartEditor implements CartEditor {
 			const activeTab = group.model.activeTab;
 			if (activeTab !== null) group.activate(activeTab.id, undefined, undefined, true);
 		}
+		this.mainWorkspace.resume();
 		this.editorParts.activePart.focus();
 		editorRuntimeState.active = true;
 		this.interaction.setActive(true);
@@ -754,6 +783,7 @@ export class RuntimeCartEditor implements CartEditor {
 		pointerHover.clear();
 		const wasActive = this.isActive;
 		this.editorParts.suspend();
+		this.mainWorkspace.suspend();
 		for (const group of this.editorParts.groups) group.panes.clearEditor();
 		editorRuntimeState.active = false;
 		this.overlayRenderer.active = false;
@@ -777,12 +807,13 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.handleGamepad(playerInput);
 	}
 
-	private layoutMainPart(): boolean { return this.editorParts.main.layout(getWorkbenchEditorBounds()); }
+	private layoutMainPart(): boolean { return this.editorParts.main.layout(this.mainWorkspace.documentBounds); }
 
 	private prepareWorkbenchLayout(): boolean {
 		let layoutChanged = refreshWorkbenchLayout();
 		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
-		this.gamePanel.prepareLayout(getWorkbenchEditorBounds());
+		layoutChanged = this.mainWorkspace.layout(getWorkbenchEditorBounds()) || layoutChanged;
+		this.gamePanel.prepareLayout(this.mainWorkspace.documentBounds);
 		return layoutChanged;
 	}
 
@@ -801,6 +832,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.layoutMainEditor();
 		this.resourcePanel.update(editorRuntimeState.currentTimeMs);
 		this.editorParts.update(deltaSeconds);
+		this.mainWorkspace.update();
 		this.windowStatus.update(inputFocus.admittedTarget?.guestInput !== undefined, this.fault.hostFrameFailure !== undefined);
 		problemsPanel.update();
 		this.quickInput.update();
@@ -851,13 +883,15 @@ export class RuntimeCartEditor implements CartEditor {
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 		renderTopBar(this.chromeRenderContext, this.menubar);
 		drawResourcePanel(this.resourcePanel);
-		this.gamePanel.draw();
 		drawProblemsPanel();
 		let contextTarget = inputFocus.target;
 		if (contextTarget === this.contextMenu.focusTarget) contextTarget = this.contextMenu.invocationOrigin;
 		if (contextTarget === this.quickInput.field.focusTarget) contextTarget = this.quickInput.invocationOrigin;
 		if (contextTarget === this.actionPrompt.focusTarget) contextTarget = this.actionPrompt.invocationOrigin;
-		renderStatusBar(this.resourcePanel, this.fault, this.editorParts.activeGroup.panes.activePane, this.luaEvaluation, this.serverConnectionState,
+		const primary = this.mainWorkspace.primary, commandTarget = contextTarget?.commandContext;
+		const statusClient = primary !== undefined && commandTarget !== undefined && primary.scope.contains(commandTarget.scope)
+			? primary : this.editorParts.activeGroup.panes.activePane;
+		renderStatusBar(this.resourcePanel, this.fault, statusClient, this.luaEvaluation, this.serverConnectionState,
 			contextTarget === null ? null : contextTarget.commandContext, this.windowStatus.width, this.keybindings.pendingLabel);
 	}
 
@@ -868,7 +902,9 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();
 		this.unbindSurfaceAdmission();
+		this.unbindWorkspaceModels();
 		this.windowStatus.dispose();
+		this.mainWorkspace.dispose();
 		this.surfaces.dispose();
 		this.input.setEditingInput(undefined);
 		this.assistant.dispose();

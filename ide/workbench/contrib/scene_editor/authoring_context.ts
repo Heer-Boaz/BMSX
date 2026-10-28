@@ -5,6 +5,16 @@ import { createLuaTableFieldRemovalEdits, luaSourceRangeMatchesTextRange, luaSou
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
 import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry } from './model';
 import type { SceneSourceDocuments } from './source_documents';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+
+/** Admission proof for one exact authored declaration, not a name or a document tab. */
+export type SceneAuthoredSubject = {
+	readonly document: SceneSourceDocument;
+	readonly sourceVersion: number;
+	readonly scene: SceneSourceDefinition;
+};
+
+const EMPTY_SCENES: readonly SceneSourceDefinition[] = [];
 
 export type SceneAuthoredSelection = {
 	readonly kind: 'scene';
@@ -28,19 +38,37 @@ export class SceneAuthoringContext {
 	private readonly lifetime = new DisposableStore();
 	private readonly selectionListeners = new Set<() => void>();
 	private readonly copies: readonly EditorTextModel[];
+	private readonly subjectRange: TrackedTextRange | undefined;
+	private readonly subjectScenes: SceneSourceDefinition[] | undefined;
 
-	public constructor(public readonly workingCopy: EditorTextModel, private readonly documents: SceneSourceDocuments) {
+	public constructor(public readonly workingCopy: EditorTextModel, private readonly documents: SceneSourceDocuments, subject?: SceneAuthoredSubject) {
 		this.copies = [workingCopy];
 		this.lifetime.add({ dispose: workingCopy.trackRanges(new Map([
 			['scene', this.sceneRange], ['selection', this.selectionRange],
 		])) });
 		this.lifetime.add({ dispose: workingCopy.onWillDispose(() => this.dispose()) });
 		this.refresh();
+		if (subject !== undefined) {
+			this.subjectRange = { start: 0, end: 0 };
+			this.subjectScenes = [];
+			if (subject.document === this.documentValue && subject.sourceVersion === workingCopy.version) {
+				const range = luaSourceRangeToTextRange(workingCopy.buffer, subject.scene.range);
+				this.subjectRange.start = range.start; this.subjectRange.end = range.end;
+				this.subjectScenes.push(subject.scene);
+			}
+			this.lifetime.add({ dispose: workingCopy.trackRanges(new Map([['subject', this.subjectRange]])) });
+		}
 	}
 
 	public getWorkingCopies(): readonly EditorTextModel[] { return this.copies; }
 	public get document(): SceneSourceDocument | undefined { return this.documentValue; }
 	public get revision(): number { return this.revisionValue; }
+	/** The domain supplies the admitted composition; controls do not filter by container kind. */
+	public get scenes(): readonly SceneSourceDefinition[] { return this.subjectScenes ?? this.documentValue?.scenes ?? EMPTY_SCENES; }
+	public get subject(): SceneSourceDefinition | undefined { return this.subjectScenes?.[0]; }
+	public get availability(): 'available' | 'unavailable' {
+		return this.lifetime.isDisposed || this.subjectScenes !== undefined && this.subjectScenes.length === 0 ? 'unavailable' : 'available';
+	}
 	/** Explicit selection intent, independently of source rebinding or retirement. */
 	public get selectionRevision(): number { return this.selectionRevisionValue; }
 	public get isCurrent(): boolean {
@@ -55,6 +83,14 @@ export class SceneAuthoringContext {
 	/** A retained occurrence can survive an edit, but its old AST is not current command authority. */
 	public get selection(): SceneAuthoredSelection | undefined {
 		return this.isCurrent ? this.selectionValue : undefined;
+	}
+
+	public getSourceLocation(): EditorSourceLocation | undefined {
+		if (!this.isCurrent) return undefined;
+		const selection = this.selectionValue, document = this.documentValue!;
+		const range = selection?.kind === 'member' ? document.analysis.chunk.locations.range(selection.entry.field.span)
+			: selection?.scene.range ?? this.subject?.range;
+		return this.documents.getSourceLocation(this.workingCopy, document, range);
 	}
 
 	/** Authoring admission reads the producer, even when only an API provider changed. */
@@ -75,10 +111,17 @@ export class SceneAuthoringContext {
 		this.documentValue = document;
 		this.sourceVersion = this.workingCopy.version;
 		this.revisionValue++;
+		if (this.subjectRange !== undefined) {
+			const subject = this.subjectRange.start === this.subjectRange.end ? undefined
+				: document.scenes.find(scene => luaSourceRangeMatchesTextRange(this.workingCopy.buffer, scene.range, this.subjectRange!));
+			this.subjectScenes!.length = 0;
+			if (subject === undefined) this.subjectRange.start = this.subjectRange.end = 0;
+			else this.subjectScenes!.push(subject);
+		}
 		if (previous === undefined) return true;
 		const { buffer } = this.workingCopy;
 		const scene = document.scenes.find(scene => luaSourceRangeMatchesTextRange(buffer, scene.range, this.sceneRange));
-		if (scene !== undefined) {
+		if (scene !== undefined && (this.subjectScenes === undefined || scene === this.subject)) {
 			if (previous.kind === 'scene') {
 				this.selectionValue = { kind: 'scene', scene };
 				return true;
@@ -103,6 +146,7 @@ export class SceneAuthoringContext {
 			this.clearSelection();
 			return true;
 		}
+		if (this.subjectScenes !== undefined && selection.scene !== this.subject) return false;
 		const previous = this.selectionValue;
 		if (previous?.scene === selection.scene && previous.kind === selection.kind
 			&& (selection.kind === 'scene' || previous.kind === 'member' && previous.entry === selection.entry)) return true;
@@ -174,5 +218,6 @@ export class SceneAuthoringContext {
 		this.selectionListeners.clear();
 		this.selectionValue = undefined;
 		this.documentValue = undefined;
+		if (this.subjectScenes !== undefined) this.subjectScenes.length = 0;
 	}
 }

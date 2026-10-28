@@ -54,7 +54,7 @@ function openVisual(f: ReturnType<typeof fixture>, kind: 'scene' | 'behavior' | 
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
 	if (kind === 'scene') {
 		f.editor.sceneEditor.openResource(group, resource); const input = group.model.activeTab;
-		assert.ok(input instanceof SceneEditorInput); f.editor.sceneEditor.refresh(input); selectSceneOutlineRow(input, 1);
+		assert.ok(input instanceof SceneEditorInput); input.view.refresh(); selectSceneOutlineRow(input.view, 1);
 	} else if (kind === 'animation') {
 		const input = f.editor.animations.openResource(group, resource);
 		assert.ok(input !== undefined);

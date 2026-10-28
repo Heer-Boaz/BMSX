@@ -9,6 +9,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { findEditorGroup } from '../../ide/workbench/services/editor/editor_group';
 import { EditorParts } from '../../ide/workbench/services/editor/editor_parts';
+import { MainWorkspace } from '../../ide/workbench/main_workspace';
 import type { EditorInputSerializers } from '../../ide/workbench/services/editor/editor_serialization';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createTestEditorPaneContributions, createTestGroupPresentation, createTestEditorCloseDependencies } from '../helpers/editor_panes';
@@ -17,15 +18,18 @@ function fixture(t: TestContext) {
 	configureFontVariant('tiny');
 	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces);
 	const commands = { isEnabled: () => false, execute() {} };
+	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
+		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main)); main.layout(presentation.workArea);
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
+		mainPresentation: main,
 		commands, contextMenu: presentation.contextMenu,
 		renderContext: presentation.renderContext, contributions: createTestEditorPaneContributions(commands, presentation.contextMenu),
 		...createTestEditorCloseDependencies(t, presentation),
-		focusReturn: inputFocus.createTarget(null, presentation.focusScope), layoutMain: () => parts.main.layout(presentation.workArea),
+		focusReturn: inputFocus.createTarget(null, presentation.focusScope), layoutMain: () => { main.layout(presentation.workArea); parts.main.layout(main.documentBounds); },
 	});
 	parts.main.layout(presentation.workArea);
-	t.after(() => { parts.dispose(); presentation.contextMenu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	t.after(() => { parts.dispose(); main.dispose(); presentation.contextMenu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { parts, surfaces, area: presentation.workArea };
 }
 

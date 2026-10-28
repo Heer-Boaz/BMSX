@@ -32,6 +32,13 @@ import type { WorkbenchMainAreaLayout } from '../../common/main_area_layout';
 import type { SerializedEditorPart, SerializedEditorGroupLayout } from './editor_parts_serialization';
 import type { EditorInputSerializers } from './editor_serialization';
 
+/** The actual Main container reveals its document region before child focus admission. */
+export type MainEditorPresentation = {
+	readonly surface: WorkbenchSurface;
+	readonly scope: InputFocusScope;
+	revealDocuments(): void;
+};
+
 type EditorPartOptions = {
 	readonly initialOperation: 'none' | 'move';
 	readonly presented: boolean;
@@ -51,7 +58,8 @@ type EditorPartOptions = {
 	onDidChangeGroupMembership(part: EditorPart): void;
 	onDidChange(): void;
 	requestClose(part: EditorPart): void;
-} & ({ readonly kind: 'main'; readonly mainArea: WorkbenchMainAreaLayout } | {
+} & ({ readonly kind: 'main'; readonly mainArea: WorkbenchMainAreaLayout;
+	readonly mainPresentation: MainEditorPresentation } | {
 	readonly kind: 'document';
 	requestMinimize(part: EditorPart): void;
 	readonly requestedBounds: Readonly<RectBounds>;
@@ -122,14 +130,21 @@ export class EditorPart {
 			this.focusTarget = this.window.clientFocusTarget; this.surface = this.window.surface!; this.clientSurface = this.window.clientSurface!;
 			this.subscriptions.push(model.onDidChangePlacement(options.onDidChange));
 		} else {
-			this.scope = new InputFocusScope(Symbol('main editor host'), options.scope); this.clientScope = this.scope;
+			this.scope = new InputFocusScope(Symbol('main editor host'), options.mainPresentation.scope);
+			this.clientScope = new InputFocusScope(Symbol('main document client'), this.scope);
 			this.focusTarget = inputFocus.createTarget(options.focusReturn, this.scope);
 			this.focusTarget.canFocus = () => !this.retired;
-			this.surface = this.clientSurface = options.surfaces.attach({
-				role: 'window', lifetimeOwner: options.owner, presentationParent: null, captureScope: this.scope.surfaceScope,
-				isVisible: () => this.presented, getBounds: () => this.clientBounds, getClip: () => options.workArea,
-				draw: () => this.drawClient(), handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
+			this.surface = options.surfaces.attach({
+				role: 'content', lifetimeOwner: options.mainPresentation.surface, presentationParent: options.mainPresentation.surface, captureScope: this.scope.surfaceScope,
+				isVisible: () => this.presented, getBounds: () => options.mainArea.availableBounds, getClip: () => options.mainArea.availableBounds,
+				draw() {}, handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
 				onRetire: () => pointerCapture.cancelScope(this.scope.surfaceScope),
+			});
+			this.clientSurface = options.surfaces.attach({
+				role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.clientScope.surfaceScope,
+				isVisible: () => this.presented, getBounds: () => this.clientBounds, getClip: () => this.clientBounds,
+				draw: () => this.drawClient(), handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
+				onRetire: () => pointerCapture.cancelScope(this.clientScope.surfaceScope),
 			});
 		}
 		this.scope.commands = options.commands;
@@ -336,7 +351,7 @@ export class EditorPart {
 	}
 	private reveal(modal: WorkbenchSurface | null): boolean {
 		const focusRevision = inputFocus.revision;
-		if (this.window === undefined) this.options.layoutMain();
+		if (this.options.kind === 'main') { this.options.mainPresentation.revealDocuments(); this.options.layoutMain(); }
 		else this.window.show(false);
 		if (this.retired || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
 		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
@@ -347,7 +362,7 @@ export class EditorPart {
 		return !this.retired && (inputFocus.revision === focusRevision || inputFocus.target === null);
 	}
 
-	public raise(): void { this.options.surfaces.raise(this.surface); }
+	public raise(): void { this.options.surfaces.raise(this.options.kind === 'main' ? this.options.mainPresentation.surface : this.surface); }
 	public setOperation(operation: 'none' | 'close' | 'move'): void {
 		if (operation !== 'none') this.restoreLifetime?.abort();
 		const previous = this.operationValue;

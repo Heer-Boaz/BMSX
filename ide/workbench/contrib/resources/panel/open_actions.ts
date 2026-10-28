@@ -77,6 +77,16 @@ export function openProjectContent(editor: CartEditor, index: ProjectContentInde
 	}
 }
 
+/** Primary authoring is an explicit contribution action, not ordinary file activation. */
+export function editProjectContentInMain(editor: CartEditor, index: ProjectContentIndex, entry: Extract<ProjectContentEntry, { kind: 'scene' }>,
+	origin: InputFocusTarget): Promise<boolean> | undefined {
+	const scope = origin.scope, context = scope.contextGeneration;
+	if (!index.isCurrent(entry) || inputFocus.admittedTarget !== origin || scope.contextGeneration !== context) return;
+	const model = resolveLuaTextFileModel(editorTextModelService, index.catalog, entry.ownerResource);
+	if (!index.isCurrent(entry) || inputFocus.admittedTarget !== origin || scope.contextGeneration !== context) return;
+	return editor.openSceneInMain(model, { document: entry.document, sourceVersion: model.version, scene: entry.definition }, origin);
+}
+
 /** Declaration offsets belong to their canonical authored owner, even when browsed at an importing consumer. */
 export function openProjectContentSource(editor: CartEditor, index: ProjectContentIndex, entry: ProjectContentEntry,
 	destination: EditorGroupView, origin: InputFocusTarget): Promise<number | undefined> | undefined {

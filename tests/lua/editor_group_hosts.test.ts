@@ -13,8 +13,9 @@ test('Main and maximized floating hosts exchange only editor client order; shell
 	const mainInput = new CodeEditorInput(f.firstInput.workingCopy);
 	mainGroup.openEditor(mainInput); f.update();
 	floating.window!.setPlacement('maximized'); floating.focus(); f.update();
-	const shell = main.surface.lifetimeOwner!;
-	assert.equal(shell.role, 'content'); assert.ok(main.surface.presentationParent === null);
+	const family = f.editor.mainWorkspace.surface, shell = family.lifetimeOwner!;
+	assert.ok(main.surface.lifetimeOwner === family && main.surface.presentationParent === family);
+	assert.equal(shell.role, 'content'); assert.ok(family.presentationParent === null);
 	const menu = editorChromeState.menuButtonBounds;
 	const x = (menu.left + menu.right) / 2, y = (menu.top + menu.bottom) / 2;
 	assert.ok(f.editor.surfaces.hitTest(x, y) === shell);

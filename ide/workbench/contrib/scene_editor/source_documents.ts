@@ -8,6 +8,9 @@ import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
 import type { SceneSourceDocument } from './model';
 import { buildSceneSourceDocument } from './source';
+import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
+import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import { luaSourceLocation } from '../../../language/lua/source_location';
 
 /** Shared immutable source projections; selections and controls belong to their authored contexts. */
 export class SceneSourceDocuments {
@@ -27,6 +30,10 @@ export class SceneSourceDocuments {
 			this.modelGenerations.set(model, generation);
 		}
 		return generation.document;
+	}
+
+	public getSourceLocation(model: EditorTextModel, document: SceneSourceDocument, range?: LuaSourceRange): EditorSourceLocation | undefined {
+		return luaSourceLocation(getOrCreateSemanticProject(this.models, model.resource.contextId), model, document.analysis, range);
 	}
 
 	/** Discovery already owns this semantic proof; it neither opens models nor requests another snapshot. */

@@ -70,11 +70,11 @@ for (const invocation of ['command', 'toolbar pointer', 'compact command'] as co
 	const pane = f.firstGroup.panes.activePane!;
 	assert.ok(pane instanceof SceneEditorPane);
 	if (invocation === 'compact command') { f.firstBounds.right = 160; f.update(); }
-	selectSceneOutlineRow(input, 1);
+	selectSceneOutlineRow(input.view, 1);
 	pane.update();
 	f.editor.commands.execute('sceneEditor.details', pane.commandTarget);
 	const commandTarget = pane.commandTarget;
-	const field = pane.controls[0].field, model = input.workingCopy, original = model.buffer.getText();
+	const field = pane.control.controls[0].field, model = input.workingCopy, original = model.buffer.getText();
 	assert.equal(field.focusTarget.focus(), true);
 	assert.equal(field.replaceText(0, field.readText().text.length, '789'), true);
 	assert.equal(field.focusTarget.edit!.pending, true);
@@ -82,7 +82,7 @@ for (const invocation of ['command', 'toolbar pointer', 'compact command'] as co
 
 	if (invocation !== 'toolbar pointer') f.editor.commands.execute('sceneEditor.removeMember', field.focusTarget.commandContext);
 	else {
-		const action = input.actionBar.items.find(item => item.command === 'sceneEditor.removeMember')!;
+		const action = input.view.actionBar.items.find(item => item.command === 'sceneEditor.removeMember')!;
 		assert.ok(action.visible && !action.overflowed && action.enabled);
 		const { left, right, top, bottom } = action.bounds;
 		// Geometry locates the actual retained action; the assertions concern focus and source history.
@@ -95,18 +95,18 @@ for (const invocation of ['command', 'toolbar pointer', 'compact command'] as co
 		}
 	}
 	assert.equal(field.focusTarget.edit!.pending, false);
-	assert.equal(input.outline.selectionIndex, -1);
+	assert.equal(input.view.outline.selectionIndex, -1);
 	assert.ok(model.buffer.getText() !== original && model.buffer.getText() !== accepted);
 	f.update();
-	assert.equal(input.section, 'outline');
+	assert.equal(input.view.section, 'outline');
 	assert.ok(inputFocus.admittedTarget === pane.commandTarget);
 	assert.ok(inputFocus.admittedTarget !== commandTarget, 'the retired Details subject cannot remain the keyboard owner');
 	f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(model.buffer.getText(), accepted, 'first Undo reverses removal, not the separately accepted numeric draft');
-	assert.equal(input.outline.selectionIndex, -1);
+	assert.equal(input.view.outline.selectionIndex, -1);
 	f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(model.buffer.getText(), original);
 	assert.equal(model.canUndo, false);
 	assert.equal(model.canRedo, true);
-	assert.equal(input.section, 'outline');
+	assert.equal(input.view.section, 'outline');
 });

@@ -30,14 +30,14 @@ test('Scene move retains its exact member and canonical history while Source bel
 	assert.ok(input instanceof SceneEditorInput);
 	const model = input.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
-	f.editor.sceneEditor.refresh(input); selectSceneOutlineRow(input, 1); input.section = 'details'; f.update();
-	const view = captureSceneEditorView(input), version = model.version, history = model.history;
+	input.view.refresh(); selectSceneOutlineRow(input.view, 1); input.view.section = 'details'; f.update();
+	const view = captureSceneEditorView(input.view), version = model.version, history = model.history;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const originPane = f.firstGroup.panes.activePane!;
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, input, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.ok(f.secondGroup.model.activeTab === input && f.secondGroup.panes.activePane !== originPane);
 	assert.equal(f.firstGroup.model.findById(input.id), undefined);
-	assert.deepEqual(captureSceneEditorView(input), view);
+	assert.deepEqual(captureSceneEditorView(input.view), view);
 	assert.ok(input.workingCopy === model && model.history === history && model.canUndo);
 	assert.equal(model.version, version); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 	f.editor.commands.execute('editor.source', f.secondGroup.panes.activePane!.commandTarget.commandContext); await setImmediate(); f.update();

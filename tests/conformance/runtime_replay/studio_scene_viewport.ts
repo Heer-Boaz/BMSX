@@ -38,8 +38,8 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	await selectMember(test, scene, 0);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('A02: actual Scene pane required');
-	const [x, y, z] = pane.controls;
-	check(scene.properties[0].value === 11 && scene.properties[2].value === 33, 'A02: independent fixture is selected');
+	const [x, y, z] = pane.control.controls;
+	check(scene.view.properties[0].value === 11 && scene.view.properties[2].value === 33, 'A02: independent fixture is selected');
 	// Reuse a real workspace input as transport, not its game implementation.
 	const record = ide.sources.catalog.getContext(model.resource.contextId).luaSources.records.find(record =>
 		record.program_module && !record.generated && record.source_path !== model.resource.path && !record.module_path.startsWith('cartlib/'))!;
@@ -52,24 +52,24 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), model.resource);
 	check(await openSceneEditor(test) === scene, 'scene imports: the actual menu reopens the same scene through a reexport');
 	await selectMember(test, scene, 0);
-	await test.click(scene.properties[0].bounds);
+	await test.click(scene.view.properties[0].bounds);
 	await press('Digit9');
 	check(x.pending && x.field.focusTarget.hasFocus, 'scene imports: a real property draft is focused');
-	const document = scene.authoring.document, version = scene.authoring.revision, sourceVersion = model.version;
+	const document = scene.view.authoring.document, version = scene.view.authoring.revision, sourceVersion = model.version;
 	provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unchanged API\n' }]);
 	await frame();
-	check(scene.authoring.document === document && scene.authoring.revision === version && x.pending && x.field.focusTarget.hasFocus,
+	check(scene.view.authoring.document === document && scene.view.authoring.revision === version && x.pending && x.field.focusTarget.hasFocus,
 		'scene imports: an equivalent dependency edit retains projection, focus and draft');
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return replacement' }]);
 	check(x.commit() && model.version === sourceVersion,
 		'scene imports: even commit before the next frame cannot publish the valid draft to a revoked source target');
 	await frame();
-	check(scene.properties[0].value === null && x.field.readOnly && !x.pending && !x.field.focusTarget.hasFocus,
+	check(scene.view.properties[0].value === null && x.field.readOnly && !x.pending && !x.field.focusTarget.hasFocus,
 		'scene imports: revocation detaches and cancels the old field rather than committing it on blur');
 	check(model.version === sourceVersion, 'scene imports: revocation never writes the consumer');
 	provider.undo(); await frame();
 	await selectMember(test, scene, 0);
-	check(scene.properties[0].value === 11 && !x.field.readOnly, 'scene imports: provider Undo restores editing admission');
+	check(scene.view.properties[0].value === 11 && !x.field.readOnly, 'scene imports: provider Undo restores editing admission');
 	provider.undo(); model.undo(); provider.undo(); await frame();
 	check(model.buffer.getText() === authored && provider.buffer.getText() === originalProvider,
 		'scene imports: ordinary Undo restores both independent source histories');
@@ -81,45 +81,45 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		setPointerButton('pointer_primary', true); await frame();
 		movePointer(point(10, y)); await frame();
 		setPointerButton('pointer_primary', false); await frame();
-		check(scene.layout.bottom === editorViewState.editorAreaBottom,
+		check(scene.view.layout.bottom === editorViewState.editorAreaBottom,
 			'A02: pane consumes resized parent bounds in the same frame');
 	};
 	const wheel = async (steps: number) => {
-		movePointer(scene.details.bounds); await frame();
+		movePointer(scene.view.details.bounds); await frame();
 		test.remote.apply([{ type: 'wheel', deltaY: steps }]);
 		await frame();
 	};
 	const visible = (index: number) => {
-		const field = scene.properties[index].bounds;
-		check(field.top >= scene.details.bounds.top && field.bottom <= scene.details.bounds.bottom, `A02: focused ${index} is entirely inside the viewport`);
+		const field = scene.view.properties[index].bounds;
+		check(field.top >= scene.view.details.bounds.top && field.bottom <= scene.view.details.bounds.bottom, `A02: focused ${index} is entirely inside the viewport`);
 	};
 	for (const variant of ['msx', 'tiny'] as const) {
 		ide.editor.setFontVariant(variant); await frame();
 		check(sourceGroup.tabStrip.scrollbar.isVisible() && sourceGroup.tabStrip.layoutState.totalHeight === editorViewState.tabBarHeight + SCROLLBAR_WIDTH,
 			'A02/A04: the document part retains its independently overflowing strip at either font');
 		const groupBounds = sourceGroup.panes.contentBounds;
-		check(scene.layout.top === groupBounds.top && scene.layout.bottom === groupBounds.bottom,
+		check(scene.view.layout.top === groupBounds.top && scene.view.layout.bottom === groupBounds.bottom,
 			'A02/A04: the actual invoking group passes its font-sized tab strip and body to the Scene child layout');
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
 		await testStudioPointerHover(test, scene);
 		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
-		const bodyTop = scene.layout.top + (editorViewState.lineHeight + 4) * 2;
+		const bodyTop = scene.view.layout.top + (editorViewState.lineHeight + 4) * 2;
 		await resize(bodyTop + 52);
-		check(scene.details.height > 30 && scene.details.height < scene.details.contentHeight && scene.details.scrollbar.isVisible(),
+		check(scene.view.details.height > 30 && scene.view.details.height < scene.view.details.contentHeight && scene.view.details.scrollbar.isVisible(),
 			`A02: ${variant} Problems resize creates a real scrollable form`);
 		pane.focus(); await press('Tab');
 		check(inputFocus.target!.commandContext === x.field.focusTarget.parent, 'A02: scroll-area focus routes document commands explicitly');
 		await press('End');
-		const note = scene.detailsText.at(-1)!;
-		check(scene.details.offsetTop + note.top + editorViewState.lineHeight <= scene.details.bounds.bottom,
+		const note = scene.view.detailsText.at(-1)!;
+		check(scene.view.details.offsetTop + note.top + editorViewState.lineHeight <= scene.view.details.bounds.bottom,
 			'A02: keyboard scroll reaches the last explanatory line');
 		// Options extend the form beyond XYZ. Position X just behind the header
 		// through keyboard scrolling, independently of the total content height.
 		await press('Home');
-		const hideXSteps = Math.ceil(scene.properties[0].contentBounds.bottom / scene.outline.layout.rowHeight);
+		const hideXSteps = Math.ceil(scene.view.properties[0].contentBounds.bottom / scene.view.outline.layout.rowHeight);
 		for (let index = 0; index < hideXSteps; index += 1) await press('ArrowDown');
-		const hidden = scene.properties[0].bounds;
-		check(hidden.bottom <= scene.details.bounds.top && hidden.bottom > scene.details.bounds.top - scene.outline.layout.rowHeight,
+		const hidden = scene.view.properties[0].bounds;
+		check(hidden.bottom <= scene.view.details.bounds.top && hidden.bottom > scene.view.details.bounds.top - scene.view.outline.layout.rowHeight,
 			'A02: X is clipped behind the property header, not a visible input');
 		await test.click(point(hidden.left + 4, hidden.bottom - 1));
 		check(!x.field.focusTarget.hasFocus && model.buffer.getText() === authored,
@@ -130,33 +130,33 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		await press('Tab'); check(z.field.focusTarget.hasFocus, 'A02: Tab reveals Z rather than focusing an invisible value'); visible(2);
 		await press('Minus');
 		check(z.pending && model.buffer.getText() === authored, 'A02: invalid unsubmitted draft has not touched source');
-		movePointer(scene.details.scrollbar.getThumb()!); await frame();
+		movePointer(scene.view.details.scrollbar.getThumb()!); await frame();
 		setPointerButton('pointer_primary', true); await frame();
 		check(pointerCapture.active && z.field.focusTarget.hasFocus && z.pending, 'A02: scrollbar capture preserves the field draft');
-		const track = scene.details.scrollbar.getTrack();
+		const track = scene.view.details.scrollbar.getTrack();
 		movePointer(point(track.left + 1, track.bottom - 1)); await frame();
 		await press('Escape');
 		check(!pointerCapture.active && z.pending && z.field.focusTarget.hasFocus, 'A02: first Escape cancels capture, not the draft');
 		setPointerButton('pointer_primary', false); await frame();
-		const scroll = scene.details.scrollTop;
+		const scroll = scene.view.details.scrollTop;
 		for (let index = 0; index < 8; index += 1) await frame();
-		check(scene.details.scrollTop === scroll, 'A02: stationary frames do not re-reveal and undo manual scroll');
+		check(scene.view.details.scrollTop === scroll, 'A02: stationary frames do not re-reveal and undo manual scroll');
 		await wheel(-1);
-		check(scene.details.scrollTop < scroll && z.pending && model.buffer.getText() === authored, 'A02: wheel moves the form without focus or source changes');
+		check(scene.view.details.scrollTop < scroll && z.pending && model.buffer.getText() === authored, 'A02: wheel moves the form without focus or source changes');
 		await press('Escape');
 		pane.focus();
 		for (let index = 0; index < 4; index += 1) await press('Tab');
 		check(z.field.focusTarget.hasFocus, 'A02: normal focus traversal returns to Z'); visible(2);
 		await press('Digit9'); await press('Enter');
-		check(model.buffer.getText() === SCENE_VIEWPORT_SOURCE.replace('z = 33', 'z = 09') + original && scene.properties[2].value === 9,
+		check(model.buffer.getText() === SCENE_VIEWPORT_SOURCE.replace('z = 33', 'z = 09') + original && scene.view.properties[2].value === 9,
 			'A02: the revealed bottom field edits only its own canonical Lua value');
 		await press('ControlLeft', 'KeyZ');
 		check(model.buffer.getText() === authored, 'A02: one document Undo restores the accepted edit');
 		for (let index = 0; index < 4; index += 1) await press('Tab');
 		await resize(bodyTop + 38);
 		check(z.field.focusTarget.hasFocus, 'A02: divider resize preserves the field focus'); visible(2);
-		await resize(scene.layout.top);
-		check(scene.details.height === 0 && !scene.details.scrollbar.isVisible(), 'A02: a fully collapsed editor has no fabricated content viewport or thumb');
+		await resize(scene.view.layout.top);
+		check(scene.view.details.height === 0 && !scene.view.details.scrollbar.isVisible(), 'A02: a fully collapsed editor has no fabricated content viewport or thumb');
 		await resize(bodyTop + 38);
 		check(z.field.focusTarget.hasFocus, 'A02: expanding a collapsed viewport retains the actual focused field'); visible(2);
 		const selectedProblem = problemsPanel.selectedDiagnostic;

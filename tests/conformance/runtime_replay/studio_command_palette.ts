@@ -74,11 +74,11 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('palette: actual scene pane missing');
-	await click(scene.properties[0].bounds);
+	await click(scene.view.properties[0].bounds);
 	await press('Digit5');
-	check(pane.controls[0].pending, 'palette: a real property draft exists');
+	check(pane.control.controls[0].pending, 'palette: a real property draft exists');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
-	check(!pane.controls[0].pending && scene.properties[0].value === 5,
+	check(!pane.control.controls[0].pending && scene.view.properties[0].value === 5,
 		'palette: property blur accepts before command enumeration');
 	check(!picker.model.items.some(row => row.label === 'Edit: Undo')
 		&& picker.model.items.some(row => row.label === 'File: Save'),
@@ -88,7 +88,7 @@ export async function testStudioCommandPalette(test: StudioFixture): Promise<voi
 	await press('Enter');
 	await until(() => !scene.workingCopy.dirty, 'palette: actual Save persists accepted scene source');
 	check(scene.workingCopy.lastSavedSource === scene.workingCopy.buffer.getText()
-		&& inputFocus.target === pane.controls[0].field.focusTarget, 'palette: Save neither targets stale code nor loses the originating property');
+		&& inputFocus.target === pane.control.controls[0].field.focusTarget, 'palette: Save neither targets stale code nor loses the originating property');
 	await press('Enter');
 	await runPaletteCommand('Edit: Undo');
 	check(scene.workingCopy.buffer.getText() === source, 'palette: explicitly focusing the scene admits its document history');

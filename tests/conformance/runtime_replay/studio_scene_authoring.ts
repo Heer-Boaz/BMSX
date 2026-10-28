@@ -28,7 +28,7 @@ export async function openScene(test: StudioFixture, name: string, memberCount =
 	await test.until(() => test.ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor'
 		&& test.ide.editor.editorParts.activeGroup.model.activeTab.resource?.path === `scenes/${name}.lua`, 'file picker opens scene code');
 	const scene = await openSceneEditor(test);
-	check(scene.outline.roots.length === 1 && scene.outline.roots[0].children.length === memberCount,
+	check(scene.view.outline.roots.length === 1 && scene.view.outline.roots[0].children.length === memberCount,
 		`${name}: Studio exposes all ${memberCount} separately authored members`);
 	return scene;
 }
@@ -38,13 +38,13 @@ export async function focusOption(test: StudioFixture, scene: SceneEditorInput, 
 	await selectMember(test, scene, member);
 	const pane = test.ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('the Scene Editor must own the option inputs');
-	const index = scene.optionProperties.findIndex(property => property.label === label);
+	const index = scene.view.optionProperties.findIndex(property => property.label === label);
 	check(index >= 0, `${label}: authored option appears in the inspector`);
-	const control = pane.options.controls[index];
-	for (let step = 0; !control.field.focusTarget.hasFocus && step < pane.controls.length + pane.options.controls.length + 3; step += 1) await test.press('Tab');
+	const control = pane.control.options.controls[index];
+	for (let step = 0; !control.field.focusTarget.hasFocus && step < pane.control.controls.length + pane.control.options.controls.length + 3; step += 1) await test.press('Tab');
 	check(control.field.focusTarget.hasFocus, `${label}: Tab reaches the authored option`);
-	const bounds = scene.optionProperties[index].bounds;
-	check(bounds.top >= scene.details.bounds.top && bounds.bottom <= scene.details.bounds.bottom,
+	const bounds = scene.view.optionProperties[index].bounds;
+	check(bounds.top >= scene.view.details.bounds.top && bounds.bottom <= scene.view.details.bounds.bottom,
 		`${label}: focus reveals the complete option input`);
 	await test.click(bounds);
 	await test.press('ControlLeft', 'KeyA');
@@ -64,11 +64,11 @@ export async function editOption(test: StudioFixture, scene: SceneEditorInput, m
 
 export async function editPosition(test: StudioFixture, scene: SceneEditorInput, member: number, field: number, value: number) {
 	await selectMember(test, scene, member);
-	await test.click(scene.properties[field].bounds);
+	await test.click(scene.view.properties[field].bounds);
 	await test.press('ControlLeft', 'KeyA');
 	for (const digit of String(value)) await test.press(`Digit${digit}`);
 	await test.press('Enter');
-	check(scene.properties[field].value === value, 'visible position property accepts keyboard input');
+	check(scene.view.properties[field].value === value, 'visible position property accepts keyboard input');
 	await test.press('ControlLeft', 'KeyS');
 	await test.until(() => !scene.workingCopy.dirty, 'save authored position through the workspace API');
 }

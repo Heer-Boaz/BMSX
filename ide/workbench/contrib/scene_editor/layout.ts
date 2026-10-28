@@ -11,6 +11,7 @@ import { layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, WORKBENC
 import { clampWorkbenchListScroll, layoutWorkbenchList } from '../../ui/list_view';
 import type { WorkbenchTreeLayout, WorkbenchTreeNode } from '../../ui/tree_view';
 import type { SceneEditorInput } from './editor_input';
+import type { SceneEditorViewState } from './view_state';
 import type { SceneOutlineElement } from './outline';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
@@ -29,7 +30,7 @@ export function measureSceneEditor(_input: SceneEditorInput, font: EditorFont, c
 }
 
 /** Measure content on invalidation; a scroll only projects the retained field rectangles. */
-export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boolean, selectionChanged = false, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): boolean {
+export function layoutSceneEditor(input: SceneEditorViewState, contentChanged: boolean, selectionChanged = false, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): boolean {
 	const changed = updateFullWidthWorkbenchLayout(input.layout, bounds);
 	const layout = input.layout;
 	// Each split column needs usable text width; font changes can cross this boundary.
@@ -101,7 +102,7 @@ export function layoutSceneEditor(input: SceneEditorInput, contentChanged: boole
 }
 
 /** Scene composition chooses content, not screen rows. All text, including notes, contributes height. */
-function measureSceneDetails(input: SceneEditorInput, width: number): number {
+function measureSceneDetails(input: SceneEditorViewState, width: number): number {
 	input.detailsText.length = 0;
 	const node = input.outline.rows[input.outline.selectionIndex];
 	if (node === undefined) return 0;
@@ -129,7 +130,7 @@ function measureSceneDetails(input: SceneEditorInput, width: number): number {
 	return appendDetailsText(input, 'AFFECTS NEW INSTANCES', textWidth, top);
 }
 
-function appendDetailsText(input: SceneEditorInput, text: string, width: number, top: number, warning = false): number {
+function appendDetailsText(input: SceneEditorViewState, text: string, width: number, top: number, warning = false): number {
 	writeWrappedMeasuredText(input.wrappedLines, text, width, width, text.length, measureTextRange);
 	for (const line of input.wrappedLines) {
 		input.detailsText.push({ text: line, top, warning });
