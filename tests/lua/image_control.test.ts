@@ -171,3 +171,64 @@ test('the image owner handles its local escape without replacing image navigatio
 	assert.equal(escape.consumed, true); assert.equal(f.focus.target, f.parent);
 	assert.equal(f.capture.active, false, 'focus-return ends the image pan through the existing blur owner');
 });
+
+test('a rejected image focus request consumes its press without starting a pan', t => {
+	const f = fixture(t), primary = PointerButton.Primary;
+	f.focus.bindScopeAdmission(() => false);
+	const handled = f.control.handlePointer({ viewportX: 80, viewportY: 70, valid: true, insideViewport: true,
+		pressedButtons: primary, justPressedButtons: primary, justReleasedButtons: 0 });
+	assert.equal(handled, true);
+	assert.equal(f.capture.active, false);
+	assert.ok(f.focus.target === f.parent);
+	assert.equal(f.view.horizontal.getScroll(), 200); assert.equal(f.view.vertical.getScroll(), 100);
+});
+
+for (const change of ['detach', 'replace', 'same-view rebind', 'scope retirement'] as const)
+test(`image focus-entry ${change} consumes the old press without capturing or panning another attachment`, t => {
+	const f = fixture(t), primary = PointerButton.Primary;
+	const replacement = new WorkbenchImageViewport();
+	replacement.setImage(800, 600); replacement.layout(20, 30, 223, 133); replacement.setScale(1);
+	replacement.horizontal.setScroll(300); replacement.vertical.setScroll(150);
+	f.parent.onDidBlur(() => {
+		if (change === 'detach') f.control.clearInput();
+		else if (change === 'replace') f.control.setInput(replacement);
+		else if (change === 'same-view rebind') f.control.setInput(f.view);
+		else f.control.focusTarget.scope.retireContext();
+	});
+	f.pointer(80, 70, primary, primary);
+	assert.equal(f.capture.active, false);
+	const motion = { modifiers: KeyModifier.none, spaceDown: false, viewportX: 60, viewportY: 50,
+		valid: true, insideViewport: true, pressedButtons: primary, justPressedButtons: 0, justReleasedButtons: 0 };
+	assert.doesNotThrow(() => { assert.equal(f.capture.dispatch(motion, false, 0), false); });
+	assert.equal(f.view.horizontal.getScroll(), 200); assert.equal(f.view.vertical.getScroll(), 100);
+	assert.equal(replacement.horizontal.getScroll(), 300); assert.equal(replacement.vertical.getScroll(), 150);
+});
+
+test('a newer foreign focus and pointer capture during image entry are not replaced or cancelled', t => {
+	const f = fixture(t), primary = PointerButton.Primary, foreign = f.focus.createTarget();
+	let moves = 0, cancellations = 0;
+	const foreignDrag = { handleCapturedPointer: () => { moves++; }, releaseCapturedPointer: () => {}, cancelPointer: () => { cancellations++; } };
+	f.parent.onDidBlur(() => { foreign.focus(); f.capture.capture(foreignDrag); });
+	f.pointer(80, 70, primary, primary);
+	assert.ok(f.focus.admittedTarget === foreign);
+	assert.equal(f.capture.active, true);
+	f.pointer(60, 50, primary);
+	assert.equal(moves, 1); assert.equal(cancellations, 0);
+	assert.equal(f.view.horizontal.getScroll(), 200); assert.equal(f.view.vertical.getScroll(), 100);
+});
+
+test('clearing an image attachment publishes retirement before blur can bind and focus its replacement', t => {
+	const f = fixture(t), primary = PointerButton.Primary;
+	const replacement = new WorkbenchImageViewport();
+	replacement.setImage(800, 600); replacement.layout(20, 30, 223, 133); replacement.setScale(1);
+	replacement.horizontal.setScroll(300); replacement.vertical.setScroll(150);
+	f.control.focusTarget.focus();
+	const unbind = f.control.focusTarget.onDidBlur(() => {
+		unbind(); f.control.setInput(replacement); f.control.focusTarget.focus();
+	});
+	f.control.clearInput();
+	assert.ok(f.focus.admittedTarget === f.control.focusTarget);
+	f.pointer(80, 70, primary, primary); f.pointer(60, 50, primary);
+	assert.equal(replacement.horizontal.getScroll(), 320); assert.equal(replacement.vertical.getScroll(), 170);
+	assert.equal(f.view.horizontal.getScroll(), 200); assert.equal(f.view.vertical.getScroll(), 100);
+});

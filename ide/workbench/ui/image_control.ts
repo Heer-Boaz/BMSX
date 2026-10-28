@@ -12,6 +12,7 @@ import { ScrollbarPointerControl } from './scrollbar_pointer';
 export class WorkbenchImageControl implements PointerCaptureTarget {
 	public readonly focusTarget: InputFocusTarget;
 	private input: WorkbenchImageViewport | null = null;
+	private inputGeneration = 0;
 	private readonly scrollbar: ScrollbarPointerControl;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
@@ -22,7 +23,7 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 	private anchorScrollX = 0;
 	private anchorScrollY = 0;
 
-	public constructor(focus: InputFocusService, private readonly capture: PointerCaptureService,
+	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		parent: InputFocusTarget, private readonly scope?: PointerCaptureScope, keyboard?: (input: KeyInputEvent) => boolean) {
 		this.scrollbar = new ScrollbarPointerControl(capture, scope);
 		this.focusTarget = focus.createTarget(parent);
@@ -34,14 +35,16 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 	}
 
 	public setInput(input: WorkbenchImageViewport): void {
+		this.inputGeneration++;
 		this.cancelPointer();
 		this.input = input;
 	}
 
 	public clearInput(): void {
+		this.inputGeneration++;
 		this.cancelPointer();
-		this.focusTarget.release();
 		this.input = null;
+		this.focusTarget.release();
 	}
 
 	public dispose(): void {
@@ -65,7 +68,9 @@ export class WorkbenchImageControl implements PointerCaptureTarget {
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) return false;
 		const pressed = snapshot.justPressedButtons;
 		if ((pressed & (PointerButton.Primary | PointerButton.Auxiliary)) !== 0) {
-			this.focusTarget.focus();
+			const scope = this.focusTarget.scope, context = scope.contextGeneration, generation = this.inputGeneration;
+			if (!this.focusTarget.focus() || this.inputGeneration !== generation || scope.contextGeneration !== context
+				|| this.focus.admittedTarget !== this.focusTarget) return true;
 			const button = (pressed & PointerButton.Auxiliary) !== 0 ? PointerButton.Auxiliary : PointerButton.Primary;
 			this.capture.capture(this, button, this.scope);
 			this.anchorX = snapshot.viewportX;
