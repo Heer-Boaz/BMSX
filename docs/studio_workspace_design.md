@@ -589,7 +589,16 @@ Keyboard focus, active part, hovered surface and command subject remain separate
   root chrome or the Command Palette captures the activated editor context when
   the interaction starts. It does not infer a different subject on submission.
   The Palette retains that editor context separately from the focused control's
-  local capabilities and clipboard. A disabled local command never borrows the
+  local capabilities and clipboard. Its editor context is the concrete pane,
+  captured before blur; its ordinary control origin is resolved after blur has
+  settled any draft. An ended property field cannot remain the catalog's local
+  command owner. An explicit nonfocused chrome/control origin stays explicit.
+  Reopening the workspace picker preserves a live invoking editor group's
+  affinity rather than borrowing a later activated sibling group.
+  The query field exposes that retained pane as its workspace-command context;
+  Go to File exposes its retained destination group. Neither replaces local
+  query history/clipboard, physical origin or focus return.
+  A disabled command on a still-live local control never borrows the
   editor's action. Its fixed catalog retires when either contributing context
   retires, including during focus return after popup teardown.
   Local Palette actions use their control's accepting selection, while editor

@@ -24,6 +24,8 @@ import type { WorkbenchModalPresentation } from '../windows/model';
 export type QuickInputOptions = {
 	readonly preserveFocus?: boolean;
 	readonly invocationOrigin?: InputFocusTarget | null;
+	/** Workspace-command addressing, independent of local query editing and focus return. */
+	readonly commandTarget?: InputFocusTarget;
 };
 
 type QuickInputSession = {
@@ -244,6 +246,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		session.returnFocus = returnFocus;
 		session.interactionOrigin = interactionOrigin;
 		this.session = session;
+		this.field.focusTarget.commandContext = options.commandTarget === undefined ? this.field.focusTarget : options.commandTarget;
 		this.field.focusTarget.scope.interactionOrigin = interactionOrigin;
 		const originScope = origin === null ? this.presentation.scope : origin.commandContext.scope;
 		session.unbindOrigin = originScope.onDidRetireContext(() => {
@@ -298,6 +301,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		const session = this.session;
 		if (session === null) return;
 		this.session = null;
+		this.field.focusTarget.commandContext = this.field.focusTarget;
 		this.field.focusTarget.scope.interactionOrigin = undefined;
 		if (!handoff) { session.contextAdmitted = false; session.unbindOrigin?.(); }
 		this.retiringSession = session;

@@ -72,6 +72,70 @@ for (const kind of ['pick', 'input', 'replacement'] as const) test(`quick ${kind
 	}
 });
 
+test('QuickInput command context is independent of its invoking control, interaction origin and local query history', t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget(), document = inputFocus.createTarget();
+	origin.focus(); let documentUndo = 0;
+	document.registerCommand('undo', { isEnabled: () => true, run: () => { documentUndo++; } });
+	const queryUndo = picker.field.focusTarget.getCommand('undo'); assert.ok(queryUndo !== undefined);
+	let provided = false;
+	picker.pick('Commands', '', prepared => {
+		provided = true; assert.ok(prepared === origin);
+		assert.ok(picker.field.focusTarget.commandContext === document);
+		return new TextQuickPickProvider(items);
+	}, () => assert.fail('cancelled pick accepted'), undefined, { commandTarget: document });
+	assert.equal(provided, true); assert.ok(picker.invocationOrigin === origin);
+	assert.ok(picker.field.focusTarget.scope.interactionOrigin === origin.scope);
+	assert.ok(inputFocus.admittedTarget === picker.field.focusTarget);
+	assert.ok(picker.field.focusTarget.getCommand('undo') === queryUndo && queryUndo.isEnabled() === false);
+	insertValue(picker.field, 'ab'); assert.equal(queryUndo.isEnabled(), true);
+	inputFocus.executeCommand('undo', picker.field.focusTarget);
+	// Query bytes are an editing-ownership contract, not incidental UI wording.
+	assert.equal(picker.field.text, ''); assert.equal(documentUndo, 0);
+	let returned = false;
+	const unbind = origin.onDidFocus(() => {
+		unbind(); returned = true;
+		assert.ok(picker.field.focusTarget.commandContext === picker.field.focusTarget);
+		assert.ok(picker.field.focusTarget.scope.interactionOrigin === undefined);
+	}); t.after(unbind);
+	picker.hide(); assert.equal(returned, true); assert.ok(inputFocus.admittedTarget === origin);
+});
+
+for (const kind of ['pick', 'input'] as const) test(`replacing an addressed QuickInput with a default ${kind} publishes self context before retiring callbacks`, t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget(), document = inputFocus.createTarget(); origin.focus();
+	let retired = false;
+	picker.pick('Previous', '', () => new TextQuickPickProvider(items), () => {}, lifetime => {
+		lifetime.add({ dispose: () => {
+			retired = true; assert.ok(picker.field.focusTarget.commandContext === picker.field.focusTarget);
+		} });
+	}, { commandTarget: document });
+	assert.ok(picker.field.focusTarget.commandContext === document);
+	if (kind === 'pick') picker.pick('Current', '', prepared => {
+		assert.ok(prepared === origin && picker.field.focusTarget.commandContext === picker.field.focusTarget);
+		return new TextQuickPickProvider(items);
+	}, () => {});
+	else picker.input('Current', '', '', async value => value, () => {});
+	assert.equal(retired, true); assert.ok(picker.visible && picker.invocationOrigin === origin);
+	assert.ok(picker.field.focusTarget.commandContext === picker.field.focusTarget);
+	picker.hide(); assert.ok(inputFocus.admittedTarget === origin);
+});
+
+for (const accept of [false, true]) test(`QuickInput ${accept ? 'acceptance' : 'cancellation'} cannot clear the newer command context opened by focus return`, t => {
+	const picker = createPicker(t), origin = inputFocus.createTarget(), first = inputFocus.createTarget(), second = inputFocus.createTarget();
+	origin.focus(); let accepted = false, reopened = false;
+	picker.pick('Previous', '', () => new TextQuickPickProvider(items), () => { accepted = true; }, undefined, { commandTarget: first });
+	assert.ok(picker.field.focusTarget.commandContext === first);
+	const unbind = origin.onDidFocus(() => {
+		unbind(); reopened = true; assert.ok(picker.field.focusTarget.commandContext === picker.field.focusTarget);
+		picker.pick('Newer', '', () => new TextQuickPickProvider(items), () => {}, undefined, { commandTarget: second });
+	}); t.after(unbind);
+	if (accept) { picker.model.list.selectionIndex = 0; picker.accept(); } else picker.hide();
+	assert.equal(reopened, true); assert.equal(accepted, false, 'the newer picker replaces the old handoff before its accept callback');
+	assert.ok(picker.visible && picker.invocationOrigin === origin);
+	assert.ok(picker.field.focusTarget.commandContext === second);
+	assert.ok(picker.field.focusTarget.scope.interactionOrigin === origin.scope);
+	assert.ok(inputFocus.admittedTarget === picker.field.focusTarget);
+});
+
 test('composed Palette keeps focused-control clipboard separate from its captured editor commands', () => {
 	const origin = inputFocus.createTarget(), editorTarget = inputFocus.createTarget();
 	origin.bindClipboard({ readOnly: false, copy: () => 'focused selection', cut() {}, paste() {} });

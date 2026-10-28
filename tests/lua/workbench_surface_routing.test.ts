@@ -1,5 +1,6 @@
 import { TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
 import { createTestEditorGroup } from '../helpers/editor_panes';
+import { createActualSourcePanes } from '../helpers/source_panes';
 import { findEditorGroup } from '../../ide/workbench/services/editor/editor_group';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
 import assert from 'node:assert/strict';
@@ -51,6 +52,7 @@ import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { selectLuaProgramModules } from '../../toolchain/ts/lua/compiler/module_graph';
 import { linkTestSystemBlua32, type TestBlua32Image } from '../helpers/blua32';
 import { parseLuaChunk } from './cpu_test_harness';
+import { LuaTableFieldKind } from '../../toolchain/ts/lua/syntax/ast';
 import { RemoteInput } from '../../hosts/common/input/remote';
 import { HostUiInput } from '../../hosts/common/input/ui';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
@@ -77,6 +79,7 @@ import { encodeImgDecStream } from '../../toolchain/ts/rompack/imgdec_codec';
 import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
+import { acceptEffectPropertySelection } from '../../ide/workbench/contrib/behavior_lens/action_effect_properties';
 
 const PROMPT_REQUEST: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
 	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
@@ -1004,6 +1007,96 @@ test('chrome Palette retains Host Error body Copy and writes the exact attached 
 	assert.equal(group.panes.activePane, pane);
 });
 
+test('the real Palette command preserves an active Find field whose disabled Undo must not borrow document history', t => {
+	const f = createActualSourcePanes(t), model = f.firstInput.workingCopy;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- document history\n' }]);
+	const source = model.buffer.getText();
+	f.first.focus(); f.key('KeyF', KeyModifier.ctrl);
+	const field = f.first.find.state.field, target = field.focusTarget;
+	assert.ok(inputFocus.admittedTarget === target && target.canFocus!());
+	assert.equal(field.canUndo, false); assert.equal(model.canUndo, true);
+	f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
+	assert.equal(f.editor.quickInput.visible, true);
+	assert.ok(f.first.find.state.visible && target.canFocus!());
+	assert.ok(f.editor.quickInput.invocationOrigin === target);
+	const items = f.editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	assert.equal(items.some(item => item.command === 'undo'), false);
+	f.key('Escape');
+	assert.ok(inputFocus.admittedTarget === target);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, true);
+});
+
+for (const originKind of ['title', 'toolbar'] as const) test(`an explicitly invoked ${originKind} Palette keeps its actual window despite another focused editor`, t => {
+	const f = createActualSourcePanes(t), window = f.firstPart.window!;
+	const origin = originKind === 'title' ? window.focusTarget : window.actionFocusTarget;
+	f.second.focus();
+	f.editor.commands.execute('commandPalette', origin);
+	const picker = f.editor.quickInput;
+	assert.equal(picker.visible, true); assert.ok(picker.invocationOrigin === origin);
+	const items = picker.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	const row = picker.model.list.rows.findIndex(row => items[row.itemIndex].command === 'window.maximize');
+	assert.ok(row >= 0);
+	const action = items[picker.model.list.rows[row].itemIndex];
+	assert.ok(action.target === origin);
+	picker.model.list.selectionIndex = row; picker.accept();
+	assert.equal(window.model.placement, 'maximized'); assert.equal(f.secondPart.window!.model.placement, 'normal');
+	assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
+});
+
+for (const rebound of ['origin', 'sibling'] as const) test(`real Palette Undo ${rebound === 'origin' ? 'rejects a rebound origin' : 'survives a sibling rebind'} during focus return`, t => {
+	const f = createActualSourcePanes(t), model = f.firstInput.workingCopy;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- canonical edit\n' }]);
+	const edited = model.buffer.getText(), origin = f.first.commandTarget;
+	f.first.focus(); f.editor.commands.execute('commandPalette', origin);
+	const picker = f.editor.quickInput, items = picker.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	const row = picker.model.list.rows.findIndex(row => items[row.itemIndex].command === 'undo');
+	assert.ok(row >= 0 && items[picker.model.list.rows[row].itemIndex].target === origin);
+	picker.model.list.selectionIndex = row;
+	const group = rebound === 'origin' ? f.firstGroup : f.secondGroup;
+	const oldPane = group.panes.activePane, retained = group.model.activeTab!;
+	const replacement = (rebound === 'origin' ? f.secondInput : f.firstInput).createView();
+	let returned = 0;
+	const unbind = origin.onDidFocus(() => { unbind(); returned++; group.openEditor(replacement); });
+	t.after(unbind); picker.accept();
+	assert.equal(returned, 1); assert.equal(picker.visible, false);
+	assert.ok(group.model.activeTab === replacement);
+	assert.ok(group.panes.activePane === oldPane && group.panes.activePane!.input === replacement);
+	assert.ok(group.model.contains(retained), 'the old input survives; only its concrete cached pane attachment retired');
+	assert.equal(model.buffer.getText(), rebound === 'origin' ? edited : f.source);
+	assert.equal(model.canUndo, rebound === 'origin');
+	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
+});
+
+for (const originKind of ['source', 'files', 'filesGoToFile'] as const) test(`the real workspace ${originKind} to Palette transition retains its editor when a same-part sibling becomes active behind it`, t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
+	const sibling = parts.splitGroup(f.firstGroup, 'right'); assert.ok(sibling !== undefined);
+	const otherInput = f.secondInput.createView(); sibling.openEditor(otherInput, { preserveFocus: true }); f.update();
+	const model = f.firstInput.workingCopy;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- invoking source edit\n' }]);
+	const edited = model.buffer.getText();
+	f.first.focus();
+	const editorTarget = f.first.commandTarget;
+	if (originKind !== 'source') f.editor.commands.execute('resources.focus', editorTarget);
+	const origin = originKind === 'source' ? editorTarget : f.editor.resourcePanel.focusTarget;
+	assert.ok(inputFocus.admittedTarget === origin);
+	f.key(originKind === 'filesGoToFile' ? 'Comma' : 'KeyP', KeyModifier.ctrl | (originKind === 'filesGoToFile' ? KeyModifier.none : KeyModifier.shift));
+	const picker = f.editor.quickInput;
+	assert.equal(picker.visible, true); assert.ok(picker.invocationOrigin === origin);
+	assert.equal(f.firstPart.activateGroup(sibling), true);
+	assert.ok(f.firstPart.activeGroup === sibling && inputFocus.admittedTarget === picker.field.focusTarget);
+	f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
+	assert.equal(picker.visible, true); assert.ok(picker.invocationOrigin === origin);
+	const items = picker.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	const row = picker.model.list.rows.findIndex(row => items[row.itemIndex].command === 'group.focusTabs');
+	assert.ok(row >= 0 && items[picker.model.list.rows[row].itemIndex].target === editorTarget);
+	picker.model.list.selectionIndex = row; picker.accept();
+	assert.equal(model.buffer.getText(), edited); assert.equal(model.canUndo, true);
+	assert.equal(otherInput.workingCopy.buffer.getText(), f.otherSource);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && sibling.model.activeTab === otherInput);
+	assert.ok(inputFocus.admittedTarget === f.firstGroup.tabStrip.focusTarget);
+});
+
 test('Conversations publishes older-page admission on its real transcript client for the attached input lifetime', t => {
 	const { editor } = fixture(t), conversation = new ObservedConversation(), replacement = new ObservedConversation();
 	const input = new ConversationObserverInput(conversation), next = new ConversationObserverInput(replacement);
@@ -1163,12 +1256,16 @@ test('Animation body clients and its actual property draft publish exact client-
 	for (let index = 0; index < commands.length; index++) assert.equal(field.getCommand(commands[index]), handlers[index]);
 	assert.equal(field.getCommand('undo'), undo, 'navigation does not borrow or replace the actual field-local history');
 	assert.equal(native.replaceText(0, native.readText().text.length, '2'), true);
-	showCommandPalette(editor.editorParts.main.quickInput, editor.commands);
+	editor.commands.execute('commandPalette', field);
 	assert.equal(input.document!.tracks[0].keys[0].value!.value, 2, 'ordinary Palette blur first publishes the actual field draft');
-	assert.equal(editor.editorParts.main.quickInput.invocationOrigin, details, 'the retired field resolves to its actual Details owner before catalog enumeration');
-	const palette = editor.editorParts.main.quickInput.model.list;
+	assert.ok(field.canFocus?.() === false);
+	assert.equal(editor.quickInput.visible, true);
+	assert.ok(editor.quickInput.invocationOrigin === details, 'the real command resolves the retired field to its actual Details owner before catalog enumeration');
+	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	assert.ok(items.find(item => item.command === 'undo')?.target === details, 'document Undo belongs to the surviving concrete Details client, not its retired field');
+	const palette = editor.quickInput.model.list;
 	assert.ok(palette.rows.some(row => (row.item as CommandQuickPickItem).command === 'animation.tracks'));
-	editor.editorParts.main.quickInput.hide();
+	editor.quickInput.hide();
 	const edited = input.workingCopy.buffer.getText();
 	editor.commands.execute('animation.tracks', field); assert.equal(input.activeClient, 'tracks');
 	assert.equal(input.workingCopy.buffer.getText(), edited);
@@ -1203,6 +1300,61 @@ test('Animation body clients and its actual property draft publish exact client-
 	editor.editorParts.main.activeGroup.panes.clearEditor();
 	for (const client of [...clients, field, valueField]) for (const command of ['editor.source', 'animation.fit', 'animation.snap', 'animation.addKey', 'animation.addFrame'] as const)
 		assert.equal(editor.commands.isEnabled(command, client), false);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} real Behavior property Palette shortcut retires its draft and keeps query Undo separate from canonical Undo`, t => {
+	const boot = 'return 42', path = 'palette-effect.lua';
+	const source = "local effects<const> = require('cartlib/actioneffects'); effects.register_effect('palette.effect', { period_ms = 40 }); return {}";
+	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(boot, 'boot.lua'), [],
+		{ entrySource: boot, programDomain: 'system', optLevel: 0 }));
+	const registry: LuaSourceRegistry = { records: [], path2lua: {}, module2lua: {}, entrySourcePath: 'boot.lua',
+		projectRootPath: '', can_boot_from_source: true, revision: 0 };
+	registerLuaSourceRecord(registry, { resid: 'boot', type: 'lua', src: boot, base_src: boot,
+		source_path: 'boot.lua', normalized_source_path: 'boot.lua', module_path: 'boot', update_timestamp: 0,
+		base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
+	registerLuaSourceRecord(registry, createScenarioTestSourceRecord(path, 1, source, path));
+	registerLuaSourceRecord(registry, createScenarioTestSourceRecord('cartlib/actioneffects.lua', 1, '', 'machine/bios/cartlib/actioneffects.lua'));
+	const { editor } = fixture(t, { image, registry }); editor.setFontVariant(variant);
+	const group = editor.editorParts.main.activeGroup, picker = editor.quickInput;
+	editor.commands.execute('behaviorLens.actionEffects');
+	assert.equal(editor.editorParts.main.quickInput.visible, true);
+	editor.editorParts.main.quickInput.accept(); editor.update(0);
+	const input = group.model.activeTab!;
+	assert.ok(input.kind === 'behavior_lens' && input.view.presentation.kind === 'properties');
+	const properties = input.view.presentation, model = input.workingCopy, pane = group.panes.activePane!;
+	const content = pane.commandTarget!;
+	const property = properties.tree.rows.findIndex(row => row.element.kind === 'property'
+		&& row.element.write?.field.kind === LuaTableFieldKind.IdentifierKey && row.element.write.field.name === 'period_ms');
+	assert.ok(property >= 0);
+	properties.tree.selectionIndex = property; acceptEffectPropertySelection(input.view, properties, false);
+	editor.commands.execute('behaviorLens.editProperty', content);
+	const field = inputFocus.admittedTarget!;
+	assert.ok(field !== content && field.edit !== undefined);
+	assert.equal(field.textInput!.replaceText(0, field.textInput!.readText().text.length, '123'), true);
+	const press = (code: string, modifiers = KeyModifier.none) => {
+		editor.dispatchKey(new KeyInputEvent(code, modifiers));
+		editor.dispatchKey(new KeyInputEvent(code, modifiers, false, false));
+	};
+	press('KeyP', KeyModifier.ctrl | KeyModifier.shift);
+	const accepted = source.replace('period_ms = 40', 'period_ms = 123');
+	assert.equal(model.buffer.getText(), accepted, 'ordinary shortcut blur publishes the one canonical property edit');
+	assert.equal(model.canUndo, true); assert.ok(field.canFocus?.() === false);
+	assert.ok(picker.visible && picker.invocationOrigin === content);
+	const items = picker.model.items as ReturnType<typeof buildCommandQuickPickItems>;
+	assert.ok(items.find(item => item.command === 'undo')?.target === content);
+	for (const character of 'undox') {
+		const target = editor.textTarget!, state = target.readText();
+		assert.equal(target.replaceText(state.selectionStart, state.selectionEnd, character), true);
+	}
+	assert.equal(picker.field.text, 'undox');
+	press('KeyZ', KeyModifier.ctrl);
+	assert.equal(picker.field.text, 'undo', 'query Undo removes only the last local query edit');
+	assert.equal(model.buffer.getText(), accepted);
+	assert.equal((picker.model.list.rows[picker.model.list.selectionIndex].item as CommandQuickPickItem).command, 'undo');
+	press('Enter');
+	assert.equal(picker.visible, false); assert.ok(inputFocus.admittedTarget === content);
+	assert.ok(group.model.activeTab === input && group.panes.activePane === pane);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false, 'one canonical Undo restores the exact authored bytes');
 });
 
 test('clipboard admission and execution retain the supplied leaf rather than its alias or ambient focus', async t => {

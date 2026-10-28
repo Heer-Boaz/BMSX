@@ -43,5 +43,5 @@ export function showResourceQuickAccess(editor: CartEditor, catalog: WorkspaceSo
 	}, lifetime => {
 		lifetime.add({ dispose: group.onWillDispose(() => picker.hide()) });
 		lifetime.add({ dispose: editorTextModelService.onWillClear(() => picker.hide(false)) });
-	});
+	}, { commandTarget: group.focusTarget });
 }

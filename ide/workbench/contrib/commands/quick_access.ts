@@ -35,7 +35,7 @@ export function buildCommandQuickPickItems(commands: Pick<IdeCommandController, 
 }
 
 export function showCommandPalette(picker: QuickInputController, commands: Pick<IdeCommandController, 'isEnabled' | 'isActive' | 'execute'>,
-	invocationOrigin?: InputFocusTarget | null, editorTarget?: InputFocusTarget | null): void {
+	invocationOrigin?: InputFocusTarget | null, editorTarget?: InputFocusTarget): void {
 	const editorScope = editorTarget?.commandContext.scope, editorGeneration = editorScope?.contextGeneration;
 	picker.pick('COMMAND PALETTE', 'Type a command', target => {
 		return new CommandQuickPickProvider(buildCommandQuickPickItems(commands, target, editorTarget === undefined ? target : editorTarget));
@@ -50,5 +50,5 @@ export function showCommandPalette(picker: QuickInputController, commands: Pick<
 		commands.execute(item.command, item.target, undefined, editorTarget);
 	}, lifetime => {
 		if (editorScope !== undefined) lifetime.add({ dispose: editorScope.onDidRetireContext(() => picker.hide(false)) });
-	}, { invocationOrigin });
+	}, { invocationOrigin, commandTarget: editorTarget });
 }
