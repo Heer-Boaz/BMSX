@@ -1,7 +1,6 @@
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import type { SourceStackTraceFrame } from '../../ide/runtime/stack_trace';
 import { TEST_CARTRIDGE_CONTEXT_IDS, TEST_SYSTEM_CONTEXT_ID } from '../helpers/runtime_sources';
-import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { openGpuDebugger } from '../../ide/workbench/contrib/gpu_debugger/editor_input';
@@ -14,9 +13,8 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { ClipboardContents } from '../../hosts/common/clipboard';
 import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
 import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
-import { resourceIdentityKey, resourceIdentityKeyFromParts } from '../../ide/common/resource';
-import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
-import { editorTextModelService, EditorTextModelService } from '../../ide/editor/model/model_service';
+import { resourceIdentityKeyFromParts } from '../../ide/common/resource';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../ide/editor/ui/view/view';
@@ -38,7 +36,6 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
 import { getSingleCursorSelectionRange } from '../../ide/editor/editing/cursor/state';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
@@ -405,7 +402,7 @@ test('actual inspector and source attachments preserve user-opened Files and Pro
 	const selectedDiagnostic = problemsPanel.selectedDiagnostic, diagnostics = problemsPanel.getDiagnostics(), problemScroll = problemsPanel.getScrollIndex();
 	assert.ok(problemScroll > 0);
 	const unchanged = () => {
-		assert.equal(files.isVisible(), true); assert.equal(files.getMode(), 'resources'); assert.ok(files.files.tree === tree);
+		assert.equal(files.isVisible(), true); assert.ok(files.files.tree === tree);
 		assert.ok(files.files.selectedNode === selectedFolder); assert.equal(selectedFolder.collapsed, true); assert.equal(files.scroll, fileScroll);
 		assert.equal(problemsPanel.isVisible, true); assert.ok(problemsPanel.getDiagnostics() === diagnostics);
 		assert.ok(problemsPanel.selectedDiagnostic === selectedDiagnostic); assert.equal(problemsPanel.getScrollIndex(), problemScroll);
@@ -424,39 +421,6 @@ test('actual inspector and source attachments preserve user-opened Files and Pro
 	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
 	files.setFocused(true); files.hide(); assert.equal(files.isVisible(), false); assert.equal(files.isFocused(), false);
 	problemsPanel.setFocused(true); inputFocus.moveFocus(false); assert.equal(problemsPanel.header.hasFocus, true); problemsPanel.hide(); assert.equal(problemsPanel.isVisible, false); assert.equal(problemsPanel.header.hasFocus, false);
-});
-
-test('actual inspector and source attachments leave Call Hierarchy expansion and reading ownership intact', t => {
-	const f = fixture(t), panel = f.editor.resourcePanel;
-	const calls = 'local function target() end\n'
-		+ Array.from({ length: 20 }, (_, index) => `local function caller_${index}() target() end`).join('\n') + '\n'
-		+ Array.from({ length: 40 }, (_, index) => `local function leaf_${index}() caller_0() end`).join('\n');
-	const project = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
-	const callsResource = { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'calls.lua' };
-	project.updateDocument(callsResource, calls);
-	t.after(() => project.dispose());
-	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
-	const symbol = frontend.findSymbolsByPosition(resourceIdentityKey(callsResource), 1, 16)!;
-	const hierarchy = new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project);
-	panel.showCallHierarchy(hierarchy); panel.prepareLayout();
-	const firstLevel = panel.itemCount;
-	panel.setSelectionIndex(1); panel.expandSelectedCallHierarchyNode();
-	assert.ok(panel.itemCount > firstLevel, 'the real semantic producer supplied a nested expanded branch');
-	panel.setSelectionIndex(25); panel.setScroll(10);
-	const count = panel.itemCount, selected = panel.selectionIndex, scroll = panel.scroll; assert.ok(scroll > 0);
-	const unchanged = () => {
-		assert.equal(panel.isVisible(), true); assert.equal(panel.getMode(), 'command'); assert.equal(panel.itemCount, count);
-		assert.equal(panel.selectionIndex, selected); assert.equal(panel.scroll, scroll);
-		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.model.canUndo, true);
-		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
-	};
-	openGpuDebugger(f.editor.editorParts.main.activeGroup, f.editor.gpu); f.editor.update(0); unchanged();
-	f.editor.editorParts.main.activeGroup.activate(f.input.id); f.editor.update(0); unchanged();
-	f.editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(50))); f.editor.update(0); unchanged();
-	panel.setSelectionIndex(1); panel.collapseSelectedCallHierarchyNode();
-	assert.equal(panel.itemCount, firstLevel, 'the same retained hierarchy still owns its expanded branch');
-	panel.setFocused(true); panel.hide();
-	assert.equal(panel.isVisible(), false); assert.equal(panel.isFocused(), false); assert.equal(panel.getMode(), 'resources');
 });
 
 test('outgoing source presentation retires without clearing the retained context of another editor', t => {
@@ -723,26 +687,11 @@ test('an actual Files scrollbar gesture survives sibling editor activation while
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
 
-for (const mode of ['resources', 'command'] as const) test(`${mode} open intent survives whole-Studio suspension without resetting its retained reading owner`, t => {
+test('Files open intent survives whole-Studio suspension without resetting its retained reading owner', t => {
 	const f = fixture(t), panel = f.editor.resourcePanel;
 	t.after(() => pointerCapture.interrupt(false));
-	if (mode === 'resources') {
-		panel.show(); panel.queuePendingSelection(f.resource(40)); panel.applyPendingSelection();
-		panel.navigateFiles('left'); panel.navigateFiles('left');
-	} else {
-		const calls = 'local function target() end\n'
-			+ Array.from({ length: 20 }, (_, index) => `local function caller_${index}() target() end`).join('\n') + '\n'
-			+ Array.from({ length: 40 }, (_, index) => `local function leaf_${index}() caller_0() end`).join('\n');
-		const project = new EditorLuaSemanticProject(TEST_SYSTEM_CONTEXT_ID, new EditorTextModelService());
-		const callsResource = { contextId: TEST_SYSTEM_CONTEXT_ID, path: 'calls.lua' };
-		project.updateDocument(callsResource, calls);
-		t.after(() => project.dispose());
-		const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
-		const symbol = frontend.findSymbolsByPosition(resourceIdentityKey(callsResource), 1, 16)!;
-		panel.showCallHierarchy(new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project));
-		panel.setSelectionIndex(1); const firstLevel = panel.itemCount; panel.expandSelectedCallHierarchyNode();
-		assert.ok(panel.itemCount > firstLevel); panel.setSelectionIndex(25);
-	}
+	panel.show(); panel.queuePendingSelection(f.resource(40)); panel.applyPendingSelection();
+	panel.navigateFiles('left'); panel.navigateFiles('left');
 	panel.setRatioFromViewportX(144, editorViewState.viewportWidth);
 	panel.setScroll(10); panel.setFocused(true); f.editor.update(0); panel.prepareLayout();
 	const selected = panel.selectionIndex, count = panel.itemCount, scroll = panel.scroll, filesNode = panel.files.selectedNode;
@@ -757,10 +706,10 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 	assert.equal(panel.visible, true, 'suspending Studio revokes presentation, not explicit open intent');
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.equal(panel.isFocused(), false); assert.equal(panel.getBounds(), null);
-	assert.equal(panel.getMode(), mode); assert.equal(panel.selectionIndex, selected); assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll);
+	assert.equal(panel.selectionIndex, selected); assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll);
 	panel.setFocused(true); assert.equal(panel.isFocused(), false, 'an unavailable part cannot regain focus');
 	f.editor.activate(); f.editor.update(0);
-	assert.equal(panel.visible, true); assert.equal(panel.getMode(), mode); assert.equal(panel.selectionIndex, selected);
+	assert.equal(panel.visible, true); assert.equal(panel.selectionIndex, selected);
 	assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll); assert.ok(panel.files.selectedNode === filesNode);
 	assert.ok(panel.getBounds() !== null);
 	// The committed user-sized span, at the same viewport, is the layout contract here.
@@ -791,12 +740,12 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 	f.editor.dispatchWheel({ x: liveX, y: liveY, deltaX: 0, deltaY: 5, attachmentDeltaY: 5, modifiers: KeyModifier.none, timestamp: 5 });
 	f.editor.dispatchPointer({ x: liveX, y: liveY + 24, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 6 });
-	assert.equal(panel.scroll, scroll); assert.equal(panel.selectionIndex, selected); assert.equal(panel.getMode(), mode);
+	assert.equal(panel.scroll, scroll); assert.equal(panel.selectionIndex, selected);
 	f.editor.updateViewport({ width: 512, height: 288 }); f.editor.update(0);
 	assert.equal(panel.getBounds(), null); assert.equal(panel.visible, true);
 	problemsPanel.hide(); f.editor.update(0); panel.prepareLayout();
 	assert.equal(getWorkbenchEditorBounds().left, panel.resizeBounds.right, 'recovery publishes the actual part and its reserved sash lane before editor layout');
-	assert.equal(panel.getMode(), mode); assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll);
+	assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll);
 	f.editor.dispatchPointer({ x: liveX, y: liveY + 24, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 7 });
 	assert.equal(panel.scroll, scroll, 'layout recovery cannot replay the retired hold');
@@ -864,7 +813,7 @@ for (const mode of ['resources', 'command'] as const) test(`${mode} open intent 
 	assert.equal(pointerCapture.active, false); problemsPanel.hide(); f.editor.update(0);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.model.canUndo, true); assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
-	panel.hide(); assert.equal(panel.visible, false); assert.equal(panel.getMode(), 'resources');
+	panel.hide(); assert.equal(panel.visible, false);
 });
 
 for (const stage of ['visible', 'pending', 'pending-roundtrip'] as const) test(`completion readonly publication retires its ${stage} automatic session without changing authored history`, t => {

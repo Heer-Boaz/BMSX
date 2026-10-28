@@ -8,13 +8,14 @@ import { SCENE_AUTHORING_SOURCE } from '../../fixtures/studio/scene_authoring';
 import { check, type StudioFixture } from './studio_fixture';
 
 /** Test setup admits source-only data; subsequent interactions use ordinary Studio controls. */
-export async function openSceneFixture(test: StudioFixture, name: string) {
+export async function openSceneFixture(test: StudioFixture, name: string, additionalSources: readonly (readonly [string, string])[] = []) {
 	const root = `tests/fixtures/studio/scene-authoring/${name}`;
 	const registry = createLuaSourceRegistry(root, 'scene.lua');
 	for (const [path, source, generated] of [
 		['scene.lua', SCENE_AUTHORING_SOURCE, false],
 		['readonly.lua', SCENE_AUTHORING_SOURCE, true],
 		['cartlib/world/scene_library.lua', 'return {}', false],
+		...additionalSources.map(([path, source]) => [path, source, false] as const),
 	] as const) registerLuaSourceRecord(registry, {
 		...createScenarioTestSourceRecord(path, 1, source, `${root}/${path}`), generated,
 	});

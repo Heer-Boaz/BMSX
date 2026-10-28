@@ -29,15 +29,15 @@ export function handleResourcePanelPointer(
 		return true;
 	}
 	if (justPressed) {
-		const mode = resourcePanel.getMode(), revision = resourcePanel.files.revision;
+		const revision = resourcePanel.files.revision;
 		const context = resourcePanel.focusTarget.scope.contextGeneration;
 		resourcePanel.setFocused(true);
 		// Outgoing blur may retire the exact tree presentation that produced this hit.
-		if (!resourcePanel.isFocused() || resourcePanel.getMode() !== mode
+		if (!resourcePanel.isFocused()
 			|| resourcePanel.focusTarget.scope.contextGeneration !== context
-			|| mode === 'resources' && resourcePanel.files.revision !== revision) return true;
+			|| resourcePanel.files.revision !== revision) return true;
 		if (hoverIndex >= 0) {
-			const kind = mode === 'resources' ? resourcePanel.files.tree.rows[hoverIndex].element.kind : undefined;
+			const kind = resourcePanel.files.tree.rows[hoverIndex].element.kind;
 			if ((kind === 'file' || kind === 'definition') && !resourcePanel.isDisclosureHit(hoverIndex, snapshot.viewportX)) {
 				resourcePanel.beginResourceDrag(hoverIndex, snapshot);
 			} else {
@@ -55,12 +55,9 @@ function openResourcePanelSelection(
 	pointerX: number,
 	toSide: boolean,
 ): void {
-	const mode = resourcePanel.getMode();
 	if (resourcePanel.isDisclosureHit(hoverIndex, pointerX)) {
-		if (mode === 'resources') resourcePanel.toggleSelectedFileDisclosure();
-		else resourcePanel.openSelected();
-	} else if (mode === 'command') resourcePanel.openSelectedCallHierarchyLocation();
-	else {
+		resourcePanel.toggleSelectedFileDisclosure();
+	} else {
 		const kind = resourcePanel.files.selectedNode!.element.kind;
 		resourcePanel.openSelected(toSide && (kind === 'file' || kind === 'definition') ? 'side' : 'default');
 	}

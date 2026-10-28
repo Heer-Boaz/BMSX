@@ -1,3 +1,6 @@
+import { CallHierarchyInput } from '../../../ide/workbench/contrib/call_hierarchy/editor_input';
+import { CALL_HIERARCHY_SOURCE } from '../../fixtures/studio/call_hierarchy';
+import { CallHierarchyDirection } from '../../../ide/editor/contrib/call_hierarchy/model';
 import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { UnavailableScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/unavailable_primary';
 import { openSceneFixture } from './studio_scene_source';
@@ -16,7 +19,7 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 export async function testMainSceneAuthoring(test: StudioFixture): Promise<void> {
 	const { ide, frame, press, click, cycles } = test, editor = ide.editor;
 	const panelWasVisible = editor.resourcePanel.isVisible();
-	const { model, resource, close } = await openSceneFixture(test, 'main');
+	const { model, resource, close } = await openSceneFixture(test, 'main', [['calls.lua', CALL_HIERARCHY_SOURCE]]);
 	const original = model.buffer.getText(), before = cycles(), media = ide.sources.currentBlua32Media;
 	await close();
 	check(editor.editorParts.groups.every(group => group.model.tabs.every(input => input.resource?.contextId !== resource.contextId)),
@@ -93,6 +96,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		}
 		await press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
+	await testCallHierarchyResult(test, resource.contextId);
 	await press('ControlLeft', 'KeyW');
 	check(editor.mainWorkspace.primary === restored && model.buffer.getText() === accepted && model.dirty && !editor.actionPrompt.visible,
 		'main: closing Source neither prompts for nor discards the working copy retained by Main');
@@ -135,4 +139,40 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'main: source-only authoring never executes or installs a cartridge');
+}
+
+/** Query and Source use ordinary commands; only initial source-fixture selection is arranged. */
+async function testCallHierarchyResult(test: StudioFixture, contextId: string): Promise<void> {
+	const { editor } = test.ide, panel = editor.resourcePanel, main = editor.mainWorkspace.primary;
+	const selected = panel.files.selectedNode, scroll = panel.scroll, horizontal = panel.hscroll;
+	const calls = test.ide.sources.catalog.resolveResource({ contextId, path: 'calls.lua' })!;
+	await editor.navigation.focusChunkSource(editor.editorParts.activeGroup, calls, { row: 1, startColumn: 16, endColumn: 16 });
+	await test.frame();
+	await test.press('ControlLeft', 'KeyB');
+	check(panel.isVisible() && panel.files.selectedNode === selected, 'calls: showing Files retains its own selection');
+	await test.runPaletteCommand('Go: Show Call Hierarchy');
+	const group = editor.editorParts.activeGroup, result = group.model.activeTab;
+	check(result instanceof CallHierarchyInput && panel.isVisible() && editor.mainWorkspace.primary === main,
+		'calls: captured result has an independent document presentation alongside Files and Main');
+	if (!(result instanceof CallHierarchyInput)) throw new Error('calls: actual result input required');
+	for (let font = 0; font < 2; font++) {
+		for (let theme = 0; theme < 2; theme++) {
+			await test.capture?.(`calls-${editor.fontVariant}-theme-${theme}`);
+			await test.press('ControlLeft', 'AltLeft', 'KeyT');
+		}
+		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
+	}
+	await test.runPaletteCommand('Calls: Show Outgoing Calls');
+	check(result.direction === CallHierarchyDirection.CallsFrom, 'calls: the result owns its actual query direction');
+	await test.press('ArrowDown'); await test.press('Enter');
+	check(group.model.activeTab?.kind === 'code_editor', 'calls: result activation navigates to its proved canonical Source');
+	check(panel.files.selectedNode === selected && panel.scroll === scroll && panel.hscroll === horizontal,
+		'calls: result and Source navigation do not choose another project-browser subject or reading position');
+	await test.runPaletteCommand('Go: Back');
+	check(group.model.activeTab === result && result.direction === CallHierarchyDirection.CallsFrom,
+		'calls: Back restores the retained result and its direction');
+	await test.press('ControlLeft', 'KeyW');
+	await test.press('ControlLeft', 'KeyW');
+	await test.press('ControlLeft', 'KeyB');
+	check(!panel.isVisible() && editor.mainWorkspace.primary === main, 'calls: closing the activity leaves primary authoring untouched');
 }

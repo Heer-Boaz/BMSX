@@ -46,10 +46,10 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const view = createCodeEditorViewState();
 	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(variant));
 	code.focusTarget.focus();
-	const filesFocus = inputFocus.createTarget(), state = { visible: true, mode: 'resources' as 'resources' | 'command' };
-	const mode = t.mock.fn(() => state.mode), filter = t.mock.fn(() => 'lua_only' as const);
+	const filesFocus = inputFocus.createTarget(), state = { visible: true };
+	const filter = t.mock.fn(() => 'lua_only' as const);
 	const resources: Parameters<typeof renderStatusBar>[0] = {
-		focusTarget: filesFocus, isVisible: () => state.visible, getMode: mode, getFilterMode: filter,
+		focusTarget: filesFocus, isVisible: () => state.visible, getFilterMode: filter,
 	};
 	const overlay = createHostOverlayFixture(384, 288), fault = createRuntimeFaultState();
 	const evaluation = new RuntimeLuaEvaluation(null, null, null, null, fault, null, null, null);
@@ -66,7 +66,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 		quick.dispose(); menu.dispose(); problemsPanel.hide(); problemsPanel.setDiagnostics([], { ready: 0, pending: 0, unsupported: 0, failed: 0 });
 		inputFocus.setTarget(null); pointerCapture.cancel();
 	});
-	return { code, model, view, filesFocus, state, mode, filter, status, lineCount, menu, quick, paint };
+	return { code, model, view, filesFocus, state, filter, status, lineCount, menu, quick, paint };
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
@@ -76,19 +76,19 @@ for (const variant of ['tiny', 'msx'] as const) {
 		f.paint(f.code.focusTarget);
 		assert.equal(f.status.mock.callCount(), 1);
 		assert.equal(f.lineCount.mock.callCount(), 1, 'source status consumes the actual source document despite visible Problems');
-		assert.equal(f.mode.mock.callCount(), 0); assert.equal(f.filter.mock.callCount(), 0);
+		 assert.equal(f.filter.mock.callCount(), 0);
 		assert.equal(f.code.model, f.model); assert.equal(f.code.view, f.view);
 	});
 
 	test(`${variant} the explicit Files or Problems owner selects that context without touching source status`, t => {
 		const f = fixture(t, variant);
 		f.filesFocus.focus(); f.paint(f.filesFocus);
-		assert.equal(f.status.mock.callCount(), 0); assert.equal(f.mode.mock.callCount(), 1); assert.equal(f.filter.mock.callCount(), 1);
+		assert.equal(f.status.mock.callCount(), 0); assert.equal(f.filter.mock.callCount(), 1);
 		problemsPanel.show(); problemsPanel.setDiagnostics([{ model: f.model, version: f.model.version, row: 1,
 			startColumn: 2, endColumn: 3, message: 'diagnostic', severity: 'error' }], { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 		problemsPanel.setSelectionIndex(0); problemsPanel.setFocused(true);
 		f.paint(problemsPanel.focusTarget);
-		assert.equal(f.status.mock.callCount(), 0); assert.equal(f.mode.mock.callCount(), 1);
+		assert.equal(f.status.mock.callCount(), 0);
 		assert.equal(f.lineCount.mock.callCount(), 0, 'a selected diagnostic is not the source cursor status');
 	});
 
@@ -97,20 +97,20 @@ for (const variant of ['tiny', 'msx'] as const) {
 		f.quick.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
 		assert.equal(inputFocus.target, f.quick.field.focusTarget);
 		f.paint(f.quick.invocationOrigin!.commandContext);
-		assert.equal(f.status.mock.callCount(), 1); assert.equal(f.mode.mock.callCount(), 0);
+		assert.equal(f.status.mock.callCount(), 1);
 		f.quick.hide(); f.filesFocus.focus();
 		f.menu.show(30, 40, [], { isEnabled: () => false, execute: () => {} });
 		assert.equal(inputFocus.target, f.menu.focusTarget);
 		assert.equal(f.menu.invocationOrigin, f.filesFocus);
 		f.paint(f.menu.invocationOrigin!.commandContext);
-		assert.equal(f.status.mock.callCount(), 1); assert.equal(f.mode.mock.callCount(), 1);
+		assert.equal(f.status.mock.callCount(), 1);
 		assert.equal(f.filter.mock.callCount(), 1);
 	});
 
 	test(`${variant} hidden panels cannot claim status through a retained former target`, t => {
 		const f = fixture(t, variant); f.state.visible = false;
 		f.paint(f.filesFocus);
-		assert.equal(f.status.mock.callCount(), 1); assert.equal(f.mode.mock.callCount(), 0);
+		assert.equal(f.status.mock.callCount(), 1);
 	});
 
 	test(`${variant} actual workbench composition resolves nested popup origins before choosing the status owner`, async t => {

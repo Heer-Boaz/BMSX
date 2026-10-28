@@ -2,9 +2,6 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { resourceIdentityKey } from '../../ide/common/resource';
-import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
-import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
@@ -17,7 +14,6 @@ import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_inpu
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', sources: readonly (readonly [string, string])[] = []) {
@@ -109,17 +105,6 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} side declaration acti
 	assert.ok(target !== undefined && target.model.activeTab?.kind === 'scene_editor' && target.model.activeTab.workingCopy === model);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && target.panes.activePane?.input === target.model.activeTab);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.dirty, false);
-});
-
-test('Call Hierarchy cannot borrow the Files side capability or open its location through Ctrl+Enter', t => {
-	const path = 'calls.lua', f = fixture(t, 'tiny', [[path, 'local function target() end\nlocal function caller() target() end']]);
-	const project = getOrCreateSemanticProject(editorTextModelService, f.sources.systemContextId), frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
-	const symbol = frontend.findSymbolsByPosition(resourceIdentityKey({ contextId: f.sources.systemContextId, path }), 1, 16)!;
-	f.panel.showCallHierarchy(new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project));
-	const open = t.mock.method(f.editor.navigation, 'openResource');
-	assert.equal(f.panel.focusTarget.getCommand('resources.openToSide')!.isEnabled(), false);
-	f.key('Enter', KeyModifier.ctrl); f.key('NumpadEnter', KeyModifier.meta);
-	assert.equal(open.mock.callCount(), 0); assert.equal(f.firstPart.groups.length, 1); assert.ok(inputFocus.target === f.panel.focusTarget);
 });
 
 test('the scoped side shortcut is not reserved while a real game viewport owns input', t => {

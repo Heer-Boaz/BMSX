@@ -81,7 +81,6 @@ test('Files focus is idempotent and retains its selection and source working cop
 	assert.equal(panel.visible, false);
 	assert.equal(key('KeyE', KeyModifier.ctrl | KeyModifier.shift).consumed, true);
 	assert.equal(panel.isVisible(), true); assert.equal(panel.isFocused(), true);
-	assert.equal(panel.getMode(), 'resources');
 	key('Home'); const root = panel.files.selectedNode!;
 	assert.equal(root.element.kind, 'root');
 	key('ArrowRight'); key('ArrowRight');

@@ -65,7 +65,7 @@ export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {
 	let pane!: GraphFixturePane;
 	const inputViews = new Map(inputs.map((input, index) => [input, views[index]]));
 	const unused = (): never => { throw new Error('Only the domain-free fixture is registered in this editor group'); };
-	const group = new EditorGroupView({ play_session: { create: unused, measure: measureUnconstrainedEditor },
+	const group = new EditorGroupView({ call_hierarchy: { create: unused, measure: measureUnconstrainedEditor }, play_session: { create: unused, measure: measureUnconstrainedEditor },
 		home: { create: unused, measure: measureUnconstrainedEditor },
 		code_editor: { create: group => pane = new GraphFixturePane(inputViews, group.focusScope), measure: measureUnconstrainedEditor }, behavior_lens: { create: unused, measure: measureUnconstrainedEditor }, resource_view: { create: unused, measure: measureUnconstrainedEditor }, scenario_lab: { create: unused, measure: measureUnconstrainedEditor }, scene_editor: { create: unused, measure: measureUnconstrainedEditor }, cart_map: { create: unused, measure: measureUnconstrainedEditor },
 		animation: { create: unused, measure: measureUnconstrainedEditor }, host_error: { create: unused, measure: measureUnconstrainedEditor }, build_log: { create: unused, measure: measureUnconstrainedEditor },

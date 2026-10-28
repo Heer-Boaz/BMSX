@@ -33,7 +33,9 @@ export function luaSourceStartMatchesTextLocation(models: LuaSourceModels, range
 /** Dependency admission may publish edits after an immutable Lua snapshot was read. */
 export function luaSourceLocation(project: EditorLuaSemanticProject, model: EditorTextModel, file: LuaFileSemanticRevision,
 	range?: LuaSourceRange): EditorSourceLocation | undefined {
-	if (project.getFileData(model.identity)?.revision !== file.revision) return undefined;
+	if (project.isDisposed) return undefined;
+	const current = project.getFileData(model.identity);
+	if (project.isDisposed || current?.revision !== file.revision) return undefined;
 	return { model, modelVersion: model.version, selection: range === undefined ? undefined : {
 		row: range.start.line - 1, startColumn: range.start.column - 1, endColumn: range.start.column - 1,
 	} };

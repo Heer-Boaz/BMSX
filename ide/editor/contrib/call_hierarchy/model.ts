@@ -4,10 +4,11 @@ import type {
 	LuaCallHierarchyOutgoingCall,
 	LuaSemanticFrontend,
 } from '../../../../toolchain/ts/lua/semantic/frontend';
-import type { LuaDefinitionLocation } from '../../../../toolchain/ts/lua/semantic_contracts';
 import type { SymbolID } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
-import { definitionLocationFromSourceRange } from '../../navigation/source_range';
+import type { EditorTextModel } from '../../model/text_model';
+import type { EditorSourceLocation } from '../../navigation/source_location';
+import { luaSourceLocation } from '../../../language/lua/source_location';
 
 const EMPTY_CALL_RANGES: readonly LuaSourceRange[] = [];
 const EMPTY_CALLS: readonly CallHierarchyNode[] = [];
@@ -21,7 +22,7 @@ export type CallHierarchySymbolNode = {
 	kind: 'symbol';
 	id: string;
 	name: string;
-	location: LuaDefinitionLocation;
+	range: LuaSourceRange;
 	fromRanges: readonly LuaSourceRange[];
 	symbolId: SymbolID;
 };
@@ -30,7 +31,7 @@ export type CallHierarchyChunkNode = {
 	kind: 'chunk';
 	id: string;
 	name: string;
-	location: LuaDefinitionLocation;
+	range: LuaSourceRange;
 	fromRanges: readonly LuaSourceRange[];
 };
 
@@ -45,8 +46,8 @@ export class CallHierarchyModel {
 	constructor(
 		private readonly frontend: LuaSemanticFrontend,
 		rootSymbolIds: readonly SymbolID[],
-		rootExpression: string,
-		public readonly project: Pick<EditorLuaSemanticProject, 'getResourceIdentity'>,
+		public readonly rootExpression: string,
+		public readonly project: EditorLuaSemanticProject,
 		private readonly allowedPaths?: ReadonlySet<string>,
 	) {
 		this.title = `Call Hierarchy: ${rootExpression}`;
@@ -58,13 +59,18 @@ export class CallHierarchyModel {
 				kind: 'symbol',
 				id: `root:${symbolId}`,
 				name: declaration.namePath.length > 0 ? declaration.namePath.join('.') : declaration.name,
-				location: definitionLocationFromSourceRange(frontend.snapshot.getFileData(declaration.file)!.chunk.locations.range(declaration.span)),
+				range: frontend.snapshot.getFileData(declaration.file)!.chunk.locations.range(declaration.span),
 				fromRanges: EMPTY_CALL_RANGES,
 				symbolId,
 			};
 			roots[index] = node;
 		}
 		this.roots = roots;
+	}
+
+	/** A captured query supplies source coordinates only while their exact file generation survives. */
+	public getSourceLocation(model: EditorTextModel, range: LuaSourceRange): EditorSourceLocation | undefined {
+		return luaSourceLocation(this.project, model, this.frontend.snapshot.getFileData(range.path)!, range);
 	}
 
 	public resolveIncomingCalls(node: CallHierarchyNode): readonly CallHierarchyNode[] {
@@ -125,13 +131,13 @@ function createIncomingNode(
 	project: Pick<EditorLuaSemanticProject, 'getResourceIdentity'>,
 ): CallHierarchyNode {
 	const id = `${parentId}>${item.key}`;
-	const location = definitionLocationFromSourceRange(item.range);
+	const range = item.range;
 	if (item.kind === 'chunk') {
 		return {
 			kind: 'chunk',
 			id,
 			name: project.getResourceIdentity(item.range.path).path,
-			location,
+			range,
 			fromRanges,
 		};
 	}
@@ -139,7 +145,7 @@ function createIncomingNode(
 		kind: 'symbol',
 		id,
 		name: item.label,
-		location,
+		range,
 		fromRanges,
 		symbolId: item.symbolId,
 	};
@@ -154,7 +160,7 @@ function createOutgoingNode(
 		kind: 'symbol',
 		id: `${parentId}>${item.key}`,
 		name: item.label,
-		location: definitionLocationFromSourceRange(item.range),
+		range: item.range,
 		fromRanges: call.fromRanges,
 		symbolId: item.symbolId,
 	};

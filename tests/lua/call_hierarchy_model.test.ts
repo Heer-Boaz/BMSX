@@ -3,11 +3,6 @@ import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 
 import { CallHierarchyDirection, CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
-import { buildCallHierarchyPanelItems } from '../../ide/workbench/contrib/resources/panel/items';
-import {
-	collapseSelectedCallHierarchyNode,
-	expandSelectedCallHierarchyNode,
-} from '../../ide/workbench/contrib/resources/panel/navigation';
 import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
@@ -111,73 +106,4 @@ test('CallHierarchyModel resolves outgoing callees one expanded branch at a time
 	assert.equal(leftCallees[0].fromRanges.length, 2);
 	assert.equal(rightCallees[0].fromRanges.length, 1);
 	assert.notEqual(leftCallees[0].id, rightCallees[0].id, 'branch identity includes the parent path');
-});
-
-test('call hierarchy panel switches the same lazy tree between callers and callees', t => {
-	const source = [
-		'local function target() end',
-		'local function direct()',
-		'\ttarget()',
-		'end',
-		'local function caller()',
-		'\tdirect()',
-		'end',
-	].join('\n');
-	const { frontend, project, resource, address } = callHierarchyFixture(t, 'calls.lua', source);
-	const direct = frontend.findSymbolsByPosition(address, 2, 16);
-	assert.ok(direct);
-	const model = new CallHierarchyModel(frontend, [direct.targets[0].id], 'direct', project);
-	const root = model.roots[0];
-	const expanded = new Set([root.id]);
-
-	const incoming = buildCallHierarchyPanelItems(model, CallHierarchyDirection.CallsTo, expanded);
-	const caller = model.resolveIncomingCalls(root)[0];
-	assert.equal(incoming.length, 2);
-	assert.equal(incoming[0].callHierarchyNodeId, root.id);
-	assert.strictEqual(incoming[0].location, root.location);
-	assert.deepEqual(incoming[0].resource, resource);
-	assert.equal(incoming[0].location.path, address);
-	assert.equal(incoming[0].callHierarchyExpanded, true);
-	assert.equal(incoming[1].callHierarchyNodeId, caller.id);
-	assert.strictEqual(incoming[1].location, caller.location);
-	assert.equal(incoming[1].callHierarchyExpanded, false);
-
-	const outgoing = buildCallHierarchyPanelItems(model, CallHierarchyDirection.CallsFrom, expanded);
-	const callee = model.resolveOutgoingCalls(root)[0];
-	assert.equal(outgoing.length, 2);
-	assert.equal(outgoing[0].callHierarchyNodeId, root.id);
-	assert.strictEqual(outgoing[0].location, root.location);
-	assert.equal(outgoing[1].callHierarchyNodeId, callee.id);
-	assert.strictEqual(outgoing[1].location, callee.location);
-	assert.notEqual(caller.id, callee.id);
-
-	assert.equal(expandSelectedCallHierarchyNode(incoming, 1, expanded), caller.id);
-	const incomingExpanded = buildCallHierarchyPanelItems(model, CallHierarchyDirection.CallsTo, expanded);
-	assert.equal(incomingExpanded.length, 3);
-	assert.equal(incomingExpanded[1].callHierarchyExpanded, true);
-	const callSite = incomingExpanded[2];
-	const range = caller.fromRanges[0];
-	assert.deepEqual(callSite.location, {
-		path: range.path,
-		range: {
-			startLine: range.start.line,
-			startColumn: range.start.column,
-			endLine: range.end.line,
-			endColumn: range.end.column,
-		},
-	});
-	assert.deepEqual(callSite.resource, resource);
-	assert.equal(callSite.callHierarchyExpandable, false);
-	assert.equal(callSite.callHierarchyExpanded, false);
-	assert.equal(expandSelectedCallHierarchyNode(incomingExpanded, 2, expanded), null);
-
-	const outgoingAfterIncomingExpansion = buildCallHierarchyPanelItems(model, CallHierarchyDirection.CallsFrom, expanded);
-	assert.equal(outgoingAfterIncomingExpansion.length, 2);
-	assert.equal(outgoingAfterIncomingExpansion[1].callHierarchyExpanded, false);
-
-	assert.equal(collapseSelectedCallHierarchyNode(incomingExpanded, 0, expanded), root.id);
-	const collapsed = buildCallHierarchyPanelItems(model, CallHierarchyDirection.CallsTo, expanded);
-	assert.equal(collapsed.length, 1);
-	assert.equal(collapsed[0].callHierarchyNodeId, root.id);
-	assert.equal(collapsed[0].callHierarchyExpanded, false);
 });

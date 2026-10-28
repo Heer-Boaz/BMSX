@@ -11,6 +11,8 @@ export type EditorCommandPresentation = {
 export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	Record<EditorCommandId, EditorCommandPresentation>
 > = {
+	'callHierarchy.incoming': { category: 'Calls', title: 'Show Incoming Calls', shortTitle: 'Incoming' },
+	'callHierarchy.outgoing': { category: 'Calls', title: 'Show Outgoing Calls', shortTitle: 'Outgoing' },
 	'graph.zoomIn': { category: 'Graph', title: 'Zoom In', shortTitle: '+' },
 	'graph.zoomOut': { category: 'Graph', title: 'Zoom Out', shortTitle: '-' },
 	'graph.resetZoom': { category: 'Graph', title: 'Reset Zoom (100%)', shortTitle: '1:1' },

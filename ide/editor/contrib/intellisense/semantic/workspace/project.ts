@@ -40,6 +40,8 @@ type ProjectBaseSource = {
 // Admitted context registries provide the base; retained models and explicit document
 // inputs own the newer source regardless of which view happens to be active.
 export class EditorLuaSemanticProject {
+	private disposed = false;
+	public get isDisposed(): boolean { return this.disposed; }
 	private readonly workspace = new LuaSemanticWorkspace(new Map());
 	private readonly documentPaths = new Set<string>();
 	private readonly pendingPaths = new Set<string>();
@@ -95,6 +97,7 @@ export class EditorLuaSemanticProject {
 	}
 
 	public dispose(): void {
+		this.disposed = true;
 		for (const listener of this.disposeListeners) listener();
 		this.disposeListeners.clear();
 		for (const unsubscribe of this.modelSubscriptions) unsubscribe();

@@ -192,6 +192,16 @@ restoration establishes new contexts and controls over recovered canonical model
 An unresolved primary reference remains explicitly Unavailable. Neither history
 nor restoration grants authority to a namesake, an old AST or a former focus scope.
 
+Project navigation owns its file/declaration identity, disclosure and reading
+state. `ResourcePanelController` presents that content only; generic editor
+opening and result navigation do not select a different browser subject.
+Call Hierarchy keeps semantic computation in `editor/contrib/call_hierarchy/`
+and its retained query/result view in `workbench/contrib/call_hierarchy/`. Its
+nonpersistent readonly input owns direction, lazy topology and selection; pane
+detachment retires only controls. It is not a working-copy consumer. Result
+Source commands obtain canonical-model and file-generation proof at navigation
+admission; captured coordinates are not current editing authority.
+
 ## Documents, inputs and panes
 
 `editor/model/` owns canonical text models. Workbench working-copy services own

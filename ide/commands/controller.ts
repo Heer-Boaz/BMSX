@@ -619,8 +619,7 @@ export class IdeCommandController {
 			case 'gameView':
 				return true;
 			case 'filter':
-				return this.editor.resourcePanel.isVisible()
-					&& this.editor.resourcePanel.getMode() === 'resources';
+				return this.editor.resourcePanel.isVisible();
 			default:
 				return isEditorSearchCommand(command)
 					|| isEditorViewCommand(command) || isEditorWorkspaceCommand(command);

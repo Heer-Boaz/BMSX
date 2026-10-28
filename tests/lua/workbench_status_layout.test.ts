@@ -56,10 +56,10 @@ function fixture(t: TestContext, variant: FontVariant, width = 384) {
 		const attached = surfaces.findByScope(focusScope.surfaceScope);
 		return attached !== undefined && surfaces.isAdmitted(attached);
 	});
-	const resourceState = { visible: false, mode: 'resources' as 'resources' | 'command', filter: 'all' as 'all' | 'lua_only' };
+	const resourceState = { visible: false, filter: 'all' as 'all' | 'lua_only' };
 	const resources: Parameters<typeof renderStatusBar>[0] = {
 		focusTarget: inputFocus.createTarget(parent),
-		isVisible: () => resourceState.visible, getMode: () => resourceState.mode, getFilterMode: () => resourceState.filter,
+		isVisible: () => resourceState.visible, getFilterMode: () => resourceState.filter,
 	};
 	const glyphs: Array<{ text: string; x: number; y: number; color: number }> = [], clips: RectBounds[] = [];
 	const markers: Array<{ x: number; y: number; color: number }> = [];

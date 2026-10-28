@@ -18,4 +18,4 @@ export type PlayTabId = `play-session:${number}`;
 export type EventViewerTabId = `events:${number}`;
 export type GteDebuggerTabId = `gte-debugger:${number}`;
 export type GpuDebuggerTabId = `gpu-debugger:${number}`;
-export type EditorTabId = 'home' | BuildLogTabId | PlayTabId | `animation:${string}` | 'host-error' | `rom-inspector:${number}` | `map:${string}` | EventViewerTabId | GteDebuggerTabId | GpuDebuggerTabId | `aem:${string}` | `program:${string}` | CodeEditorTabId | ResourceViewerTabId | BehaviorLensTabId | ScenarioLabTabId | SceneEditorTabId | 'terminal' | ActorLabTabId | GameViewTabId | 'assistant' | 'codex-conversations' | `edit-review:${number}`;
+export type EditorTabId = `call-hierarchy:${number}` | 'home' | BuildLogTabId | PlayTabId | `animation:${string}` | 'host-error' | `rom-inspector:${number}` | `map:${string}` | EventViewerTabId | GteDebuggerTabId | GpuDebuggerTabId | `aem:${string}` | `program:${string}` | CodeEditorTabId | ResourceViewerTabId | BehaviorLensTabId | ScenarioLabTabId | SceneEditorTabId | 'terminal' | ActorLabTabId | GameViewTabId | 'assistant' | 'codex-conversations' | `edit-review:${number}`;

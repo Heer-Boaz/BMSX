@@ -134,6 +134,7 @@ function createEditorPanes(measureCode: EditorPaneContribution<CodeEditorInput>[
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const group = new EditorGroupView({
+		call_hierarchy: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'call_hierarchy' }>>(group.focusScope), measure: measureUnconstrainedEditor },
 		home: { create: group => new RecordingEditorPane<HomeInput>(group.focusScope), measure: measureUnconstrainedEditor },
 		play_session: { create: group => new RecordingEditorPane(group.focusScope), measure: measureUnconstrainedEditor },
 		animation: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'animation' }>>(group.focusScope), measure: measureUnconstrainedEditor },

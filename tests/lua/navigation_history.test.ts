@@ -16,7 +16,6 @@ import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/c
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { CodeEditorNavigationSelection } from '../../ide/workbench/contrib/code_editor/navigation_selection';
 import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
-import type { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { ResourceEditorResolver } from '../../ide/workbench/services/editor/resource_editor_resolver';
 import { createTestEditorGroup, createTestEditorParts } from '../helpers/editor_panes';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
@@ -199,7 +198,6 @@ test('history awaits the registered resource opener and restores a closed text i
 	for (const [key, value] of new Map([[resourceIdentityKey(resource), resource]])) catalog.resourceByIdentity.set(key, value);
 	const navigation = new EditorNavigationController(
 		catalog,
-		{ focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
 		new ResourceEditorResolver([{
 			id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async actual => {
 				assert.equal(actual, resource); await openGate; return reopened;
@@ -230,7 +228,7 @@ test('Back activates a surviving visual preview without turning navigation into 
 	const target = new NavigationHistoryEntry({ kind: 'input', input: visual }, new Location(1), group);
 	navigationState.back.push(target);
 	const navigation = new EditorNavigationController(
-		new WorkspaceSourceCatalog(), { focusTarget: inputFocus.createTarget(), isFocused: () => false } as ResourcePanelController,
+		new WorkspaceSourceCatalog(),
 		new ResourceEditorResolver([]), parts,
 	);
 	t.after(() => { group.dispose(); });
@@ -256,7 +254,6 @@ for (const route of ['resource', 'history'] as const) for (const interruption of
 		for (const [key, value] of new Map([[resourceIdentityKey(older.workingCopy.resource), older.workingCopy.resource]])) catalog.resourceByIdentity.set(key, value);
 		const navigation = new EditorNavigationController(
 			catalog,
-			{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 			new ResourceEditorResolver([{
 				id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: async resource => {
 					if (resource === older.workingCopy.resource) { await openGate; return older; }
@@ -305,7 +302,6 @@ test('cancelled resolution disposes its fresh candidate without disturbing the r
 	input.onWillDispose(() => { retainedDisposals++; }); candidate.onWillDispose(() => { candidateDisposals++; });
 	const navigation = new EditorNavigationController(
 		new WorkspaceSourceCatalog(),
-		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' }, createEditorInput: () => candidate }]), parts,
 	);
 	t.after(() => { group.dispose(); });
@@ -328,7 +324,6 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 	const gate = new Promise<void>(resolve => { finish = resolve; });
 	const navigation = new EditorNavigationController(
 		new WorkspaceSourceCatalog(),
-		{} as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async () => { await gate; return candidate; } }]), parts,
 	);
@@ -359,7 +354,6 @@ test('async resource admission captures the departure before an in-control caret
 	const gate = new Promise<void>(resolve => { finish = resolve; });
 	const navigation = new EditorNavigationController(
 		new WorkspaceSourceCatalog(),
-		{ queuePendingSelection() {}, isVisible: () => false, focusTarget: inputFocus.createTarget(), isFocused: () => false } as unknown as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async () => { await gate; return destination; } }]), parts,
 	);
@@ -389,7 +383,6 @@ for (const direction of ['back', 'forward'] as const) test(`invalid focused draf
 	for (const [key, value] of new Map([first, second].map(input => [resourceIdentityKey(input.resource), input.workingCopy.resource]))) catalog.resourceByIdentity.set(key, value);
 	const navigation = new EditorNavigationController(
 		catalog,
-		{ focusTarget: inputFocus.createTarget() } as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: resource => new CodeEditorInput(editorTextModelService.get(resource)!) }]), parts);
 	if (direction === 'forward') await navigation.goBackward();
@@ -421,7 +414,6 @@ for (const direction of ['back', 'forward'] as const) test(`an invalid draft beg
 	for (const [key, value] of new Map([first, second].map(input => [resourceIdentityKey(input.resource), input.workingCopy.resource]))) catalog.resourceByIdentity.set(key, value);
 	const navigation = new EditorNavigationController(
 		catalog,
-		{ focusTarget: inputFocus.createTarget() } as ResourcePanelController,
 		new ResourceEditorResolver([{ id: WORKBENCH_TEXT_EDITOR_ID, selector: { kind: 'all' },
 			createEditorInput: async resource => {
 				if (blocked) await gate;

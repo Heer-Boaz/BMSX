@@ -4,10 +4,6 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
-import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
-import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
-import { resourceIdentityKey } from '../../ide/common/resource';
 import { inputFocus } from '../../ide/input/focus';
 import type { EditorCommandId } from '../../ide/common/commands';
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
@@ -159,18 +155,6 @@ for (const retirement of ['hide', 'filter', 'model clear'] as const) test(`Files
 	else editorTextModelService.clear();
 	assert.equal(f.editor.contextMenu.visible, false);
 	if (retirement === 'filter') assert.equal(f.panel.files.revision, revision);
-});
-
-test('switching the real panel to Call Hierarchy revokes its Files popup instead of retaining the old resource commands', t => {
-	const path = 'calls.lua', f = fixture(t, [[path, 'local function target() end\nlocal function caller() target() end']]);
-	const project = getOrCreateSemanticProject(editorTextModelService, f.sources.systemContextId);
-	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
-	const symbol = frontend.findSymbolsByPosition(resourceIdentityKey({ contextId: f.sources.systemContextId, path }), 1, 16)!;
-	const hierarchy = new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project);
-	const { node } = reveal(f, 'folder/third.lua'); secondary(f, node); assert.equal(f.editor.contextMenu.visible, true);
-	f.panel.showCallHierarchy(hierarchy);
-	assert.equal(f.editor.contextMenu.visible, false); assert.equal(f.panel.getMode(), 'command');
-	assert.ok(inputFocus.target === f.panel.focusTarget);
 });
 
 test('catalog removal and same-path recreation cannot retain the old Files resource popup', t => {

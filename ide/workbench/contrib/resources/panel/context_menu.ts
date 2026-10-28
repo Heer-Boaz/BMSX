@@ -33,7 +33,7 @@ export class ResourcePanelContextMenu {
 			&& editor.resourceEditors.hasEditor(resource, WORKBENCH_TEXT_EDITOR_ID);
 		const sourceDestination = hasSource ? editor.editorParts.editorDestination(invoking, { resource: resource!, editorId: WORKBENCH_TEXT_EDITOR_ID }) : undefined;
 		const sideCurrent = (): boolean => invoking.openingAdmitted && editor.editorParts.partForGroup(invoking) === invokingPart;
-		const current = (): boolean => panel.isVisible() && panel.getMode() === 'resources'
+		const current = (): boolean => panel.isVisible()
 			&& panel.files.revision === revision && origin.scope.contextGeneration === context
 			&& (element.kind === 'definition' ? content.isCurrent(element.content)
 				: resource !== undefined ? catalog.resolveResource(resource) === resource : catalog.contexts.has(element.contextId));

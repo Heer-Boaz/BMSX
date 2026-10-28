@@ -358,7 +358,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
 	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
-	const navigation = new EditorNavigationController(sources.catalog, null!, null!, null!);
+	const navigation = new EditorNavigationController(sources.catalog, null!, null!);
 	const controller = new AnimationEditorController(sources.catalog);
 	const group = createTestEditorGroup();
 	const input = new AnimationEditorInput(model, model.resource.contextId), menu = new ContextMenuController(inputFocus, pointerCapture);

@@ -46,7 +46,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	]);
 	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const surfaces = new WorkbenchSurfaceService();
-	const navigation = new EditorNavigationController(sources.catalog, null!, null!, null!);
+	const navigation = new EditorNavigationController(sources.catalog, null!, null!);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources.catalog);
 	const controller = new BehaviorLensController(sources, navigation, documents,
 		() => assert.fail('Behavior-tree views do not create an FSM layout worker'), null!, null!, null!);
@@ -57,6 +57,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	const unused = (): never => assert.fail('This owner regression only opens Behavior Lens views');
 	const createGroup = () => {
 		const group = new EditorGroupView({
+			call_hierarchy: { create: unused, measure: measureUnconstrainedEditor },
 			home: { create: unused, measure: measureUnconstrainedEditor }, play_session: { create: unused, measure: measureUnconstrainedEditor }, animation: { create: unused, measure: measureUnconstrainedEditor }, host_error: { create: unused, measure: measureUnconstrainedEditor }, build_log: { create: unused, measure: measureUnconstrainedEditor },
 			rom_inspector: { create: unused, measure: measureUnconstrainedEditor }, event_viewer: { create: unused, measure: measureUnconstrainedEditor }, gpu_debugger: { create: unused, measure: measureUnconstrainedEditor }, gte_debugger: { create: unused, measure: measureUnconstrainedEditor },
 			terminal: { create: unused, measure: measureUnconstrainedEditor }, conversation_observer: { create: unused, measure: measureUnconstrainedEditor }, assistant: { create: unused, measure: measureUnconstrainedEditor }, workspace_edit_review: { create: unused, measure: measureUnconstrainedEditor },

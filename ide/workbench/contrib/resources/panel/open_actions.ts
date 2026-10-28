@@ -1,5 +1,3 @@
-import { WORKBENCH_TEXT_EDITOR_ID } from '../../code_editor/editor_input';
-import type { CallHierarchyPanelItem } from './items';
 import type { CartEditor } from '../../../../cart_editor';
 import { inputFocus, type InputFocusTarget } from '../../../../input/focus';
 import type { EditorGroupView } from '../../../services/editor/editor_group';
@@ -96,29 +94,4 @@ export function openProjectContentSource(editor: CartEditor, index: ProjectConte
 	model.buffer.positionAt(entry.range.start, position);
 	return editor.navigation.focusChunkSource(destination, entry.ownerResource,
 		{ row: position.row, startColumn: position.column, endColumn: position.column });
-}
-
-export function openResourcePanelCallHierarchyLocation(
-	editor: CartEditor,
-	item: CallHierarchyPanelItem,
-): void {
-	void editor.navigation.focusChunkSource(
-		editor.editorParts.editorDestination(undefined, { resource: item.resource, editorId: WORKBENCH_TEXT_EDITOR_ID }), item.resource,
-		{
-			row: item.location.range.startLine - 1,
-			startColumn: item.location.range.startColumn - 1,
-			endColumn: item.location.range.startColumn - 1,
-		},
-	);
-}
-
-export function openSelectedResourcePanelCallHierarchyLocation(
-	editor: CartEditor,
-	items: readonly CallHierarchyPanelItem[],
-	selectionIndex: number,
-): void {
-	if (selectionIndex < 0) {
-		return;
-	}
-	openResourcePanelCallHierarchyLocation(editor, items[selectionIndex]);
 }

@@ -1,5 +1,4 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import type { CallHierarchyPanelItem } from './items';
 
 export function resourcePanelIndexAtRelativeY(scroll: number, relativeY: number, lineHeight: number, itemCount: number): number {
 	const index = (scroll | 0) + ((relativeY / lineHeight) | 0);
@@ -8,14 +7,6 @@ export function resourcePanelIndexAtRelativeY(scroll: number, relativeY: number,
 
 export function clampResourcePanelSelectionIndex(index: number, itemCount: number): number {
 	return clamp(index, -1, itemCount - 1);
-}
-
-export function moveResourcePanelSelectionIndex(selectionIndex: number, itemCount: number, delta: number): number {
-	let next: number;
-	if (delta === Number.NEGATIVE_INFINITY) next = 0;
-	else if (delta === Number.POSITIVE_INFINITY) next = itemCount - 1;
-	else next = (selectionIndex >= 0 ? selectionIndex : 0) + delta;
-	return clamp(next, 0, itemCount - 1);
 }
 
 export function ensureResourcePanelSelectionScroll(selectionIndex: number, scroll: number, capacity: number, itemCount: number): number {
@@ -34,44 +25,4 @@ export function ensureResourcePanelSelectionScroll(selectionIndex: number, scrol
 	}
 	const requestedScroll = currentScroll + overflow;
 	return requestedScroll < maxScroll ? requestedScroll : maxScroll;
-}
-
-export function expandSelectedCallHierarchyNode(
-	items: readonly CallHierarchyPanelItem[],
-	selectionIndex: number,
-	expandedNodeIds: Set<string>,
-): string {
-	if (selectionIndex < 0) {
-		return null;
-	}
-	const item = items[selectionIndex];
-	if (!item.callHierarchyExpandable) {
-		return null;
-	}
-	const nodeId = item.callHierarchyNodeId;
-	if (expandedNodeIds.has(nodeId)) {
-		return null;
-	}
-	expandedNodeIds.add(nodeId);
-	return nodeId;
-}
-
-export function collapseSelectedCallHierarchyNode(
-	items: readonly CallHierarchyPanelItem[],
-	selectionIndex: number,
-	expandedNodeIds: Set<string>,
-): string {
-	if (selectionIndex < 0) {
-		return null;
-	}
-	const item = items[selectionIndex];
-	if (!item.callHierarchyExpandable) {
-		return null;
-	}
-	const nodeId = item.callHierarchyNodeId;
-	if (!expandedNodeIds.has(nodeId)) {
-		return null;
-	}
-	expandedNodeIds.delete(nodeId);
-	return nodeId;
 }

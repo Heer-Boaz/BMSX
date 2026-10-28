@@ -23,7 +23,6 @@ import { inputFocus } from '../../ide/input/focus';
 const hiddenResources: Parameters<typeof renderStatusBar>[0] = {
 	focusTarget: inputFocus.createTarget(),
 	isVisible: () => false,
-	getMode: () => 'resources',
 	getFilterMode: () => 'all',
 };
 

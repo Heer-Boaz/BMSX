@@ -16,7 +16,7 @@ import { renderServerConnection } from './server_connection';
 import { inputFocus, type InputFocusTarget } from '../../input/focus';
 
 export function renderStatusBar(
-	resourcePanel: Pick<ResourcePanelController, 'focusTarget' | 'isVisible' | 'getMode' | 'getFilterMode'>,
+	resourcePanel: Pick<ResourcePanelController, 'focusTarget' | 'isVisible' | 'getFilterMode'>,
 	fault: RuntimeFaultState,
 	editorPane: Pick<EditorPane<EditorInput>, 'drawStatusBar'> | null,
 	evaluation: RuntimeLuaEvaluation,
@@ -71,17 +71,10 @@ export function renderStatusBar(
 			drawEditorText(editorViewState.font, info, context.left + 4, context.top + 2, 0, statusTextColor);
 		}
 	} else if (resourcePanel.isVisible() && contextTarget === resourcePanel.focusTarget) {
-		if (resourcePanel.getMode() === 'command') {
-			const info = 'CALL HIERARCHY';
-			const hint = 'ENTER toggle/open • LEFT/RIGHT collapse/expand';
-			drawEditorText(editorViewState.font, info, context.left + 4, context.top + 2, 0, statusTextColor);
-			if (!guestInput) drawEditorText(editorViewState.font, hint, context.right - measureText(hint) - 4, context.top + 2, 0, statusTextColor);
-		} else {
-			const fileInfo = resourcePanel.getFilterMode() === 'lua_only' ? 'FILES (LUA)' : 'FILES (ALL)';
-			const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
-			drawEditorText(editorViewState.font, fileInfo, context.left + 4, context.top + 2, 0, statusTextColor);
-			if (!guestInput) drawEditorText(editorViewState.font, hint, context.right - measureText(hint) - 4, context.top + 2, 0, statusTextColor);
-		}
+		const fileInfo = resourcePanel.getFilterMode() === 'lua_only' ? 'FILES (LUA)' : 'FILES (ALL)';
+		const hint = 'CTRL+SHIFT+L TOGGLE FILTER';
+		drawEditorText(editorViewState.font, fileInfo, context.left + 4, context.top + 2, 0, statusTextColor);
+		if (!guestInput) drawEditorText(editorViewState.font, hint, context.right - measureText(hint) - 4, context.top + 2, 0, statusTextColor);
 	} else editorPane?.drawStatusBar(context, statusTextColor);
 	api.popClipRect();
 	if (layout.guestHintText !== '') {

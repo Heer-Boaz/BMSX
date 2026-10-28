@@ -1,12 +1,9 @@
 import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
-import { resourceIdentityKey } from '../../ide/common/resource';
-import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import type { CartEditor } from '../../ide/cart_editor';
-import { CallHierarchyModel } from '../../ide/editor/contrib/call_hierarchy/model';
-import { editorTextModelService, EditorTextModelService } from '../../ide/editor/model/model_service';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
@@ -22,7 +19,6 @@ import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
-import { buildLuaSemanticFrontendFromSnapshot } from '../../toolchain/ts/lua/semantic/frontend';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
@@ -42,7 +38,7 @@ function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.fro
 	const resourceEditors = createResourceEditorResolver(sources.catalog), editor = { editorParts: parts, resourceEditors, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
 		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
-	const navigation = new EditorNavigationController(sources.catalog, panel, resourceEditors, parts);
+	const navigation = new EditorNavigationController(sources.catalog, resourceEditors, parts);
 	group.focus();
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();
 	group.panes.layout({ left: 140, top: 20, right: 384, bottom: 270 });
@@ -202,22 +198,13 @@ test('Files separates canonical project, shared and generated ownership while re
 	model.undo(); assert.equal(model.buffer.getText(), shared.src); assert.equal(input.isDirty(), false);
 });
 
-test('hide/show and Call Hierarchy presentation retain the actual selected folder and independent Files reading position', t => {
+test('hide/show retains the actual selected folder and Files reading position', t => {
 	const f = fixture(t);
 	f.panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'directory_40/child.lua' }); f.panel.applyPendingSelection();
 	f.panel.navigateFiles('left'); f.panel.navigateFiles('left');
 	const folder = f.panel.files.selectedNode!; assert.equal(folder.collapsed, true);
 	f.panel.setScroll(10); const scroll = f.panel.scroll;
 	assert.ok(scroll > 0); f.panel.hide(); f.panel.show(); f.panel.prepareLayout();
-	assert.equal(f.panel.files.selectedNode, folder); assert.equal(folder.collapsed, true); assert.equal(f.panel.scroll, scroll);
-	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());
-	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'calls.lua' };
-	project.updateDocument(resource, 'local function target() end\nlocal function caller() target() end');
-	t.after(() => project.dispose());
-	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
-	const symbol = frontend.findSymbolsByPosition(resourceIdentityKey(resource), 1, 16)!;
-	f.panel.showCallHierarchy(new CallHierarchyModel(frontend, [symbol.targets[0].id], 'target', project)); f.panel.prepareLayout();
-	f.panel.hide(); f.panel.show(); f.panel.prepareLayout();
 	assert.equal(f.panel.files.selectedNode, folder); assert.equal(folder.collapsed, true); assert.equal(f.panel.scroll, scroll);
 });
 
@@ -246,29 +233,21 @@ test('clean catalog updates preserve hover and cached measurements; a real publi
 	assert.equal(f.panel.files.selectedNode, folder); assert.ok(f.panel.files.revision > revision); assert.equal(f.panel.hoverIndex, -1);
 });
 
-test('panel refresh owns the active view without rebuilding Call Hierarchy or updating a hidden Files catalog', t => {
+test('hidden Files retains its browser state without scanning a changed catalog until shown', t => {
 	const f = fixture(t);
-	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());
-	const resource = { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'calls.lua' };
-	project.updateDocument(resource, 'local function target() end\nlocal function caller() target() end');
-	t.after(() => project.dispose());
-	const frontend = buildLuaSemanticFrontendFromSnapshot(project.getSnapshot());
-	const target = frontend.findSymbolsByPosition(resourceIdentityKey(resource), 1, 16)!;
-	const model = new CallHierarchyModel(frontend, [target.targets[0].id], 'target', project);
-	f.panel.showCallHierarchy(model);
-	const incoming = t.mock.method(model, 'resolveIncomingCalls'), outgoing = t.mock.method(model, 'resolveOutgoingCalls');
-	const hasChildren = t.mock.method(model, 'hasChildren');
-	const catalog = t.mock.method(f.sources.catalog.resourceByIdentity, Symbol.iterator);
-	const selected = f.panel.selectionIndex, metrics = f.panel.getItemMetrics(selected);
-	for (let frame = 0; frame < 1000; frame++) f.panel.refresh();
-	assert.equal(incoming.mock.callCount(), 0); assert.equal(outgoing.mock.callCount(), 0);
-	assert.equal(hasChildren.mock.callCount(), 0); assert.equal(catalog.mock.callCount(), 0);
-	assert.equal(f.panel.selectionIndex, selected); assert.equal(f.panel.getItemMetrics(selected), metrics);
-	f.panel.toggleCallHierarchyDirection();
-	assert.ok(outgoing.mock.callCount() > 0); assert.ok(hasChildren.mock.callCount() > 0);
+	f.panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'directory_40/child.lua' }); f.panel.applyPendingSelection();
+	const selected = f.panel.files.selectedNode, revision = f.panel.files.revision;
 	f.panel.hide();
+	const catalog = t.mock.method(f.sources.catalog.resourceByIdentity, Symbol.iterator);
+	const source = createScenarioTestSourceRecord('added/new.lua', 2);
+	registerLuaSourceRecord(f.sources.catalog.getContext(TEST_CARTRIDGE_CONTEXT_IDS[0]).luaSources, source);
+	f.sources.catalog.registerLuaResource(TEST_CARTRIDGE_CONTEXT_IDS[0], source);
 	for (let frame = 0; frame < 1000; frame++) f.panel.refresh();
 	assert.equal(catalog.mock.callCount(), 0);
+	assert.equal(f.panel.files.revision, revision); assert.ok(f.panel.files.selectedNode === selected);
+	f.panel.show();
+	assert.ok(catalog.mock.callCount() > 0); assert.ok(f.panel.files.revision > revision);
+	assert.ok(f.panel.files.selectedNode === selected);
 });
 
 test('an excluded reveal waits for a changed tree instead of retrying on every frame', t => {

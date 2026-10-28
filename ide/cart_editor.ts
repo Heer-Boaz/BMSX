@@ -84,6 +84,7 @@ import type { EditorInputSerializers } from './workbench/services/editor/editor_
 import { WORKBENCH_TEXT_EDITOR_ID } from './workbench/contrib/code_editor/editor_input';
 import { CodeEditorInputSerializer } from './workbench/contrib/code_editor/editor_serializer';
 import { BehaviorLensInputSerializer } from './workbench/contrib/behavior_lens/editor_serializer';
+import { CallHierarchyPane } from './workbench/contrib/call_hierarchy/editor_pane';
 import { SceneEditorInputSerializer } from './workbench/contrib/scene_editor/editor_serializer';
 import { ScenarioLabInputSerializer } from './workbench/contrib/scenario_lab/editor_serializer';
 import { ResourceViewerInputSerializer } from './workbench/contrib/resources/editor_serializer';
@@ -471,6 +472,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
 			animation: { create: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput, this.navigation), measure: measureAnimationEditorConstraints },
 			host_error: { create: group => new HostErrorPane(group.focusScope), measure: measureHostErrorEditor },
+			call_hierarchy: { create: group => new CallHierarchyPane(group, this.commands, this.sources.catalog, this.contextMenu, this.surfaces, group.workArea), measure: measureUnconstrainedEditor },
 			build_log: { create: group => new BuildLogPane(this.clipboard, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureBuildLogEditor },
 			rom_inspector: { create: group => new RomInspectorPane(this.commands, this.sources, this.navigation, this.editorParts.partForGroup(group).quickInput, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope), measure: measureRomInspectorEditor },
 			event_viewer: { create: group => new EventViewerPane(this.editorParts.partForGroup(group).quickInput, this.commands, frameNavigation, this.contextMenu,
@@ -574,7 +576,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.assistantCommands = new AssistantChatCommands(this.assistant, this.clipboard);
 		this.navigation = new EditorNavigationController(
 			this.sources.catalog,
-			this.resourcePanel,
 			this.resourceEditors,
 			this.editorParts,
 		);

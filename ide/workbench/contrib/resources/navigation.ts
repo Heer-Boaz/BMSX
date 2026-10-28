@@ -12,7 +12,6 @@ import {
 	type WorkspaceSourceCatalog,
 } from '../../../workspace/source_catalog';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
-import type { ResourcePanelController } from './panel/controller';
 import type { ResourceEditorResolver } from '../../services/editor/resource_editor_resolver';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { EditorParts } from '../../services/editor/editor_parts';
@@ -29,7 +28,6 @@ export type ResourceNavigationOptions = {
 export class EditorNavigationController {
 	public constructor(
 		private readonly catalog: WorkspaceSourceCatalog,
-		private readonly resourcePanel: ResourcePanelController,
 		private readonly editorResolver: ResourceEditorResolver,
 		private readonly parts: EditorParts,
 	) {
@@ -76,14 +74,7 @@ export class EditorNavigationController {
 	public async openResource(group: EditorGroupView, resource: RuntimeResource, options?: ResourceNavigationOptions): Promise<number | undefined> {
 		const result = await group.openResolvedEditor(() => this.editorResolver.resolveEditorInput(resource, options?.editorId),
 			{ selection: options?.selection, preserveFocus: options?.preserveFocus, isCurrent: options?.isCurrent });
-		if (result === undefined) return undefined;
-		if (!result.activated) return result.generation;
-		this.resourcePanel.queuePendingSelection(resource);
-		if (this.resourcePanel.isVisible()) {
-			this.resourcePanel.applyPendingSelection();
-		}
-		this.resourcePanel.focusTarget.release();
-		return result.generation;
+		return result?.generation;
 	}
 
 	public focusChunkSource(group: EditorGroupView, identity: ResourceIdentity, selection?: EditorTextSelection): Promise<number | undefined> {
@@ -150,7 +141,6 @@ export class EditorNavigationController {
 				}))) return;
 			}
 			if (!pending.accept()) return;
-			if (!preserveFocus) this.resourcePanel.focusTarget.release();
 		} finally {
 			pending.dispose();
 		}
