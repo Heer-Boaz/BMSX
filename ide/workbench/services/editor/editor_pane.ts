@@ -5,7 +5,7 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorPaneSelection } from './editor_selection';
 import type { EditorInput } from '../../common/editor_inputs';
-import type { InputFocusScope, InputFocusTarget } from '../../../input/focus';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 
 export type EditorPaneClearReason = 'deactivate' | 'move';
@@ -53,10 +53,11 @@ export abstract class EditorPane<TInput extends EditorInput> {
 
 	public abstract focus(): void;
 
-	/** Focus callbacks can replace this reusable pane's attachment before an action continues. */
+	/** Continue only for this input's unchanged attachment and completed concrete focus request. */
 	protected focusInput(input: TInput): boolean {
-		this.focus();
-		return this.inputValue === input;
+		if (this.inputValue !== input) return false;
+		const target = this.commandTarget, scope = target.scope, context = scope.contextGeneration;
+		return target.focus() && scope.contextGeneration === context && inputFocus.admittedTarget === target;
 	}
 
 	public abstract dispose(): void;

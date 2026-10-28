@@ -87,6 +87,7 @@ import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompa
 import { readActorChoices } from '../../ide/workbench/contrib/actor_lab/projection';
 import { ActorLabEditorPane } from '../../ide/workbench/contrib/actor_lab/editor_pane';
 import { acceptEffectPropertySelection } from '../../ide/workbench/contrib/behavior_lens/action_effect_properties';
+import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 
 const PROMPT_REQUEST: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
 	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
@@ -478,6 +479,124 @@ for (const admission of ['ordinary', 'away-back'] as const) test(`ROM filter nat
 	if (admission === 'away-back') assert.deepEqual(text.readText(), state);
 	else assert.deepEqual(text.readText(), { ...state, selectionStart: state.text.length, selectionEnd: state.text.length });
 	assert.equal(f.input.model.filter, 'header'); assert.equal(f.input.readerWindow.open, false);
+});
+
+function behaviorFocusFixture(t: TestContext) {
+	const path = 'focus-tree.lua';
+	const source = `local trees<const> = require('cartlib/behaviour_tree/library')
+trees.register('focus.tree', { root = { type = 'sequence', children = {
+	{ type = 'wait', duration_ticks = 1 },
+	{ type = 'wait', duration_ticks = 2 },
+} } })
+`;
+	const f = createActualSourcePanes(t, false, [[path, source], ['cartlib/behaviour_tree/library.lua', 'return {}']]);
+	const controller = f.editor.behaviorLens;
+	const registration = controller.documents.registrations.getRegistrations(f.sources.systemContextId).find(registration => registration.resource.path === path)!;
+	const input = controller.openDefinition(f.firstGroup, registration); assert.ok(input !== undefined); f.update();
+	assert.ok(input.view.presentation.kind === 'graph');
+	const graph = input.view.presentation;
+	graph.viewport.selection = graph.viewport.model.nodes[0].children[0].children[0];
+	acceptBehaviorGraphSelection(input.view, graph);
+	assert.equal(controller.canEditSelectedChild(input), true);
+	const pane = f.firstGroup.panes.activePane!, target = pane.commandTarget;
+	assert.equal(f.editor.commands.isEnabled('behaviorLens.duplicateChild', target), true);
+	f.second.focus(); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+	return { ...f, controller, input, pane, target, treeSource: source };
+}
+
+test('Behavior duplicate action cannot mutate canonical source when departing Source blur admits Files without replacing the lens', t => {
+	const f = behaviorFocusFixture(t), model = f.input.workingCopy, version = model.version;
+	const context = f.target.scope.contextGeneration, cycles = f.host.runtime.machine.scheduler.nowCycles;
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.editor.commands.execute('resources.focus', f.target); });
+	t.after(unbind); f.editor.commands.execute('behaviorLens.duplicateChild', f.target);
+	assert.equal(callbacks, 1); assert.ok(inputFocus.admittedTarget === f.editor.resourcePanel.focusTarget);
+	assert.ok(f.firstGroup.panes.activePane === f.pane && f.pane.input === f.input);
+	assert.equal(f.target.scope.contextGeneration, context, 'the rejected focus leaves the original concrete lens attachment alive');
+	assert.equal(model.buffer.getText(), f.treeSource); assert.equal(model.version, version); assert.equal(model.canUndo, false);
+	assert.equal(f.firstPart.quickInput.visible, false); assert.equal(f.editor.contextMenu.visible, false);
+	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
+	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+for (const admission of ['away-back', 'reattach'] as const) test(`Behavior duplicate action rejects a source-focus handoff superseded by ${admission}`, t => {
+	const f = behaviorFocusFixture(t), model = f.input.workingCopy, context = f.target.scope.contextGeneration;
+	const completions: boolean[] = [];
+	if (admission === 'reattach') {
+		const focus = f.target.focus.bind(f.target);
+		t.mock.method(f.target, 'focus', () => { const completed = focus(); completions.push(completed); return completed; });
+	}
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		if (admission === 'away-back') {
+			f.editor.commands.execute('resources.focus', f.target); f.pane.focus();
+		} else { f.firstGroup.panes.clearEditor(); f.firstGroup.openEditor(f.input, { preserveFocus: true }); }
+	});
+	t.after(unbind); f.editor.commands.execute('behaviorLens.duplicateChild', f.target);
+	assert.equal(callbacks, 1); assert.ok(inputFocus.admittedTarget === f.target);
+	assert.ok(f.firstGroup.panes.activePane === f.pane && f.pane.input === f.input);
+	if (admission === 'reattach') {
+		assert.ok(f.target.scope.contextGeneration > context); assert.deepEqual(completions, [true]);
+	}
+	else assert.equal(f.target.scope.contextGeneration, context);
+	assert.equal(model.buffer.getText(), f.treeSource); assert.equal(model.canUndo, false);
+	assert.equal(f.firstPart.quickInput.visible, false); assert.equal(f.editor.contextMenu.visible, false);
+});
+
+test('Behavior runtime inspection cannot publish a picker after another Source blur rejects its requested lens focus', t => {
+	const f = behaviorFocusFixture(t), context = f.target.scope.contextGeneration;
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => { unbind(); callbacks++; f.editor.commands.execute('resources.focus', f.target); });
+	t.after(unbind); f.editor.commands.execute('behaviorLens.inspectRuntimeTree', f.target);
+	assert.equal(callbacks, 1); assert.ok(f.firstGroup.panes.activePane === f.pane && f.pane.input === f.input);
+	assert.equal(f.target.scope.contextGeneration, context);
+	assert.equal(f.firstPart.quickInput.visible, false); assert.ok(inputFocus.admittedTarget === f.editor.resourcePanel.focusTarget);
+	assert.equal(f.input.workingCopy.buffer.getText(), f.treeSource); assert.equal(f.input.workingCopy.canUndo, false);
+});
+
+for (const admission of ['ordinary', 'sibling'] as const) test(`Behavior duplicate retains its actual canonical edit and one Undo after ${admission} focus admission`, t => {
+	const f = behaviorFocusFixture(t), model = f.input.workingCopy;
+	let callbacks = 0;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		if (admission === 'sibling') f.secondGroup.openEditor(new HostErrorInput('unrelated source replacement'), { preserveFocus: true });
+	});
+	t.after(unbind); f.editor.commands.execute('behaviorLens.duplicateChild', f.target);
+	assert.equal(callbacks, 1); assert.ok(inputFocus.admittedTarget === f.target);
+	assert.ok(f.firstGroup.panes.activePane === f.pane && f.pane.input === f.input);
+	assert.notEqual(model.buffer.getText(), f.treeSource); assert.equal(model.canUndo, true);
+	f.editor.commands.execute('undo', f.target);
+	assert.equal(model.buffer.getText(), f.treeSource); assert.equal(model.canUndo, false);
+	assert.equal(f.firstPart.quickInput.visible, false);
+});
+
+test('Behavior inspection admits its actual property draft commit without freezing the canonical model version', t => {
+	const path = 'focus-effect.lua';
+	const source = "local effects<const> = require('cartlib/actioneffects'); effects.register_effect('focus.effect', { period_ms = 40 }); return {}";
+	const f = createActualSourcePanes(t, false, [[path, source], ['cartlib/actioneffects.lua', 'return {}']]);
+	const controller = f.editor.behaviorLens;
+	const registration = controller.documents.registrations.getRegistrations(f.sources.systemContextId).find(registration => registration.resource.path === path)!;
+	const input = controller.openDefinition(f.firstGroup, registration); assert.ok(input !== undefined); f.update();
+	assert.ok(input.view.presentation.kind === 'properties');
+	const properties = input.view.presentation, model = input.workingCopy, pane = f.firstGroup.panes.activePane!, target = pane.commandTarget;
+	const property = properties.tree.rows.findIndex(row => row.element.kind === 'property'
+		&& row.element.write?.field.kind === LuaTableFieldKind.IdentifierKey && row.element.write.field.name === 'period_ms');
+	assert.ok(property >= 0); properties.tree.selectionIndex = property; acceptEffectPropertySelection(input.view, properties, false);
+	f.editor.commands.execute('behaviorLens.editProperty', target);
+	const field = inputFocus.admittedTarget!; assert.ok(field !== target && field.edit !== undefined);
+	assert.equal(field.textInput!.replaceText(0, field.textInput!.readText().text.length, '41'), true);
+	const version = model.version, context = target.scope.contextGeneration;
+	assert.equal(model.buffer.getText(), source); assert.equal(field.edit.pending, true);
+	f.editor.commands.execute('behaviorLens.inspectRegisteredDefinitions', target);
+	assert.ok(model.version > version); assert.equal(model.buffer.getText(), source.replace('period_ms = 40', 'period_ms = 41'));
+	assert.equal(model.canUndo, true); assert.equal(field.edit.pending, false); assert.equal(field.canFocus!(), false);
+	assert.equal(target.scope.contextGeneration, context);
+	assert.ok(f.firstGroup.panes.activePane === pane && pane.input === input);
+	assert.equal(f.firstPart.quickInput.visible, true); assert.ok(inputFocus.admittedTarget === f.firstPart.quickInput.field.focusTarget);
+	f.firstPart.quickInput.hide(); assert.ok(inputFocus.admittedTarget === target);
+	f.editor.commands.execute('undo', target);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
 });
 
 /** Compiled guest membership and the production Actor pane, not a substituted input/focus control. */
