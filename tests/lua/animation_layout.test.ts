@@ -14,6 +14,10 @@ import { drawAnimationEditor } from '../../ide/workbench/contrib/animation/rende
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { uppercaseOutsideStrings } from '../../ide/common/text';
+import { createActualSourcePanes } from '../helpers/source_panes';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { KeyModifier } from '../../hosts/common/input/text';
 
 const source = "return {duration_frames=100,clock_scale=1,tracks={{kind='value',interpolation='linear',keys={{frame=0,value=1},{frame=100,value=2}}},{kind='event',keys={{frame=50,event='other'}}}}}";
 
@@ -29,6 +33,43 @@ function fixture(t: TestContext, text = source) {
 	t.after(() => { keys.dispose(); input.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); });
 	return { input, model, keys, controller };
 }
+
+for (const variant of ['tiny', 'msx'] as const) for (const direction of ['right', 'down'] as const)
+test(`${variant} Animation publishes its compact constraints to a real ${direction} Source split`, t => {
+	const f = createActualSourcePanes(t, false, [['animation.lua', source]]);
+	f.editor.setFontVariant(variant);
+	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'animation.lua' })!;
+	const model = f.ide.models.retain(resource, 'lua', source), input = new AnimationEditorInput(model, resource.contextId);
+	f.editor.animations.refresh(input); f.editor.animations.selectTrack(input, 1); f.editor.animations.selectKey(input, 0);
+	f.firstGroup.openEditor(input);
+	const sibling = f.firstPart.splitGroup(f.firstGroup, direction);
+	sibling.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.firstInput.workingCopy.resource));
+	f.update(); f.firstGroup.focus();
+	const subject = input.keySelection, split = f.firstPart.arrangement.splits[0].split;
+	split.moveTo(split.start); f.update();
+	const measured = measureAnimationEditor(editorViewState.font);
+	// These are the contribution's hard layout constraints, not a UI geometry snapshot.
+	assert.ok(input.layout.bounds.right - input.layout.bounds.left >= measured.compactWidth);
+	assert.ok(input.layout.bounds.bottom - input.layout.bounds.top >= measured.compactHeight);
+	f.firstBounds.right = f.firstBounds.left + measured.compactWidth - 1;
+	f.firstBounds.bottom = f.firstBounds.top + measured.compactHeight - 1;
+	f.update();
+	assert.ok(f.firstPart.arrangement.contentWidth > f.firstPart.arrangement.bounds.right - f.firstPart.arrangement.bounds.left);
+	assert.ok(f.firstPart.arrangement.contentHeight > f.firstPart.arrangement.bounds.bottom - f.firstPart.arrangement.bounds.top);
+	assert.ok(input.layout.bounds.right - input.layout.bounds.left >= measured.compactWidth);
+	assert.ok(input.layout.bounds.bottom - input.layout.bounds.top >= measured.compactHeight);
+	const details = input.clientBar.items.find(item => item.command === 'animation.details')!;
+	const x = (details.bounds.left + details.bounds.right) / 2, y = (details.bounds.top + details.bounds.bottom) / 2;
+	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
+		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	f.update();
+	assert.ok(input.activeClient === 'details' && input.layout.detailsVisible);
+	assert.ok(inputFocus.admittedTarget === f.firstGroup.panes.activePane!.commandTarget);
+	assert.ok(input.keySelection === subject);
+	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
+});
 
 test('Animation renders decoded semantic track and clip captions without recasing their identifier contents or authored source', t => {
 	const text = [

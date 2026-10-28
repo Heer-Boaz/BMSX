@@ -227,7 +227,13 @@ for (const variant of ['tiny', 'msx']) {
 		t.assert(tree.selectionIndex === coordinateIndex, 'closing the keyboard menu did not restore the actual Details target');
 		await press('ArrowDown');
 		// Source opens the field; the following Producer Source opens its value expression.
-		await press('ShiftLeft', 'F10'); await press('End'); await press('ArrowUp'); await press('Enter'); await t.frames(2);
+			await press('ShiftLeft', 'F10');
+			const menu = t.contextMenu(), actions = menu.model.rows.filter(row => row.command !== undefined && row.enabled);
+			const sourceIndex = actions.findIndex(row => row.command === 'editor.source');
+			t.assert(menu.visible && sourceIndex >= 0, 'the actual property menu has no eligible field Source action');
+			await press('Home');
+			for (let item = 0; item < sourceIndex; item++) await press('ArrowDown');
+			await press('Enter'); await t.frames(2);
 		const opened = t.activeWorkbenchTab();
 		t.assert(opened.kind === 'code_editor' && opened.workingCopy === input.workingCopy
 			&& opened.context.view.cursorRow === fieldRange.start.line - 1 && opened.context.view.cursorColumn === fieldRange.start.column - 1

@@ -49,6 +49,8 @@ const ANIMATION_AUTHORING_COMMANDS = ['animation.addTrack', 'animation.addKey', 
 	'animation.fit', 'animation.snap', 'animation.remove', 'animation.producerSource', 'animation.producerSourceToSide', 'animation.edit', 'animation.more'] as const;
 
 export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditorInput> {
+	public override get minimumClientWidth(): number { return measureAnimationEditor(editorViewState.font).compactWidth; }
+	public override get minimumClientHeight(): number { return measureAnimationEditor(editorViewState.font).compactHeight; }
 	public override get companionGameMinimumWidth(): number { return measureAnimationEditor(editorViewState.font).compactWidth; }
 	public override getSourceLocation(): EditorSourceLocation | undefined {
 		const input = this.input;
