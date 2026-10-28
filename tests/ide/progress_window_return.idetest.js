@@ -88,3 +88,31 @@ for (const mode of ['editor', 'group', 'drag']) {
 	t.assert(t.runtime().machine.scheduler.nowCycles === cycles, 'presentation must not execute the paused guest');
 	t.log(`PROGRESS-WINDOW-RETURN:${mode}:PASS`);
 }
+
+// Move is the same retained-input operation when a context-menu destination creates a split.
+for (const font of ['tiny', 'msx']) {
+	for (const theme of ['light', 'dark']) {
+		const direction = font === 'tiny' ? 'right' : 'down', count = t.workbenchTabs().length;
+		await tabContext(original); await accept('window.moveEditor');
+		await type(`${direction} main workspace`);
+		t.log(`VISUAL progress-move-split-${font}-${theme}-destination`); t.capture(`progress-move-split-${font}-${theme}-destination`);
+		await press('Enter'); await t.frames(4);
+		const receiver = t.activeEditorGroup();
+		t.assert(receiver !== main && receiver.model.activeTab === original && t.activeWorkbenchTab() === original,
+			'the context-menu split must transfer the exact retained Progress input rather than copy or reopen it');
+		t.assert(!main.model.tabs.includes(original) && main.model.tabs.includes(other)
+			&& main.model.tabs.length + receiver.model.tabs.length === count,
+			'splitting must preserve the other producer and transfer rather than duplicate the moved editor');
+		t.log(`VISUAL progress-move-split-${font}-${theme}-result`); t.capture(`progress-move-split-${font}-${theme}-result`);
+		await tabContext(original); await accept('window.moveEditor');
+		await type('main workspace group '); await press('Digit1'); await press('Enter'); await t.frames(4);
+		t.assert(t.activeEditorGroup() === main && t.activeWorkbenchTab() === original && t.workbenchTabs().length === count,
+			'returning from a split must restore the same input to its original group without a duplicate');
+		for (const document of documents) t.assert(document.model.buffer.getText() === document.source
+			&& document.model.version === document.version && document.model.history === document.history && !document.model.dirty,
+			'context-menu split/return changed canonical source, history or clean state');
+		t.assert(t.runtime().machine.scheduler.nowCycles === cycles, 'context-menu split/return executed the paused guest');
+		t.command('theme-toggle'); await t.frames(2);
+	}
+	await press('ControlLeft', 'ShiftLeft', 'KeyT');
+}

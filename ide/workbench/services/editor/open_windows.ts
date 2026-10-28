@@ -36,9 +36,10 @@ export function showMoveDestination(parts: EditorParts, picker: QuickInputContro
 			const title = part.groups.length === 1 ? host : `${host} / Group ${part.groups.indexOf(target) + 1}`;
 			const description = active?.description ?? '', detail = part.window?.model.minimized ? 'Minimized editor window' : '';
 			if (eligible) items.push({ destination, label: source.kind === 'editor' ? title : `Merge into ${title}`, description, detail });
-			if (source.kind === 'group') for (const direction of ['left', 'right', 'up', 'down'] as const) {
+			for (const direction of ['left', 'right', 'up', 'down'] as const) {
 				const beside: EditorMoveDestination = { kind: 'split', group: target, direction };
-				if (parts.canMoveGroup(group, beside)) items.push({ destination: beside, label: `${direction}: ${title}`, description, detail });
+				const eligible = source.kind === 'editor' ? parts.canMoveEditor(group, source.input, beside) : parts.canMoveGroup(group, beside);
+				if (eligible) items.push({ destination: beside, label: `${direction}: ${title}`, description, detail });
 			}
 		}
 		const window: EditorMoveDestination = { kind: 'window' };

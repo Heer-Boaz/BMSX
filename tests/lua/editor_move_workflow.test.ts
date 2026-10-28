@@ -13,11 +13,13 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 
-function selectDestination(f: Fixture, destination: EditorGroupView | 'new'): number {
+function selectDestination(f: Fixture, destination: EditorGroupView | 'new' | Extract<EditorMoveDestination, { kind: 'split' }>): number {
 	const picker = f.editor.quickInput;
 	const index = picker.model.list.rows.findIndex(row => {
 		const candidate = (row.item as typeof row.item & { destination: EditorMoveDestination }).destination;
-		return destination === 'new' ? candidate.kind === 'window' : candidate.kind === 'group' && candidate.group === destination;
+		return destination === 'new' ? candidate.kind === 'window'
+			: 'kind' in destination ? candidate.kind === 'split' && candidate.group === destination.group && candidate.direction === destination.direction
+				: candidate.kind === 'group' && candidate.group === destination;
 	});
 	assert.ok(index >= 0, 'the actual destination owner is admitted by the move chooser');
 	f.key('Home', KeyModifier.ctrl);
@@ -73,6 +75,71 @@ test('Enter moves the exact dirty Source input into a newly admitted window with
 	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version); assert.equal(model.dirty, true);
 	assert.ok(f.secondGroup.model.activeTab === f.secondInput); assert.equal(f.editor.actionPrompt.visible, false);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+for (const sameGroup of [true, false]) for (const direction of ['left', 'right', 'up', 'down'] as const)
+	test(`Move Editor ${direction} of ${sameGroup ? 'its own group' : 'another window group'} retains its dirty input and source successor`, t => {
+		const f = createActualSourcePanes(t), parts = f.editor.editorParts, source = f.firstGroup, input = f.firstInput, model = input.workingCopy;
+		const successor = new CodeEditorInput(f.secondInput.workingCopy);
+		source.openEditor(successor); source.activate(input.id); f.first.focus();
+		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- split without copying\n' }]);
+		input.context.view.cursorRow = 2; input.context.view.cursorColumn = 3; input.context.view.selectionAnchor = { row: 1, column: 2 };
+		const reading = captureCodeEditorView(input), text = model.buffer.getText(), version = model.version;
+		const reference = sameGroup ? source : f.secondGroup, destinationPart = parts.partForGroup(reference);
+		const count = parts.documents.length, groupCount = destinationPart.groups.length, cycles = f.host.runtime.machine.scheduler.nowCycles;
+		const copy = t.mock.method(input, 'createView'); let disposed = 0; input.onWillDispose(() => { disposed++; });
+		f.editor.commands.execute('window.moveEditor', f.first.commandTarget);
+		for (const available of ['left', 'right', 'up', 'down'] as const) assert.ok(f.editor.quickInput.model.list.rows.some(row => {
+			const destination = (row.item as typeof row.item & { destination: EditorMoveDestination }).destination;
+			return destination.kind === 'split' && destination.group === reference && destination.direction === available;
+		}));
+		selectDestination(f, { kind: 'split', group: reference, direction }); f.key('Enter');
+		const receiver = parts.findGroup(input); assert.ok(receiver !== undefined && receiver !== reference && receiver !== source);
+		assert.ok(parts.partForGroup(receiver) === destinationPart && destinationPart.arrangement.isNeighbor(reference, receiver, direction));
+		assert.equal(parts.documents.length, count); assert.equal(destinationPart.groups.length, groupCount + 1);
+		assert.ok(source.model.activeTab === successor && source.panes.activePane?.input === successor);
+		assert.ok(receiver.model.activeTab === input && receiver.panes.activePane instanceof CodeEditorPane && receiver.panes.activePane.input === input);
+		assert.ok(receiver.panes.activePane.code.model === model && receiver.panes.activePane.code.view === input.context.view);
+		assert.ok(parts.activeGroup === receiver && inputFocus.target === receiver.panes.activePane.commandTarget);
+		assert.equal(parts.groups.reduce((count, group) => count + (group.model.contains(input) ? 1 : 0), 0), 1);
+		assert.equal(copy.mock.callCount(), 0); assert.equal(disposed, 0); assert.deepEqual(captureCodeEditorView(input), reading);
+		assert.equal(model.buffer.getText(), text); assert.equal(model.version, version); assert.equal(model.dirty, true); assert.equal(model.canUndo, true);
+		assert.equal(f.editor.actionPrompt.visible, false); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+		if (!sameGroup) assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane?.input === f.secondInput);
+	});
+
+test('Cancel from a selected split move leaves every group, document and source attachment intact', t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, input = f.firstInput;
+	f.first.focus(); const origin = inputFocus.target, pane = f.firstGroup.panes.activePane;
+	const groups = [...parts.groups], documents = [...parts.documents], members = groups.map(group => [...group.model.tabs]);
+	const topologies = parts.mostRecentlyActive.map(part => [part, part.arrangement.topologyRevision] as const);
+	f.editor.commands.execute('window.moveEditor', f.first.commandTarget);
+	selectDestination(f, { kind: 'split', group: f.secondGroup, direction: 'right' }); f.key('Escape');
+	assert.equal(f.editor.quickInput.visible, false); assert.ok(inputFocus.target === origin);
+	assert.equal(parts.groups.length, groups.length); assert.ok(parts.groups.every((group, index) => group === groups[index]));
+	assert.equal(parts.documents.length, documents.length); assert.ok(parts.documents.every((part, index) => part === documents[index]));
+	for (const [part, revision] of topologies) assert.equal(part.arrangement.topologyRevision, revision);
+	for (const [index, group] of groups.entries()) {
+		assert.equal(group.model.tabs.length, members[index].length); assert.ok(group.model.tabs.every((tab, position) => tab === members[index][position]));
+	}
+	assert.ok(f.firstGroup.model.activeTab === input && f.firstGroup.panes.activePane === pane);
+});
+
+test('a split destination entering close admission after the chooser snapshot cannot create a receiver group', async t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, input = f.firstInput;
+	f.secondInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dirty split destination\n' }]);
+	f.first.focus(); f.editor.commands.execute('window.moveEditor', f.first.commandTarget);
+	selectDestination(f, { kind: 'split', group: f.secondGroup, direction: 'right' });
+	const groups = [...parts.groups], documents = [...parts.documents], topology = f.secondPart.arrangement.topologyRevision;
+	const close = parts.close(f.secondPart);
+	assert.equal(f.secondPart.actionPrompt.visible, true); assert.equal(f.secondPart.closing, true);
+	f.key('Enter');
+	assert.equal(f.editor.quickInput.visible, false); assert.ok(f.firstGroup.model.activeTab === input && f.firstGroup.panes.activePane === f.first);
+	assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
+	assert.equal(parts.groups.length, groups.length); assert.ok(parts.groups.every((group, index) => group === groups[index]));
+	assert.equal(parts.documents.length, documents.length); assert.ok(parts.documents.every((part, index) => part === documents[index]));
+	assert.equal(f.secondPart.arrangement.topologyRevision, topology);
+	f.secondPart.actionPrompt.close('cancel', false); assert.equal(await close, false);
 });
 
 test('a chooser row commits on matching pointer release and can move Source into the permanent Main part', t => {
