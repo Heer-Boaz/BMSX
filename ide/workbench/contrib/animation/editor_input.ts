@@ -1,4 +1,5 @@
-import { resourceIdentityKey } from '../../../common/resource';
+import { resourceIdentityEquals, resourceIdentityKey } from '../../../common/resource';
+import type { AbstractEditorInput } from '../../common/editor_input';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
@@ -26,6 +27,14 @@ let nextInputId = 0;
 export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${string}`, 'animation'> {
 	public readonly createView?: () => AnimationEditorInput;
 	public override canMove(): boolean { return true; }
+	public override matches(other: AbstractEditorInput<string, string>): boolean {
+		if (this === other) return true;
+		if (!(other instanceof AnimationEditorInput) || this.projectContextId !== other.projectContextId
+			|| !resourceIdentityEquals(this.workingCopy.resource, other.workingCopy.resource) || this.consumerPath !== other.consumerPath) return false;
+		const range = this.definitionRange, candidate = other.definitionRange;
+		return range === undefined ? candidate === undefined : candidate !== undefined && range.start !== range.end
+			&& range.start === candidate.start && range.end === candidate.end;
+	}
 	public readonly definitionRange: TrackedTextRange | undefined;
 	public readonly sourceModels = new Map<string, EditorTextModel>();
 	public sourceRevision: symbol | undefined;

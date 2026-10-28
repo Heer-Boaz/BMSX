@@ -58,6 +58,8 @@ export abstract class AbstractEditorInput<
 	}
 
 	public abstract isDirty(): boolean;
+	/** Logical editor equivalence within one group, independent of a retained view's gesture ID. */
+	public matches(other: AbstractEditorInput<string, string>): boolean { return this.id === other.id; }
 	/** Only portable inputs may transfer their retained identity to another editor group. */
 	public canMove(_destination?: AbstractEditorInput<string, string>): boolean { return false; }
 	/** Primary file identity for workspace commands; tool panes may have no file. */

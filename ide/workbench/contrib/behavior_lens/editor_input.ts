@@ -1,4 +1,5 @@
-import { resourceIdentityKey } from '../../../common/resource';
+import { resourceIdentityEquals, resourceIdentityKey } from '../../../common/resource';
+import type { AbstractEditorInput } from '../../common/editor_input';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { mapBehaviorLensSourceRanges } from './source_correspondence';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
@@ -28,6 +29,15 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 	/** The attached pane owns/disposes this visible inspection; source identity stays separate. */
 	public runtimeInspection: BehaviorRuntimeInspection | undefined;
 	public override canMove(): boolean { return this.runtimeInspection === undefined; }
+	public override matches(other: AbstractEditorInput<string, string>): boolean {
+		if (this === other) return true;
+		if (!(other instanceof BehaviorLensInput) || !resourceIdentityEquals(this.workingCopy.resource, other.workingCopy.resource)
+			|| this.view.definitionRowKey === null || other.view.definitionRowKey === null) return false;
+		const key = this.view.definitionRowKey, candidate = other.view.definitionRowKey;
+		const range = this.view.source.ranges.get(key)!, candidateRange = other.view.source.ranges.get(candidate)!;
+		return range.start !== range.end && range.start === candidateRange.start && range.end === candidateRange.end
+			&& this.view.source.nodesByRowKey.get(key)!.behaviorKind === other.view.source.nodesByRowKey.get(candidate)!.behaviorKind;
+	}
 	public readonly graphLayout: AsyncGraphLayout<StateGraphModel>;
 	private definitionTitle: string | undefined;
 	private ownedDefinition: BehaviorSourceNode | undefined;

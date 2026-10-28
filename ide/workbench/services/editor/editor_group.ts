@@ -294,7 +294,7 @@ export class EditorGroupView {
 		const preserveFocus = options.preserveFocus || inputFocus.revision !== focusRevision && inputFocus.target !== null;
 		generation = this.panes.beginOpen();
 		const admit = (): EditorInputOpenResult | undefined => {
-			if (this.model.findById(input.id) === undefined) {
+			if (this.model.findMatching(input) === undefined) {
 				generation = this.panes.clearEditor();
 				if (this.panes.openGeneration !== generation) {
 					if (this.model.indexOf(input) < 0) input.dispose();

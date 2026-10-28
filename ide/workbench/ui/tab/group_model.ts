@@ -136,7 +136,7 @@ export class EditorTabGroupModel {
 
 	/** The workbench detaches a replaced pane before changing group membership. */
 	public add(tab: EditorInput, options: EditorOpenOptions = {}): EditorInput {
-		const existing = this.findById(tab.id);
+		const existing = this.findMatching(tab);
 		if (existing !== undefined) {
 			// Concurrent resolvers may offer two inputs for the same resource view.
 			// Admission owns the candidate; the group keeps its existing view alive.
@@ -227,6 +227,12 @@ export class EditorTabGroupModel {
 		return undefined;
 	}
 
+	/** Admission and transfer use contribution-owned editor equivalence; gestures still address exact IDs. */
+	public findMatching(input: EditorInput): EditorInput | undefined {
+		for (const candidate of this.editorTabs) if (candidate.matches(input)) return candidate;
+		return undefined;
+	}
+
 	/** Match document identity independently of a contribution's view/input object. */
 	public findByResourceEditor(identity: ResourceEditorIdentity): EditorInput | undefined {
 		for (const input of this.editorTabs) {
@@ -238,6 +244,13 @@ export class EditorTabGroupModel {
 
 	public indexOf(tab: EditorInput): number {
 		return this.editorTabs.indexOf(tab);
+	}
+
+	/** Select the retained successor before a known member leaves this group. */
+	public activeAfterRemoval(input: EditorInput): EditorInput | null {
+		if (this.activeEditor !== input) return this.activeEditor;
+		const index = this.editorTabs.indexOf(input);
+		return this.editorTabs[index - 1] ?? this.editorTabs[index + 1] ?? null;
 	}
 
 	public removeAt(index: number): void {
@@ -258,14 +271,12 @@ export class EditorTabGroupModel {
 	/** Topology owners adopt the paired memberships before publishing their notifications. */
 	public transferTo(destination: EditorTabGroupModel, input: EditorInput, coalesced?: EditorInput, index?: number): EditorTransferPublication {
 		const sourceIndex = this.editorTabs.indexOf(input);
+		const successor = this.activeAfterRemoval(input);
 		this.listeners.get(input)!.dispose();
 		this.listeners.delete(input);
 		this.labels.delete(input);
 		this.editorTabs.splice(sourceIndex, 1);
-		if (this.activeEditor === input) {
-			const successor = this.editorTabs[sourceIndex - 1] ?? this.editorTabs[sourceIndex];
-			this.activeEditor = successor === undefined ? null : successor;
-		}
+		this.activeEditor = successor;
 		if (this.previewEditor === input) this.previewEditor = null;
 		const admitted = coalesced === undefined ? input : coalesced;
 		if (coalesced === undefined) {
@@ -290,9 +301,7 @@ export class EditorTabGroupModel {
 	/** One affinity plan supplies capability checks, input locks and the final batch mutation. */
 	public planTransferTo(destination: EditorTabGroupModel | undefined): EditorGroupTransferPlan {
 		const entries: EditorGroupTransferEntry[] = [];
-		const existing = new Map<EditorTabId, EditorInput>();
-		if (destination !== undefined) for (const input of destination.editorTabs) existing.set(input.id, input);
-		for (const input of this.editorTabs) entries.push({ input, receiver: existing.get(input.id) ?? input });
+		for (const input of this.editorTabs) entries.push({ input, receiver: destination?.findMatching(input) ?? input });
 		return { entries };
 	}
 

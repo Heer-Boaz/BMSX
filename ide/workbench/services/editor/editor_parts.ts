@@ -349,7 +349,7 @@ export class EditorParts {
 		if (receiver === undefined || receiver.retired || destination.group.paneSurface.retired || !destination.group.openingAdmitted || receiver.operation !== 'none') return false;
 		if (destination.kind === 'split') return (destination.group !== source || source.model.tabs.length > 1) && input.canMove();
 		if (destination.group === source) return destination.index !== undefined;
-		const existing = destination.group.model.findById(input.id);
+		const existing = destination.group.model.findMatching(input);
 		return input.canMove(existing) && (existing === undefined || !this.closeController.isPending(existing));
 	}
 
@@ -372,7 +372,7 @@ export class EditorParts {
 					&& (active === null ? source.panes.activePane === null : source.panes.activePane?.input === active);
 			});
 		}
-		const existing = destination.kind === 'group' ? destination.group.model.findById(input.id) : undefined;
+		const existing = destination.kind === 'group' ? destination.group.model.findMatching(input) : undefined;
 		const sourcePart = this.partForGroup(source);
 		const movedTo = this.closeController.transfer(existing === undefined ? [input] : [input, existing], () => {
 			sourcePart.setOperation('move');
@@ -384,7 +384,7 @@ export class EditorParts {
 			let retiring: EditorInput | undefined, handoff: { group: EditorGroupView; input: EditorInput } | undefined;
 			try {
 				if (this.owners.get(source) !== sourcePart || source.paneSurface.retired || !source.model.contains(input) || (source.model.activeTab === input) !== movingActive
-					|| target.paneSurface.retired || !targetPart.ownsGroup(target) || target.model.findById(input.id) !== existing
+					|| target.paneSurface.retired || !targetPart.ownsGroup(target) || target.model.findMatching(input) !== existing
 					|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart) return false;
 				const targetGeneration = target.panes.openGeneration;
 				return withNavigationCaptureSuspended(() => {
@@ -392,12 +392,12 @@ export class EditorParts {
 					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.paneSurface.retired || target.paneSurface.retired
 						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
 						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetGeneration
-						|| !source.model.contains(input) || (source.model.activeTab === input) !== movingActive || target.model.findById(input.id) !== existing) return false;
+						|| !source.model.contains(input) || (source.model.activeTab === input) !== movingActive || target.model.findMatching(input) !== existing) return false;
 					const targetReceipt = target.panes.clearEditor();
 					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.paneSurface.retired || target.paneSurface.retired
 						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
 						|| movingActive && source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
-						|| !source.model.contains(input) || (source.model.activeTab === input) !== movingActive || target.model.findById(input.id) !== existing || !input.canMove(existing)) return false;
+						|| !source.model.contains(input) || (source.model.activeTab === input) !== movingActive || target.model.findMatching(input) !== existing || !input.canMove(existing)) return false;
 					if (existing !== undefined) retiring = input;
 					const publication = source.model.transferTo(target.model, input, existing, destination.kind === 'group' ? destination.index : undefined);
 					const receiver = publication.input; handoff = { group: target, input: receiver };
@@ -467,7 +467,7 @@ export class EditorParts {
 			if (destination.kind === 'split' && receiver === part) return true;
 		}
 		for (const input of source.model.tabs) {
-			const receiver = destination.kind === 'group' ? destination.group.model.findById(input.id) : undefined;
+			const receiver = destination.kind === 'group' ? destination.group.model.findMatching(input) : undefined;
 			if (!input.canMove(receiver) || this.closeController.isPending(input) || receiver !== undefined && this.closeController.isPending(receiver)) return false;
 		}
 		return true;
@@ -508,7 +508,7 @@ export class EditorParts {
 					if (this.owners.get(source) !== sourcePart || !sourcePart.ownsGroup(source) || source.surface.retired || !targetPart.ownsGroup(target) || target.surface.retired
 						|| destination.kind !== 'window' && this.owners.get(destination.group) !== targetPart
 						|| source.model.activeTab !== sourceActive || source.model.tabs.length !== plan.entries.length
-						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input && (entry.receiver === entry.input ? !target.model.contains(entry.input) : target.model.findById(entry.input.id) === entry.receiver))) return false;
+						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input && target.model.findMatching(entry.input) === (entry.receiver === entry.input ? undefined : entry.receiver))) return false;
 					const targetGeneration = target.panes.openGeneration;
 					source.tabStrip.cancelDrag();
 					const sourceReceipt = source.panes.clearEditor('move');
@@ -521,7 +521,7 @@ export class EditorParts {
 					if (this.owners.get(source) !== sourcePart || !targetPart.ownsGroup(target) || source.surface.retired || target.surface.retired
 						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
 						|| source.model.activeTab !== sourceActive || target.model.activeTab !== targetActive || source.model.tabs.length !== plan.entries.length
-						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input && entry.input.canMove(entry.receiver === entry.input ? undefined : entry.receiver))
+						|| !plan.entries.every((entry, index) => source.model.tabs[index] === entry.input && target.model.findMatching(entry.input) === (entry.receiver === entry.input ? undefined : entry.receiver) && entry.input.canMove(entry.receiver === entry.input ? undefined : entry.receiver))
 						|| target.model.tabs.length !== targetInputs.length || !targetInputs.every((input, index) => target.model.tabs[index] === input)) return false;
 					publication = source.model.transferGroupTo(target.model, plan, destination.kind === 'group' ? destination.index : undefined);
 					targetAdopted = true;

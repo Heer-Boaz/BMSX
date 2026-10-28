@@ -1,4 +1,5 @@
-import { resourceIdentityKey, type ResourceDomain } from '../../../common/resource';
+import { resourceIdentityEquals, resourceIdentityKey, type ResourceDomain } from '../../../common/resource';
+import type { AbstractEditorInput } from '../../common/editor_input';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
@@ -20,6 +21,12 @@ let nextInputId = 0;
 export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}`, 'lua_program'> {
 	public readonly createView?: () => LuaProgramInput;
 	public override canMove(): boolean { return true; }
+	public override matches(other: AbstractEditorInput<string, string>): boolean {
+		return this === other || other instanceof LuaProgramInput
+			&& resourceIdentityEquals(this.workingCopy.resource, other.workingCopy.resource) && this.programKind === other.programKind
+			&& this.occurrenceRange.start !== this.occurrenceRange.end
+			&& this.occurrenceRange.start === other.occurrenceRange.start && this.occurrenceRange.end === other.occurrenceRange.end;
+	}
 	public readonly tree = createWorkbenchPropertyTree<LuaProgramProperty>();
 	public readonly live = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	public readonly sourceModels = new Map<string, EditorTextModel>();
