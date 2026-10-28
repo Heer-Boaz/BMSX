@@ -8,7 +8,7 @@ import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
 import type { RuntimeResource } from '../../../common/resource';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
-import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
 import { luaSourceLocation } from '../../../language/lua/source_location';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { SceneEditorInput } from './editor_input';
@@ -34,9 +34,11 @@ export class SceneEditorController {
 		return group.model.tabs.find((input): input is SceneEditorInput => input.kind === 'scene_editor' && resourceIdentityEquals(input.workingCopy.resource, resource));
 	}
 
-	public openResource(group: EditorGroupView, resource: RuntimeResource): void {
-		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-		group.openEditor(this.findResource(group, resource) ?? new SceneEditorInput(model, this.createView));
+	public openResource(group: EditorGroupView, resource: RuntimeResource, options: EditorTabOpenOptions = {}): void {
+		group.openProducedEditor(() => {
+			const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
+			return this.findResource(group, resource) ?? new SceneEditorInput(model, this.createView);
+		}, options);
 	}
 
 	/** The occurrence owner tracks this table extent through canonical source edits. */

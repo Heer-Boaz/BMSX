@@ -57,6 +57,7 @@ function openVisual(f: ReturnType<typeof fixture>, kind: 'scene' | 'behavior' | 
 		assert.ok(input instanceof SceneEditorInput); f.editor.sceneEditor.refresh(input); selectSceneOutlineRow(input, 1);
 	} else if (kind === 'animation') {
 		const input = f.editor.animations.openResource(group, resource);
+		assert.ok(input !== undefined);
 		f.editor.animations.selectTrack(input, 1); f.editor.animations.selectKey(input, 0); f.editor.animations.selectProperty(input, 0);
 	} else {
 		const panel = f.editor.resourcePanel; panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection();
@@ -104,6 +105,7 @@ test('Scene Source to Side consumes the actual focused draft before reading the 
 test('Animation frames selection names the written frames field while selected imported frames retain their own owner', t => {
 	const f = fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'sprite.lua' })!;
 	const input = f.editor.animations.openResource(f.firstGroup, resource), controller = f.editor.animations;
+	assert.ok(input !== undefined);
 	controller.selectTrack(input, input.tracks.rows.findIndex(row => row.frames));
 	const document = input.document!, expected = luaSourceRangeToTextRange(input.workingCopy.buffer, document.root.file.chunk.locations.range(document.framesField!.span)).start;
 	const frames = controller.getSourceLocation(input); assert.ok(frames?.selection !== undefined && frames.model === input.workingCopy);
@@ -120,6 +122,7 @@ test('Animation Producer Source to Side certifies the imported producer after an
 	const f = fixture(t), controller = f.editor.animations;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'generated.lua' })!;
 	const input = controller.openResource(f.firstGroup, resource);
+	assert.ok(input !== undefined);
 	const index = input.details.rows.findIndex(row => staticLuaTableFieldName(row.element.field) === 'frame_duration');
 	assert.ok(index >= 0); controller.selectProperty(input, index);
 	const before = controller.getProducerSourceLocation(input); assert.ok(before?.selection !== undefined && before.model.resource.path === 'builders.lua');

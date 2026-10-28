@@ -11,7 +11,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'animation.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'luaProgram.context' | 'actorLab.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.run' | 'home.tools' | 'buildLog.title' | 'window.status' | 'window.title' | 'play.title' | 'animation.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'buildLog.title' | 'window.status' | 'window.title' | 'play.title' | 'animation.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.content' | 'romInspector.reader.title' | 'cartMap.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'assistant.turn' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.title' | 'scenarioLab.target' | 'aem.title' | 'luaProgram.title' | 'sceneEditor.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -30,6 +30,8 @@ export type WorkbenchMenuItem = WorkbenchMenuCommandItem | WorkbenchMenuSeparato
 type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly WorkbenchMenuItem[]> & {
 	readonly 'home.work': readonly WorkbenchMenuCommandItem[];
 	readonly 'home.author': readonly WorkbenchMenuCommandItem[];
+	readonly 'home.behavior': readonly WorkbenchMenuCommandItem[];
+	readonly 'home.gameplay': readonly WorkbenchMenuCommandItem[];
 	readonly 'home.run': readonly WorkbenchMenuCommandItem[];
 	readonly 'home.tools': readonly WorkbenchMenuCommandItem[];
 	readonly 'buildLog.title': readonly WorkbenchMenuCommandItem[];
@@ -99,6 +101,23 @@ const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 	{ type: 'command', command: 'scenarioLab.breakpoints' },
 ];
 
+/** The same supported entrypoints feed Home cards and the Tools menu. */
+const CONTENT_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
+	{ type: 'command', command: 'sceneEditor', icon: 'scene' },
+	{ type: 'command', command: 'cartMap', icon: 'grid' },
+	{ type: 'command', command: 'animation', icon: 'animation' },
+	{ type: 'command', command: 'aem', icon: 'audio' },
+];
+const BEHAVIOR_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
+	{ type: 'command', command: 'behaviorLens.stateMachines', icon: 'stateMachine' },
+	{ type: 'command', command: 'behaviorLens.behaviorTrees', icon: 'behaviorTree' },
+	{ type: 'command', command: 'behaviorLens.actionEffects', icon: 'actionEffect' },
+];
+const GAMEPLAY_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
+	{ type: 'command', command: 'progression', icon: 'progression' },
+	{ type: 'command', command: 'inputBindings', icon: 'inputBindings' },
+];
+
 /** Immutable built-in menu contributions; renderers only project these items. */
 export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'editor.source.actions': [{ type: 'command', command: 'editor.source' }, { type: 'command', command: 'editor.sourceToSide' }],
@@ -130,12 +149,9 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'createResource', icon: 'source' },
 		{ type: 'command', command: 'commandPalette', icon: 'menu' },
 	],
-	'home.author': [
-		{ type: 'command', command: 'sceneEditor', icon: 'grid' },
-		{ type: 'command', command: 'animation', icon: 'play' },
-		{ type: 'command', command: 'behaviorLens', icon: 'actor' },
-		{ type: 'command', command: 'cartMap', icon: 'grid' },
-	],
+	'home.author': CONTENT_ACTIONS,
+	'home.behavior': BEHAVIOR_ACTIONS,
+	'home.gameplay': GAMEPLAY_ACTIONS,
 	'home.run': [
 		{ type: 'command', command: 'scenarioLab', icon: 'accept' },
 		{ type: 'command', command: 'gameView', icon: 'play' },
@@ -486,10 +502,11 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'window.hide' },
 	],
 	'menubar.tools': [
-		{ type: 'command', command: 'sceneEditor' },
-		{ type: 'command', command: 'animation' },
-		{ type: 'command', command: 'cartMap' },
-		{ type: 'command', command: 'behaviorLens' },
+		...CONTENT_ACTIONS,
+		{ type: 'separator' },
+		...BEHAVIOR_ACTIONS,
+		{ type: 'separator' },
+		...GAMEPLAY_ACTIONS,
 		{ type: 'separator' },
 		{ type: 'command', command: 'scenarioLab' },
 		{ type: 'separator' },

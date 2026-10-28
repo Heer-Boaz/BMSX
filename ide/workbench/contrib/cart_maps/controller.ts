@@ -1,9 +1,10 @@
 import { showEditorWarningBanner } from '../../../common/feedback_state';
+import { DisposableStore } from '../../../common/lifecycle';
 import type { RuntimeResource } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { TextEditorInput } from '../../common/editor_input';
-import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { FileQuickPickProvider } from '../../services/quick_input/file_provider';
 import { resolveTextFileModel } from '../../services/working_copy/text_file_model';
@@ -35,14 +36,25 @@ export class CartMapController {
 			const kind = cartMapKind(active.workingCopy.resource);
 			if (kind !== undefined) { this.openResource(group, active.workingCopy.resource, kind); return; }
 		}
-		quickInput.pick('MAP EDITOR', 'Authored room objects / stage markers', () => new FileQuickPickProvider(
-			buildResourceQuickPickItems(this.catalog.resources.filter(resource => cartMapKind(resource) !== undefined))),
-			item => this.openResource(group, item.resource, cartMapKind(item.resource)!),
+		quickInput.pick('MAP EDITOR', 'Authored room objects / stage markers', (_origin, lifetime) => {
+			const retire = () => quickInput.hide();
+			lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
+			lifetime.add({ dispose: this.catalog.onDidChange(retire) });
+			return new FileQuickPickProvider(buildResourceQuickPickItems(this.catalog.resources.filter(resource => cartMapKind(resource) !== undefined)));
+		},
+			(item, _modifiers, preserveFocus) => this.openResource(group, item.resource, cartMapKind(item.resource)!, { preserveFocus }),
 			lifetime => lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) }));
 	}
-	public openResource(group: EditorGroupView, resource: RuntimeResource, kind: CartMapKind): void {
-		void group.openResolvedEditor(() => resolveCartMapInput(this.catalog, resource, kind))
-			.catch(error => showEditorWarningBanner(`Cannot open map source: ${String(error)}`));
+	public openResource(group: EditorGroupView, resource: RuntimeResource, kind: CartMapKind, options: EditorTabOpenOptions = {}): void {
+		const lifetime = new DisposableStore();
+		let current = true;
+		const retire = () => { current = false; };
+		lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
+		lifetime.add({ dispose: this.catalog.onDidChange(retire) });
+		const isCurrent = () => current && options.isCurrent?.() !== false;
+		void group.openResolvedEditor(() => resolveCartMapInput(this.catalog, resource, kind), { ...options, isCurrent })
+			.catch(error => { if (isCurrent()) showEditorWarningBanner(`Cannot open map source: ${String(error)}`); })
+			.finally(() => lifetime.dispose());
 	}
 	public getSourceLocation(input: CartMapInput): EditorSourceLocation {
 		projectCartMap(input);

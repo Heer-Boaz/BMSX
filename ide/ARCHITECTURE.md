@@ -240,9 +240,10 @@ outstanding asynchronous openings. Forced teardown retires the part's controls
 and command authority without closing shared documents or sibling views.
 
 The frontend owns shared navigation history. Captured selections belong to their
-group/input lifetime and name their destination group. A group admits the
-resolver factory and captures opening, focus and navigation authority before
-invoking it; an inadmissible group starts no resolution. Opening generations
+group/input lifetime and name their destination group. `EditorOpeningRequest`
+admits synchronous producers and asynchronous resolver factories under one
+opening, focus, navigation and candidate-cleanup lifetime. An inadmissible group
+starts neither production nor resolution. Opening generations
 arbitrate group-local admission across draft publication, clear, model and
 pane-show callbacks; they are not control-attachment lifetimes. A superseded
 opening cannot reattach its input or reactivate its group. Commands retain the
@@ -265,3 +266,5 @@ resolution and shortcut presentation; pane handlers do not own chord state.
 focus lifetime. Providers own their actual catalog, matching and ordering;
 `QuickPickModel` consumes the provider's projection. Features contribute those
 providers and actions rather than adding feature-specific matching to the shell.
+Acceptance carries foreground-preservation intent across focus return; an
+opening consumes that intent instead of recapturing it after the handoff.

@@ -190,3 +190,17 @@ test('capture admission distinguishes an interactive popup from a background gra
 	assert.equal(capture.dispatch(held, false, 5, WORKBENCH_POINTER_SCOPE), false);
 	assert.equal(cancels, 4, 'a closed popup cannot deliver its later release to the workbench');
 });
+
+for (const newerFocus of [false, true]) test(`acceptance reports focus-return intent before a destination opening (${newerFocus ? 'newer foreground' : 'ordinary return'})`, t => {
+	const f = fixture(t); f.picker.hide(false);
+	const origin = inputFocus.createTarget(), foreign = inputFocus.createTarget();
+	const unbindOrigin = origin.bindKeyboard(() => {}), unbindForeign = foreign.bindKeyboard(() => {});
+	t.after(() => { unbindOrigin(); unbindForeign(); });
+	origin.focus();
+	let preserve: boolean | undefined;
+	f.picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(f.items), (_item, _modifiers, preserveFocus) => { preserve = preserveFocus; });
+	if (newerFocus) t.after(f.picker.field.focusTarget.onDidBlur(() => foreign.focus()));
+	f.press('Home'); f.press('Enter');
+	assert.equal(preserve, newerFocus, 'editor opening must receive the already-settled foreground policy, not recapture it after handoff');
+	assert.ok(inputFocus.target === (newerFocus ? foreign : origin));
+});

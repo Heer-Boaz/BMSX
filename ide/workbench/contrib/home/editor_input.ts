@@ -9,7 +9,9 @@ import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 
 export const HOME_SECTIONS: readonly { readonly title: string; readonly menu: WorkbenchActionMenuId }[] = [
 	{ title: 'Work', menu: 'home.work' },
-	{ title: 'Author', menu: 'home.author' },
+	{ title: 'Content', menu: 'home.author' },
+	{ title: 'Behavior', menu: 'home.behavior' },
+	{ title: 'Gameplay', menu: 'home.gameplay' },
 	{ title: 'Run', menu: 'home.run' },
 	{ title: 'Tools', menu: 'home.tools' },
 ];

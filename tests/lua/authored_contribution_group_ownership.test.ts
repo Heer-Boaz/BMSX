@@ -123,6 +123,7 @@ test('one Lua program controller retains distinct group inputs over the same can
 	assert.ok(occurrence);
 	const first = f.programs.openOccurrence(f.first, occurrence);
 	const second = f.programs.openOccurrence(f.second, occurrence);
+	assert.ok(first !== undefined && second !== undefined);
 	assert.notEqual(first, second);
 	assert.equal(first.workingCopy, second.workingCopy);
 	assert.equal(f.first.model.activeTab, first);
@@ -167,6 +168,7 @@ test('Lua program matching queries retain exact group, kind, resource and mapped
 	const occurrences = collectLuaPrograms(f.resource, project.getSnapshot());
 	assert.equal(occurrences.length, 2);
 	const first = f.programs.openOccurrence(f.first, occurrences[0]), second = f.programs.openOccurrence(f.second, occurrences[1]);
+	assert.ok(first !== undefined && second !== undefined);
 	f.second.panes.activePane!.focus();
 	const blocked = t.mock.method(f.sources.catalog, 'resolveLuaSource', () => assert.fail('retained-input lookup cannot load source'));
 	assert.equal(f.programs.findOccurrence(f.first, f.resource, 'progression', first.occurrenceRange), first);
@@ -198,6 +200,7 @@ trees.register('same', { root = { type = 'wait', duration_ticks = 2 } })`;
 	const registrations = documents.registrations.getRegistrations(f.resource.contextId);
 	assert.equal(registrations.length, 2);
 	const first = controller.openDefinition(f.first, registrations[0]), second = controller.openDefinition(f.second, registrations[1]);
+	assert.ok(first !== undefined && second !== undefined);
 	const range = luaSourceRangeToTextRange(first.workingCopy.buffer, registrations[0].occurrenceRange);
 	f.second.panes.activePane!.focus();
 	const blocked = t.mock.method(f.sources.catalog, 'resolveLuaSource', () => assert.fail('retained-input lookup cannot load source'));
@@ -235,6 +238,7 @@ test('Animation matching queries distinguish owning table, semantic project and 
 	const standalone = controller.openDefinition(f.first, f.resource.contextId, definition);
 	const first = controller.openDefinition(f.first, f.resource.contextId, consumerA);
 	const second = controller.openDefinition(f.second, f.resource.contextId, consumerB);
+	assert.ok(standalone !== undefined && first !== undefined && second !== undefined);
 	const range = first.definitionRange!;
 	f.second.panes.activePane!.focus();
 	const blocked = t.mock.method(f.sources.catalog, 'resolveLuaSource', () => assert.fail('retained-input lookup cannot load source'));

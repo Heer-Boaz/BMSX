@@ -2,7 +2,7 @@ import type { EditorCommandRunner } from '../../../common/commands';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { InputInteraction } from '../../../input/interaction';
 import { pointerCapture } from '../../../input/pointer/capture';
-import { beginNavigationCapture, captureNavigation, completeNavigation, navigationState, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
+import { beginNavigationCapture, captureNavigation, completeNavigation, navigationState } from '../../../navigation/navigation_history';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { EditorTabGroupModel, type EditorOpenOptions } from '../../ui/tab/group_model';
 import { EditorTabStrip } from '../../ui/tab/control';
@@ -31,6 +31,7 @@ import { WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH } from '../../ui/action_bar';
 import { ELLIPSIS } from '../../../common/text';
 import { TAB_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_SYMBOL, TAB_DIRTY_LEFT_MARGIN, TAB_DIRTY_RIGHT_MARGIN } from '../../../common/constants';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
+import { EditorOpeningRequest } from './editor_opening';
 
 /** The container supplies ancestry and allowable popup extent before controls are constructed. */
 export type EditorGroupPresentation = {
@@ -295,24 +296,26 @@ export class EditorGroupView {
 		return options.preserveFocus ? admit() : captureNavigation(admit);
 	}
 
+	/** Synchronous producers publish models and language facts under the same opening lifetime as asynchronous resolvers. */
+	public openProducedEditor<TInput extends EditorInput>(produce: () => TInput | undefined, options: EditorTabOpenOptions = {}): TInput | undefined {
+		const opening = EditorOpeningRequest.begin(this, options);
+		if (opening === undefined) return undefined;
+		try {
+			return opening.admit(produce());
+		} finally {
+			opening.dispose();
+		}
+	}
+
 	/** Own opening admission and departure before candidate resolution can publish or yield. */
 	public async openResolvedEditor(resolveInput: () => EditorInput | Promise<EditorInput>, options: EditorTabOpenOptions = {}): Promise<EditorInputOpenResult | undefined> {
-		if (!this.openingAdmitted || options.isCurrent?.() === false) return undefined;
-		const generation = this.panes.beginOpen(), focusRevision = inputFocus.revision;
-		let departure = options.preserveFocus ? null : beginNavigationCapture();
+		const opening = EditorOpeningRequest.begin(this, options);
+		if (opening === undefined) return undefined;
 		try {
-			const input = await resolveInput();
-			if (!this.openingAdmitted || generation !== this.panes.openGeneration || options.isCurrent?.() === false) { input.dispose(); return undefined; }
-			const preserveFocus = options.preserveFocus || focusRevision !== inputFocus.revision;
-			if (!withNavigationCaptureSuspended(() => this.openEditor(input, { ...options, preserveFocus }))) return undefined;
-			if (!preserveFocus) {
-				const previous = departure;
-				departure = null;
-				completeNavigation(previous);
-			}
-			return { generation: this.panes.openGeneration, activated: !preserveFocus };
+			const admitted = opening.admit(await resolveInput());
+			return admitted === undefined ? undefined : { generation: this.panes.openGeneration, activated: opening.activated };
 		} finally {
-			departure?.dispose();
+			opening.dispose();
 		}
 	}
 

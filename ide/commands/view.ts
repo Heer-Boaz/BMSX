@@ -113,7 +113,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'sceneEditor':
 			openSourceView(group, sources.catalog, picker, {
 				title: 'SCENE EDITOR', accepts: hasSceneSourceDefinitions,
-				openResource: resource => editor.sceneEditor.openResource(group, resource),
+				openResource: (resource, options) => editor.sceneEditor.openResource(group, resource, options),
 			});
 			return;
 		case 'filter':

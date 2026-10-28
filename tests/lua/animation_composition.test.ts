@@ -249,6 +249,7 @@ test('an imported BIOS animation definition retains cart semantic scope through 
 	assert.equal(definition.file.file, resourceIdentityKey(biosResource));
 	assert.equal(definition.consumer!.file, resourceIdentityKey(callerResource));
 	const input = controller.openDefinition(group, callerResource.contextId, definition);
+	assert.ok(input !== undefined);
 	t.after(() => { group.model.clear(); group.dispose(); input.dispose(); editorTextModelService.clear(); });
 	assert.equal(input.projectContextId, callerResource.contextId);
 	assert.deepEqual(input.workingCopy.identity, biosResource);
@@ -256,6 +257,7 @@ test('an imported BIOS animation definition retains cart semantic scope through 
 	assert.equal(controller.openDefinition(group, callerResource.contextId, definition), input, 'open reuses the same definition inside its owning semantic project');
 	const siblingGroup = createTestEditorGroup(); t.after(() => siblingGroup.dispose());
 	const sibling = controller.openDefinition(siblingGroup, callerResource.contextId, definition);
+	assert.ok(sibling !== undefined);
 	assert.notEqual(sibling, input, 'the same shared controller opens an independent input in another group');
 	assert.equal(sibling.workingCopy, input.workingCopy);
 	assert.equal(group.model.activeTab, input); assert.equal(siblingGroup.model.activeTab, sibling);

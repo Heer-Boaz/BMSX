@@ -1,5 +1,4 @@
 import type { BehaviorLensNavigationSelection } from './navigation_selection';
-import { captureNavigation } from '../../../navigation/navigation_history';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { editorTextModelService } from '../../../editor/model/model_service';
@@ -88,8 +87,20 @@ export class BehaviorLensController {
 
 	public open(group: EditorGroupView, quickInput: QuickInputController, kind: BehaviorKind | null = null, options: EditorTabOpenOptions = {}): void {
 		quickInput.pick(kind === null ? 'BEHAVIOR LENS' : PICKER_TITLES[kind], 'Choose a definition',
-			() => new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources.catalog, this.documents.registrations, kind)),
-			item => this.openDefinition(group, item.registration, options), lifetime => {
+			(_origin, lifetime) => {
+				lifetime.add({ dispose: editorTextModelService.onDidChangeContent(() => quickInput.hide()) });
+				lifetime.add({ dispose: editorTextModelService.onWillClear(() => quickInput.hide()) });
+				lifetime.add({ dispose: this.sources.catalog.onDidChange(() => quickInput.hide()) });
+				return new TextQuickPickProvider(buildBehaviorQuickPickItems(this.sources.catalog, this.documents.registrations, kind));
+			},
+			(item, _modifiers, preserveFocus) => {
+				const source = new WorkspaceSourceContext(editorTextModelService, this.sources.catalog);
+				try {
+					const isCurrent = () => source.reason === undefined && options.isCurrent?.() !== false && this.documents.registrations
+						.getRegistrations(item.registration.resource.contextId).includes(item.registration);
+					this.openDefinition(group, item.registration, { ...options, preserveFocus: options.preserveFocus || preserveFocus, isCurrent });
+				} finally { source.dispose(); }
+			}, lifetime => {
 				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
@@ -107,25 +118,26 @@ export class BehaviorLensController {
 		return undefined;
 	}
 
-	public openDefinition(group: EditorGroupView, registration: BehaviorRegistrationSource, options: EditorTabOpenOptions = {}): BehaviorLensInput {
-		return captureNavigation(() => {
+	public openDefinition(group: EditorGroupView, registration: BehaviorRegistrationSource, options: EditorTabOpenOptions = {}): BehaviorLensInput | undefined {
+		return group.openProducedEditor(() => {
 			const resource = this.sources.catalog.resolveResource(registration.resource)!;
 			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
+			if (options.isCurrent?.() === false) return undefined;
 			const occurrence = luaSourceRangeToTextRange(model.buffer, registration.occurrenceRange);
 			let input = this.findDefinition(group, resource, registration.behaviorKind, occurrence);
 			if (input === undefined) {
 				input = this.createInput(model,
 					registration.behaviorKind === 'behavior_tree' ? 'graph'
 						: registration.behaviorKind === 'action_effect' ? 'properties' : 'state-graph');
+				if (options.isCurrent?.() === false) { input.dispose(); return undefined; }
 				const view = input.view;
 				selectBehaviorLensDefinition(view, registration.rowKey);
 				view.sourceMatchRowKeys.add(registration.rowKey);
 				input.updateDefinition();
 			}
 			// Reopening a surviving occurrence preserves its selection and viewport.
-			group.openEditor(input, options);
 			return input;
-		});
+		}, options);
 	}
 
 	/** Source-derived input creation is independent of group admission and pane layout. */

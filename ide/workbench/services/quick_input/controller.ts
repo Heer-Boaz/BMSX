@@ -107,7 +107,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		title: string,
 		placeholder: string,
 		provide: (origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T>,
-		accept: (item: T, modifiers: KeyModifier) => void,
+		accept: (item: T, modifiers: KeyModifier, preserveFocus: boolean) => void,
 		onWillShow?: (lifetime: DisposableStore) => void,
 		options: QuickInputOptions = {},
 	): void {
@@ -147,10 +147,14 @@ export class QuickInputController implements PointerCaptureTarget {
 				const list = this.model.list;
 				if (list.selectionIndex === -1) return; // A real user choice is required.
 				const item = provider.items[list.rows[list.selectionIndex].itemIndex];
+				const returnFocus = inputFocus.resolveTarget(session.returnFocus);
 				try {
 					this.retireSession(true, true);
 					session.disposables.dispose();
-					if (session.contextAdmitted) accept(item, modifiers);
+					// A return-focus observer may have chosen a newer foreground before
+					// an editor-opening callback starts its own lifetime.
+					const preserveFocus = inputFocus.admittedTarget !== null && inputFocus.admittedTarget !== returnFocus;
+					if (session.contextAdmitted) accept(item, modifiers, preserveFocus);
 				} finally {
 					session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
 					if (this.retiringSession === session) this.retiringSession = null;

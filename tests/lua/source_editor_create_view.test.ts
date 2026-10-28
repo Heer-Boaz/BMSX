@@ -76,6 +76,7 @@ test('Animation fresh views retain their exact imported subject and deep-copy so
 	t.after(() => group.dispose());
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'animation.lua' })!;
 	const source = controller.openResource(group, resource);
+	assert.ok(source !== undefined);
 	controller.selectTrack(source, 1); controller.selectKey(source, 1); controller.selectProperty(source, 0);
 	source.activeClient = 'keys'; source.keys.setView(20, 120); source.keys.setCursor(37); source.keys.snap = false;
 	source.columnSplit.ratio = 0.4; source.rowSplit.ratio = 0.6; source.tracks.scroll = 3; source.details.scroll = 4;
@@ -110,7 +111,9 @@ test('Animation fresh views keep the selected definition and its consuming sourc
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'consumer.lua' })!;
 	const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId); project.synchronizeSources(sources.catalog);
 	const definition = collectAnimationDefinitions(resource, project.getSnapshot()).find(candidate => candidate.file.file === resourceIdentityKey({ contextId: resource.contextId, path: 'second.lua' }))!;
-	const source = controller.openDefinition(group, resource.contextId, definition), input = source.createView!(); t.after(() => input.dispose());
+	const source = controller.openDefinition(group, resource.contextId, definition);
+	assert.ok(source !== undefined);
+	const input = source.createView!(); t.after(() => input.dispose());
 	assert.ok(input.workingCopy === source.workingCopy);
 	assert.deepEqual(input.definitionRange, source.definitionRange); assert.ok(input.definitionRange !== source.definitionRange);
 	assert.equal(input.consumerPath, resourceIdentityKey(resource)); assert.equal(input.document!.family, source.document!.family);
@@ -136,6 +139,7 @@ test('LuaProgram fresh views share authored imported working copies but never co
 	const project = getOrCreateSemanticProject(editorTextModelService, resource.contextId); project.synchronizeSources(sources.catalog);
 	const occurrence = collectLuaPrograms(resource, project.getSnapshot())[0];
 	const source = controller.openOccurrence(group, occurrence);
+	assert.ok(source !== undefined);
 	source.tree.selectionIndex = source.tree.rows.findIndex(row => row.element.path.join('/') === 'rules/1/on'); source.tree.scroll = 2;
 	const before = captureWorkbenchTreeView(source.tree, element => element.key);
 	source.inspectRuntime(transport); source.interaction.running = true;

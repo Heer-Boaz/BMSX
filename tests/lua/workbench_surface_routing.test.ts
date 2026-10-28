@@ -763,6 +763,7 @@ test('Animation body clients and its actual property draft publish exact client-
 	finalizePackedRomAssets(assets); rom.index.entries.push(...assets);
 	context.previewPackage.img.picture = assets[0]; sources.catalog.rebuildResources();
 	const input = editor.animations.openResource(editor.editorParts.main.activeGroup, sources.catalog.luaResources.find(resource => resource.path === path)!); editor.update(0);
+	assert.ok(input !== undefined);
 	const tracks = inputFocus.target!, commands = ['animation.tracks', 'animation.keys', 'animation.details'] as const;
 	const handlers = commands.map(command => tracks.getCommand(command));
 	editor.animations.selectTrack(input, 1); editor.animations.selectKey(input, 0); editor.update(0);
@@ -820,6 +821,7 @@ test('Animation body clients and its actual property draft publish exact client-
 	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), true);
 	assert.equal(input.workingCopy.buffer.getText(), edited);
 	const timeline = editor.animations.openResource(editor.editorParts.main.activeGroup, sources.catalog.luaResources.find(resource => resource.path === timelinePath)!);
+	assert.ok(timeline !== undefined);
 	editor.animations.selectTrack(timeline, 1); editor.animations.selectKey(timeline, 0); editor.update(0);
 	editor.commands.execute('animation.keys');
 	const keysClient = inputFocus.target!;

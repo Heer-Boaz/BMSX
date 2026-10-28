@@ -1,4 +1,5 @@
 import { isMap, isSeq } from 'yaml';
+import { DisposableStore } from '../../../common/lifecycle';
 import { showEditorWarningBanner } from '../../../common/feedback_state';
 import { aemDocumentFormat } from '../../../../toolchain/ts/rompack/aem';
 import { createStructuredInsertionEdit, createStructuredRemovalEdit, type StructuredCollection } from '../../../language/yaml/structured_edits';
@@ -30,11 +31,22 @@ export class AemEditorController {
 		private readonly guest: SuspendedGuestSession,
 		private readonly runtime: Runtime, private readonly tasks: RuntimeTaskQueue) {}
 	public open(group: EditorGroupView, quickInput: QuickInputController): void {
-		quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', () => new TextQuickPickProvider(this.sources.catalog.resources
-			.filter(resource => resource.source.type === 'aem').map(resource => ({ label: resource.path, description: this.sources.catalog.getContext(resource.contextId).projectRootPath, detail: '', resource }))),
-			item => {
-				void group.openResolvedEditor(() => resolveAemEditorInput(this.sources.catalog, item.resource))
-					.catch(error => showEditorWarningBanner(`Cannot open audio map: ${error instanceof Error ? error.message : String(error)}`));
+		quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', (_origin, lifetime) => {
+			const retire = () => quickInput.hide();
+			lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
+			lifetime.add({ dispose: this.sources.catalog.onDidChange(retire) });
+			return new TextQuickPickProvider(this.sources.catalog.resources
+				.filter(resource => resource.source.type === 'aem').map(resource => ({ label: resource.path, description: this.sources.catalog.getContext(resource.contextId).projectRootPath, detail: '', resource })));
+		},
+			(item, _modifiers, preserveFocus) => {
+				const lifetime = new DisposableStore();
+				let current = true;
+				const retire = () => { current = false; };
+				lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
+				lifetime.add({ dispose: this.sources.catalog.onDidChange(retire) });
+				void group.openResolvedEditor(() => resolveAemEditorInput(this.sources.catalog, item.resource), { preserveFocus, isCurrent: () => current })
+					.catch(error => { if (current) showEditorWarningBanner(`Cannot open audio map: ${error instanceof Error ? error.message : String(error)}`); })
+					.finally(() => lifetime.dispose());
 			}, lifetime => {
 				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});

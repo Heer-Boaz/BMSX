@@ -79,6 +79,7 @@ function fixture(t: TestContext, source = SOURCE) {
 
 test('Behavior Lens pane publishes its canonical source location on first attachment', t => {
 	const f = fixture(t), input = f.controller.openDefinition(f.first, f.registration);
+	assert.ok(input !== undefined);
 	const location = f.first.panes.activePane!.getSourceLocation!();
 	assert.ok(location?.model === input.workingCopy); assert.equal(location.modelVersion, input.workingCopy.version);
 });
@@ -87,6 +88,7 @@ test('shared Behavior Lens operations and pane commands consume their concrete v
 	const f = fixture(t);
 	const first = f.controller.openDefinition(f.first, f.registration);
 	const second = f.controller.openDefinition(f.second, f.registration);
+	assert.ok(first !== undefined && second !== undefined);
 	assert.notEqual(first, second);
 	assert.equal(first.workingCopy, second.workingCopy);
 	assert.equal(first.view.document, second.view.document, 'topology remains shared by its source generation');
@@ -128,6 +130,7 @@ test('shared Behavior Lens operations and pane commands consume their concrete v
 for (const command of ['behaviorLens.removeChild', 'behaviorLens.inspectRuntimeTree'] as const) test(`${command} cannot act on a reusable pane replacement installed by focus`, t => {
 	const f = fixture(t);
 	const first = f.controller.openDefinition(f.first, f.registration);
+	assert.ok(first !== undefined);
 	f.controller.openDefinition(f.second, f.registration);
 	assert.ok(first.view.presentation.kind === 'graph');
 	first.view.presentation.viewport.selection = first.view.presentation.viewport.model.nodes[0].children[0].children[0];
@@ -159,6 +162,9 @@ for (const command of ['behaviorLens.removeChild', 'behaviorLens.inspectRuntimeT
 
 test('the shared Behavior picker retains its requested group when focus returns elsewhere at acceptance', t => {
 	const f = fixture(t), sibling = f.controller.openDefinition(f.second, f.registration);
+	assert.ok(sibling !== undefined);
+	f.controller.openDefinition(f.first, f.registration);
+	f.first.panes.activePane!.focus();
 	f.controller.open(f.first, f.picker, 'behavior_tree');
 	assert.equal(f.picker.visible, true);
 	t.after(f.picker.field.focusTarget.onDidBlur(() => f.second.panes.activePane!.focus()));
@@ -167,6 +173,7 @@ test('the shared Behavior picker retains its requested group when focus returns 
 	assert.notEqual(f.first.model.activeTab, sibling);
 	assert.equal(f.first.model.activeTab.workingCopy, sibling.workingCopy);
 	assert.equal(f.second.model.activeTab, sibling);
+	assert.ok(inputFocus.target === f.second.panes.activePane!.commandTarget);
 });
 
 test('Behavior picker destination retirement does not couple unrelated sibling groups', t => {
@@ -206,6 +213,7 @@ test('Behavior layout consumes each group client rectangle and shared refresh or
 	const f = fixture(t);
 	const first = f.controller.openDefinition(f.first, f.registration);
 	const second = f.controller.openDefinition(f.second, f.registration);
+	assert.ok(first !== undefined && second !== undefined);
 	const firstBounds = { left: 10, top: 30, right: 190, bottom: 250 };
 	const secondBounds = { left: 200, top: 50, right: 380, bottom: 270 };
 	f.first.panes.layout(firstBounds); f.second.panes.layout(secondBounds);
@@ -220,6 +228,7 @@ test('Behavior layout consumes each group client rectangle and shared refresh or
 
 test('Behavior presentation acknowledges a source generation consumed by its controller once, while navigation restore retains its viewport', t => {
 	const f = fixture(t), input = f.controller.openDefinition(f.first, f.registration);
+	assert.ok(input !== undefined);
 	const pane = f.first.panes.activePane!;
 	assert.ok(input.view.presentation.kind === 'graph');
 	const graph = input.view.presentation, viewport = graph.viewport;
@@ -256,6 +265,7 @@ effects.register_effect('explicit.effect', {
 })
 `;
 	const f = fixture(t, source), input = f.controller.openDefinition(f.first, f.registration);
+	assert.ok(input !== undefined);
 	const pane = f.first.panes.activePane!;
 	assert.ok(input.view.presentation.kind === 'properties');
 	const properties = input.view.presentation, tree = properties.tree;
@@ -283,6 +293,7 @@ effects.register_effect('explicit.effect', {
 
 test('authored Behavior graph controls do not acquire a runtime command subject from an open runtime inspector', t => {
 	const f = fixture(t), input = f.controller.openDefinition(f.first, f.registration);
+	assert.ok(input !== undefined);
 	f.first.panes.activePane!.focus();
 	const graph = inputFocus.target!, pane = f.first.panes.activePane as BehaviorLensEditorPane;
 	const transport = new RuntimeTransport(createTestRuntime(createTestRuntimeRomPayload()), null!, null!, null!, () => true);

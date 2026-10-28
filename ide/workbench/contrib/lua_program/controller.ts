@@ -22,6 +22,7 @@ import { programFieldTemplates, programEntryTemplate } from './schema';
 import type { HostRewind } from '../../../../hosts/common/rewind';
 import type { RuntimeTransport } from '../../../runtime/transport';
 import { captureWorkbenchTreeView, restoreWorkbenchTreeView } from '../../ui/tree_view';
+import { WorkspaceSourceContext } from '../../services/working_copy/source_context';
 
 /** Source ownership and runtime readback meet in a retained input, never in a second program database. */
 export class LuaProgramController {
@@ -40,7 +41,11 @@ export class LuaProgramController {
 	};
 	public open(group: EditorGroupView, quickInput: QuickInputController, kind: LuaProgramKind): void {
 		quickInput.pick(kind === 'progression' ? 'PROGRESSION PROGRAMS' : 'INPUT BINDINGS', 'Choose a producer call',
-			() => {
+			(_origin, lifetime) => {
+				const retire = () => quickInput.hide();
+				lifetime.add({ dispose: editorTextModelService.onDidChangeContent(retire) });
+				lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
+				lifetime.add({ dispose: this.sources.catalog.onDidChange(retire) });
 				const choices: { label: string; description: string; detail: string; occurrence: LuaProgramOccurrence }[] = [];
 				const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
 				for (const resource of this.sources.catalog.luaResources) {
@@ -57,7 +62,11 @@ export class LuaProgramController {
 					}
 				}
 				return new TextQuickPickProvider(choices);
-			}, item => this.openOccurrence(group, item.occurrence), lifetime => {
+			}, (item, _modifiers, preserveFocus) => {
+				const context = new WorkspaceSourceContext(editorTextModelService, this.sources.catalog);
+				try { this.openOccurrence(group, item.occurrence, { preserveFocus, isCurrent: () => context.reason === undefined }); }
+				finally { context.dispose(); }
+			}, lifetime => {
 				lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) });
 			});
 	}
@@ -73,17 +82,21 @@ export class LuaProgramController {
 			&& input.occurrenceRange.start !== input.occurrenceRange.end
 			&& input.occurrenceRange.start === range.start && input.occurrenceRange.end === range.end);
 	}
-	public openOccurrence(group: EditorGroupView, occurrence: LuaProgramOccurrence, options: EditorTabOpenOptions = {}): LuaProgramInput {
-		const resource = this.sources.catalog.resolveResource(occurrence.resource)!;
-		const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
-		const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
-		let input = this.findOccurrence(group, resource, occurrence.kind, span);
-		if (input === undefined) {
-			input = new LuaProgramInput(model, occurrence.kind, span, this.guest, this.createView);
-			this.refresh(input);
-		}
-		group.openEditor(input, options);
-		return input;
+	public openOccurrence(group: EditorGroupView, occurrence: LuaProgramOccurrence, options: EditorTabOpenOptions = {}): LuaProgramInput | undefined {
+		return group.openProducedEditor(() => {
+			const resource = this.sources.catalog.resolveResource(occurrence.resource)!;
+			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
+			if (options.isCurrent?.() === false) return;
+			const project = getOrCreateSemanticProject(editorTextModelService, occurrence.resource.contextId);
+			if (project.getFileData(model.identity)?.revision !== occurrence.file.revision) return;
+			const span = luaSourceRangeToTextRange(model.buffer, occurrence.file.chunk.locations.range(occurrence.call.expression.span));
+			let input = this.findOccurrence(group, resource, occurrence.kind, span);
+			if (input === undefined) {
+				input = new LuaProgramInput(model, occurrence.kind, span, this.guest, this.createView);
+				this.refresh(input);
+			}
+			return input;
+		}, options);
 	}
 	public refreshRuntime(input: LuaProgramInput): void {
 		// Reconcile at the requested position, not an intermediate replay checkpoint.

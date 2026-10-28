@@ -21,6 +21,7 @@ import { projectAnimationDetails } from './details';
 import { animationDefinitionAtPosition, animationDefinitionAtRange, animationDefinitionFamily, collectAnimationDefinitions, type AnimationDefinitionSource } from './definitions';
 import { AnimationAuthoring } from './authoring';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
+import { WorkspaceSourceContext } from '../../services/working_copy/source_context';
 
 /** Admits source generations, selects syntax and issues edits through their real working copies. */
 export class AnimationEditorController {
@@ -73,6 +74,10 @@ export class AnimationEditorController {
 			if (buildAnimationSourceDocument(model.resource, snapshot) !== undefined) { this.openResource(group, model.resource); return; }
 		}
 		quickInput.pick('ANIMATIONS', 'Choose a written definition', (_origin, lifetime) => {
+			const retire = () => quickInput.hide();
+			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(retire) });
+			lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
+			lifetime.add({ dispose: this.catalog.onDidChange(retire) });
 			snapshots.clear();
 			const choices: { label: string; description: string; detail: string; contextId: string; definition: AnimationDefinitionSource }[] = [];
 			const admitted = new Map<string, Map<LuaTableConstructorExpression, Set<FileSemanticData | undefined>>>();
@@ -91,13 +96,13 @@ export class AnimationEditorController {
 						contextId: resource.contextId, definition });
 				}
 			}
-			const retire = () => quickInput.hide();
-			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(retire) });
-			lifetime.add({ dispose: editorTextModelService.onWillClear(retire) });
-			lifetime.add({ dispose: this.catalog.onDidChange(retire) });
 			return new TextQuickPickProvider(choices);
 		},
-			item => this.openDefinition(group, item.contextId, item.definition),
+			(item, _modifiers, preserveFocus) => {
+				const context = new WorkspaceSourceContext(editorTextModelService, this.catalog);
+				try { this.openDefinition(group, item.contextId, item.definition, { preserveFocus, isCurrent: () => context.reason === undefined }); }
+				finally { context.dispose(); }
+			},
 			lifetime => lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) }));
 	}
 
@@ -108,30 +113,34 @@ export class AnimationEditorController {
 			&& item.definitionRange.start === range.start && item.definitionRange.end === range.end);
 	}
 
-	public openDefinition(group: EditorGroupView, contextId: string, definition: AnimationDefinitionSource, options: EditorTabOpenOptions = {}): AnimationEditorInput {
-		const project = getOrCreateSemanticProject(editorTextModelService, contextId);
-		const resource = this.catalog.resolveResource(project.getResourceIdentity(definition.file.file))!;
-		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-		const range = luaSourceRangeToTextRange(model.buffer, definition.file.chunk.locations.range(definition.table.span));
-		let input = this.findDefinition(group, contextId, resource, range, definition.consumer?.file);
-		if (input === undefined) {
-			input = new AnimationEditorInput(model, contextId, range, definition.label, definition.consumer?.file, this.createView);
-			if (definition.consumer !== undefined) {
-				const consumer = this.catalog.resolveResource(project.getResourceIdentity(definition.consumer.file))!;
-				input.sourceModels.set(definition.consumer.file, resolveLuaTextFileModel(editorTextModelService, this.catalog, consumer));
+	public openDefinition(group: EditorGroupView, contextId: string, definition: AnimationDefinitionSource, options: EditorTabOpenOptions = {}): AnimationEditorInput | undefined {
+		return group.openProducedEditor(() => {
+			const project = getOrCreateSemanticProject(editorTextModelService, contextId);
+			const resource = this.catalog.resolveResource(project.getResourceIdentity(definition.file.file))!;
+			const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
+			if (options.isCurrent?.() === false || project.getFileData(model.identity)?.revision !== definition.file.revision) return;
+			const range = luaSourceRangeToTextRange(model.buffer, definition.file.chunk.locations.range(definition.table.span));
+			let input = this.findDefinition(group, contextId, resource, range, definition.consumer?.file);
+			if (input === undefined) {
+				input = new AnimationEditorInput(model, contextId, range, definition.label, definition.consumer?.file, this.createView);
+				if (definition.consumer !== undefined) {
+					const consumer = this.catalog.resolveResource(project.getResourceIdentity(definition.consumer.file))!;
+					input.sourceModels.set(definition.consumer.file, resolveLuaTextFileModel(editorTextModelService, this.catalog, consumer));
+				}
+				this.refresh(input);
 			}
-			this.refresh(input);
-		}
-		group.openEditor(input, options);
-		return input;
+			return input;
+		}, options);
 	}
 
-	public openResource(group: EditorGroupView, resource: RuntimeResource, options: EditorTabOpenOptions = {}): AnimationEditorInput {
-		const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
-		let input = group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
-		if (input === undefined) { input = new AnimationEditorInput(model, resource.contextId, undefined, undefined, undefined, this.createView); this.refresh(input); }
-		group.openEditor(input, options);
-		return input;
+	public openResource(group: EditorGroupView, resource: RuntimeResource, options: EditorTabOpenOptions = {}): AnimationEditorInput | undefined {
+		return group.openProducedEditor(() => {
+			const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
+			if (options.isCurrent?.() === false) return;
+			let input = group.model.tabs.find((item): item is AnimationEditorInput => item.kind === 'animation' && item.workingCopy === model && item.definitionRange === undefined);
+			if (input === undefined) { input = new AnimationEditorInput(model, resource.contextId, undefined, undefined, undefined, this.createView); this.refresh(input); }
+			return input;
+		}, options);
 	}
 
 	public modelFor(input: AnimationEditorInput, file: FileSemanticData): EditorTextModel {
