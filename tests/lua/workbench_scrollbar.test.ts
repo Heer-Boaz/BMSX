@@ -8,6 +8,24 @@ import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 
+test('scroll notifications publish logical movement once, including range refinement, not repeated layout', () => {
+	const bar = new Scrollbar('vertical'), positions: number[] = [];
+	const track = { left: 100, top: 0, right: 103, bottom: 100 };
+	const unsubscribe = bar.onDidScroll(() => positions.push(bar.getScroll()));
+	bar.layout(track, 400, 100, 0);
+	bar.setScroll(125.5);
+	bar.layout(track, 400, 100, 125.5);
+	bar.layout({ ...track, bottom: 120 }, 400, 100, 125.5);
+	bar.setScroll(125.5);
+	assert.deepEqual(positions, [125.5]);
+	bar.layout(track, 120, 100, 125.5);
+	assert.deepEqual(positions, [125.5, 20]);
+	bar.setScroll(100);
+	assert.deepEqual(positions, [125.5, 20], 'a clamped no-op is not another memento change');
+	unsubscribe(); bar.setScroll(0);
+	assert.deepEqual(positions, [125.5, 20]);
+});
+
 for (const orientation of ['horizontal', 'vertical'] as const) {
 	test(`${orientation} captured scrollbar releases outside its track and ends when geometry changes`, () => {
 		const bar = new Scrollbar(orientation), capture = new PointerCaptureService();

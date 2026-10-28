@@ -1,4 +1,4 @@
-import { beginNavigationCapture, completeNavigation, navigationState, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
+import { beginNavigationCapture, completeNavigation, navigationState, withNavigationCaptureSuspended, type NavigationHistorySource } from '../../../navigation/navigation_history';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
@@ -58,6 +58,12 @@ export type EditorDocumentOptions = {
 	readonly requestedBounds?: Readonly<RectBounds>;
 	readonly placement?: WindowPlacement;
 	readonly minimized?: boolean;
+};
+
+export type EditorPartsRestoreRequest = {
+	isCurrent(): boolean;
+	restore(state: SerializedEditorParts, serializers: EditorInputSerializers, options?: { readonly preserveFocus?: boolean }): Promise<boolean>;
+	dispose(): void;
 };
 
 /** Frontend membership and opening destinations over one shared workspace. */
@@ -169,6 +175,7 @@ export class EditorParts {
 	}
 
 	public createDocument(options: EditorDocumentOptions = {}, initialOperation: 'none' | 'move' = 'none'): EditorPart {
+		this.restoreGeneration++;
 		const part = this.constructDocument(options, initialOperation); this.publishDocument(part); return part;
 	}
 	/** A drop owns construction until paired membership is ready for workspace publication. */
@@ -213,8 +220,8 @@ export class EditorParts {
 		return next;
 	}
 
-	public activate(part: EditorPart): void {
-		navigationState.activeGroup = part.activeGroup;
+	public activate(part: EditorPart, owner: NavigationHistorySource = part.activeGroup): void {
+		navigationState.activeOwner = owner;
 		if (this.activePart === part) { part.raise(); return; }
 		this.activePart = part;
 		this.mru.splice(this.mru.indexOf(part), 1); this.mru.unshift(part);
@@ -548,7 +555,7 @@ export class EditorParts {
 					if (this.activePart === sourcePart && sourceWasActive && (inputFocus.revision === focusRevision || inputFocus.target === null)) {
 						this.activePart = targetPart; this.mru.splice(this.mru.indexOf(targetPart), 1); this.mru.unshift(targetPart);
 					}
-					navigationState.activeGroup = this.activePart.activeGroup;
+					if (navigationState.activeOwner === source) navigationState.activeOwner = target;
 					if (!sourcePart.ownsGroup(source) || this.owners.get(target) !== targetPart || source.surface.retired || target.surface.retired
 						|| source.panes.openGeneration !== sourceReceipt || target.panes.openGeneration !== targetReceipt
 						|| target.model.activeTab !== publication.active || !plan.entries.every(entry => target.model.contains(entry.receiver))) return false;
@@ -665,6 +672,7 @@ export class EditorParts {
 
 	private remove(part: EditorPart): void {
 		const target = inputFocus.target;
+		const retiresNavigationOwner = part.groups.some(group => navigationState.activeOwner === group);
 		// Accepted close may already have retired the focused pane. An unrelated
 		// live control keeps focus; the retiring active part's empty route returns.
 		const ownsFocus = target === null ? this.activePart === part : part.scope.contains(target.commandContext.scope);
@@ -676,7 +684,7 @@ export class EditorParts {
 		for (const group of part.groups) { this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupsByModel.delete(group.model); this.groupList.splice(this.groupList.indexOf(group), 1); }
 		this.mru.splice(this.mru.indexOf(part), 1);
 		if (this.activePart === part) this.activePart = next;
-		navigationState.activeGroup = this.activePart.activeGroup;
+		if (retiresNavigationOwner && navigationState.activeOwner === null) navigationState.activeOwner = this.activePart.activeGroup;
 		this.activePart.raise();
 		this.changed();
 	}
@@ -686,7 +694,7 @@ export class EditorParts {
 		while (this.documentParts.length !== 0) this.remove(this.documentParts[this.documentParts.length - 1]);
 		this.main.clear();
 		this.activePart = this.main;
-		navigationState.activeGroup = this.main.activeGroup;
+		navigationState.activeOwner = this.main.activeGroup;
 		this.changed();
 	}
 
@@ -715,30 +723,75 @@ export class EditorParts {
 		return { main, documents, active, mru };
 	}
 
-	public async restore(state: SerializedEditorParts, serializers: EditorInputSerializers): Promise<boolean> {
-		if (this.main.retired) return false;
+	/** Admit recovery before source hydration yields to newer foreground work. */
+	public beginRestore(): EditorPartsRestoreRequest {
 		const generation = ++this.restoreGeneration;
-		if (!await this.main.restore(state.main, serializers) || generation !== this.restoreGeneration) return false;
-		for (const document of state.documents) {
-			const part = this.createDocument(document);
-			if (generation !== this.restoreGeneration) return false;
-			if (!await part.restore(document, serializers) || generation !== this.restoreGeneration) return false;
-		}
-		for (const group of this.groupList) {
-			const active = group.model.activeTab;
-			if (active !== null && !group.activate(active.id, undefined, undefined, true)) return false;
-			if (generation !== this.restoreGeneration) return false;
-		}
-		this.mru.length = 0;
-		for (const index of state.mru) this.mru.push(index === 0 ? this.main : this.documentParts[index - 1]);
-		this.activePart = state.active === 0 ? this.main : this.documentParts[state.active - 1];
-		navigationState.activeGroup = this.activeGroup;
-		for (let index = this.mru.length - 1; index >= 0; index--) {
-			this.mru[index].raise();
-			if (generation !== this.restoreGeneration) return false;
-		}
-		this.changed();
-		return generation === this.restoreGeneration;
+		const interaction = inputFocus.interactionRevision;
+		let disposed = false;
+		const isCurrent = () => !disposed && !this.main.retired && generation === this.restoreGeneration;
+		const invalidate = () => { if (isCurrent()) this.restoreGeneration++; };
+		const tracked = new Map<EditorPart, { readonly pending: (() => void)[]; readonly openings: (() => void)[] }>();
+		const untrack = (part: EditorPart) => {
+			const subscriptions = tracked.get(part)!;
+			for (const unsubscribe of subscriptions.pending) unsubscribe();
+			for (const unsubscribe of subscriptions.openings) unsubscribe();
+			tracked.delete(part);
+		};
+		const track = (part: EditorPart) => {
+			const pending = [part.onDidChangeGroups(invalidate)], openings: (() => void)[] = [];
+			for (const group of part.groups) {
+				pending.push(group.model.onDidChange(change => { if (change !== 'label' && change !== 'dirty') invalidate(); }));
+				openings.push(group.panes.onDidBeginOpen(() => { if (group.openingAdmitted) invalidate(); }));
+			}
+			tracked.set(part, { pending, openings });
+		};
+		track(this.main); for (const part of this.documentParts) track(part);
+		const disposeSubscriptions = () => { for (const part of tracked.keys()) untrack(part); };
+		const restorePart = async (part: EditorPart, state: SerializedEditorParts['main'], serializers: EditorInputSerializers) => {
+			const subscriptions = tracked.get(part)!;
+			// The part's own restore lifetime now owns topology/model invalidation;
+			// unresolved openings on its departing groups still supersede publication.
+			for (const unsubscribe of subscriptions.pending) unsubscribe();
+			if (!await part.restore(state, serializers, isCurrent) || !isCurrent()) return false;
+			untrack(part); track(part);
+			return true;
+		};
+		return {
+			isCurrent,
+			restore: async (state, serializers, options) => {
+				if (!isCurrent()) return false;
+				if (!await restorePart(this.main, state.main, serializers)) return false;
+				for (const document of state.documents) {
+					const part = this.constructDocument(document, 'none'); this.publishDocument(part); track(part);
+					if (!isCurrent() || !await restorePart(part, document, serializers)) return false;
+				}
+				disposeSubscriptions();
+				for (const group of this.groupList) {
+					const active = group.model.activeTab;
+					if (active !== null && !group.activate(active.id, undefined, undefined, true)) return false;
+					if (!isCurrent()) return false;
+				}
+				if (inputFocus.interactionRevision === interaction) {
+					this.mru.length = 0;
+					for (const index of state.mru) this.mru.push(index === 0 ? this.main : this.documentParts[index - 1]);
+					this.activePart = state.active === 0 ? this.main : this.documentParts[state.active - 1];
+					for (let index = this.mru.length - 1; index >= 0; index--) {
+						this.mru[index].raise();
+						if (!isCurrent()) return false;
+					}
+					if (!options?.preserveFocus && inputFocus.interactionRevision === interaction)
+						withNavigationCaptureSuspended(() => this.activePart.focus());
+				}
+				this.changed();
+				return isCurrent();
+			},
+			dispose: () => { disposed = true; disposeSubscriptions(); },
+		};
+	}
+
+	public async restore(state: SerializedEditorParts, serializers: EditorInputSerializers): Promise<boolean> {
+		const request = this.beginRestore();
+		try { return await request.restore(state, serializers); } finally { request.dispose(); }
 	}
 
 	public dispose(): void {

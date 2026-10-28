@@ -2,6 +2,7 @@ import type { FontVariant } from '../../../machine/ts/render/shared/bmsx_font';
 import type { SerializedBreakpoints } from '../../runtime/breakpoints';
 import type { WorkspaceRecord } from '../../workspace/records';
 import type { SerializedEditorParts } from '../services/editor/editor_parts_serialization';
+import type { SerializedMainWorkspace } from '../common/main_workspace_serialization';
 
 import type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
 export type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
@@ -9,6 +10,7 @@ export type { PersistedDirtyEntry } from '../../workspace/source_recovery_store'
 export type WorkspaceAutosavePayload = {
 	dirtyFiles: PersistedDirtyEntry[];
 	editorParts: SerializedEditorParts;
+	mainWorkspace: SerializedMainWorkspace;
 	breakpoints: SerializedBreakpoints;
 	fontVariant: FontVariant;
 };

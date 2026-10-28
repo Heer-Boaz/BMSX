@@ -8,15 +8,21 @@ export const WORKBENCH_SPLIT_SIZE = 8;
 export class WorkbenchSplitView {
 	public readonly bounds = create_rect_bounds();
 	private ratioValue: number;
+	private readonly ratioListeners = new Set<() => void>();
 	public minimumFirstSize = 0;
 	public minimumSecondSize = 0;
 	public revision = 0;
 	public constructor(public readonly defaultRatio: number, public readonly orientation: 'horizontal' | 'vertical' = 'horizontal') { this.ratioValue = defaultRatio; }
 	public get ratio(): number { return this.ratioValue; }
+	public onDidChangeRatio(listener: () => void): () => void {
+		this.ratioListeners.add(listener);
+		return () => { this.ratioListeners.delete(listener); };
+	}
 	/** Requested view intent is retained independently of current placement constraints. */
 	public set ratio(value: number) {
 		if (this.ratioValue === value) return;
 		this.ratioValue = value; this.revision++;
+		for (const listener of this.ratioListeners) listener();
 	}
 	public get start(): number { return this.orientation === 'horizontal' ? this.bounds.left : this.bounds.top; }
 	public get end(): number { return this.orientation === 'horizontal' ? this.bounds.right : this.bounds.bottom; }

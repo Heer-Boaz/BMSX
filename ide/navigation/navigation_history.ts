@@ -7,44 +7,72 @@ import type { EditorPaneSelection } from '../workbench/services/editor/editor_se
 
 const NAVIGATION_HISTORY_LIMIT = 64;
 
-export type NavigationHistoryTarget =
+export type EditorNavigationHistoryTarget =
 	| { readonly kind: 'input'; readonly input: EditorInput }
 	| ({ readonly kind: 'resource' } & ResourceEditorIdentity);
 
-/** Retains a selection only while its capturing pane owner and retained input survive. */
-export class NavigationHistoryEntry extends DisposableStore {
-	private ownerValue: EditorGroupView;
-	private targetValue: NavigationHistoryTarget;
-	private unbindOwner: () => void;
-	private unbindMove: () => void;
-	private unbindInput: (() => void) | undefined;
-	public get owner(): EditorGroupView { return this.ownerValue; }
-	public get target(): NavigationHistoryTarget { return this.targetValue; }
+/** Captured by the real active frontend owner, independently of keyboard leaf focus. */
+export interface NavigationHistorySource {
+	captureNavigationEntry(): NavigationHistoryEntry | null;
+}
 
-	public constructor(target: NavigationHistoryTarget, public readonly selection: EditorPaneSelection | undefined,
-		owner: EditorGroupView) {
+/** The contribution owns source correspondence and primary-subject admission. */
+export interface PrimaryNavigationLocation {
+	readonly isDisposed: boolean;
+	matches(other: PrimaryNavigationLocation): boolean;
+	onDidRetire(listener: () => void): () => void;
+	restore(options: { readonly isCurrent: () => boolean; readonly preserveFocus: boolean }): Promise<boolean>;
+	dispose(): void;
+}
+
+export type PrimaryNavigationHistoryTarget = { readonly kind: 'primary'; readonly location: PrimaryNavigationLocation };
+export type NavigationHistoryTarget = EditorNavigationHistoryTarget | PrimaryNavigationHistoryTarget;
+
+/** Entries own inert locations, never an additional authoring consumer or control attachment. */
+export class NavigationHistoryEntry extends DisposableStore {
+	private ownerValue: EditorGroupView | undefined;
+	private editorTarget: EditorNavigationHistoryTarget | undefined;
+	private readonly primaryTarget: PrimaryNavigationHistoryTarget | undefined;
+	private unbindOwner: (() => void) | undefined;
+	private unbindMove: (() => void) | undefined;
+	private unbindInput: (() => void) | undefined;
+	public readonly selection: EditorPaneSelection | undefined;
+	public get owner(): EditorGroupView | undefined { return this.ownerValue; }
+	public get target(): NavigationHistoryTarget { return this.primaryTarget === undefined ? this.editorTarget! : this.primaryTarget; }
+
+	public constructor(target: PrimaryNavigationHistoryTarget);
+	public constructor(target: EditorNavigationHistoryTarget, selection: EditorPaneSelection | undefined, owner: EditorGroupView);
+	public constructor(target: NavigationHistoryTarget, selection?: EditorPaneSelection, owner?: EditorGroupView) {
 		super();
-		this.targetValue = target;
-		this.ownerValue = owner;
-		this.unbindOwner = owner.onWillDispose(this.retire);
-		this.unbindMove = owner.onDidMoveEditor(this.followMove);
-		if (selection !== undefined) this.add(selection);
-		if (target.kind === 'input') this.unbindInput = target.input.onWillDispose(this.retire);
+		this.selection = selection;
+		if (target.kind === 'primary') {
+			this.primaryTarget = target;
+			if (target.location.isDisposed) { super.dispose(); return; }
+			this.add({ dispose: target.location.onDidRetire(this.retire) });
+			this.add(target.location);
+		} else {
+			this.editorTarget = target;
+			this.ownerValue = owner;
+			this.unbindOwner = owner!.onWillDispose(this.retire);
+			this.unbindMove = owner!.onDidMoveEditor(this.followMove);
+			if (selection !== undefined) this.add(selection);
+			if (target.kind === 'input') this.unbindInput = target.input.onWillDispose(this.retire);
+		}
 	}
 
 	/** Pending captures and stacked entries follow the same actual group handoff. */
 	private readonly followMove = (event: EditorMoveEvent): void => {
-		const target = this.targetValue;
+		const target = this.editorTarget!;
 		if (target.kind === 'input') {
 			if (target.input !== event.input) return;
 			this.unbindInput!();
-			this.targetValue = { kind: 'input', input: event.replacement };
+			this.editorTarget = { kind: 'input', input: event.replacement };
 			this.unbindInput = event.replacement.onWillDispose(this.retire);
 		} else {
 			const identity = event.input.toResourceEditor?.();
 			if (identity === undefined || identity.editorId !== target.editorId || !resourceIdentityEquals(identity.resource, target.resource)) return;
 		}
-		this.unbindOwner(); this.unbindMove();
+		this.unbindOwner!(); this.unbindMove!();
 		this.ownerValue = event.destination;
 		this.unbindOwner = event.destination.onWillDispose(this.retire);
 		this.unbindMove = event.destination.onDidMoveEditor(this.followMove);
@@ -57,7 +85,7 @@ export class NavigationHistoryEntry extends DisposableStore {
 	};
 
 	public override dispose(): void {
-		this.unbindOwner(); this.unbindMove(); this.unbindInput?.();
+		this.unbindOwner?.(); this.unbindMove?.(); this.unbindInput?.();
 		super.dispose();
 	}
 }
@@ -66,15 +94,15 @@ export const navigationState = {
 	back: [] as NavigationHistoryEntry[],
 	forward: [] as NavigationHistoryEntry[],
 	captureSuspendDepth: 0,
-	activeGroup: null as EditorGroupView | null,
+	activeOwner: null as NavigationHistorySource | null,
 };
 
-/** The frontend binds its editor group; child pane construction never selects this owner. */
-export function initializeNavigationState(group: EditorGroupView): () => void {
+/** The frontend binds an actual capture owner; child construction never selects this owner. */
+export function initializeNavigationState(owner: NavigationHistorySource): () => void {
 	resetNavigationHistoryState();
-	navigationState.activeGroup = group;
+	navigationState.activeOwner = owner;
 	return () => {
-		navigationState.activeGroup = null;
+		navigationState.activeOwner = null;
 		resetNavigationHistoryState();
 	};
 }
@@ -144,6 +172,8 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 	if (a.owner !== b.owner) return false;
 	const left = a.target;
 	const right = b.target;
+	if (left.kind === 'primary') return right.kind === 'primary' && left.location.matches(right.location);
+	if (right.kind === 'primary') return false;
 	if (left.kind === 'input') {
 		if (right.kind !== 'input' || left.input !== right.input) return false;
 	} else if (right.kind !== 'resource' || left.editorId !== right.editorId
@@ -153,13 +183,8 @@ export function areNavigationEntriesEqual(a: NavigationHistoryEntry, b: Navigati
 }
 
 export function createNavigationEntry(): NavigationHistoryEntry | null {
-	const owner = navigationState.activeGroup;
-	if (owner === null) return null; // No frontend or active editor group is attached.
-	const pane = owner.panes.activePane;
-	if (pane === null) return null; // The editor group can be empty.
-	const resourceEditor = pane.input.toResourceEditor?.();
-	return new NavigationHistoryEntry(resourceEditor === undefined
-		? { kind: 'input', input: pane.input } : { kind: 'resource', ...resourceEditor }, pane.getSelection?.(), owner);
+	const owner = navigationState.activeOwner;
+	return owner === null ? null : owner.captureNavigationEntry();
 }
 
 export function withNavigationCaptureSuspended<T>(operation: () => T): T {

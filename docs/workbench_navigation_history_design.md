@@ -17,8 +17,10 @@ and [history owner](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e
 
 ## Destinations and admission
 
-- An entry names its concrete destination group and either a retained input or
-  a registered resource-editor identity. Resource identity is `(contextId, path)`;
+- A document entry names its concrete destination group and either a retained
+  input or a registered resource-editor identity. A primary-context entry instead
+  carries its contribution-owned location and Main admission, without a synthetic
+  document group or input. Resource identity is `(contextId, path)`;
   an installed socket, label or filesystem-path guess is not a destination.
 - A closed resource editor can be reopened through its registration. An input
   without that capability retires its history entries on disposal. Removing a
@@ -35,15 +37,19 @@ and [history owner](https://github.com/microsoft/vscode/blob/7f59d5e01a7fafeba8e
   destination. Only admitted navigation transfers the departure to the opposite
   stack and consumes the destination. Rejected or superseded requests do not
   consume a still-live entry or redirect it to a later-focused group.
-- Back/Forward restore under capture suppression. Eviction, branch pruning,
+- Back/Forward restore without recording a new jump. Suppression covers only
+  synchronous document activation; asynchronous primary admission carries explicit
+  request options rather than suppressing unrelated navigation while it awaits.
+  Eviction, branch pruning,
   reset, destination retirement and consumption dispose owned selections and
   subscriptions. A preview replacement can retire a captured departure before
   its opening completes; that retired entry cannot enter the history afterward.
 
 The frontend initializes the shared history once. Creating a group or attaching
 one of its reusable panes is not permission to reset that history. Frontend
-activation identifies the current part/group without changing the ownership
-of retained destinations.
+activation identifies the actual document or primary capture owner without
+changing the ownership of retained destinations. Focus in project navigation
+does not manufacture a different document destination.
 
 ## Contribution-owned locations
 
@@ -55,6 +61,15 @@ Visual locations retain source-correspondence bookmarks, including FSM return
 evidence and BT occurrence ancestry. They do not retain an old graph object or
 source-generation AST. Deleting an occurrence makes it unselected, rather than
 selecting a namesake or the next ordinal.
+
+Primary Scene locations retain independently mapped declaration and optional
+member ranges over the canonical model. Replacing the current primary context
+does not dispose those bookmarks. Removing their exact declaration, ending its
+model lifetime or revoking semantic recognition retires the destination; deleting
+only the selected member clears sub-selection. The bookmark is not a retained
+authoring context and cannot keep a dirty file from reaching last-consumer close
+admission. Persisted primary references separately require source-fingerprint
+correspondence before an exact declaration can be admitted again.
 
 The presentation consumes viewport restoration, including an asynchronously
 published graph layout. Initial positioning and automatic selection reveal must

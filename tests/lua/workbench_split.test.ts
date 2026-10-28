@@ -12,6 +12,21 @@ import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
 import { WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
 
+test('split intent changes notify session consumers, while constrained layout retains the same intent', () => {
+	const view = new WorkbenchSplitView(0.4), ratios: number[] = [];
+	const unsubscribe = view.onDidChangeRatio(() => ratios.push(view.ratio));
+	view.minimumFirstSize = 200; view.minimumSecondSize = 100;
+	view.layout(0, 0, 600, 200);
+	view.ratio = 0.2;
+	view.ratio = 0.2;
+	view.layout(0, 0, 1000, 200);
+	assert.deepEqual(ratios, [0.2]);
+	view.resize(0.5);
+	assert.deepEqual(ratios, [0.2, 0.5]);
+	unsubscribe(); view.ratio = 0.7;
+	assert.deepEqual(ratios, [0.2, 0.5]);
+});
+
 test('shared pane sash captures drag, releases on blur/replacement and consumes only its focused keyboard input', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();

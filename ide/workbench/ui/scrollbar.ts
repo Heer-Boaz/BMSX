@@ -9,6 +9,7 @@ export type ScrollbarDragStart = { readonly pointer: number; readonly scroll: nu
 export class Scrollbar {
 	public revision = 0;
 	private readonly trackListeners = new Set<() => void>();
+	private readonly scrollListeners = new Set<() => void>();
 	private readonly track = create_rect_bounds();
 	private readonly thumb = create_rect_bounds();
 	private visible = false;
@@ -28,6 +29,10 @@ export class Scrollbar {
 	public onDidChangeTrack(listener: () => void): () => void {
 		this.trackListeners.add(listener);
 		return () => { this.trackListeners.delete(listener); };
+	}
+	public onDidScroll(listener: () => void): () => void {
+		this.scrollListeners.add(listener);
+		return () => { this.scrollListeners.delete(listener); };
 	}
 
 	/** Geometry changes recompute the range; repeated layout and position retain it. */
@@ -52,8 +57,10 @@ export class Scrollbar {
 				this.thumbLength = Math.max(SCROLLBAR_MIN_THUMB_HEIGHT, Math.trunc(trackLength * viewportSize / contentSize));
 				this.thumbTravel = trackLength - this.thumbLength;
 			}
+			const previousScroll = this.scrollValue;
 			this.scrollValue = clamp(scroll, minimum, this.maxScrollValue);
 			this.updateThumb();
+			if (previousScroll !== this.scrollValue) for (const listener of this.scrollListeners) listener();
 			if (trackChanged || wasVisible !== this.visible) for (const listener of this.trackListeners) listener();
 		} else this.setScroll(scroll);
 	}
@@ -63,6 +70,7 @@ export class Scrollbar {
 		if (this.scrollValue === value) return;
 		this.scrollValue = value;
 		this.updateThumb();
+		for (const listener of this.scrollListeners) listener();
 	}
 
 	private updateThumb(): void {

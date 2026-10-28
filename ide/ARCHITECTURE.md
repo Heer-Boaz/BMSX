@@ -172,6 +172,26 @@ Play and Scenario preparation capture an explicit authored source namespace;
 the fixture compiler consumes it independently of the ROM's packaged assets.
 Unit fixtures have their own entry rather than rebuilding the gameplay program.
 
+## State and presentation lifetimes
+
+State belongs to the owner of its meaning, not automatically to the tab, pane or
+window that currently presents it. Canonical text models own source; contribution
+contexts own authored subjects, source correspondence and domain selection.
+Retained view state owns a particular presentation's reading intent. Attached
+controls own focus, drafts, gestures and transient UI; containers own placement
+and membership. Sharing a model does not implicitly share selection or view state.
+These are distinct lifetimes, not a universal state registry or a requirement to
+retain every control after it is hidden.
+
+Navigation records a location supplied by the actual active owner: a document
+group or Main's primary contribution. Its bounded shared history owns inert
+bookmarks, not additional working-copy consumers or old control attachments.
+Contributions map and retire their own exact occurrences. Session storage records
+plain source-correspondence and view mementos separately from document topology;
+restoration establishes new contexts and controls over recovered canonical models.
+An unresolved primary reference remains explicitly Unavailable. Neither history
+nor restoration grants authority to a namesake, an old AST or a former focus scope.
+
 ## Documents, inputs and panes
 
 `editor/model/` owns canonical text models. Workbench working-copy services own

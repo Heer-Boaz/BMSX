@@ -104,7 +104,11 @@ export class SceneEditorControl {
 			isEnabled: () => this.hasView && this.view.outline.selectionIndex >= 0,
 			run: () => {
 				const input = this.view, tree = input.outline;
-				if (origin === this.focusTarget) revealWorkbenchListSelection(tree);
+				if (origin === this.focusTarget) {
+					const previousScroll = tree.scroll;
+					revealWorkbenchListSelection(tree);
+					if (tree.scroll !== previousScroll) input.notifyPresentationChanged();
+				}
 				this.openContextMenu(origin === this.focusTarget ? tree.layout.contentLeft + 4 : input.details.bounds.left + 4,
 					origin === this.focusTarget ? tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0) + 1) * tree.layout.rowHeight : input.details.bounds.top + 4, origin, true);
 			},
@@ -386,7 +390,7 @@ export class SceneEditorControl {
 			&& (row.parent ?? row).element.span.start === sceneSpan.start && (row.parent ?? row).element.span.end === sceneSpan.end);
 		if (index === -1) return false;
 		const row = input.outline.rows[index], version = input.authoring.workingCopy.version;
-		if (toggle) setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed);
+		if (toggle && setWorkbenchTreeCollapsed(input.outline, index, !row.collapsed)) input.notifyPresentationChanged();
 		if (!selectSceneOutlineRow(input, index)) return false;
 		const selected = input.authoring.selection;
 		const current = inputFocus.admittedTarget;
@@ -396,7 +400,9 @@ export class SceneEditorControl {
 		const contentChanged = this.boundVersion !== input.authoring.revision;
 		this.bindProperties();
 		if (scope.contextGeneration !== context) return false;
+		const previousScroll = input.outline.scroll;
 		revealWorkbenchListSelection(input.outline);
+		if (input.outline.scroll !== previousScroll) input.notifyPresentationChanged();
 		layoutSceneEditor(input, contentChanged, true, this.contentBounds);
 		if (!this.updateControlAdmission()) return false;
 		this.bindFocusOrder();
@@ -420,7 +426,10 @@ export class SceneEditorControl {
 		for (const [code, command] of TREE_NAVIGATION) {
 			if (isKeyDown(code, input)) {
 				consumeIdeKey(code, input);
-				if (navigateWorkbenchTree(this.view.outline, command) !== WorkbenchTreeNavigationResult.None && !this.select(this.view.outline.selectionIndex, false)) return;
+				const view = this.view, previousScroll = view.outline.scroll;
+				const change = navigateWorkbenchTree(view.outline, command);
+				if (change === WorkbenchTreeNavigationResult.Collapse || view.outline.scroll !== previousScroll) view.notifyPresentationChanged();
+				if (change !== WorkbenchTreeNavigationResult.None && !this.select(view.outline.selectionIndex, false)) return;
 				this.identityFeedback.keyboardSelection(this.view);
 				return;
 			}
@@ -436,7 +445,9 @@ export class SceneEditorControl {
 	private moveSelectedMember(direction: -1 | 1): void {
 		if (!this.view.authoring.moveSelectedMember(direction)) return;
 		this.view.refresh();
+		const previousScroll = this.view.outline.scroll;
 		revealWorkbenchListSelection(this.view.outline);
+		if (this.view.outline.scroll !== previousScroll) this.view.notifyPresentationChanged();
 	}
 
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean,
@@ -507,7 +518,11 @@ export class SceneEditorControl {
 	public handleWheel(event: WheelInputSnapshot): void {
 		if (!this.hasView) return;
 		if (this.details.handleWheel(event, event.deltaY * this.details.lineStep * 3)) layoutSceneEditor(this.view, false, false, this.contentBounds);
-		else if (workbenchListContainsPosition(this.view.outline, event.viewportX, event.viewportY)) scrollWorkbenchList(this.view.outline, event.deltaY * 3);
+		else if (workbenchListContainsPosition(this.view.outline, event.viewportX, event.viewportY)) {
+			const previousScroll = this.view.outline.scroll;
+			scrollWorkbenchList(this.view.outline, event.deltaY * 3);
+			if (this.view.outline.scroll !== previousScroll) this.view.notifyPresentationChanged();
+		}
 	}
 
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {

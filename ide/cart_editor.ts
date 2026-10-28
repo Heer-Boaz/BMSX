@@ -1,6 +1,8 @@
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
-import { MainWorkspace } from './workbench/main_workspace';
+import { MainWorkspace, type MainWorkspaceClient } from './workbench/main_workspace';
+import type { SerializedPrimaryClient } from './workbench/common/main_workspace_serialization';
+import type { WorkbenchSurface } from './workbench/services/windows/model';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { HomeInput } from './workbench/contrib/home/editor_input';
 import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
@@ -89,8 +91,10 @@ import { ContextMenuController } from './workbench/services/context_menu/control
 import { drawContextMenu, layoutContextMenu } from './workbench/services/context_menu/render';
 import type { GraphLayoutEngineFactory } from './workbench/services/graph_layout/engine';
 import { SceneEditorController } from './workbench/contrib/scene_editor/controller';
-import { SceneAuthoringContext, type SceneAuthoredSubject } from './workbench/contrib/scene_editor/authoring_context';
-import { ScenePrimaryClient } from './workbench/contrib/scene_editor/primary_client';
+import type { SceneAuthoredSubject } from './workbench/contrib/scene_editor/authoring_context';
+import { createScenePrimaryClient, type ScenePrimaryClientOptions } from './workbench/contrib/scene_editor/primary_client';
+import { restoreScenePrimaryClient } from './workbench/contrib/scene_editor/primary_serialization';
+import type { RestoreScenePrimaryBookmark } from './workbench/contrib/scene_editor/primary_location';
 import type { EditorTextModel } from './editor/model/text_model';
 import type { InputFocusTarget } from './input/focus';
 import { saveTextFileFromCommand } from './commands/source_save';
@@ -222,6 +226,7 @@ export type CartEditor = TextInputHost & {
 	readonly cartMaps: CartMapController;
 	readonly sceneEditor: SceneEditorController;
 	openSceneInMain(model: EditorTextModel, subject: SceneAuthoredSubject, origin: InputFocusTarget): Promise<boolean>;
+	restorePrimaryClient(record: SerializedPrimaryClient, surface: WorkbenchSurface, scope: InputFocusScope, isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined>;
 	readonly animations: AnimationEditorController;
 	readonly actorLab: ActorLabController;
 	readonly actionPrompt: ActionPrompt;
@@ -278,6 +283,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
 	public readonly mainWorkspace: MainWorkspace;
+	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'owner' | 'scope'>;
 	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly surfaces: WorkbenchSurfaceService;
 	private readonly chromeScope = Symbol('workbench chrome');
@@ -451,7 +457,8 @@ export class RuntimeCartEditor implements CartEditor {
 		});
 
 		this.mainWorkspace = new MainWorkspace(this.surfaces, chromeSurface, inputFocus.workbenchScope, this.commands,
-			() => this.layoutMainEditor(), () => this.editorParts.activate(this.editorParts.main));
+			() => this.layoutMainEditor(), () => this.editorParts.activate(this.editorParts.main, this.mainWorkspace),
+			focus => { if (focus) this.editorParts.main.focus(); else this.editorParts.activate(this.editorParts.main); });
 		this.editorParts = new EditorParts({
 			surfaces: this.surfaces, owner: chromeSurface, scope: inputFocus.workbenchScope, workArea,
 			mainPresentation: this.mainWorkspace,
@@ -615,6 +622,12 @@ export class RuntimeCartEditor implements CartEditor {
 			scenario_lab: new ScenarioLabInputSerializer(this.scenarioLab),
 			resource_view: new ResourceViewerInputSerializer(sources.catalog),
 		};
+		this.scenePrimaryOptions = {
+			commands: this.commands, sources: this.sources, contextMenu: this.contextMenu, surfaces: this.surfaces,
+			workArea: getWorkbenchWorkArea(), navigation: this.navigation, parts: this.editorParts, main: this.mainWorkspace,
+			restoreNavigation: this.restoreSceneNavigation,
+			save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
+		};
 		this.crossFileRename = new CrossFileRenameManager(this.sources.catalog);
 		this.unbindProblemsPanel = problemsPanel.focusTarget.bindKeyboard(
 			input => problemsPanel.handleKeyboard(input, this.editorParts),
@@ -710,16 +723,23 @@ export class RuntimeCartEditor implements CartEditor {
 	public get fontVariant(): FontVariant { return editorViewState.fontVariant; }
 
 	public openSceneInMain(model: EditorTextModel, subject: SceneAuthoredSubject, origin: InputFocusTarget): Promise<boolean> {
-		return this.mainWorkspace.openPrimary((surface, scope) => {
-			const context = new SceneAuthoringContext(model, this.workbench.sceneSources, subject);
-			if (!context.isCurrent || context.availability !== 'available') { context.dispose(); return undefined; }
-			return new ScenePrimaryClient(context, {
-				commands: this.commands, sources: this.sources, contextMenu: this.contextMenu,
-				surfaces: this.surfaces, owner: surface, workArea: getWorkbenchWorkArea(), scope,
-				navigation: this.navigation, parts: this.editorParts,
-				save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
-			});
-		}, this.editorParts.closeController, origin);
+		return this.mainWorkspace.openPrimary((owner, scope) => createScenePrimaryClient(model, this.workbench.sceneSources,
+			subject, { ...this.scenePrimaryOptions, owner, scope }), this.editorParts.closeController, origin);
+	}
+
+	private readonly restoreSceneNavigation: RestoreScenePrimaryBookmark = (bookmark, options) =>
+		this.mainWorkspace.openPrimary((owner, scope) => {
+			const subject = bookmark.resolve(this.workbench.sceneSources);
+			return subject === undefined ? undefined : createScenePrimaryClient(bookmark.model, this.workbench.sceneSources,
+				subject, { ...this.scenePrimaryOptions, owner, scope }, bookmark.view);
+		}, this.editorParts.closeController, inputFocus.target, { ...options, recordNavigation: false });
+
+	public restorePrimaryClient(record: SerializedPrimaryClient, owner: WorkbenchSurface, scope: InputFocusScope,
+		isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined> {
+		switch (record.kind) {
+			case 'scene': return restoreScenePrimaryClient(record.value, editorTextModelService, this.sources.catalog,
+				this.workbench.sceneSources, { ...this.scenePrimaryOptions, owner, scope }, isCurrent);
+		}
 	}
 
 	public activate(): void {
@@ -904,56 +924,56 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindSurfaceAdmission();
 		this.unbindWorkspaceModels();
 		this.windowStatus.dispose();
-		this.mainWorkspace.dispose();
-		this.surfaces.dispose();
-		this.input.setEditingInput(undefined);
-		this.assistant.dispose();
-		this.observedConversation.dispose();
-		this.unbindBreakpoints();
-		this.unbindSourceStop();
-		this.actionPrompt.dispose();
-		this.terminal.discard();
-		await this.workbench.shutdown();
-		this.play.dispose();
-		this.actorLab.dispose();
-		this.unsubscribeDiagnosticsChanged();
-		pointerHover.clear();
-		pointerCapture.cancel();
-		this.contextMenu.dispose();
-		this.menubar.dispose();
-		this.gamePanel.dispose();
-		this.quickInput.dispose();
-		this.unbindProblemsPanel();
-		problemsPanel.detach();
-		if (this.isAvailable) {
-			for (const group of this.editorParts.groups) group.panes.clearEditor();
-		}
-		applyEditorInputOverrides(this.input, false, captureKeys);
-		if (editorViewState.dimCrtInEditor) {
-			this.restoreCrtPostprocessingFromEditor();
-		}
-		editorRuntimeState.active = false;
-		setEditorFeedbackActive(false);
-		this.input.setPointerAdmissionMode('physical');
-		this.input.guestInputRecipient = this.input;
-		requestWorkspaceAutosave(WorkspaceAutosaveChange.All);
-		cancelWorkspaceAutosave();
 		try {
-			await runWorkspaceAutosaveTick();
-		} finally {
+			await this.workbench.shutdown();
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.All);
+			cancelWorkspaceAutosave();
 			try {
-				await shutdownWorkspaceStorage();
+				await runWorkspaceAutosaveTick();
 			} finally {
-				this.editorParts.dispose();
-				this.unbindNavigation();
-				this.scenarioLab.dispose();
-				this.unsubscribeTextModelChanged();
-				this.codeDocuments.dispose();
-				editorTextModelService.clear();
-				this.sources.catalog.dispose();
+				await shutdownWorkspaceStorage();
 			}
+		} finally {
+			this.mainWorkspace.dispose();
+			this.surfaces.dispose();
+			this.input.setEditingInput(undefined);
+			this.assistant.dispose();
+			this.observedConversation.dispose();
+			this.unbindBreakpoints();
+			this.unbindSourceStop();
+			this.actionPrompt.dispose();
+			this.terminal.discard();
+			this.play.dispose();
+			this.actorLab.dispose();
+			this.unsubscribeDiagnosticsChanged();
+			pointerHover.clear();
+			pointerCapture.cancel();
+			this.contextMenu.dispose();
+			this.menubar.dispose();
+			this.gamePanel.dispose();
+			this.quickInput.dispose();
+			this.unbindProblemsPanel();
+			problemsPanel.detach();
+			if (this.isAvailable) {
+				for (const group of this.editorParts.groups) group.panes.clearEditor();
+			}
+			applyEditorInputOverrides(this.input, false, captureKeys);
+			if (editorViewState.dimCrtInEditor) {
+				this.restoreCrtPostprocessingFromEditor();
+			}
+			editorRuntimeState.active = false;
+			setEditorFeedbackActive(false);
+			this.input.setPointerAdmissionMode('physical');
+			this.input.guestInputRecipient = this.input;
+			this.editorParts.dispose();
+			this.unbindNavigation();
+			this.scenarioLab.dispose();
+			this.unsubscribeTextModelChanged();
+			this.codeDocuments.dispose();
+			editorTextModelService.clear();
+			this.sources.catalog.dispose();
+			this.resourcePanel.dispose();
 		}
-		this.resourcePanel.dispose();
 	}
 
 	public setFontVariant(variant: FontVariant): void {

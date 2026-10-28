@@ -185,7 +185,7 @@ test('actual Resource viewers keep arranged scrollbar gestures and retirement lo
 	first.openEditor(firstInput); second.openEditor(secondInput);
 	const pane = first.panes.activePane!;
 	pane.focus();
-	assert.equal(navigationState.activeGroup, first);
+	assert.equal(navigationState.activeOwner, first);
 	const focused = inputFocus.target;
 	t.after(() => { first.dispose(); second.dispose(); pointerCapture.cancel(); inputFocus.setTarget(null); });
 	// Address the actual component's arranged scrollbar, not root-workbench chrome.

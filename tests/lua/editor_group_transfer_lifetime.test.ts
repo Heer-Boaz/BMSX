@@ -23,7 +23,7 @@ for (const phase of ['source detach', 'destination detach', 'history handoff', '
 		assert.equal(parts.moveGroup(source, { kind: 'group', group: target }), true);
 		assert.equal(interacted, true); assert.ok(target.model.activeTab === f.firstInput && target.panes.activePane?.input === f.firstInput);
 		assert.ok(inputFocus.target === pane.commandTarget && parts.activePart === f.secondPart && parts.activeGroup === sibling);
-		assert.ok(navigationState.activeGroup === sibling && sibling.panes.activePane === pane && sibling.model.activeTab === siblingInput);
+		assert.ok(navigationState.activeOwner === sibling && sibling.panes.activePane === pane && sibling.model.activeTab === siblingInput);
 	});
 
 for (const phase of ['source detach', 'destination detach', 'history handoff', 'model publication', 'source retirement'] as const)

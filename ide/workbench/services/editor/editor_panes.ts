@@ -30,6 +30,7 @@ export class EditorPanes {
 	private readonly clearListeners = new Set<() => void>();
 	private readonly showListeners = new Set<(options: EditorPaneOpenOptions) => void>();
 	private readonly disposeListeners = new Set<() => void>();
+	private readonly openingListeners = new Set<() => void>();
 	private openGenerationValue = 0;
 	private layoutRevision = 0;
 	public readonly contentBounds = create_rect_bounds();
@@ -52,7 +53,15 @@ export class EditorPanes {
 	}
 
 	/** Resolution can await storage; only the latest opening may attach its input. */
-	public beginOpen(): number { return ++this.openGenerationValue; }
+	public beginOpen(): number {
+		const generation = ++this.openGenerationValue;
+		for (const listener of this.openingListeners) listener();
+		return generation;
+	}
+	public onDidBeginOpen(listener: () => void): () => void {
+		this.openingListeners.add(listener);
+		return () => { this.openingListeners.delete(listener); };
+	}
 	public get openGeneration(): number { return this.openGenerationValue; }
 
 	public onDidClearEditor(listener: () => void): () => void {
@@ -89,7 +98,7 @@ export class EditorPanes {
 	public openEditor(input: EditorInput, options: EditorPaneOpenOptions = {}): EditorInputOpenResult | undefined {
 		const { selection, navigationSelection, preserveFocus } = options;
 		const focusRevision = inputFocus.revision;
-		this.openGenerationValue += 1;
+		this.beginOpen();
 		const activePane = this.activePaneValue;
 		const reusing = activePane !== null && activePane.input === input;
 		let pane: EditorPane<EditorInput>;
@@ -148,6 +157,7 @@ export class EditorPanes {
 		this.panes.clear();
 		this.clearListeners.clear();
 		this.showListeners.clear();
+		this.openingListeners.clear();
 	}
 
 	private getOrCreatePane(input: EditorInput): EditorPane<EditorInput> {

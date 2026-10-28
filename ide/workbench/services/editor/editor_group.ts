@@ -2,7 +2,7 @@ import type { EditorCommandRunner } from '../../../common/commands';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../../input/focus';
 import { InputInteraction } from '../../../input/interaction';
 import { pointerCapture } from '../../../input/pointer/capture';
-import { beginNavigationCapture, completeNavigation, navigationState, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
+import { beginNavigationCapture, completeNavigation, navigationState, NavigationHistoryEntry, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { EditorTabGroupModel, type EditorOpenOptions } from '../../ui/tab/group_model';
 import { EditorTabStrip } from '../../ui/tab/control';
@@ -85,6 +85,13 @@ export function editorGroupChromeMinimumHeight(): number {
 
 /** Concrete input, control and tab-strip lifetimes for one independently arranged editor group. */
 export class EditorGroupView {
+	public captureNavigationEntry(): NavigationHistoryEntry | null {
+		const pane = this.panes.activePane;
+		if (pane === null) return null;
+		const resource = pane.input.toResourceEditor?.();
+		return new NavigationHistoryEntry(resource === undefined ? { kind: 'input', input: pane.input }
+			: { kind: 'resource', ...resource }, pane.getSelection?.(), this);
+	}
 	public readonly model = new EditorTabGroupModel();
 	public readonly captureScope = Symbol('editor-group');
 	private readonly containerScope: InputFocusScope;
@@ -153,7 +160,7 @@ export class EditorGroupView {
 		this.focusScope.commands = commands;
 		this.tabFocusTarget.scope.commands = commands;
 		this.unbindFocus = inputFocus.onDidChangeTarget(() => {
-			if (findEditorGroup(inputFocus.target) === this && navigationState.activeGroup !== this) navigationState.activeGroup = this;
+			if (findEditorGroup(inputFocus.target) === this && navigationState.activeOwner !== this) navigationState.activeOwner = this;
 		});
 		this.tabFocusTarget.canFocus = () => false;
 		this.surface = presentation.surfaces.attach({ role: 'content', lifetimeOwner: presentation.owner, presentationParent: presentation.owner,
@@ -409,7 +416,7 @@ export class EditorGroupView {
 
 	/** The transfer model already selected this exact member; only its new control is attached here. */
 	public attachTransferredEditor(input: EditorInput, selection?: EditorPaneSelection, preserveFocus = false): void {
-		if (!preserveFocus) navigationState.activeGroup = this;
+		if (!preserveFocus) navigationState.activeOwner = this;
 		this.panes.openEditor(input, { navigationSelection: selection, preserveFocus });
 	}
 
@@ -424,7 +431,7 @@ export class EditorGroupView {
 		this.model.activate(input);
 		if (this.panes.openGeneration !== generation) { previous?.dispose(); return undefined; }
 		preserveFocus ||= inputFocus.revision !== focusRevision && inputFocus.target !== null;
-		if (!preserveFocus) navigationState.activeGroup = this;
+		if (!preserveFocus) navigationState.activeOwner = this;
 		const result = this.panes.openEditor(input, { selection, navigationSelection, preserveFocus });
 		if (capture && result?.activated) completeNavigation(previous); else previous?.dispose();
 		return this.model.activeTab === input && this.panes.activePane?.input === input ? result : undefined;
@@ -450,7 +457,7 @@ export class EditorGroupView {
 			if (successor === undefined) for (let position = index + 1; position < tabs.length; position++) if (!closing?.has(tabs[position])) {
 				successor = tabs[position]; break;
 			}
-			if (successor !== undefined) this.doActivate(successor, undefined, undefined, navigationState.activeGroup !== this || this.tabStrip.focusTarget.hasFocus);
+			if (successor !== undefined) this.doActivate(successor, undefined, undefined, navigationState.activeOwner !== this || this.tabStrip.focusTarget.hasFocus);
 			else this.panes.clearEditor();
 		}
 		this.model.removeAt(index);
@@ -481,7 +488,7 @@ export class EditorGroupView {
 		for (const listener of this.disposeListeners) listener();
 		this.disposeListeners.clear();
 		this.moveListeners.clear();
-		if (navigationState.activeGroup === this) navigationState.activeGroup = null;
+		if (navigationState.activeOwner === this) navigationState.activeOwner = null;
 		this.unbindFocus();
 		for (const unbind of this.subscriptions) unbind();
 		this.focusListeners.clear(); this.focusTarget.release(); this.timeline.dispose();

@@ -6,6 +6,7 @@ import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_
 import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry } from './model';
 import type { SceneSourceDocuments } from './source_documents';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 
 /** Admission proof for one exact authored declaration, not a name or a document tab. */
 export type SceneAuthoredSubject = {
@@ -26,6 +27,19 @@ export type SceneAuthoredSelection = {
 	readonly index: number;
 };
 
+export type SceneAuthoredSelectionReference = {
+	readonly kind: SceneAuthoredSelection['kind'];
+	readonly span: TrackedTextRange;
+	readonly root: TrackedTextRange;
+};
+
+/** Inert source correspondence, not semantic authority for an editing command. */
+export type SceneAuthoredSourceReference = {
+	readonly source: TextFileModelSnapshot;
+	readonly subject: { readonly range: TrackedTextRange; readonly availability: 'available' | 'unavailable' } | undefined;
+	readonly selected: SceneAuthoredSelectionReference | undefined;
+};
+
 /** Retained source editing context. Trees, Details and document containers do not own its selection. */
 export class SceneAuthoringContext {
 	private documentValue: SceneSourceDocument | undefined;
@@ -40,6 +54,7 @@ export class SceneAuthoringContext {
 	private readonly copies: readonly EditorTextModel[];
 	private readonly subjectRange: TrackedTextRange | undefined;
 	private readonly subjectScenes: SceneSourceDefinition[] | undefined;
+	private readonly subjectOrigin: { readonly source: TextFileModelSnapshot; readonly range: TrackedTextRange } | undefined;
 
 	public constructor(public readonly workingCopy: EditorTextModel, private readonly documents: SceneSourceDocuments, subject?: SceneAuthoredSubject) {
 		this.copies = [workingCopy];
@@ -55,6 +70,7 @@ export class SceneAuthoringContext {
 				const range = luaSourceRangeToTextRange(workingCopy.buffer, subject.scene.range);
 				this.subjectRange.start = range.start; this.subjectRange.end = range.end;
 				this.subjectScenes.push(subject.scene);
+				this.subjectOrigin = { source: captureTextFileModel(workingCopy), range: { ...range } };
 			}
 			this.lifetime.add({ dispose: workingCopy.trackRanges(new Map([['subject', this.subjectRange]])) });
 		}
@@ -91,6 +107,21 @@ export class SceneAuthoringContext {
 		const range = selection?.kind === 'member' ? document.analysis.chunk.locations.range(selection.entry.field.span)
 			: selection?.scene.range ?? this.subject?.range;
 		return this.documents.getSourceLocation(this.workingCopy, document, range);
+	}
+
+	/** Observe mapped source occurrences without semantic admission, selection publication or projected rows. */
+	public captureSourceReference(): SceneAuthoredSourceReference {
+		const range = this.subjectRange;
+		const unavailable = range !== undefined && (this.lifetime.isDisposed || range.start === range.end);
+		const selected = this.selectionValue;
+		return {
+			source: unavailable ? this.subjectOrigin!.source : captureTextFileModel(this.workingCopy),
+			subject: range === undefined ? undefined : unavailable
+				? { range: { ...this.subjectOrigin!.range }, availability: 'unavailable' }
+				: { range: { ...range }, availability: 'available' },
+			selected: unavailable || selected === undefined || this.selectionRange.start === this.selectionRange.end || this.sceneRange.start === this.sceneRange.end
+				? undefined : { kind: selected.kind, span: { ...this.selectionRange }, root: { ...this.sceneRange } },
+		};
 	}
 
 	/** Authoring admission reads the producer, even when only an API provider changed. */

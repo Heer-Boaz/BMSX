@@ -154,16 +154,17 @@ export function createTestEditorCloseDependencies(t: TestContext, presentation: 
 }
 
 /** Real frontend parts share one surface owner and popup family without constructing a machine. */
-export function createTestEditorParts(
+export function createTestEditorWorkspace(
 	t: TestContext,
 	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
 	contributions?: EditorPaneContributions,
 	workArea?: Readonly<RectBounds>,
-): EditorParts {
+) {
 	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces, workArea);
 	const contextMenu = presentation.contextMenu;
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
-		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main));
+		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main, main),
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); });
 	main.layout(presentation.workArea);
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
@@ -173,7 +174,16 @@ export function createTestEditorParts(
 		layoutMain: () => { main.layout(presentation.workArea); parts.main.layout(main.documentBounds); },
 	});
 	t.after(() => { parts.dispose(); main.dispose(); contextMenu.dispose(); surfaces.dispose(); });
-	return parts;
+	return { editorParts: parts, mainWorkspace: main };
+}
+
+export function createTestEditorParts(
+	t: TestContext,
+	commands: EditorCommandRunner = { isEnabled: () => false, execute() {} },
+	contributions?: EditorPaneContributions,
+	workArea?: Readonly<RectBounds>,
+): EditorParts {
+	return createTestEditorWorkspace(t, commands, contributions, workArea).editorParts;
 }
 
 /** Editor-group lifecycle used by tests that exercise workspace and navigation owners. */

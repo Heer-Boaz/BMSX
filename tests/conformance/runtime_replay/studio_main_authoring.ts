@@ -1,4 +1,5 @@
 import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
+import { UnavailableScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/unavailable_primary';
 import { openSceneFixture } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -77,6 +78,14 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	check(editor.mainWorkspace.primary === client && client.consumer.selectionRange.start === selected.start
 		&& client.consumer.selectionRange.end === selected.end,
 		'main: independent document caret navigation cannot replace primary selection');
+	await test.runPaletteCommand('Go: Back');
+	const restored = editor.mainWorkspace.primary;
+	check(restored instanceof ScenePrimaryClient && restored !== client && restored.consumer.workingCopy === model
+		&& restored.consumer.selectionRange.start === selected.start && restored.consumer.selectionRange.end === selected.end,
+		'main: Back restores the exact authored location through a fresh primary attachment');
+	await test.runPaletteCommand('Go: Forward');
+	check(editor.editorParts.main.activeGroup.model.activeTab === input,
+		'main: Forward returns to the independent retained Source view');
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {
 			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-source`);
@@ -85,13 +94,42 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		await press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
 	await press('ControlLeft', 'KeyW');
-	check(editor.mainWorkspace.primary === client && model.buffer.getText() === accepted && model.dirty && !editor.actionPrompt.visible,
+	check(editor.mainWorkspace.primary === restored && model.buffer.getText() === accepted && model.dirty && !editor.actionPrompt.visible,
 		'main: closing Source neither prompts for nor discards the working copy retained by Main');
-	await click(client.view.layout.sourceBounds); await press('ControlLeft', 'KeyZ');
+	if (!(restored instanceof ScenePrimaryClient)) throw new Error('main: restored Scene client required');
+	await click(restored.view.layout.sourceBounds); await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty,
 		'main: the retained authoring control consumes the same canonical source history after document close');
+	await press('ContextMenu'); await test.clickContextCommand('editor.source');
+	await press('ControlLeft', 'KeyA'); await press('Backspace');
+	check(model.buffer.getText() === '' && restored.consumer.availability === 'unavailable',
+		'main: deleting the exact authored declaration leaves its retained reference unavailable');
+
+	// Exercise initial-recovery attachment explicitly; UI input above produced the missing subject.
+	const recovery = editor.mainWorkspace.beginRestore();
+	try {
+		check(await recovery.restore(editor.mainWorkspace.serialize(), (record, surface, scope, isCurrent) =>
+			editor.restorePrimaryClient(record, surface, scope, isCurrent)), 'main: unavailable reference admits its own recovery presentation');
+	} finally { recovery.dispose(); }
+	const unavailable = editor.mainWorkspace.primary;
+	check(unavailable instanceof UnavailableScenePrimaryClient && unavailable.getWorkingCopies()[0] === model,
+		'main: recovery retains the real source model without fabricating a Scene context');
+	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
+	for (let font = 0; font < 2; font++) {
+		for (let theme = 0; theme < 2; theme++) {
+			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-unavailable`);
+			await press('ControlLeft', 'AltLeft', 'KeyT');
+		}
+		await press('ControlLeft', 'ShiftLeft', 'KeyT');
+	}
+	await press('Tab'); await press('Enter');
+	check(editor.editorParts.main.activeGroup.model.activeTab?.kind === 'code_editor',
+		'main: unavailable presentation exposes Source through its actual keyboard action control');
+	await press('ControlLeft', 'KeyZ');
+	check(model.buffer.getText() === original && !model.dirty && editor.mainWorkspace.primary === unavailable,
+		'main: Source Undo cannot silently rebind the unavailable persisted subject');
 	await test.runPaletteCommand('Workspace: Clear Primary Authoring');
-	check(editor.mainWorkspace.primary === undefined && !client.control.hasView && !client.consumer.isCurrent,
+	check(editor.mainWorkspace.primary === undefined && !restored.control.hasView && !restored.consumer.isCurrent,
 		'main: explicit clear releases its actual controls and domain context');
 	await close();
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');

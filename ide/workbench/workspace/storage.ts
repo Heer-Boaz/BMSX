@@ -50,12 +50,15 @@ let storage: KeyValueStorage = null;
 let clock: HostClock = null;
 let logOutput: LogOutput = null;
 let unsubscribeEditorParts: (() => void) | undefined;
+let unsubscribeMainWorkspace: (() => void) | undefined;
 let unsubscribeModelSaved: (() => void) | undefined;
 
 export async function shutdownWorkspaceStorage(): Promise<void> {
 	unsubscribeEditorParts?.();
+	unsubscribeMainWorkspace?.();
 	unsubscribeModelSaved?.();
 	unsubscribeEditorParts = undefined;
+	unsubscribeMainWorkspace = undefined;
 	unsubscribeModelSaved = undefined;
 	cancelWorkspaceAutosave();
 	try {
@@ -254,6 +257,7 @@ export async function restoreWorkspaceStorageSession(
 	catalog = sourceCatalog;
 	debuggerState = runtimeDebuggerState;
 	unsubscribeEditorParts = editor.editorParts.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
+	unsubscribeMainWorkspace = editor.mainWorkspace.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
 	unsubscribeModelSaved = editorTextModelService.onDidSaveModel(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles));
 	if (restorePayload !== payload) {
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);

@@ -11,17 +11,27 @@ import {
 } from './models';
 
 export async function applyWorkspaceAutosavePayload(
-	editor: Pick<CartEditor, 'editorParts' | 'editorInputSerializers' | 'setFontVariant'>,
+	editor: Pick<CartEditor, 'editorParts' | 'editorInputSerializers' | 'mainWorkspace' | 'restorePrimaryClient' | 'setFontVariant'>,
 	catalog: WorkspaceSourceCatalog,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
 	editor.editorParts.clear();
 	editorTextModelService.clear();
-	editor.setFontVariant(payload.fontVariant);
-	await restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords);
-	if (!await editor.editorParts.restore(payload.editorParts, editor.editorInputSerializers)) return;
-	debuggerState.breakpoints.restore(payload.breakpoints);
+	const primary = editor.mainWorkspace.beginRestore();
+	const documents = editor.editorParts.beginRestore();
+	try {
+		editor.setFontVariant(payload.fontVariant);
+		await restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords);
+		const primaryRestored = primary.restore(payload.mainWorkspace, (record, surface, scope, isCurrent) =>
+			editor.restorePrimaryClient(record, surface, scope, isCurrent));
+		const documentsRestored = documents.restore(payload.editorParts, editor.editorInputSerializers,
+			{ preserveFocus: payload.editorParts.active === 0 && payload.mainWorkspace.activeClient === 'primary' });
+		const [restoredPrimary, restoredDocuments] = await Promise.all([primaryRestored, documentsRestored]);
+		if (!restoredDocuments) return;
+		if (restoredPrimary && payload.editorParts.active === 0) primary.focusPrimary();
+		debuggerState.breakpoints.restore(payload.breakpoints);
+	} finally { primary.dispose(); documents.dispose(); }
 }
 
 export function hydrateDirtyFiles(

@@ -204,7 +204,10 @@ export class EditorPart {
 				layout: () => { if (!this.retired) this.relayout(); },
 			}, presented);
 		group.setOpenAdmission(this.operationValue === 'none');
-		this.groupSubscriptions.set(group, [group.onWillFocus(() => this.prepareGroupFocus(group)), group.model.onDidChange(() => {
+		this.groupSubscriptions.set(group, [group.onWillFocus(() => this.prepareGroupFocus(group)),
+			group.panes.onDidBeginOpen(() => {
+				if (group.openingAdmitted && this.groups.includes(group)) this.restoreLifetime?.abort();
+			}), group.model.onDidChange(() => {
 			if (this.restoreLifetime !== undefined && this.groups.includes(group)) this.restoreLifetime.abort();
 			if (group === this.activeGroup && this.window !== undefined) this.window.model.title = group.model.activeTab?.title ?? 'Editor';
 			this.options.onDidChange();
@@ -508,7 +511,7 @@ export class EditorPart {
 		for (const listener of this.groupListeners) listener();
 		this.syncSashes(); this.relayout(); this.options.onDidChange();
 	}
-	public async restore(state: SerializedEditorPart, serializers: EditorInputSerializers): Promise<boolean> {
+	public async restore(state: SerializedEditorPart, serializers: EditorInputSerializers, isCurrent?: () => boolean): Promise<boolean> {
 		if (this.retired || this.surface.retired || this.operationValue !== 'none') return false;
 		this.restoreLifetime?.abort();
 		const lifetime = new AbortController(); this.restoreLifetime = lifetime;
@@ -529,7 +532,7 @@ export class EditorPart {
 		};
 		try {
 			const layout = await restore(state.layout);
-			if (layout === undefined || lifetime.signal.aborted) return false;
+			if (layout === undefined || lifetime.signal.aborted || isCurrent?.() === false) return false;
 			for (const group of this.groups) {
 				retired.push(group); group.setOpenAdmission(false);
 				for (const unbind of this.groupSubscriptions.get(group)!) unbind();

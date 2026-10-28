@@ -12,7 +12,7 @@ import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runti
 import { resolveWorkspacePath } from '../../ide/workspace/path';
 import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 import { createTestRuntimeSourceState, createTestRuntime, createTestRuntimeRomPayload } from '../helpers/runtime_sources';
-import { createTestEditorParts } from '../helpers/editor_panes';
+import { createTestEditorWorkspace } from '../helpers/editor_panes';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -70,7 +70,7 @@ function fixture(t: TestContext) {
 		registerLuaSourceRecord(system, createScenarioTestSourceRecord(`${module}.lua`, 0, '', `system/${module}.lua`));
 	}
 	const sources = createTestRuntimeSourceState(system, [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
-	const editorParts = createTestEditorParts(t);
+	const { editorParts, mainWorkspace } = createTestEditorWorkspace(t);
 	const group = editorParts.main.activeGroup;
 	const behavior = new BehaviorLensController(sources, null, new BehaviorSourceDocuments(editorTextModelService, sources.catalog), () => assert.fail('metadata must not start an FSM layout worker'), null, null, null);
 	const scene = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
@@ -93,7 +93,7 @@ function fixture(t: TestContext) {
 	t.after(() => { scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
-	return { sources, group, editorParts, behavior, scene, scenario, serializers, model, runtime };
+	return { sources, group, editorParts, mainWorkspace, behavior, scene, scenario, serializers, model, runtime };
 }
 
 test('group round-trip restores ordered clean/dirty views, preview and distinct definitions sharing one hydrated model', async t => {
@@ -123,8 +123,10 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const dirtySource = f.model.buffer.getText();
 	workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath('game', TEST_CARTRIDGE_CONTEXT_IDS[0], 'definitions.lua'), { contents: dirtySource, updatedAt: 50 });
 	const generation = JSON.parse(JSON.stringify({ dirtyFiles: [{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', updatedAt: 50 }],
-		editorParts: f.editorParts.serialize(f.serializers), fontVariant: 'tiny', breakpoints: [] }));
-	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, editorInputSerializers: f.serializers, setFontVariant() {} },
+		editorParts: f.editorParts.serialize(f.serializers), mainWorkspace: f.mainWorkspace.serialize(), fontVariant: 'tiny', breakpoints: [] }));
+	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, mainWorkspace: f.mainWorkspace,
+		async restorePrimaryClient() { return assert.fail('document fixture has no primary contribution'); },
+		editorInputSerializers: f.serializers, setFontVariant() {} },
 		f.sources.catalog, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);
 	const restoredGroup = f.editorParts.main.activeGroup;
 	const after = restoredGroup.model.serialize(f.serializers);
@@ -214,6 +216,25 @@ test('source fingerprint is retained by buffer version and shared by views, not 
 	const changed = getTextSnapshotFingerprint(model.buffer);
 	assert.notEqual(changed, first); assert.equal(changed.length, first.length); assert.notEqual(changed.hash, first.hash);
 	input.dispose();
+});
+
+test('retained Scene presentation publishes source and reading changes without a document control', t => {
+	const f = fixture(t), input = new SceneEditorInput(f.model, f.scene.documents);
+	input.view.refresh();
+	let changes = 0;
+	const unsubscribe = input.view.onDidChange(() => { changes++; });
+	input.view.section = 'details'; input.view.section = 'details';
+	assert.equal(changes, 1);
+	const scrollbar = input.view.details.scrollbar, track = { left: 0, top: 0, right: 3, bottom: 100 };
+	scrollbar.layout(track, 400, 100, 0); scrollbar.setScroll(20); scrollbar.setScroll(20);
+	assert.equal(changes, 2);
+	assert.equal(selectSceneOutlineRow(input.view, 1), true);
+	assert.equal(changes, 3);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- source generation\n' }]);
+	assert.equal(changes, 4);
+	unsubscribe(); input.dispose();
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retired view\n' }]);
+	assert.equal(changes, 4);
 });
 
 test('scene memento survives first layout and retains pending coordinates before its pane is attached', t => {

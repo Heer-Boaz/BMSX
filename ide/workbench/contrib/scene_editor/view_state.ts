@@ -23,7 +23,14 @@ export class SceneEditorViewState {
 	public outlineRevision = -1;
 	public outlineSourceVersion = -1;
 	public readonly outlineRanges = new Map<SceneOutlineElement, TrackedTextRange>();
-	public section: SceneEditorSection = 'outline';
+	private sectionValue: SceneEditorSection = 'outline';
+	private readonly changeListeners = new Set<() => void>();
+	public get section(): SceneEditorSection { return this.sectionValue; }
+	public set section(value: SceneEditorSection) {
+		if (this.sectionValue === value) return;
+		this.sectionValue = value;
+		this.notifyPresentationChanged();
+	}
 	public position: { outlineScroll: number | undefined; readonly detailsScroll: number } | undefined;
 	public sourceText = '';
 	public readonly sourceCaption: string;
@@ -47,10 +54,23 @@ export class SceneEditorViewState {
 	};
 
 	private readonly releaseRanges: () => void;
+	private readonly unsubscribeContent: () => void;
+	private readonly unsubscribeSelection: () => void;
+	private readonly unsubscribeDetailsScroll: () => void;
 
 	public constructor(public readonly authoring: SceneAuthoringContext) {
 		this.sourceCaption = computeResourceTabTitle(authoring.workingCopy.resource);
 		this.releaseRanges = authoring.workingCopy.trackRanges(this.outlineRanges);
+		this.unsubscribeContent = authoring.workingCopy.onDidChangeContent(() => this.notifyPresentationChanged());
+		this.unsubscribeSelection = authoring.onDidChangeSelection(() => this.notifyPresentationChanged());
+		this.unsubscribeDetailsScroll = this.details.scrollbar.onDidScroll(() => this.notifyPresentationChanged());
+	}
+	public onDidChange(listener: () => void): () => void {
+		this.changeListeners.add(listener);
+		return () => { this.changeListeners.delete(listener); };
+	}
+	public notifyPresentationChanged(): void {
+		for (const listener of this.changeListeners) listener();
 	}
 
 	public refresh(): void {
@@ -59,5 +79,8 @@ export class SceneEditorViewState {
 		installSceneOutline(this);
 	}
 
-	public dispose(): void { this.releaseRanges(); }
+	public dispose(): void {
+		this.unsubscribeContent(); this.unsubscribeSelection(); this.unsubscribeDetailsScroll();
+		this.releaseRanges(); this.changeListeners.clear();
+	}
 }

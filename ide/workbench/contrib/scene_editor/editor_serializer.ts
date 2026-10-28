@@ -1,6 +1,6 @@
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { EditorInputSerializer } from '../../services/editor/editor_serialization';
-import { captureTextFileModel, resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
+import { resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { SceneEditorController } from './controller';
 import { SceneEditorInput } from './editor_input';
@@ -14,7 +14,8 @@ export class SceneEditorInputSerializer implements EditorInputSerializer<SceneEd
 		private readonly controller: SceneEditorController) {}
 
 	public serialize(input: SceneEditorInput): string {
-		const state: SerializedSceneEditorInput = { source: captureTextFileModel(input.workingCopy), view: captureSceneEditorView(input.view) };
+		const reference = input.view.authoring.captureSourceReference();
+		const state: SerializedSceneEditorInput = { source: reference.source, view: captureSceneEditorView(input.view, reference) };
 		return JSON.stringify(state);
 	}
 

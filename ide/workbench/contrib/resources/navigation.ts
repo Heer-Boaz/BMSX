@@ -122,12 +122,18 @@ export class EditorNavigationController {
 
 	private async openHistoryEntry(pending: NavigationHistorySelection): Promise<void> {
 		const target = pending.target;
-		const group = target.owner;
+		const destination = target.target;
+		if (destination.kind === 'primary') {
+			try {
+				if (await destination.location.restore({ isCurrent: () => pending.isCurrent, preserveFocus: false })) pending.accept();
+			} finally { pending.dispose(); }
+			return;
+		}
+		const group = target.owner!;
 		const generation = group.panes.beginOpen();
 		const activation = inputFocus.revision;
 		let preserveFocus = false;
 		try {
-			const destination = target.target;
 			if (destination.kind === 'input') {
 				// This live destination already belongs to the group. History does
 				// not turn a surviving preview into an explicit Keep Open request.

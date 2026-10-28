@@ -2,28 +2,23 @@ import { mapTrackedTextRange, type EditorTextChange, type TrackedTextRange } fro
 import { rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { selectSceneOutlineRow, type SceneOutlineElement } from './outline';
 import type { SceneEditorViewState, SceneEditorSection } from './view_state';
+import type { SceneAuthoredSelectionReference, SceneAuthoredSourceReference } from './authoring_context';
 
 export type SceneEditorViewSnapshot = {
 	readonly section: SceneEditorSection;
-	readonly selected: { readonly kind: SceneOutlineElement['kind']; readonly span: TrackedTextRange; readonly root: TrackedTextRange } | undefined;
+	readonly selected: SceneAuthoredSelectionReference | undefined;
 	readonly collapsed: readonly TrackedTextRange[];
 	readonly outlineScroll: number;
 	readonly detailsScroll: number;
 };
 
-export function captureSceneEditorView(input: SceneEditorViewState): SceneEditorViewSnapshot {
-	const selected = input.outline.rows[input.outline.selectionIndex];
+export function captureSceneEditorView(input: SceneEditorViewState, reference: SceneAuthoredSourceReference = input.authoring.captureSourceReference()): SceneEditorViewSnapshot {
 	const collapsed: TrackedTextRange[] = [];
 	for (const root of input.outline.roots) if (root.collapsed) collapsed.push({ ...root.element.span });
 	const position = input.position;
 	return {
 		section: input.section,
-		selected: selected === undefined ? undefined : {
-			kind: selected.element.kind,
-			// The retained selection range is mapped even while the pane is hidden.
-			span: { ...input.authoring.selectionRange },
-			root: { ...(selected.parent === null ? selected : selected.parent).element.span },
-		},
+		selected: reference.selected,
 		collapsed,
 		outlineScroll: position?.outlineScroll === undefined ? input.outline.scroll : position.outlineScroll,
 		detailsScroll: position === undefined ? input.details.scrollTop : position.detailsScroll,

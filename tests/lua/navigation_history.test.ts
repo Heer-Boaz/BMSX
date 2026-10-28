@@ -337,7 +337,7 @@ test('a delayed resource open preserves a newer focus target in the same owning 
 	const popup = inputFocus.createTarget(group.tabFocusTarget);
 	const unbind = popup.bindKeyboard(() => {}); t.after(unbind);
 	popup.focus();
-	assert.equal(navigationState.activeGroup, group);
+	assert.equal(navigationState.activeOwner, group);
 	finish();
 	assert.equal(await pending, group.panes.openGeneration);
 	assert.equal(group.model.activeTab, candidate);

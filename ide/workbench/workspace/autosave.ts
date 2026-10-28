@@ -42,6 +42,9 @@ export function commitWorkspaceSessionLocally(
 	const context = workspaceState.context;
 	const recoveryIdentity = workspaceState.recoveryIdentity;
 	const rebuildDirtyFiles = !previousGeneration || (changes & WorkspaceAutosaveChange.DirtyFiles);
+	const mainWorkspace = !previousGeneration || rebuildDirtyFiles || (changes & WorkspaceAutosaveChange.EditorSession)
+		? editor.mainWorkspace.serialize(previousGeneration?.payload.mainWorkspace)
+		: previousGeneration.payload.mainWorkspace;
 	let dirtyFiles: PersistedDirtyEntry[];
 	let generationDirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
 	if (rebuildDirtyFiles) {
@@ -68,6 +71,7 @@ export function commitWorkspaceSessionLocally(
 	if (previousGeneration
 		&& dirtyFiles === previousGeneration.payload.dirtyFiles
 		&& editorParts === previousGeneration.payload.editorParts
+		&& mainWorkspace === previousGeneration.payload.mainWorkspace
 		&& breakpoints === previousGeneration.payload.breakpoints
 		&& fontVariant === previousGeneration.payload.fontVariant) {
 		return previousGeneration;
@@ -75,6 +79,7 @@ export function commitWorkspaceSessionLocally(
 	const payload: WorkspaceAutosavePayload = {
 		dirtyFiles,
 		editorParts,
+		mainWorkspace,
 		breakpoints,
 		fontVariant,
 	};

@@ -63,7 +63,7 @@ export function performHotResume(
 			|| operation.result !== null && operation.result.status !== 'completed') return;
 		const presentation = request.presentation;
 		if (selectionRevision !== runTargets.revision || presentation !== undefined
-			&& (navigationState.activeGroup !== presentation.group || presentation.generation !== presentation.group.panes.openGeneration)) return;
+			&& (navigationState.activeOwner !== presentation.group || presentation.generation !== presentation.group.panes.openGeneration)) return;
 		execution.requestExecution(true);
 		if (presentation !== undefined) deactivateEditor(editor, overlayRenderer);
 	});
@@ -112,7 +112,7 @@ export function performReboot(
 					? primary !== undefined && runTargets.complete(request.selectionRequest, primary)
 					: selectionRevision === runTargets.revision;
 				const presentation = request.presentation;
-				if (admitted && (presentation === undefined || navigationState.activeGroup === presentation.group
+				if (admitted && (presentation === undefined || navigationState.activeOwner === presentation.group
 					&& presentation.generation === presentation.group.panes.openGeneration)) {
 					execution.requestExecution(true);
 					if (presentation !== undefined) deactivateEditor(editor, overlayRenderer);

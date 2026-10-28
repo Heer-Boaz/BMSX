@@ -33,6 +33,9 @@ class FixtureMainClient implements MainWorkspaceClient {
 		this.commandTarget.canFocus = () => this.visible && this.disposed === 0;
 	}
 	public isCurrent(): boolean { return this.disposed === 0 && editorTextModelService.get(this.model.resource) === this.model; }
+	public serialize() { return { kind: 'scene' as const, value: this.model.identity.path }; }
+	public onDidChange(): () => void { return () => {}; }
+	public captureNavigationLocation() { return undefined; }
 	public attach(bounds: Readonly<RectBounds>): void { this.attached++; this.visible = true; copy_rect_bounds(this.bounds, bounds); }
 	public detach(): void { this.detached++; this.visible = false; this.commandTarget.release(); }
 	public layout(bounds: Readonly<RectBounds>): void { copy_rect_bounds(this.bounds, bounds); }
@@ -209,4 +212,36 @@ test('Main preserves both client minima below the combined width and reveals act
 	assert.ok(client.bounds.left >= f.main.bounds.left);
 	assert.equal(client.attached, 1); assert.equal(f.main.primary, client);
 	assert.equal(f.primary.buffer.getText(), source); assert.equal(f.primary.dirty, false);
+});
+
+test('restore transfers an admitted client lifetime even when its retirement callbacks start a newer pending request', async t => {
+	const f = primaryFixture(t); assert.equal(await f.open(f.primary), true);
+	const first = f.clients[0];
+	f.primary.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
+	const request = f.main.beginRestore(), snapshot = f.main.serialize();
+	let replacement: Promise<boolean> | undefined, restored: FixtureMainClient | undefined, generation = -1;
+	first.onDispose = () => { replacement = f.open(f.incoming); };
+	const admitted = await request.restore(snapshot, async (_record, _surface, scope) => {
+		restored = new FixtureMainClient(f.primary, scope); generation = scope.contextGeneration; return restored;
+	});
+	assert.equal(admitted, false, 'newer request supersedes initial focus restoration');
+	assert.ok(f.main.primary === restored, 'publication owns the still-current outgoing client');
+	assert.equal(restored!.scope.contextGeneration, generation, 'supersession does not retire an admitted scope');
+	assert.equal(restored!.disposed, 0); assert.equal(restored!.attached, 1);
+	f.main.focusPrimary(); f.key('Escape');
+	assert.equal(await replacement, false);
+	assert.ok(f.main.primary === restored); request.dispose();
+});
+
+test('a newer Main request published by restored layout intent cannot be overwritten by the older candidate', async t => {
+	const f = primaryFixture(t); assert.equal(await f.open(f.primary), true);
+	const request = f.main.beginRestore(), snapshot = { ...f.main.serialize(), splitRatio: 0.7 };
+	let restored: FixtureMainClient | undefined, replacement: Promise<boolean> | undefined;
+	const release = f.main.onDidChange(() => { release(); replacement = f.open(f.incoming); });
+	const admitted = await request.restore(snapshot, async (_record, _surface, scope) => {
+		restored = new FixtureMainClient(f.primary, scope); return restored;
+	});
+	assert.equal(admitted, false); assert.equal(await replacement, true);
+	assert.ok(f.main.primary === f.clients[1]); assert.equal(restored!.disposed, 1);
+	assert.equal(restored!.attached, 0); request.dispose();
 });

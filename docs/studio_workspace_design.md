@@ -1271,8 +1271,8 @@ than being serialized as layout mementos.
 ## Construction gates
 
 The group arrangement, normal routing, shell/host separation and permanent
-editor discovery are existing composition owners to preserve. The missing
-primary-context/region composition must build on them rather than replace them
+editor discovery are composition owners to preserve. Primary-context/region
+composition builds on them rather than replacing them
 with a universal docking framework. A layout that keeps a Scene document fixed
 in Main while forcing Source into a separate window does not satisfy the target.
 

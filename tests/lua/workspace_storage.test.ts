@@ -102,7 +102,7 @@ import { TextFileSaveService } from '../../ide/workbench/services/working_copy/t
 import { WORKBENCH_RESOURCE_VIEWER_ID } from '../../ide/workbench/contrib/resources/editor_input';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
-import { createTestEditorGroup, createTestEditorParts } from '../helpers/editor_panes';
+import { createTestEditorGroup, createTestEditorWorkspace } from '../helpers/editor_panes';
 
 class MockStorage implements KeyValueStorage {
 	private readonly store = new Map<string, string>();
@@ -400,6 +400,7 @@ function payload(
 	return {
 		dirtyFiles,
 		editorParts: { main: { layout: { kind: 'group', group: editorGroup }, active: 0, mru: [0], scrollX: 0, scrollY: 0 }, documents: [], active: 0, mru: [0] },
+		mainWorkspace: { primary: null, splitRatio: 0.5, scrollX: 0, activeClient: 'documents' },
 		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
 	};
@@ -443,7 +444,7 @@ function editorStub(
 	t: TestContext,
 ) {
 	installWorkspaceRestoreView();
-	const editorParts = createTestEditorParts(t);
+	const { editorParts, mainWorkspace } = createTestEditorWorkspace(t);
 	const unused = { serialize: () => assert.fail('unexpected editor kind in storage fixture'),
 		deserialize: () => assert.fail('unexpected editor reconstruction in storage fixture') };
 	const editorInputSerializers: EditorInputSerializers = {
@@ -456,6 +457,8 @@ function editorStub(
 		resourcePanel: null,
 		editorInputSerializers,
 		editorParts,
+		mainWorkspace,
+		async restorePrimaryClient() { return assert.fail('storage fixture has no primary contribution'); },
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};

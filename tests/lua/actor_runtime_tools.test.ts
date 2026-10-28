@@ -99,7 +99,8 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 	const commands = { isEnabled: () => false, execute() {} };
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
-		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main)); main.layout(presentation.workArea);
+		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main, main),
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }); main.layout(presentation.workArea);
 	const parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
 		mainPresentation: main,
 		commands, contextMenu, renderContext: presentation.renderContext,
