@@ -47,6 +47,48 @@ for (const button of [PointerButton.Primary, PointerButton.Secondary]) for (cons
 	assert.ok(view.selection === b); assert.equal(capture.active, false);
 });
 
+for (const gesture of [
+	{ name: 'node press', button: PointerButton.Primary, pan: false },
+	{ name: 'context press', button: PointerButton.Secondary, pan: false },
+	{ name: 'middle pan', button: PointerButton.Auxiliary, pan: false },
+	{ name: 'Space-primary pan', button: PointerButton.Primary, pan: true },
+] as const) test(`graph ${gesture.name} rejects a superseded focus request even when its exact live target returns`, t => {
+	const { view, a, b, model } = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService()), departing = focus.createTarget(), away = focus.createTarget();
+	let starts = 0, callbacks = 0;
+	control.setInput(view, { begin: () => { starts++; return undefined; } }); view.selection = b;
+	t.after(() => control.dispose());
+	departing.focus();
+	const target = control.focusTarget, context = target.scope.contextGeneration;
+	const unbind = departing.onDidBlur(() => {
+		unbind(); callbacks++; away.focus(); assert.ok(focus.admittedTarget === away);
+		target.focus(); assert.ok(focus.admittedTarget === target);
+	}); t.after(unbind);
+	const snapshot = { ...pointer(22, 22), pressedButtons: gesture.button, justPressedButtons: gesture.button };
+	assert.ok(view.hitTest(snapshot.viewportX, snapshot.viewportY) === a);
+	assert.equal(control.handlePointer(snapshot, 0, gesture.pan), Result.Rejected);
+	assert.equal(callbacks, 1); assert.ok(focus.admittedTarget === target);
+	assert.equal(target.scope.contextGeneration, context); assert.ok(view.model === model && view.selection === b);
+	assert.equal(capture.active, false); assert.equal(starts, 0);
+	assert.equal(capture.dispatch({ ...snapshot, viewportX: 40, justPressedButtons: 0 }, false, 20), false);
+});
+
+for (const button of [PointerButton.Primary, PointerButton.Secondary]) test(`graph button ${button} admits its exact node when blur only rebinds an unrelated sibling graph`, t => {
+	const current = fixture(), sibling = fixture(), replacement = fixture();
+	const focus = new InputFocusService(), capture = new PointerCaptureService();
+	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	const other = new WorkbenchGraphControl(focus, capture, new PointerHoverService());
+	control.setInput(current.view); current.view.selection = current.b;
+	other.setInput(sibling.view); other.focusTarget.focus();
+	t.after(() => { control.dispose(); other.dispose(); });
+	const unbind = other.focusTarget.onDidBlur(() => { unbind(); other.setInput(replacement.view); }); t.after(unbind);
+	assert.equal(control.handlePointer({ ...pointer(22, 22), pressedButtons: button, justPressedButtons: button }, 0),
+		button === PointerButton.Secondary ? Result.ContextMenu : Result.Selection);
+	assert.ok(focus.admittedTarget === control.focusTarget && current.view.selection === current.a);
+	assert.ok(current.view.model === current.model && replacement.view.selection === null);
+	assert.equal(capture.active, false);
+});
+
 test('clearing a graph attachment cannot erase the new view admitted by its blur callback', t => {
 	const original = fixture(), replacement = fixture(), focus = new InputFocusService(), capture = new PointerCaptureService();
 	const control = new WorkbenchGraphControl(focus, capture, new PointerHoverService());

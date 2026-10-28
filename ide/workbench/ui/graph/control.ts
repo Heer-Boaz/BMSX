@@ -288,8 +288,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		const end = this.hoverEnd, edge = this.connectionHandles?.edge;
 		const model = view.model, scope = this.focusTarget.scope, context = scope.contextGeneration, generation = this.inputGeneration;
 		if (secondary) this.cancelPointer();
-		this.focusTarget.focus();
-		if (this.inputGeneration !== generation || view.model !== model || scope.contextGeneration !== context || this.focus.admittedTarget !== this.focusTarget) return WorkbenchGraphPointerResult.Rejected;
+		if (!this.focusTarget.focus() || this.inputGeneration !== generation || view.model !== model
+			|| scope.contextGeneration !== context || this.focus.admittedTarget !== this.focusTarget) return WorkbenchGraphPointerResult.Rejected;
 		if (secondary) {
 			view.selection = hit;
 			return WorkbenchGraphPointerResult.ContextMenu;

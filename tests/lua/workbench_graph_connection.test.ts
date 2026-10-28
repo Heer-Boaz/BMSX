@@ -30,6 +30,20 @@ function fixture() {
 	return { ...f, focus, capture, control, pointer, press };
 }
 
+for (const end of ['source', 'target'] as const) test(`graph ${end} grip rejects a superseded focus request without starting a connection drag`, t => {
+	const f = fixture(), departing = f.focus.createTarget(), away = f.focus.createTarget();
+	t.after(() => f.control.dispose()); departing.focus();
+	const target = f.control.focusTarget, context = target.scope.contextGeneration;
+	const unbind = departing.onDidBlur(() => {
+		unbind(); away.focus(); assert.ok(f.focus.admittedTarget === away); target.focus();
+	}); t.after(unbind);
+	assert.equal(f.press(end), Result.Rejected);
+	assert.ok(f.focus.admittedTarget === target && f.view.selection === f.edge && f.view.model === f.model);
+	assert.equal(target.scope.contextGeneration, context); assert.equal(f.capture.active, false);
+	assert.equal(f.capture.dispatch(f.pointer(248, 146), false, 20), false);
+	assert.equal(f.interaction.starts.length, 0); assert.equal(f.interaction.drops.length, 0);
+});
+
 test('selected endpoint grips win over node headers and coincident parallel routes; press identity is latched', () => {
 	for (const end of ['source', 'target'] as const) {
 		const f = fixture();
