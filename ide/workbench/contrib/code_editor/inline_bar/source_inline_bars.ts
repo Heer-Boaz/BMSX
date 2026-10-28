@@ -35,7 +35,7 @@ export class SourceInlineBars {
 		const resultSpace = client.bottom - client.top - searchFieldHeight - renameHeight - lineJumpHeight
 			- constants.SEARCH_RESULT_SPACING - lineHeight * 6;
 		this.searchResultCapacity = this.find.state.visible
-			? Math.max(0, Math.min(constants.GLOBAL_SEARCH_RESULT_LIMIT, Math.trunc(resultSpace / this.searchResultEntryHeight))) : 0;
+			? Math.max(0, Math.trunc(resultSpace / this.searchResultEntryHeight)) : 0;
 		this.find.resultCapacity = this.searchResultCapacity;
 		this.find.ensureSearchSelectionVisible();
 		this.visibleSearchResults = this.find.state.visible

@@ -22,7 +22,7 @@ function fixture(t: TestContext, source = Array.from({ length: 200 }, () => 'x')
 	const client = { left: 0, top: 10, right: 384, bottom: 270 };
 	const code = createTestCodeControl(t, model, documents, clock, undefined, new EditorFont('tiny'), client);
 	const sources = {} as RuntimeSourceState;
-	const find = new EditorSearchController(code, sources.catalog), lineJump = new CodeEditorLineJump(code);
+	const find = new EditorSearchController(code), lineJump = new CodeEditorLineJump(code);
 	const rename = new RenameController(code, sources.catalog, new CrossFileRenameManager(sources.catalog));
 	const bars = new SourceInlineBars(code, find, rename, lineJump);
 	const layout = () => { bars.layout(client); resolveCodeAreaViewport(code); };
@@ -43,7 +43,7 @@ function manyResults(find: EditorSearchController): void {
 function capacityForBody(f: ReturnType<typeof fixture>): number {
 	const field = f.code.lineHeight + constants.SEARCH_BAR_MARGIN_Y * 2;
 	const available = f.client.bottom - f.client.top - field - constants.SEARCH_RESULT_SPACING - f.code.lineHeight * 6;
-	return Math.max(0, Math.min(constants.GLOBAL_SEARCH_RESULT_LIMIT, Math.trunc(available / (f.code.lineHeight * 2))));
+	return Math.max(0, Math.trunc(available / (f.code.lineHeight * 2)));
 }
 
 test('Source inline bars arrange inside the supplied pane origin and right edge', t => {

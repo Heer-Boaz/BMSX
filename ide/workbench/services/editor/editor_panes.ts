@@ -1,7 +1,5 @@
-import type { EditorPaneSelection } from './editor_selection';
-import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import type { EditorInput, EditorInputKind } from '../../common/editor_inputs';
-import type { EditorPane, EditorPaneClearReason, EditorPaneConstraints } from './editor_pane';
+import type { EditorPane, EditorPaneClearReason, EditorPaneConstraints, EditorPaneOpenOptions } from './editor_pane';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import type { EditorGroupView, EditorInputOpenResult } from './editor_group';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
@@ -15,12 +13,6 @@ export type EditorPaneContribution<TInput extends EditorInput> = {
 
 export type EditorPaneContributions = {
 	[TKind in EditorInputKind]: EditorPaneContribution<Extract<EditorInput, { kind: TKind }>>;
-};
-
-export type EditorPaneOpenOptions = {
-	readonly selection?: EditorTextSelection;
-	readonly navigationSelection?: EditorPaneSelection;
-	readonly preserveFocus?: boolean;
 };
 
 /** Owns the active editor pane and its input lifecycle for one editor group. */
@@ -97,8 +89,12 @@ export class EditorPanes {
 
 	public openEditor(input: EditorInput, options: EditorPaneOpenOptions = {}): EditorInputOpenResult | undefined {
 		const { selection, navigationSelection, preserveFocus } = options;
+		let generation = this.openGenerationValue;
+		const current = () => options.isCurrent?.() !== false && navigationSelection?.isDisposed !== true && this.openGenerationValue === generation;
+		if (!current()) return;
 		const focusRevision = inputFocus.revision;
-		this.beginOpen();
+		generation = this.beginOpen();
+		if (!current()) return;
 		const activePane = this.activePaneValue;
 		const reusing = activePane !== null && activePane.input === input;
 		let pane: EditorPane<EditorInput>;
@@ -109,22 +105,24 @@ export class EditorPanes {
 				if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
 					|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 			}
+			if (!current()) return;
 			activePane.setOptions(selection, navigationSelection);
 			pane = activePane;
 		} else {
-			const generation = this.clearEditor();
-			if (this.openGenerationValue !== generation) return;
+			generation = this.clearEditor();
+			if (!current()) return;
 			pane = this.getOrCreatePane(input);
 			this.activePaneValue = pane;
-			pane.setInput(input, this.contentBounds, selection, navigationSelection);
+			pane.setInput(input, this.contentBounds, { ...options, isCurrent: current });
 		}
-		if (this.activePaneValue !== pane || pane.input !== input) return;
+		if (!current() || this.activePaneValue !== pane || pane.input !== input) return;
 		const layoutRevision = this.layoutRevision;
 		for (const listener of this.showListeners) {
 			listener(options);
-			if (this.activePaneValue !== pane || pane.input !== input) return;
+			if (!current() || this.activePaneValue !== pane || pane.input !== input) return;
 		}
 		if (!reusing && this.layoutRevision === layoutRevision) pane.layout(this.contentBounds);
+		if (!current() || this.activePaneValue !== pane || pane.input !== input) return;
 		const activated = !preserveFocus && (inputFocus.revision === focusRevision || inputFocus.target === null);
 		if (activated) pane.focus();
 		return { generation: this.openGenerationValue, activated };

@@ -1,6 +1,5 @@
 import type { PointerButtons } from '../../hosts/common/input/pointer_event';
 import type { KeyModifier } from '../../hosts/common/input/text';
-import type { RuntimeResource } from './resource';
 import type { LuaMemberCompletionContext } from '../../toolchain/ts/lua/semantic/completion';
 import type { TextField } from '../editor/ui/inline/text_field_model';
 import type { EditorTextModel } from '../editor/model/text_model';
@@ -67,16 +66,6 @@ export type SearchMatch = {
 	row: number;
 	start: number;
 	end: number;
-};
-
-export type GlobalSearchMatch = {
-	resource: RuntimeResource;
-	pathLabel: string;
-	row: number;
-	start: number;
-	end: number;
-	snippet: string;
-	path: string;
 };
 
 export type LuaCompletionKind =
@@ -191,20 +180,6 @@ export type CrtOptionsSnapshot = {
 	glowColor: [number, number, number];
 };
 
-export type SearchState = {
-	field: TextField;
-	visible: boolean;
-	query: string;
-	matches: SearchMatch[];
-	currentIndex: number;
-	job: SearchComputationJob;
-	displayOffset: number;
-	hoverIndex: number;
-	scope: 'local' | 'global';
-	globalMatches: GlobalSearchMatch[];
-	globalJob: GlobalSearchJob;
-};
-
 export type LineJumpState = {
 	field: TextField;
 	visible: boolean;
@@ -244,23 +219,4 @@ export type InlineInputOptions = {
 	singleLine?: boolean;
 	characterFilter?: (value: string) => boolean;
 	maxLength?: number;
-};
-
-export type SearchComputationJob = {
-	query: string;
-	nextRow: number;
-	matches: SearchMatch[];
-	firstMatchAfterCursor: number;
-	cursorRow: number;
-	cursorColumn: number;
-};
-
-export type GlobalSearchJob = {
-	query: string;
-	resources: RuntimeResource[];
-	resourceIndex: number;
-	currentLines: string[];
-	nextRow: number;
-	matches: GlobalSearchMatch[];
-	limitHit: boolean;
 };

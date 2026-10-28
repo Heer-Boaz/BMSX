@@ -11,6 +11,14 @@ import type { EditorFont } from '../../../editor/ui/view/font';
 
 export type EditorPaneClearReason = 'deactivate' | 'move';
 
+export type EditorPaneOpenOptions = {
+	readonly selection?: EditorTextSelection;
+	readonly navigationSelection?: EditorPaneSelection;
+	readonly preserveFocus?: boolean;
+	/** The requesting location can retire during model or attachment publication. */
+	readonly isCurrent?: () => boolean;
+};
+
 /** Intrinsic constraints of one retained input, independent of any attached control. */
 export type EditorPaneConstraints = { minimumWidth: number; minimumHeight: number; companionWidth: number | undefined };
 
@@ -32,7 +40,9 @@ export abstract class EditorPane<TInput extends EditorInput> {
 	/** Optional selection capability; editors without one still have an input identity. */
 	public getSelection?(): EditorPaneSelection;
 	/** The contribution owns source meaning and the canonical generation behind its selection. */
-	public getSourceLocation?(): EditorSourceLocation | undefined;
+	public getSourceLocation?(): EditorSourceLocation | undefined | Promise<EditorSourceLocation | undefined>;
+	/** Cheap selection capability; command presentation must not resolve or read source. */
+	public get canOpenSource(): boolean { return this.getSourceLocation !== undefined; }
 	private inputValue: TInput | null = null;
 	protected get hasInput(): boolean { return this.inputValue !== null; }
 
@@ -40,11 +50,13 @@ export abstract class EditorPane<TInput extends EditorInput> {
 		return this.inputValue!;
 	}
 
-	public setInput(input: TInput, bounds: Readonly<RectBounds>, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection): void {
+	public setInput(input: TInput, bounds: Readonly<RectBounds>, options: EditorPaneOpenOptions = {}): void {
+		if (options.isCurrent?.() === false || options.navigationSelection?.isDisposed) return;
 		this.inputValue = input;
 		this.contentBounds = bounds;
 		this.activate();
-		this.setOptions(selection, navigationSelection);
+		if (this.inputValue !== input || options.isCurrent?.() === false || options.navigationSelection?.isDisposed) return;
+		this.setOptions(options.selection, options.navigationSelection);
 	}
 
 	/** Selection options belong to the concrete view, never to input attachment. */

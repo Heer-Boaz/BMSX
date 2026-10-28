@@ -8,6 +8,7 @@ export type EditorSearchCommandId =
 	| 'resourceSearch'
 	| 'runtimeErrorFocus'
 	| 'findGlobal'
+	| 'workspaceSearch.run' | 'workspaceSearch.cancel' | 'workspaceSearch.matchCase' | 'workspaceSearch.includeShared'
 	| 'findLocal'
 	| 'lineJump'
 	| 'referenceSearch'

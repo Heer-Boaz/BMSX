@@ -176,7 +176,8 @@ Unit fixtures have their own entry rather than rebuilding the gameplay program.
 
 State belongs to the owner of its meaning, not automatically to the tab, pane or
 window that currently presents it. Canonical text models own source; contribution
-contexts own authored subjects, source correspondence and domain selection.
+contexts own authored subjects, queries or inspection sessions and their
+meaningful selections and source/session correspondence.
 Retained view state owns a particular presentation's reading intent. Attached
 controls own focus, drafts, gestures and transient UI; containers own placement
 and membership. Sharing a model does not implicitly share selection or view state.
@@ -186,7 +187,9 @@ retain every control after it is hidden.
 Navigation records a location supplied by the actual active owner: a document
 group or Main's primary contribution. Its bounded shared history owns inert
 bookmarks, not additional working-copy consumers or old control attachments.
-Contributions map and retire their own exact occurrences. Session storage records
+Contributions map and retire their own exact occurrences and query-result locations.
+Query progress extends observations; replacing a query retires its old locations
+independently of the input that remains open. Session storage records
 plain source-correspondence and view mementos separately from document topology;
 restoration establishes new contexts and controls over recovered canonical models.
 An unresolved primary reference remains explicitly Unavailable. Neither history
@@ -201,6 +204,11 @@ nonpersistent readonly input owns direction, lazy topology and selection; pane
 detachment retires only controls. It is not a working-copy consumer. Result
 Source commands obtain canonical-model and file-generation proof at navigation
 admission; captured coordinates are not current editing authority.
+Workspace Search retains its query, explicit source scope, computation and grouped
+file observations in `workbench/contrib/workspace_search/`. The shared working-copy
+source owner supplies canonical dirty text or unopened authored text without
+admitting an editor model for every searched file. Result navigation proves
+correspondence with the captured source; local Find stays with its Source control.
 
 ## Documents, inputs and panes
 

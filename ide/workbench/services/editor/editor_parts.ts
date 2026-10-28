@@ -768,7 +768,7 @@ export class EditorParts {
 				disposeSubscriptions();
 				for (const group of this.groupList) {
 					const active = group.model.activeTab;
-					if (active !== null && !group.activate(active.id, undefined, undefined, true)) return false;
+					if (active !== null && !group.activate(active.id, { preserveFocus: true })) return false;
 					if (!isCurrent()) return false;
 				}
 				if (inputFocus.interactionRevision === interaction) {

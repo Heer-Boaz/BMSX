@@ -74,7 +74,7 @@ function openVisual(f: ReturnType<typeof fixture>, kind: 'scene' | 'behavior' | 
 for (const kind of ['scene', 'behavior', 'animation'] as const)
 	test(`${kind} contributes a fresh canonical caret before a frame and shared Source to Side retains the visual input`, async t => {
 		const f = fixture(t), { group, input, pane } = openVisual(f, kind), model = input.workingCopy;
-		const before = pane.getSourceLocation!(); assert.ok(before !== undefined && before.selection !== undefined);
+		const before = await pane.getSourceLocation!(); assert.ok(before !== undefined && before.selection !== undefined);
 		const start = model.buffer.offsetAt(before.selection.row, before.selection.startColumn), prefix = '-- shifted before the next frame\n';
 		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
 		const text = model.buffer.getText(), version = model.version, source = t.mock.method(pane, 'getSourceLocation');
@@ -89,9 +89,28 @@ for (const kind of ['scene', 'behavior', 'animation'] as const)
 		assert.equal(model.buffer.getText(), text); assert.equal(model.version, version); assert.equal(model.canUndo, true);
 	});
 
+test('generic Source enablement follows the contribution selection capability without producing a location', async t => {
+	const f = fixture(t), { pane } = openVisual(f, 'scene'), source = t.mock.method(pane, 'getSourceLocation');
+	assert.equal(pane.canOpenSource, true);
+	let available = false;
+	t.mock.getter(pane, 'canOpenSource', () => available);
+	const generation = f.firstGroup.panes.openGeneration;
+	assert.equal(f.editor.commands.isEnabled('editor.sourceToSide', pane.commandTarget), false);
+	f.editor.commands.execute('editor.sourceToSide', pane.commandTarget);
+	assert.equal(source.mock.callCount(), 0); assert.equal(f.firstGroup.panes.openGeneration, generation);
+	assert.equal(f.firstPart.groups.length, 1);
+	available = true;
+	assert.equal(f.editor.commands.isEnabled('editor.sourceToSide', pane.commandTarget), true);
+	assert.equal(source.mock.callCount(), 0);
+	const opening = t.mock.method(f.editor.navigation, 'openSource');
+	f.editor.commands.execute('editor.sourceToSide', pane.commandTarget);
+	assert.equal(source.mock.callCount(), 1); assert.equal(opening.mock.callCount(), 1);
+	assert.ok(await opening.mock.calls[0].result !== undefined);
+});
+
 test('Scene Source to Side consumes the actual focused draft before reading the selected source generation', async t => {
 	const f = fixture(t), { group, input, pane } = openVisual(f, 'scene'), model = input.workingCopy;
-	const before = pane.getSourceLocation!(); assert.ok(before?.selection !== undefined);
+	const before = await pane.getSourceLocation!(); assert.ok(before?.selection !== undefined);
 	const start = model.buffer.offsetAt(before.selection.row, before.selection.startColumn), prefix = '-- accepted source draft\n';
 	const field = new ValueInput(pane.commandTarget, INTEGER_INPUT_FORMAT, () => model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]));
 	t.after(() => field.dispose()); field.setValue(1); field.layout(group.panes.contentBounds); field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
@@ -177,7 +196,7 @@ test('Lua Program generic Source to Side retains its exact program input and can
 	const f = fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'program.lua' })!;
 	f.editor.luaPrograms.openResource(f.firstGroup, resource, 'progression');
 	const input = f.firstGroup.model.activeTab; assert.ok(input?.kind === 'lua_program');
-	const pane = f.firstGroup.panes.activePane!, location = pane.getSourceLocation!(); assert.ok(location?.selection !== undefined);
+	const pane = f.firstGroup.panes.activePane!, location = await pane.getSourceLocation!(); assert.ok(location?.selection !== undefined);
 	const model = input.workingCopy, text = model.buffer.getText(), version = model.version;
 	const opening = t.mock.method(f.editor.navigation, 'openSource'); f.editor.commands.execute('editor.sourceToSide', pane.commandTarget);
 	assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result;

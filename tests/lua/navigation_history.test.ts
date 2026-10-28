@@ -74,6 +74,57 @@ test('bounded history owns disposal on duplicates, eviction, forward pruning and
 	assert.equal(unused.selection!.isDisposed, true);
 });
 
+test('a contribution location retires once after releasing its resources, including reentrant disposal', () => {
+	const location = new Location(1); let released = 0, retired = 0;
+	location.add({ dispose: () => { released++; } });
+	location.onDidRetire(() => {
+		assert.equal(location.isDisposed, true); assert.equal(released, 1);
+		retired++; location.dispose();
+	});
+	location.dispose(); location.dispose();
+	assert.equal(retired, 1); assert.equal(released, 1);
+});
+
+test('location retirement removes exact stacked destinations and revokes an outstanding Back decision', t => {
+	const group = createTestEditorGroup(); t.after(() => { resetNavigationHistoryState(); group.dispose(); });
+	resetNavigationHistoryState();
+	const back = entry(group, 'observed.lua', 1), forward = entry(group, 'other.lua', 2);
+	navigationState.back.push(back); navigationState.forward.push(forward);
+	const departure = entry(group, 'current.lua', 3), pending = selectNavigationHistoryEntry('back', departure)!;
+	back.selection!.dispose();
+	assert.equal(back.isDisposed, true); assert.equal(navigationState.back.length, 0);
+	assert.equal(pending.isCurrent, false); assert.equal(pending.accept(), false);
+	assert.ok(navigationState.forward[0] === forward && !forward.isDisposed);
+	pending.dispose(); assert.equal(departure.isDisposed, true);
+	forward.selection!.dispose(); assert.equal(navigationState.forward.length, 0); assert.equal(forward.isDisposed, true);
+	const retired = new Location(4); retired.dispose();
+	const late = new NavigationHistoryEntry({ kind: 'resource', resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'late.lua' },
+		editorId: WORKBENCH_TEXT_EDITOR_ID }, retired, group);
+	assert.equal(late.isDisposed, true);
+});
+
+test('history reset unsubscribes location retirement before releasing every owned selection', t => {
+	const group = createTestEditorGroup(); t.after(() => group.dispose()); resetNavigationHistoryState();
+	const back = [entry(group, 'a.lua', 1), entry(group, 'b.lua', 2), entry(group, 'c.lua', 3)];
+	const forward = [entry(group, 'd.lua', 4), entry(group, 'e.lua', 5)];
+	let retired = 0;
+	for (const captured of [...back, ...forward]) captured.selection!.onDidRetire(() => { retired++; });
+	navigationState.back.push(...back); navigationState.forward.push(...forward);
+	resetNavigationHistoryState();
+	assert.equal(retired, 5); assert.ok([...back, ...forward].every(captured => captured.isDisposed && captured.selection!.isDisposed));
+	assert.equal(navigationState.back.length, 0); assert.equal(navigationState.forward.length, 0);
+});
+
+test('location retirement at receiver opening releases a fresh unadmitted input without replacing the sender', t => {
+	const group = createTestEditorGroup(); t.after(() => group.dispose());
+	const retained = code('retained.lua'), offered = code('offered.lua'), location = new Location(1);
+	group.openEditor(retained); let disposed = 0; offered.onWillDispose(() => { disposed++; });
+	const unbind = group.panes.onDidBeginOpen(() => { unbind(); location.dispose(); }); t.after(unbind);
+	assert.equal(group.openEditor(offered, { navigationSelection: location }), undefined);
+	assert.equal(disposed, 1); assert.equal(group.model.contains(offered), false);
+	assert.ok(group.model.activeTab === retained && group.panes.activePane?.input === retained);
+});
+
 test('input close removes visual destinations from both stacks; resource destinations stay reopenable', t => {
 	const group = createTestEditorGroup(); t.after(() => group.dispose());
 	resetNavigationHistoryState();
@@ -172,7 +223,7 @@ test('one explicit navigation records a departure before mutating the same retai
 	original.dispose();
 	const current = createNavigationEntry()!;
 	const selected = selectNavigationHistoryEntry('back', current)!;
-	withNavigationCaptureSuspended(() => group.activate(input.id, undefined, selected.target.selection));
+	withNavigationCaptureSuspended(() => group.activate(input.id, { navigationSelection: selected.target.selection }));
 	assert.equal(selected.accept(), true);
 	const forward = navigationState.forward[0];
 	captureNavigation(() => { input.context.view.cursorRow = 1; });

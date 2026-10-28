@@ -113,7 +113,7 @@ test('retiring a target preserves a sibling capture and consumes the interrupted
 
 test('an empty Source budget retires its actual Find capture before the next held move', t => {
 	const code = codeFixture(t, 'tiny'), sources = {} as RuntimeSourceState;
-	const find = new EditorSearchController(code, sources.catalog), lineJump = new CodeEditorLineJump(code);
+	const find = new EditorSearchController(code), lineJump = new CodeEditorLineJump(code);
 	const rename = new RenameController(code, sources.catalog, new CrossFileRenameManager(sources.catalog));
 	const bars = new SourceInlineBars(code, find, rename, lineJump);
 	t.after(() => { find.dispose(); rename.dispose(); lineJump.dispose(); });

@@ -5,6 +5,9 @@ import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/
 import { UnavailableScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/unavailable_primary';
 import { openSceneFixture } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
+import { editorTextModelService } from '../../../ide/editor/model/model_service';
+import { WorkspaceSearchInput } from '../../../ide/workbench/contrib/workspace_search/editor_input';
+import { WorkspaceSearchPane } from '../../../ide/workbench/contrib/workspace_search/editor_pane';
 
 /** Standalone renderer workflow over a dedicated test cartridge and independent source fixtures. */
 export async function runStudioMainAuthoring(test: StudioFixture) {
@@ -97,6 +100,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		await press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
 	await testCallHierarchyResult(test, resource.contextId);
+	await testWorkspaceSearchResult(test, resource.contextId);
 	await press('ControlLeft', 'KeyW');
 	check(editor.mainWorkspace.primary === restored && model.buffer.getText() === accepted && model.dirty && !editor.actionPrompt.visible,
 		'main: closing Source neither prompts for nor discards the working copy retained by Main');
@@ -175,4 +179,37 @@ async function testCallHierarchyResult(test: StudioFixture, contextId: string): 
 	await test.press('ControlLeft', 'KeyW');
 	await test.press('ControlLeft', 'KeyB');
 	check(!panel.isVisible() && editor.mainWorkspace.primary === main, 'calls: closing the activity leaves primary authoring untouched');
+}
+
+/** Fixture setup admits the independent source namespace; query editing and navigation use real controls. */
+async function testWorkspaceSearchResult(test: StudioFixture, contextId: string): Promise<void> {
+	const editor = test.ide.editor, panel = editor.resourcePanel, main = editor.mainWorkspace.primary;
+	const selected = panel.files.selectedNode, scroll = panel.scroll, horizontal = panel.hscroll;
+	const group = editor.editorParts.activeGroup;
+	const result = group.openProducedEditor(() => new WorkspaceSearchInput(editorTextModelService, test.ide.sources.catalog, contextId, test.clock));
+	check(result instanceof WorkspaceSearchInput, 'search: fixture admits an independent retained query');
+	if (!(result instanceof WorkspaceSearchInput)) throw new Error('search: actual retained query required');
+	const pane = group.panes.activePane;
+	if (!(pane instanceof WorkspaceSearchPane)) throw new Error('search: real query control required');
+	pane.focusQuery();
+	await test.clipboard.writeText('launch'); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
+	await test.until(() => result.search.status === 'complete', 'search: explicit query completes over authored fixture source');
+	check(result.search.files.some(file => file.resource.contextId === contextId && file.resource.path === 'calls.lua'),
+		'search: actual field query observes the admitted source namespace');
+	for (let font = 0; font < 2; font++) {
+		for (let theme = 0; theme < 2; theme++) {
+			await test.capture?.(`search-${editor.fontVariant}-theme-${theme}`);
+			await test.press('ControlLeft', 'AltLeft', 'KeyT');
+		}
+		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
+	}
+	await test.press('ArrowDown'); await test.press('ArrowDown'); await test.press('Enter');
+	await test.until(() => group.model.activeTab?.kind === 'code_editor', 'search: result opens its exact canonical Source');
+	check(panel.files.selectedNode === selected && panel.scroll === scroll && panel.hscroll === horizontal && editor.mainWorkspace.primary === main,
+		'search: navigating the observation leaves Files reading state and Main authoring intact');
+	await test.runPaletteCommand('Go: Back');
+	check(group.model.activeTab === result && result.tree.rows[result.tree.selectionIndex]?.element.match !== undefined,
+		'search: Back restores the retained query and selected observation');
+	await test.press('ControlLeft', 'KeyW'); await test.press('ControlLeft', 'KeyW');
+	check(editor.mainWorkspace.primary === main, 'search: closing the activity does not close primary authoring');
 }

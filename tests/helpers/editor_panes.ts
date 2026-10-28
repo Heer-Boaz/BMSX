@@ -208,6 +208,7 @@ export function createTestEditorPaneContributions(
 	codePane?: (scope: InputFocusScope, group: EditorGroupView) => EditorPane<CodeEditorInput>,
 ): EditorPaneContributions {
 	return {
+		workspace_search: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'workspace_search' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		call_hierarchy: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'call_hierarchy' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		home: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'home' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },
 		play_session: { create: group => new TestEditorPane<Extract<EditorInput, { kind: 'play_session' }>>(group.focusScope, activateViewInput), measure: measureTestEditor },

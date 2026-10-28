@@ -1,4 +1,5 @@
 import type { CallHierarchyInput } from '../contrib/call_hierarchy/editor_input';
+import type { WorkspaceSearchInput } from '../contrib/workspace_search/editor_input';
 import type { HomeInput } from '../contrib/home/editor_input';
 import type { AnimationEditorInput } from '../contrib/animation/editor_input';
 import type { PlayEditorInput } from '../contrib/play/editor_input';
@@ -26,6 +27,7 @@ import type { WorkspaceEditReviewInput } from '../contrib/edit_review/editor_inp
 /** Retained workbench-domain views, independent of their group, pane or tab control. */
 export type EditorInput = (
 	| CallHierarchyInput
+	| WorkspaceSearchInput
 	| HomeInput
 	| PlayEditorInput
 	| AnimationEditorInput

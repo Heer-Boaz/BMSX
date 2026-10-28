@@ -133,7 +133,7 @@ function gestureFixture(t: TestContext, width = 384, left = 0, top = 0,
 	t.after(() => { strip.cancelDrag(); for (const model of models) model.dispose(); });
 	layout();
 	return { parts, part, view, group, strip, bar, bounds, scope, add, item, begin, dispatch, frame, layout,
-		draw: layout, activate: (input: EditorInput) => view.activate(input.id, undefined, undefined, true),
+		draw: layout, activate: (input: EditorInput) => view.activate(input.id, { preserveFocus: true }),
 		setFont: (variant: 'tiny' | 'msx') => configureFontVariant(variant), sibling };
 }
 

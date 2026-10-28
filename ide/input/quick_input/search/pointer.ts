@@ -5,11 +5,6 @@ import type { EditorSearchController } from '../../../workbench/contrib/code_edi
 import type { SourceInlineBars } from '../../../workbench/contrib/code_editor/inline_bar/source_inline_bars';
 import type { PointerSnapshot } from '../../../common/models';
 
-function applySearchPointerSelection(find: EditorSearchController, index: number, preview = false): void {
-	find.applySearchSelection(index, { preview });
-	if (!preview) find.openSelectedGlobalMatch();
-}
-
 export function handleSearchPointer(find: EditorSearchController, bars: SourceInlineBars,
 	snapshot: PointerSnapshot, justPressed: boolean): boolean {
 	const state = find.state, bounds = bars.searchBounds;
@@ -35,13 +30,7 @@ export function handleSearchPointer(find: EditorSearchController, bars: SourceIn
 	if (indexWithin >= bars.visibleSearchResults) return true;
 	const hoverIndex = state.displayOffset + indexWithin;
 	state.hoverIndex = hoverIndex;
-	if (justPressed) {
-		if (hoverIndex !== state.currentIndex) {
-			state.currentIndex = hoverIndex;
-			find.ensureSearchSelectionVisible();
-			if (state.scope === 'local') applySearchPointerSelection(find, hoverIndex, true);
-		}
-		applySearchPointerSelection(find, hoverIndex);
-	}
+	if (justPressed) find.applySearchSelection(hoverIndex);
+
 	return true;
 }

@@ -21,7 +21,7 @@ import test from 'node:test';
 
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../ide/common/models';
 import type { EditorTextSelection } from '../../ide/editor/navigation/text_selection';
-import { EditorPane, measureUnconstrainedEditor, type EditorPaneConstraints } from '../../ide/workbench/services/editor/editor_pane';
+import { EditorPane, measureUnconstrainedEditor, type EditorPaneConstraints, type EditorPaneOpenOptions } from '../../ide/workbench/services/editor/editor_pane';
 import type { EditorPaneContribution } from '../../ide/workbench/services/editor/editor_panes';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { measureSourceEditor } from '../../ide/workbench/contrib/code_editor/constraints';
@@ -68,9 +68,9 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 		this.unbindKeyboard();
 	}
 
-	public override setInput(input: TInput, bounds: Readonly<RectBounds>, selection?: EditorTextSelection): void {
+	public override setInput(input: TInput, bounds: Readonly<RectBounds>, options?: EditorPaneOpenOptions): void {
 		this.setInputCount += 1;
-		super.setInput(input, bounds, selection);
+		super.setInput(input, bounds, options);
 	}
 
 	public override setOptions(selection?: EditorTextSelection): void {
@@ -134,6 +134,7 @@ function createEditorPanes(measureCode: EditorPaneContribution<CodeEditorInput>[
 	let codeFactoryCount = 0;
 	let resourceFactoryCount = 0;
 	const group = new EditorGroupView({
+		workspace_search: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'workspace_search' }>>(group.focusScope), measure: measureUnconstrainedEditor },
 		call_hierarchy: { create: group => new RecordingEditorPane<Extract<EditorInput, { kind: 'call_hierarchy' }>>(group.focusScope), measure: measureUnconstrainedEditor },
 		home: { create: group => new RecordingEditorPane<HomeInput>(group.focusScope), measure: measureUnconstrainedEditor },
 		play_session: { create: group => new RecordingEditorPane(group.focusScope), measure: measureUnconstrainedEditor },

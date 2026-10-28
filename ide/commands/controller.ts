@@ -47,6 +47,7 @@ import { getTextFileRuntimeSourceInstallations } from '../workbench/services/wor
 import { showMoveDestination, showOpenWindows } from '../workbench/services/editor/open_windows';
 import { findWorkbenchWindow } from '../workbench/ui/window/control';
 import { showGroupOpenEditors } from '../workbench/services/editor/open_editors';
+import { workspaceState } from '../workbench/workspace/state';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
@@ -151,7 +152,7 @@ export class IdeCommandController {
 		switch (command) {
 			case 'editor.source': case 'editor.sourceToSide': {
 				const pane = group.panes.activePane;
-				if (pane === null || pane.input !== editor || pane.getSourceLocation === undefined) return;
+				if (pane === null || pane.input !== editor || !pane.canOpenSource) return;
 				void this.editor.navigation.openSource(group, () => pane.getSourceLocation!(), command === 'editor.sourceToSide' ? 'side' : 'default');
 				return;
 			}
@@ -383,7 +384,7 @@ export class IdeCommandController {
 				return;
 		}
 		if (isEditorSearchCommand(command)) {
-			executeEditorSearchCommand(this.editor, this.sources, command, group, target);
+			executeEditorSearchCommand(this.editor, this.sources, command, group, target, this.clock);
 			return;
 		}
 		if (isEditorViewCommand(command)) {
@@ -459,9 +460,10 @@ export class IdeCommandController {
 		switch (command) {
 			case 'editor.source': case 'editor.sourceToSide': {
 				const pane = group.panes.activePane;
-				return group.openingAdmitted && pane !== null && pane.input === editor && pane.getSourceLocation !== undefined;
+				return group.openingAdmitted && pane !== null && pane.input === editor && pane.canOpenSource;
 			}
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
+			case 'findGlobal': return workspaceState.context !== null;
 			case 'workspace.focusPrimary': case 'workspace.clearPrimary': return this.editor.mainWorkspace.primary !== undefined;
 			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
 			case 'group.close': return this.editor.editorParts.canCloseGroup(group);

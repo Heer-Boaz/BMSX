@@ -26,7 +26,7 @@ function fixture(t: TestContext) {
 	const registry = f.sources.catalog.getContext(resource.contextId).luaSources;
 	const open = () => {
 		f.first.focus();
-		executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, f.first.commandTarget);
+		executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, f.first.commandTarget, f.host.clock);
 		f.editor.quickInput.model.filter('third.lua');
 		assert.equal(f.editor.quickInput.visible, true);
 		assert.equal(f.editor.quickInput.model.list.rows.length, 1);
@@ -111,7 +111,7 @@ test('Alt acceptance reuses a maximized same-part side without fabricating anoth
 
 test('a null prepared origin can open its captured group without a fabricated control', async t => {
 	const f = fixture(t); inputFocus.setTarget(null);
-	executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, null);
+	executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, null, f.host.clock);
 	f.editor.quickInput.model.filter('third.lua'); f.editor.quickInput.accept(); await setImmediate();
 	assert.ok(f.firstGroup.model.activeTab instanceof CodeEditorInput && f.firstGroup.model.activeTab.workingCopy.resource === f.resource);
 	assert.ok(f.editor.editorParts.activeGroup === f.firstGroup);
@@ -130,7 +130,7 @@ test('the prepared origin follows ordinary Source draft blur before retaining it
 	edit.open({ model: f.firstInput.workingCopy, tree, row, parse: text => ({ value: text }),
 		apply: text => f.firstInput.workingCopy.pushEditOperations([{ offset: 14, deleteLength: 1, text }]) }, '1');
 	setFieldText(edit.control.field, '2', true);
-	executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, edit.control.field.focusTarget);
+	executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, edit.control.field.focusTarget, f.host.clock);
 	assert.equal(edit.active, false);
 	assert.equal(f.firstInput.workingCopy.buffer.getText(), f.source.replace('1', '2'));
 	assert.ok(f.editor.quickInput.invocationOrigin === f.first.commandTarget);
@@ -145,7 +145,7 @@ for (const side of [false, true]) test(`Go to File ${side ? 'Alt' : 'plain'} acc
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	f.sources.catalog.registerTextSources(f.sources.systemContextId, [{ type: 'data', resid: 'map', source_path: path, sourcemeta: { text: source } }]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
-	f.first.focus(); executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, f.first.commandTarget);
+	f.first.focus(); executeEditorSearchCommand(f.editor, f.sources, 'resourceSearch', f.firstGroup, f.first.commandTarget, f.host.clock);
 	f.editor.quickInput.model.filter(path); f.editor.quickInput.accept(side ? KeyModifier.alt : KeyModifier.none); await setImmediate();
 	const destination = f.editor.editorParts.activeGroup, input = destination.model.activeTab;
 	assert.ok(input instanceof CartMapInput && input.resource === resource && input.workingCopy === editorTextModelService.get(resource));

@@ -115,7 +115,7 @@ test('navigation bookmarks and text Undo do not restore an earlier wrapping pref
 test('Back and Forward restore Source locations without reverting a later wrap toggle', async t => {
 	const f = createActualSourcePanes(t), commands = f.editor.commands;
 	f.first.focus(); resetNavigationHistoryState();
-	assert.equal(f.firstGroup.activate(f.firstInput.id, { row: 1, startColumn: 3, endColumn: 3 }), true);
+	assert.equal(f.firstGroup.activate(f.firstInput.id, { selection: { row: 1, startColumn: 3, endColumn: 3 } }), true);
 	commands.execute('wrap', f.first.commandTarget);
 	await f.editor.navigation.goBackward();
 	assert.equal(f.firstInput.context.view.cursorRow, 0); assert.equal(f.firstInput.context.view.cursorColumn, 0);
@@ -133,7 +133,7 @@ test('cross-mode history reveals its canonical source caret instead of restoring
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'long.lua' })!;
 	const input = resolveLuaCodeEditorInput(f.sources.catalog, resource);
 	f.firstGroup.openEditor(input, { pinned: true }); f.update();
-	f.firstGroup.activate(input.id, { row: 60, startColumn: 120, endColumn: 120 });
+	f.firstGroup.activate(input.id, { selection: { row: 60, startColumn: 120, endColumn: 120 } });
 	resetNavigationHistoryState();
 	f.firstGroup.activate(f.firstInput.id);
 	f.firstGroup.activate(input.id);
@@ -156,7 +156,7 @@ test('coalescing views with opposite wrapping reveals the source caret in the re
 	const source = resolveLuaCodeEditorInput(f.sources.catalog, resource), receiver = new CodeEditorInput(source.workingCopy);
 	f.firstGroup.openEditor(source, { pinned: true }); f.secondGroup.openEditor(receiver, { pinned: true }); f.update();
 	f.second.focus(); f.editor.commands.execute('wrap', f.second.commandTarget);
-	f.firstGroup.activate(source.id, { row: 60, startColumn: 120, endColumn: 120 });
+	f.firstGroup.activate(source.id, { selection: { row: 60, startColumn: 120, endColumn: 120 } });
 	assert.equal(f.editor.editorParts.moveEditor(f.firstGroup, source, { kind: 'group', group: f.secondGroup }), true);
 	assert.ok(f.second.input === receiver); assert.equal(receiver.context.view.wordWrapEnabled, false);
 	assert.equal(receiver.context.view.cursorRow, 60); assert.equal(receiver.context.view.cursorColumn, 120);

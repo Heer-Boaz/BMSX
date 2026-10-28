@@ -57,7 +57,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	const unused = (): never => assert.fail('This owner regression only opens Behavior Lens views');
 	const createGroup = () => {
 		const group = new EditorGroupView({
-			call_hierarchy: { create: unused, measure: measureUnconstrainedEditor },
+			workspace_search: { create: unused, measure: measureUnconstrainedEditor }, call_hierarchy: { create: unused, measure: measureUnconstrainedEditor },
 			home: { create: unused, measure: measureUnconstrainedEditor }, play_session: { create: unused, measure: measureUnconstrainedEditor }, animation: { create: unused, measure: measureUnconstrainedEditor }, host_error: { create: unused, measure: measureUnconstrainedEditor }, build_log: { create: unused, measure: measureUnconstrainedEditor },
 			rom_inspector: { create: unused, measure: measureUnconstrainedEditor }, event_viewer: { create: unused, measure: measureUnconstrainedEditor }, gpu_debugger: { create: unused, measure: measureUnconstrainedEditor }, gte_debugger: { create: unused, measure: measureUnconstrainedEditor },
 			terminal: { create: unused, measure: measureUnconstrainedEditor }, conversation_observer: { create: unused, measure: measureUnconstrainedEditor }, assistant: { create: unused, measure: measureUnconstrainedEditor }, workspace_edit_review: { create: unused, measure: measureUnconstrainedEditor },
@@ -79,14 +79,14 @@ function fixture(t: TestContext, source = SOURCE) {
 	return { controller, documents, navigation, picker, first, second, registration };
 }
 
-test('Behavior Lens pane publishes its canonical source location on first attachment', t => {
+test('Behavior Lens pane publishes its canonical source location on first attachment', async t => {
 	const f = fixture(t), input = f.controller.openDefinition(f.first, f.registration);
 	assert.ok(input !== undefined);
-	const location = f.first.panes.activePane!.getSourceLocation!();
+	const location = await f.first.panes.activePane!.getSourceLocation!();
 	assert.ok(location?.model === input.workingCopy); assert.equal(location.modelVersion, input.workingCopy.version);
 });
 
-test('shared Behavior Lens operations and pane commands consume their concrete view, not the later active group', t => {
+test('shared Behavior Lens operations and pane commands consume their concrete view, not the later active group', async t => {
 	const f = fixture(t);
 	const first = f.controller.openDefinition(f.first, f.registration);
 	const second = f.controller.openDefinition(f.second, f.registration);
@@ -107,7 +107,7 @@ test('shared Behavior Lens operations and pane commands consume their concrete v
 	f.second.panes.activePane!.focus();
 	const secondTarget = inputFocus.target!;
 	const source = selectedBehaviorLensSourceRange(first.view)!;
-	const location = f.first.panes.activePane!.getSourceLocation!();
+	const location = await f.first.panes.activePane!.getSourceLocation!();
 	assert.ok(location?.model === first.workingCopy);
 	assert.deepEqual(location.selection, { row: source.start.line - 1, startColumn: source.start.column - 1, endColumn: source.start.column - 1 });
 	assert.equal(inputFocus.target, secondTarget, 'the shared Source operation does not focus another pane itself');

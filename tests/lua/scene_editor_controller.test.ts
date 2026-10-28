@@ -76,7 +76,7 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 	assert.equal(left.workingCopy.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 });
 
-test('Scene pane source production and member commands retain their input when another group gains focus', t => {
+test('Scene pane source production and member commands retain their input when another group gains focus', async t => {
 	const sources = createScenarioTestSourceState([
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
@@ -117,7 +117,7 @@ test('Scene pane source production and member commands retain their input when a
 	pane.update(0); pane.focus();
 	const origin = inputFocus.target!;
 	first.activate(left.id);
-	const location = pane.getSourceLocation!();
+	const location = await pane.getSourceLocation!();
 	assert.ok(location?.model === right.workingCopy); assert.equal(location.modelVersion, right.workingCopy.version);
 	assert.equal(origin.getCommand('sceneEditor.moveMemberDown')!.isEnabled(), true);
 	inputFocus.executeCommand('sceneEditor.moveMemberDown', origin);

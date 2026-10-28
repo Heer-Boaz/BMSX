@@ -259,7 +259,7 @@ test('preserved-focus opens and activations do not publish another group control
 	const nextOpening = other.openEditor(next, { pinned: false, preserveFocus: true });
 	assert.ok(nextOpening !== undefined); assert.equal(nextOpening.activated, false); assert.equal(nextOpening.generation, other.panes.openGeneration);
 	assert.ok(other.panes.activePane?.input === next);
-	assert.equal(other.activate(kept.id, undefined, undefined, true), true);
+	assert.equal(other.activate(kept.id, { preserveFocus: true }), true);
 	assert.equal(f.publications(), 0); assert.equal(f.current.isDirty(), false);
 	assert.equal(f.control.pending, true); assert.equal(f.control.field.text, '2');
 	assert.equal(inputFocus.target, f.control.field.focusTarget);

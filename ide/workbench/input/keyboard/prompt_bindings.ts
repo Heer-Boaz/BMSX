@@ -6,15 +6,6 @@ import { resetBlinkState } from '../../../editor/ui/view/caret/blink';
 import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isShiftDown } from '../../../input/keyboard/key_input';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 
-function handleGlobalFindBinding(playerInput: KeyInputEvent, commands: EditorCommandRunner): boolean {
-	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || !isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
-		return false;
-	}
-	consumeIdeKey('KeyF', playerInput);
-	commands.execute('findGlobal');
-	return true;
-}
-
 function handleLocalFindBinding(playerInput: KeyInputEvent, commands: EditorCommandRunner): boolean {
 	if (!(isCtrlDown(playerInput) || isMetaDown(playerInput)) || isShiftDown(playerInput) || isAltDown(playerInput) || !isKeyJustPressed('KeyF', playerInput)) {
 		return false;
@@ -61,8 +52,7 @@ function handleLineJumpBinding(playerInput: KeyInputEvent, commands: EditorComma
 }
 
 export function handleEditorPromptBindings(code: CodeEditorControl, playerInput: KeyInputEvent, commands: EditorCommandRunner): boolean {
-	return handleGlobalFindBinding(playerInput, commands)
-		|| handleLocalFindBinding(playerInput, commands)
+	return handleLocalFindBinding(playerInput, commands)
 		|| handleDefinitionAndReferenceBinding(playerInput, commands)
 		|| handleSelectAllBinding(code, playerInput)
 		|| handleLineJumpBinding(playerInput, commands);

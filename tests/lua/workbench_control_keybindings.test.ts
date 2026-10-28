@@ -704,24 +704,28 @@ test('a genuine guest input target does not acquire list Find from an applicatio
 		presentation: { kind: 'offscreen', frames } };
 	guest.focus(); t.after(() => { frames.dispose(); input.dispose(); });
 	assert.equal(inputFocus.commandRunner, f.commands); assert.equal(guest.getCommand('list.find'), undefined);
-	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
-		const event = new KeyInputEvent('KeyF', primary);
+	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) for (const shift of [KeyModifier.none, KeyModifier.shift]) {
+		const event = new KeyInputEvent('KeyF', primary | shift);
 		assert.equal(f.keybindings.handle(event, inputFocus.commandRunner), false);
 		assert.equal(event.consumed, false);
 	}
 	assert.equal(finds, 0); assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
 });
 
-test('list Find does not claim Shift/Alt variants or change Actor Lab routing', t => {
+test('list Find stays local while shifted primary Find routes to workspace search', t => {
 	const f = fixture(t, inputFocus.workbenchScope);
 	let finds = 0, actorFinds = 0;
 	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
 	f.parent.focus();
-	for (const modifiers of [KeyModifier.none, KeyModifier.alt, KeyModifier.ctrl | KeyModifier.shift,
-		KeyModifier.meta | KeyModifier.shift, KeyModifier.ctrl | KeyModifier.alt, KeyModifier.meta | KeyModifier.alt]) {
+	for (const modifiers of [KeyModifier.none, KeyModifier.alt, KeyModifier.ctrl | KeyModifier.alt, KeyModifier.meta | KeyModifier.alt]) {
 		const event = new KeyInputEvent('KeyF', modifiers);
 		assert.equal(f.keybindings.handle(event, inputFocus.commandRunner), false);
 		assert.equal(event.consumed, false);
+	}
+	for (const primary of [KeyModifier.ctrl, KeyModifier.meta]) {
+		const event = new KeyInputEvent('KeyF', primary | KeyModifier.shift);
+		assert.equal(f.keybindings.handle(event, inputFocus.commandRunner), true);
+		assert.equal(event.consumed, true);
 	}
 	const actor = inputFocus.createTarget(f.parent); actor.commandContext = f.parent;
 	actor.registerCommand('actorLab.find', { isEnabled: () => true, run: () => { actorFinds++; } }); actor.focus();
@@ -732,5 +736,5 @@ test('list Find does not claim Shift/Alt variants or change Actor Lab routing', 
 	}
 	assert.equal(actorFinds, 2); assert.equal(finds, 0);
 
-	assert.equal(finds, 0); assert.deepEqual(f.executed, []); assert.deepEqual(f.checked, []);
+	assert.equal(finds, 0); assert.deepEqual(f.executed, ['findGlobal', 'findGlobal']); assert.deepEqual(f.checked, ['findGlobal', 'findGlobal']);
 });

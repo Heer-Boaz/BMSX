@@ -3,17 +3,6 @@ import { consumeIdeKey, isAltDown, isCtrlDown, isKeyJustPressed, isMetaDown, isS
 import type { EditorSearchController } from '../../../workbench/contrib/code_editor/find/search';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 
-type SearchSelectionOptions = {
-	preview?: boolean;
-	keepSearchActive?: boolean;
-};
-
-function stepSearchSelectionFromInput(search: EditorSearchController, delta: number,
-	options?: SearchSelectionOptions & { wrap?: boolean }): void {
-	search.stepSearchSelection(delta, options);
-	if (!options?.preview) search.openSelectedGlobalMatch();
-}
-
 export function handleSearchInput(
 	playerInput: KeyInputEvent,
 	search: EditorSearchController,
@@ -27,22 +16,16 @@ export function handleSearchInput(
 	const ctrlDown = isCtrlDown(playerInput);
 	const metaDown = isMetaDown(playerInput);
 	const altDown = isAltDown(playerInput);
-	if ((ctrlDown || metaDown) && shiftDown && !altDown && isKeyJustPressed('KeyF', playerInput)) {
+	if ((ctrlDown || metaDown) && !shiftDown && !altDown && isKeyJustPressed('KeyF', playerInput)) {
 		consumeIdeKey('KeyF', playerInput);
-		search.switchScope('global');
-		return;
-	}
-	if ((ctrlDown || metaDown) && !altDown && isKeyJustPressed('KeyF', playerInput)) {
-		consumeIdeKey('KeyF', playerInput);
-		search.switchScope('local');
+		search.focus();
 		return;
 	}
 	const hasResults = search.activeSearchMatchCount() > 0;
-	const previewLocal = search.state.scope === 'local';
 	if (isKeyJustPressed('Enter', playerInput)) {
 		consumeIdeKey('Enter', playerInput);
 		if (hasResults) {
-			stepSearchSelectionFromInput(search, shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
+			search.stepSearchSelection(shiftDown ? -1 : 1, { wrap: true, keepSearchActive: true });
 		} else if (shiftDown) {
 			search.jumpToPreviousMatch();
 		} else {
@@ -62,22 +45,22 @@ export function handleSearchInput(
 	if (hasResults) {
 		if (isKeyDown('ArrowUp', playerInput)) {
 			consumeIdeKey('ArrowUp', playerInput);
-			stepSearchSelectionFromInput(search, -1, { preview: previewLocal });
+			search.stepSearchSelection(-1, { preview: true });
 			return;
 		}
 		if (isKeyDown('ArrowDown', playerInput)) {
 			consumeIdeKey('ArrowDown', playerInput);
-			stepSearchSelectionFromInput(search, 1, { preview: previewLocal });
+			search.stepSearchSelection(1, { preview: true });
 			return;
 		}
 		if (isKeyDown('PageUp', playerInput)) {
 			consumeIdeKey('PageUp', playerInput);
-			stepSearchSelectionFromInput(search, -search.searchPageSize(), { preview: previewLocal });
+			search.stepSearchSelection(-search.searchPageSize(), { preview: true });
 			return;
 		}
 		if (isKeyDown('PageDown', playerInput)) {
 			consumeIdeKey('PageDown', playerInput);
-			stepSearchSelectionFromInput(search, search.searchPageSize(), { preview: previewLocal });
+			search.stepSearchSelection(search.searchPageSize(), { preview: true });
 			return;
 		}
 

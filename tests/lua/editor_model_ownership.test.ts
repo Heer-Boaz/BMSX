@@ -3,7 +3,6 @@ import { createTestCodeControl } from '../helpers/code_control';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import type { CodeEditorControl } from '../../ide/editor/ui/code_editor_control';
 import { EditorSearchController } from '../../ide/workbench/contrib/code_editor/find/search';
-import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 
 import { createTestCodeDocuments } from '../helpers/code_documents';
 import assert from 'node:assert/strict';
@@ -440,7 +439,7 @@ test('a local search job cannot continue against another model with the same ver
 	const first = models.retain(luaResource('first.lua'), 'lua', 'needle');
 	const second = models.retain(luaResource('second.lua'), 'lua', 'needle');
 	const code = createTestCodeControl(t, first, documents, clock);
-	const search = new EditorSearchController(code, new WorkspaceSourceCatalog());
+	const search = new EditorSearchController(code);
 	t.after(() => { search.dispose(); clearBackgroundTasks(); });
 	search.applySearchFieldText('needle', true);
 	search.openSearch(false);

@@ -74,7 +74,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} source viewport consumes only its own Find field space`, t => {
 		const code = fixture(t, variant), model = code.model;
 		const sources = {} as RuntimeSourceState;
-		const find = new EditorSearchController(code, sources.catalog), lineJump = new CodeEditorLineJump(code);
+		const find = new EditorSearchController(code), lineJump = new CodeEditorLineJump(code);
 		const rename = new RenameController(code, sources.catalog, new CrossFileRenameManager(sources.catalog));
 		const bars = new SourceInlineBars(code, find, rename, lineJump);
 		t.after(() => { find.dispose(); rename.dispose(); lineJump.dispose(); });

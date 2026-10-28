@@ -72,6 +72,9 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 		this.actions.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 	}
 
+	public override get canOpenSource(): boolean {
+		return this.hasInput && this.input.tree.rows[this.input.tree.selectionIndex] !== undefined;
+	}
 	public override getSourceLocation(): EditorSourceLocation | undefined {
 		const input = this.input, revision = input.revision, selected = input.tree.rows[input.tree.selectionIndex]?.element;
 		if (selected === undefined) return undefined;

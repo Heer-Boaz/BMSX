@@ -62,6 +62,7 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'KeyF', command: 'findGlobal', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
 	{ code: 'NumpadEnter', command: 'resources.openToSide', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('resources.openToSide') !== undefined },
 	{ code: 'Enter', command: 'resources.openToSide', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('resources.openToSide') !== undefined },
 	{ code: 'Backslash', command: 'group.splitRight', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },

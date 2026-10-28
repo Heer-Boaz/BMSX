@@ -1,11 +1,14 @@
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
+import { LiteralTextMatcher, buildTextSearchSnippet, type LiteralTextSearchCursor } from '../../../../common/search_text';
+import { getTextSnapshot } from '../../../../editor/text/source_text';
+import { inputFocus } from '../../../../input/focus';
+import type { Position } from '../../../../common/models';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { showEditorMessage } from '../../../../common/feedback_state';
 import * as constants from '../../../../common/constants';
 import { clamp, clamp_wrap } from '../../../../../machine/ts/common/clamp';
 import { getSelectionRange, getSelectionText } from '../../../../editor/editing/text_editing_and_selection';
-import type { GlobalSearchJob, GlobalSearchMatch, SearchComputationJob, SearchMatch } from '../../../../common/models';
-import { readWorkspaceLuaSourceText } from '../../../../workspace/files';
+import type { SearchMatch } from '../../../../common/models';
 import { enqueueBackgroundTask } from '../../../../common/background_tasks';
 import { beginNavigationCapture, completeNavigation } from '../../../../navigation/navigation_history';
 import { updateDesiredColumn } from '../../../../editor/ui/view/caret/caret';
@@ -17,52 +20,50 @@ import { setSingleCursorPosition, setSingleCursorSelectionAnchor } from '../../.
 import type { CodeEditorControl } from '../../../../editor/ui/code_editor_control';
 import { TextField } from '../../../../editor/ui/inline/text_field_model';
 import { InlineBarFieldLayout } from '../inline_bar/field';
-import type { SearchState } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { handleSearchInput } from '../../../../input/quick_input/search/input';
 import { InlineBarFieldPointer } from '../../../../input/quick_input/pointer/field';
-import { openGlobalSearchMatch } from '../../find/global_search_navigation';
-import { findEditorGroup } from '../../../services/editor/editor_group';
-import { splitText } from '../../../../../machine/ts/common/text_lines';
-import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import type { EditorTextModel } from '../../../../editor/model/text_model';
 
-const LOCAL_ROWS_PER_SLICE = 256;
-const GLOBAL_ROWS_PER_SLICE = 128;
-
-type LocalSearchJob = SearchComputationJob & {
-	model: EditorTextModel;
-	version: number;
+type LocalSearchJob = {
+	readonly query: string;
+	readonly model: EditorTextModel;
+	readonly version: number;
+	readonly cursor: LiteralTextSearchCursor;
+	readonly acceptMatch: (start: number, end: number) => void;
+	readonly matchCase: boolean;
+	readonly matches: SearchMatch[];
+	firstMatchAfterCursor: number;
+	readonly cursorRow: number;
+	readonly cursorColumn: number;
 };
 
-function normalizeQuery(raw: string): string {
-	return editorRuntimeState.caseInsensitive ? raw.toLowerCase() : raw;
-}
+type LocalSearchState = {
+	readonly field: TextField;
+	visible: boolean;
+	query: string;
+	matches: SearchMatch[];
+	currentIndex: number;
+	job: LocalSearchJob | null;
+	displayOffset: number;
+	hoverIndex: number;
+};
 
-function forEachMatchInLine(line: string, query: string, cb: (start: number, end: number) => void): void {
-	if (query.length === 0) return;
-	const haystack = normalizeQuery(line);
-	let from = 0;
-	const needleLength = query.length;
-	while (from <= haystack.length - needleLength) {
-		const index = haystack.indexOf(query, from);
-		if (index === -1) return;
-		cb(index, index + needleLength);
-		from = index + needleLength;
-	}
-}
+type SearchSelectionOptions = { wrap?: boolean; preview?: boolean; keepSearchActive?: boolean };
+type SearchNavigation = { readonly kind: 'step'; readonly delta: number; readonly options: SearchSelectionOptions | undefined }
+	| { readonly kind: 'jump'; readonly direction: 1 | -1 };
+type PendingSearchNavigation = {
+	readonly job: LocalSearchJob;
+	readonly action: SearchNavigation;
+	readonly view: CodeEditorControl['view'];
+	readonly context: number;
+	readonly interaction: number;
+	readonly row: number;
+	readonly column: number;
+	readonly anchor: Position | null;
+};
 
-function buildSnippet(line: string, start: number, end: number): string {
-	const padding = 32;
-	const sliceStart = start - padding;
-	const sliceEnd = Math.min(line.length, end + padding);
-	let snippet = line.slice(sliceStart, sliceEnd).trim();
-	if (sliceStart > 0) snippet = `…${snippet}`;
-	if (sliceEnd < line.length) snippet = `${snippet}…`;
-	return snippet.length === 0 ? '<blank>' : snippet;
-}
-
-export type SearchResultEntry = { primary: string; secondary?: string; detail?: string };
+export type SearchResultEntry = { primary: string; secondary: string };
 
 export class EditorSearchController {
 	private readonly layoutListeners = new Set<() => void>();
@@ -74,13 +75,15 @@ export class EditorSearchController {
 
 	private readonly pageStats = { total: 0, offset: 0, visible: 0 };
 	private readonly visibleResultEntries: SearchResultEntry[] = [];
-	private resultEntriesSource: readonly SearchMatch[] | readonly GlobalSearchMatch[] | null = null;
+	private resultEntriesSource: readonly SearchMatch[] | null = null;
 	private resultEntriesOffset = -1;
 	private resultEntriesCount = -1;
 	private resultEntriesVersion = -1;
 	private unbindQueryChange: (() => void) | undefined;
+	private completedJob: LocalSearchJob | null = null;
+	private pendingNavigation: PendingSearchNavigation | undefined;
 
-	public readonly state: SearchState;
+	public readonly state: LocalSearchState;
 	public readonly fieldLayout: InlineBarFieldLayout;
 	public readonly fieldPointer: InlineBarFieldPointer;
 	public readonly searchHover: PointerHoverTarget = { onPointerLeave: () => { this.state.hoverIndex = -1; } };
@@ -91,10 +94,10 @@ export class EditorSearchController {
 	private layoutDetail = '';
 	private readonly unbindKeyboard: () => void;
 
-	public constructor(public readonly code: CodeEditorControl, private readonly catalog: WorkspaceSourceCatalog) {
+	public constructor(public readonly code: CodeEditorControl) {
 		const field = new TextField(code.focusTarget, { allowSpace: true, singleLine: true });
 		this.state = { field, visible: false, query: '', matches: [], currentIndex: -1, job: null,
-			displayOffset: 0, hoverIndex: -1, scope: 'local', globalMatches: [], globalJob: null };
+			displayOffset: 0, hoverIndex: -1 };
 		this.fieldLayout = new InlineBarFieldLayout(code, field);
 		this.fieldPointer = new InlineBarFieldPointer(code, field, this.fieldLayout);
 		field.focusTarget.canFocus = () => this.state.visible && this.fieldLayout.visible;
@@ -109,17 +112,20 @@ export class EditorSearchController {
 
 	public layoutField(bounds: Readonly<RectBounds>, clip: Readonly<RectBounds> = bounds): void {
 		const count = this.activeSearchMatchCount(), index = this.state.currentIndex;
-		const working = this.state.scope === 'global' ? this.state.globalJob !== null : this.state.job !== null;
+		const working = this.state.job !== null;
 		if (count !== this.layoutCount || index !== this.layoutIndex || working !== this.layoutWorking) {
 			this.layoutCount = count; this.layoutIndex = index; this.layoutWorking = working;
 			this.layoutDetail = working ? 'SEARCHING…' : `${index >= 0 ? index + 1 : 0}/${count}`;
 		}
-		this.fieldLayout.layout(bounds, this.state.scope === 'global' ? 'FIND ALL' : 'FIND',
+		this.fieldLayout.layout(bounds, 'FIND',
 			count > 0 || this.state.query.length > 0 || working ? this.layoutDetail : '', constants.SEARCH_BAR_MARGIN_Y, clip);
 	}
 
-	public openSearch(useSelection: boolean, scope: 'local' | 'global' = 'local'): void {
+	public openSearch(useSelection: boolean): void {
+		const model = this.code.model, view = this.code.view, context = this.code.focusTarget.scope.contextGeneration;
+		const current = () => this.code.model === model && this.code.view === view && this.code.focusTarget.scope.contextGeneration === context;
 		this.closeSearch(false);
+		if (!current()) return;
 
 		let query = this.state.query;
 		if (useSelection) {
@@ -130,15 +136,16 @@ export class EditorSearchController {
 				this.code.view.cursorRow = range.start.row;
 				this.code.view.cursorColumn = range.start.column;
 				this.code.emitCursorMoved();
+				if (!current()) return;
 			}
 		}
 
 		// Seed before binding: one query, without clearing the source selection
 		// before it has been read. Only a live find session observes field edits.
 		this.applySearchFieldText(query, true);
-		this.state.scope = scope;
 		this.state.visible = true;
 		this.emitLayoutChanged();
+		if (!current()) return;
 		this.unbindQueryChange = this.state.field.onDidChangeText(() => {
 			this.state.query = this.state.field.text;
 			this.onSearchQueryChanged();
@@ -148,12 +155,6 @@ export class EditorSearchController {
 		resetInlineBlink();
 	}
 
-	public switchScope(scope: 'local' | 'global'): void {
-		this.cancelSearchJob(); this.cancelGlobalSearchJob();
-		this.state.scope = scope;
-		this.onSearchQueryChanged();
-	}
-
 	public closeSearch(clearQuery: boolean): void {
 		const wasVisible = this.state.visible;
 		// End model-bound effects before resetting retained widget state. A source
@@ -161,14 +162,11 @@ export class EditorSearchController {
 		this.unbindQueryChange?.();
 		this.unbindQueryChange = undefined;
 		this.cancelSearchJob();
-		this.cancelGlobalSearchJob();
 		pointerHover.release(this.searchHover);
 		this.state.visible = false;
 		this.state.field.selectionAnchor = null;
 		this.state.field.pointerSelecting = false;
-		this.state.scope = 'local';
 		this.state.matches = [];
-		this.state.globalMatches = [];
 		this.state.currentIndex = -1;
 		this.state.hoverIndex = -1;
 		this.state.displayOffset = 0;
@@ -192,36 +190,16 @@ export class EditorSearchController {
 		resetInlineBlink();
 	}
 
+	public activeSearchMatchCount(): number { return this.state.matches.length; }
+
 	private onSearchQueryChanged(): void {
-		if (this.state.scope === 'global') {
-			this.onGlobalSearchQueryChanged();
-			return;
-		}
-		this.onLocalSearchQueryChanged();
-	}
-
-	private onGlobalSearchQueryChanged(): void {
-		this.state.displayOffset = 0;
-		this.state.hoverIndex = -1;
-		this.state.currentIndex = -1;
-		if (this.state.query.length === 0) {
-			this.cancelGlobalSearchJob();
-			this.state.globalMatches = [];
-			this.emitLayoutChanged();
-			return;
-		}
-		this.startGlobalSearchJob(this.catalog);
-	}
-	public activeSearchMatchCount(): number {
-		return this.state.scope === 'global' ? this.state.globalMatches.length : this.state.matches.length;
-	}
-
-	private onLocalSearchQueryChanged(): void {
+		const model = this.code.model, view = this.code.view, context = this.code.focusTarget.scope.contextGeneration;
+		this.clearEditorSearchSelection();
+		if (!this.state.visible || this.code.model !== model || this.code.view !== view || this.code.focusTarget.scope.contextGeneration !== context) return;
 		if (this.state.query.length === 0) {
 			this.cancelSearchJob();
 			this.state.matches = [];
 			this.state.currentIndex = -1;
-			this.clearEditorSearchSelection();
 			this.state.displayOffset = 0;
 			this.emitLayoutChanged();
 			return;
@@ -236,86 +214,62 @@ export class EditorSearchController {
 		this.state.hoverIndex = -1;
 		this.state.currentIndex = -1;
 		this.state.matches = [];
-		this.clearEditorSearchSelection();
-		this.emitLayoutChanged();
 
+		const model = this.code.model, query = this.state.query, position = { row: 0, column: 0 };
+		const matchCase = !editorRuntimeState.caseInsensitive;
 		const job: LocalSearchJob = {
-			query: normalizeQuery(this.state.query),
-			model: this.code.model,
-			version: this.code.model.version,
-			nextRow: 0,
-			matches: [],
-			firstMatchAfterCursor: -1,
-			cursorRow: this.code.view.cursorRow,
-			cursorColumn: this.code.view.cursorColumn,
+			query, model, version: model.version, matchCase,
+			cursor: new LiteralTextMatcher(query, matchCase).createCursor(getTextSnapshot(model.buffer)),
+			matches: [], firstMatchAfterCursor: -1,
+			cursorRow: this.code.view.cursorRow, cursorColumn: this.code.view.cursorColumn,
+			acceptMatch: (start, end) => {
+				model.buffer.positionAt(start, position);
+				job.matches.push({ row: position.row, start: position.column, end: position.column + end - start });
+				if (job.firstMatchAfterCursor === -1 && (position.row > job.cursorRow
+					|| position.row === job.cursorRow && position.column >= job.cursorColumn)) job.firstMatchAfterCursor = job.matches.length - 1;
+			},
 		};
 		this.state.job = job;
+		this.emitLayoutChanged();
 		enqueueBackgroundTask(() => this.runLocalSearchSlice(job));
+	}
+
+	private isCurrentJob(job: LocalSearchJob | null): boolean {
+		return job !== null && job.model === this.code.model && job.version === job.model.version
+			&& job.query === this.state.query && job.matchCase === !editorRuntimeState.caseInsensitive;
 	}
 
 	private runLocalSearchSlice(job: LocalSearchJob): boolean {
 		if (this.state.job !== job) return false;
-		if (job.query.length === 0
-			|| job.model !== this.code.model
-			|| job.version !== job.model.version
-			|| this.state.query.length === 0) {
-			this.state.job = null;
-			return false;
-		}
-		let processed = 0;
-		const lineCount = job.model.buffer.getLineCount();
-		while (job.nextRow < lineCount && processed < LOCAL_ROWS_PER_SLICE) {
-			const row = job.nextRow;
-			job.nextRow += 1;
-			processed += 1;
-			this.collectLocalMatches(job, row);
-		}
-		if (job.nextRow >= lineCount) {
-			this.completeLocalSearchJob(job);
-			return false;
-		}
-		return true;
-	}
-
-	private collectLocalMatches(job: LocalSearchJob, row: number): void {
-		const line = job.model.buffer.getLineContent(row);
-		if (line.length === 0) return;
-		forEachMatchInLine(line, job.query, (start, end) => {
-			const match: SearchMatch = { row, start, end };
-			job.matches.push(match);
-			const matchIndex = job.matches.length - 1;
-			if (job.firstMatchAfterCursor === -1) {
-				if (row > job.cursorRow || (row === job.cursorRow && start >= job.cursorColumn)) {
-					job.firstMatchAfterCursor = matchIndex;
-				}
-			}
-		});
+		if (!this.isCurrentJob(job)) { this.cancelSearchJob(); return false; }
+		if (job.cursor.step(job.acceptMatch)) return true;
+		this.completeLocalSearchJob(job);
+		return false;
 	}
 
 	private completeLocalSearchJob(job: LocalSearchJob): void {
 		if (this.state.job !== job) return;
 		this.state.job = null;
+		this.completedJob = job;
 		this.state.matches = job.matches;
-
-		if (job.matches.length === 0) {
-			this.state.currentIndex = -1;
-			this.clearEditorSearchSelection();
-			this.state.displayOffset = 0;
-			this.emitLayoutChanged();
+		const initialIndex = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
+		this.state.currentIndex = job.matches.length === 0 ? -1 : clamp(initialIndex, 0, job.matches.length - 1);
+		if (job.matches.length === 0) this.state.displayOffset = 0;
+		this.emitLayoutChanged();
+		if (!this.isCurrentJob(job) || this.completedJob !== job) return;
+		const navigation = this.pendingNavigation;
+		this.pendingNavigation = undefined;
+		if (navigation !== undefined) {
+			if (this.isCurrentNavigation(navigation)) this.applyNavigation(navigation.action);
 			return;
 		}
-
-		const initialIndex = job.firstMatchAfterCursor >= 0 ? job.firstMatchAfterCursor : 0;
-		this.state.currentIndex = clamp(initialIndex, 0, job.matches.length - 1);
-		this.emitLayoutChanged();
 		this.ensureSearchSelectionVisible();
-		if (this.state.field.focusTarget.hasFocus) {
+		if (job.matches.length > 0 && this.state.field.focusTarget.hasFocus)
 			this.applySearchSelection(this.state.currentIndex, { preview: true, keepSearchActive: true });
-		}
 	}
 
 	public cancelSearchJob(): void {
-		this.state.job = null;
+		this.state.job = null; this.completedJob = null; this.pendingNavigation = undefined;
 	}
 
 	/** A new find query replaces its code selection; hiding the widget does not. */
@@ -327,110 +281,31 @@ export class EditorSearchController {
 		this.code.emitCursorMoved();
 	}
 
-	private ensureLocalJobCompleted(): void {
-		const job = this.state.job as LocalSearchJob;
-		if (!job) return;
-		while (this.state.job === job && this.runLocalSearchSlice(job)) {
-			// run synchronously
-		}
+	private navigate(action: SearchNavigation): void {
+		const model = this.code.model, view = this.code.view, context = this.code.focusTarget.scope.contextGeneration;
+		if (this.state.job !== null && !this.isCurrentJob(this.state.job)) this.cancelSearchJob();
+		if (this.state.job === null && !this.isCurrentJob(this.completedJob) && this.state.query.length > 0) this.startSearchJob();
+		if (this.code.model !== model || this.code.view !== view || this.code.focusTarget.scope.contextGeneration !== context) return;
+		const job = this.state.job;
+		if (job === null) { this.applyNavigation(action); return; }
+		this.pendingNavigation = { job, action, view, context, interaction: inputFocus.interactionRevision,
+			row: view.cursorRow, column: view.cursorColumn, anchor: view.selectionAnchor === null ? null : { ...view.selectionAnchor } };
+		// One bounded step keeps short-document navigation immediate; further work
+		// remains on the normal background queue with its retained command intent.
+		this.runLocalSearchSlice(job);
 	}
 
-	private startGlobalSearchJob(catalog: WorkspaceSourceCatalog): void {
-		this.cancelGlobalSearchJob();
-
-		const job: GlobalSearchJob = {
-			query: normalizeQuery(this.state.query),
-			resources: catalog.luaResources,
-			resourceIndex: 0,
-			currentLines: null,
-			nextRow: 0,
-			matches: [],
-			limitHit: false,
-		};
-		this.state.globalJob = job;
-		this.state.globalMatches = [];
-		this.state.currentIndex = -1;
-		this.state.displayOffset = 0;
-		this.state.hoverIndex = -1;
-		this.emitLayoutChanged();
-		enqueueBackgroundTask(() => this.runGlobalSearchSlice(catalog, job));
+	private isCurrentNavigation(navigation: PendingSearchNavigation): boolean {
+		const view = this.code.view, anchor = view.selectionAnchor, previous = navigation.anchor;
+		return this.completedJob === navigation.job && this.isCurrentJob(navigation.job) && view === navigation.view
+			&& this.code.focusTarget.scope.contextGeneration === navigation.context && inputFocus.interactionRevision === navigation.interaction
+			&& view.cursorRow === navigation.row && view.cursorColumn === navigation.column
+			&& (anchor === null || previous === null ? anchor === previous : anchor.row === previous.row && anchor.column === previous.column);
 	}
 
-	private runGlobalSearchSlice(catalog: WorkspaceSourceCatalog, job: GlobalSearchJob): boolean {
-		if (this.state.globalJob !== job) return false;
-		if (job.query.length === 0) {
-			this.state.globalJob = null;
-			return false;
-		}
-
-		let processed = 0;
-		while (job.resourceIndex < job.resources.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
-				if (job.currentLines === null) {
-					const resource = job.resources[job.resourceIndex];
-					const source = catalog.resolveLuaSource(resource)!;
-					job.currentLines = splitText(readWorkspaceLuaSourceText(source.registry, source.record));
-					job.nextRow = 0;
-				}
-
-			const lines = job.currentLines;
-			while (job.nextRow < lines.length && processed < GLOBAL_ROWS_PER_SLICE && !job.limitHit) {
-				const row = job.nextRow;
-				job.nextRow += 1;
-				processed += 1;
-				const line = lines[row];
-				if (line.length === 0) continue;
-				forEachMatchInLine(line, job.query, (start, end) => {
-					if (job.limitHit) return;
-					const resource = job.resources[job.resourceIndex];
-					const match: GlobalSearchMatch = {
-						resource,
-						pathLabel: resource.path.replace(/\\\\/g, '/'),
-						row,
-						start,
-						end,
-						snippet: buildSnippet(line, start, end),
-						path: resource.path,
-					};
-					job.matches.push(match);
-					if (job.matches.length >= constants.GLOBAL_SEARCH_RESULT_LIMIT) {
-						job.limitHit = true;
-					}
-				});
-			}
-
-			if (job.nextRow >= lines.length) {
-				job.currentLines = null;
-				job.nextRow = 0;
-				job.resourceIndex += 1;
-			}
-		}
-
-		if (job.limitHit || job.resourceIndex >= job.resources.length) {
-			this.completeGlobalSearchJob(job);
-			return false;
-		}
-		return true;
-	}
-
-	private completeGlobalSearchJob(job: GlobalSearchJob): void {
-		if (this.state.globalJob !== job) return;
-		this.state.globalJob = null;
-		this.state.globalMatches = job.matches;
-
-		if (job.matches.length === 0) {
-			this.state.currentIndex = -1;
-			this.state.displayOffset = 0;
-			this.emitLayoutChanged();
-			return;
-		}
-
-		this.state.currentIndex = clamp(this.state.currentIndex, 0, job.matches.length - 1);
-		this.emitLayoutChanged();
-		this.ensureSearchSelectionVisible();
-	}
-
-	public cancelGlobalSearchJob(): void {
-		this.state.globalJob = null;
+	private applyNavigation(action: SearchNavigation): void {
+		if (action.kind === 'jump') this.jumpToMatch(action.direction);
+		else this.stepMatches(action.delta, action.options);
 	}
 
 	private focusLocalMatch(index: number, recordNavigation: boolean): void {
@@ -462,10 +337,9 @@ export class EditorSearchController {
 		return clamp(next, 0, total - 1);
 	}
 
-	public stepSearchSelection(delta: number, options?: { wrap?: boolean; preview?: boolean; keepSearchActive?: boolean }): void {
-		if (this.state.scope === 'local') {
-			this.ensureLocalJobCompleted();
-		}
+	public stepSearchSelection(delta: number, options?: SearchSelectionOptions): void { this.navigate({ kind: 'step', delta, options }); }
+
+	private stepMatches(delta: number, options?: SearchSelectionOptions): void {
 		const total = this.activeSearchMatchCount();
 		if (total === 0) {
 			if (!options?.preview) {
@@ -486,25 +360,38 @@ export class EditorSearchController {
 		const targetIndex = clamp(index, 0, total - 1);
 		this.state.currentIndex = targetIndex;
 		this.ensureSearchSelectionVisible();
-		this.emitLayoutChanged();
 
-		if (this.state.scope === 'local') {
-			this.focusLocalMatch(targetIndex, !options?.preview);
-		}
+		this.focusLocalMatch(targetIndex, !options?.preview);
 
 		if (!options?.preview && !options?.keepSearchActive) {
 			this.state.field.focusTarget.release();
 			this.state.field.selectionAnchor = null;
 			this.state.field.pointerSelecting = false;
 		}
+		this.emitLayoutChanged();
 	}
 
-	public jumpToNextMatch(): void {
-		this.stepSearchSelection(1, { wrap: true });
-	}
+	public jumpToNextMatch(): void { this.navigate({ kind: 'jump', direction: 1 }); }
+	public jumpToPreviousMatch(): void { this.navigate({ kind: 'jump', direction: -1 }); }
 
-	public jumpToPreviousMatch(): void {
-		this.stepSearchSelection(-1, { wrap: true });
+	private jumpToMatch(direction: 1 | -1): void {
+		const matches = this.state.matches;
+		if (matches.length === 0) { showEditorMessage('No matches found', 'warning', 1.5); return; }
+		const selection = getSelectionRange(this.code);
+		const position = selection === null ? { row: this.code.view.cursorRow, column: this.code.view.cursorColumn }
+			: direction === 1 ? selection.end : selection.start;
+		let index: number;
+		if (direction === 1) {
+			index = matches.findIndex(match => match.row > position.row || match.row === position.row && match.start >= position.column);
+			if (index === -1) index = 0;
+		} else {
+			index = matches.length - 1;
+			for (let candidate = matches.length - 1; candidate >= 0; candidate--) {
+				const match = matches[candidate];
+				if (match.row < position.row || match.row === position.row && match.start < position.column) { index = candidate; break; }
+			}
+		}
+		this.applySearchSelection(index, { keepSearchActive: this.state.field.focusTarget.hasFocus });
 	}
 
 	public searchPageSize(): number {
@@ -553,8 +440,8 @@ export class EditorSearchController {
 
 	public getVisibleSearchResultEntries(): readonly SearchResultEntry[] {
 		const stats = this.computeSearchPageStats();
-		const source = this.state.scope === 'global' ? this.state.globalMatches : this.state.matches;
-		const version = this.state.scope === 'local' && stats.visible > 0 ? this.code.model.version : -1;
+		const source = this.state.matches;
+		const version = stats.visible > 0 ? this.code.model.version : -1;
 		if (source !== this.resultEntriesSource || stats.offset !== this.resultEntriesOffset
 			|| stats.visible !== this.resultEntriesCount || version !== this.resultEntriesVersion) {
 			this.resultEntriesSource = source; this.resultEntriesOffset = stats.offset;
@@ -568,27 +455,12 @@ export class EditorSearchController {
 	}
 
 	private buildSearchResultEntry(index: number): SearchResultEntry {
-		if (this.state.scope === 'global') {
-			const match = this.state.globalMatches[index];
-			return {
-				primary: match.pathLabel,
-				secondary: match.snippet,
-				detail: `:${match.row + 1}`,
-			};
-		}
-
 		const match = this.state.matches[index];
-		const lineText = this.code.model.buffer.getLineContent(match.row);
+		const buffer = this.code.model.buffer;
 		return {
 			primary: `Line ${match.row + 1}`,
-			secondary: buildSnippet(lineText, match.start, match.end),
+			secondary: buildTextSearchSnippet(getTextSnapshot(buffer), buffer.offsetAt(match.row, match.start), match.end - match.start).text,
 		};
-	}
-
-	public openSelectedGlobalMatch(): void {
-		if (this.state.scope !== 'global') return;
-		const match = this.state.globalMatches[this.state.currentIndex];
-		if (match) openGlobalSearchMatch(findEditorGroup(this.code.focusTarget)!, this.catalog, match);
 	}
 
 	public applySearchFieldText(value: string, moveCursorToEnd: boolean): void {

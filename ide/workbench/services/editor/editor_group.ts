@@ -3,14 +3,13 @@ import { InputFocusScope, inputFocus, type InputFocusTarget } from '../../../inp
 import { InputInteraction } from '../../../input/interaction';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { beginNavigationCapture, completeNavigation, navigationState, NavigationHistoryEntry, withNavigationCaptureSuspended } from '../../../navigation/navigation_history';
-import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { EditorTabGroupModel, type EditorOpenOptions } from '../../ui/tab/group_model';
 import { EditorTabStrip } from '../../ui/tab/control';
 import type { EditorTabDragHandler } from '../../ui/tab/drag';
 import type { EditorTabId } from '../../ui/tab/id';
 import type { EditorInput } from '../../common/editor_inputs';
-import type { EditorPaneConstraints } from './editor_pane';
-import { EditorPanes, type EditorPaneContributions, type EditorPaneOpenOptions } from './editor_panes';
+import type { EditorPaneConstraints, EditorPaneOpenOptions } from './editor_pane';
+import { EditorPanes, type EditorPaneContributions } from './editor_panes';
 import type { EditorPaneSelection } from './editor_selection';
 import type { CloseEditors } from './editor_close';
 import type { WorkbenchSurface } from '../windows/model';
@@ -57,10 +56,7 @@ export function findEditorGroup(target: InputFocusTarget | null): EditorGroupVie
 	return undefined;
 }
 
-export type EditorTabOpenOptions = EditorOpenOptions & EditorPaneOpenOptions & {
-	/** The requesting owner may retire while input resolution or a destination draft publishes. */
-	readonly isCurrent?: () => boolean;
-};
+export type EditorTabOpenOptions = EditorOpenOptions & EditorPaneOpenOptions;
 export type EditorInputOpenResult = { readonly generation: number; readonly activated: boolean };
 export type EditorMoveEvent = { readonly input: EditorInput; readonly destination: EditorGroupView; readonly replacement: EditorInput };
 
@@ -170,7 +166,7 @@ export class EditorGroupView {
 		});
 		this.panes = new EditorPanes(contributions, this);
 		this.tabStrip = new EditorTabStrip(this.model, this.tabLayoutContext, commands, this.tabFocusTarget,
-			(id, preserveFocus) => this.activate(id, undefined, undefined, preserveFocus), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget, presentation.contextMenu);
+			(id, preserveFocus) => this.activate(id, { preserveFocus }), id => { void this.close(id); }, () => this.commitPendingEdit() && this.focus(), presentation.dropTarget, presentation.contextMenu);
 		this.tabSurface = presentation.surfaces.attach({
 			role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.tabScope,
 			isVisible: () => this.presented, getBounds: () => this.tabStrip.layoutState.bounds, getClip: () => this.clip,
@@ -321,28 +317,33 @@ export class EditorGroupView {
 	public openEditor(input: EditorInput, options: EditorTabOpenOptions = {}): EditorInputOpenResult | undefined {
 		let generation = this.panes.openGeneration;
 		const focusRevision = inputFocus.revision;
-		if (options.isCurrent?.() === false || !this.openingAdmitted || this.panes.openGeneration !== generation) {
+		if (options.isCurrent?.() === false || options.navigationSelection?.isDisposed || !this.openingAdmitted || this.panes.openGeneration !== generation) {
 			if (this.model.indexOf(input) < 0) input.dispose();
 			return undefined;
 		}
-		if (!this.commitPendingEdit() || options.isCurrent?.() === false || !this.openingAdmitted || this.panes.openGeneration !== generation) {
+		if (!this.commitPendingEdit() || options.isCurrent?.() === false || options.navigationSelection?.isDisposed || !this.openingAdmitted || this.panes.openGeneration !== generation) {
 			if (this.model.indexOf(input) < 0) input.dispose();
 			return undefined;
 		}
 		const preserveFocus = options.preserveFocus || inputFocus.revision !== focusRevision && inputFocus.target !== null;
 		generation = this.panes.beginOpen();
 		const admit = (): EditorInputOpenResult | undefined => {
+			if (options.navigationSelection?.isDisposed || this.panes.openGeneration !== generation) {
+				if (this.model.indexOf(input) < 0) input.dispose();
+				return undefined;
+			}
 			if (this.model.findMatching(input) === undefined) {
 				generation = this.panes.clearEditor();
-				if (this.panes.openGeneration !== generation) {
+				if (options.navigationSelection?.isDisposed || this.panes.openGeneration !== generation) {
 					if (this.model.indexOf(input) < 0) input.dispose();
 					return undefined;
 				}
 			}
 			const admitted = this.model.add(input, options);
 			if (this.panes.openGeneration !== generation) return undefined;
-			return this.doActivate(admitted, options.selection, options.navigationSelection,
-				preserveFocus || inputFocus.revision !== focusRevision && inputFocus.target !== null);
+			// Producer admission is consumed before the receiver retires the old attachment.
+			return this.doActivate(admitted, { selection: options.selection, navigationSelection: options.navigationSelection,
+				preserveFocus: preserveFocus || inputFocus.revision !== focusRevision && inputFocus.target !== null });
 		};
 		const previous = preserveFocus ? null : beginNavigationCapture();
 		try {
@@ -393,12 +394,12 @@ export class EditorGroupView {
 		}
 	}
 
-	public activate(id: EditorTabId, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection, preserveFocus = false): boolean {
-		if (!this.openingAdmitted) return false;
+	public activate(id: EditorTabId, options: EditorPaneOpenOptions = {}): boolean {
+		if (options.isCurrent?.() === false || options.navigationSelection?.isDisposed || !this.openingAdmitted) return false;
 		const generation = this.panes.openGeneration;
-		if (!this.commitPendingEdit() || this.panes.openGeneration !== generation) return false;
+		if (!this.commitPendingEdit() || options.isCurrent?.() === false || options.navigationSelection?.isDisposed || this.panes.openGeneration !== generation) return false;
 		const input = this.model.findById(id)!;
-		return this.doActivate(input, selection, navigationSelection, preserveFocus) !== undefined;
+		return this.doActivate(input, options) !== undefined;
 	}
 
 	/** Only the actual attached view may publish its focused control's draft. */
@@ -421,18 +422,21 @@ export class EditorGroupView {
 	}
 
 	/** Apply a switch after its caller has settled user admission or owner retirement. */
-	private doActivate(input: EditorInput, selection?: EditorTextSelection, navigationSelection?: EditorPaneSelection, preserveFocus = false): EditorInputOpenResult | undefined {
+	private doActivate(input: EditorInput, options: EditorPaneOpenOptions = {}): EditorInputOpenResult | undefined {
+		const { selection, navigationSelection } = options;
+		let preserveFocus = options.preserveFocus;
+		if (options.isCurrent?.() === false || navigationSelection?.isDisposed) return undefined;
 		const changing = input !== this.model.activeTab;
 		const capture = !preserveFocus && (changing || selection !== undefined || navigationSelection !== undefined);
 		const previous = capture ? beginNavigationCapture() : null;
 		const focusRevision = inputFocus.revision;
 		const generation = changing ? this.panes.clearEditor() : this.panes.beginOpen();
-		if (this.panes.openGeneration !== generation) { previous?.dispose(); return undefined; }
+		if (options.isCurrent?.() === false || navigationSelection?.isDisposed || this.panes.openGeneration !== generation) { previous?.dispose(); return undefined; }
 		this.model.activate(input);
-		if (this.panes.openGeneration !== generation) { previous?.dispose(); return undefined; }
+		if (options.isCurrent?.() === false || navigationSelection?.isDisposed || this.panes.openGeneration !== generation) { previous?.dispose(); return undefined; }
 		preserveFocus ||= inputFocus.revision !== focusRevision && inputFocus.target !== null;
 		if (!preserveFocus) navigationState.activeOwner = this;
-		const result = this.panes.openEditor(input, { selection, navigationSelection, preserveFocus });
+		const result = this.panes.openEditor(input, { ...options, preserveFocus });
 		if (capture && result?.activated) completeNavigation(previous); else previous?.dispose();
 		return this.model.activeTab === input && this.panes.activePane?.input === input ? result : undefined;
 	}
@@ -457,7 +461,7 @@ export class EditorGroupView {
 			if (successor === undefined) for (let position = index + 1; position < tabs.length; position++) if (!closing?.has(tabs[position])) {
 				successor = tabs[position]; break;
 			}
-			if (successor !== undefined) this.doActivate(successor, undefined, undefined, navigationState.activeOwner !== this || this.tabStrip.focusTarget.hasFocus);
+			if (successor !== undefined) this.doActivate(successor, { preserveFocus: navigationState.activeOwner !== this || this.tabStrip.focusTarget.hasFocus });
 			else this.panes.clearEditor();
 		}
 		this.model.removeAt(index);

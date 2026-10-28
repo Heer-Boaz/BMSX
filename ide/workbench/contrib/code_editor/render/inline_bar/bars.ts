@@ -2,35 +2,20 @@ import * as constants from '../../../../../common/constants';
 import { renderInlineBarField, renderInlineBarFrame } from './common';
 import { api } from '../../../../../runtime/overlay_api';
 import { drawEditorText } from '../../../../../editor/render/text_renderer';
-import type { EditorSearchController } from '../../find/search';
+import type { EditorSearchController, SearchResultEntry } from '../../find/search';
 import type { CodeEditorLineJump } from '../../find/line_jump';
 import type { RenameController } from '../../rename/controller';
 import type { SourceInlineBars } from '../../inline_bar/source_inline_bars';
 import type { CodeEditorControl } from '../../../../../editor/ui/code_editor_control';
 import type { RectBounds } from '../../../../../../machine/ts/common/rect';
 
-type InlineSearchResultEntry = {
-	primary: string;
-	secondary?: string;
-	detail?: string;
-};
-
-const drawSearchResultRow = (code: CodeEditorControl, entry: InlineSearchResultEntry, rowTop: number, bounds: Readonly<RectBounds>, selected: boolean, hovered: boolean): void => {
+const drawSearchResultRow = (code: CodeEditorControl, entry: SearchResultEntry, rowTop: number, bounds: Readonly<RectBounds>, selected: boolean, hovered: boolean): void => {
 	const paddingX = bounds.left + constants.QUICK_OPEN_RESULT_PADDING_X;
 	const secondaryY = rowTop + code.lineHeight;
 	const text = selected ? constants.COLOR_SEARCH_SELECTION_TEXT : hovered ? constants.COLOR_SEARCH_HOVER_TEXT : constants.COLOR_SEARCH_TEXT;
 	const secondary = selected || hovered ? text : constants.COLOR_SEARCH_SECONDARY_TEXT;
-	if (entry.primary) {
-		drawEditorText(code.font, entry.primary, paddingX, rowTop, 0, text);
-	}
-	if (entry.detail) {
-		const detailWidth = code.font.measure(entry.detail);
-		const detailX = bounds.right - detailWidth - constants.QUICK_OPEN_RESULT_PADDING_X;
-		drawEditorText(code.font, entry.detail, detailX, rowTop, 0, secondary);
-	}
-	if (entry.secondary) {
-		drawEditorText(code.font, entry.secondary, paddingX, secondaryY, 0, secondary);
-	}
+	drawEditorText(code.font, entry.primary, paddingX, rowTop, 0, text);
+	drawEditorText(code.font, entry.secondary, paddingX, secondaryY, 0, secondary);
 };
 
 export function renderSearchBar(code: CodeEditorControl, find: EditorSearchController, bars: SourceInlineBars): void {

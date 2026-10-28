@@ -118,8 +118,8 @@ test('shared font publication and one-pane resize preserve independent Source la
 
 test('Find, Rename and Suggest belong to the real Source pane and clear only with their own input', t => {
 	const f = createActualSourcePanes(t), a = f.first, b = f.second;
-	a.code.focusTarget.focus(); a.openFind('local'); a.find.applySearchFieldText('alpha', true);
-	b.code.focusTarget.focus(); b.openFind('local'); b.find.applySearchFieldText('beta', true);
+	a.code.focusTarget.focus(); a.openFind(); a.find.applySearchFieldText('alpha', true);
+	b.code.focusTarget.focus(); b.openFind(); b.find.applySearchFieldText('beta', true);
 	f.update();
 	assert.notEqual(a.find.state.field, b.find.state.field); assert.equal(a.find.state.query, 'alpha'); assert.equal(b.find.state.query, 'beta');
 	assert.equal(a.find.state.matches.length, 2); assert.equal(b.find.state.matches.length, 2);
@@ -223,7 +223,7 @@ test('Source navigation restore and input retirement target one actual pane with
 	const selection = new CodeEditorNavigationSelection(f.firstInput);
 	t.after(() => selection.dispose());
 	a.focusTarget.textInput!.setSelection(0, 0);
-	f.firstGroup.activate(f.firstInput.id, undefined, selection);
+	f.firstGroup.activate(f.firstInput.id, { navigationSelection: selection });
 	assert.equal(a.view.cursorColumn, 11); assert.deepEqual(a.view.selectionAnchor, { row: 0, column: 6 });
 	assert.equal(b.view.cursorColumn, 10); assert.deepEqual(b.view.selectionAnchor, { row: 0, column: 6 });
 	const retiredView = f.firstInput.context.view;

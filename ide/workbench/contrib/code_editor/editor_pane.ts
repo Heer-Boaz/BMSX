@@ -101,7 +101,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.part = editor.editorParts.partForGroup(group);
 		const code = this.code = new CodeEditorControl(scope, editorViewState.font, clock);
 		this.completion = new EditorCompletionController(code, sources, guest, fault, runtime);
-		this.find = new EditorSearchController(code, sources.catalog);
+		this.find = new EditorSearchController(code);
 		this.lineJump = new CodeEditorLineJump(code);
 		this.rename = new RenameController(code, sources.catalog, editor.crossFileRename);
 		this.hover = new CodeEditorHoverController(code, sources, guest, fault, runtime);
@@ -155,7 +155,7 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		this.unsubscribeBeforeContentChange = model.onWillChangeContent(() => { this.hover.clear(); this.code.gotoHoverHighlight = null; });
 		this.unsubscribeContentChange = model.onDidChangeContent(event => {
 			this.completion.updateAfterEdit(event.editContext); this.code.references.clear();
-			if (this.find.state.query.length > 0 && this.find.state.scope === 'local') this.find.startSearchJob();
+			if (this.find.state.query.length > 0) this.find.startSearchJob();
 		});
 	}
 
@@ -228,15 +228,15 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 				renameActive ? this.rename.getHighlightMatches() : this.code.references.getMatches(),
 				renameActive ? this.rename.getActiveIndex() : this.code.references.getActiveIndex(),
 				this.find.state.matches, this.find.state.currentIndex,
-				this.find.state.scope === 'local' && this.find.state.query.length > 0,
+				this.find.state.query.length > 0,
 				diagnostics?.status === 'ready' ? diagnostics.byRow : EMPTY_DIAGNOSTICS_BY_ROW);
 		}
 		api.popClipRect();
 	}
 
-	public openFind(scope: 'local' | 'global'): void {
+	public openFind(): void {
 		this.code.references.clear(); this.lineJump.close(false); this.rename.cancel(); this.completion.closeSession();
-		this.find.openSearch(true, scope); this.find.state.field.focusTarget.focus();
+		this.find.openSearch(true); this.find.state.field.focusTarget.focus();
 	}
 
 	public openLineJump(): void {

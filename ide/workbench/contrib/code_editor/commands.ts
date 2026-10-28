@@ -15,8 +15,7 @@ export function bindSourceCommands(pane: CodeEditorPane): () => void {
 	const lua = () => code.model !== null && code.model.mode === 'lua';
 	const editableLua = () => code.model !== null && code.model.mode === 'lua' && !code.model.readOnly;
 	const commands: readonly (readonly [EditorCommandId, FocusCommand])[] = [
-		['findLocal', { isEnabled: attached, run: () => pane.openFind('local') }],
-		['findGlobal', { isEnabled: attached, run: () => pane.openFind('global') }],
+		['findLocal', { isEnabled: attached, run: () => pane.openFind() }],
 		['lineJump', { isEnabled: attached, run: () => pane.openLineJump() }],
 		['rename', { isEnabled: editableLua, run: () => pane.openRename(false) }],
 		['renamePreview', { isEnabled: editableLua, run: () => pane.openRename(true) }],

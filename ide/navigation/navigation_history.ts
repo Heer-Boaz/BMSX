@@ -53,9 +53,13 @@ export class NavigationHistoryEntry extends DisposableStore {
 		} else {
 			this.editorTarget = target;
 			this.ownerValue = owner;
+			if (selection?.isDisposed) { super.dispose(); return; }
 			this.unbindOwner = owner!.onWillDispose(this.retire);
 			this.unbindMove = owner!.onDidMoveEditor(this.followMove);
-			if (selection !== undefined) this.add(selection);
+			if (selection !== undefined) {
+				this.add({ dispose: selection.onDidRetire(this.retire) });
+				this.add(selection);
+			}
 			if (target.kind === 'input') this.unbindInput = target.input.onWillDispose(this.retire);
 		}
 	}
