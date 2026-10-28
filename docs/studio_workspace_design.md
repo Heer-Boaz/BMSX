@@ -122,6 +122,11 @@ continues to use the common group-routing contract.
   [terminal input](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/terminal/browser/terminalEditorInput.ts#L24-L85)
   keeps that instance independently of the pane. Studio likewise separates
   runtime-client intent from concrete focus, popup and guest-input authority.
+- VS Code's [editor input](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/common/editor/editorInput.ts)
+  and [code widget](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/editor/browser/widget/codeEditor/codeEditorWidget.ts)
+  distinguish retained subject lifetime from an attached control. This supports
+  Studio's domain/context/control/container boundary; it does not require every
+  tool to inherit a universal context class or normalize its selection data.
 - Godot's [main-screen container](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/editor_main_screen.h#L49-L64)
   keeps the main area present, while its
   [dock manager](https://github.com/godotengine/godot/blob/5d1cd20f9117e4721fce626454e2323eb9462d0a/editor/docks/editor_dock_manager.h)
@@ -190,22 +195,42 @@ owners without requiring every missing Unreal subsystem.
 | Owner | Retained state and responsibility |
 | --- | --- |
 | Attached workspace | Source/file authority, admitted resource catalog, working copies, semantic caches, Save, recovery and navigation. Execution attachments consume these owners; they do not supply authoring identity. |
+| Domain model and projection | Canonical data and source/inspection facts in their own representations: text models and semantic generations, authored topology, physical histories and captured observations. Shared projections follow their producer's identity and invalidation, not whichever container is visible. |
+| Retained work context | Exact authored or inspected subject, contribution-owned semantic selection, source correspondence or runtime lease, availability and working-copy participation. Its lifetime is independent of attached controls and window/group placement. |
+| Attached control | Concrete focus/native input, layout, scrolling, gestures, drafts and transient command authority. Coordinated controls bind a work context; presentation mementos can survive detachment without keeping the old control authority alive. |
 | Frontend editor-parts owner | Permanent main part, floating-part membership, document-part activation/MRU and destination routing. Derives workspace-wide group/input enumeration from actual membership; a retained active group is not the primary authored context. |
 | Permanent shell | Project navigation, workspace-wide Open Editors, menu and status outside the overlapping editor-host area. It is not the surface raised when an editor gains focus. |
 | Main workspace composition (target) | Frontend-owned allocation and attachment of project content, primary authoring client, contextual hierarchy/Details, Main's document arrangement and output/tool presentations. It composes actual controllers and shared surfaces; it owns no duplicate source/domain services. |
-| Primary authored context (target) | Explicit primary subject, source correspondence, contribution-owned selection and working-copy retention, independent of document activation and physical execution. Its lifetime ends on admitted replacement/clear or workspace retirement. |
-| Contextual hierarchy/Details (target) | Controls bound to the primary context's domain projection and selection. They own local focus, scrolling and field drafts; the subject owner owns meaning and accepted edits. |
+| Primary authored context (target) | The retained work context explicitly selected for Main, independent of secondary document activation and physical execution. Its lifetime ends on admitted replacement/clear or workspace retirement. |
+| Contextual hierarchy/Details (target) | Coordinated controls over the primary work context's projection and semantic selection, not separate subject owners or duplicate working-copy consumers. |
 | Project content | Existing file/catalog and declaration projections, with browser-local selection/disclosure. Hiding its presentation retains browsing state; another activity does not replace its content identity. |
 | Main editor part | A permanent arrangement of ordinary document/asset editor groups within Main's presentation family. Closing or changing its tabs does not replace the primary authored context. |
 | Editor part | Group membership/arrangement, local active group, client bounds and local focus/capture scope. Main and floating parts use the same group composition; only host presentation differs. |
 | Editor-group arrangement | Retained group leaves and horizontal/vertical split branches, requested proportions, minimum extents and published leaf bounds. It owns topology, not editor subjects or source data. |
 | Editor group | Ordered inputs, active/preview input, pane instances, tab chrome, group focus/capture scope and outstanding editor-opening lifetime. Each concurrently visible group has its own panes and controls. |
-| Editor input/view | One presentation identity, selection, scroll and source-correspondence bookmarks. Another part gets another view/input when an additional view is explicitly requested. |
+| Editor input/view | Document presentation identity and retention of its work context, with contribution-owned reading mementos. A move transfers this view; an explicit independent view gets its own context/selection over the same domain data. |
 | Working copy | Authored text, dirty state, versions and Undo/Redo for one admitted resource identity. Views of that same identity share this owner. |
-| Source control | Its text layout, native caret, selection gestures, completion and Find/Rename interaction. Font/theme and project semantic results remain shared at their existing owners. |
 | Surface/window owner | Paint order, placement, clipping, chrome and input admission. It does not own the document or choose a physical execution target. |
 | Output/tool activity | Its build/log, diagnostic, terminal, inspection or preview subject and lifetime at the existing activity owner. Presentation may be an editor, panel or owned window without replacing the primary authored context. |
 | Workbench navigation | One Back/Forward history of concrete destinations and contribution-owned selections, including the destination part. Creating or disposing a part does not reset unrelated history. |
+
+The boundaries are **domain model/projection → retained work context → attached
+controls → container**. This lifetime and ownership contract applies to Source,
+authored tools and runtime inspection alike; it is not a proposed generic
+subject/selection type, context base class or registry. Domain-specific owners
+keep their real representations. Shared capabilities are introduced where a
+consumer needs them: working-copy participation serves Save/final-consumer
+close, while existing `InputEdit`, `InputInteraction` and `InputFocusScope`
+serve field drafts, logical runtime intent and control-attachment authority.
+
+Controls coordinated by one context share its semantic selection: Main's
+hierarchy and Details act on the same exact member, and an Actor inspector's
+controls act on its retained target. Independent Source, Scene or Behavior views
+have independent contexts/selections even when their working copies match.
+Independent GPU/GTE observations can retain different captured operations from
+the same physical history. A Play context retains its admitted handle, not a
+source-file identity. Neither common placement nor common data joins selections
+or grants another context's source/session authority.
 
 All parts in a frontend share its workspace services. A group is not a window:
 several groups can be arranged within a part, and the layout owner supplies their
@@ -260,13 +285,10 @@ The context retains its working copies and source correspondence, not another
 authored data model. Existing catalog, semantic and source-projection owners
 remain shared and generation-cached.
 
-The primary context owns its semantic selection: for example, an exact Scene
-member occurrence. Hierarchy, primary-client interaction and Details publish
-selection through that owner. Each control retains only its local focus,
-scroll, gesture and uncommitted edit state. A secondary Scene editor's selection
-is independent; sharing a working copy does not join those selections. Files
-selection, document activation, keyboard focus, command invocation and explicit
-run-target selection also remain separate states.
+Hierarchy, primary-client interaction and Details publish semantic selection
+through the primary context: for example, an exact Scene member occurrence.
+Files selection, document activation, keyboard focus, command invocation and
+explicit run-target selection remain separate states.
 
 Occurrence references are tracked through canonical edits by their source
 owner. An AST node, range or projected property belongs to the source generation
@@ -478,8 +500,20 @@ controls and opening destination; no factory closes over a primary-group alias.
 Workspace caches and document projections stay at their existing shared owners.
 Each part retains its group's inputs independently of another part's active tab
 and Main's authored subject. Part activation selects its actual active group,
-not a primary-group alias. A primary client has its own source-backed state and
-controls, not a hidden group input or a pane borrowed from a document group.
+not a primary-group alias. Inputs retain their contexts; controls bind those
+contexts rather than obtaining domain state through a container. A primary
+client has its own admitted context and actual controls, not a hidden group input
+or a pane borrowed from a document group.
+
+Detaching or rebinding a control retires its gestures, popups, native input and
+invocation scopes before another context can bind. Pending drafts follow the
+actual control's accept/cancel contract, not a context-wide success stub. The
+retained subject, semantic selection and domain lease survive according to their own
+owners. A source edit invalidates the relevant source generation; guest
+execution releases borrowed rows; target replacement retires that target's
+authority. These are different events, not a universal reset on tab/window
+change. Retaining a context or restoring an inert memento never revives the
+old control's commands, source coordinates or guest-input authorization.
 
 Composition follows a concrete ownership order:
 
@@ -488,7 +522,8 @@ Composition follows a concrete ownership order:
 2. Construct Main's workspace composition and permanent document part, then
    restored floating parts. Resolve the recorded primary subject through its
    domain/source owner, or retain its unbound/Unavailable state. Construct
-   independent inputs and contextual controls over the recovered models.
+   the corresponding retained contexts and independent views before binding
+   contextual controls over the recovered models.
 3. Attach project content, primary/contextual regions, group controls and
    activity presentations within their actual surface and focus ancestry.
    Publish allocation and presentation activation only after their destinations
@@ -509,15 +544,16 @@ source state. Layout and activation invalidate their owning projections; a
 stationary frame does not rebuild pane factories, enumerate source registries
 or reconstruct window state.
 
-Source layout is separated by responsibility, rather than copying the entire
-current `CodeLayout` into every window. Canonical source/semantic/highlight data
-and font-generation measurements can be shared by their producer keys. Wrapping,
-visual-row/viewport projection, hit testing and interaction belong to the actual
-control. An unchanged second view reuses source/index generations; stationary
-frames do not parse, rebuild highlights or remeasure unchanged source per view.
-Injected completion/ghost text and other view-specific projections stay with
-their control; they are neither canonical source nor another view's shared
-highlight/measurement result.
+Projection sharing follows representation, not a universal document wrapper.
+Code's canonical model/semantic facts are shared; `CodeDocumentProjections`
+shares frontend token colors and font-generation measurements, not authored
+topology. Behavior/Scene source documents share semantic topology. Runtime
+histories and copied GPU/GTE observations retain physical-target and capture
+generations. Context-local filtering or graph geometry is not canonical data.
+Source wrapping, visual rows, hit testing, completion/ghost text and Find/Rename
+interaction belong to the attached control. An unchanged second view reuses
+appropriate source/index/measurement generations instead of parsing, coloring
+or measuring the same source again per window.
 
 ## Identity and admission
 
@@ -1117,12 +1153,16 @@ Run-target selection has explicit admission rules:
 
 ## Close, layout and restoration
 
-Closing an asset tab ends that view. A workspace-owned close operation identifies
-the explicit affected authoring consumers and **all** their working copies,
-including composite inputs' `getWorkingCopies()` rather than only their primary
-resource. Main's retained primary context is also a real working-copy consumer,
-not a hidden editor input. Closing an editor window applies that operation to
-its groups; replacing/clearing the primary context applies it to that context.
+Closing an asset tab ends that view and releases its context retention. A
+workspace-owned close operation identifies the affected authoring contexts and
+**all** their working copies, including composite participation rather than only
+a primary resource.
+Each retained context is one consumer: a shared projection, its hierarchy and
+Details controls, an input adapter and its group/window do not add duplicate
+consumers. Existing source inputs expose `getWorkingCopies()`; an independent
+primary context participates directly, not through a hidden editor input.
+Closing an editor window applies that operation to its groups' retained
+contexts; replacing/clearing the primary subject applies it to that context.
 One dirty-close decision is required per working copy whose final retained
 authoring consumer would retire. Save/Discard/Cancel is presented through the
 existing prompt UI and executed through working-copy/recovery owners before
@@ -1249,7 +1289,7 @@ Construction depends on these owner boundaries remaining coherent together:
 | --- | --- |
 | `workbench/workbench.ts`, source/catalog, model and Save composition | Separate authoring authority from execution attachments; admit logical source contexts centrally. |
 | Frontend main-workspace composition and primary-context owner | Allocate actual content, primary/contextual, document and activity clients; retain exact authored context independently of focus and document activation; no duplicate domain store or forwarding host. |
-| Source-domain projections and contextual controls | One generation-cached source projection, exact occurrence/selection, independent control state, source-preserving edits and explicit unavailability. Scene membership/property authoring proves the contract without claiming a spatial viewport. |
+| Domain projections, retained work contexts and attached controls | Share producer-owned data/projections; retain exact subject, semantic selection and source/session correspondence per context; retire control authority independently. Scene membership/property authoring proves the primary authored contract without claiming a spatial viewport. |
 | `services/editor/editor_part.ts`, arrangement, `editor_group.ts`, `ui/tab/`, `editor_panes.ts` | Multiple real groups per part, shared split/drop/transfer operations and group-scoped controls; no retained single-group alias or tool-specific container routing. |
 | `editor/ui/code_editor_state.ts`, view/layout and editor contributions | Control-owned source interaction/viewport state, with shared model/semantic/font-generation producers. |
 | `commands/controller.ts` and contribution controllers | Explicit invocation input/group/transport instead of global active-tab subject discovery. |
