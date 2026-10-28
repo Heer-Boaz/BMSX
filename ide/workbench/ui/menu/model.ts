@@ -10,6 +10,7 @@ export type WorkbenchMenuDefinition<Context> = readonly WorkbenchMenuItemDefinit
 export type WorkbenchMenuEntry = {
 	readonly item: WorkbenchMenuItem;
 	visible: boolean;
+	revision: number;
 };
 
 /** A consumer admits the presented membership and its structural lifetime. */
@@ -32,7 +33,7 @@ export class WorkbenchMenu<Context> implements WorkbenchMenuProjection {
 
 	public constructor(private readonly definition: WorkbenchMenuDefinition<Context>, private readonly context: Context) {
 		// Class-field construction binds only; producer state is published before refresh.
-		this.entries = definition.map(item => ({ item, visible: false }));
+		this.entries = definition.map(item => ({ item, visible: false, revision: 0 }));
 	}
 
 	public refresh(): boolean {
@@ -40,7 +41,7 @@ export class WorkbenchMenu<Context> implements WorkbenchMenuProjection {
 		for (let index = 0; index < this.entries.length; index++) {
 			const item = this.definition[index], entry = this.entries[index];
 			const visible = item.type === 'separator' || item.when === undefined || item.when(this.context);
-			if (entry.visible !== visible) { entry.visible = visible; changed = true; }
+			if (entry.visible !== visible) { entry.visible = visible; entry.revision++; changed = true; }
 		}
 		if (!changed) return false;
 		let count = 0;

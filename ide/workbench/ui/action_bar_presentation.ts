@@ -4,7 +4,7 @@ import type { WorkbenchMenuItem } from './menu/registry';
 
 const SECONDARY_GROUP: WorkbenchMenuItem = { type: 'separator' };
 
-/** Primary placements and the derived More menu share one structural lifetime. */
+/** The derived More menu tracks primary and secondary membership as one structural lifetime. */
 export class WorkbenchActionBarPresentation implements WorkbenchMenuPresentation {
 	public readonly visibleItems: WorkbenchMenuItem[] = [];
 	public revision = 0;

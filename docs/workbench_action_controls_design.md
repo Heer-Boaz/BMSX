@@ -87,8 +87,12 @@ Its revision observes both source menus. Input admission can retract a hidden
 primary immediately; only layout admits a newly visible primary's geometry.
 
 Membership changes have a structural revision even when the final geometry is
-unchanged. A hidden action's armed gesture is revoked; hiding and showing it
-before key-up cannot revive the press. An owned popup retires on a membership
+unchanged. Each placement retains its own membership revision: an ordinary
+attempt depends on its initiating entry, not an unrelated action becoming
+available before layout. A hidden action's armed gesture is revoked; hiding and
+showing it before key-up cannot revive the press. Layout changes revoke the
+old physical geometry. More and its owned popup depend on the whole derived
+membership. An owned popup retires on a membership
 change without closing a newer unrelated popup or stealing its focus. Existing
 source/context retirement remains independent of presentation membership.
 Unchanged refreshes reuse entry and visible-item storage and do not remeasure

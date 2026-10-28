@@ -375,3 +375,32 @@ test('a newly shown title member cannot admit stale bounds until layout arranges
 	f.pointer(undo, 0, PRIMARY, PRIMARY);
 	assert.deepEqual(f.executed, ['undo']);
 });
+
+for (const input of ['pointer', 'keyboard'] as const) for (const visible of [false, true])
+	test(`an armed ${input} action retains its own membership when another placement becomes ${visible ? 'visible' : 'hidden'} before layout`, t => {
+		const f = fixture(t), undo = f.state.items[0];
+		f.context.showRedo = !visible;
+		f.layout(); f.bar.update();
+		if (input === 'pointer') f.pointer(undo, PRIMARY, PRIMARY);
+		else { f.bar.focusTarget.focus(); f.key('Enter', true); }
+		assert.equal(f.state.pressedCommand, 'undo');
+		f.context.showRedo = visible;
+		assert.equal(f.menu.refresh(), true);
+		if (input === 'pointer') f.pointer(undo, 0, 0, PRIMARY);
+		else f.key('Enter', false);
+		assert.deepEqual(f.executed, ['undo'], 'unarranged unrelated membership cannot retire the initiating placement');
+	});
+
+for (const input of ['pointer', 'keyboard'] as const)
+	test(`an armed ${input} More action retains the lifetime of the whole derived menu before layout`, t => {
+		const f = fixture(t, [{ type: 'command', command: 'save' }]), more = f.state.overflow!.button;
+		if (input === 'pointer') f.pointer(more, PRIMARY, PRIMARY);
+		else { f.bar.focusTarget.focus(); f.press('End'); f.key('Enter', true); }
+		assert.equal(f.state.pressedCommand, more.command);
+		f.context.showUndo = false; f.menu.refresh();
+		f.context.showUndo = true; f.menu.refresh();
+		if (input === 'pointer') f.pointer(more, 0, 0, PRIMARY);
+		else f.key('Enter', false);
+		assert.equal(f.popup.visible, false, 'More cannot open the replacement structure with an old physical attempt');
+		assert.deepEqual(f.executed, []);
+	});

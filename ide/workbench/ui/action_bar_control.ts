@@ -11,6 +11,7 @@ import { WORKBENCH_ACTION_BAR_OVERFLOW, type WorkbenchActionBarAction, type Work
 import { editorCommandTitle } from '../../commands/catalog';
 import type { ContextMenuController } from '../services/context_menu/controller';
 import type { DisposableStore } from '../../common/lifecycle';
+import type { WorkbenchMenuEntry } from './menu/model';
 
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
 const HORIZONTAL_NAVIGATION_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'] as const;
@@ -25,6 +26,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	private input: WorkbenchActionBarState | undefined;
 	private pointerCommand: WorkbenchActionBarAction | null = null;
 	private triggerKey: string | undefined;
+	private pressedEntry: WorkbenchMenuEntry | undefined;
+	private pressedEntryRevision = 0;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindFocus: () => void;
 	private readonly unbindBlur: () => void;
@@ -123,12 +126,15 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	private refreshPresentation(): void {
 		const state = this.input!;
 		state.presentation.refresh();
-		if (this.layoutRevision !== state.layoutRevision || this.presentationRevision !== state.presentation.revision) {
-			this.layoutRevision = state.layoutRevision;
-			this.presentationRevision = state.presentation.revision;
+		const layoutChanged = this.layoutRevision !== state.layoutRevision;
+		const presentationChanged = this.presentationRevision !== state.presentation.revision;
+		this.layoutRevision = state.layoutRevision;
+		this.presentationRevision = state.presentation.revision;
+		// Ordinary attempts own one placement; More owns the entire derived menu.
+		if (layoutChanged || this.pressedEntry !== undefined && this.pressedEntry.revision !== this.pressedEntryRevision
+			|| presentationChanged && (this.pointerCommand === WORKBENCH_ACTION_BAR_OVERFLOW || state.pressedCommand === WORKBENCH_ACTION_BAR_OVERFLOW))
 			this.cancelPointer();
-			if (this.overflowSession !== undefined) this.contextMenu!.hide();
-		}
+		if ((layoutChanged || presentationChanged) && this.overflowSession !== undefined) this.contextMenu!.hide();
 	}
 
 	/** A subject change revokes its action without interrupting unrelated window controls. */
@@ -142,6 +148,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		this.unbindPressBlur = undefined;
 		this.pointerCommand = null;
 		this.triggerKey = undefined;
+		this.pressedEntry = undefined;
 		if (this.input !== undefined) {
 			this.input.pressedCommand = null;
 			this.input.hoveredCommand = null;
@@ -163,6 +170,8 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 			this.cancelPointer();
 			this.capture.capture(this);
 			this.pointerCommand = command;
+			this.pressedEntry = item!.menuEntry;
+			this.pressedEntryRevision = this.pressedEntry === undefined ? 0 : this.pressedEntry.revision;
 			state.pressedCommand = command;
 			state.hoveredCommand = command;
 			state.focusedIndex = index;
@@ -269,7 +278,10 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		if (input.down && !input.repeat && this.triggerKey === undefined && state.focusedIndex >= 0) {
 			this.cancelPointer();
 			this.triggerKey = input.code;
-			state.pressedCommand = state.focusedIndex === state.items.length ? state.overflow!.button.command : state.items[state.focusedIndex].command;
+			const item = state.focusedIndex === state.items.length ? state.overflow!.button : state.items[state.focusedIndex];
+			state.pressedCommand = item.command;
+			this.pressedEntry = item.menuEntry;
+			this.pressedEntryRevision = this.pressedEntry === undefined ? 0 : this.pressedEntry.revision;
 		}
 		consumeIdeKey(input.code, input);
 		if (input.code !== this.triggerKey || input.down) return;
