@@ -55,7 +55,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		return measureWorkbenchPropertyTreeMinimumWidth(editorViewState.font.renderFont(), PROPERTY_NAME_READING_COLUMNS, EXPRESSION_READING_COLUMNS) + 8;
 	}
 
-	private readonly pointer = new WorkbenchPropertyTreePointer(pointerHover);
+	private readonly pointer = new WorkbenchPropertyTreePointer(inputFocus, pointerHover, this.focusTarget);
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly edit: WorkbenchPropertyEdit<EditorTextEdit>;
 	private readonly actionTooltip = new WorkbenchTooltip();
@@ -63,7 +63,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.tree.layout.visibleRowCount > 0;
-		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
+		this.pointer.attachFeedback(surfaces, paneSurface, workArea);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.focusTarget.canFocus = () => this.hasInput && this.input.actionBar.bounds.left < this.input.actionBar.bounds.right
@@ -91,7 +91,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 			run: () => executeTextHistoryCommand(this.input.workingCopy, direction),
 		});
 	}
-	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); }
+	protected override activate(): void { this.actions.setInput(this.input.actionBar, this.focusTarget); this.pointer.setInput(this.input.tree); }
 	public override setOptions(_selection?: EditorTextSelection, navigationSelection?: AemNavigationSelection): void {
 		if (navigationSelection === undefined) return;
 		this.edit.close(); this.pointer.clear();
@@ -121,12 +121,13 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		layoutWorkbenchPropertyTree(tree, font, measureTextRange, left,
 			Math.min(layout.bottom, layout.top + layout.rowHeight + 7), right, layout.bottom);
 		if (tree.layout.visibleRowCount === 0) { this.pointer.clear(); this.focusTarget.release(); }
+		else this.pointer.setInput(tree);
 		if (!this.actions.focusTarget.canFocus!()) {
 			pointerCapture.cancelTarget(this.actions);
 			pointerHover.release(this.actions);
 			this.actions.focusTarget.release();
 		}
-		this.pointer.updateFeedback(tree);
+		this.pointer.updateFeedback();
 		this.edit.update();
 		this.actions.update();
 		const hint = this.actions.tooltipItem;
@@ -143,21 +144,16 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status || this.input.applyStatus, bounds.left + 4, bounds.top + 2, 0, color); }
 	public handleKeyboard(input: KeyInputEvent): void {
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
-			consumeIdeKey(key, input); navigateWorkbenchTree(this.input.tree, command); this.pointer.keyboardSelection(this.input.tree); return;
+			consumeIdeKey(key, input); navigateWorkbenchTree(this.input.tree, command); this.pointer.keyboardSelection(); return;
 		}
 		if (isKeyJustPressed('Enter', input)) { consumeIdeKey('Enter', input); this.commands.execute('aem.edit', this.focusTarget); }
 		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); this.commands.execute('aem.remove', this.focusTarget); }
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
-		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
-		const result = this.pointer.handle(input.tree, snapshot, justPressed, now);
+		const result = this.pointer.handle(snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;
-		if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
-			if (this.input !== input || scope.contextGeneration !== context || !this.focusInput(input)) return true;
-			const focused = inputFocus.admittedTarget;
-			if (scope.contextGeneration !== context || focused === null || !scope.contains(focused.scope)) return true;
-		}
+		if (result === WorkbenchPropertyPointerResult.Rejected) return true;
 		if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 		if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('aem.edit', this.focusTarget);
 		return true;

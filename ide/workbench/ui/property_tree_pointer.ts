@@ -2,7 +2,7 @@ import type { PointerHoverService, PointerHoverTarget } from '../../input/pointe
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS } from '../../common/constants';
 import type { PointerSnapshot } from '../../common/models';
-import type { InputFocusTarget } from '../../input/focus';
+import type { InputFocusService, InputFocusTarget } from '../../input/focus';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
 import type { WorkbenchSurface } from '../services/windows/model';
 import type { WorkbenchSurfaceService } from '../services/windows/service';
@@ -11,18 +11,19 @@ import { workbenchListRowIndexAtPosition } from './list_view';
 import type { WorkbenchPropertyElement, WorkbenchPropertyTree } from './property_tree';
 import { setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, type WorkbenchTreeNode } from './tree_view';
 
-export const enum WorkbenchPropertyPointerResult { Outside, Handled, Selection, Collapse, Activate, ContextMenu }
+export const enum WorkbenchPropertyPointerResult { Outside, Handled, Selection, Collapse, Activate, ContextMenu, Rejected }
 
 /** A gesture belongs to one retained tree node. Reprojection and detach cannot transfer a double-click. */
 export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
+	private input: WorkbenchPropertyTree<WorkbenchPropertyElement> | undefined;
+	private subject: unknown;
+	private inputGeneration = 0;
 	private hoveredTree: WorkbenchPropertyTree<WorkbenchPropertyElement> | undefined;
 	private feedback: WorkbenchTooltip | undefined;
 	private feedbackOwner: WorkbenchSurface | undefined;
 	private feedbackArea: Readonly<RectBounds> | undefined;
-	private feedbackFocus: InputFocusTarget | undefined;
 	private unbindBlur: (() => void) | undefined;
 	private unbindFocus: (() => void) | undefined;
-	private tree: WorkbenchPropertyTree<WorkbenchPropertyElement> | undefined;
 	private feedbackNode: WorkbenchTreeNode<WorkbenchPropertyElement> | undefined;
 	private feedbackKeyboard = false;
 	private feedbackScroll = 0;
@@ -33,16 +34,24 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 	private feedbackValue = '';
 	private feedbackDescription = '';
 	private feedbackText = '';
-	private readonly measureFeedback = (text: string) => this.tree!.layout.measure!(text, 0, text.length);
+	private readonly measureFeedback = (text: string) => this.input!.layout.measure!(text, 0, text.length);
 
-	public constructor(private readonly hover: PointerHoverService) {}
+	public constructor(private readonly focus: InputFocusService, private readonly hover: PointerHoverService, private readonly focusTarget: InputFocusTarget) {}
+
+	/** A visible tree binding survives canonical reparse, but not a subject or client switch. */
+	public setInput<Element extends WorkbenchPropertyElement>(state: WorkbenchPropertyTree<Element>, subject: unknown = state): void {
+		if (this.input === state && this.subject === subject) return;
+		this.clear();
+		this.input = state; this.subject = subject;
+		this.inputGeneration++;
+	}
 
 	/** Feedback belongs to the actual editor attachment, independent of source/edit commands. */
-	public attachFeedback(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, focus: InputFocusTarget): void {
-		this.feedback = new WorkbenchTooltip(); this.feedbackOwner = owner; this.feedbackArea = workArea; this.feedbackFocus = focus;
+	public attachFeedback(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>): void {
+		this.feedback = new WorkbenchTooltip(); this.feedbackOwner = owner; this.feedbackArea = workArea;
 		this.feedback.attach(surfaces, owner, workArea);
-		this.unbindBlur = focus.onDidBlur(() => this.hideFeedback());
-		this.unbindFocus = focus.onDidFocus(() => { if (this.tree !== undefined) this.keyboardSelection(this.tree); });
+		this.unbindBlur = this.focusTarget.onDidBlur(() => this.hideFeedback());
+		this.unbindFocus = this.focusTarget.onDidFocus(() => this.keyboardSelection());
 	}
 
 	public hideFeedback(): void {
@@ -54,15 +63,17 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 		this.feedbackLabel = ''; this.feedbackValue = ''; this.feedbackDescription = ''; this.feedbackText = '';
 	}
 
-	public keyboardSelection<Element extends WorkbenchPropertyElement>(state: WorkbenchPropertyTree<Element>): void {
-		this.tree = state; this.feedbackNode = state.rows[state.selectionIndex]; this.feedbackKeyboard = true; this.feedbackScroll = state.scroll;
-		this.updateFeedback(state);
+	public keyboardSelection(): void {
+		const state = this.input;
+		if (state === undefined) return;
+		this.feedbackNode = state.rows[state.selectionIndex]; this.feedbackKeyboard = true; this.feedbackScroll = state.scroll;
+		this.updateFeedback();
 	}
 
 	/** Hover and focus read retained strings only; an idle frame never remeasures unchanged feedback. */
-	public updateFeedback<Element extends WorkbenchPropertyElement>(state: WorkbenchPropertyTree<Element>): void {
-		this.tree = state;
-		if (this.feedback === undefined) return;
+	public updateFeedback(): void {
+		const state = this.input;
+		if (state === undefined || this.feedback === undefined) return;
 		if (this.feedbackScroll !== state.scroll) { this.feedbackScroll = state.scroll; this.hideFeedback(); }
 		const index = this.feedbackKeyboard ? state.selectionIndex : state.hoverIndex;
 		const node = state.rows[index];
@@ -71,7 +82,7 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 			this.retireFeedback(); return;
 		}
 		if (node === undefined || node !== this.feedbackNode
-			|| this.feedbackKeyboard && !this.feedbackFocus!.hasFocus
+			|| this.feedbackKeyboard && !this.focusTarget.hasFocus
 			|| node.element.displayLabel === node.element.label && node.element.displayValue === node.element.value
 				&& !(index === state.selectionIndex && state.descriptionClipped)) {
 			this.feedback.hide(); return;
@@ -98,7 +109,9 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 	}
 
 	public clear(): void {
-		this.hover.release(this); this.cancel(); this.retireFeedback(); this.tree = undefined;
+		if (this.input === undefined) return;
+		this.input = undefined; this.subject = undefined; this.inputGeneration++;
+		this.hover.release(this); this.cancel(); this.retireFeedback();
 		this.pointerX = -1; this.pointerY = -1;
 	}
 	private lastClickNode: WorkbenchTreeNode<WorkbenchPropertyElement> | null = null;
@@ -106,9 +119,9 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 
 	public cancel(): void { this.lastClickNode = null; }
 
-	public handle<Element extends WorkbenchPropertyElement>(
-		state: WorkbenchPropertyTree<Element>, snapshot: PointerSnapshot, justPressed: boolean, now: number,
-	): WorkbenchPropertyPointerResult {
+	public handle(snapshot: PointerSnapshot, justPressed: boolean, now: number): WorkbenchPropertyPointerResult {
+		const state = this.input;
+		if (state === undefined) return WorkbenchPropertyPointerResult.Outside;
 		const layout = state.layout;
 		if (!snapshot.valid || !snapshot.insideViewport || snapshot.viewportX < layout.contentLeft || snapshot.viewportX >= layout.contentRight
 			|| snapshot.viewportY < layout.contentTop || snapshot.viewportY >= layout.bottom) {
@@ -116,17 +129,26 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 			this.hover.release(this);
 			return WorkbenchPropertyPointerResult.Outside;
 		}
+		const index = workbenchListRowIndexAtPosition(state, snapshot.viewportX, snapshot.viewportY);
+		const twistie = justPressed && index >= 0 && workbenchTreeTwistieContainsPosition(state, index, snapshot.viewportX);
+		if (justPressed || (snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+			const identity = state.rows[index]?.identity, scope = this.focusTarget.scope, context = scope.contextGeneration, generation = this.inputGeneration;
+			if (!this.focusTarget.focus() || this.inputGeneration !== generation || scope.contextGeneration !== context
+				|| this.focus.admittedTarget !== this.focusTarget || state.rows[index]?.identity !== identity) {
+				this.cancel(); this.hover.release(this);
+				return WorkbenchPropertyPointerResult.Rejected;
+			}
+		}
 		if (this.hoveredTree !== state) this.hover.release(this);
 		this.hoveredTree = state;
 		this.hover.visit(this);
-		const index = workbenchListRowIndexAtPosition(state, snapshot.viewportX, snapshot.viewportY);
 		state.hoverIndex = index;
 		if (this.pointerX !== snapshot.viewportX || this.pointerY !== snapshot.viewportY) {
 			this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY;
-			this.tree = state; this.feedbackNode = state.rows[index]; this.feedbackKeyboard = false; this.feedbackScroll = state.scroll;
+			this.feedbackNode = state.rows[index]; this.feedbackKeyboard = false; this.feedbackScroll = state.scroll;
 		}
 		if (justPressed || snapshot.justPressedButtons !== 0) this.hideFeedback();
-		else this.updateFeedback(state);
+		else this.updateFeedback();
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 			this.cancel();
 			state.selectionIndex = index;
@@ -140,7 +162,7 @@ export class WorkbenchPropertyTreePointer implements PointerHoverTarget {
 		const node = state.rows[index];
 		state.selectionIndex = index;
 		const twice = this.lastClickNode === node && now - this.lastClickTime <= DOUBLE_CLICK_MAX_INTERVAL_MS;
-		if (workbenchTreeTwistieContainsPosition(state, index, snapshot.viewportX) || twice && node.element.kind === 'group') {
+		if (twistie || twice && node.element.kind === 'group') {
 			setWorkbenchTreeCollapsed(state, index, !node.collapsed);
 			this.cancel();
 			return WorkbenchPropertyPointerResult.Collapse;

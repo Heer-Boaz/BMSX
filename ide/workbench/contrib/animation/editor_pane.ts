@@ -59,8 +59,8 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	private readonly columnSash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly rowSash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget);
 	private readonly actionTooltip = new WorkbenchTooltip();
-	private readonly propertyPointer = new WorkbenchPropertyTreePointer(pointerHover);
 	private readonly detailsFocus = inputFocus.createTarget(this.focusTarget);
+	private readonly propertyPointer = new WorkbenchPropertyTreePointer(inputFocus, pointerHover, this.detailsFocus);
 	private readonly edit: WorkbenchPropertyEdit<LuaFieldValueEdit>;
 	private readonly keys: AnimationKeyControl;
 	private readonly lanes: AnimationLaneControl;
@@ -83,7 +83,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		private readonly navigation: EditorNavigationController) {
 		super(scope);
 		this.edit = new WorkbenchPropertyEdit(this.detailsFocus, value => value.edit.text, surfaces, paneSurface, workArea);
-		this.propertyPointer.attachFeedback(surfaces, paneSurface, workArea, this.detailsFocus);
+		this.propertyPointer.attachFeedback(surfaces, paneSurface, workArea);
 		this.keys = new AnimationKeyControl(this.focusTarget, controller, controller.authoring);
 		this.lanes = new AnimationLaneControl(this.focusTarget, controller);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
@@ -254,7 +254,6 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 				this.columnSash.cancelPointer(); this.rowSash.cancelPointer();
 				if (this.columnSash.focusTarget.hasFocus || this.rowSash.focusTarget.hasFocus) this.focus();
 			}
-			if (!input.layout.detailsVisible) this.propertyPointer.hideFeedback();
 		}
 		if (availabilityChanged) {
 			this.updateFocusOrder();
@@ -282,11 +281,12 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 			preview.view.layout(area.left, area.top + editorViewState.font.lineHeight + 4, area.right, area.bottom);
 		}
 		if (input.layout.detailsVisible) {
+			this.propertyPointer.setInput(input.details, input.keySelection ?? input.trackSelection ?? input);
 			const details = input.details.layout;
 			layoutWorkbenchPropertyTree(input.details, editorViewState.font.renderFont(), measureTextRange,
 				details.contentLeft, details.contentTop, details.contentRight, details.bottom);
-			this.propertyPointer.updateFeedback(input.details);
-		}
+			this.propertyPointer.updateFeedback();
+		} else this.propertyPointer.clear();
 		this.edit.update(); this.actions.update(); this.clients.update();
 		const hint = this.actions.tooltipItem;
 		if (hint !== undefined) this.actionTooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
@@ -314,7 +314,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	}
 	private handleDetailsKeyboard(player: KeyInputEvent): void {
 		for (const [key, command] of DETAILS_NAVIGATION) {
-			if (isKeyDown(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); this.controller.selectProperty(this.input, this.input.details.selectionIndex); this.propertyPointer.keyboardSelection(this.input.details); return; }
+			if (isKeyDown(key, player)) { consumeIdeKey(key, player); navigateWorkbenchTree(this.input.details, command); this.controller.selectProperty(this.input, this.input.details.selectionIndex); this.propertyPointer.keyboardSelection(); return; }
 		}
 		if (isKeyJustPressed('Enter', player)) { consumeIdeKey('Enter', player); this.commands.execute('animation.edit', this.focusTarget); }
 	}
@@ -341,19 +341,14 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 			return true;
 		}
 		if (layout.detailsVisible) {
-			const scope = this.focusTarget.scope, context = scope.contextGeneration;
-			const result = this.propertyPointer.handle(input.details, snapshot, justPressed, now);
+			const scope = this.detailsFocus.scope, context = scope.contextGeneration;
+			const result = this.propertyPointer.handle(snapshot, justPressed, now);
 			if (result !== WorkbenchPropertyPointerResult.Outside) {
-				if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
-					if (this.input !== input || scope.contextGeneration !== context) return true;
+				if (result === WorkbenchPropertyPointerResult.Rejected) return true;
+				if (result === WorkbenchPropertyPointerResult.Selection || result === WorkbenchPropertyPointerResult.Collapse
+					|| result === WorkbenchPropertyPointerResult.Activate || result === WorkbenchPropertyPointerResult.ContextMenu) {
 					this.controller.selectProperty(input, input.details.selectionIndex);
-					if (this.input !== input || scope.contextGeneration !== context) return true;
-					input.activeClient = 'details';
-					if (justPressed) {
-						this.detailsFocus.focus();
-						const focused = inputFocus.admittedTarget;
-						if (this.input !== input || scope.contextGeneration !== context || focused === null || !scope.contains(focused.scope)) return true;
-					}
+					if (this.input !== input || scope.contextGeneration !== context || inputFocus.admittedTarget !== this.detailsFocus) return true;
 				}
 				if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.detailsFocus);
 				if (result === WorkbenchPropertyPointerResult.Activate) this.commands.execute('animation.edit', this.focusTarget);

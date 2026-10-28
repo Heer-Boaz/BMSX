@@ -57,7 +57,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 			this.input.liveVisible ? RUNTIME_VALUE_READING_COLUMNS : SOURCE_VALUE_READING_COLUMNS) + 8;
 	}
 
-	private readonly pointer = new WorkbenchPropertyTreePointer(pointerHover);
+	private readonly pointer = new WorkbenchPropertyTreePointer(inputFocus, pointerHover, this.focusTarget);
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly edit: WorkbenchPropertyEdit<LuaFieldValueEdit>;
 	private headerLabel = '';
@@ -74,7 +74,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && (this.input.liveVisible ? this.input.live : this.input.tree).layout.visibleRowCount > 0;
-		this.pointer.attachFeedback(surfaces, paneSurface, workArea, this.focusTarget);
+		this.pointer.attachFeedback(surfaces, paneSurface, workArea);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
 		this.actions.focusTarget.canFocus = () => this.hasInput && this.input.actionBar.bounds.left < this.input.actionBar.bounds.right
@@ -133,10 +133,13 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		});
 	}
 	protected override activate(): void {
-		const interaction = this.input.interaction, scope = this.focusTarget.scope;
+		const input = this.input, interaction = input.interaction, scope = this.focusTarget.scope;
 		scope.interaction = interaction;
 		const context = { target: this.focusTarget, interaction };
-		const bindRuntime = () => { scope.runtime = interaction.transport === null ? undefined : context; };
+		const bindRuntime = () => {
+			scope.runtime = interaction.transport === null ? undefined : context;
+			this.pointer.setInput(input.liveVisible ? input.live : input.tree);
+		};
 		bindRuntime();
 		this.unbindInteraction = interaction.onDidChange(bindRuntime);
 		this.actions.setInput(this.input.actionBar, this.focusTarget); this.update();
@@ -192,13 +195,13 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		if (tree.layout.visibleRowCount === 0) {
 			if (this.edit.active) this.edit.close();
 			this.pointer.clear(); this.focusTarget.release();
-		}
+		} else this.pointer.setInput(tree);
 		if (!this.actions.focusTarget.canFocus!()) {
 			pointerCapture.cancelTarget(this.actions);
 			pointerHover.release(this.actions);
 			this.actions.focusTarget.release();
 		}
-		this.pointer.updateFeedback(tree);
+		this.pointer.updateFeedback();
 		this.edit.update();
 		this.actions.update();
 		const hint = this.actions.tooltipItem;
@@ -218,7 +221,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			if (navigateWorkbenchTree(tree, command) === WorkbenchTreeNavigationResult.Collapse && this.input.liveVisible) this.controller.resolveRuntime(this.input);
-			this.pointer.keyboardSelection(tree);
+			this.pointer.keyboardSelection();
 			return;
 		}
 		if (isKeyJustPressed('Enter', input)) {
@@ -230,14 +233,9 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
-		const input = this.input, scope = this.focusTarget.scope, context = scope.contextGeneration;
-		const result = this.pointer.handle(input.liveVisible ? input.live : input.tree, snapshot, justPressed, now);
+		const result = this.pointer.handle(snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;
-		if (justPressed || result === WorkbenchPropertyPointerResult.ContextMenu) {
-			if (this.input !== input || scope.contextGeneration !== context || !this.focusInput(input)) return true;
-			const focused = inputFocus.admittedTarget;
-			if (scope.contextGeneration !== context || focused === null || !scope.contains(focused.scope)) return true;
-		}
+		if (result === WorkbenchPropertyPointerResult.Rejected) return true;
 		if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 		if (this.input.liveVisible) {
 			if (result === WorkbenchPropertyPointerResult.Collapse) this.controller.resolveRuntime(this.input);

@@ -4,6 +4,8 @@ import { clampWorkbenchListScroll, revealWorkbenchListSelection, type WorkbenchL
 /** Retained topology; visible list rows refer to these same nodes. */
 export type WorkbenchTreeNode<Element> = {
 	readonly element: Element;
+	/** Model-owned occurrence identity; source projections can retain their semantic key. */
+	readonly identity: unknown;
 	readonly parent: WorkbenchTreeNode<Element> | null;
 	readonly children: WorkbenchTreeNode<Element>[];
 	readonly depth: number;
@@ -19,9 +21,9 @@ export type WorkbenchTreeState<Element> = WorkbenchListState<WorkbenchTreeNode<E
 
 /** The topology owner computes depth and attaches a node to its actual parent. */
 export function appendWorkbenchTreeNode<Element>(
-	state: WorkbenchTreeState<Element>, parent: WorkbenchTreeNode<Element> | null, element: Element, collapsed = false,
+	state: WorkbenchTreeState<Element>, parent: WorkbenchTreeNode<Element> | null, element: Element, collapsed = false, identity: unknown = element,
 ): WorkbenchTreeNode<Element> {
-	const node: WorkbenchTreeNode<Element> = { element, parent, children: [], depth: parent === null ? 0 : parent.depth + 1, collapsed, expandable: false };
+	const node: WorkbenchTreeNode<Element> = { element, identity, parent, children: [], depth: parent === null ? 0 : parent.depth + 1, collapsed, expandable: false };
 	if (parent === null) state.roots.push(node);
 	else { parent.children.push(node); parent.expandable = true; }
 	return node;

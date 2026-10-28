@@ -71,7 +71,7 @@ export function projectActionEffectProperties(
 		const node = appendWorkbenchTreeNode(tree, parent, {
 			kind: 'property', source, write: writes.get(source.rowKey), label: uppercaseOutsideStrings(label), value, description,
 			warning: source.resolution !== 'complete', displayLabel: '', displayValue: '', displayValueLeft: 0,
-		}, properties.collapsedRowKeys.has(source.rowKey));
+		}, properties.collapsedRowKeys.has(source.rowKey), source.rowKey);
 		properties.nodesBySource.set(source.rowKey, node);
 		return node;
 	}
@@ -80,7 +80,7 @@ export function projectActionEffectProperties(
 		let group = groups.get(metadata.group);
 		if (group === undefined) {
 			group = appendWorkbenchTreeNode(tree, null, { kind: 'group', group: metadata.group, ...GROUPS[metadata.group],
-				value: '', warning: false, displayLabel: '', displayValue: '', displayValueLeft: 0 }, properties.collapsedGroups.has(metadata.group));
+				value: '', warning: false, displayLabel: '', displayValue: '', displayValueLeft: 0 }, properties.collapsedGroups.has(metadata.group), metadata.group);
 			groups.set(metadata.group, group);
 		}
 		let value: string;

@@ -67,7 +67,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 
 	private readonly pointer = new BehaviorLensPointer(pointerHover);
 	private presentedSource: BehaviorSourceIndex | undefined;
-	private readonly properties = new WorkbenchPropertyTreePointer(pointerHover);
+	private readonly properties = new WorkbenchPropertyTreePointer(inputFocus, pointerHover, this.focusTarget);
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, input => this.handleKeyboard(input), this.focusTarget);
 	private readonly unbindGraphGamepad = this.graph.focusTarget.bindGamepad(input => this.handleGamepad(input));
 	public readonly inspector = new WorkbenchPropertyInspector<RuntimeInspectionProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
@@ -216,6 +216,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		const presentation = this.input.view.presentation;
 		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.graphDragSource);
 		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport, this.stateMachineDragSource);
+		else if (presentation.kind === 'properties') this.properties.setInput(presentation.tree, this.input.view.definitionRowKey);
 		const content = presentation.kind === 'graph' || presentation.kind === 'state-graph' ? this.graph.focusTarget : this.focusTarget;
 		this.actionBar.setInput(presentation.actionBar, content);
 		content.next = this.actionBar.focusTarget;
@@ -239,6 +240,9 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		if (!this.hasInput) return;
 		prepareBehaviorLensLayout(this.input.view, bounds);
 		this.input.updatePresentation(editorViewState.font.renderFont());
+		const presentation = this.input.view.presentation;
+		if (presentation.kind === 'properties') this.properties.setInput(presentation.tree, this.input.view.definitionRowKey);
+		else this.properties.clear();
 		if (this.presentedSource !== this.input.view.source) {
 			this.presentedSource = this.input.view.source;
 			finishBehaviorLensNavigation(this.input.view);
@@ -324,8 +328,8 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		const view = this.input.view;
 		this.layout(this.contentBounds);
 		if (view.presentation.kind === 'properties') {
-			if (justPressed) this.focus();
-			const result = this.properties.handle(view.presentation.tree, snapshot, justPressed, now);
+			const result = this.properties.handle(snapshot, justPressed, now);
+			if (result === WorkbenchPropertyPointerResult.Rejected) return true;
 			if (result === WorkbenchPropertyPointerResult.ContextMenu) {
 				if (view.presentation.tree.selectionIndex >= 0) acceptEffectPropertySelection(view, view.presentation, false);
 				else view.selection = null;

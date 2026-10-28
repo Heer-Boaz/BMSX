@@ -38,7 +38,7 @@ import { WorkbenchTooltip } from '../../ui/tooltip';
 export class ScenarioTargetInspection {
 	public model: TestTargetInspectionModel | undefined;
 	private readonly focus: InputFocusTarget;
-	private readonly pointer = new WorkbenchPropertyTreePointer(pointerHover);
+	private readonly pointer: WorkbenchPropertyTreePointer;
 	private readonly details: WorkbenchPropertyInspector<InspectedProperty>;
 	private readonly bar = createWorkbenchActionBar('scenarioLab.target', true);
 	private readonly actionTooltip = new WorkbenchTooltip();
@@ -53,6 +53,8 @@ export class ScenarioTargetInspection {
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface,
 		private readonly workArea: Readonly<RectBounds>) {
 		this.focus = inputFocus.createTarget(parent);
+		this.focus.canFocus = () => this.model !== undefined;
+		this.pointer = new WorkbenchPropertyTreePointer(inputFocus, pointerHover, this.focus);
 		this.details = new WorkbenchPropertyInspector(inputFocus, pointerCapture, pointerHover, this.focus);
 		this.actionTooltip.attach(surfaces, paneSurface, workArea);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.focus, () => this.focus.focus(), contextMenu);
@@ -67,6 +69,7 @@ export class ScenarioTargetInspection {
 	public show(inspection: TestTargetInspection | TestStopInspection): void {
 		this.hide();
 		this.model = new TestTargetInspectionModel(inspection);
+		this.pointer.setInput(this.model.tree);
 		this.headerFont = undefined;
 		for (const item of this.bar.items) item.visible = item.command === 'scenarioLab.details' || item.command === 'scenarioLab.closeTarget'
 			|| inspection.state.role === 'live-test' && this.commands.isEnabled(item.command);
@@ -148,9 +151,9 @@ export class ScenarioTargetInspection {
 	public handlePointer(snapshot: PointerSnapshot, justPressed: boolean, now: number): boolean {
 		if (this.details.visible) return this.details.handlePointer(snapshot);
 		if (this.actions.handlePointer(snapshot)) return true;
-		const model = this.model!, result = this.pointer.handle(model.tree, snapshot, justPressed, now);
+		const model = this.model!, result = this.pointer.handle(snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;
-		if (justPressed) this.focus.focus();
+		if (result === WorkbenchPropertyPointerResult.Rejected) return true;
 		const node = model.tree.rows[model.tree.selectionIndex];
 		if (result === WorkbenchPropertyPointerResult.Collapse) model.resolve(node);
 		if (result === WorkbenchPropertyPointerResult.Activate) {

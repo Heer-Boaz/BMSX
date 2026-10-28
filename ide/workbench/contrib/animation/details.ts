@@ -28,16 +28,18 @@ export function projectAnimationDetails(tree: WorkbenchPropertyTree<AnimationPro
 			const name = staticLuaTableFieldName(field);
 			if (name !== null) lastNamed.set(name, field);
 		}
-		for (let index = 0; index < fields.length; index++) {
-			const field = fields[index];
+		let arrayIndex = 0;
+		for (const field of fields) {
 			const name = staticLuaTableFieldName(field);
+			if (field.kind === LuaTableFieldKind.Array) arrayIndex++;
 			if (name !== null && (excluded.includes(name) || lastNamed.get(name) !== field)) continue;
 			const range = source.file.chunk.locations.range(field.span);
 			const producer = reader!.producer(source.file, field.value);
 			if (producer !== undefined) resolveModel(producer.source.file);
-			appendWorkbenchTreeNode(tree, null, { kind: 'property', source, field, producer, label: name === null ? field.kind === LuaTableFieldKind.Array ? `[${index + 1}]` : '[source key]' : name,
+			appendWorkbenchTreeNode(tree, null, { kind: 'property', source, field, producer, label: name === null ? field.kind === LuaTableFieldKind.Array ? `[${arrayIndex}]` : '[source key]' : name,
 				value: readLuaExpressionPreview(model.buffer, source.file.chunk.locations, field.value),
-				description: `${model.resource.path}:${range.start.line}`, warning: !source.structural, displayLabel: '', displayValue: '', displayValueLeft: 0 });
+				description: `${model.resource.path}:${range.start.line}`, warning: !source.structural, displayLabel: '', displayValue: '', displayValueLeft: 0 }, false,
+				name === null ? field.kind === LuaTableFieldKind.Array ? arrayIndex : field : name);
 		}
 	}
 	rebuildWorkbenchTreeRows(tree, null);

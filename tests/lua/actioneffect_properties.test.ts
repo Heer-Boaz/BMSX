@@ -23,7 +23,7 @@ import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '..
 import { ACTIONEFFECT_PARTIAL_SOURCE, ACTIONEFFECT_SOURCE } from '../helpers/actioneffect_source_fixture';
 import { applyActionEffectPropertyEdit, selectedActionEffectProperty } from '../../ide/workbench/contrib/behavior_lens/action_effect_edit';
 import type { EffectPropertyWrite } from '../../ide/workbench/contrib/behavior_lens/action_effect_index';
-import { inputFocus } from '../../ide/input/focus';
+import { InputFocusService, inputFocus } from '../../ide/input/focus';
 import { insertValue, selectAll } from '../../ide/editor/ui/inline/text_field';
 import { WorkbenchPropertyEdit } from '../../ide/workbench/ui/property_edit';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
@@ -349,10 +349,12 @@ test('property selection and fold preferences survive hidden source edits/Undo o
 		while (f.properties.tree.rows[f.properties.tree.selectionIndex].element.label !== 'PERIOD') f.move('down');
 		const before = f.view.document;
 		const node = f.properties.tree.rows[f.properties.tree.selectionIndex];
-		const pointer = new WorkbenchPropertyTreePointer(new PointerHoverService());
+		const focus = new InputFocusService(), target = focus.createTarget(); target.bindKeyboard(() => {});
+		const pointer = new WorkbenchPropertyTreePointer(focus, new PointerHoverService(), target);
+		pointer.setInput(f.properties.tree, f.view.definitionRowKey);
 		const point = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 200,
 			viewportY: f.properties.tree.layout.contentTop + (f.properties.tree.selectionIndex - f.properties.tree.scroll) * f.properties.tree.layout.rowHeight + 3 };
-		assert.equal(pointer.handle(f.properties.tree, point, true, 10), WorkbenchPropertyPointerResult.Selection);
+		assert.equal(pointer.handle(point, true, 10), WorkbenchPropertyPointerResult.Selection);
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 shifted\n' }]);
 		const offset = f.model.buffer.getText().indexOf('period_ms = 20') + 'period_ms = '.length;
 		f.model.pushEditOperations([{ offset, deleteLength: 2, text: '35' }]);
@@ -367,7 +369,8 @@ test('property selection and fold preferences survive hidden source edits/Undo o
 		assert.equal(selectedBehaviorLensSourceRange(f.view), selected.element.source.authoredRange);
 		assert.equal(f.properties.tree.roots[0].collapsed, true);
 		assert.equal(f.properties.collapsedRowKeys.size, 1);
-		assert.equal(pointer.handle(f.properties.tree, point, true, 20), WorkbenchPropertyPointerResult.Selection, 'new generation cannot complete the old double-click');
+		pointer.setInput(f.properties.tree, f.view.definitionRowKey);
+		assert.equal(pointer.handle(point, true, 20), WorkbenchPropertyPointerResult.Selection, 'new generation cannot complete the old double-click');
 		f.model.undo(f.view.editSource); f.refresh();
 		assert.equal(f.properties.tree.rows[f.properties.tree.selectionIndex].element.value, '20');
 		const roots = f.properties.tree.roots.slice();

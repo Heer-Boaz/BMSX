@@ -37,7 +37,7 @@ export function projectAemSource(input: AemEditorInput): void {
 			value, inlineEditable: isScalar(node) && !/[\r\n]/.test(value),
 			description: '', warning: false,
 			displayLabel: '', displayValue: '', displayValueLeft: 0 };
-		const row = appendWorkbenchTreeNode(tree, parent, element, collapsed.has(key));
+		const row = appendWorkbenchTreeNode(tree, parent, element, collapsed.has(key), key);
 		if (key === selectedKey) selected = row;
 		if (isMap(node)) for (let i = 0; i < node.items.length; i++) {
 			const pair = node.items[i] as Pair<Node, Node | null>;

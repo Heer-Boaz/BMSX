@@ -459,6 +459,28 @@ test('secondary context on the current clip lane replaces its former Details-pro
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
 });
 
+for (const variant of ['tiny', 'msx'] as const) for (const named of ['', 'rate=60,'])
+test(`${variant} committing an Animation frame draft admits the next array slot with ${named === '' ? 'plain' : 'mixed'} fields`, t => {
+	const source = `return {frames={${named}'first','second'}}`, f = animationPane(t, variant, source);
+	const { input, controller, pane, model } = f;
+	controller.selectTrack(input, input.tracks.rows.findIndex(row => row.frames)); pane.update();
+	f.commands.execute('animation.details', pane.commandTarget);
+	const first = named === '' ? 0 : 1, next = first + 1, tree = input.details;
+	controller.selectProperty(input, first);
+	f.commands.execute('animation.edit', pane.commandTarget);
+	const field = inputFocus.admittedTarget!, text = field.textInput!, subject = input.trackSelection;
+	assert.ok(field.edit);
+	assert.equal(text.replaceText(0, text.readText().text.length, "'edited'"), true);
+	const offered = tree.rows[next];
+	f.pointer(tree.layout.contentRight - 2, tree.layout.contentTop + (next + 0.5) * tree.layout.rowHeight, false);
+	assert.equal(model.buffer.getText(), source.replace("'first'", "'edited'"), 'blur publishes exactly the authored frame edit');
+	assert.ok(input.trackSelection === subject && input.activeClient === 'details');
+	assert.ok(inputFocus.admittedTarget !== field && inputFocus.admittedTarget === pane.commandTarget);
+	assert.ok(tree.rows[next] !== offered && tree.rows[next].element.field !== offered.element.field, 'a real commit reparses authored fields');
+	assert.equal(tree.selectionIndex, next, 'the same press must select the offered array slot after commit');
+	assert.ok(input.detailSelection !== undefined);
+});
+
 for (const variant of ['tiny', 'msx'] as const) test(`${variant} an actual property draft and focus survive compact, font and sash relayout without publication`, t => {
 	const f = animationPane(t, variant), { input, controller, pane, model } = f;
 	controller.selectTrack(input, 1); controller.selectKey(input, 0);

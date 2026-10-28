@@ -90,7 +90,7 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 			file, expression, valueExpression: value, inlineEditable: range.start.line === range.end.line, field, container,
 			table: table === undefined ? undefined : { file: owner!, table, structural },
 		};
-		const node = appendWorkbenchTreeNode(tree, parent, element, collapsed.has(key));
+		const node = appendWorkbenchTreeNode(tree, parent, element, collapsed.has(key), key);
 		if (key === selection) selected = node;
 		if (table === undefined) return;
 		resolveModel(owner!);

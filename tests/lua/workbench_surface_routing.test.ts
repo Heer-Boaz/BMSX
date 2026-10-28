@@ -22,6 +22,7 @@ import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_inpu
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { EventViewerInput } from '../../ide/workbench/contrib/events/editor_input';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
+import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
 import { eventClipboardText } from '../../ide/workbench/contrib/events/presentation';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
@@ -479,6 +480,83 @@ for (const admission of ['ordinary', 'away-back'] as const) test(`ROM filter nat
 	if (admission === 'away-back') assert.deepEqual(text.readText(), state);
 	else assert.deepEqual(text.readText(), { ...state, selectionStart: state.text.length, selectionEnd: state.text.length });
 	assert.equal(f.input.model.filter, 'header'); assert.equal(f.input.readerWindow.open, false);
+});
+
+function aemPointerFixture(t: TestContext) {
+	const f = createActualSourcePanes(t);
+	const source = '# authored event map\nevents:\n  story:\n    channel: "music"\n    rules: []\n  impact:\n    channel: "sfx"\n    rules: []\n';
+	const path = 'res/audio/admission.aem.yaml', contextId = f.sources.systemContextId;
+	f.sources.catalog.registerTextSources(contextId, [{ type: 'aem', resid: 'admission', source_path: path }]);
+	const resource = f.sources.catalog.resolveResource({ contextId, path })!, model = f.ide.models.retain(resource, 'aem', source);
+	const input = new AemEditorInput(model);
+	f.firstGroup.openEditor(input); f.update();
+	const pane = f.firstGroup.panes.activePane!, target = pane.commandTarget, tree = input.tree;
+	const selectedKey = JSON.stringify(['events', 'story', 'channel']), offeredKey = JSON.stringify(['events', 'impact']);
+	tree.selectionIndex = tree.rows.findIndex(row => row.element.key === selectedKey);
+	const offeredIndex = tree.rows.findIndex(row => row.element.key === offeredKey), offered = tree.rows[offeredIndex];
+	assert.ok(offered !== undefined && offered.expandable && !offered.collapsed && offeredIndex < tree.layout.visibleRowCount);
+	f.update(); f.second.focus(); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+	return { ...f, input, pane, target, tree, model, aemSource: source, selectedKey, offeredKey, offeredIndex, offered };
+}
+
+for (const gesture of ['primary', 'secondary', 'disclosure'] as const) for (const admission of ['accepted', 'files', 'away-back', 'retire', 'reattach'] as const)
+test(`AEM ${gesture} press consumes its surviving semantic key after canonical reparse and ${admission} focus admission`, t => {
+	const f = aemPointerFixture(t), context = f.target.scope.contextGeneration, version = f.model.version;
+	const x = gesture === 'disclosure' ? f.tree.layout.contentLeft + f.offered.depth * f.tree.layout.indentWidth + f.tree.layout.twistieWidth / 2
+		: f.tree.layout.contentRight - 4;
+	const y = f.tree.layout.contentTop + (f.offeredIndex - (f.tree.scroll | 0) + 0.5) * f.tree.layout.rowHeight;
+	const button = gesture === 'secondary' ? PointerButton.Secondary : PointerButton.Primary;
+	let callbacks = 0, replacement: HostErrorInput | undefined;
+	const unbind = f.second.commandTarget.onDidBlur(() => {
+		unbind(); callbacks++;
+		f.model.pushEditOperations([{ offset: f.model.buffer.getText().length, deleteLength: 0, text: '# canonical draft\n' }]);
+		f.pane.update(0);
+		if (admission === 'files' || admission === 'away-back') {
+			f.editor.commands.execute('resources.focus', f.target);
+			if (admission === 'away-back') f.target.focus();
+		} else if (admission === 'retire') {
+			replacement = new HostErrorInput('newer property group'); f.firstGroup.openEditor(replacement);
+		} else if (admission === 'reattach') {
+			f.firstGroup.panes.clearEditor(); f.firstGroup.openEditor(f.input, { preserveFocus: true });
+		}
+	});
+	t.after(unbind);
+	f.editor.dispatchPointer({ x, y, buttons: button, pressedButtons: button,
+		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	assert.equal(callbacks, 1);
+	if (admission === 'retire') {
+		assert.ok(f.firstGroup.model.activeTab === replacement && f.firstGroup.panes.activePane!.input === replacement);
+		assert.ok(inputFocus.admittedTarget === f.firstGroup.panes.activePane!.commandTarget);
+	} else {
+		assert.ok(f.firstGroup.panes.activePane === f.pane && f.pane.input === f.input);
+		assert.ok(inputFocus.admittedTarget === (admission === 'files' ? f.editor.resourcePanel.focusTarget
+			: admission === 'accepted' && gesture === 'secondary' ? f.editor.contextMenu.focusTarget : f.target));
+	}
+	if (admission === 'retire' || admission === 'reattach') assert.ok(f.target.scope.contextGeneration > context);
+	else assert.equal(f.target.scope.contextGeneration, context);
+	const current = f.tree.rows.find(row => row.element.key === f.offeredKey)!;
+	assert.ok(current !== f.offered && current.element.node !== f.offered.element.node, 'the admitted canonical edit reparses real YAML nodes, not the surviving semantic key');
+	assert.equal(f.model.buffer.getText(), f.aemSource + '# canonical draft\n'); assert.ok(f.model.version > version);
+	assert.equal(f.tree.rows[f.tree.selectionIndex]?.element.key, admission === 'accepted' ? f.offeredKey : f.selectedKey);
+	assert.equal(current.collapsed, admission === 'accepted' && gesture === 'disclosure');
+	assert.equal(f.editor.contextMenu.visible, admission === 'accepted' && gesture === 'secondary');
+	if (admission === 'accepted' && gesture === 'secondary') {
+		assert.ok(f.editor.contextMenu.invocationOrigin === f.target && f.editor.contextMenu.focusTarget.commandContext === f.target);
+	}
+});
+
+test('AEM property hover updates feedback without acquiring focus, selecting a key or changing disclosure', t => {
+	const f = aemPointerFixture(t), version = f.model.version;
+	let blurs = 0; t.after(f.second.commandTarget.onDidBlur(() => { blurs++; }));
+	f.editor.dispatchPointer({ x: f.tree.layout.contentRight - 4,
+		y: f.tree.layout.contentTop + (f.offeredIndex - (f.tree.scroll | 0) + 0.5) * f.tree.layout.rowHeight,
+		buttons: 0, pressedButtons: 0, releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none,
+		spaceDown: false, timestamp: f.host.clock.now() });
+	assert.equal(blurs, 0); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+	assert.equal(f.tree.rows[f.tree.hoverIndex]?.element.key, f.offeredKey);
+	assert.equal(f.tree.rows[f.tree.selectionIndex]?.element.key, f.selectedKey); assert.equal(f.offered.collapsed, false);
+	assert.equal(f.model.buffer.getText(), f.aemSource); assert.equal(f.model.version, version);
+	assert.equal(f.editor.contextMenu.visible, false);
 });
 
 function behaviorFocusFixture(t: TestContext) {

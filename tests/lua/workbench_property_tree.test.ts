@@ -115,40 +115,100 @@ test('property idle, scrolling, hover and fold reuse topology and text without f
 
 test('property pointer isolates Source activation from folds, held presses, detach and source generations', () => {
 	const f = fixture(2);
-	const pointer = new WorkbenchPropertyTreePointer(new PointerHoverService());
+	const focus = new InputFocusService(), target = focus.createTarget(); target.bindKeyboard(() => {});
+	const pointer = new WorkbenchPropertyTreePointer(focus, new PointerHoverService(), target);
+	pointer.setInput(f.state);
 	const bounds = f.state.layout;
 	const point = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: bounds.valueLeft + 8, viewportY: bounds.contentTop + bounds.rowHeight + 3 };
-	assert.equal(pointer.handle(f.state, point, true, 10), PointerResult.Selection);
-	assert.equal(pointer.handle(f.state, point, false, 20), PointerResult.Handled);
-	assert.equal(pointer.handle(f.state, point, true, 30), PointerResult.Activate);
-	assert.equal(pointer.handle(f.state, point, true, 40), PointerResult.Selection, 'third click starts a new sequence');
+	assert.equal(pointer.handle(point, true, 10), PointerResult.Selection);
+	assert.equal(pointer.handle(point, false, 20), PointerResult.Handled);
+	assert.equal(pointer.handle(point, true, 30), PointerResult.Activate);
+	assert.equal(pointer.handle(point, true, 40), PointerResult.Selection, 'third click starts a new sequence');
 	pointer.cancel();
-	assert.equal(pointer.handle(f.state, point, true, 50), PointerResult.Selection, 'reattachment is not a second click');
+	assert.equal(pointer.handle(point, true, 50), PointerResult.Selection, 'reattachment is not a second click');
 	const replacement = fixture(2);
-	assert.equal(pointer.handle(replacement.state, point, true, 60), PointerResult.Selection, 'equal labels in a new generation cannot inherit a gesture');
+	pointer.setInput(replacement.state);
+	assert.equal(pointer.handle(point, true, 60), PointerResult.Selection, 'equal labels in a new generation cannot inherit a gesture');
+	pointer.setInput(f.state);
 	point.viewportY = bounds.contentTop + 3;
-	assert.equal(pointer.handle(f.state, point, true, 70), PointerResult.Selection);
-	assert.equal(pointer.handle(f.state, point, true, 80), PointerResult.Collapse, 'group double-click folds, never navigates to invented source');
+	assert.equal(pointer.handle(point, true, 70), PointerResult.Selection);
+	assert.equal(pointer.handle(point, true, 80), PointerResult.Collapse, 'group double-click folds, never navigates to invented source');
 	assert.equal(f.state.rows.length, 1);
 	point.viewportX = bounds.contentLeft + 3;
-	assert.equal(pointer.handle(f.state, point, true, 90), PointerResult.Collapse, 'a twistie toggles on its own press');
+	assert.equal(pointer.handle(point, true, 90), PointerResult.Collapse, 'a twistie toggles on its own press');
 	assert.equal(f.state.rows.length, 3);
 	point.viewportY = bounds.contentBottom + 4;
-	assert.equal(pointer.handle(f.state, point, true, 100), PointerResult.Handled);
+	assert.equal(pointer.handle(point, true, 100), PointerResult.Handled);
 	assert.equal(f.state.hoverIndex, -1);
 	point.viewportX = bounds.contentRight;
-	assert.equal(pointer.handle(f.state, point, true, 110), PointerResult.Outside);
+	assert.equal(pointer.handle(point, true, 110), PointerResult.Outside);
 	point.viewportX = bounds.valueLeft + 8;
 	point.viewportY = bounds.contentTop + bounds.rowHeight + 3;
-	assert.equal(pointer.handle(f.state, point, true, 120), PointerResult.Selection);
+	assert.equal(pointer.handle(point, true, 120), PointerResult.Selection);
 	point.viewportY = bounds.contentBottom + 4;
-	pointer.handle(f.state, point, true, 130);
+	pointer.handle(point, true, 130);
 	point.viewportY = bounds.contentTop + bounds.rowHeight + 3;
-	assert.equal(pointer.handle(f.state, point, true, 140), PointerResult.Selection, 'an intervening blank click breaks the sequence');
+	assert.equal(pointer.handle(point, true, 140), PointerResult.Selection, 'an intervening blank click breaks the sequence');
 	point.valid = false;
-	pointer.handle(f.state, point, false, 150);
+	pointer.handle(point, false, 150);
 	point.valid = true;
-	assert.equal(pointer.handle(f.state, point, true, 160), PointerResult.Selection, 'losing the pointer breaks the sequence');
+	assert.equal(pointer.handle(point, true, 160), PointerResult.Selection, 'losing the pointer breaks the sequence');
+});
+
+for (const change of ['reattach', 'subject'] as const) test(`property press rejects a ${change} of the same tree during focus publication`, () => {
+	const f = fixture(2), focus = new InputFocusService(), target = focus.createTarget(), source = focus.createTarget();
+	target.bindKeyboard(() => {}); source.bindKeyboard(() => {}); source.focus();
+	const pointer = new WorkbenchPropertyTreePointer(focus, new PointerHoverService(), target);
+	const subject = Symbol('definition'); pointer.setInput(f.state, subject);
+	const bounds = f.state.layout, selected = f.state.rows[f.state.selectionIndex], rows = f.state.rows;
+	const context = target.scope.contextGeneration;
+	const secondary = change === 'subject';
+	const point = { valid: true, insideViewport: true, pressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary,
+		justPressedButtons: secondary ? PointerButton.Secondary : PointerButton.Primary, justReleasedButtons: 0,
+		viewportX: bounds.valueLeft + 8, viewportY: bounds.contentTop + bounds.rowHeight + 3 };
+	const unbind = source.onDidBlur(() => {
+		unbind();
+		if (change === 'reattach') pointer.clear();
+		pointer.setInput(f.state, change === 'reattach' ? subject : Symbol('another definition'));
+	});
+	assert.equal(pointer.handle(point, !secondary, 10), PointerResult.Rejected);
+	assert.equal(focus.admittedTarget, target);
+	assert.equal(target.scope.contextGeneration, context);
+	assert.equal(f.state.rows, rows);
+	assert.equal(f.state.rows[f.state.selectionIndex], selected, 'a retired binding cannot select or offer a context-menu subject');
+	assert.equal(f.state.hoverIndex, -1);
+	point.pressedButtons = PointerButton.Primary; point.justPressedButtons = PointerButton.Primary;
+	assert.equal(pointer.handle(point, true, 20), PointerResult.Selection, 'the new binding starts a fresh gesture');
+	assert.equal(f.state.selectionIndex, 1);
+	pointer.dispose();
+});
+
+for (const sameIdentity of [true, false]) test(`property press ${sameIdentity ? 'admits' : 'rejects'} a reparse with ${sameIdentity ? 'the same' : 'another'} semantic row identity`, () => {
+	const f = fixture(0), focus = new InputFocusService(), target = focus.createTarget(), source = focus.createTarget();
+	target.bindKeyboard(() => {}); source.bindKeyboard(() => {}); source.focus();
+	const element: WorkbenchPropertyElement = { kind: 'property', label: 'period_ms', value: '10', description: '', warning: false,
+		displayLabel: '', displayValue: '', displayValueLeft: 0 };
+	const old = appendWorkbenchTreeNode(f.state, f.group, element, false, 'effect.period');
+	rebuildWorkbenchTreeRows(f.state, f.group); f.state.textDirty = true; f.layout();
+	const pointer = new WorkbenchPropertyTreePointer(focus, new PointerHoverService(), target);
+	pointer.setInput(f.state, 'effect');
+	const bounds = f.state.layout, context = target.scope.contextGeneration;
+	const point = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0,
+		viewportX: bounds.valueLeft + 8, viewportY: bounds.contentTop + bounds.rowHeight + 3 };
+	const unbind = source.onDidBlur(() => {
+		unbind();
+		f.group.children.length = 0;
+		appendWorkbenchTreeNode(f.state, f.group, { ...element, value: '25' }, false, sameIdentity ? 'effect.period' : 'effect.event');
+		rebuildWorkbenchTreeRows(f.state, f.group); f.state.textDirty = true; f.layout();
+		pointer.setInput(f.state, 'effect');
+	});
+	assert.equal(pointer.handle(point, true, 10), sameIdentity ? PointerResult.Selection : PointerResult.Rejected);
+	assert.equal(focus.admittedTarget, target); assert.equal(target.scope.contextGeneration, context);
+	assert.notEqual(f.state.rows[1], old, 'canonical reparse emits new nodes, not reused authored objects');
+	assert.equal(f.state.rows[f.state.selectionIndex], sameIdentity ? f.state.rows[1] : f.group);
+	assert.equal(f.state.hoverIndex, sameIdentity ? 1 : -1);
+	assert.equal(old.element.value, '10', 'the old authored element was not rewritten by pointer admission');
+	pointer.dispose();
 });
 
 test('property renderer clips list and footer separately and retains actual overlay/quad storage', () => {
@@ -177,18 +237,23 @@ test('property renderer clips list and footer separately and retains actual over
 
 
 test('property tree hover is routed, releases replaced generations and ends at detach', () => {
-	const hover = new PointerHoverService(), pointer = new WorkbenchPropertyTreePointer(hover);
+	const focus = new InputFocusService(), target = focus.createTarget(), source = focus.createTarget();
+	target.bindKeyboard(() => {}); source.bindKeyboard(() => {}); source.focus();
+	const hover = new PointerHoverService(), pointer = new WorkbenchPropertyTreePointer(focus, hover, target);
 	const first = fixture(2), second = fixture(2), bounds = first.state.layout;
 	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: bounds.valueLeft + 8, viewportY: bounds.contentTop + bounds.rowHeight + 3 };
-	hover.beginDispatch(); pointer.handle(first.state, point, false, 0); hover.endDispatch();
+	pointer.setInput(first.state);
+	hover.beginDispatch(); pointer.handle(point, false, 0); hover.endDispatch();
 	assert.equal(first.state.hoverIndex, 1);
-	hover.beginDispatch(); pointer.handle(second.state, point, false, 20); hover.endDispatch();
+	assert.equal(focus.admittedTarget, source, 'passive property hover must not commit or move source focus');
+	pointer.setInput(second.state);
+	hover.beginDispatch(); pointer.handle(point, false, 20); hover.endDispatch();
 	assert.equal(first.state.hoverIndex, -1); assert.equal(second.state.hoverIndex, 1);
 	const selection = second.state.selectionIndex;
 	hover.beginDispatch(); hover.endDispatch();
 	assert.equal(second.state.hoverIndex, -1); assert.equal(second.state.selectionIndex, selection);
-	hover.beginDispatch(); pointer.handle(second.state, point, false, 40); hover.endDispatch();
+	hover.beginDispatch(); pointer.handle(point, false, 40); hover.endDispatch();
 	pointer.clear(); hover.clear();
 	assert.equal(second.state.hoverIndex, -1);
 });
@@ -247,19 +312,21 @@ function feedbackFixture(t: TestContext, property: Partial<WorkbenchPropertyElem
 	const f = fixture(40, undefined, { label: 'music_transition', value: 'music_story', description: 'res/data/events.aem.yaml:6', ...property }), surfaces = new WorkbenchSurfaceService(), focus = new InputFocusService();
 	const parent = focus.createTarget(), target = focus.createTarget(parent);
 	parent.bindKeyboard(() => {}); target.bindKeyboard(() => {}); parent.focus();
-	const hover = new PointerHoverService(), pointer = new WorkbenchPropertyTreePointer(hover);
+	const hover = new PointerHoverService(), pointer = new WorkbenchPropertyTreePointer(focus, hover, target);
+	pointer.setInput(f.state);
 	const area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('property tree'), isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw: () => drawWorkbenchPropertyTree(f.state) });
-	pointer.attachFeedback(surfaces, owner, area, target);
+	pointer.attachFeedback(surfaces, owner, area);
 	const child = f.group.children[0];
-	f.state.textDirty = true; f.layout(200); pointer.updateFeedback(f.state);
+	f.state.textDirty = true; f.layout(200); pointer.updateFeedback();
+	// Feedback must publish the exact authored strings, not their clipped row previews.
 	const texts: string[] = []; t.mock.method(api, 'blit_text_inline_with_font', text => texts.push(text));
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => { texts.length = 0; overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame(); };
 	const point = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0,
 		viewportX: f.state.layout.contentLeft + 20, viewportY: f.state.layout.contentTop + f.state.layout.rowHeight + 3 };
-	const move = (delta = 0) => { point.viewportX += delta; hover.beginDispatch(); pointer.handle(f.state, point, false, 0); hover.endDispatch(); };
+	const move = (delta = 0) => { point.viewportX += delta; hover.beginDispatch(); pointer.handle(point, false, 0); hover.endDispatch(); };
 	t.after(() => { pointer.dispose(); surfaces.dispose(); });
 	return { ...f, surfaces, owner, area, parent, target, pointer, child, texts, paint, point, move };
 }
@@ -272,9 +339,9 @@ test('clipped property names and values expose full cached passive hover and key
 	assert.ok(f.texts.includes(f.child.element.label)); assert.ok(f.texts.includes(f.child.element.value)); assert.ok(f.texts.includes(f.child.element.description));
 	assert.equal(f.surfaces.hitTest(f.point.viewportX, f.point.viewportY), f.owner, 'passive feedback never intercepts source/edit gestures');
 	const measurements = f.measurements();
-	for (let n = 0; n < 1000; n++) { f.layout(200); f.pointer.updateFeedback(f.state); }
+	for (let n = 0; n < 1000; n++) { f.layout(200); f.pointer.updateFeedback(); }
 	assert.equal(f.measurements(), measurements, 'full-text feedback retains strings and measured wrapping across clean frames');
-	f.state.selectionIndex = 1; f.target.focus(); f.pointer.keyboardSelection(f.state); f.paint();
+	f.state.selectionIndex = 1; f.target.focus(); f.pointer.keyboardSelection(); f.paint();
 	assert.ok(f.texts.includes(f.child.element.label));
 	f.parent.focus(); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false);
 	f.target.focus(); f.paint(); assert.ok(f.texts.includes(f.child.element.label));
@@ -285,27 +352,37 @@ test('description-only clipping exposes complete retained annotation without cha
 	const description = 'z'.repeat(150), f = feedbackFixture(t, { label: 'ID', value: '7', description });
 	f.state.selectionIndex = 1; f.layout(200);
 	assert.equal(f.child.element.displayLabel, 'ID'); assert.equal(f.child.element.displayValue, '7'); assert.equal(f.state.descriptionClipped, true);
-	f.target.focus(); f.pointer.keyboardSelection(f.state); f.paint();
+	f.target.focus(); f.pointer.keyboardSelection(); f.paint();
 	assert.ok(f.texts.join('').includes(description), 'the description is reachable even though its name/value need no truncation');
-	assert.equal(f.pointer.handle(f.state, f.point, true, 100), PointerResult.Selection);
-	assert.equal(f.pointer.handle(f.state, f.point, true, 110), PointerResult.Activate, 'feedback does not replace double-click edit/source activation');
+	assert.equal(f.pointer.handle(f.point, true, 100), PointerResult.Selection);
+	assert.equal(f.pointer.handle(f.point, true, 110), PointerResult.Activate, 'feedback does not replace double-click edit/source activation');
 });
 
 test('property full-text feedback retires on scroll, projection replacement, clear, modal and surface lifetime', t => {
 	const f = feedbackFixture(t);
 	f.move(); f.paint(); assert.ok(f.texts.includes(f.child.element.label));
-	scrollWorkbenchList(f.state, 1); f.pointer.updateFeedback(f.state); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false);
-	scrollWorkbenchList(f.state, -1); f.pointer.updateFeedback(f.state); f.move(); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false, 'stationary pointer cannot rebind after scroll');
+	scrollWorkbenchList(f.state, 1); f.pointer.updateFeedback(); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false);
+	scrollWorkbenchList(f.state, -1); f.pointer.updateFeedback(); f.move(); f.paint(); assert.equal(f.texts.includes(f.child.element.label), false, 'stationary pointer cannot rebind after scroll');
 	f.move(1); f.paint(); assert.ok(f.texts.includes(f.child.element.label));
 	const old = f.child, replacement = { ...old, element: { ...old.element, label: 'other_music_transition' } };
-	f.group.children[0] = replacement; rebuildWorkbenchTreeRows(f.state, f.group); f.state.textDirty = true; f.layout(200); f.pointer.updateFeedback(f.state); f.paint();
+	f.group.children[0] = replacement; rebuildWorkbenchTreeRows(f.state, f.group); f.state.textDirty = true; f.layout(200); f.pointer.updateFeedback(); f.paint();
 	assert.equal(f.texts.includes(old.element.label), false); assert.equal(f.texts.includes(replacement.element.label), false, 'new source projection cannot inherit an existing hover');
 	f.move(1); f.paint(); assert.ok(f.texts.includes(replacement.element.label));
 	const modal = f.surfaces.attach({ role: 'modal', blockedScope: null, presentationParent: null, captureScope: Symbol('modal'), getBounds: () => f.area, getClip: () => f.area, isVisible: () => true, draw() {} });
 	f.paint(); assert.equal(f.texts.includes(replacement.element.label), false); modal.dispose();
+	assert.equal(f.pointer.handle(f.point, true, 100), PointerResult.Selection);
+	const selected = f.state.rows[f.state.selectionIndex], collapsed = f.group.collapsed;
 	f.pointer.clear(); f.paint(); assert.equal(f.texts.includes(replacement.element.label), false);
-	const retained = f.pointer as unknown as { feedbackNode: unknown; tree: unknown; feedbackText: string };
-	assert.equal(retained.feedbackNode, undefined); assert.equal(retained.tree, undefined); assert.equal(retained.feedbackText, '', 'input retirement does not retain authored AST/source element bindings');
+	assert.equal(f.pointer.handle(f.point, true, 110), PointerResult.Outside);
+	const x = f.point.viewportX, y = f.point.viewportY;
+	f.point.viewportX = f.state.layout.contentLeft + 3; f.point.viewportY = f.state.layout.contentTop + 3;
+	assert.equal(f.pointer.handle(f.point, true, 115), PointerResult.Outside, 'an unbound group twistie cannot fold its former input');
+	f.point.viewportX = x; f.point.viewportY = y;
+	f.pointer.keyboardSelection(); f.pointer.updateFeedback(); f.paint();
+	assert.equal(f.state.rows[f.state.selectionIndex], selected); assert.equal(f.group.collapsed, collapsed); assert.equal(f.state.hoverIndex, -1);
+	assert.equal(f.texts.includes(replacement.element.label), false, 'an unbound pointer cannot republish former authored feedback');
+	f.pointer.setInput(f.state);
+	assert.equal(f.pointer.handle(f.point, true, 120), PointerResult.Selection, 'rebinding starts a fresh click rather than completing the retired double-click');
 	f.move(1); f.paint(); assert.ok(f.texts.includes(replacement.element.label));
 	f.owner.dispose(); f.paint(); assert.equal(f.texts.includes(replacement.element.label), false);
 });
