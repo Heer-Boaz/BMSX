@@ -79,6 +79,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 };
 
 const WINDOW_CONTEXT_ACTIONS: readonly WorkbenchMenuItem[] = [
+	{ type: 'command', command: 'window.restore' },
 	{ type: 'command', command: 'window.maximize' },
 	{ type: 'command', command: 'window.snapLeft' },
 	{ type: 'command', command: 'window.snapRight' },

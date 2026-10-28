@@ -40,15 +40,27 @@ t.command('progression'); await t.frames(2); await press('Enter'); await t.frame
 t.assert(t.activeWorkbenchTab() === original, 'ordinary opening must reuse the original Progress editor');
 const documents = [original.workingCopy, other.workingCopy].map(model => ({ model, source: model.buffer.getText(), version: model.version, history: model.history }));
 const cycles = t.runtime().machine.scheduler.nowCycles;
-for (const mode of ['editor', 'group']) {
+for (const mode of ['editor', 'group', 'drag']) {
 	const count = t.workbenchTabs().length;
+	const order = [...main.model.tabs];
 	await tabContext(original); await accept('window.copyEditor');
 	const copy = t.activeWorkbenchTab(), floating = t.activeEditorGroup();
 	t.assert(copy.kind === 'lua_program' && copy !== original && copy.id !== original.id && copy.workingCopy === original.workingCopy,
 		'New Window must retain an independent view over the same canonical editor');
 	t.assert(copy.programKind === original.programKind && copy.occurrenceRange.start === original.occurrenceRange.start
 		&& copy.occurrenceRange.end === original.occurrenceRange.end, 'the copied view must name the same authored producer');
-	if (mode === 'editor') { await tabContext(copy); await accept('window.moveEditor'); }
+	if (mode === 'drag') {
+		const tabs = floating.tabStrip.layoutState.items;
+		let tab;
+		for (let index = 0; index < tabs.length; index++) if (tabs.peek(index).input === copy) tab = tabs.peek(index);
+		t.assert(tab !== undefined, 'the copied view must expose its actual source tab');
+		t.controlInput([{ type: 'pointer', x: tab.bounds.left + 3, y: (tab.bounds.top + tab.bounds.bottom) / 2 },
+			{ type: 'button', button: 'primary', down: true }]); await t.frames(1);
+		const target = main.tabStrip.layoutState.viewportBounds;
+		t.controlInput([{ type: 'pointer', x: target.left + 1, y: (target.top + target.bottom) / 2 }]); await t.frames(3);
+		t.log('VISUAL progress-copy-semantic-tab-target'); t.capture('progress-copy-semantic-tab-target');
+		t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(4);
+	} else if (mode === 'editor') { await tabContext(copy); await accept('window.moveEditor'); }
 	else {
 		const layout = floating.tabStrip.layoutState, last = layout.items.peek(layout.items.length - 1);
 		const start = Math.max(last.bounds.right, layout.viewportBounds.left);
@@ -57,7 +69,9 @@ for (const mode of ['editor', 'group']) {
 		await accept('group.move');
 	}
 	// This is user-entered picker text, not an assertion freezing presentation wording.
-	await type(mode === 'editor' ? 'main workspace' : 'merge main workspace'); await press('Enter'); await t.frames(4);
+	if (mode !== 'drag') {
+		await type(mode === 'editor' ? 'main workspace' : 'merge main workspace'); await press('Enter'); await t.frames(4);
+	}
 	const tabs = t.workbenchTabs();
 	t.assert(t.activeEditorGroup() === main && t.activeWorkbenchTab() === original && tabs.length === count
 		&& tabs.includes(original) && !tabs.includes(copy) && tabs.includes(other),
@@ -66,6 +80,8 @@ for (const mode of ['editor', 'group']) {
 		&& input.workingCopy === original.workingCopy && input.occurrenceRange.start === original.occurrenceRange.start
 		&& input.occurrenceRange.end === original.occurrenceRange.end).length === 1, 'one group must retain one editor for this producer occurrence');
 	t.assert(mode !== 'group' || floating.surface.retired, 'whole-group merge must retire the departed floating owner');
+	if (mode === 'drag') t.assert(order.every((input, index) => main.model.tabs[index] === input),
+		'dropping a copied view on its semantic receiver must preserve the existing tab order, not insert at the pointer gap');
 	for (const document of documents) t.assert(document.model.buffer.getText() === document.source
 		&& document.model.version === document.version && document.model.history === document.history && !document.model.dirty,
 		'presentation must preserve exact source bytes, document generation, history and clean state');

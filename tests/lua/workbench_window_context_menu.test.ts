@@ -91,6 +91,21 @@ test('utility window menu invokes its exact owner and accepts maximize/restore a
 	assert.equal(u.contentFocus(), 0);
 });
 
+for (const kind of ['document', 'utility'] as const) for (const side of ['left', 'right'] as const)
+test(`${kind} title menu restores its ${side}-snapped owner without changing another window or entering content`, t => {
+	const f = createActualSourcePanes(t), u = kind === 'utility' ? utility(t, f) : undefined;
+	const window = u === undefined ? f.firstPart.window! : u.window;
+	const other = f.secondPart.window!, otherPlacement = other.model.placement;
+	const input = f.firstGroup.model.activeTab;
+	rightClickTitle(f, window); choose(f, side === 'left' ? 'window.snapLeft' : 'window.snapRight');
+	assert.equal(window.model.placement, side);
+	rightClickTitle(f, window); choose(f, 'window.restore');
+	assert.equal(window.model.placement, 'normal'); assert.equal(other.model.placement, otherPlacement);
+	assert.ok(inputFocus.admittedTarget === window.focusTarget);
+	assert.ok(f.firstGroup.model.activeTab === input);
+	if (u !== undefined) assert.equal(u.contentFocus(), 0);
+});
+
 for (const retirement of ['hide', 'minimize', 'retire'] as const) test(`title menu presentation retires with its concrete window on ${retirement}`, t => {
 	const f = createActualSourcePanes(t), window = f.firstPart.window!;
 	rightClickTitle(f, window);

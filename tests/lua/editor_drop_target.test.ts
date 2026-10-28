@@ -80,6 +80,41 @@ test('merge preserves an existing matching receiver view and its tab position', 
 	assert.ok(f.secondInput.workingCopy === f.firstInput.workingCopy);
 });
 
+test('a copied Progress drop targets its semantic receiver instead of advertising and applying a tab insertion', t => {
+	const f = createActualSourcePanes(t, false, [
+		['program.lua', "local p=require('cartlib/progression'); p.compile_program({rules={},filters={},handlers={}})"],
+		['cartlib/progression.lua', ''],
+	]), parts = f.editor.editorParts, source = f.firstGroup, receiver = f.secondGroup;
+	receiver.model.pin(f.secondInput);
+	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'program.lua' })!;
+	f.editor.luaPrograms.openResource(receiver, resource, 'progression');
+	const original = receiver.model.activeTab;
+	assert.ok(original?.kind === 'lua_program');
+	receiver.model.pin(original);
+	const copy = original.createView!();
+	source.openEditor(copy); f.update();
+	assert.notEqual(original.id, copy.id);
+	const order = [...receiver.model.tabs], before = original.workingCopy.buffer.getText(), version = original.workingCopy.version;
+	const snapshot = pointer(receiver.tabStrip.layoutState.viewportBounds);
+	snapshot.viewportX = receiver.tabStrip.layoutState.viewportBounds.left + 1;
+	const move = t.mock.method(parts, 'moveEditor');
+	const drag = { kind: 'editor' as const, model: source.model, input: copy };
+	parts.dropTarget.update(drag, snapshot, 0, false);
+	assert.equal(move.mock.callCount(), 0);
+	assert.equal(receiver.model.tabs.length, order.length);
+	assert.ok(order.every((input, index) => receiver.model.tabs[index] === input));
+	parts.dropTarget.drop(drag, snapshot, 1);
+	assert.equal(move.mock.callCount(), 1);
+	const destination = move.mock.calls[0].arguments[2];
+	assert.ok(destination.kind === 'group');
+	assert.equal(destination.index, undefined, 'semantic coalescence names the retained receiver, not an unrelated insertion gap');
+	assert.equal(receiver.model.tabs.length, order.length);
+	assert.ok(order.every((input, index) => receiver.model.tabs[index] === input));
+	assert.ok(receiver.model.activeTab === original && receiver.panes.activePane?.input === original);
+	assert.equal(parts.findGroup(copy), undefined);
+	assert.equal(original.workingCopy.buffer.getText(), before); assert.equal(original.workingCopy.version, version);
+});
+
 test('release rechecks a stationary target when a modal now blocks its presentation', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, snapshot = bodyPoint(f.secondGroup);
 	let hitTests = 0;

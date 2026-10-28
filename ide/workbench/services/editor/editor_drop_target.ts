@@ -202,7 +202,7 @@ export class EditorDropTarget implements EditorTabDragHandler {
 		} else if (overTabs) {
 			if (drag.kind === 'group' && target === source) return;
 			this.groupDestination.group = target;
-			const existing = drag.kind === 'opening' ? drag.findExisting(target) : drag.kind === 'editor' ? target.model.findById(drag.input.id) : undefined;
+			const existing = drag.kind === 'opening' ? drag.findExisting(target) : drag.kind === 'editor' ? target.model.findMatching(drag.input) : undefined;
 			if (this.dragSource !== drag) return;
 			if (target !== source && existing !== undefined) {
 				this.groupDestination.index = undefined;
