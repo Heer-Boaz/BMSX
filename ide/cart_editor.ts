@@ -222,6 +222,7 @@ export type CartEditor = TextInputHost & {
 	readonly interaction: WorkbenchInteraction;
 	readonly guestInputRecipient: InputRecipient | null;
 	readonly isAvailable: boolean;
+	readonly isClosing: boolean;
 	readonly resourcePanel: ResourcePanelController;
 	readonly breakpoints: BreakpointController;
 	readonly commands: IdeCommandController;
@@ -289,6 +290,8 @@ export class RuntimeCartEditor implements CartEditor {
 		const viewport = inputFocus.admittedTarget?.guestInput;
 		return viewport === undefined ? null : viewport.recipient;
 	}
+	private shutdownOperation: Promise<void> | undefined;
+	public get isClosing(): boolean { return this.shutdownOperation !== undefined; }
 	public readonly isAvailable: boolean;
 	public readonly resourcePanel: ResourcePanelController;
 	public readonly breakpoints: BreakpointController;
@@ -691,7 +694,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public get isActive(): boolean { return editorRuntimeState.active; }
-	public get acceptsInput(): boolean { return this.isActive && this.input.editingInputEnabled; }
+	public get acceptsInput(): boolean { return !this.isClosing && this.isActive && this.input.editingInputEnabled; }
 	public get clipboardTarget(): ClipboardTarget | undefined {
 		return this.acceptsInput ? inputFocus.admittedTarget?.clipboard : undefined;
 	}
@@ -771,6 +774,7 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 
 	public activate(): void {
+		if (this.isClosing) return;
 		this.menubar.cancelAlt();
 		const wasActive = this.isActive;
 		const runtime = this.runtime;
@@ -941,13 +945,24 @@ export class RuntimeCartEditor implements CartEditor {
 		this.statusBar.draw();
 	}
 
-	public async shutdown(): Promise<void> {
+	public shutdown(): Promise<void> {
+		if (this.shutdownOperation !== undefined) return this.shutdownOperation;
+		const completion = Promise.withResolvers<void>();
+		// Publish terminal admission before retiring controls can call back into this frontend.
+		this.shutdownOperation = completion.promise;
+		void this.close().then(completion.resolve, completion.reject);
+		return completion.promise;
+	}
+
+	private async close(): Promise<void> {
+		inputFocus.workbenchScope.retireContext();
+		this.deactivate();
+		this.input.setEditingInput(undefined);
 		this.keybindings.dispose();
 		this.interaction.dispose();
 		this.editorParts.closeController.dispose();
 		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();
-		this.unbindSurfaceAdmission();
 		this.unbindWorkspaceModels();
 		this.statusBar.dispose();
 		this.windowStatus.dispose();
@@ -964,7 +979,7 @@ export class RuntimeCartEditor implements CartEditor {
 		} finally {
 			this.mainWorkspace.dispose();
 			this.surfaces.dispose();
-			this.input.setEditingInput(undefined);
+			this.unbindSurfaceAdmission();
 			this.assistant.dispose();
 			this.observedConversation.dispose();
 			this.unbindBreakpoints();
@@ -980,16 +995,6 @@ export class RuntimeCartEditor implements CartEditor {
 			this.menubar.dispose();
 			this.gamePanel.dispose();
 			this.quickInput.dispose();
-			if (this.isAvailable) {
-				for (const group of this.editorParts.groups) group.panes.clearEditor();
-			}
-			applyEditorInputOverrides(this.input, false, captureKeys);
-			if (editorViewState.dimCrtInEditor) {
-				this.restoreCrtPostprocessingFromEditor();
-			}
-			editorRuntimeState.active = false;
-			setEditorFeedbackActive(false);
-			this.input.setPointerAdmissionMode('physical');
 			this.input.guestInputRecipient = this.input;
 			this.editorParts.dispose();
 			this.unbindNavigation();

@@ -598,10 +598,14 @@ Composition follows a concrete ownership order:
    the shared close owner. Keep the part until close admission completes; Cancel
    leaves it available. Successful close retires its openings, controls,
    popups, navigation destinations, surfaces and part membership in owner order.
-5. Workspace teardown settles workspace-wide operations and retires the primary
-   context, parts, content and activity presentations before clearing canonical
-   models, source authority or recovery bindings. Project replacement uses that
-   boundary; adding a project picker is a separate capability.
+5. Workspace teardown first publishes terminal frontend admission and retires
+   native controls, popups and pending presentation requests synchronously.
+   Retained primary/document contexts and canonical models remain available
+   while accepted operations drain and final recovery is written. That checkpoint
+   precedes disposal of retained contexts, models, source authority and recovery
+   bindings. Repeated or reentrant shutdown joins that same operation; editor
+   activation cannot resume it. Project replacement uses that boundary; adding
+   a project picker is a separate capability.
 
 Each part arranges its groups within layout-owned bounds. Paint/input traversal
 uses the shared surface owner; controls consume their group's retained client

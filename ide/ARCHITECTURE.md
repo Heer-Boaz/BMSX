@@ -410,6 +410,12 @@ that part's actual dialog owner; cancellation reopens new input admission, not
 outstanding asynchronous openings. Forced teardown retires the part's controls
 and command authority without closing shared documents or sibling views.
 
+Frontend shutdown publishes terminal input/command admission before retiring
+native attachments and awaiting shared services. Accepted writes drain while
+retained contexts, inputs and canonical models still supply final recovery;
+their disposal follows that checkpoint. Shutdown is one joined operation, not
+resumable editor deactivation or a captured copy of application state.
+
 The frontend owns shared navigation history. Captured selections belong to their
 group/input lifetime and name their destination group. `EditorOpeningRequest`
 admits synchronous producers and asynchronous resolver factories under one

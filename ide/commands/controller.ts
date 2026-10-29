@@ -78,6 +78,7 @@ export class IdeCommandController {
 	) {}
 	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target, input?: EditorInput,
 		editorContext?: InputFocusTarget | null): void {
+		if (this.editor.isClosing) return;
 		if (editorContext === null) return;
 		const targetScope = target?.scope, targetGeneration = targetScope?.contextGeneration;
 		const commandScope = target?.commandContext.scope, contextGeneration = commandScope?.contextGeneration;
@@ -355,6 +356,7 @@ export class IdeCommandController {
 
 	/** One unconfirmed source action owns its unsaved decision before execution admission. */
 	public requestAction(request: EditorActionRequest): void {
+		if (this.editor.isClosing) return;
 		if (request.action !== 'theme-toggle' && editorTextModelService.dirtyWorkingCopies.length !== 0) {
 			void this.editor.actionPrompt.show(ACTION_PROMPTS[request.action]).then(choice => {
 				if (choice !== 'cancel') return this.executeConfirmedAction(request, choice === 'primary');
@@ -368,6 +370,7 @@ export class IdeCommandController {
 		request: EditorActionRequest,
 		saveBeforeAction: boolean,
 	): Promise<boolean> {
+		if (this.editor.isClosing) return false;
 		if (request.action === 'run' && this.sources.currentBlua32Media.cartridgeSlots[request.entry.domain] !== request.expectedImage) return false;
 		if (saveBeforeAction) {
 			for (;;) {
@@ -375,7 +378,7 @@ export class IdeCommandController {
 				if (workingCopies.length === 0) break;
 				for (const model of workingCopies) {
 					const result = await saveTextFileFromCommand(this.textFileSaves, model, this.editor, this.sources);
-					if (result.status === 'failed' || model.dirty) return false;
+					if (this.editor.isClosing || result.status === 'failed' || model.dirty) return false;
 				}
 			}
 		}
@@ -393,6 +396,7 @@ export class IdeCommandController {
 	}
 
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target, input?: EditorInput): boolean {
+		if (this.editor.isClosing) return false;
 		const originWindowSurface = findWorkbenchWindowSurface(focus, this.editor.surfaces);
 		if (originWindowSurface === null) return false;
 		const originGroup = findEditorGroup(focus);
@@ -557,6 +561,7 @@ export class IdeCommandController {
 	}
 
 	public isActive(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target, input?: EditorInput): boolean {
+		if (this.editor.isClosing) return false;
 		const originWindowSurface = findWorkbenchWindowSurface(target, this.editor.surfaces);
 		if (originWindowSurface === null) return false;
 		const originGroup = findEditorGroup(target);
