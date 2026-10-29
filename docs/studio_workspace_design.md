@@ -601,7 +601,12 @@ histories and copied GPU/GTE observations retain physical-target and capture
 generations. Context-local filtering or graph geometry is not canonical data.
 Source inputs retain wrapping and reading preferences; attached controls derive
 visual rows and hit testing and own completion/ghost text and local Find/Rename
-interaction. An unchanged second view reuses
+interaction. New Source views start without automatic wrapping, preserving authored
+rows and horizontal reading. Explicit wrapping retains measured continuation
+indentation where the available text budget permits it; resizing does not change
+the chosen wrap mode or insert source whitespace. Preferred visual-x intent belongs
+to the attached control's current font/wrap projection, not its retained view
+memento. An unchanged second view reuses
 appropriate source/index/measurement generations instead of parsing, coloring
 or measuring the same source again per window.
 

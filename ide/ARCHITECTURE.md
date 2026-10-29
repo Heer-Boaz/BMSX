@@ -264,6 +264,11 @@ projects ready row markers through its own layout rather than an active-editor b
 `CodeDocumentProjections` owns model-bound highlighting and semantic scheduling.
 Font-generation measurements are shared by attached views; each `CodeLayout`
 owns wrapping, visual rows and its control's inline-text projection.
+Visual segments carry their measured continuation origin; painting, caret,
+selection and hit-testing consume that same projection without inserting source
+whitespace. The attached control owns preferred visual-x intent and Source line
+pitch; neither pixel geometry nor reading leading belongs to canonical text or
+immutable bitmap-font metrics.
 `CodeEditorViewState` retains each Source input's wrapping choice; reusable
 controls consume that choice directly. Full view snapshots carry it through
 copies, group mementos and recovery. Navigation locations and text-history

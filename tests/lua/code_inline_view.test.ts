@@ -98,6 +98,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} EOF reveal and two-way font/resize reveal the same complete inline intent without moving source`, t => {
 		const source = 'line()\n'.repeat(50) + 'retur_tail()';
 		const { code, model, view } = fixture(t, source, variant, minimumWidth), sourceVersion = model.version;
+		view.wordWrapEnabled = true;
 		view.cursorRow = 50; view.cursorColumn = 5; ensureCursorVisible(code);
 		const capacity = resolveViewportCapacity(code);
 		view.scrollRow = code.layout.positionToVisualIndex(50, 5) - capacity.rows + 1;
@@ -135,6 +136,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} ordinary caret reveal cannot hide the end of a nearly viewport-height inline edit`, t => {
 		const source = 'line()\n'.repeat(50) + 'retur_tail()\n' + 'line()\n'.repeat(50);
 		const { code, model, view } = fixture(t, source, variant, minimumWidth), version = model.version;
+		view.wordWrapEnabled = true;
 		view.cursorRow = 50; view.cursorColumn = 5;
 		const viewport = resolveViewportCapacity(code);
 		const cellsPerWrap = (computeWrapWidth(code) / code.font.advance('n')) | 0;
@@ -151,6 +153,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 
 	test(`${variant} a wrapped full-width source line retains a visible block caret at EOF`, t => {
 		const { code, model, view } = fixture(t, 'x'.repeat(200), variant, minimumWidth);
+		view.wordWrapEnabled = true;
 		const viewport = resolveViewportCapacity(code), source = 'x'.repeat(Math.trunc(viewport.contentWidth / code.charAdvance));
 		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 		code.layout.markVisualLinesDirty(); view.cursorColumn = source.length;
@@ -163,6 +166,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} wrapped glyphs and the trailing block caret fit the reserved text viewport`, t => {
 		const source = ('--' + '…'.repeat(30) + '\n').repeat(50);
 		const { code } = fixture(t, source, variant, minimumWidth);
+		code.view.wordWrapEnabled = true;
 		const viewport = resolveViewportCapacity(code), layout = code.layout;
 		assert.equal(computeWrapWidth(code) + code.charAdvance, viewport.contentWidth);
 		assert.ok(code.geometry.codeVerticalScrollbarVisible);

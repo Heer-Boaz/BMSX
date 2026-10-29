@@ -37,7 +37,6 @@ export type CodeEditorViewState = {
 	selectionAnchor: Position;
 	selectionAnchorScratch: Position;
 	desiredColumn: number;
-	desiredDisplayOffset: number;
 	/** Retained presentation choice for this Source view, not its shared document. */
 	wordWrapEnabled: boolean;
 	/** Continuous position in wrapped visual rows, not source buffer rows. */
@@ -59,8 +58,7 @@ export function createCodeEditorViewState(): CodeEditorViewState {
 		selectionAnchor: null,
 		selectionAnchorScratch: { row: 0, column: 0 },
 		desiredColumn: 0,
-		desiredDisplayOffset: 0,
-		wordWrapEnabled: true,
+		wordWrapEnabled: false,
 		scrollRow: 0,
 		scrollLeft: 0,
 	};
@@ -77,7 +75,6 @@ export function applyCodeEditorSelectionSnapshot(view: CodeEditorViewState, snap
 	view.cursorRow = snapshot.cursorRow;
 	view.cursorColumn = snapshot.cursorColumn;
 	view.desiredColumn = snapshot.cursorColumn;
-	view.desiredDisplayOffset = 0;
 	const anchor = snapshot.selectionAnchor;
 	if (anchor === null) clearSingleCursorSelection(view);
 	else setSingleCursorSelectionAnchor(view, anchor.row, anchor.column);

@@ -107,7 +107,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.ok(field.nativeCaret.x >= layout.bounds.left + 3);
 		assert.ok(field.nativeCaret.x + field.nativeCaret.width <= layout.bounds.right - 3);
 		assert.equal(field.nativeCaret.y, 22);
-		assert.equal(field.nativeCaret.height, code.lineHeight);
+		assert.equal(field.nativeCaret.height, layout.viewport.lineHeight);
 		assert.equal(field.text, 'long_query_with_a_visible_caret');
 		setCursorFromOffset(field, 0);
 		layout.layout({ left: 73, top: 20, right: 73 + width, bottom: 40 }, 'Find all', '123/456', 2);
@@ -144,7 +144,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.equal(cancellations, 1);
 		assert.equal(field.text, 'retained_query'); assert.equal(field.nativeCaret.width, 0); assert.equal(field.nativeCaret.height, 0);
 		layout.layout({ left: 0, top: 20, right: 180, bottom: 40 }, 'FIND', '', 2);
-		assert.ok(field.nativeCaret.width > 0); assert.equal(field.nativeCaret.height, code.lineHeight);
+		assert.ok(field.nativeCaret.width > 0); assert.equal(field.nativeCaret.height, layout.viewport.lineHeight);
 		layout.hide(); assert.equal(cancellations, 2);
 	});
 }

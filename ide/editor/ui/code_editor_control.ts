@@ -3,7 +3,7 @@ import { copyPointerSnapshot } from '../../input/pointer/frame';
 import { CodeEditorTextInput } from '../input/native_text';
 import { RuntimeErrorOverlayPointer } from '../contrib/runtime_error/pointer';
 import { advanceToggleBlink, resetBlinkState } from './view/caret/blink';
-import { CURSOR_BLINK_INTERVAL, SCROLLBAR_WIDTH } from '../../common/constants';
+import { CODE_LINE_LEADING, CURSOR_BLINK_INTERVAL, SCROLLBAR_WIDTH } from '../../common/constants';
 import type { HostClock } from '../../../hosts/common/clock';
 import { create_rect_bounds, copy_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
 import { clamp } from '../../../machine/ts/common/clamp';
@@ -84,6 +84,8 @@ export class CodeEditorControl implements PointerCaptureTarget {
 	public charAdvance: number;
 	public spaceAdvance: number;
 	public layout: CodeLayout;
+	/** Preferred visual x belongs to this attachment's current font and wrapping projection. */
+	public desiredPixelOffset: number | undefined;
 	public completionRender: CompletionRenderState;
 	public pendingEditContext: EditContext | null = null;
 	private readonly inlineEditValue = { version: 0, active: false, row: 0, startColumn: 0, endColumn: 0, text: '', preserveCase: false };
@@ -109,7 +111,7 @@ export class CodeEditorControl implements PointerCaptureTarget {
 			&& this.geometry.presentedBounds.top < this.geometry.presentedBounds.bottom;
 		this.unbindFocus = this.focusTarget.onDidFocus(() => resetBlinkState(this.caret));
 		this.completionRender = new CompletionRenderState(font);
-		this.font = font; this.lineHeight = font.lineHeight; this.charAdvance = font.advance('M'); this.spaceAdvance = font.advance(' ');
+		this.font = font; this.lineHeight = font.lineHeight + CODE_LINE_LEADING; this.charAdvance = font.advance('M'); this.spaceAdvance = font.advance(' ');
 		this.inlineFieldMetrics.spaceAdvance = this.spaceAdvance;
 		this.layout = new CodeLayout(font, { inlineEdit: this.inlineEdit, computeWrapWidth: () => computeWrapWidth(this) });
 	}
@@ -126,7 +128,7 @@ export class CodeEditorControl implements PointerCaptureTarget {
 		const document = this.layout.document;
 		this.layout.dispose();
 		this.completionRender = new CompletionRenderState(font);
-		this.font = font; this.lineHeight = font.lineHeight; this.charAdvance = font.advance('M'); this.spaceAdvance = font.advance(' ');
+		this.font = font; this.lineHeight = font.lineHeight + CODE_LINE_LEADING; this.charAdvance = font.advance('M'); this.spaceAdvance = font.advance(' ');
 		this.inlineFieldMetrics.spaceAdvance = this.spaceAdvance;
 		this.layout = new CodeLayout(font, { inlineEdit: this.inlineEdit, computeWrapWidth: () => computeWrapWidth(this) });
 		if (this.model !== null) this.layout.attach(document);
@@ -180,7 +182,7 @@ export class CodeEditorControl implements PointerCaptureTarget {
 		value.text = text; value.preserveCase = preserveCase; value.active = true; value.version++; return true;
 	}
 	public clearInlineEdit(): void { const value = this.inlineEditValue; if (!value.active) return; value.active = false; value.version++; }
-	public clearVisualCursor(): void { this.visualCursorOverride = null; }
+	public clearVisualCursor(): void { this.visualCursorOverride = null; this.desiredPixelOffset = undefined; }
 	public captureVisualCursor(row: number, column: number, visualIndex: number): void {
 		const value = this.visualCursorValue; value.row = row; value.column = column; value.visualIndex = visualIndex; this.visualCursorOverride = value;
 	}

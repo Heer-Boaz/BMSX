@@ -22,6 +22,7 @@ const createVisualLineSegment = (): VisualLineSegment => ({
 	endColumn: 0,
 	startDisplay: 0,
 	endDisplay: 0,
+	indentPixels: 0,
 });
 
 function ensureVisualLineSegment(target: VisualLineSegmentTarget, index: number, free: VisualLineSegment[]): VisualLineSegment {
@@ -173,7 +174,7 @@ export class CodeLayout {
 	public resolveLineViewport(line: CodeLineView, segment: VisualLineSegment, scrollLeft: number, width: number,
 		wrapEnabled: boolean): CodeLineViewport {
 		const result = this.lineViewport;
-		result.pixelOffset = wrapEnabled ? line.advancePrefix[segment.startDisplay] : scrollLeft;
+		result.pixelOffset = this.segmentPixelOffset(line, segment, scrollLeft, wrapEnabled);
 		result.startDisplay = wrapEnabled ? segment.startDisplay : this.displayAtPixel(line, scrollLeft);
 		if (wrapEnabled) result.endDisplay = segment.endDisplay;
 		else {
@@ -181,6 +182,11 @@ export class CodeLayout {
 			result.endDisplay = end < line.hi.text.length && line.advancePrefix[end] < right ? end + 1 : end;
 		}
 		return result;
+	}
+
+	/** Source-display pixels translated into this visual segment's viewport coordinates. */
+	public segmentPixelOffset(line: CodeLineView, segment: VisualLineSegment, scrollLeft: number, wrapEnabled: boolean): number {
+		return wrapEnabled ? line.advancePrefix[segment.startDisplay] - segment.indentPixels : scrollLeft;
 	}
 
 	public cursorWidth(line: CodeLineView, display: number): number {
@@ -460,37 +466,28 @@ export class CodeLayout {
 			target.endColumn = source.endColumn;
 			target.startDisplay = source.startDisplay;
 			target.endDisplay = source.endDisplay;
+			target.indentPixels = source.indentPixels;
 		}
 		for (let index = insertCount; index < deleteCount; index++) this.freeSegments.push(replaced[index]);
 		replaced.length = 0;
 	}
 
-	private findWrapBreak(line: string, entry: CodeLineView, startColumn: number, wrapWidth: number): number {
+	private findWrapBreak(line: string, entry: CodeLineView, startColumn: number, wrapWidth: number, continuationWidth: number): number {
 		if (wrapWidth === Number.POSITIVE_INFINITY) {
 			return line.length;
 		}
 		let column = startColumn + 1;
-		let lastBreak = startColumn;
-		let lastBreakEnd = startColumn + 1;
+		let lastBreakEnd = startColumn;
 		while (column <= line.length) {
 			const width = this.measureColumns(entry, startColumn, column);
 			if (width > wrapWidth) {
-				if (lastBreak > startColumn) {
+				if (lastBreakEnd > startColumn && this.measureColumns(entry, lastBreakEnd, column) <= continuationWidth) {
 					return lastBreakEnd;
 				}
 				return column - 1;
 			}
-			if (column < line.length) {
-				const ch = line.charAt(column);
-				if (ch === ' ' || ch === '\t' || ch === '-') {
-					lastBreak = column;
-					let skip = column + 1;
-					while (skip < line.length && line.charAt(skip) === ' ') {
-						skip += 1;
-					}
-					lastBreakEnd = skip;
-				}
-			}
+			const ch = line.charAt(column - 1);
+			if (ch === ' ' || ch === '\t' || ch === '-') lastBreakEnd = column;
 			column += 1;
 		}
 		return line.length;
@@ -500,13 +497,15 @@ export class CodeLayout {
 		return entry.advancePrefix[entry.viewColumnToDisplay[endColumn]] - entry.advancePrefix[entry.viewColumnToDisplay[startColumn]];
 	}
 
-	private appendSegment(target: VisualLineSegmentTarget, index: number, row: number, entry: CodeLineView, startColumn: number, endColumn: number): void {
+	private appendSegment(target: VisualLineSegmentTarget, index: number, row: number, entry: CodeLineView,
+		startColumn: number, endColumn: number, indentPixels: number): void {
 		const segment = ensureVisualLineSegment(target, index, this.freeSegments);
 		segment.row = row;
 		segment.startDisplay = entry.viewColumnToDisplay[startColumn];
 		segment.endDisplay = entry.viewColumnToDisplay[endColumn];
 		segment.startColumn = this.sourceColumnAtDisplay(entry, segment.startDisplay, false);
 		segment.endColumn = this.sourceColumnAtDisplay(entry, segment.endDisplay, true);
+		segment.indentPixels = indentPixels;
 	}
 
 	private appendSegmentsForRow(
@@ -519,17 +518,29 @@ export class CodeLayout {
 		effectiveWrapWidth: number,
 	): number {
 		if (line.length === 0) {
-			this.appendSegment(target, writeIndex, row, entry, 0, 0);
+			this.appendSegment(target, writeIndex, row, entry, 0, 0, 0);
 			return writeIndex + 1;
 		}
 		const length = line.length;
+		let indentPixels = 0;
+		if (wordWrapEnabled) {
+			let firstContent = 0;
+			while (firstContent < entry.src.length && (entry.src.charAt(firstContent) === ' ' || entry.src.charAt(firstContent) === '\t')) firstContent++;
+			if (firstContent < entry.src.length) {
+				const source = this.measurements.getLine(row);
+				const authoredIndent = source.advancePrefix[source.hi.columnToDisplay[firstContent]];
+				if (effectiveWrapWidth - authoredIndent >= this.font.charAdvance) indentPixels = authoredIndent;
+			}
+		}
+		const continuationWidth = effectiveWrapWidth - indentPixels;
 		let column = 0;
 		while (column < length) {
+			const segmentIndent = column === 0 ? 0 : indentPixels;
 			const nextBreak = wordWrapEnabled
-				? this.findWrapBreak(line, entry, column, effectiveWrapWidth)
+				? this.findWrapBreak(line, entry, column, effectiveWrapWidth - segmentIndent, continuationWidth)
 				: length;
 			const endColumn = Math.max(column + 1, Math.min(length, nextBreak));
-			this.appendSegment(target, writeIndex, row, entry, column, endColumn);
+			this.appendSegment(target, writeIndex, row, entry, column, endColumn, segmentIndent);
 			writeIndex += 1;
 			column = endColumn;
 		}

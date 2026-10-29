@@ -222,9 +222,10 @@ for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'd
 		f.overlay.renderer.endFrame(); frame = f.overlay.queue.consumeOverlayFrame();
 		assert.equal(frame.commandCount, 2);
 		const wrappedBackground = frame.commandRefs[0] as RectRenderSubmission, wrappedGlyph = frame.commandRefs[1] as GlyphRenderSubmission;
-		assert.equal(wrappedGlyph.x, viewport.textLeft); assert.equal(wrappedBackground.area.left, viewport.textLeft);
+		const origin = viewport.textLeft + segment.indentPixels;
+		assert.equal(wrappedGlyph.x, origin); assert.equal(wrappedBackground.area.left, origin);
 		assert.equal(wrappedGlyph.item_start, segment.startDisplay); assert.equal(wrappedGlyph.item_end, segment.endDisplay);
-		assert.equal(wrappedBackground.area.right, viewport.textLeft + line.advancePrefix[segment.endDisplay] - line.advancePrefix[segment.startDisplay]);
+		assert.equal(wrappedBackground.area.right, origin + line.advancePrefix[segment.endDisplay] - line.advancePrefix[segment.startDisplay]);
 		assert.equal(f.model.buffer.getText(), '\tabcdefghijklmnopqr');
 	});
 }

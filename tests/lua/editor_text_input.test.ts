@@ -33,6 +33,7 @@ function sourceRangeFixture(t: TestContext, source: string) {
 
 test('native source caret projects the canonical tab and wrapped position before paint independently of blink', t => {
 	const { code, model, view, layout } = sourceRangeFixture(t, '\tfirst\n' + 'local value = 12345; '.repeat(80) + 'return 7');
+	view.wordWrapEnabled = true;
 	const target = new CodeEditorTextInput(code), visible = code.caret.cursorVisible;
 	t.after(() => { code.caret.cursorVisible = visible; });
 	target.setSelection(1, 1);
@@ -57,6 +58,7 @@ test('native source caret projects the canonical tab and wrapped position before
 
 test('prepared explicit multiline UTF16 range edits publish their internal caret and invalidate the complete insertion', t => {
 	const source = 'head\nAAAA\nBBBB\nCCCC\nfoot', { code, model, view, layout } = sourceRangeFixture(t, source);
+	view.wordWrapEnabled = true;
 	view.cursorRow = 0; view.cursorColumn = 1; setSingleCursorSelectionAnchor(view, 4, 2);
 	resolveViewportCapacity(code);
 	const oldVisualCount = layout.getVisualLineCount();

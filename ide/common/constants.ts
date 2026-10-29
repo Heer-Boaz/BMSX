@@ -880,6 +880,7 @@ export const RESOURCE_PANEL_PADDING_X = 4;
 export const RESOURCE_PANEL_DIVIDER_DRAG_MARGIN = 4;
 export const SCROLLBAR_WIDTH = 3;
 export const CODE_AREA_RIGHT_MARGIN = 6;
+export const CODE_LINE_LEADING = 1;
 export const SCROLLBAR_MIN_THUMB_HEIGHT = 6;
 export const SEARCH_RESULT_SPACING = 1;
 export const QUICK_OPEN_RESULT_PADDING_X = 4;

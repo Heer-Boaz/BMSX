@@ -8,6 +8,24 @@ import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/sem
 import { CodeDocumentProjections } from '../../ide/editor/ui/code/document_projections';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 
+test('Source line pitch retains reading space independently of bitmap glyph metrics after font replacement', t => {
+	const clock = new VirtualHeadlessClock(), models = new EditorTextModelService();
+	const documents = new CodeDocumentProjections(models, { clock, maxHighlightCache: 64,
+		semanticDebounceMs: 200, getBuiltinIdentifiers: () => ({ epoch: 0, ids: [] }) });
+	const model = models.retain({ contextLabel: 'Fixture project', sourceFilePath: 'reading.lua', location: { kind: 'workspace', path: 'reading.lua' },
+		contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'reading.lua', source: { type: 'lua', resid: 'reading' } }, 'lua', 'local value = 1\nreturn value');
+	const code = createTestCodeControl(t, model, documents, clock);
+	t.after(() => { code.dispose(); documents.dispose(); resetSemanticProjects(models); models.clear(); });
+	for (const variant of ['tiny', 'msx', 'tiny'] as const) {
+		const font = new EditorFont(variant), glyphPitch = font.lineHeight;
+		code.setFont(font);
+		assert.ok(code.lineHeight > glyphPitch, 'Source has leading; reusable bitmap font metrics remain unchanged');
+		assert.equal(font.lineHeight, glyphPitch);
+		assert.ok(code.minimumHeight >= code.lineHeight);
+		assert.equal(code.model, model); assert.equal(model.dirty, false);
+	}
+});
+
 for (const debounce of [0, 200]) {
 	test(`retiring a document cancels its ${debounce === 0 ? 'dispatch' : 'debounce'} work at the clock owner`, t => {
 		const clock = new VirtualHeadlessClock(), models = new EditorTextModelService();

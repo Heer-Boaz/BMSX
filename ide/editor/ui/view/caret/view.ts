@@ -1,5 +1,4 @@
 import type { CodeEditorControl } from '../../code_editor_control';
-import { clamp } from '../../../../../machine/ts/common/clamp';
 import { ensureVisualLines } from '../../../common/text/layout';
 import { resolveCodeAreaViewport, type CodeAreaViewport } from '../../code/area_viewport';
 import { resolveCursorVisualIndex } from './visual_index';
@@ -84,7 +83,7 @@ export function ensureCursorVisible(code: CodeEditorControl): void {
 	}
 }
 
-export function setCursorFromVisualIndex(code: CodeEditorControl, visualIndex: number, desiredColumnHint?: number, desiredOffsetHint?: number): void {
+export function setCursorFromVisualIndex(code: CodeEditorControl, visualIndex: number, desiredColumnHint?: number, desiredPixelHint?: number): void {
 	ensureVisualLines(code);
 	code.clearVisualCursor();
 	const visualLines = code.layout.getVisualLines();
@@ -95,26 +94,18 @@ export function setCursorFromVisualIndex(code: CodeEditorControl, visualIndex: n
 	const segmentStart = code.layout.clampSegmentStart(line.length, segment.startColumn);
 	const segmentEnd = code.layout.clampSegmentEnd(line.length, segmentStart, segment.endColumn);
 	const hasDesiredHint = desiredColumnHint !== undefined;
-	const hasOffsetHint = desiredOffsetHint !== undefined;
+	const hasOffsetHint = desiredPixelHint !== undefined;
 	let targetColumn = hasDesiredHint ? desiredColumnHint! : code.view.cursorColumn;
-	if (code.view.wordWrapEnabled) {
-		const segmentDisplayStart = segment.startDisplay;
-		const segmentDisplayEnd = segment.endDisplay;
-		const segmentWidth = Math.max(0, segmentDisplayEnd - segmentDisplayStart);
-		if (hasOffsetHint) {
-			const clampedOffset = clamp(desiredOffsetHint, 0, segmentWidth);
-			const targetDisplay = clamp(segmentDisplayStart + clampedOffset, segmentDisplayStart, segmentDisplayEnd);
-			const columnFromOffset = entry.displayToColumn[targetDisplay];
-			targetColumn = code.layout.clampLineLength(line.length, columnFromOffset);
-			targetColumn = code.layout.clampSegmentEnd(line.length, segmentStart, targetColumn);
-		} else {
-			targetColumn = code.layout.clampLineLength(line.length, targetColumn);
-			targetColumn = code.layout.clampSegmentEnd(line.length, segmentStart, targetColumn);
-		}
+	if (hasOffsetHint) {
+		const startDisplay = code.view.wordWrapEnabled ? segment.startDisplay : 0;
+		const endDisplay = code.view.wordWrapEnabled ? segment.endDisplay : entry.hi.text.length;
+		const sourcePixel = desiredPixelHint + code.layout.segmentPixelOffset(entry, segment, 0, code.view.wordWrapEnabled);
+		targetColumn = code.layout.hitTestColumn(entry, startDisplay, endDisplay, sourcePixel - entry.advancePrefix[startDisplay]);
 	} else {
 		targetColumn = code.layout.clampLineLength(line.length, targetColumn);
 	}
 	if (code.view.wordWrapEnabled) {
+		targetColumn = code.layout.clampSegmentEnd(line.length, segmentStart, targetColumn);
 		const hasNextSegmentSameRow = (clampedIndex + 1 < visualLines.length)
 			&& visualLines[clampedIndex + 1].row === segment.row;
 		if (hasNextSegmentSameRow && targetColumn >= segmentEnd) targetColumn = Math.max(segmentStart, segmentEnd - 1);
@@ -122,37 +113,24 @@ export function setCursorFromVisualIndex(code: CodeEditorControl, visualIndex: n
 	code.view.cursorRow = segment.row;
 	code.view.cursorColumn = targetColumn;
 	code.emitCursorMoved();
-	updateDesiredColumn(code);
-	if (hasDesiredHint) {
-		code.view.desiredColumn = Math.max(0, desiredColumnHint!);
-	}
+	updateDesiredColumn(code, desiredColumnHint, desiredPixelHint);
 }
 
-export function updateDesiredColumn(code: CodeEditorControl): void {
-	code.view.desiredColumn = code.view.cursorColumn;
-	code.view.desiredDisplayOffset = 0;
-	if (code.view.cursorRow < 0 || code.view.cursorRow >= code.model.buffer.getLineCount()) {
+export function updateDesiredColumn(code: CodeEditorControl, desiredColumn = code.view.cursorColumn, desiredPixel?: number): void {
+	code.view.desiredColumn = desiredColumn;
+	if (desiredPixel !== undefined) {
+		code.desiredPixelOffset = desiredPixel;
 		return;
 	}
 	const entry = code.layout.getViewLine(code.view.cursorRow);
 	const highlight = entry.hi;
 	const cursorDisplay = code.layout.columnToDisplay(highlight, code.view.cursorColumn);
-	let segmentDisplayStart = 0;
+	let pixelOffset = 0;
 	if (code.view.wordWrapEnabled) {
 		ensureVisualLines(code);
-		const override = code.visualCursor;
-		if (override) {
-			segmentDisplayStart = code.layout.visualIndexToSegment(override.visualIndex).startDisplay;
-		} else {
-			const visualIndex = code.layout.positionToVisualIndex(code.view.cursorRow, code.view.cursorColumn);
-			const segment = code.layout.visualIndexToSegment(visualIndex);
-			if (segment) {
-				segmentDisplayStart = segment.startDisplay;
-			}
-		}
+		const visualIndex = code.visualCursor?.visualIndex ?? code.layout.positionToVisualIndex(code.view.cursorRow, code.view.cursorColumn);
+		const segment = code.layout.visualIndexToSegment(visualIndex);
+		pixelOffset = code.layout.segmentPixelOffset(entry, segment, 0, true);
 	}
-	code.view.desiredDisplayOffset = cursorDisplay - segmentDisplayStart;
-	if (code.view.desiredDisplayOffset < 0) {
-		code.view.desiredDisplayOffset = 0;
-	}
+	code.desiredPixelOffset = entry.advancePrefix[cursorDisplay] - pixelOffset;
 }

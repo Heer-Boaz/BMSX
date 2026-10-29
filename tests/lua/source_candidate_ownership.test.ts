@@ -69,6 +69,7 @@ test('Source factories and serialization produce group-local views while sharing
 	firstView.cursorRow = 1; firstView.cursorColumn = 2; firstView.scrollRow = 1.25; firstView.scrollLeft = 19.75;
 	firstView.wordWrapEnabled = false;
 	secondView.cursorRow = 1; secondView.cursorColumn = 7; secondView.scrollRow = 3.5; secondView.scrollLeft = 41.25;
+	secondView.wordWrapEnabled = true;
 	const serializer = new CodeEditorInputSerializer(sources.catalog);
 	const firstState = serializer.serialize(first), secondState = serializer.serialize(second);
 	firstGroup.clear(); secondGroup.clear();

@@ -169,6 +169,8 @@ export type VisualLineSegment = {
 	endColumn: number;
 	startDisplay: number;
 	endDisplay: number;
+	/** Virtual continuation indentation in measured font pixels; never source text. */
+	indentPixels: number;
 };
 
 export type ScrollbarKind = 'codeVertical' | 'codeHorizontal' | 'resourceVertical' | 'resourceHorizontal';

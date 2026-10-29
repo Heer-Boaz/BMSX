@@ -27,7 +27,7 @@ test('fresh Source views share canonical history but independently retain plain 
 	t.after(() => { group.dispose(); input.dispose(); model.dispose(); });
 	input.initializeViewState();
 	Object.assign(input.context.view, { cursorRow: 7, cursorColumn: 6, selectionAnchor: { row: 3, column: 2 },
-		scrollRow: 2.5, scrollLeft: 17.25, desiredColumn: 99, desiredDisplayOffset: 91, wordWrapEnabled: false });
+		scrollRow: 2.5, scrollLeft: 17.25, desiredColumn: 99, wordWrapEnabled: false });
 	input.context.runtimeErrorOverlay = { row: 7, column: 6, message: 'retained runtime fault', lines: [], messageLines: [],
 		lineDescriptors: [], layout: null, details: null, expanded: true, hovered: true, hoverLine: 1, copyButtonHovered: true, hidden: false };
 	input.context.executionStopRow = 7;
@@ -39,7 +39,6 @@ test('fresh Source views share canonical history but independently retain plain 
 	assert.ok(copy.context.view.selectionAnchor !== input.context.view.selectionAnchor);
 	assert.deepEqual(captureCodeEditorView(copy), reading);
 	assert.equal(copy.context.runtimeErrorOverlay, null); assert.equal(copy.context.executionStopRow, null);
-	assert.equal(copy.context.view.desiredDisplayOffset, 0);
 	copy.initializeViewState({ cursor: 0, anchor: null, scrollRow: 0, scrollLeft: 0, wordWrapEnabled: true });
 	assert.deepEqual(captureCodeEditorView(copy), reading, 'a fresh view is initialized before a destination can supply an old group memento');
 	copy.context.view.cursorRow = 11; copy.context.view.scrollLeft = 29;

@@ -116,12 +116,13 @@ export function resolvePointerTextPosition(code: CodeEditorControl, viewportX: n
 		const resolvedSegment = lastPointerRowResolution.segment;
 		startDisplay = resolvedSegment.startDisplay;
 		endDisplay = resolvedSegment.endDisplay;
-		pixelOffset = entry.advancePrefix[startDisplay];
+		pixelOffset = layout.segmentPixelOffset(entry, resolvedSegment, code.view.scrollLeft, true);
 	}
 	const pixel = pixelOffset + viewportX - bounds.textLeft, inline = entry.inline;
 	code.scratch.pointerTextPosition.row = row;
 	code.scratch.pointerTextPosition.column = layout.hitTestColumn(entry, startDisplay, endDisplay, pixel - entry.advancePrefix[startDisplay]);
-	code.scratch.pointerTextPosition.injected = inline !== null && viewportX >= bounds.textLeft && pixel < entry.advancePrefix[endDisplay]
+	code.scratch.pointerTextPosition.injected = inline !== null && viewportX >= bounds.textLeft
+		&& pixel >= entry.advancePrefix[startDisplay] && pixel < entry.advancePrefix[endDisplay]
 		&& pixel >= entry.advancePrefix[inline.startDisplay] && pixel < entry.advancePrefix[inline.endDisplay];
 	return code.scratch.pointerTextPosition;
 }
@@ -134,7 +135,7 @@ export function resolveTextPositionBounds(code: CodeEditorControl, row: number, 
 	const visual = layout.positionToVisualIndex(row, column);
 	const segment = layout.visualIndexToSegment(visual)!;
 	const entry = layout.getViewLine(row);
-	const offset = code.view.wordWrapEnabled ? entry.advancePrefix[segment.startDisplay] : code.view.scrollLeft;
+	const offset = layout.segmentPixelOffset(entry, segment, code.view.scrollLeft, code.view.wordWrapEnabled);
 	const display = layout.columnToDisplay(entry.hi, column);
 	const x = bounds.textLeft + entry.advancePrefix[display] - offset;
 	const y = bounds.codeTop + (visual - (code.view.scrollRow | 0)) * code.lineHeight;

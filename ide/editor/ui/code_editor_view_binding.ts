@@ -33,7 +33,6 @@ export class CodeEditorViewBinding extends DisposableStore {
 			view.cursorRow = this.position.row;
 			view.cursorColumn = this.position.column;
 			view.desiredColumn = view.cursorColumn;
-			view.desiredDisplayOffset = 0;
 			if (anchor === null) clearSingleCursorSelection(view);
 			else {
 				const mapped = mapTextOffset(anchor, event.changes, forward ? 1 : -1);

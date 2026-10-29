@@ -10,16 +10,32 @@ import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { resolveCodeAreaViewport } from '../../ide/editor/ui/code/area_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
+test('new Source views keep authored rows intact until wrapping is explicitly enabled', t => {
+	const f = createActualSourcePanes(t, false, [['long.lua', `local long_value = '${'authored_'.repeat(80)}'\nreturn long_value`]]);
+	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'long.lua' })!;
+	const input = resolveLuaCodeEditorInput(f.sources.catalog, resource);
+	f.firstGroup.openEditor(input, { pinned: true }); f.update();
+	const code = f.first.code;
+	assert.equal(code.view.wordWrapEnabled, false);
+	assert.equal(code.layout.getVisualLineCount(), input.workingCopy.buffer.getLineCount());
+	resolveCodeAreaViewport(code);
+	assert.equal(code.geometry.codeHorizontalScrollbarVisible, true);
+	f.first.focus(); f.editor.commands.execute('wrap', f.first.commandTarget); f.update();
+	assert.equal(code.view.wordWrapEnabled, true);
+	assert.ok(code.layout.getVisualLineCount() > input.workingCopy.buffer.getLineCount());
+	assert.equal(input.workingCopy.dirty, false); assert.equal(input.workingCopy.canUndo, false);
+});
+
 test('Source tabs retain independent wrapping while reusing the same code control', t => {
 	const f = createActualSourcePanes(t), commands = f.editor.commands;
 	f.first.focus(); commands.execute('wrap', f.first.commandTarget);
-	assert.equal(commands.isActive('wrap', f.first.commandTarget), false);
+	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
 	const other = new CodeEditorInput(f.secondInput.workingCopy);
 	f.firstGroup.openEditor(other, { pinned: true });
 	assert.ok(f.firstGroup.panes.activePane === f.first && f.first.input === other);
-	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
-	f.firstGroup.activate(f.firstInput.id);
 	assert.equal(commands.isActive('wrap', f.first.commandTarget), false);
+	f.firstGroup.activate(f.firstInput.id);
+	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
 	assert.equal(f.firstInput.workingCopy.dirty, false); assert.equal(other.workingCopy.dirty, false);
 });
 
@@ -32,7 +48,7 @@ for (const placement of ['split', 'window', 'group'] as const) test(`moving Sour
 	assert.equal(parts.moveEditor(f.firstGroup, f.firstInput, destination), true);
 	const group = parts.findGroup(f.firstInput)!;
 	assert.ok(group.model.activeTab === f.firstInput && group.panes.activePane instanceof CodeEditorPane);
-	assert.equal(commands.isActive('wrap', group.panes.activePane.commandTarget), false);
+	assert.equal(commands.isActive('wrap', group.panes.activePane.commandTarget), true);
 	assert.equal(model.version, version); assert.equal(model.dirty, false); assert.equal(model.canUndo, false);
 });
 
@@ -42,10 +58,10 @@ test('Open Editor in New Window copies initial wrapping then retains independent
 	commands.execute('window.copyEditor', f.first.commandTarget); await setImmediate(); f.update();
 	const group = parts.activeGroup, input = group.model.activeTab, pane = group.panes.activePane!;
 	assert.ok(input instanceof CodeEditorInput && input !== f.firstInput && input.workingCopy === f.firstInput.workingCopy);
-	assert.equal(commands.isActive('wrap', pane.commandTarget), false);
-	commands.execute('wrap', pane.commandTarget);
 	assert.equal(commands.isActive('wrap', pane.commandTarget), true);
-	f.first.focus(); assert.equal(commands.isActive('wrap', f.first.commandTarget), false);
+	commands.execute('wrap', pane.commandTarget);
+	assert.equal(commands.isActive('wrap', pane.commandTarget), false);
+	f.first.focus(); assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
 	assert.equal(input.workingCopy.dirty, false); assert.equal(input.workingCopy.canUndo, false);
 });
 
@@ -55,7 +71,7 @@ test('moving a whole Source group retains its input-owned wrapping in a fresh ho
 	assert.equal(parts.moveGroup(f.firstGroup, { kind: 'window' }), true);
 	const group = parts.findGroup(f.firstInput)!;
 	assert.ok(group.model.activeTab === f.firstInput && group.panes.activePane instanceof CodeEditorPane);
-	assert.equal(commands.isActive('wrap', group.panes.activePane.commandTarget), false);
+	assert.equal(commands.isActive('wrap', group.panes.activePane.commandTarget), true);
 });
 
 test('coalescing Source views preserves the retained receiver wrapping rather than the retired source preference', t => {
@@ -63,7 +79,7 @@ test('coalescing Source views preserves the retained receiver wrapping rather th
 	f.first.focus(); commands.execute('wrap', f.first.commandTarget);
 	assert.equal(f.editor.editorParts.moveEditor(f.firstGroup, f.firstInput, { kind: 'group', group: f.secondGroup }), true);
 	assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.second.input === f.secondInput);
-	assert.equal(commands.isActive('wrap', f.second.commandTarget), true);
+	assert.equal(commands.isActive('wrap', f.second.commandTarget), false);
 });
 
 test('a mode-only wrap toggle publishes a view-state change without editing its canonical model', t => {
@@ -85,7 +101,7 @@ test('closing and reopening a Source restores its group view memento rather than
 	const reopened = new CodeEditorInput(model);
 	f.firstGroup.openEditor(reopened, { pinned: true });
 	assert.ok(f.first.input === reopened);
-	assert.equal(commands.isActive('wrap', f.first.commandTarget), false);
+	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
 	assert.equal(model.dirty, false);
 });
 
@@ -96,7 +112,7 @@ test('Source serializer restores wrapping onto the same canonical model in a fre
 	const restored = await serializer.deserialize(serializer.serialize(f.firstInput));
 	const document = f.editor.editorParts.createDocument(); document.activeGroup.openEditor(restored);
 	assert.ok(restored !== f.firstInput && restored.workingCopy === f.firstInput.workingCopy);
-	assert.equal(commands.isActive('wrap', document.activeGroup.panes.activePane!.commandTarget), false);
+	assert.equal(commands.isActive('wrap', document.activeGroup.panes.activePane!.commandTarget), true);
 	assert.equal(restored.workingCopy.dirty, false);
 });
 
@@ -106,11 +122,11 @@ test('navigation bookmarks and text Undo do not restore an earlier wrapping pref
 	const selection = new CodeEditorNavigationSelection(f.firstInput); t.after(() => selection.dispose());
 	commands.execute('wrap', f.first.commandTarget);
 	selection.restore(f.firstInput, f.first.code);
-	assert.equal(commands.isActive('wrap', f.first.commandTarget), false);
+	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
 	assert.equal(f.first.code.focusTarget.textInput!.replaceText(0, 0, '-- draft\n'), true);
 	commands.execute('undo', f.first.commandTarget);
 	assert.equal(model.buffer.getText(), f.source);
-	assert.equal(commands.isActive('wrap', f.first.commandTarget), false);
+	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
 });
 
 test('Back and Forward restore Source locations without reverting a later wrap toggle', async t => {
@@ -120,10 +136,10 @@ test('Back and Forward restore Source locations without reverting a later wrap t
 	commands.execute('wrap', f.first.commandTarget);
 	await f.editor.navigation.goBackward();
 	assert.equal(f.firstInput.context.view.cursorRow, 0); assert.equal(f.firstInput.context.view.cursorColumn, 0);
-	assert.equal(commands.isActive('wrap', f.first.commandTarget), false);
+	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
 	await f.editor.navigation.goForward();
 	assert.equal(f.firstInput.context.view.cursorRow, 1); assert.equal(f.firstInput.context.view.cursorColumn, 3);
-	assert.equal(commands.isActive('wrap', f.first.commandTarget), false);
+	assert.equal(commands.isActive('wrap', f.first.commandTarget), true);
 	assert.equal(f.firstInput.workingCopy.dirty, false);
 });
 
@@ -133,6 +149,7 @@ test('cross-mode history reveals its canonical source caret instead of restoring
 	const f = createActualSourcePanes(t, false, [['long.lua', LONG_SOURCE]]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'long.lua' })!;
 	const input = resolveLuaCodeEditorInput(f.sources.catalog, resource);
+	input.context.view.wordWrapEnabled = true;
 	f.firstGroup.openEditor(input, { pinned: true }); f.update();
 	f.firstGroup.activate(input.id, { selection: { row: 60, startColumn: 120, endColumn: 120 } });
 	resetNavigationHistoryState();
@@ -155,6 +172,7 @@ test('coalescing views with opposite wrapping reveals the source caret in the re
 	const f = createActualSourcePanes(t, false, [['long.lua', LONG_SOURCE]]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'long.lua' })!;
 	const source = resolveLuaCodeEditorInput(f.sources.catalog, resource), receiver = new CodeEditorInput(source.workingCopy);
+	source.context.view.wordWrapEnabled = receiver.context.view.wordWrapEnabled = true;
 	f.firstGroup.openEditor(source, { pinned: true }); f.secondGroup.openEditor(receiver, { pinned: true }); f.update();
 	f.second.focus(); f.editor.commands.execute('wrap', f.second.commandTarget);
 	f.firstGroup.activate(source.id, { selection: { row: 60, startColumn: 120, endColumn: 120 } });

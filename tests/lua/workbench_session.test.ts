@@ -128,7 +128,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	scene.view.hierarchy.position = 1; scene.view.details.position = 17; f.group.model.add(scene);
 	const cleanResource = f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'definitions.lua' })!;
 	const cleanModel = editorTextModelService.retain(cleanResource, 'lua', '-- second slot');
-	const clean = new CodeEditorInput(cleanModel); f.group.model.add(clean, { pinned: false });
+	const clean = new CodeEditorInput(cleanModel); clean.context.view.wordWrapEnabled = true; f.group.model.add(clean, { pinned: false });
 	f.group.model.activate(lenses[1]);
 	const before = f.group.model.serialize(f.serializers);
 	assert.equal(f.group.model.serialize(f.serializers, before), before, 'unchanged checkpoint reuses immutable group');

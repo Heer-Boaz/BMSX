@@ -61,17 +61,17 @@ export function setCursorPosition(code: CodeEditorControl, row: number, column: 
  * Move cursor vertically by delta lines (supports word wrap)
  */
 export function moveCursorVertical(code: CodeEditorControl, delta: number): void {
-	code.clearVisualCursor();
 	ensureVisualLines(code);
 	const visualCount = code.layout.getVisualLineCount();
 	if (visualCount === 0) {
 		return;
 	}
-	const currentIndex = code.layout.positionToVisualIndex(code.view.cursorRow, code.view.cursorColumn);
+	if (code.desiredPixelOffset === undefined) updateDesiredColumn(code);
+	const currentIndex = resolveCursorVisualIndex(code);
 	const targetIndex = code.layout.clampVisualIndex(visualCount, currentIndex + delta);
 	const desired = code.view.desiredColumn;
-	const desiredDisplay = code.view.desiredDisplayOffset;
-	setCursorFromVisualIndex(code, targetIndex, desired, desiredDisplay);
+	const desiredPixel = code.desiredPixelOffset;
+	setCursorFromVisualIndex(code, targetIndex, desired, desiredPixel);
 	resetBlinkState(code.caret);
 	revealCursor(code);
 }
@@ -356,7 +356,8 @@ export function pageUp(code: CodeEditorControl, playerInput: ModifierState): voi
 	const visualCount = code.layout.getVisualLineCount();
 	const currentVisual = resolveCursorVisualIndex(code);
 	const targetVisual = code.layout.clampVisualScroll(currentVisual - rows, visualCount, rows);
-	setCursorFromVisualIndex(code, targetVisual, code.view.desiredColumn, code.view.desiredDisplayOffset);
+	if (code.desiredPixelOffset === undefined) updateDesiredColumn(code);
+	setCursorFromVisualIndex(code, targetVisual, code.view.desiredColumn, code.desiredPixelOffset);
 	resetBlinkState(code.caret);
 	breakUndoSequence(code);
 	revealCursor(code);
@@ -376,7 +377,8 @@ export function pageDown(code: CodeEditorControl, playerInput: ModifierState): v
 	const visualCount = code.layout.getVisualLineCount();
 	const currentVisual = resolveCursorVisualIndex(code);
 	const targetVisual = code.layout.clampVisualIndex(visualCount, currentVisual + rows);
-	setCursorFromVisualIndex(code, targetVisual, code.view.desiredColumn, code.view.desiredDisplayOffset);
+	if (code.desiredPixelOffset === undefined) updateDesiredColumn(code);
+	setCursorFromVisualIndex(code, targetVisual, code.view.desiredColumn, code.desiredPixelOffset);
 	resetBlinkState(code.caret);
 	breakUndoSequence(code);
 	revealCursor(code);

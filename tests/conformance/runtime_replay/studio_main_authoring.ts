@@ -4,7 +4,7 @@ import { CallHierarchyDirection } from '../../../ide/editor/contrib/call_hierarc
 import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { UnavailableScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/unavailable_primary';
 import { openSceneFixture } from './studio_scene_source';
-import { check, type StudioFixture } from './studio_fixture';
+import { check, codePositionBounds, sourcePane, type StudioFixture } from './studio_fixture';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { WorkspaceSearchInput } from '../../../ide/workbench/contrib/workspace_search/editor_input';
 import { WorkspaceSearchPane } from '../../../ide/workbench/contrib/workspace_search/editor_pane';
@@ -20,6 +20,14 @@ import type { ResourceQuickPickItem } from '../../../ide/workbench/contrib/resou
 import type { QuickPickItem } from '../../../ide/workbench/services/quick_input/provider';
 import { SCENE_AUTHORING_SOURCE } from '../../fixtures/studio/scene_authoring';
 import { createTestSourceOnlyLuaRecord } from '../../helpers/runtime_sources';
+import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
+
+const SOURCE_READING_FIXTURE = `local function read_authoring_source()
+    local readable_value = alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_kappa_lambda_mu_nu_xi_omicron_pi_rho_sigma_tau_upsilon_phi_chi_psi_omega
+    return readable_value
+end
+return read_authoring_source
+`;
 
 /** Standalone renderer workflow over a dedicated test cartridge and independent source fixtures. */
 export async function runStudioMainAuthoring(test: StudioFixture) {
@@ -37,7 +45,9 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 export async function testMainSceneAuthoring(test: StudioFixture): Promise<void> {
 	const { ide, frame, press, click, cycles } = test, editor = ide.editor;
 	const panelWasVisible = editor.resourcePanel.isVisible();
-	const { model, resource, close } = await openSceneFixture(test, 'main', [['calls.lua', CALL_HIERARCHY_SOURCE]]);
+	const { model, resource, close } = await openSceneFixture(test, 'main', [
+		['calls.lua', CALL_HIERARCHY_SOURCE], ['reading.lua', SOURCE_READING_FIXTURE],
+	]);
 	const original = model.buffer.getText(), before = cycles(), media = ide.sources.currentBlua32Media;
 	await close();
 	check(editor.editorParts.groups.every(group => group.model.tabs.every(input => input.resource?.contextId !== resource.contextId)),
@@ -146,7 +156,8 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		}
 		await press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
-	if (input?.kind !== 'code_editor') throw new Error('main: retained canonical Source required');
+	if (!(restored instanceof ScenePrimaryClient) || input?.kind !== 'code_editor') throw new Error('main: retained primary and canonical Source required');
+	await testMainSourceReadability(test, restored, input);
 	await testPrimarySourceDestinations(test, input);
 	await testCallHierarchyResult(test, resource.contextId);
 	await testWorkspaceSearchResult(test, resource.contextId);
@@ -210,6 +221,95 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'main: source-only authoring never executes or installs a cartridge');
+}
+
+/** Native wrapping is a retained Source reading choice, independent of Main and canonical text history. */
+async function testMainSourceReadability(test: StudioFixture, client: ScenePrimaryClient, originalSource: CodeEditorInput): Promise<void> {
+	const editor = test.ide.editor, group = editor.editorParts.findGroup(originalSource)!;
+	const originalView = { ...originalSource.context.view }, mainModel = client.consumer.workingCopy;
+	const mainText = mainModel.buffer.getText(), mainVersion = mainModel.version, selection = client.consumer.selection;
+	const mainDirty = mainModel.dirty, mainUndo = mainModel.canUndo, mainRedo = mainModel.canRedo;
+	await test.runPaletteCommand('Go: Go to File');
+	await test.clipboard.writeText('reading.lua'); await test.press('ControlLeft', 'KeyV');
+	const rows = editor.quickInput.model.list.rows;
+	const index = rows.findIndex(row => {
+		const resource = (row.item as ResourceQuickPickItem).resource;
+		return resource.contextId === mainModel.identity.contextId && resource.path === 'reading.lua';
+	});
+	check(index >= 0, 'source reading: the ordinary source-only fixture is a real file choice');
+	for (let row = 0; row < index; row++) await test.press('ArrowDown');
+	await test.press('Enter');
+	await test.until(() => group.model.activeTab?.resource?.path === 'reading.lua'
+		&& inputFocus.admittedTarget === group.panes.activePane?.commandTarget,
+		'source reading: Go to File admits the independent reading document between the retained Main regions');
+	const source = group.model.activeTab;
+	if (source?.kind !== 'code_editor') throw new Error('source reading: actual Source input required');
+	const model = source.workingCopy, view = source.context.view;
+	const text = model.buffer.getText(), version = model.version, dirty = model.dirty, undo = model.canUndo, redo = model.canRedo;
+	check(text === SOURCE_READING_FIXTURE && !view.wordWrapEnabled && editor.mainWorkspace.primary === client,
+		'source reading: a new ordinary Source view defaults to unwrapped reading without replacing Main');
+	for (let font = 0; font < 2; font++) {
+		for (let theme = 0; theme < 2; theme++) {
+			await test.press('ControlLeft', 'Home');
+			await test.click(codePositionBounds(test, 1, 6));
+			check(view.cursorRow === 1 && view.cursorColumn === 6 && !view.wordWrapEnabled,
+				'source reading: pointer navigation uses canonical source columns in the unwrapped native control');
+			await test.capture?.(`main-source-reading-${editor.fontVariant}-theme-${theme}-unwrapped`);
+			const unwrappedScroll = { row: view.scrollRow, left: view.scrollLeft };
+			await test.runPaletteCommand('Workspace: Focus Details');
+			await test.clickTab(source.id, 1, group);
+			check(!view.wordWrapEnabled && view.cursorRow === 1 && view.cursorColumn === 6
+				&& view.scrollRow === unwrappedScroll.row && view.scrollLeft === unwrappedScroll.left,
+				'source reading: Main field focus cannot reset an independent unwrapped Source viewport');
+			await test.press('AltLeft', 'KeyZ');
+			check(view.wordWrapEnabled && view.cursorRow === 1 && view.cursorColumn === 6,
+				'source reading: actual Alt+Z changes only the attached Source reading mode');
+			const code = sourcePane(test)!.code, layout = code.layout;
+			const firstVisual = layout.positionToVisualIndex(1, 6), continuation = layout.visualIndexToSegment(firstVisual + 1);
+			check(continuation.row === 1 && continuation.startColumn > 6,
+				'source reading: the narrow real Source presents a continuation of the same authored line');
+			// Coordinates only drive the pointer through the actual virtual-indent projection.
+			const bounds = { left: 0, top: 0, right: 0, bottom: 0 };
+			resolveTextPositionBounds(code, 1, continuation.startColumn, bounds);
+			const area = getCodeAreaBounds(code), continuationColumn = continuation.startColumn;
+			const indentX = area.textLeft + continuation.indentPixels / 2, rowY = (bounds.top + bounds.bottom) / 2;
+			await test.click({ left: indentX, right: indentX, top: rowY, bottom: rowY });
+			check(view.cursorRow === 1 && view.cursorColumn === continuationColumn,
+				'source reading: clicking virtual continuation indentation chooses its real source stop');
+			await test.click(codePositionBounds(test, 1, 6));
+			await test.press('ArrowDown');
+			const firstColumn = view.cursorColumn;
+			await test.press('ArrowDown');
+			check(view.cursorRow === 1 && firstColumn > 6 && view.cursorColumn > firstColumn,
+				'source reading: native vertical keys traverse wrapped continuations, not unrelated source rows');
+			await test.capture?.(`main-source-reading-${editor.fontVariant}-theme-${theme}-wrapped`);
+			const wrappedColumn = view.cursorColumn, wrappedScroll = { row: view.scrollRow, left: view.scrollLeft };
+			await test.runPaletteCommand('Workspace: Focus Details');
+			await test.clickTab(source.id, 1, group);
+			check(view.wordWrapEnabled && view.cursorRow === 1 && view.cursorColumn === wrappedColumn
+				&& view.scrollRow === wrappedScroll.row && view.scrollLeft === wrappedScroll.left,
+				'source reading: Main field focus preserves the exact wrapped Source caret and viewport');
+			await test.press('ArrowUp'); await test.press('ArrowUp');
+			check(view.cursorRow === 1 && view.cursorColumn === 6,
+				'source reading: returning through indented continuations restores the requested source caret');
+			await test.press('AltLeft', 'KeyZ');
+			check(!view.wordWrapEnabled && model.buffer.getText() === text && model.version === version
+				&& model.dirty === dirty && model.canUndo === undo && model.canRedo === redo
+				&& editorTextModelService.get(model.identity) === model,
+				'source reading: presentation input never edits, dirties, replaces or adds Undo history to the working copy');
+			check(editor.mainWorkspace.primary === client && client.consumer.selection === selection
+				&& mainModel.buffer.getText() === mainText && mainModel.version === mainVersion
+				&& mainModel.dirty === mainDirty && mainModel.canUndo === mainUndo && mainModel.canRedo === mainRedo,
+				'source reading: font, theme, pointer and wrapping remain independent of Main authoring and history');
+			await test.press('ControlLeft', 'AltLeft', 'KeyT');
+		}
+		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
+	}
+	await test.press('ControlLeft', 'KeyW');
+	check(group.model.activeTab === originalSource && originalSource.context.view.wordWrapEnabled === originalView.wordWrapEnabled
+		&& originalSource.context.view.cursorRow === originalView.cursorRow && originalSource.context.view.cursorColumn === originalView.cursorColumn
+		&& originalSource.context.view.scrollRow === originalView.scrollRow && originalSource.context.view.scrollLeft === originalView.scrollLeft,
+		'source reading: closing the clean reading document returns to the original independent Source state');
 }
 
 /** A newly authored source-only Scene still belongs to its actual installed project's existing entry program. */
