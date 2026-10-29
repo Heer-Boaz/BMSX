@@ -1,8 +1,10 @@
 import type { TestContext } from 'node:test';
-import type { RectBounds } from '../../machine/ts/common/rect';
+import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { COLOR_CODE_BACKGROUND } from '../../ide/common/constants';
 import type { EditorCommandRunner } from '../../ide/common/commands';
+import { mainWorkspaceActivityHeaderHeight } from '../../ide/workbench/common/main_workspace_activity';
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
@@ -31,9 +33,15 @@ export function createProblemsPanelFixture(t: TestContext, variant: 'tiny' | 'ms
 	const controller = new ProblemsPanelController(parts, commands, surfaces, owner, area, scope, parts.main.focusTarget);
 	const headerFeedback = attachments.mock.calls.find(call => call.result.role === 'feedback')!.result;
 	const feedback = attachments.mock.calls.at(-1)!.result;
-	controller.attach(bounds);
+	const headerBounds = create_rect_bounds();
+	const arrange = (allocation: Readonly<RectBounds> = bounds) => {
+		write_rect_bounds(headerBounds, allocation.left, allocation.top, allocation.right,
+			Math.min(allocation.bottom, allocation.top + mainWorkspaceActivityHeaderHeight(editorViewState.font)));
+		controller.layout(allocation, headerBounds);
+	};
+	arrange(); controller.attach(bounds, headerBounds);
 	t.after(() => { controller.dispose(); inputFocus.setTarget(null); pointerHover.clear(); pointerCapture.cancel(); surfaces.dispose(); });
 	const wheel = (deltaY: number) => controller.handleWheel({ valid: true, insideViewport: true, viewportX: bounds.left + 1,
 		viewportY: bounds.top + 1, modifiers: KeyModifier.none, deltaX: 0, deltaY });
-	return { controller, surfaces, owner, headerFeedback, feedback, parts, group: parts.main.activeGroup, bounds, area, wheel };
+	return { controller, surfaces, owner, headerFeedback, feedback, parts, group: parts.main.activeGroup, bounds, headerBounds, area, wheel, arrange };
 }

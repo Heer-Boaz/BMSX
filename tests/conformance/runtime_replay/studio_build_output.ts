@@ -1,5 +1,6 @@
 import type { StudioBuildJob } from '../../../hosts/common/studio_builds';
 import type { WorkspaceBuilds } from '../../../ide/workbench/services/builds';
+import { BuildOutputActivity } from '../../../ide/workbench/contrib/builds/activity';
 import { BuildLogInput } from '../../../ide/workbench/contrib/builds/editor_input';
 import type { EditorCommandId } from '../../../ide/common/commands';
 import { inputFocus } from '../../../ide/input/focus';
@@ -139,6 +140,7 @@ export async function runStudioBuildOutput(test: StudioFixture) {
 				'build output: the native overflow action copies the exact active failure document');
 			test.presenter.setFixedRenderTargetSize(640, 360);
 			ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport'); editor.updateViewport(ide.overlayRenderer.viewportSize); await frame();
+			await runMainActivityPhase(test, first, peer, builds.job, theme);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
 		}
 		await press('ControlLeft', 'ShiftLeft', 'KeyT');
@@ -222,4 +224,58 @@ async function focusReader(test: StudioFixture, input: BuildLogInput): Promise<v
 	check(parts.activeGroup === group && group.model.activeTab === input && inputFocus.admittedTarget !== null
 		&& group.focusScope.contains(inputFocus.admittedTarget.scope),
 		'build output: the native window picker reveals and focuses the actual retained reader');
+}
+
+
+/** The native activity selector changes presentations, never the independent document reader. */
+async function runMainActivityPhase(test: StudioFixture, first: BuildLogInput, peer: BuildLogInput, job: StudioBuildJob, theme: number): Promise<void> {
+	const editor = test.ide.editor, main = editor.mainWorkspace;
+	const firstDocument = first.view.output;
+	const retained = { query: firstDocument.query, cursor: firstDocument.cursorOffset, scroll: firstDocument.viewport.scrollTop,
+		peerQuery: peer.view.output.query, peerErrorQuery: peer.view.error!.query, peerChannel: peer.view.channel };
+	await test.runPaletteCommand('View: Build Output');
+	await test.runPaletteCommand('Build Output: Select Build');
+	await chooseQuickPick(test, job.request.target);
+	await test.until(() => main.activity instanceof BuildOutputActivity && main.activity.selectedResult === first.view.result
+		&& inputFocus.admittedTarget === main.activity.commandTarget,
+		'build output: the actual Main activity admits the selected workspace observation');
+	const activity = main.activity;
+	if (!(activity instanceof BuildOutputActivity)) throw new Error('build output: selected Main Output activity required');
+	const body = activity.commandTarget, selector = main.activities.commandTarget;
+	await test.runPaletteCommand('Build Output: Show Captured Output');
+	check(inputFocus.admittedTarget === body, 'build output: channel selection keeps the actual Main native reader');
+	await test.press('ControlLeft', 'KeyA'); await test.press('ControlLeft', 'KeyC');
+	check(await test.clipboard.readText() === OUTPUT, 'build output: Main native Copy preserves shared producer bytes independently of document selection');
+	await find(test, 'output needle'); const field = inputFocus.admittedTarget!;
+	await test.press('Escape'); const selected = body.clipboard!.copy!();
+	check(selected === 'output needle', 'build output: Main local Find selects its own raw occurrence');
+	await test.press('ShiftLeft', 'Tab');
+	check(inputFocus.admittedTarget !== body && inputFocus.admittedTarget!.getCommand('builds.output.choose')!.isEnabled(),
+		'build output: reverse Tab reaches the actual request chooser in the shared header');
+	await test.press('ShiftLeft', 'Tab');
+	check(inputFocus.admittedTarget === selector, 'build output: the request chooser returns through its permanent native selector');
+	await test.press('Home'); await test.press('Enter');
+	check(main.activity === editor.problems && !activity.attached && editor.problems.attached,
+		'build output: the native selector detaches only its outgoing presentation');
+	check(!editor.surfaces.isFocusAdmitted(editor.surfaces.findByScope(body.scope.surfaceScope)!),
+		'build output: a hidden reader cannot borrow its visible sibling activity surface');
+	await test.press('ShiftLeft', 'Tab'); await test.press('End'); await test.press('Enter');
+	check(main.activity === activity && inputFocus.admittedTarget === body && body.clipboard!.copy!() === selected,
+		'build output: native switch-back retains the exact activity reader and selection');
+	await test.runPaletteCommand('Workspace: Hide Activity Area');
+	check(!activity.attached, 'build output: the real Hide command withdraws activity native ownership');
+	await test.runPaletteCommand('View: Build Output');
+	await test.until(() => activity.attached && inputFocus.admittedTarget === body,
+		'build output: reopening reveals and admits the retained Main reader');
+	await test.press('ControlLeft', 'KeyF');
+	check(inputFocus.admittedTarget === field && field.textInput!.readText().text === 'output needle',
+		'build output: hide and peer selection preserve this reader query without rebinding a document query');
+	await test.press('Escape');
+	test.movePointer(main.regionLayout.activityBounds); await test.frame();
+	test.remote.apply([{ type: 'wheel', deltaY: 5 }]); await test.frame();
+	check(firstDocument.query === retained.query && firstDocument.cursorOffset === retained.cursor
+		&& firstDocument.viewport.scrollTop === retained.scroll && peer.view.output.query === retained.peerQuery
+		&& peer.view.error!.query === retained.peerErrorQuery && peer.view.channel === retained.peerChannel,
+		'build output: Main activity selection, Find and scrolling do not mutate either independent document reader');
+	await test.capture?.(`build-output-${editor.fontVariant}-theme-${theme}-main-activity`);
 }

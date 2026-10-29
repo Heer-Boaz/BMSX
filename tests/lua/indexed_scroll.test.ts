@@ -123,12 +123,12 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'problems.lua', location: { kind: 'workspace' as const, path: 'problems.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: 10 }, (_, row) => ({ model, version: 1, row,
 		startColumn: 0, endColumn: 1, message: 'A diagnostic message that wraps across several narrow panel lines.', severity: 'error' }));
-	const { controller, wheel } = createProblemsPanelFixture(t, 'tiny');
+	const { controller, wheel, arrange } = createProblemsPanelFixture(t, 'tiny');
 	controller.setDiagnostics(diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 	controller.setSelectionIndex(0); controller.focus();
 	t.after(() => { model.dispose(); });
 	const bounds = { left: 0, top: 0, right: 160, bottom: 100 };
-	controller.layout(bounds);
+	arrange(bounds);
 	const rowHeight = controller.getItemLayout(0).height;
 	const delta = rowHeight / editorViewState.lineHeight / 4;
 	for (let step = 1; step <= 4; step++) {
@@ -151,17 +151,17 @@ test('Problems wheel prepares current variable-height layout after show, resize 
 	const diagnostic = (message: string, row: number): EditorDiagnostic => ({ model, version: 1, row, startColumn: 0, endColumn: 1, message, severity: 'error' });
 	const diagnostics = [diagnostic('Short', 0), diagnostic('A diagnostic message that wraps across several narrow panel lines.', 1), diagnostic('Last', 2)];
 	const coverage = { ready: 1, pending: 0, unsupported: 0, failed: 0 };
-	const { controller, wheel } = createProblemsPanelFixture(t, 'tiny');
+	const { controller, wheel, arrange } = createProblemsPanelFixture(t, 'tiny');
 	controller.setDiagnostics(diagnostics, coverage);
 	t.after(() => { model.dispose(); });
 	const wide = { left: 0, top: 0, right: 320, bottom: 100 };
 
 	const firstRowLines = controller.getItemLayout(0, wide.right - wide.left - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2).height / editorViewState.lineHeight;
-	controller.layout(wide); wheel(firstRowLines);
+	arrange(wide); wheel(firstRowLines);
 	assert.equal(controller.getScrollIndex(), 1, 'first wheel after showing and installing diagnostics is not dropped');
 	const wideHeight = controller.getItemLayout(1).height;
 	const narrow = { ...wide, right: 80 };
-	controller.layout(narrow);
+	arrange(narrow);
 
 	wheel(1);
 	const narrowHeight = controller.getItemLayout(1).height;

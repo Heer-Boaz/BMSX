@@ -1,6 +1,6 @@
 import { findEditorGroup } from '../workbench/services/editor/editor_group';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create';
-import { chooseBuild, showBuildJobs } from '../workbench/contrib/builds/commands';
+import { chooseBuild, chooseBuildOutput, showBuildJobs } from '../workbench/contrib/builds/commands';
 import { createCartridge } from '../workbench/contrib/projects/commands';
 import { importCartridgeFiles } from '../workbench/contrib/resources/import';
 import { executeClipboardAction } from '../input/clipboard';
@@ -132,15 +132,17 @@ export class IdeCommandController {
 			return;
 		}
 		// Named regions settle only their own input at the Main owner; an unrelated document draft is not their subject.
+		const activityId = this.editor.mainWorkspace.activities.idForCommand(command);
+		if (activityId !== undefined) {
+			const main = this.editor.mainWorkspace;
+			if (main.activities.selectedId === activityId && main.regionLayout.activityVisible) main.setActivityVisible(false);
+			else main.openActivity(activityId, { focus: true });
+			return;
+		}
 		switch (command) {
 			case 'status.focus': this.editor.statusBar.focus(); return;
 			case 'status.details': this.editor.statusBar.showDetails(); return;
-			case 'problems': {
-				const main = this.editor.mainWorkspace;
-				if (main.activity === this.editor.problems && main.regionLayout.activityVisible) main.setActivityVisible(false);
-				else { main.setActivity(this.editor.problems); main.focusActivity(); }
-				return;
-			}
+			case 'workspace.activity.hide': this.editor.mainWorkspace.setActivityVisible(false); return;
 			case 'workspace.hierarchy.focus': this.editor.mainWorkspace.focusPrimary('hierarchy'); return;
 			case 'workspace.details.focus': this.editor.mainWorkspace.focusPrimary('details'); return;
 			case 'workspace.hierarchy.toggle': this.editor.mainWorkspace.toggleRegion('hierarchy'); return;
@@ -305,6 +307,7 @@ export class IdeCommandController {
 			case 'projects.createCartridge': createCartridge(this.editor); return;
 			case 'resources.import': importCartridgeFiles(this.editor, this.sources.catalog); return;
 			case 'builds.jobs': showBuildJobs(this.editor); return;
+			case 'builds.output.choose': chooseBuildOutput(this.editor); return;
 			case 'server.connection':
 				showServerConnection(this.editor);
 				return;
@@ -472,6 +475,7 @@ export class IdeCommandController {
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(focus);
 		if (originPart === null) return false;
+		if (this.editor.mainWorkspace.activities.idForCommand(command) !== undefined) return this.editor.isActive;
 		const implementation = input === undefined ? focus?.resolveCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isEnabled();
 		if ((command === 'editor.source' || command === 'editor.sourceToSide') && input === undefined && (this.editor.mainWorkspace.isPrimaryTarget(focus) || this.editor.mainWorkspace.isActivityTarget(focus)))
@@ -491,7 +495,7 @@ export class IdeCommandController {
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'status.focus': return this.editor.isActive && this.editor.statusBar.canFocus;
 			case 'status.details': return this.editor.isActive && this.editor.statusBar.hasDetails;
-			case 'problems': return this.editor.isActive;
+			case 'workspace.activity.hide': return this.editor.isActive && this.editor.mainWorkspace.regionLayout.activityVisible;
 			case 'findGlobal': return workspaceState.context !== null;
 			case 'workspace.focusPrimary': case 'workspace.clearPrimary':
 			case 'workspace.hierarchy.focus': case 'workspace.details.focus':
@@ -561,7 +565,7 @@ export class IdeCommandController {
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
 			case 'resources.import': return this.editor.importFiles !== undefined
 				&& [...this.sources.catalog.contexts.values()].some(context => context.programDomain === 'cart');
-			case 'builds.jobs': return this.editor.builds !== undefined;
+			case 'builds.jobs': case 'builds.output.choose': return this.editor.builds !== undefined;
 			case 'server.connection': return true;
 			case 'conversations.history':
 				return this.editor.observedConversation.available && !this.editor.observedConversation.pending;
@@ -666,6 +670,9 @@ export class IdeCommandController {
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(target);
 		if (originPart === null) return false;
+		const activityId = this.editor.mainWorkspace.activities.idForCommand(command);
+		if (activityId !== undefined) return this.editor.mainWorkspace.regionLayout.activityVisible
+			&& this.editor.mainWorkspace.activities.selectedId === activityId;
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return false;
 		const implementation = input === undefined ? target?.resolveCommand(command) : undefined;
@@ -700,8 +707,6 @@ export class IdeCommandController {
 				return this.runTargets.selected?.transport.execution.userPaused === true;
 			case 'resources':
 				return this.editor.resourcePanel.visible;
-			case 'problems':
-				return this.editor.mainWorkspace.regionLayout.activityVisible && this.editor.mainWorkspace.activity === this.editor.problems;
 			case 'behaviorLens':
 				return (group.model.activeTab?.kind === 'behavior_lens');
 			case 'scenarioLab':

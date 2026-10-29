@@ -14,10 +14,10 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', width = 240) {
 	const f = createProblemsPanelFixture(t, variant, { left: 8, top: 170, right: width, bottom: 270 }, { left: 0, top: 0, right: 384, bottom: 288 });
-	const { controller, surfaces, bounds } = f;
+	const { controller, surfaces } = f;
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => {
-		controller.layout(bounds); controller.update();
+		f.arrange(); controller.update();
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 	};
 	const press = (code: string) => {
@@ -71,7 +71,7 @@ test('coverage publication refreshes its read-only export without remeasuring st
 	const advance = editorViewState.font.advance.bind(editorViewState.font);
 	let measures = 0;
 	t.mock.method(editorViewState.font, 'advance', (...args: Parameters<typeof advance>) => { measures++; return advance(...args); });
-	for (let frame = 0; frame < 1000; frame++) { f.controller.layout(f.bounds); f.controller.header.updateFeedback(); }
+	for (let frame = 0; frame < 1000; frame++) { f.arrange(); f.controller.header.updateFeedback(); }
 	assert.equal(measures, 0);
 	f.controller.setDiagnostics([], { ready: 9, pending: 0, unsupported: 0, failed: 0 }); f.paint();
 	assert.equal(f.headerFeedback.visible, true);
@@ -91,7 +91,7 @@ test('coverage feedback is passive, respects modal admission and retires with pa
 	f.paint(); assert.equal(f.headerFeedback.visible, false); modal.dispose();
 	f.controller.detach(); f.paint(); assert.equal(f.headerFeedback.visible, false);
 	assert.equal(f.controller.focusTarget.getCommand('problems.coverage')!.isEnabled(), false);
-	f.controller.attach(f.bounds); f.paint(); f.controller.header.detach();
+	f.controller.attach(f.bounds, f.headerBounds); f.paint(); f.controller.header.detach();
 	assert.equal(f.controller.focusTarget.getCommand('problems.coverage')!.isEnabled(), false, 'open intent is not an attached command capability');
 	f.controller.focus(); inputFocus.moveFocus(false);
 	assert.ok(inputFocus.admittedTarget === f.controller.focusTarget, 'Tab cannot enter a detached header control');

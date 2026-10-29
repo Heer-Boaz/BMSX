@@ -139,7 +139,7 @@ test('the actual command palette retains the activity Source subject and loses i
 	f.main.focusActivity(); f.key('Enter'); assert.ok(group.model.tabs.includes(scene!));
 });
 
-for (const retirement of ['hide', 'selection', 'source'] as const)
+for (const retirement of ['hide', 'activity', 'selection', 'source'] as const)
 	test(`pending diagnostic Source cannot regain authority after ${retirement} changes its exact producing observation`, async t => {
 		const f = fixture(t); f.panel.setSelectionIndex(6);
 		const ready = Promise.withResolvers<void>(), capture = f.panel.captureSourceLocation.bind(f.panel);
@@ -151,6 +151,7 @@ for (const retirement of ['hide', 'selection', 'source'] as const)
 		f.editor.commands.execute('editor.source', f.panel.focusTarget);
 		assert.equal(opening.mock.callCount(), 1); assert.equal(admitted.mock.callCount(), 0);
 		if (retirement === 'hide') { f.main.setActivityVisible(false); f.main.focusActivity(); }
+		else if (retirement === 'activity') { f.main.openActivity('builds.output'); f.main.openActivity('problems'); }
 		else if (retirement === 'selection') { f.panel.setSelectionIndex(7); f.panel.setSelectionIndex(6); }
 		else f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer source\n' }]);
 		f.second.focus(); const foreground = inputFocus.admittedTarget;
@@ -284,7 +285,7 @@ test('an activity body press retains its hit diagnostic when focus reveals and m
 	} finally { restore.dispose(); }
 	f.update();
 	const x = f.panel.bounds.left + 10, y = f.panel.layoutState.contentTop + f.panel.getItemLayout(0).height - 1;
-	assert.ok(f.editor.surfaces.hitTest(x, y) === f.main.activitySurface, 'the original occurrence is admitted by the actual activity body');
+	assert.ok(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, f.panel.scope.surfaceScope), 'the original occurrence is admitted by the actual activity body');
 	f.editor.dispatchPointer(pointer(x, y, PointerButton.Primary));
 	f.editor.dispatchPointer(pointer(x, y, 0, PointerButton.Primary)); f.update();
 	const input = f.editor.editorParts.activeGroup.model.activeTab;

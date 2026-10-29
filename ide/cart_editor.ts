@@ -58,6 +58,8 @@ import { ActionStringTester } from './workbench/contrib/scenario_lab/actionstrin
 import type { PublishedBuildOpenResult } from './workbench/services/builds';
 import type { WorkspaceBuilds } from './workbench/services/builds';
 import { BuildOutputs } from './workbench/contrib/builds/output';
+import { BuildOutputActivity } from './workbench/contrib/builds/activity';
+import { chooseBuildOutput } from './workbench/contrib/builds/commands';
 import type { WorkspaceProjects } from './workbench/services/projects';
 import type { ImportWorkspaceFiles } from './workbench/services/file_import';
 import type { ConversationObserverFactory } from '../hosts/common/conversation_observer';
@@ -227,6 +229,7 @@ export type CartEditor = TextInputHost & {
 	readonly mainWorkspace: MainWorkspace;
 	readonly statusBar: WorkbenchStatusBar;
 	readonly problems: ProblemsPanelController;
+	readonly buildOutput: BuildOutputActivity;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
@@ -292,6 +295,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly mainWorkspace: MainWorkspace;
 	public readonly statusBar: WorkbenchStatusBar;
 	public readonly problems: ProblemsPanelController;
+	public readonly buildOutput: BuildOutputActivity;
 	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'regions' | 'scope'>;
 	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly surfaces: WorkbenchSurfaceService;
@@ -476,7 +480,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.mainWorkspace = new MainWorkspace(this.surfaces, chromeSurface, inputFocus.workbenchScope, this.commands,
 			() => this.layoutMainEditor(), () => this.editorParts.activate(this.editorParts.main, this.mainWorkspace),
 			focus => { if (focus) this.editorParts.main.focus(); else this.editorParts.activate(this.editorParts.main); },
-			() => this.editorParts.main.activeGroup);
+			() => this.editorParts.main.activeGroup, this.contextMenu);
 		this.editorParts = new EditorParts({
 			surfaces: this.surfaces, owner: chromeSurface, scope: inputFocus.workbenchScope, workArea,
 			mainPresentation: this.mainWorkspace,
@@ -643,9 +647,12 @@ export class RuntimeCartEditor implements CartEditor {
 			save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
 		};
 		this.crossFileRename = new CrossFileRenameManager(this.sources.catalog);
-		this.problems = new ProblemsPanelController(this.editorParts, this.commands, this.surfaces, this.mainWorkspace.activitySurface,
-			workArea, new InputFocusScope(this.mainWorkspace.activitySurface.captureScope, this.mainWorkspace.activityScope), this.editorParts.main.focusTarget);
-		this.mainWorkspace.setActivity(this.problems);
+		this.problems = this.mainWorkspace.activities.register({ id: 'problems', command: 'problems' }, context =>
+			new ProblemsPanelController(this.editorParts, this.commands, this.surfaces, context.surface, workArea, context.scope, context.focusReturn));
+		this.buildOutput = this.mainWorkspace.activities.register({ id: 'builds.output', command: 'builds.output' }, context =>
+			new BuildOutputActivity(this.clipboard, this.contextMenu, this.surfaces, context.surface, workArea, context.scope, context.focusReturn,
+				{ isEnabled: () => this.builds !== undefined, run: () => chooseBuildOutput(this) }));
+		this.mainWorkspace.activities.initialize('problems');
 		this.problems.setDiagnostics(diagnostics.diagnostics, diagnostics.coverage);
 		this.breakpoints = new BreakpointController(debuggerState);
 		this.unbindBreakpoints = debuggerState.breakpoints.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.Breakpoints));
@@ -962,7 +969,6 @@ export class RuntimeCartEditor implements CartEditor {
 			this.menubar.dispose();
 			this.gamePanel.dispose();
 			this.quickInput.dispose();
-			this.problems.dispose();
 			if (this.isAvailable) {
 				for (const group of this.editorParts.groups) group.panes.clearEditor();
 			}

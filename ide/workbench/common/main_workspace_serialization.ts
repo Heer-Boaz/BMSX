@@ -6,6 +6,7 @@ export type SerializedPrimaryClient = { readonly kind: 'scene'; readonly value: 
 /** Main's primary work is separate from the document-part topology and source recovery. */
 export type SerializedMainWorkspace = WorkbenchMainWorkspaceState & {
 	readonly primary: SerializedPrimaryClient | null;
+	readonly activityId: string | undefined;
 	readonly scrollX: number;
 	readonly scrollY: number;
 	readonly activeClient: 'primary' | 'documents' | 'activity';

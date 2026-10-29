@@ -22,8 +22,11 @@ import type { WorkbenchViewSizeConstraints } from './common/layout';
 import { WorkbenchMainWorkspaceLayout } from './common/main_workspace_layout';
 import type { MainWorkspaceActivityClient, MainWorkspaceActivitySizeConstraints } from './common/main_workspace_activity';
 import type { MainWorkspaceClient, MainWorkspaceClientFactory, MainWorkspaceRegionId, MainWorkspaceRegionSurfaces } from './common/main_workspace_client';
+import { MainWorkspaceActivityPart } from './main_activity';
+import type { ContextMenuController } from './services/context_menu/controller';
 
 export type MainWorkspaceOpenOptions = { readonly recordNavigation?: boolean; readonly preserveFocus?: boolean; readonly isCurrent?: () => boolean };
+export type MainWorkspaceActivityOpenOptions = { readonly focus?: boolean };
 export type MainWorkspaceRestoreFactory = (record: SerializedPrimaryClient, surfaces: MainWorkspaceRegionSurfaces, scope: InputFocusScope,
 	isCurrent: () => boolean) => Promise<MainWorkspaceClient | undefined>;
 export type MainWorkspaceRestoreRequest = {
@@ -57,9 +60,7 @@ export class MainWorkspace {
 	public readonly scope: InputFocusScope;
 	public readonly surface: WorkbenchSurface;
 	public readonly focusTarget: InputFocusTarget;
-	public readonly activitySurface: WorkbenchSurface;
-	public readonly activityScope: InputFocusScope;
-	private activityValue: MainWorkspaceActivityClient | undefined;
+	public readonly activities: MainWorkspaceActivityPart;
 	private readonly activityConstraints: MainWorkspaceActivitySizeConstraints = { minimumHeight: 0, preferredHeight: 0 };
 	private readonly verticalConstraints = { rowMinimumHeight: 0, activity: undefined as MainWorkspaceActivitySizeConstraints | undefined, scrollY: 0 };
 	private readonly activitySash: WorkbenchSplitControl;
@@ -98,16 +99,16 @@ export class MainWorkspace {
 	private resetting = false;
 	private sourceOpeningRevision = 0;
 	public get primary(): MainWorkspaceClient | undefined { return this.primaryValue; }
-	public get activity(): MainWorkspaceActivityClient | undefined { return this.activityValue; }
+	public get activity(): MainWorkspaceActivityClient | undefined { return this.activities.client; }
 
 	public constructor(private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, parent: InputFocusScope,
 		commands: EditorCommandRunner,
 		private readonly requestLayout: () => void, private readonly onPrimaryActivate: () => void,
-		private readonly onDocumentsActivate: (focus: boolean) => void, private readonly documentAnchor: () => EditorGroupView) {
+		private readonly onDocumentsActivate: (focus: boolean) => void, private readonly documentAnchor: () => EditorGroupView,
+		contextMenu: ContextMenuController) {
 		this.scope = new InputFocusScope(Symbol('main workspace'), parent);
 		this.scope.commands = commands;
 		this.primaryScope = new InputFocusScope(Symbol('main authored context'), this.scope);
-		this.activityScope = new InputFocusScope(Symbol('main activity'), this.scope);
 		this.focusTarget = inputFocus.createTarget(null, this.scope);
 		this.focusTarget.canFocus = () => this.presented && !this.surface.retired;
 		this.unbindFocus = this.focusTarget.onDidFocus(() => {
@@ -171,13 +172,9 @@ export class MainWorkspace {
 			handlePointer: snapshot => { this.scrollControl.begin(HORIZONTAL_SCROLLBAR, snapshot, 0); }, handleWheel: () => true,
 			onRetire: () => this.scrollControl.cancel(),
 		});
-		this.activitySurface = surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
-			captureScope: this.activityScope.surfaceScope, isVisible: () => this.activityValue?.attached === true,
-			getBounds: () => this.regionLayout.activityBounds, getClip: () => this.regionLayout.verticalViewport,
-			draw: () => this.activityValue!.draw(), handlePointer: snapshot => this.activityValue!.handlePointer(snapshot),
-			handleWheel: event => { this.activityValue!.handleWheel(event); return true; },
-			onRetire: () => pointerCapture.cancelScope(this.activitySurface.captureScope),
-		});
+		this.activities = new MainWorkspaceActivityPart(surfaces, this.surface, this.scope, this.focusTarget,
+			this.regionLayout.verticalViewport, contextMenu, id => this.openActivity(id), () => this.setActivityVisible(false),
+			() => this.presented && !this.surface.retired && !this.resetting, () => this.changed());
 		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
 			captureScope: this.activitySash.focusTarget.scope.surfaceScope, isVisible: () => this.regionLayout.activityPresented,
 			getBounds: () => this.regionLayout.activitySashBounds, getClip: () => this.regionLayout.verticalViewport,
@@ -209,7 +206,7 @@ export class MainWorkspace {
 				if (this.activeClient !== 'primary' || this.activeRegion !== region) {
 					this.activeClient = 'primary'; this.activeRegion = region; this.changed();
 				}
-			} else if (this.activityValue?.attached && this.activityValue.scope.contains(target.scope)) {
+			} else if (this.activities.attached && this.activities.scope.contains(target.scope)) {
 				this.reveal(this.regionLayout.activityBounds); this.onDocumentsActivate(false);
 				if (this.activeClient !== 'activity') { this.activeClient = 'activity'; this.changed(); }
 			} else if (this.scope.contains(target.scope) && !this.primaryScope.contains(target.scope)
@@ -232,12 +229,12 @@ export class MainWorkspace {
 	/** Route the semantic source producer without borrowing the active document's subject. */
 	private sourceClient(target: InputFocusTarget): MainWorkspaceClient | MainWorkspaceActivityClient | undefined {
 		if (this.primaryValue?.scope.contains(target.commandContext.scope)) return this.primaryValue;
-		if (this.activityValue?.scope.contains(target.commandContext.scope)) return this.activityValue;
+		return this.activities.clientForTarget(target);
 	}
 	public canOpenSource(target: InputFocusTarget): boolean {
 		const client = this.sourceClient(target);
 		if (!this.presented || this.surface.retired || this.resetting || client === undefined || client.canOpenSource !== true) return false;
-		if (client === this.activityValue) return this.activityValue.attached;
+		if (client === this.activity) return this.activities.attached && client.attached;
 		return target === client.commandTarget || this.regionForTarget(target) !== undefined;
 	}
 	public captureSourceNavigation(options: SourceNavigationCaptureOptions = {}): SourceNavigationOrigin | undefined {
@@ -267,10 +264,11 @@ export class MainWorkspace {
 		const primary = this.primaryValue?.serialize() ?? null, layout = this.regionLayout;
 		if (previous !== undefined && previous.hierarchyVisible === layout.hierarchyVisible && previous.detailsVisible === layout.detailsVisible
 			&& previous.hierarchyWidth === layout.hierarchyWidth && previous.detailsWidth === layout.detailsWidth
-			&& previous.activityVisible === layout.activityVisible && previous.activityHeight === layout.activityHeight && previous.scrollY === this.verticalScrollbar.getScroll()
+			&& previous.activityId === this.activities.selectedId && previous.activityVisible === layout.activityVisible
+			&& previous.activityHeight === layout.activityHeight && previous.scrollY === this.verticalScrollbar.getScroll()
 			&& previous.scrollX === this.scrollbar.getScroll() && previous.activeClient === this.activeClient && previous.activeRegion === this.activeRegion
 			&& (primary === null ? previous.primary === null : previous.primary?.kind === primary.kind && previous.primary.value === primary.value)) return previous;
-		return { primary, hierarchyVisible: layout.hierarchyVisible, detailsVisible: layout.detailsVisible,
+		return { primary, activityId: this.activities.selectedId, hierarchyVisible: layout.hierarchyVisible, detailsVisible: layout.detailsVisible,
 			hierarchyWidth: layout.hierarchyWidth, detailsWidth: layout.detailsWidth, activityVisible: layout.activityVisible, activityHeight: layout.activityHeight,
 			scrollY: this.verticalScrollbar.getScroll(), scrollX: this.scrollbar.getScroll(),
 			activeClient: this.activeClient, activeRegion: this.activeRegion };
@@ -282,6 +280,7 @@ export class MainWorkspace {
 		const generation = this.requestRevision, interaction = inputFocus.interactionRevision;
 		let disposed = false, restored = false;
 		let state: SerializedMainWorkspace;
+		let activityRevision: number;
 		const current = () => !disposed && !this.surface.retired && this.presented && !this.resetting && this.requestRevision === generation;
 		return {
 			isCurrent: current,
@@ -291,7 +290,9 @@ export class MainWorkspace {
 				this.restoredScroll = snapshot.scrollX; this.restoredScrollY = snapshot.scrollY;
 				if (inputFocus.interactionRevision === interaction) {
 					this.activeClient = snapshot.activeClient; this.activeRegion = snapshot.activeRegion;
+					if (snapshot.activityId !== undefined) this.activities.select(snapshot.activityId);
 				}
+				activityRevision = this.activities.revision;
 				this.regionLayout.setState(snapshot);
 				if (!current()) return false;
 				this.requestLayout();
@@ -315,7 +316,8 @@ export class MainWorkspace {
 			focusClient: () => {
 				if (!restored || !current() || inputFocus.interactionRevision !== interaction) return;
 				if (state.activeClient === 'primary') this.focusPrimary();
-				else if (state.activeClient === 'activity' && this.regionLayout.activityVisible) this.focusActivity();
+				else if (state.activeClient === 'activity' && this.regionLayout.activityVisible && state.activityId !== undefined
+					&& this.activities.revision === activityRevision && this.activities.selectedId === state.activityId) this.openActivity(state.activityId);
 			},
 			dispose: () => { disposed = true; },
 		};
@@ -451,24 +453,13 @@ export class MainWorkspace {
 		if (candidate !== undefined) { candidate.scope.retireContext(); candidate.dispose(); }
 	}
 
-	/** The composition root binds a real retained activity, independently of the primary subject. */
-	public setActivity(client: MainWorkspaceActivityClient): void {
-		const previous = this.activityValue;
-		if (previous === client) return;
-		this.activityValue = client;
-		client.scope.statusSource = client;
-		if (previous !== undefined) previous.scope.statusSource = undefined;
-		previous?.detach();
-		if (this.activityValue !== client || !this.presented || this.surface.retired) return;
-		this.requestLayout(); this.surfaces.changed();
-	}
 	public isActivityTarget(target: InputFocusTarget | null): boolean {
-		return target !== null && this.activityScope.contains(target.commandContext.scope);
+		return this.activities.isTarget(target);
 	}
 
 	/** Measure contributions and arrange the named geometry; clients attach after the final document pass. */
 	public layout(bounds: Readonly<RectBounds>, documentMinimumWidth: number, documentMinimumHeight: number): boolean {
-		const client = this.primaryValue, activity = this.activityValue, layout = this.regionLayout;
+		const client = this.primaryValue, activity = this.activity, layout = this.regionLayout;
 		if (client !== undefined) for (const region of REGIONS) client[region].measure(editorViewState.font, this.regionConstraints[region]);
 		const vertical = this.verticalConstraints;
 		vertical.rowMinimumHeight = Math.max(documentMinimumHeight,
@@ -513,21 +504,19 @@ export class MainWorkspace {
 			} else if (view.attached) view.detach();
 			if (this.primaryValue !== client || !this.presented || this.surface.retired) return;
 		}
-		const activity = this.activityValue, presented = this.regionLayout.activityPresented;
+		const activity = this.activity, presented = this.regionLayout.activityPresented;
 		if (presented !== this.activitySashAttached) {
 			this.activitySashAttached = presented;
 			if (presented) this.activitySash.setInput(this.regionLayout.activitySash); else this.activitySash.clearInput();
 		}
-		if (activity === undefined || this.activityValue !== activity || !this.presented || this.surface.retired) return;
-		if (presented) {
-			if (activity.attached) activity.layout(this.regionLayout.activityBounds); else activity.attach(this.regionLayout.activityBounds);
-		} else if (activity.attached) activity.detach();
+		if (activity === undefined || this.activity !== activity || !this.presented || this.surface.retired) return;
+		if (presented) this.activities.layout(this.regionLayout.activityBounds); else this.activities.detach();
 	}
 
 	public update(): void {
 		if (!this.presented || this.surface.retired) return;
 		this.prompt.update();
-		const client = this.primaryValue, activity = this.activityValue;
+		const client = this.primaryValue, activity = this.activity;
 		if (client !== undefined) {
 			client.update();
 			for (const region of REGIONS) {
@@ -535,39 +524,56 @@ export class MainWorkspace {
 				if (client[region].attached) client[region].update();
 			}
 		}
-		if (this.activityValue === activity && activity?.attached && this.presented && !this.surface.retired) activity.update();
+		if (this.activity === activity && this.presented && !this.surface.retired) this.activities.update();
 	}
 
 	public setActivityVisible(visible: boolean): boolean {
-		const revision = ++this.visibilityRevision, activity = this.activityValue;
+		const revision = ++this.visibilityRevision, activity = this.activity;
 		if (this.regionLayout.activityVisible === visible) return true;
 		if (!this.presented || this.surface.retired || this.resetting || activity === undefined) return false;
 		const focused = inputFocus.target, focusRevision = inputFocus.revision;
-		if (!visible && focused !== null && (activity.scope.contains(focused.scope) || focused === this.activitySash.focusTarget)) {
+		if (!visible && focused !== null && (this.activities.scope.contains(focused.scope) || focused === this.activitySash.focusTarget)) {
 			if (focused.edit?.commit() === false) return false;
-			if (this.activityValue !== activity || this.visibilityRevision !== revision || inputFocus.revision !== focusRevision) return false;
+			if (this.activity !== activity || this.visibilityRevision !== revision || inputFocus.revision !== focusRevision) return false;
 			this.onDocumentsActivate(true);
-			if (this.activityValue !== activity || this.visibilityRevision !== revision || this.surface.retired || !this.presented) return false;
+			if (this.activity !== activity || this.visibilityRevision !== revision || this.surface.retired || !this.presented) return false;
 		}
 		this.regionLayout.activityVisible = visible;
 		this.requestLayout();
-		if (this.activityValue !== activity || this.visibilityRevision !== revision || this.surface.retired || !this.presented) return false;
+		if (this.activity !== activity || this.visibilityRevision !== revision || this.surface.retired || !this.presented) return false;
 		this.surfaces.changed(); return true;
 	}
+	/** The native focus owner publishes selection after departing blur and before new focus admission. */
+	public openActivity(id: string, options: MainWorkspaceActivityOpenOptions = {}): boolean {
+		if (!this.presented || this.surface.retired || this.resetting) return false;
+		const activity = this.activities.clientWithId(id), selected = this.activity;
+		const revision = ++this.visibilityRevision, selection = this.activities.revision;
+		const focused = inputFocus.target, focusRevision = inputFocus.revision, generation = focused?.scope.contextGeneration;
+		if (focused !== null && !activity.scope.contains(focused.scope) && focused.edit?.commit() === false) return false;
+		const current = () => this.presented && !this.surface.retired && !this.resetting && this.visibilityRevision === revision;
+		if (!current() || this.activities.revision !== selection || inputFocus.revision !== focusRevision
+			|| focused?.scope.contextGeneration !== generation) return false;
+		const focus = options.focus !== false || focused !== null && selected !== activity && selected?.scope.contains(focused.scope);
+		const present = () => {
+			if (!current() || !this.activities.select(id) || !current()) return;
+			this.regionLayout.activityVisible = true;
+			if (!current()) return;
+			this.requestLayout();
+			if (!current() || this.activity !== activity) return;
+			this.reveal(this.regionLayout.activityBounds);
+			if (!current() || this.activity !== activity) return;
+			this.surfaces.raise(this.surface);
+		};
+		if (focus) {
+			if (!inputFocus.setTarget(activity.commandTarget, present)) return false;
+		} else present();
+		if (!current() || this.activity !== activity || !this.activities.attached) return false;
+		this.surfaces.changed();
+		return current() && this.activity === activity;
+	}
 	public focusActivity(): void {
-		const activity = this.activityValue;
-		if (activity === undefined || !this.presented || this.surface.retired || this.resetting) return;
-		const focused = inputFocus.target, revision = inputFocus.revision, generation = focused?.scope.contextGeneration;
-		if (focused !== null && !activity.scope.contains(focused.scope) && focused.edit?.commit() === false) return;
-		if (this.activityValue !== activity || inputFocus.revision !== revision || focused?.scope.contextGeneration !== generation) return;
-		if (!this.setActivityVisible(true) || this.activityValue !== activity || inputFocus.revision !== revision
-			|| focused?.scope.contextGeneration !== generation) return;
-		this.reveal(this.regionLayout.activityBounds);
-		if (this.activityValue !== activity || !this.presented || this.surface.retired || inputFocus.revision !== revision
-			|| focused?.scope.contextGeneration !== generation) return;
-		this.surfaces.raise(this.surface);
-		if (this.activityValue === activity && this.presented && !this.surface.retired && inputFocus.revision === revision
-			&& focused?.scope.contextGeneration === generation) activity.focus();
+		const id = this.activities.selectedId;
+		if (id !== undefined) this.openActivity(id);
 	}
 
 	/** Visibility changes one native attachment, never the retained semantic context or sibling draft. */
@@ -629,7 +635,7 @@ export class MainWorkspace {
 		for (const region of REGIONS) {
 			client?.[region].detach(); this.sashAttached[region] = false; this.sashes[region].clearInput();
 		}
-		this.activityValue?.detach(); this.activitySashAttached = false; this.activitySash.clearInput();
+		this.activities.detach(); this.activitySashAttached = false; this.activitySash.clearInput();
 		this.prompt.close('cancel', false); this.scrollControl.cancel();
 		pointerCapture.cancelScope(this.primaryScope.surfaceScope);
 		this.surfaces.changed();
@@ -663,7 +669,7 @@ export class MainWorkspace {
 		this.activeClient = 'documents';
 		if (client !== undefined) { client.scope.statusSource = undefined; client.scope.retireContext(); client.dispose(); }
 		this.primaryScope.retireContext(); this.prompt.close('cancel', false);
-		this.activityValue?.detach(); this.activitySashAttached = false; this.activitySash.clearInput();
+		this.activities.detach(); this.activitySashAttached = false; this.activitySash.clearInput();
 		for (const region of REGIONS) { this.sashAttached[region] = false; this.sashes[region].clearInput(); }
 		this.resetting = false;
 		if (!this.surface.retired) { this.requestLayout(); this.surfaces.changed(); }

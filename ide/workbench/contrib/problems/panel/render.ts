@@ -31,12 +31,14 @@ export function drawProblemsPanelSurface(
 	api.fill_rect(bounds.left, layout.headerTop, bounds.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_BACKGROUND);
 	api.fill_rect(bounds.left, layout.headerBottom - 1, bounds.right, layout.headerBottom, 0, constants.COLOR_PROBLEMS_PANEL_BORDER);
 
-	const headerX = bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
-	const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
 	const header = controller.header;
+	api.pushClipRect(header.bounds.left, header.bounds.top, header.bounds.right, header.bounds.bottom);
+	const headerX = header.bounds.left + constants.PROBLEMS_PANEL_HEADER_PADDING_X;
+	const headerY = layout.headerTop + constants.PROBLEMS_PANEL_HEADER_PADDING_Y;
 	drawEditorText(editorViewState.font, header.title, headerX, headerY, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
 	if (header.summary.length > 0) drawEditorText(editorViewState.font, header.summary, header.summaryLeft, headerY, 0, constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT);
 	renderWorkbenchActionBar(header.actions, editorViewState.font.renderFont(), constants.COLOR_PROBLEMS_PANEL_HEADER_TEXT, constants.COLOR_HEADER_BUTTON_TEXT_DISABLED);
+	api.popClipRect();
 
 	const contentLeft = bounds.left + constants.PROBLEMS_PANEL_CONTENT_PADDING_X;
 	const contentRight = bounds.right - constants.PROBLEMS_PANEL_CONTENT_PADDING_X;

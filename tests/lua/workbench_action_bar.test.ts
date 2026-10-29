@@ -627,3 +627,24 @@ test('clearing an action bar publishes old input retirement before blur admits a
 	assert.equal(f.bar.focusTarget.focus(), true);
 	assert.equal(next.hasFocus, true); assert.equal(f.bar.focusTarget.commandContext, context);
 });
+
+test('shared action-bar alignment owns leading order, trailing overflow and stable cached hit bounds', () => {
+	// Alignment and non-overlapping hit cells are this layout algorithm's explicit geometry contract.
+	const state = createWorkbenchActionBar('workspaceEditReview.evidence.title', true), font = new Font({ variant: 'tiny' });
+	let measurements = 0;
+	const measure = (text: string) => { measurements++; return font.measure(text); };
+	const first = state.items[0], second = state.items[1], bounds = first.bounds;
+	layoutWorkbenchActionBar(state, 240, 10, 24, measure, font, 30, 'start');
+	assert.equal(first.bounds.left, 30); assert.ok(first.bounds.right < second.bounds.left);
+	assert.equal(state.bounds.left, 30);
+	const measured = measurements, revision = state.layoutRevision;
+	for (let frame = 0; frame < 1000; frame++) layoutWorkbenchActionBar(state, 240, 10, 24, measure, font, 30, 'start');
+	assert.equal(measurements, measured); assert.equal(state.layoutRevision, revision); assert.ok(first.bounds === bounds);
+	layoutWorkbenchActionBar(state, 240, 10, 24, measure, font, 30, 'end');
+	assert.equal(state.bounds.right, 240); assert.ok(first.bounds.right < second.bounds.left);
+	assert.equal(measurements, measured); assert.ok(state.layoutRevision > revision);
+	layoutWorkbenchActionBar(state, 60, 10, 24, measure, font, 30, 'start');
+	const overflow = state.overflow!.button; assert.equal(overflow.visible, true);
+	assert.ok(overflow.bounds.left >= 30 && overflow.bounds.right <= 60);
+	for (const item of state.items) if (item.visible && !item.overflowed) assert.ok(item.bounds.right <= overflow.bounds.left);
+});

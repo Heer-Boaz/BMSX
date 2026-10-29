@@ -45,6 +45,7 @@ export type WorkbenchActionBarState = {
 		readonly secondaryMenu: WorkbenchMenuPresentation | undefined;
 	};
 	layoutRevision: number;
+	alignment: 'start' | 'end';
 	hoveredCommand: WorkbenchActionBarAction | null;
 	pressedCommand: WorkbenchActionBarAction | null;
 	focusedIndex: number;
@@ -95,7 +96,7 @@ export function createWorkbenchActionBar(source: WorkbenchActionMenuId | Workben
 	const presentation = new WorkbenchActionBarPresentation(items, menu, secondaryItems, secondaryMenu, button);
 	return { items, menu, presentation, bounds: create_rect_bounds(), overflow: button === undefined ? undefined : {
 		button, items: presentation.visibleItems, secondary: secondaryItems, secondaryMenu,
-	}, layoutRevision: 0, hoveredCommand: null, pressedCommand: null, focusedIndex: -1, hasFocus: false, measuredFont: null, measuredBy: undefined };
+	}, layoutRevision: 0, alignment: 'end', hoveredCommand: null, pressedCommand: null, focusedIndex: -1, hasFocus: false, measuredFont: null, measuredBy: undefined };
 }
 
 export function layoutWorkbenchActionBar(
@@ -106,9 +107,11 @@ export function layoutWorkbenchActionBar(
 	measure: (text: string) => number,
 	font: BFont | null,
 	left: number,
+	alignment: 'start' | 'end' = 'end',
 ): void {
 	state.presentation.refresh();
-	let changed = false;
+	let changed = state.alignment !== alignment;
+	state.alignment = alignment;
 	const remeasure = state.measuredFont !== font || state.measuredBy !== measure;
 	for (const item of state.items) {
 		if (item.menuEntry !== undefined && item.visible !== item.menuEntry.visible) { item.visible = item.menuEntry.visible; changed = true; }
@@ -149,22 +152,33 @@ export function layoutWorkbenchActionBar(
 		if (revision !== state.presentation.revision) changed = true;
 		const visible = overflow.items.length !== 0;
 		if (overflow.button.visible !== visible) { overflow.button.visible = visible; changed = true; }
-		const button = overflow.button;
-		if (button.bounds.left !== right - button.width || button.bounds.top !== top || button.bounds.right !== right || button.bounds.bottom !== bottom) changed = true;
-		write_rect_bounds(button.bounds, right - button.width, top, right, bottom);
 	}
-	let itemRight = right;
-	if (overflow?.button.visible) itemRight -= overflow.button.width + WORKBENCH_ACTION_BAR_ITEM_SPACING;
-	for (let index = state.items.length - 1; index >= 0; index -= 1) {
+	const leading = alignment === 'start', direction = leading ? 1 : -1;
+	let position = leading ? left : right;
+	if (!leading && overflow?.button.visible) position -= overflow.button.width + WORKBENCH_ACTION_BAR_ITEM_SPACING;
+	let presented = false;
+	for (let index = leading ? 0 : state.items.length - 1; index >= 0 && index < state.items.length; index += direction) {
 		const item = state.items[index];
 		if (!item.visible || item.overflowed) continue;
-		const width = item.width;
-		if (item.bounds.left !== itemRight - width || item.bounds.top !== top || item.bounds.right !== itemRight || item.bounds.bottom !== bottom) changed = true;
-		write_rect_bounds(item.bounds, itemRight - width, top, itemRight, bottom);
-		itemRight -= width + WORKBENCH_ACTION_BAR_ITEM_SPACING;
+		const itemLeft = leading ? position : position - item.width, itemRight = itemLeft + item.width;
+		if (item.bounds.left !== itemLeft || item.bounds.top !== top || item.bounds.right !== itemRight || item.bounds.bottom !== bottom) changed = true;
+		write_rect_bounds(item.bounds, itemLeft, top, itemRight, bottom);
+		position += direction * (item.width + WORKBENCH_ACTION_BAR_ITEM_SPACING);
+		presented = true;
 	}
-	const paintedLeft = itemRight === right ? right : itemRight + WORKBENCH_ACTION_BAR_ITEM_SPACING;
-	if (state.bounds.left !== paintedLeft || state.bounds.top !== top || state.bounds.right !== right || state.bounds.bottom !== bottom) changed = true;
-	write_rect_bounds(state.bounds, paintedLeft, top, right, bottom);
+	if (overflow !== undefined) {
+		const button = overflow.button;
+		const buttonLeft = leading ? position : right - button.width, buttonRight = buttonLeft + button.width;
+		if (button.bounds.left !== buttonLeft || button.bounds.top !== top || button.bounds.right !== buttonRight || button.bounds.bottom !== bottom) changed = true;
+		write_rect_bounds(button.bounds, buttonLeft, top, buttonRight, bottom);
+		if (button.visible) {
+			if (leading) position = buttonRight + WORKBENCH_ACTION_BAR_ITEM_SPACING;
+			presented = true;
+		}
+	}
+	const paintedLeft = leading ? left : presented ? position + WORKBENCH_ACTION_BAR_ITEM_SPACING : right;
+	const paintedRight = leading ? presented ? position - WORKBENCH_ACTION_BAR_ITEM_SPACING : left : right;
+	if (state.bounds.left !== paintedLeft || state.bounds.top !== top || state.bounds.right !== paintedRight || state.bounds.bottom !== bottom) changed = true;
+	write_rect_bounds(state.bounds, paintedLeft, top, paintedRight, bottom);
 	if (changed) state.layoutRevision++;
 }

@@ -45,25 +45,25 @@ async function fixture(t: TestContext, failed = true, output = '') {
 		pane.clearInput(); inputFocus.setTarget(null); pane.dispose(); menu.dispose(); input.dispose(); outputs.dispose();
 		pointerCapture.cancel(); pointerHover.clear(); surfaces.dispose();
 	});
-	return { input, pane, clipboard, bounds, menu, reads: () => reads, publish: (job: StudioBuildJob) => { receipt = job; } };
+	return { input, pane, clipboard, bounds, menu, surfaces, reads: () => reads, publish: (job: StudioBuildJob) => { receipt = job; } };
 }
 
 test('channel commands retain independent documents and selection through pane changes', async t => {
 	const f = await fixture(t), error = f.input.view.error!;
 	assert.equal(f.input.view.channel, 'error'); assert.equal(f.input.resource, undefined); assert.equal(f.input.isDirty(), false);
 	assert.equal(inputFocus.target!.clipboard!.readOnly, true);
-	assert.equal(f.pane.isActive('buildLog.error'), true);
+	assert.equal(f.pane.commandTarget.getCommand('buildLog.error')!.isChecked!(), true);
 	error.select(0, 8); error.setQuery('path'); error.nextMatch(1);
 	const selection = [error.selectionAnchor, error.cursorOffset], query = error.query;
 	// Exact content is the Copy All contract: preserve producer data and line endings, not UI labels.
-	f.pane.execute('buildLog.copyAll'); await Promise.resolve(); assert.equal(f.clipboard.text, ERROR);
-	f.pane.execute('buildLog.output'); assert.equal(f.input.view.document, f.input.view.output);
-	assert.equal(f.pane.isActive('buildLog.output'), true); assert.equal(f.pane.isActive('buildLog.error'), false);
+	f.pane.commandTarget.getCommand('buildLog.copyAll')!.run(); await Promise.resolve(); assert.equal(f.clipboard.text, ERROR);
+	f.pane.commandTarget.getCommand('buildLog.output')!.run(); assert.equal(f.input.view.document, f.input.view.output);
+	assert.equal(f.pane.commandTarget.getCommand('buildLog.output')!.isChecked!(), true); assert.equal(f.pane.commandTarget.getCommand('buildLog.error')!.isChecked!(), false);
 	assert.equal(inputFocus.target!.clipboard!.copy!(), null);
-	assert.equal(f.pane.isEnabled('buildLog.copyAll'), false);
-	f.pane.execute('buildLog.copyAll'); await Promise.resolve(); assert.equal(f.clipboard.text, ERROR, 'an empty document cannot wipe the clipboard');
-	f.pane.execute('buildLog.error');
-	assert.equal(f.pane.isActive('buildLog.error'), true); assert.equal(f.pane.isActive('buildLog.output'), false);
+	assert.equal(f.pane.commandTarget.getCommand('buildLog.copyAll')!.isEnabled(), false);
+	f.pane.commandTarget.getCommand('buildLog.copyAll')!.run(); await Promise.resolve(); assert.equal(f.clipboard.text, ERROR, 'an empty document cannot wipe the clipboard');
+	f.pane.commandTarget.getCommand('buildLog.error')!.run();
+	assert.equal(f.pane.commandTarget.getCommand('buildLog.error')!.isChecked!(), true); assert.equal(f.pane.commandTarget.getCommand('buildLog.output')!.isChecked!(), false);
 	assert.deepEqual([error.selectionAnchor, error.cursorOffset], selection); assert.equal(error.query, query);
 	assert.equal(inputFocus.target!.clipboard!.copy!(), ERROR.slice(error.selectionStart, error.selectionEnd));
 	const reads = f.reads(); f.pane.clearInput(); f.pane.setInput(f.input, f.bounds); f.pane.focus();
@@ -78,8 +78,8 @@ test('an observed empty document disables copying and has no diagnostic channel'
 	assert.equal(f.input.view.result.outputText, ''); assert.equal(f.input.view.document.buffer.length, 0);
 	assert.equal(inputFocus.target!.clipboard!.copy!(), null);
 	assert.equal(f.input.view.actions.items.filter(item => item.visible && (item.command === 'buildLog.error' || item.command === 'buildLog.output')).length, 0);
-	assert.equal(f.pane.isEnabled('buildLog.error'), false); f.pane.execute('buildLog.error');
-	assert.equal(f.input.view.channel, 'output'); assert.equal(f.pane.isEnabled('buildLog.copyAll'), false);
+	assert.equal(f.pane.commandTarget.getCommand('buildLog.error')!.isEnabled(), false); f.pane.commandTarget.getCommand('buildLog.error')!.run();
+	assert.equal(f.input.view.channel, 'output'); assert.equal(f.pane.commandTarget.getCommand('buildLog.copyAll')!.isEnabled(), false);
 });
 
 for (const restore of [false, true]) test(`diagnostic publication retires an armed channel overflow before the next pane update${restore ? ' even when the diagnostic reappears' : ''}`, async t => {
@@ -96,18 +96,18 @@ for (const restore of [false, true]) test(`diagnostic publication retires an arm
 	const snapshot: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
 		viewportX: (button.bounds.left + button.bounds.right) / 2, viewportY: (button.bounds.top + button.bounds.bottom) / 2,
 		pressedButtons: 0, justPressedButtons: PointerButton.Primary, justReleasedButtons: PointerButton.Primary };
-	pane.handlePointer(snapshot, true, false, 1, false);
+	pane.handlePointer(snapshot);
 	assert.equal(menu.visible, true);
 	for (const down of [true, false]) inputFocus.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none, false, down));
 	assert.equal(menu.model.rows[menu.model.selectedIndex].command, 'buildLog.output');
-	const execute = t.mock.method(pane, 'execute');
 	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, true));
 	f.publish({ ...input.view.result.job, state: 'completed', error: undefined });
 	await input.view.result.refresh();
-	assert.equal(input.view.channel, 'output'); assert.equal(pane.isEnabled('buildLog.output'), true);
+	assert.equal(input.view.channel, 'output'); assert.equal(pane.commandTarget.getCommand('buildLog.output')!.isEnabled(), true);
 	if (restore) { f.publish({ ...input.view.result.job, state: 'failed', error: ERROR }); await input.view.result.refresh(); }
+	const newer = inputFocus.createTarget(); newer.bindKeyboard(() => {}); newer.focus();
 	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
-	assert.equal(execute.mock.callCount(), 0, 'enabled capability cannot admit a channel placement from a retired diagnostic');
+	assert.ok(inputFocus.admittedTarget === newer, 'retired menu acceptance cannot reclaim native focus');
 	assert.equal(menu.visible, false);
 	pane.update();
 	assert.equal(error.visible, restore); assert.equal(output.visible, restore);
@@ -209,7 +209,7 @@ test('the actual workspace provider owns build observations even when a replacem
 	assert.equal(logSignals[1].aborted, true); assert.equal(result.isDisposed, true); assert.equal(result.loading, false);
 	assert.ok(f.firstGroup.model.activeTab === first);
 	const pane = f.firstGroup.panes.activePane; assert.ok(pane instanceof BuildLogPane);
-	assert.equal(pane.isEnabled('buildLog.refresh'), false);
+	assert.equal(pane.commandTarget.getCommand('buildLog.refresh')!.isEnabled(), false);
 	pending.resolve('late output from the closed provider'); await reading;
 	assert.ok(first.view.output.buffer === buffer); assert.equal(first.view.output.copy(), 'captured in the first workspace\r\n');
 	const replacement = openBuildLog(f.firstGroup, secondStore.get(job)); await replacement.view.result.refresh(); f.update();
@@ -245,7 +245,7 @@ test('receipt publication immediately retires a removed diagnostic reader and it
 	const held: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
 		viewportX: body.left + TEXT_VIEW_PADDING + 1, viewportY: body.top + TEXT_VIEW_PADDING + 1,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
-	f.pane.handlePointer(held, true, false, 1, false); assert.equal(pointerCapture.active, true);
+	f.pane.handlePointer(held); assert.equal(pointerCapture.active, true);
 	const selection = [retired.selectionAnchor, retired.cursorOffset];
 	f.publish({ ...view.result.job, state: 'completed', error: undefined }); await view.result.refresh();
 	assert.equal(view.error, undefined); assert.equal(view.channel, 'output'); assert.equal(pointerCapture.active, false);
@@ -283,9 +283,9 @@ test('a focused Find return callback can retire the Build pane and keep a newer 
 	});
 	t.after(unbind);
 	f.publish({ ...view.result.job, state: 'completed', error: undefined }); await view.result.refresh();
-	assert.equal(returned, true); assert.equal(f.pane.isEnabled('buildLog.refresh'), false);
-	assert.ok(inputFocus.admittedTarget === foreign); assert.equal(leaf.canFocus!(), false);
-	assert.equal(leaf.getCommand('text.find')!.isEnabled(), false);
+	assert.equal(returned, true); assert.equal(f.pane.commandTarget.getCommand('buildLog.refresh')!.isEnabled(), false);
+	assert.ok(inputFocus.admittedTarget === foreign);
+	assert.equal(f.surfaces.isFocusAdmitted(f.surfaces.findByScope(leaf.scope.surfaceScope)!), false);
 	for (const down of [true, false]) inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none, false, down));
 	assert.equal(escaped, 1); assert.ok(inputFocus.admittedTarget === foreign);
 	f.clipboard.execute('copy', inputFocus.admittedTarget!.clipboard!);
@@ -295,9 +295,9 @@ test('a focused Find return callback can retire the Build pane and keep a newer 
 test('disposing a build pane severs its document binding before later result publication', async t => {
 	const f = await fixture(t), reader = f.pane.commandTarget;
 	f.pane.dispose();
-	assert.equal(reader.canFocus!(), false);
+	assert.equal(reader.focus(), false);
 	f.publish({ ...f.input.view.result.job, state: 'completed', error: undefined });
 	await f.input.view.result.refresh();
-	assert.equal(reader.canFocus!(), false);
+	assert.equal(reader.focus(), false);
 	assert.equal(reader.getCommand('text.find')!.isEnabled(), false);
 });

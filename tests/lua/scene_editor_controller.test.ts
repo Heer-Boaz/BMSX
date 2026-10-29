@@ -101,7 +101,7 @@ test('Scene pane source production and member commands retain their input when a
 	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
 		layoutMain, () => parts.activate(parts.main, main),
-		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup);
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup, menu);
 	let parts: EditorParts;
 	const contributions = createTestEditorPaneContributions(commands, menu);
 	contributions.scene_editor = { create: group => new SceneEditorPane(commands as IdeCommandController, sources, menu,
@@ -168,7 +168,7 @@ scenes.register('incomplete', {})
 	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
 		layoutMain, () => parts.activate(parts.main, main),
-		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup);
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup, menu);
 	let parts: EditorParts;
 	const contributions = createTestEditorPaneContributions(commands, menu);
 	contributions.scene_editor = { create: group => new SceneEditorPane(commands as IdeCommandController, sources, menu,

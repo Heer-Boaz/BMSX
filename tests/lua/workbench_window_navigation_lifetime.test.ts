@@ -23,7 +23,7 @@ test('Main activity and its coverage header raise their owning family without ch
 		assert.ok(parts.activePart === parts.main);
 		assert.ok(inputFocus.admittedTarget !== null && problems.scope.contains(inputFocus.admittedTarget.scope));
 		const bounds = problems.bounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, main.activitySurface.captureScope), true,
+		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, problems.scope.surfaceScope), true,
 			'explicit activity focus raises the actual Main family over the covering document');
 		assert.ok(f.secondPart.activeGroup.model.activeTab === f.secondInput);
 		assert.equal(f.secondPart.retired, false); assert.equal(f.secondPart.window!.model.placement, 'maximized');

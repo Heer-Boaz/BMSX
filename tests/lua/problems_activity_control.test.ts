@@ -9,6 +9,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { EditorFont } from '../../ide/editor/ui/view/font';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
+import { mainWorkspaceActivityHeaderHeight } from '../../ide/workbench/common/main_workspace_activity';
 import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { createTestEditorParts } from '../helpers/editor_panes';
@@ -34,9 +35,10 @@ function fixture(t: TestContext) {
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: 12 }, (_, row) => ({ model, version: model.version,
 		row, startColumn: 0, endColumn: 1, severity: 'error', message: 'A source-owned diagnostic with enough detail to wrap at a narrow allocation.' }));
 	controller.setDiagnostics(diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
-	controller.attach(bounds);
+	const headerBounds = { ...bounds, bottom: bounds.top + mainWorkspaceActivityHeaderHeight(editorViewState.font) };
+	controller.attach(bounds, headerBounds);
 	t.after(() => { controller.dispose(); editorTextModelService.clear(); surfaces.dispose(); inputFocus.setTarget(null); });
-	return { controller, diagnostics, model, bounds, scope, accepted: () => accepted };
+	return { controller, diagnostics, model, bounds, headerBounds, scope, accepted: () => accepted };
 }
 
 test('Problems native detachment preserves exact diagnostic selection and reading through pending publication', t => {
@@ -52,7 +54,7 @@ test('Problems native detachment preserves exact diagnostic selection and readin
 	assert.equal(panel.selectedDiagnostic, undefined);
 	const next = f.diagnostics.map(diagnostic => ({ ...diagnostic, version: diagnostic.version + 1 }));
 	panel.setDiagnostics(next, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
-	panel.attach(f.bounds);
+	panel.attach(f.bounds, f.headerBounds);
 	assert.ok(panel.selectedDiagnostic === next[10]); assert.equal(panel.getScrollIndex(), scroll);
 	assert.equal(f.model.dirty, false);
 });
@@ -63,9 +65,9 @@ for (const reattachDuringRetirement of [false, true])
 		assert.equal(target.focus(), true);
 		inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none));
 		let unbind: (() => void) | undefined;
-		if (reattachDuringRetirement) unbind = f.scope.onDidRetireContext(() => panel.attach(f.bounds));
+		if (reattachDuringRetirement) unbind = f.scope.onDidRetireContext(() => panel.attach(f.bounds, f.headerBounds));
 		panel.detach(); unbind?.();
-		if (!reattachDuringRetirement) panel.attach(f.bounds);
+		if (!reattachDuringRetirement) panel.attach(f.bounds, f.headerBounds);
 		assert.equal(panel.attached, true);
 		assert.equal(target.focus(), true);
 		inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none, false, false));
@@ -126,7 +128,7 @@ for (const cause of ['selection', 'detachment', 'publication', 'edit', 'model re
 		panel.setSelectionIndex(7); const request = panel.captureSourceLocation()!;
 		switch (cause) {
 			case 'selection': panel.setSelectionIndex(8); panel.setSelectionIndex(7); break;
-			case 'detachment': panel.detach(); panel.attach(f.bounds); break;
+			case 'detachment': panel.detach(); panel.attach(f.bounds, f.headerBounds); break;
 			case 'publication':
 				panel.setDiagnostics([], { ready: 0, pending: 1, unsupported: 0, failed: 0 });
 				panel.setDiagnostics(f.diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 }); break;
@@ -140,7 +142,7 @@ for (const cause of ['selection', 'detachment', 'publication', 'edit', 'model re
 test('a Problems attachment admitted by outgoing header blur keeps its new native header input', t => {
 	const f = fixture(t), panel = f.controller, target = panel.header.controls.focusTarget;
 	assert.equal(target.focus(), true);
-	const unbind = target.onDidBlur(() => panel.attach(f.bounds));
+	const unbind = target.onDidBlur(() => panel.attach(f.bounds, f.headerBounds));
 	panel.detach(); unbind();
 	assert.equal(panel.attached, true);
 	assert.equal(target.focus(), true);
@@ -153,7 +155,7 @@ test('a Problems press retains the diagnostic hit before native focus reveals a 
 	const f = fixture(t), panel = f.controller;
 	const y = panel.layoutState.contentTop + panel.getItemLayout(0).height - 1;
 	const unbind = panel.focusTarget.onDidFocus(() => panel.layout({ left: f.bounds.left, top: f.bounds.top - 4,
-		right: f.bounds.right, bottom: f.bounds.bottom - 4 }));
+		right: f.bounds.right, bottom: f.bounds.bottom - 4 }, { ...f.headerBounds, top: f.headerBounds.top - 4, bottom: f.headerBounds.bottom - 4 }));
 	// The last pixel of the visible first diagnostic moves over the second row after focus scrolls its owner.
 	panel.handlePointer({ valid: true, insideViewport: true, viewportX: panel.bounds.left + 10, viewportY: y,
 		modifiers: KeyModifier.none, spaceDown: false, pressedButtons: 1, justPressedButtons: 1, justReleasedButtons: 0 });

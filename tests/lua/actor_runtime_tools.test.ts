@@ -109,7 +109,7 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
 		layoutMain, () => parts.activate(parts.main, main),
-		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup);
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup, contextMenu);
 	const parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
 		mainPresentation: main,
 		commands, contextMenu, renderContext: presentation.renderContext,

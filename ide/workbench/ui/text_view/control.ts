@@ -90,10 +90,14 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 		this.removeFind();
 	}
 	public clearInput(): void {
-		this.cancelPointer(); pointerHover.release(this); this.removeFind(); this.findField.focusTarget.release();
+		this.cancelPointer(); pointerHover.release(this);
 		this.unbindBuffer?.(); this.unbindBuffer = undefined;
-		this.scroll.clearInput(); this.model = undefined;
+		this.model = undefined;
 		this.findField.nativeCaret.width = this.findField.nativeCaret.height = 0;
+		this.scroll.clearInput();
+		if (this.model !== undefined) return;
+		this.removeFind();
+		if (this.model === undefined) this.findField.focusTarget.release();
 	}
 	public dispose(): void {
 		this.clearInput(); this.unbindFind(); this.unbindChange(); this.unbindDocumentCancel(); this.unbindFieldCancel(); this.scroll.dispose();

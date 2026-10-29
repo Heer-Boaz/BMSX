@@ -24,14 +24,14 @@ function diagnostic(model: TextModel, row = 13, column = 5): EditorDiagnostic {
 }
 function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 240) {
 	const f = createProblemsPanelFixture(t, variant, { left: 0, top: 160, right: width, bottom: 274 });
-	const { controller, surfaces, bounds } = f;
+	const { controller, surfaces } = f;
 	const models = [new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'scenes/intro.lua', location: { kind: 'workspace' as const, path: 'scenes/intro.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scenes/intro.lua', source: { type: 'lua', resid: 'intro' } }, 'lua', source),
 		new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'scenes/cart.lua', location: { kind: 'workspace' as const, path: 'scenes/cart.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'scenes/cart.lua', source: { type: 'lua', resid: 'cart' } }, 'lua', source)];
 	controller.setDiagnostics(models.map(model => diagnostic(model)), { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	controller.setSelectionIndex(-1);
 	const overlay = createHostOverlayFixture(384, 288);
 	const paint = () => {
-		controller.layout(bounds); controller.update();
+		f.arrange(); controller.update();
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); surfaces.draw(api); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame(), glyphs: GlyphRenderSubmission[] = [];
 		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
@@ -132,7 +132,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} intrinsic activ
 	const size = { minimumHeight: 0, preferredHeight: 0 }, width = f.bounds.right - f.bounds.left;
 	f.controller.measure(editorViewState.font, width, size); const height = size.preferredHeight;
 	const content = f.models.reduce((sum, _model, index) => sum + f.controller.getItemLayout(index, width - colors.PROBLEMS_PANEL_CONTENT_PADDING_X * 2).height, 0);
-	f.bounds.top = f.bounds.bottom - height; f.controller.layout(f.bounds); const layout = f.controller.layoutState;
+	f.bounds.top = f.bounds.bottom - height; f.arrange(); const layout = f.controller.layoutState;
 	assert.equal(layout.visibleHeight, content, 'the preferred activity extent fits two bounded parser cards');
 	assert.ok(layout.visibleHeight <= colors.PROBLEMS_PANEL_MAX_VISIBLE_ROWS * editorViewState.lineHeight);
 	const advance = t.mock.method(editorViewState.font, 'advance');
@@ -181,7 +181,7 @@ test('new row heights govern Home/End/Page and wheel hit geometry without changi
 	f.wheel(item.height / lineHeight); assert.equal(f.controller.getScrollIndex(), 1);
 	assert.equal(f.controller.getSelectionIndex(), 0, 'wheel navigation is independent of selection');
 	const font = editorViewState.font, advance = t.mock.method(font, 'advance'); f.paint(); advance.mock.resetCalls();
-	for (let frame = 0; frame < 1000; frame++) { f.controller.layout(f.bounds); f.controller.updateFeedback(); }
+	for (let frame = 0; frame < 1000; frame++) { f.arrange(); f.controller.updateFeedback(); }
 	assert.equal(advance.mock.callCount(), 0); assert.equal(f.controller.getItemLayout(0), item);
 	assert.equal(f.controller.getDiagnostics(), diagnostics);
 });
@@ -215,7 +215,7 @@ for (const theme of ['light', 'dark']) test(`${theme} diagnostic severity uses i
 test('pending diagnostic projection retains semantic selection and reading intent without exposing stale actions', t => {
 	const f = fixture(t), records = Array.from({ length: 20 }, (_, row) => diagnostic(f.models[row & 1], row, 0));
 	f.controller.setDiagnostics(records, { ready: 2, pending: 0, unsupported: 0, failed: 0 });
-	f.controller.setSelectionIndex(15); f.controller.focus(); f.controller.layout(f.bounds);
+	f.controller.setSelectionIndex(15); f.controller.focus(); f.arrange();
 	f.wheel(30); const scroll = f.controller.getScrollIndex(); assert.ok(scroll > 0);
 	f.controller.setDiagnostics([], { ready: 0, pending: 2, unsupported: 0, failed: 0 });
 	assert.equal(f.controller.selectedDiagnostic, undefined); assert.equal(f.controller.focusTarget.clipboard!.copy(), null);
@@ -250,7 +250,7 @@ test('settled marker deletion retires its selection while native reattachment re
 	f.controller.setDiagnostics([b, a], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	assert.ok(f.controller.selectedDiagnostic === a, 'a deleted marker cannot resurrect its retired intent');
 	f.controller.setSelectionIndex(0); f.controller.setDiagnostics([], { ready: 0, pending: 2, unsupported: 0, failed: 0 });
-	f.controller.detach(); f.controller.attach(f.bounds);
+	f.controller.detach(); f.controller.attach(f.bounds, f.headerBounds);
 	f.controller.setDiagnostics([a, b], { ready: 2, pending: 0, unsupported: 0, failed: 0 });
 	assert.ok(f.controller.selectedDiagnostic === b, 'reattachment retains the actual newer marker intent across pending coverage');
 });

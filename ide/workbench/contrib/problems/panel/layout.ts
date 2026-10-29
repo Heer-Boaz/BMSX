@@ -4,7 +4,6 @@ import type { EditorFont } from '../../../../editor/ui/view/font';
 import { writeWrappedMeasuredText, truncateMeasuredText } from '../../../../common/text';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import * as constants from '../../../../common/constants';
-import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 import { computeSourceLabel } from '../../../../common/paths';
 import { sourceTabDescription } from '../../../ui/tab/titles';
 
@@ -39,10 +38,6 @@ function renderSeverityLabel(severity: EditorDiagnosticSeverity): string {
 	}
 }
 
-export function problemsPanelHeaderHeight(font: EditorFont): number {
-	return Math.max(font.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2, WORKBENCH_ICON_SIZE + 5);
-}
-
 export function createProblemsPanelLayout(): PanelLayout {
 	return {
 		headerTop: 0,
@@ -53,9 +48,9 @@ export function createProblemsPanelLayout(): PanelLayout {
 	};
 }
 
-export function writeProblemsPanelLayout(bounds: Readonly<RectBounds>, font: EditorFont, out: PanelLayout): void {
-	out.headerTop = bounds.top;
-	out.headerBottom = bounds.top + problemsPanelHeaderHeight(font);
+export function writeProblemsPanelLayout(bounds: Readonly<RectBounds>, header: Readonly<RectBounds>, out: PanelLayout): void {
+	out.headerTop = header.top;
+	out.headerBottom = header.bottom;
 	out.contentTop = out.headerBottom + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y;
 	out.contentBottom = bounds.bottom - constants.PROBLEMS_PANEL_CONTENT_PADDING_Y;
 	out.visibleHeight = out.contentBottom - out.contentTop;

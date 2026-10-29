@@ -12,7 +12,7 @@ import { measureText, measureTextRange } from '../../../../editor/common/text/la
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../../input/focus';
 import { pointerCapture } from '../../../../input/pointer/capture';
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
-import type { MainWorkspaceActivityClient, MainWorkspaceActivitySizeConstraints } from '../../../common/main_workspace_activity';
+import { mainWorkspaceActivityHeaderHeight, type MainWorkspaceActivityClient, type MainWorkspaceActivitySizeConstraints } from '../../../common/main_workspace_activity';
 import { truncateMeasuredText } from '../../../../common/text';
 import type { DiagnosticsCoverage } from '../../../services/diagnostics/resource_diagnostics';
 import type { EditorParts } from '../../../services/editor/editor_parts';
@@ -20,7 +20,7 @@ import type { WorkbenchSurface } from '../../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../../services/windows/service';
 import { WorkbenchTooltip } from '../../../ui/tooltip';
 import { clampProblemsPanelScrollIndex, createProblemsPanelItemLayout, createProblemsPanelLayout,
-	findProblemsPanelPreferredSelection, problemsPanelHeaderHeight, writeProblemsPanelItemLayout, writeProblemsPanelLayout,
+	findProblemsPanelPreferredSelection, writeProblemsPanelItemLayout, writeProblemsPanelLayout,
 	type PanelLayout, type ProblemsPanelItemLayout } from './layout';
 import { ProblemsPanelHeader } from './header';
 import { handleProblemsPanelKeyboardInput } from './keyboard';
@@ -75,6 +75,8 @@ export class ProblemsPanelController implements MainWorkspaceActivityClient, Poi
 		this.focusTarget.clipboard = { readOnly: true, copy: () => this.selectionIndex < 0 ? null : this.getItemLayout(this.selectionIndex).feedback };
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => handleProblemsPanelKeyboardInput(input, this, parts));
 		this.header = new ProblemsPanelHeader(this.focusTarget, surfaces, owner, workArea, commands);
+		this.focusTarget.previous = focusReturn;
+		this.header.controls.focusTarget.next = focusReturn;
 		this.feedback.attach(surfaces, owner, workArea);
 		this.unbindFeedbackBlur = this.focusTarget.onDidBlur(() => this.feedback.hide());
 	}
@@ -110,7 +112,7 @@ export class ProblemsPanelController implements MainWorkspaceActivityClient, Poi
 	public measure(font: EditorFont, width: number, target: MainWorkspaceActivitySizeConstraints): void {
 		if (!this.measuredContent || this.measuredFont !== font || this.measuredWidth !== width) {
 			this.measuredFont = font; this.measuredWidth = width; this.measuredContent = true;
-			const headerHeight = problemsPanelHeaderHeight(font) + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;
+			const headerHeight = mainWorkspaceActivityHeaderHeight(font) + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;
 			const minimumContent = constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS * font.lineHeight;
 			const maximumContent = constants.PROBLEMS_PANEL_MAX_VISIBLE_ROWS * font.lineHeight;
 			let contentHeight = 0;
@@ -121,23 +123,24 @@ export class ProblemsPanelController implements MainWorkspaceActivityClient, Poi
 		}
 		target.minimumHeight = this.minimumHeight; target.preferredHeight = this.preferredHeight;
 	}
-	public attach(bounds: Readonly<RectBounds>): void {
-		if (this.attached) { this.layout(bounds); return; }
+	public attach(bounds: Readonly<RectBounds>, headerBounds: Readonly<RectBounds>): void {
+		if (this.attached) { this.layout(bounds, headerBounds); return; }
 		const revision = ++this.attachmentRevision;
 		this.attachedValue = true;
-		this.layout(bounds);
+		this.layout(bounds, headerBounds);
 		if (revision !== this.attachmentRevision) return;
 		this.header.attach();
 	}
-	public layout(bounds: Readonly<RectBounds>): void {
+	public layout(bounds: Readonly<RectBounds>, headerBounds: Readonly<RectBounds>): void {
 		const font = editorViewState.font;
 		const geometryChanged = this.font !== font || this.bounds.left !== bounds.left || this.bounds.top !== bounds.top
-			|| this.bounds.right !== bounds.right || this.bounds.bottom !== bounds.bottom;
+			|| this.bounds.right !== bounds.right || this.bounds.bottom !== bounds.bottom
+			|| this.layoutState.headerTop !== headerBounds.top || this.layoutState.headerBottom !== headerBounds.bottom;
 		if (geometryChanged) {
 			this.font = font; copy_rect_bounds(this.bounds, bounds);
-			writeProblemsPanelLayout(bounds, font, this.layoutState);
-			this.header.layout(font.renderFont(), bounds.left, this.layoutState.headerTop, bounds.right, this.layoutState.headerBottom);
+			writeProblemsPanelLayout(bounds, headerBounds, this.layoutState);
 		}
+		this.header.layout(font.renderFont(), headerBounds.left, headerBounds.top, headerBounds.right, headerBounds.bottom);
 		if (geometryChanged || this.emptySource !== this.emptyMessage) {
 			this.emptySource = this.emptyMessage;
 			this.emptyText = truncateMeasuredText(this.emptyMessage, this.contentWidth, font.measureTextRange);
@@ -186,8 +189,7 @@ export class ProblemsPanelController implements MainWorkspaceActivityClient, Poi
 	}
 	public update(): void {
 		if (!this.attached) return;
-		this.layout(this.bounds);
-		this.header.layout(this.font!.renderFont(), this.bounds.left, this.layoutState.headerTop, this.bounds.right, this.layoutState.headerBottom);
+		this.layout(this.bounds, this.header.bounds);
 		this.header.updateFeedback(); this.updateFeedback();
 	}
 	/** The compact row discloses its qualified resource and complete message outside its allocation. */

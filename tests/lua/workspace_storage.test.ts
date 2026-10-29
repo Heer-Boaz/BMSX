@@ -400,7 +400,7 @@ function payload(
 	return {
 		dirtyFiles,
 		editorParts: { main: { layout: { kind: 'group', group: editorGroup }, active: 0, mru: [0], scrollX: 0, scrollY: 0 }, documents: [], active: 0, mru: [0] },
-		mainWorkspace: { primary: null, hierarchyVisible: true, detailsVisible: true, activityVisible: false,
+		mainWorkspace: { primary: null, activityId: undefined, hierarchyVisible: true, detailsVisible: true, activityVisible: false,
 			scrollX: 0, scrollY: 0, activeClient: 'documents', activeRegion: 'hierarchy' },
 		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
@@ -705,7 +705,7 @@ test('browser workspace restores its local editor recovery without a server', as
 	);
 
 	const restored = await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput);
-	assert.deepEqual(restored, session);
+	assert.deepEqual(restored, JSON.parse(JSON.stringify(session)));
 	assert.ok(workspaceRecords);
 });
 
@@ -731,7 +731,7 @@ test('workspace state selects the newest exact local or remote record', async (t
 		TEST_DOMAIN,
 	);
 
-	assert.deepEqual(await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput), localPayload);
+	assert.deepEqual(await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput), JSON.parse(JSON.stringify(localPayload)));
 	assert.equal(workspaceState.remoteRevision, -1);
 	await shutdownWorkspaceStorage();
 
@@ -739,10 +739,10 @@ test('workspace state selects the newest exact local or remote record', async (t
 	const remotePayload = payload();
 	remotePayload.fontVariant = 'msx';
 	server.files.set(statePath, { contents: JSON.stringify(remotePayload), updatedAt: 40 });
-	assert.deepEqual(await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput), remotePayload);
+	assert.deepEqual(await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput), JSON.parse(JSON.stringify(remotePayload)));
 	assert.deepEqual(
 		JSON.parse(readLocalWorkspaceRecord(storage, 'offline-cart', statePath)!.contents),
-		remotePayload,
+		JSON.parse(JSON.stringify(remotePayload)),
 	);
 });
 
@@ -874,7 +874,7 @@ test('incomplete recovery is reported and leaves the local generation intact', a
 	server.files.set(remoteDirtyPath, { contents: '-- remote dirty', updatedAt: 30 });
 	assert.deepEqual(
 		await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput),
-		remotePayload,
+		JSON.parse(JSON.stringify(remotePayload)),
 	);
 	assert.equal(
 		readLocalWorkspaceRecord(

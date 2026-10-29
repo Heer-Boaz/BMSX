@@ -26,14 +26,14 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 		configureFontVariant(font);
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
 		t.after(() => colors.setIdeThemeVariant(previousTheme));
-		const { controller } = createProblemsPanelFixture(t, font); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
+		const { controller, arrange } = createProblemsPanelFixture(t, font); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
 		t.after(() => controller.focusTarget.release());
 		const overlay = createHostOverlayFixture(256, 192);
 		const bounds = { left: 8, top: 8, right: 248, bottom: 168 };
 		const draw = (focused: boolean) => {
 			if (focused) controller.focus(); else controller.focusTarget.release();
 			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-			controller.layout(bounds); controller.draw(); overlay.renderer.endFrame();
+			arrange(bounds); controller.draw(); overlay.renderer.endFrame();
 			return overlay.queue.consumeOverlayFrame();
 		};
 		const inactive = draw(false);
@@ -83,12 +83,12 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 
 for (const empty of [false, true]) test(`Problems owns its panel/content clips (empty: ${empty})`, t => {
 	configureFontVariant('tiny');
-	const { controller } = createProblemsPanelFixture(t, 'tiny'); controller.setDiagnostics(empty ? [] : [diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(empty ? -1 : 0);
+	const { controller, arrange } = createProblemsPanelFixture(t, 'tiny'); controller.setDiagnostics(empty ? [] : [diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(empty ? -1 : 0);
 	t.after(() => controller.focusTarget.release());
 	const overlay = createHostOverlayFixture(160, 96);
 	const bounds = { left: 8, top: 8, right: 112, bottom: 8 + editorViewState.lineHeight * 3 + 12 };
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-	controller.layout(bounds); controller.draw(); overlay.renderer.endFrame();
+	arrange(bounds); controller.draw(); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame();
 	const pixels = overlay.backend.framebufferPixels;
 	pixels.fill(0);
@@ -108,7 +108,7 @@ for (const empty of [false, true]) test(`Problems owns its panel/content clips (
 
 test('Problems restores a nested caller clip and retains warm paint/layout storage', t => {
 	configureFontVariant('tiny');
-	const { controller } = createProblemsPanelFixture(t, 'tiny');
+	const { controller, arrange } = createProblemsPanelFixture(t, 'tiny');
 	controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
 	t.after(() => controller.focusTarget.release());
 	const overlay = createHostOverlayFixture(160, 96);
@@ -118,7 +118,7 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		api.pushClipRect(caller.left, caller.top, caller.right, caller.bottom);
-		controller.layout(bounds); controller.draw();
+		arrange(bounds); controller.draw();
 		api.fill_rect(0, 60, 160, 70, 0, colors.COLOR_SELECTION_TEXT);
 		api.popClipRect(); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame();
@@ -154,11 +154,11 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 
 test('Problems padding and header cannot hover clipped row geometry', t => {
 	configureFontVariant('tiny');
-	const { controller, group } = createProblemsPanelFixture(t, 'tiny');
+	const { controller, group, arrange } = createProblemsPanelFixture(t, 'tiny');
 	controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(-1);
 	t.after(() => controller.focusTarget.release());
 		const bounds = { left: 8, top: 8, right: 112, bottom: 38 };
-	controller.layout(bounds); const layout = controller.layoutState;
+	arrange(bounds); const layout = controller.layoutState;
 	const snapshot: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 12, viewportY: 0,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
 	for (const y of [bounds.top, layout.contentTop - 1, layout.contentBottom, bounds.bottom - 1]) for (const pressed of [false, true]) {

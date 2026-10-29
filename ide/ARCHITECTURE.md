@@ -278,9 +278,17 @@ single semantic consumer from its independently attached region presentations.
 contributions supply the content controls and measurements. Hiding a region
 retires that attachment, not its sibling or retained work context. The logical
 primary surface groups modality without covering the document region.
+`main_activity.ts` owns the selected activity and a distinct native family for
+each retained contribution. Its descriptor-driven selector and the selected
+client's controls share one allocated header row. Switching admits departure
+through native focus before changing presentation; hiding retires native input,
+not the contribution's reading or observation state. Main owns visibility,
+requested height, sash and two-axis overflow. Selection storage records the
+activity identity, not captured request data or former native authority.
+`contrib/builds/control.ts` supplies the same actual reader to document panes
+and the independent Build Output activity; their view models remain separate.
 The activity is independent of the primary authored subject and document tabs.
-Its contribution supplies intrinsic height and retained reading state; Main owns
-visibility, requested height, sash and two-axis overflow. The document part
+Its contribution supplies intrinsic height and retained reading state. The document part
 consumes Main's row clip and reveals a concrete leaf through that parent before
 native focus admission. Root chrome reserves permanent shell geometry, not a
 contribution's temporary panel height.

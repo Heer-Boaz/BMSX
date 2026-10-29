@@ -17,13 +17,13 @@ import { WorkbenchTooltip } from '../../../ui/tooltip';
 
 const EMPTY_COVERAGE: DiagnosticsCoverage = { ready: 0, pending: 0, unsupported: 0, failed: 0 };
 
-/** Compact panel identity; exact diagnostic coverage is an owned, keyboard-reachable disclosure. */
+/** Diagnostic count and coverage within the container's allocated header. */
 export class ProblemsPanelHeader {
 	public readonly actions = createWorkbenchActionBar('problems.title');
 	public title = '';
 	public summary = '';
 	public summaryLeft = 0;
-	private readonly bounds = create_rect_bounds();
+	public readonly bounds = create_rect_bounds();
 	private readonly feedback = new WorkbenchTooltip();
 	public readonly controls: WorkbenchActionBarControl;
 	private readonly unbindBlur: () => void;
@@ -82,7 +82,7 @@ export class ProblemsPanelHeader {
 			&& this.unsupported === coverage.unsupported && this.failed === coverage.failed) return;
 		this.diagnosticCount = count; this.ready = coverage.ready; this.pending = coverage.pending;
 		this.unsupported = coverage.unsupported; this.failed = coverage.failed;
-		this.fullTitle = `PROBLEMS (${count})`;
+		this.fullTitle = `${count}`;
 		this.fullSummary = coverage.failed > 0 ? `${coverage.failed} failed`
 			: coverage.pending > 0 ? `${coverage.pending} pending`
 				: coverage.unsupported > 0 ? `${coverage.unsupported} unsupported`

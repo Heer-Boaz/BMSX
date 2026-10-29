@@ -7,7 +7,7 @@ import { TextQuickPickProvider } from '../../services/quick_input/text_provider'
 import { openBuildLog } from './editor_input';
 import type { BuildOutputs } from './output';
 
-type BuildAction = QuickPickItem & { run(): Promise<void> };
+type BuildAction = QuickPickItem & { run(preserveFocus: boolean): Promise<void> };
 
 export async function chooseBuild(editor: CartEditor): Promise<void> {
 	const builds = editor.builds!;
@@ -39,6 +39,26 @@ export function showBuildJobs(editor: CartEditor): void {
 		choice => { void inspectBuild(editor, builds, outputs, choice.id).catch(reportBuildError); });
 }
 
+export function chooseBuildOutput(editor: CartEditor): void {
+	const builds = editor.builds!, outputs = editor.buildOutputs!;
+	const choices = [...builds.jobs].sort((left, right) => right.acceptedAt - left.acceptedAt).map(job => ({
+		label: job.request.target, description: `${job.state} | ${job.request.debug ? 'Debug' : 'Release'} -O${job.request.optLevel}`,
+		detail: job.request.requestId, job,
+	}));
+	const selected = editor.buildOutput.selectedResult;
+	const selectedIndex = selected !== undefined && !selected.isDisposed
+		? choices.findIndex(choice => choice.job.request.requestId === selected.requestId) : 0;
+	editor.quickInput.pick('Select Build', 'Choose an admitted request to inspect in Main', () => new TextQuickPickProvider(choices, selectedIndex),
+		(choice, _modifiers, preserveFocus) => {
+			if (preserveFocus) return;
+			try {
+				const result = outputs.get(choice.job);
+				if (editor.mainWorkspace.openActivity('builds.output', { focus: false }) && editor.buildOutput.select(result, { focus: true }))
+					void result.refresh();
+			} catch (error) { reportBuildError(error); }
+		});
+}
+
 async function inspectBuild(editor: CartEditor, builds: WorkspaceBuilds, outputs: BuildOutputs, id: string): Promise<void> {
 	const job = await builds.get(id);
 	if (job === undefined) {
@@ -50,7 +70,7 @@ async function inspectBuild(editor: CartEditor, builds: WorkspaceBuilds, outputs
 				run: async () => { builds.forget(id); } },
 		];
 		editor.quickInput.pick('Build not admitted', 'No durable receipt currently exists; no build was automatically repeated',
-			() => new TextQuickPickProvider(choices), choice => { void choice.run().catch(reportBuildError); });
+			() => new TextQuickPickProvider(choices), (choice, _modifiers, preserveFocus) => { void choice.run(preserveFocus).catch(reportBuildError); });
 		return;
 	}
 	showBuildDetails(editor, builds, outputs, job);
@@ -66,6 +86,13 @@ function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, outputs: 
 			const result = outputs.get(job);
 			openBuildLog(editor.editorParts.editorDestination(), result);
 		} },
+		{ label: 'Show in Main Output', description: 'Keep the request independent of document readers', detail: job.request.target,
+			run: async preserveFocus => {
+				if (preserveFocus) return;
+				const result = outputs.get(job);
+				if (editor.mainWorkspace.openActivity('builds.output', { focus: false }) && editor.buildOutput.select(result, { focus: true }))
+					void result.refresh();
+			} },
 		{ label: 'Copy request ID', description: id, detail: '', run: async () => { await editor.clipboard.writeText(id); } },
 	];
 	if (job.artifact !== undefined && job.state === 'completed') {
@@ -82,7 +109,7 @@ function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, outputs: 
 							run: async () => { await editor.clipboard.writeText(opened.url); } },
 					];
 					editor.quickInput.pick('Browser blocked the new Studio tab', 'Allow pop-ups for this site, then retry',
-						() => new TextQuickPickProvider(recovery), choice => { void choice.run().catch(reportBuildError); });
+						() => new TextQuickPickProvider(recovery), (choice, _modifiers, preserveFocus) => { void choice.run(preserveFocus).catch(reportBuildError); });
 				}
 			} });
 		choices.push({ label: 'Copy published artifact ID', description: artifact,
@@ -91,6 +118,6 @@ function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, outputs: 
 	if (!isBuildTerminal(job.state)) choices.push({ label: 'Cancel build', description: 'Wait for the producer to stop',
 		detail: 'Already published results are not rolled back.', run: async () => { showBuildDetails(editor, builds, outputs, await builds.cancel(id)); } });
 	editor.quickInput.pick('Build details', 'Publication and runtime installation are separate',
-		() => new TextQuickPickProvider(choices), choice => { void choice.run().catch(reportBuildError); });
+		() => new TextQuickPickProvider(choices), (choice, _modifiers, preserveFocus) => { void choice.run(preserveFocus).catch(reportBuildError); });
 }
 function reportBuildError(error: unknown): void { showEditorMessage(String(error), 'error', 8); }

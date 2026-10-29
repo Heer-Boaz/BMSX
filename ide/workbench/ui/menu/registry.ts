@@ -443,6 +443,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'resources' },
 		{ type: 'command', command: 'problems' },
+		{ type: 'command', command: 'builds.output' },
 		{ type: 'command', command: 'runtime.toggleTimeline' },
 		{ type: 'command', command: 'terminal' },
 		{ type: 'separator' },
