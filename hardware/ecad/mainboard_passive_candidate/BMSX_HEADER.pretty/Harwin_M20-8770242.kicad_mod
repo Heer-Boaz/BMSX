@@ -1,0 +1,137 @@
+(footprint "Harwin_M20-8770242"
+	(layer "F.Cu")
+	(descr "Harwin M20-8770242 two-position SMT header; exact nominal manufacturer lands and5.08x2.50body; no generic3Dmodel.")
+	(tags "Surface mounted pin header SMD 1x04 2.54mm single row style1 pin1 left")
+	(property "Reference" "REF**"
+		(at 0 4.2 0)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Value" "M20-8770242"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Datasheet" "https://content.harwin.com/asset/78040b49-a9b7-410c-b55a-a933379a0337/DRG-00409-Technical-Drawing-Datasheet-M20-877-pdf.pdf"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(property "Description" "Harwin M20-8770242 two-position SMT header; exact nominal manufacturer lands and5.08x2.50body; no generic3Dmodel."
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(attr smd)
+	(embedded_fonts no)
+	(property "Manufacturer" "Harwin"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1))))
+	(property "MPN" "M20-8770242"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1))))
+	(property "Function" "Always-powered main5V fan supply; two parallel fans; no control or tach signal"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1))))
+	(property "Qualification" "Exact manufacturer land pattern and mating interface; unpolarised. No assembled-harness/process qualification."
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1))))
+	(fp_rect
+		(start -1.25 -2.54)
+		(end 1.25 2.54)
+		(stroke
+			(width 0.1)
+			(type solid))
+		(fill none)
+		(layer "F.Fab"))
+	(fp_rect
+		(start -3.45 -3.05)
+		(end 3.45 3.05)
+		(stroke
+			(width 0.05)
+			(type solid))
+		(fill none)
+		(layer "F.CrtYd"))
+	(fp_line
+		(start -1.38 -2.65)
+		(end 1.38 -2.65)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -1.38 2.65)
+		(end 1.38 2.65)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -1.38 -2.65)
+		(end -1.38 -2.08)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -1.38 -2.08)
+		(end -2.85 -2.08)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -1.38 -0.46)
+		(end -1.38 2.65)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start 1.38 -2.65)
+		(end 1.38 0.46)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start 1.38 2.08)
+		(end 1.38 2.65)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(pad "1" smd rect
+		(at -1.655 -1.27)
+		(size 2.51 1)
+		(layers "F.Cu" "F.Mask" "F.Paste"))
+	(pad "2" smd rect
+		(at 1.655 1.27)
+		(size 2.51 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")))

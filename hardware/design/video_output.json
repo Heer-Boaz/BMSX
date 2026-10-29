@@ -1,0 +1,215 @@
+{
+  "scope": "Concrete separate-sync analog output circuit for the four-ASIC physical design. Native electrical ECO and nominal/corner screens, not fabricated hardware or universal SCART/TV compatibility.",
+  "decision": "Use a real low-impedance SDTV line amplifier followed by 75ohm series termination. Shape the sync edge BEFORE the amplifier. Do not put a large shunt capacitor on the outgoing coax node and call its DC resistance a broadband75ohm source.",
+  "profile_owner": "design/analog_video_profile.json",
+  "native_implementation_owner": "ecad/mainboard/av_harness.kicad_sch",
+  "components": {
+    "R528": {
+      "ohms": 75,
+      "initial_tolerance_fraction": 0.001,
+      "pins": {
+        "1": "VIDEO_CSYNC_AMP",
+        "2": "SCART_CSYNC"
+      }
+    },
+    "R533": {
+      "ohms": 36500,
+      "initial_tolerance_fraction": 0.001,
+      "pins": {
+        "1": "VIDEO_CSYNC_BUF",
+        "2": "VIDEO_CSYNC_SCALED"
+      }
+    },
+    "R534": {
+      "ohms": 3830,
+      "initial_tolerance_fraction": 0.001,
+      "pins": {
+        "1": "VIDEO_CSYNC_SCALED",
+        "2": "GND"
+      }
+    },
+    "C533": {
+      "farads": 1.8e-11,
+      "initial_tolerance_fraction": 0.05,
+      "dielectric": "C0G",
+      "pins": {
+        "1": "VIDEO_CSYNC_SCALED",
+        "2": "GND"
+      }
+    },
+    "C534": {
+      "farads": 1e-07,
+      "pins": {
+        "1": "V3V3",
+        "2": "GND"
+      }
+    },
+    "C535": {
+      "farads_nameplate": 2.2e-05,
+      "pins": {
+        "1": "V3V3",
+        "2": "GND"
+      }
+    },
+    "U43": {
+      "MPN": "THS7314D",
+      "pins": {
+        "1": "VIDEO_CSYNC_SCALED",
+        "2": "GND",
+        "3": "GND",
+        "4": "V3V3",
+        "5": "GND",
+        "6": null,
+        "7": null,
+        "8": "VIDEO_CSYNC_AMP"
+      }
+    }
+  },
+  "buffer": {
+    "ref": "U42",
+    "MPN": "SN74LVC1G125DBVR",
+    "pins_unchanged": {
+      "1": "GND",
+      "2": "VIDEO_CSYNC_N",
+      "3": "GND",
+      "4": "VIDEO_CSYNC_BUF",
+      "5": "V3V3"
+    },
+    "published_test_VCC_V": 3.0,
+    "published_abs_IO_A_NOT_design_current": 0.05,
+    "low_current_test_A": 0.0001,
+    "VOH_min_below_VCC_V_at_low_current": 0.1,
+    "VOL_max_V_at_low_current": 0.1,
+    "interpretation": "Low-current DC level limits, not an ideal zero-ohm rail-to-rail analog source. Divider branch transient bound excludes capacitance on the short preceding U42 PCB trace. Digital transition ringing and actual load remain layout/prototype observations."
+  },
+  "amplifier": {
+    "supply": "V3V3, same rail as U42: no V5-to-V3V3 partial-power input domain",
+    "gain_nominal_V_per_V": 2.0,
+    "gain_full_temperature_dB": [
+      5.65,
+      6.35
+    ],
+    "input_resistance_typical_ohms": 800000,
+    "input_resistance_sensitivity_ohms_NOT_manufacturer_limits": [
+      640000,
+      960000
+    ],
+    "input_capacitance_typical_F": 2e-12,
+    "output_bias_full_temperature_V_at_zero_input": [
+      0.19,
+      0.39
+    ],
+    "output_bias_nominal_V": 0.285,
+    "filter_bandwidth_typical_Hz": 8500000,
+    "filter_bandwidth_characterized_range_Hz": [
+      6500000,
+      10600000
+    ],
+    "filter_model": "Fifth-order Butterworth, nominal 8.5MHz. Numerical idealized response is not a vendor macromodel or guaranteed pole set.",
+    "group_delay_typical_s_at_100kHz": 5.7e-08,
+    "output_impedance_typical_ohms_at_5MHz": 0.63,
+    "quiescent_current_full_temperature_max_A_at_3V3": 0.024,
+    "all_three_channels_powered": true,
+    "unused_channels": "Inputs2/3 tied toGND, outputs6/7 explicitly native no-connect. Do not divide the IC quiescent current by3.",
+    "power_allocation_W": 0.16,
+    "power_scope": "The 0.16 W U43 value is an internal diagnostic allocation, not a console rating or measured device dissipation. Include it within the selected internal heat load; load waveform and actual PCB thermal paths require qualification.",
+    "theta_JA_JEDEC_highK_C_per_W": 130,
+    "theta_JA_JEDEC_lowK_C_per_W": 196,
+    "maximum_continuous_junction_C": 125
+  },
+  "operating_acceptance": {
+    "V3V3_V": [
+      3.0,
+      3.43
+    ],
+    "status": "Explicit physical design/procurement/measurement envelope, not a newly proven rail or startup/PVT guarantee.",
+    "nominal_buck_setpoint_V": 3.318,
+    "comparison_buffer_swing_V": 3.3,
+    "reference_receiver_ohms": 75,
+    "reference_receiver_tolerance_fraction": 0.001,
+    "reference_cable_characteristic_ohms": 75,
+    "terminated_sync_amplitude_V": [
+      0.25,
+      0.35
+    ],
+    "amplitude_scope": "Own prototype acceptance into the precision75ohm test load; NOT asserted as a verified universal SCART tolerance or a whole-life corner guarantee.",
+    "terminal_10_90_rise_and_fall_s": [
+      1e-07,
+      3e-07
+    ],
+    "terminal_sync_threshold_alignment_to_RGB_s": [
+      -7.407407407407407e-08,
+      7.407407407407407e-08
+    ],
+    "timing_scope": "One DAC-sample path-alignment acceptance at the physical output. Common digital tags, falling-edge RGB launch, DAC capture/pipeline and analog sync RC/filter must be accounted together; no unexplained extra sync register.",
+    "same_rail_input": "During arbitrary supply ramps no valid-TV claim; U42 and U43 use the same physical rail. The scaled input remains below that rail. Reset/live-beam semantics are unchanged."
+  },
+  "layout_acceptance": {
+    "total_scaled_node_capacitance_design_F": [
+      1.71e-11,
+      2.8e-11
+    ],
+    "capacitance_scope": "Total includes actual C533, IC input and PCB/probe/stub contribution; 2pF IC is typical only. This bounded layout/fixture capacitance must be established.",
+    "maximum_capacitance_directly_at_U43_output_F": 2.5e-11,
+    "output_note": "TI requires isolation by75ohm series resistor. Keep pre-R528 amplifier trace/pad capacitance within25pF; do not add a shunt-C on SCART_CSYNC.",
+    "divider_layout": "Keep scaled-node loop short over continuousGND, away from switch nodes. Place100nF and local22uF next to U43 supply/return; native layer/routing reservations are not filled copper.",
+    "cable_model": "A correctly terminated75ohm coax is a transmission line with propagation delay, not its full lumped capacitance added again at the source.",
+    "prototype_checks": [
+      "Both terminal edges and threshold alignment",
+      "Amplitude on75ohm precision load",
+      "No extra threshold crossings/ringing",
+      "Actual rail/temperature and power sequencing",
+      "Chosen internal harness and external cable"
+    ]
+  },
+  "rail_design_screen": {
+    "owner": "ecad/mainboard/power_reference.kicad_sch:U20/R21/R22",
+    "R21_ohms": 45300,
+    "R22_ohms": 10000,
+    "VFB_published_V": [
+      0.591,
+      0.609
+    ],
+    "resistor_initial_tolerance_fraction": 0.001,
+    "TCR_per_K": 2.5e-05,
+    "delta_temperature_K_screen": 100,
+    "age_fraction_screen_NOT_product_guarantee": 0.003,
+    "age_ohms_screen_NOT_product_guarantee": 0.05,
+    "ripple_half_width_V_acceptance": 0.015,
+    "additional_DC_error_budget_V_acceptance": 0.01,
+    "limits": "PublishedVFB row uses VOUT5V/continuous-mode test conditions. NativeU20.MODE=GND isEco-mode at light load. No found guaranteed separate FB-bias/line/load-regulation bound. Screen plausibility only; real rail must meet operational acceptance."
+  },
+  "rejected_candidates": [
+    {
+      "circuit": "Existing750ohmseriesfromU42into75ohmreceiver",
+      "reason": "Nominal0.3V but750ohm source, not75ohm."
+    },
+    {
+      "circuit": "412ohmseries+91ohmshunt+1.5nF outputshunt",
+      "reason": "DCsource74.5ohm but outputcap makes frequency-dependent~50-j35ohm at1MHz. Buffer analog low-current guarantee also not applicable at7mA. Do not rebrand DC match as broadband match."
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.ti.com/lit/ds/symlink/ths7314.pdf",
+      "use": "SLOS513A:pinoutp3,3.3Vcharacteristicsp4,DCinputlevelshiftp13,Fig33DCcoupled75ohmlineoutputp17,layoutp22. Typicalvscharacterizedlimitsdistinguished."
+    },
+    {
+      "url": "https://www.ti.com/lit/ds/symlink/sn74lvc1g125.pdf",
+      "use": "LowcurrentVOH/VOLtestconditions,notidealrailsource."
+    },
+    {
+      "url": "https://www.ti.com/lit/ds/symlink/tps56637.pdf",
+      "use": "VFBtestconditions,feedbackequation,modeanddynamicqualificationboundary."
+    },
+    {
+      "url": "https://github.com/borti4938/n64rgb_pcb",
+      "use": "Concrete native console analog-output project; distinct TTL/75ohm sync choices and retained reference termination topology, not a validation of this design."
+    },
+    {
+      "url": "https://github.com/herr-g/pcergb_pub",
+      "use": "Implementedvideo-amplifiergain2and75ohmoutput pattern; exact BMSX values from its own circuit/manufacturer references, not copied."
+    }
+  ],
+  "fabrication_release": false
+}

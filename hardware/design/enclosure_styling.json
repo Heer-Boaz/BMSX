@@ -1,0 +1,120 @@
+{
+  "revision": "COMPACT_STYLING_1",
+  "scope": "Own exterior industrial-design variant. Core cavity, hardware/port datums, cooling openings and all functions unchanged. Original delivery is immutable.",
+  "outer_sections": [
+    {
+      "Z_mm": 3,
+      "bounds_XY_mm": [
+        -2,
+        -2,
+        242,
+        192
+      ],
+      "radius_mm": 8
+    },
+    {
+      "Z_mm": 12,
+      "bounds_XY_mm": [
+        -2,
+        -2,
+        242,
+        192
+      ],
+      "radius_mm": 8
+    },
+    {
+      "Z_mm": 36,
+      "bounds_XY_mm": [
+        -4,
+        -4,
+        244,
+        194
+      ],
+      "radius_mm": 10
+    },
+    {
+      "Z_mm": 48,
+      "bounds_XY_mm": [
+        -3,
+        -3,
+        243,
+        190
+      ],
+      "radius_mm": 12
+    },
+    {
+      "Z_mm": 56,
+      "bounds_XY_mm": [
+        -1,
+        -1,
+        241,
+        190
+      ],
+      "radius_mm": 7
+    }
+  ],
+  "front_recess": {
+    "bounds_mm": [
+      7,
+      -8,
+      9.5,
+      223,
+      0,
+      35.5
+    ],
+    "radius_mm": 3,
+    "scope": "Cuts only added exterior stock back to the unchanged Y0 connector/front-fastener datum; dark fascia is a face coating."
+  },
+  "cartridge_well": {
+    "bounds_mm": [
+      110,
+      94,
+      55.4,
+      230,
+      156,
+      56.2
+    ],
+    "radius_mm": 5,
+    "scope": "0.6mm shallow exterior recess. Apertures/contact geometry unchanged; remaining overall lid thickness2.4mm in well. No separate trim insert or new fastener."
+  },
+  "plinth_top_Z_mm": 11,
+  "nominal_outer_midsection_XY_mm": [
+    248,
+    198
+  ],
+  "thermal_scope": "No fan or changed vent area. Larger exterior and changed finish are not treated as measured thermal improvement. Existing thermal study remains the baseline sensitivity, not restyled-casing qualification.",
+  "mechanical_scope": "Original PCB, native components, card bank, controls, fasteners and wiring remain. Targeted shell/service-boundary sanity only; no electrical rebuild.",
+  "waist_groove": {
+    "bounds_mm": [
+      -8,
+      -8,
+      10.8,
+      248,
+      198,
+      11.4
+    ],
+    "retained_inside_bounds_mm": [
+      -1.25,
+      -1.25,
+      10.7,
+      241.25,
+      191.25,
+      11.5
+    ],
+    "retained_radius_mm": 7.25,
+    "scope": "Solid shallow exterior shadowline only; retained interior circle/rectangle lies outside original cavity, no ventilation perforation or separate body joint."
+  },
+  "rear_recess": {
+    "bounds_mm": [
+      14,
+      190,
+      15,
+      227,
+      198,
+      53.2
+    ],
+    "radius_mm": 3,
+    "scope": "Exterior stock removed back to unchanged190mm rear mating plane; retains existing rear openings/ventilation and full manufacturer/plug envelopes."
+  },
+  "outer_profile": "Ruled rounded-rectangle shoulder bands: intentional crisp moulding creases, not unconstrained freeform spline."
+}

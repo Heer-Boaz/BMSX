@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 930" role="img" aria-labelledby="title desc">
+<title id="title">Proposed PCRTC clock-domain and video pipeline</title>
+<desc id="desc">System-clock writes update programmed PCRTC registers. Changed timing words restart live timing immediately; display settings latch together on VBlank, except reset. The displayed configuration, reset and live FIELD pass through an ordered clock-domain transfer. A local 54 megahertz display beam controls two readers of scheduled video memory and a compositor. Pixels and sync feed the 13.5 megahertz analogue output. The mapping between domains, end-to-end latency and memory deadlines are not yet qualified.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#294b68"/></marker>
+<style>
+text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:29px;font-weight:bold}.section{font-size:21px;font-weight:bold}.head{font-size:21px;font-weight:bold}.minor{font-size:17px}.unit{fill:#e4eff6;stroke:#294b68;stroke-width:2}.storage{fill:#f6f7f8;stroke:#294b68;stroke-width:2}.gfx{fill:#eef5ea;stroke:#426649;stroke-width:2}.transfer{fill:#fff5df;stroke:#997031;stroke-width:2}.wire{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}.control{fill:none;stroke:#426649;stroke-width:2.5;marker-end:url(#arrow)}
+</style>
+</defs>
+<rect width="1500" height="930" fill="white"/>
+<text x="45" y="49" class="title">Proposed video timing and display path</text>
+<text x="45" y="81" class="minor">Functional clock-domain organisation; not a qualified timing implementation.</text>
+
+<text x="45" y="124" class="section">System clock</text>
+<text x="793" y="124" class="section">Clock-domain crossing</text>
+<text x="1130" y="124" class="section">Local video clock · 54 MHz</text>
+
+<rect x="45" y="165" width="270" height="142" rx="8" class="unit"/>
+<text x="180" y="202" class="head" text-anchor="middle">Programmed words</text>
+<text x="180" y="233" class="minor" text-anchor="middle">CPU writes and reads</text>
+<text x="180" y="259" class="minor" text-anchor="middle">timing and display settings</text>
+<text x="180" y="284" class="minor" text-anchor="middle">stored as written</text>
+
+<rect x="385" y="150" width="330" height="160" rx="8" class="unit"/>
+<text x="550" y="187" class="head" text-anchor="middle">Live timing and FIELD</text>
+<text x="550" y="216" class="minor" text-anchor="middle">Changed SMODE1 / SYNCH / SYNCV</text>
+<text x="550" y="242" class="minor" text-anchor="middle">recalculate and restart the beam now</text>
+<text x="550" y="271" class="minor" text-anchor="middle">VBlank and FIELD events</text>
+<path d="M315 211H385" class="wire"/>
+
+<rect x="385" y="355" width="330" height="120" rx="8" class="storage"/>
+<text x="550" y="391" class="head" text-anchor="middle">Displayed bank</text>
+<text x="550" y="420" class="minor" text-anchor="middle">all display words latch on VBlank</text>
+<text x="550" y="447" class="minor" text-anchor="middle">PCRTC reset installs them immediately</text>
+<path d="M180 307V415H385" class="wire"/>
+<path d="M550 310V355" class="control"/>
+<text x="565" y="337" class="minor">VBlank</text>
+
+<rect x="790" y="205" width="260" height="207" rx="8" class="transfer"/>
+<text x="920" y="242" class="head" text-anchor="middle">Ordered transfer</text>
+<text x="920" y="273" class="minor" text-anchor="middle">complete displayed bank</text>
+<text x="920" y="298" class="minor" text-anchor="middle">together with FIELD</text>
+<text x="920" y="329" class="minor" text-anchor="middle">display updates / reset</text>
+<text x="920" y="360" class="minor" text-anchor="middle">while receiver is running</text>
+<path d="M715 230H755V267H790" class="wire"/>
+<path d="M715 415H755V352H790" class="wire"/>
+
+<rect x="1130" y="190" width="320" height="170" rx="8" class="gfx"/>
+<text x="1290" y="228" class="head" text-anchor="middle">Local beam and configuration</text>
+<text x="1290" y="260" class="minor" text-anchor="middle">apply latched timing / reset</text>
+<text x="1290" y="287" class="minor" text-anchor="middle">retain bank and FIELD coherently</text>
+<text x="1290" y="317" class="minor" text-anchor="middle">sample phase at one-quarter rate</text>
+<text x="1290" y="343" class="minor" text-anchor="middle">retain global half-line parity</text>
+<path d="M1050 300H1130" class="wire"/>
+
+<text x="45" y="535" class="section">GFX local-memory and output datapath</text>
+<rect x="45" y="601" width="235" height="120" rx="8" class="storage"/>
+<text x="162" y="639" class="head" text-anchor="middle">Video SRAM</text>
+<text x="162" y="670" class="minor" text-anchor="middle">2 MiB, 32-bit interface</text>
+<text x="162" y="696" class="minor" text-anchor="middle">renderer and display</text>
+
+<rect x="338" y="601" width="245" height="120" rx="8" class="gfx"/>
+<text x="460" y="639" class="head" text-anchor="middle">Memory scheduler</text>
+<text x="460" y="670" class="minor" text-anchor="middle">display and renderer slots</text>
+<text x="460" y="696" class="minor" text-anchor="middle">shared at 54 MHz</text>
+<path d="M280 661H338" class="wire"/>
+
+<rect x="635" y="550" width="250" height="225" rx="10" fill="none" stroke="#8eaa90" stroke-width="2"/>
+<rect x="650" y="562" width="220" height="82" rx="8" class="gfx"/>
+<text x="760" y="596" class="head" text-anchor="middle">Display reader 1</text>
+<text x="760" y="623" class="minor" text-anchor="middle">window and pixels</text>
+<rect x="650" y="681" width="220" height="82" rx="8" class="gfx"/>
+<text x="760" y="715" class="head" text-anchor="middle">Display reader 2</text>
+<text x="760" y="742" class="minor" text-anchor="middle">window and pixels</text>
+<path d="M583 640H615V603H650" class="wire"/><path d="M583 682H615V722H650" class="wire"/>
+
+<rect x="950" y="613" width="205" height="100" rx="8" class="gfx"/>
+<text x="1052" y="650" class="head" text-anchor="middle">Compositor</text>
+<text x="1052" y="682" class="minor" text-anchor="middle">RGB and blanking</text>
+<path d="M870 603H909V637H950" class="wire"/><path d="M870 722H909V688H950" class="wire"/>
+<rect x="1230" y="613" width="220" height="100" rx="8" class="unit"/>
+<text x="1340" y="648" class="head" text-anchor="middle">Output latch</text>
+<text x="1340" y="678" class="minor" text-anchor="middle">RGB / sync · 13.5 MHz</text>
+<path d="M1155 663H1230" class="wire"/>
+
+<path d="M1290 360V480H760V550" class="control"/>
+<path d="M1052 480V613" class="control"/>
+<path d="M1340 360V613" class="control"/>
+<text x="972" y="468" class="minor">phase, configuration and FIELD</text>
+<text x="1352" y="520" class="minor">sync / alignment</text>
+
+<text x="45" y="835" class="minor">The transfer does not preserve an exact system timestamp. Sample-time mapping, queue limits, output latency,</text>
+<text x="45" y="862" class="minor">vertical row anchoring, sync waveform and display-read deadlines remain open; no missed-deadline result is implied.</text>
+</svg>

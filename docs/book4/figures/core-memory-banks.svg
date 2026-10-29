@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+<title id="title">CORE main and private DRAM paths</title>
+<desc id="desc">Proposed CORE organisation. CPU, DMA and GEO share the public main-memory service; only the CPU runtime can request the proposed private bank. One DRAM controller shares address, data and byte-control conductors between public and private banks, with separate row and output enables. Initialisation and refresh belong to the controller. The private bank, CPU execution and complete GEO connection are not established by the schematic.</desc>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+  <style>text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:23px}.title{font-size:32px;font-weight:700}.head{font-size:25px;font-weight:700}.small{font-size:20px}.tiny{font-size:18px}.frame{fill:#f7f9fa;stroke:#8da2ae;stroke-width:2}.chip{fill:#e3eff5;stroke:#294b68;stroke-width:3}.block{fill:#fff;stroke:#294b68;stroke-width:2}.proposal{fill:#fff8e8;stroke:#9b6d21;stroke-width:2;stroke-dasharray:8 5}.line{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}.p{stroke:#9b6d21;stroke-dasharray:8 5}</style>
+</defs>
+<rect width="1600" height="920" fill="#fff"/>
+<text x="45" y="53" class="title">CORE — main and private DRAM</text>
+<text x="45" y="89" class="small">Four-device construction proposal · one DRAM service, two selected banks</text>
+<rect x="45" y="130" width="1000" height="585" rx="12" class="frame"/>
+<text x="73" y="171" class="head">U1 · CORE</text>
+<rect x="80" y="220" width="235" height="105" rx="8" class="block"/>
+<text x="197" y="259" text-anchor="middle" class="head">CPU execution</text><text x="197" y="292" text-anchor="middle" class="small">Public access + runtime</text>
+<rect x="80" y="360" width="235" height="90" rx="8" class="block"/>
+<text x="197" y="397" text-anchor="middle" class="head">DMA</text><text x="197" y="428" text-anchor="middle" class="small">Public access</text>
+<rect x="80" y="485" width="235" height="90" rx="8" class="block"/>
+<text x="197" y="522" text-anchor="middle" class="head">GEO</text><text x="197" y="553" text-anchor="middle" class="small">Public access</text>
+<rect x="405" y="252" width="250" height="275" rx="8" class="chip"/>
+<text x="530" y="292" text-anchor="middle" class="head">Request router</text><text x="530" y="331" text-anchor="middle" class="small">Choose target</text><text x="530" y="368" text-anchor="middle" class="small">Arbitrate clients</text><text x="530" y="405" text-anchor="middle" class="small">Retain response owner</text><text x="530" y="462" text-anchor="middle" class="small">Private access:</text><text x="530" y="491" text-anchor="middle" class="small">CPU runtime only</text>
+<path d="M315 273H405 M315 405H405 M315 530H355V480H405" class="line"/>
+<rect x="745" y="264" width="255" height="190" rx="8" class="chip"/>
+<text x="872" y="305" text-anchor="middle" class="head">DRAM controller</text><text x="872" y="346" text-anchor="middle" class="small">One bank per access</text><text x="872" y="379" text-anchor="middle" class="small">Initialise + refresh</text><text x="872" y="413" text-anchor="middle" class="small">Byte-lane controls</text>
+<path d="M655 350H745" class="line both"/>
+<rect x="1100" y="205" width="435" height="150" rx="8" class="block"/>
+<text x="1317" y="245" text-anchor="middle" class="head">Main DRAM · U10 / U11</text><text x="1317" y="282" text-anchor="middle" class="small">4 MiB · accessible through the main map</text><text x="1317" y="315" text-anchor="middle" class="small">Public RAS and output enable</text>
+<rect x="1100" y="420" width="435" height="150" rx="8" class="proposal"/>
+<text x="1317" y="460" text-anchor="middle" class="head">Private DRAM · U150 / U151</text><text x="1317" y="497" text-anchor="middle" class="small">4 MiB candidate · runtime backing</text><text x="1317" y="530" text-anchor="middle" class="small">Private RAS and output enable</text>
+<path d="M1000 310H1055V280H1100" class="line both"/><path d="M1000 405H1055V495H1100" class="line both p"/>
+<text x="1317" y="628" text-anchor="middle" class="small">Shared MA[9:0], MD[31:0],</text><text x="1317" y="657" text-anchor="middle" class="small">write and byte strobes</text>
+<rect x="80" y="615" width="920" height="64" rx="8" class="block"/>
+<text x="540" y="655" text-anchor="middle" class="small">Other targets use their own request / response paths, including SYS and cartridge.</text>
+<rect x="45" y="760" width="1490" height="112" rx="8" class="proposal"/>
+<text x="70" y="795" class="small">The controller initialises and refreshes DRAM; its system reset does not itself clear memory.</text>
+<text x="70" y="827" class="small">The private bank and execution arrangement are proposals. CPU/runtime and full GEO integration,</text>
+<text x="70" y="855" class="small">bus timing and physical performance are not established by this diagram.</text>
+</svg>

@@ -1,0 +1,4 @@
+(sym_lib_table
+  (lib (name "BMSX_GFX") (type "KiCad") (uri "${KIPRJMOD}/BMSX_GFX.kicad_sym") (options "") (descr "Micron MT5LC256K16D4 manufacturer pinout"))
+  (lib (name "R9_interfaces") (type "KiCad") (uri "${KIPRJMOD}/R9_interfaces.kicad_sym") (options "") (descr "Existing candidate snapshot symbols"))
+)

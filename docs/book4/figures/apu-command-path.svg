@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 960" role="img" aria-labelledby="title desc">
+<title id="title">APU commands, slot state and event paths</title>
+<desc id="desc">CPU accesses the staging bank and captures nonzero commands into a sixteen-entry FIFO. The executor binds PLAY sources and updates one of sixteen slot banks. The selected-slot window provides a separate live path. Playback reads slot state and supplies the stereo mixer. Natural and fade ends update an event record before requesting an interrupt. APU faults instead retain the first fault and do not request an interrupt. Sample-memory transfers are separate.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+  text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:18px}.minor{font-size:17px}.unit{fill:#e1edf4;stroke:#294b68;stroke-width:2}.store{fill:#f4f7f9;stroke:#69879a;stroke-width:2}.action{fill:#edf5ec;stroke:#52775b;stroke-width:2}.event{fill:#fff5e3;stroke:#9b7938;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}.twoway{marker-start:url(#arrow)}
+ </style>
+</defs>
+<rect width="1600" height="960" fill="white"/>
+<text x="40" y="50" class="title">APU — command, playback and event control</text>
+<text x="40" y="82" class="minor">Functional organisation for the current programming contract; no complete physical timing guarantee is implied.</text>
+
+<rect x="35" y="150" width="200" height="120" rx="8" class="unit"/>
+<text x="135" y="190" text-anchor="middle" class="head">CPU / SYS</text>
+<text x="135" y="221" text-anchor="middle" class="small">Program APU words</text>
+<text x="135" y="248" text-anchor="middle" class="small">Read status / slots</text>
+
+<rect x="300" y="135" width="265" height="150" rx="8" class="store"/>
+<text x="432" y="173" text-anchor="middle" class="head">Staging bank</text>
+<text x="432" y="205" text-anchor="middle" class="small">21 parameter words</text>
+<text x="432" y="232" text-anchor="middle" class="small">SLOT selects live window</text>
+<text x="432" y="259" text-anchor="middle" class="small">CMD captures parameters</text>
+<path d="M235 210H300" class="line"/>
+
+<rect x="630" y="135" width="270" height="150" rx="8" class="store"/>
+<text x="765" y="173" text-anchor="middle" class="head">Command FIFO</text>
+<text x="765" y="205" text-anchor="middle" class="small">16 captured commands</text>
+<text x="765" y="232" text-anchor="middle" class="small">Each retains all 21 words</text>
+<text x="765" y="259" text-anchor="middle" class="small">Full: replace oldest entry</text>
+<path d="M565 210H630" class="line"/>
+
+<rect x="965" y="135" width="275" height="150" rx="8" class="action"/>
+<text x="1102" y="173" text-anchor="middle" class="head">Command executor</text>
+<text x="1102" y="205" text-anchor="middle" class="small">Execute in FIFO order</text>
+<text x="1102" y="232" text-anchor="middle" class="small">PLAY binds at execution</text>
+<text x="1102" y="259" text-anchor="middle" class="small">Stop · gain · pause · resume</text>
+<path d="M900 210H965" class="line"/>
+
+<rect x="1295" y="135" width="270" height="150" rx="8" class="store"/>
+<text x="1430" y="173" text-anchor="middle" class="head">Slot banks</text>
+<text x="1430" y="205" text-anchor="middle" class="small">16 voices · 21 words each</text>
+<text x="1430" y="232" text-anchor="middle" class="small">Phase · source · playback</text>
+<text x="1430" y="259" text-anchor="middle" class="small">Failed PLAY retains old voice</text>
+<path d="M1240 210H1295" class="line"/>
+
+<rect x="300" y="355" width="265" height="110" rx="8" class="store"/>
+<text x="432" y="393" text-anchor="middle" class="head">Selected-slot window</text>
+<text x="432" y="425" text-anchor="middle" class="small">Live reads and writes</text>
+<text x="432" y="451" text-anchor="middle" class="small">Not a queued command</text>
+<path d="M135 270V410H300" class="line"/>
+<path d="M565 410H1430V285" class="line"/>
+<text x="610" y="395" class="minor">Live access follows the output-frame timeline</text>
+
+<rect x="1280" y="535" width="285" height="130" rx="8" class="action"/>
+<text x="1422" y="574" text-anchor="middle" class="head">Playback / mixer</text>
+<text x="1422" y="606" text-anchor="middle" class="small">Source · filter · gain</text>
+<text x="1422" y="634" text-anchor="middle" class="small">Stereo output frames</text>
+<path d="M1430 285V535" class="line"/>
+
+<rect x="875" y="555" width="300" height="110" rx="8" class="event"/>
+<text x="1025" y="593" text-anchor="middle" class="head">End event record</text>
+<text x="1025" y="625" text-anchor="middle" class="small">Natural or completed fade</text>
+<text x="1025" y="651" text-anchor="middle" class="small">Publish slot, source and sequence</text>
+<path d="M1280 610H1175" class="line"/>
+
+<rect x="500" y="555" width="270" height="110" rx="8" class="unit"/>
+<text x="635" y="593" text-anchor="middle" class="head">Central APU IRQ</text>
+<text x="635" y="625" text-anchor="middle" class="small">Requested after event</text>
+<text x="635" y="651" text-anchor="middle" class="small">Pending bit may coalesce</text>
+<path d="M875 610H770" class="line"/>
+
+<rect x="965" y="755" width="300" height="110" rx="8" class="event"/>
+<text x="1115" y="793" text-anchor="middle" class="head">First-fault record</text>
+<text x="1115" y="825" text-anchor="middle" class="small">Bad command / source fault</text>
+<text x="1115" y="851" text-anchor="middle" class="small">Retained until fault ACK</text>
+<path d="M1102 285V335H1190V755" class="line"/>
+<path d="M565 450H810V715H1040V755" class="line"/>
+<path d="M432 285V320H280V810H965" class="line"/>
+<text x="40" y="696" class="minor">An APU fault does not itself request an interrupt.</text>
+
+<text x="40" y="912" class="minor">Source reads and sample-RAM upload / readback are separate data paths. Current mono and stereo source rules remain unchanged here.</text>
+<text x="40" y="938" class="minor">Output-frame scheduling, physical source service and proposed independent L/R levels require their respective integration decisions.</text>
+</svg>

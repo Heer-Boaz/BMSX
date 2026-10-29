@@ -1,0 +1,49 @@
+(fp_lib_table
+	(lib
+		(name "BMSX_R10")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_R10.pretty")
+		(options "")
+		(descr "Project-local nominal package and pad geometry."))
+	(lib
+		(name "R9_interfaces")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/R9_interfaces.pretty")
+		(options "")
+		(descr "Project-local nominal package and pad geometry."))
+	(lib
+		(name "BMSX_4ASIC")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_4ASIC.pretty")
+		(options "")
+		(descr "Project-local nominal package and pad geometry."))
+	(lib
+		(name "BMSX_POWER")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_POWER.pretty")
+		(options "")
+		(descr "Project-local nominal package and pad geometry."))
+	(lib
+		(name "BMSX_IntegratedBuck")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_IntegratedBuck.pretty")
+		(options "")
+		(descr "Project-local nominal package and pad geometry."))
+	(lib
+		(name "BMSX_HEADER")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_HEADER.pretty")
+		(options "")
+		(descr "Project-local nominal package and pad geometry."))
+	(lib
+		(name "BMSX_AV")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_AV.pretty")
+		(options "")
+		(descr "Project-local nominal package and pad geometry."))
+	(lib
+		(name "BMSX_COMPACT")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_COMPACT.pretty")
+		(options "")
+		(descr "Project-local nominal package and pad geometry.")))

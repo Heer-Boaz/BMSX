@@ -1,0 +1,32 @@
+{
+  "revision": "CARTRIDGE_FLAPS_POLARISED_3",
+  "scope": "One spring-return inward cover per existing cartridge aperture. Both working-edge reliefs admit the owned frame polarising ribs throughout door travel; hinge ears, selected connectors, PCB and seating datums are unchanged.",
+  "hinge_axes": [
+    [
+      100.1,
+      54.7
+    ],
+    [
+      130.1,
+      54.7
+    ]
+  ],
+  "hinge_axis_direction": "X",
+  "leaf_bounds_slot0_mm": [
+    114.2,
+    99.9,
+    54.3,
+    225.8,
+    120.1,
+    55.1
+  ],
+  "pin_diameter_mm": 1.5,
+  "journal_bore_mm": 1.7,
+  "leaf_knuckle_OD_mm": 3.2,
+  "lower_journal_attachment": "Four internal M2x5 per slot; split journals receive pin from below, integral roof bosses. CAD thread diameter2.0, manufacturing pilot1.6 before M2x0.4 tapping; no detailed thread helices claimed.",
+  "spring": "Own torsion return proposal; coil and keyed fixed/moving leg envelopes, not supplier-qualified loaded wire or spring-rate proof.",
+  "references": [
+    "https://github.com/BelfrySCAD/BOSL2/blob/450f7fa5fc5222279ca4c4e564e1a6c01ccdd57c/hinges.scad",
+    "https://www.leespring.com/torsion-springs"
+  ]
+}

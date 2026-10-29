@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 730" role="img" aria-labelledby="title desc">
+<title id="title">Startup picture and proposed interlaced output</title>
+<desc id="desc">A conceptual comparison of the existing non-interlaced 320 by 240 BIOS startup picture and a separate proposed 625-line RGB interlaced output. At 13.5 megasamples per second both use 864 physical samples per line. Startup uses 628 half-lines and about 49.76 pictures per second. The proposed output uses 625 half-lines per field, two fields per frame, 50 fields or 25 frames per second, and 576 active lines per frame. The proposal is not automatically selected at startup or qualified with a display.</desc>
+<defs><style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:23px}.title{font-size:34px;font-weight:700}.head{font-size:27px;font-weight:700}.small{font-size:20px}.note{font-size:19px}.panel{fill:#f5f8fa;stroke:#7592a3;stroke-width:2}.screen{fill:#e0eff6;stroke:#294b68;stroke-width:2.5}.beam{stroke:#3e809a;stroke-width:3}.alternate{stroke:#bd8d33;stroke-width:3}.guide{stroke:#294b68;stroke-width:2;fill:none}.tag{fill:#fff8e8;stroke:#aa7522;stroke-width:2}
+</style></defs>
+<rect width="1600" height="730" fill="white"/>
+<text x="50" y="55" class="title">Video output: startup and an interlaced proposal</text>
+<text x="50" y="91" class="small">Both examples use a 13.5 MHz output sample clock and 864 samples per line</text>
+<rect x="45" y="125" width="720" height="510" rx="12" class="panel"/>
+<rect x="835" y="125" width="720" height="510" rx="12" class="panel"/>
+<text x="75" y="173" class="head">BIOS startup picture</text>
+<text x="865" y="173" class="head">Separate 625-line proposal</text>
+<text x="75" y="211" class="small">Non-interlaced · 320 × 240 logical picture</text>
+<text x="865" y="211" class="small">Interlaced RGB · selected by software</text>
+<!-- Conceptual line diagrams do not imply pixel dimensions. -->
+<rect x="95" y="245" width="370" height="180" rx="5" class="screen"/>
+<path d="M115 270H445 M115 290H445 M115 310H445 M115 330H445 M115 350H445 M115 370H445 M115 390H445 M115 410H445" class="beam"/>
+<text x="490" y="281" class="small">One complete</text><text x="490" y="309" class="small">picture per scan</text>
+<text x="75" y="485" class="small">628 half-lines = 314 lines per picture</text>
+<text x="75" y="521" class="small">Approximately 49.76 pictures per second</text>
+<text x="75" y="565" class="note">320 × 240 is the logical image area,</text><text x="75" y="592" class="note">not the total signal timing.</text>
+<rect x="885" y="245" width="370" height="180" rx="5" class="screen"/>
+<path d="M905 270H1235 M905 310H1235 M905 350H1235 M905 390H1235" class="beam"/>
+<path d="M905 290H1235 M905 330H1235 M905 370H1235 M905 410H1235" class="alternate"/>
+<text x="1280" y="281" class="small">Two fields</text><text x="1280" y="309" class="small">form a frame</text>
+<text x="865" y="485" class="small">625 half-lines per field · 576 active lines per frame</text>
+<text x="865" y="521" class="small">50 fields / 25 frames per second</text>
+<text x="865" y="565" class="note">702 active output samples per line; this is not a</text><text x="865" y="592" class="note">required framebuffer width.</text>
+<rect x="45" y="655" width="1510" height="47" rx="7" class="tag"/>
+<text x="70" y="685" class="note">Physical output proposal: RGB plus composite sync, not PAL colour encoding. Neither output is yet guaranteed with a display.</text>
+</svg>

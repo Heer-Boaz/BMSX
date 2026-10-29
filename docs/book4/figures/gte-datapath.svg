@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 970" role="img" aria-labelledby="title desc">
+<title id="title">GTE normal and PLUS register and arithmetic paths</title>
+<desc id="desc">Within CORE, the CPU programs normal GTE data and control registers, and separately programs the PLUS register bank. The normal command decoder directs shared multiply-accumulate, projection, saturation and flag paths; their results are presented in normal registers and screen, depth and colour histories. PLUS has its own operands, three-lane multiply-add and result and flag words, and can operate while normal GTE work runs. The CPU reads results and submits drawing work to the separate GFX device. Normal physical command timing is not qualified.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+  text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:18px}.minor{font-size:17px}.device{fill:#f8fafb;stroke:#91a9b8;stroke-width:2}.unit{fill:#e1edf4;stroke:#294b68;stroke-width:2}.storage{fill:#f3f6f8;stroke:#294b68;stroke-width:2}.plus{fill:#eaf4ec;stroke:#426b53;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}
+ </style>
+</defs>
+<rect width="1600" height="970" fill="white"/>
+<text x="40" y="49" class="title">GTE — normal commands and PLUS</text>
+<text x="40" y="81" class="minor">Functional organisation within CORE; normal physical command timing is not yet qualified.</text>
+
+<rect x="30" y="105" width="1540" height="690" rx="12" class="device"/>
+<text x="55" y="143" class="head">U1 · CORE</text>
+<rect x="65" y="230" width="230" height="160" rx="8" class="unit"/>
+<text x="180" y="270" text-anchor="middle" class="head">CPU</text>
+<text x="180" y="302" text-anchor="middle" class="small">Program register words</text>
+<text x="180" y="330" text-anchor="middle" class="small">Issue commands</text>
+<text x="180" y="358" text-anchor="middle" class="small">Read and retain results</text>
+
+<rect x="370" y="180" width="300" height="145" rx="8" class="storage"/>
+<text x="520" y="217" text-anchor="middle" class="head">Normal register interface</text>
+<text x="520" y="248" text-anchor="middle" class="small">D[0–31] · C[0–31]</text>
+<text x="520" y="275" text-anchor="middle" class="small">Vectors · matrices · controls</text>
+<text x="520" y="303" text-anchor="middle" class="small">COMMAND · nominal CYCLES</text>
+<path d="M295 255H370" class="line both"/>
+<text x="305" y="240" class="minor">32-bit</text>
+
+<rect x="750" y="180" width="330" height="145" rx="8" class="unit"/>
+<text x="915" y="217" text-anchor="middle" class="head">Command control</text>
+<text x="915" y="248" text-anchor="middle" class="small">Function and operand selection</text>
+<text x="915" y="276" text-anchor="middle" class="small">Ordered arithmetic stages</text>
+<text x="915" y="303" text-anchor="middle" class="small">Recognised-command flags</text>
+<path d="M670 253H750" class="line"/>
+
+<rect x="750" y="395" width="330" height="150" rx="8" class="unit"/>
+<text x="915" y="433" text-anchor="middle" class="head">Normal arithmetic</text>
+<text x="915" y="464" text-anchor="middle" class="small">Three signed 44-bit MAC lanes</text>
+<text x="915" y="492" text-anchor="middle" class="small">Shift · saturation · FLAG</text>
+<text x="915" y="520" text-anchor="middle" class="small">Matrix, vector, light and colour</text>
+<path d="M915 325V395" class="line"/>
+
+<rect x="1160" y="395" width="340" height="150" rx="8" class="unit"/>
+<text x="1330" y="433" text-anchor="middle" class="head">Projection and MAC0</text>
+<text x="1330" y="464" text-anchor="middle" class="small">Perspective quotient</text>
+<text x="1330" y="492" text-anchor="middle" class="small">Reciprocal seed · 257 bytes</text>
+<text x="1330" y="520" text-anchor="middle" class="small">Screen, depth and area paths</text>
+<path d="M1080 465H1160" class="line both"/>
+
+<rect x="370" y="395" width="300" height="150" rx="8" class="storage"/>
+<text x="520" y="433" text-anchor="middle" class="head">Normal result views</text>
+<text x="520" y="464" text-anchor="middle" class="small">MAC · IR · FLAG C[31]</text>
+<text x="520" y="492" text-anchor="middle" class="small">Screen · depth · colour histories</text>
+<text x="520" y="520" text-anchor="middle" class="minor">Views of the normal register bank</text>
+<path d="M750 470H670" class="line"/>
+<path d="M370 470H320V335H295" class="line"/>
+<path d="M520 395V325" class="line both"/>
+
+<rect x="370" y="635" width="1130" height="120" rx="8" class="plus"/>
+<text x="400" y="672" class="head">Separate GTE PLUS</text>
+<text x="400" y="704" class="small">Own operands, command, result and FLAG words · three-lane VMAD3</text>
+<text x="400" y="733" class="small">VMAD3 publishes after five system cycles; normal commands can run while PLUS is pending</text>
+<path d="M180 390V695H370" class="line both"/>
+
+<rect x="850" y="830" width="400" height="90" rx="8" class="unit"/>
+<text x="1050" y="868" text-anchor="middle" class="head">U2 · GFX</text>
+<text x="1050" y="896" text-anchor="middle" class="small">GPU drawing from submitted packets</text>
+<path d="M65 350H45V875H850" class="line"/>
+<text x="280" y="857" class="small">CPU / DMA submit drawing work; GTE does not draw</text>
+<text x="40" y="947" class="minor">Normal results are available at COMMAND-write completion; nominal CYCLES is not a measured execution delay.</text>
+</svg>

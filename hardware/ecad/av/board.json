@@ -1,0 +1,35 @@
+{
+  "scope": "Assembly pose and nominal finished thickness. The editable native board owns the circuit, parts, holes and outline.",
+  "thickness_mm": 1.6,
+  "assembly_pose": {
+    "native_xy_is_world_xy": false,
+    "pcb_top_origin_world_mm": [
+      191.525,
+      183.41,
+      7
+    ],
+    "native_x_axis_world": [
+      -1,
+      0,
+      0
+    ],
+    "native_y_axis_world": [
+      0,
+      0,
+      1
+    ],
+    "native_top_normal_world": [
+      0,
+      1,
+      0
+    ],
+    "nominal_world_PCB_bounds_mm": [
+      161.525,
+      181.81,
+      7,
+      191.525,
+      183.41,
+      27
+    ]
+  }
+}

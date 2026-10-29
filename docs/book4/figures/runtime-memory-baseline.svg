@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" role="img" aria-labelledby="title description">
+<title id="title">Proposed native interpreter and private runtime memory</title>
+<desc id="description">A conventional 32-bit processor in CORE executes an interpreter from private on-chip firmware ROM. Guest memory requests and DMA and GEO access the existing public 4 MiB main DRAM. Interpreter-owned requests use an internal selector to reach a proposed separate 4 MiB private DRAM bank containing runtime values, frames, objects and management data. Both DRAM banks are outside CORE; the private capacity is a proposal and does not establish program compatibility or performance.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:18px}.minor{font-size:17px}.boundary{fill:#f9fbfc;stroke:#91a9b8;stroke-width:2}.unit{fill:#e1edf4;stroke:#294b68;stroke-width:2}.storage{fill:#f5f7f8;stroke:#294b68;stroke-width:2}.candidate{fill:#fff8e8;stroke:#9b6d21;stroke-width:2;stroke-dasharray:8 5}.wire{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}.private{fill:none;stroke:#9b6d21;stroke-width:3;stroke-dasharray:8 5;marker-end:url(#arrow)}.privateboth{marker-start:url(#arrow)}</style>
+</defs>
+<rect width="1600" height="980" fill="white"/>
+<text x="40" y="49" class="title">Native execution and runtime memory — reference candidate</text>
+<text x="40" y="81" class="minor">The added private bank and the native implementation are proposals, not a completed board or an execution-time guarantee.</text>
+
+<rect x="35" y="115" width="880" height="670" rx="12" class="boundary"/>
+<text x="60" y="153" class="head">U1 · CORE</text>
+
+<rect x="75" y="190" width="260" height="140" rx="8" class="candidate"/>
+<text x="205" y="228" text-anchor="middle" class="head">Native code ROM</text>
+<text x="205" y="260" text-anchor="middle" class="small">Private on-chip candidate</text>
+<text x="205" y="290" text-anchor="middle" class="small">Boot and interpreter</text>
+
+<rect x="395" y="190" width="310" height="140" rx="8" class="unit"/>
+<text x="550" y="228" text-anchor="middle" class="head">32-bit native CPU</text>
+<text x="550" y="260" text-anchor="middle" class="small">Executes interpreter software</text>
+<text x="550" y="290" text-anchor="middle" class="small">BLua32 execution and control</text>
+<path d="M335 260H395" class="wire"/>
+
+<rect x="75" y="405" width="260" height="125" rx="8" class="unit"/>
+<text x="205" y="443" text-anchor="middle" class="head">DMA · GEO</text>
+<text x="205" y="475" text-anchor="middle" class="small">Guest-visible transfers</text>
+<text x="205" y="503" text-anchor="middle" class="small">and addressed geometry</text>
+
+<rect x="395" y="395" width="310" height="145" rx="8" class="unit"/>
+<text x="550" y="433" text-anchor="middle" class="head">Memory request owner</text>
+<text x="550" y="465" text-anchor="middle" class="small">Arbitrate and retain requests</text>
+<text x="550" y="493" text-anchor="middle" class="small">Select public or private bank</text>
+<text x="550" y="520" text-anchor="middle" class="minor">Private select is not a guest bit</text>
+<path d="M550 330V395" class="wire both"/>
+<path d="M335 465H395" class="wire both"/>
+
+<rect x="75" y="620" width="630" height="105" rx="8" class="storage"/>
+<text x="390" y="658" text-anchor="middle" class="head">Guest-visible address space and devices</text>
+<text x="390" y="690" text-anchor="middle" class="small">Public RAM · system ROM · cartridge bus · mapped I/O</text>
+<path d="M550 540V620" class="wire both"/>
+
+<rect x="1055" y="190" width="480" height="200" rx="8" class="storage"/>
+<text x="1295" y="231" text-anchor="middle" class="head">Public main DRAM · current design</text>
+<text x="1295" y="265" text-anchor="middle" class="small">4 MiB · two 1M × 16 devices</text>
+<text x="1295" y="296" text-anchor="middle" class="small">Guest CPU, DMA and GEO requests</text>
+<text x="1295" y="328" text-anchor="middle" class="small">Main-RAM buffers and DATA/BSS</text>
+
+<rect x="1055" y="495" width="480" height="225" rx="8" class="candidate"/>
+<text x="1295" y="536" text-anchor="middle" class="head">Private runtime DRAM · candidate</text>
+<text x="1295" y="570" text-anchor="middle" class="small">4 MiB · two additional 1M × 16 devices</text>
+<text x="1295" y="602" text-anchor="middle" class="small">One shared system / cartridge runtime pool</text>
+<text x="1295" y="634" text-anchor="middle" class="small">Values · frames · separate global namespaces</text>
+<text x="1295" y="666" text-anchor="middle" class="small">Image maps · allocator · collector · workspace</text>
+<path d="M705 450H875V290H1055" class="wire both"/>
+<path d="M705 490H850V607H1055" class="private privateboth"/>
+<text x="930" y="745" text-anchor="middle" class="minor">Separate DRAM selects; shared address/data in the investigated organisation</text>
+
+<rect x="35" y="825" width="1500" height="110" rx="10" class="storage"/>
+<text x="60" y="860" class="head">Boundary and status</text>
+<text x="60" y="890" class="small">Private runtime memory is not a guest RAM window. Native firmware ROM and the existing public BIOS ROM have different roles.</text>
+<text x="60" y="918" class="small">Four MiB is a sizing candidate, not a proven capacity or a new product limit. Memory, timing and board integration are not qualified.</text>
+</svg>

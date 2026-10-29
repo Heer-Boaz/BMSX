@@ -1,0 +1,124 @@
+(version 1)
+(rule "R4 local core and RAM fine-pitch escape"
+ (condition "A.enclosedByArea('CORE_RAM_LOCAL') && B.enclosedByArea('CORE_RAM_LOCAL')")
+ (constraint clearance (min 0.15mm)))
+
+# Drill spacing is checked even when both vias carry the same net.
+(rule "R4 minimum drilled hole separation"
+ (constraint hole_to_hole (min 0.20mm)))
+
+# R6 mounting-pad ownership rules
+(rule "R6 H1_landing_area_R5: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H1_landing_area_R5') && !(A.memberOfFootprint('H1') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H2_landing_area_R5: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H2_landing_area_R5') && !(A.memberOfFootprint('H2') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H3_landing_area_R5: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H3_landing_area_R5') && !(A.memberOfFootprint('H3') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H4_landing_area_R5: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H4_landing_area_R5') && !(A.memberOfFootprint('H4') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H5_landing_area_R5: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H5_landing_area_R5') && !(A.memberOfFootprint('H5') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H6_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H6_CAD_hole_clearance') && !(A.memberOfFootprint('H6') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H7_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H7_CAD_hole_clearance') && !(A.memberOfFootprint('H7') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H8_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H8_CAD_hole_clearance') && !(A.memberOfFootprint('H8') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H9_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H9_CAD_hole_clearance') && !(A.memberOfFootprint('H9') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H10_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H10_CAD_hole_clearance') && !(A.memberOfFootprint('H10') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H11_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H11_CAD_hole_clearance') && !(A.memberOfFootprint('H11') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H12_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H12_CAD_hole_clearance') && !(A.memberOfFootprint('H12') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H13_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H13_CAD_hole_clearance') && !(A.memberOfFootprint('H13') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H14_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H14_CAD_hole_clearance') && !(A.memberOfFootprint('H14') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H15_CAD_hole_clearance: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H15_CAD_hole_clearance') && !(A.memberOfFootprint('H15') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H_CTRL1 copper exclusion: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H_CTRL1 copper exclusion') && !(A.memberOfFootprint('H_CTRL1') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+(rule "R6 H_CTRL2 copper exclusion: foreign or copper pads forbidden"
+ (condition "A.Type == 'Pad' && A.intersectsArea('H_CTRL2 copper exclusion') && !(A.memberOfFootprint('H_CTRL2') && A.Pad_Type == 'NPTH, mechanical')")
+ (constraint disallow pad))
+
+# R7 TI RPW0010A has 0.20 mm package-internal pad gaps; external routing stays at Default.
+(rule "R7 U62 vendor landpattern internal pad clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U62') && B.memberOfFootprint('U62')")
+ (constraint clearance (min 0.20mm)))
+
+# R8 physical RPW0010A power escape: preserve the vendor's 0.20 mm gap
+# only within this local copper bank; absolute board minimum is unchanged.
+(rule "R8 U62 package and power escape clearance"
+ (condition "A.enclosedByArea('U62_POWER_ESCAPE') && B.enclosedByArea('U62_POWER_ESCAPE')")
+ (constraint clearance (min 0.20mm)))
+
+# R9 selected stock 0.50-mm-pitch land patterns have 0.30-mm pad widths.
+# This 0.20-mm copper gap applies only between pads in the same package;
+# external traces and unrelated footprints retain the 0.25-mm Default rule.
+(rule "R9 U2 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U2') && B.memberOfFootprint('U2')")
+ (constraint clearance (min 0.20mm)))
+(rule "R9 U3 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U3') && B.memberOfFootprint('U3')")
+ (constraint clearance (min 0.20mm)))
+(rule "R9 U4 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U4') && B.memberOfFootprint('U4')")
+ (constraint clearance (min 0.20mm)))
+(rule "R9 U5 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U5') && B.memberOfFootprint('U5')")
+ (constraint clearance (min 0.20mm)))
+(rule "R9 U6 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U6') && B.memberOfFootprint('U6')")
+ (constraint clearance (min 0.20mm)))
+(rule "R9 U7 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U7') && B.memberOfFootprint('U7')")
+ (constraint clearance (min 0.20mm)))
+(rule "R9 U33 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U33') && B.memberOfFootprint('U33')")
+ (constraint clearance (min 0.20mm)))
+(rule "R9 U35 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U35') && B.memberOfFootprint('U35')")
+ (constraint clearance (min 0.20mm)))
+(rule "R9 U51 internal 0.50mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U51') && B.memberOfFootprint('U51')")
+ (constraint clearance (min 0.20mm)))
+
+# U34 SSOP has 0.635-mm pitch and 0.400-mm copper width: 0.235-mm internal gap.
+(rule "R9 U34 internal 0.635mm pitch land clearance"
+ (condition "A.Type == 'Pad' && B.Type == 'Pad' && A.memberOfFootprint('U34') && B.memberOfFootprint('U34')")
+ (constraint clearance (min 0.235mm)))

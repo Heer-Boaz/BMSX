@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 900" role="img" aria-labelledby="title desc">
+<title id="title">Geometry and image data routes into GFX</title>
+<desc id="desc">CPU supplies operands to GTE and reads results. GEO reads addressed geometry and writes results in main RAM, which the game uses for collision decisions or drawing packets. CPU or DMA supplies compressed image data to IMGDEC and carries its generated upload words to GPU GP0. The program or DMA supplies drawing packets to GP0. GFX writes video memory, which PCRTC reads for display.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#294b68"/></marker>
+<style>text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:28px;font-weight:bold}.section{font-size:21px;font-weight:bold}.head{font-size:23px;font-weight:bold}.minor{font-size:17px}.unit{fill:#e4eff6;stroke:#294b68;stroke-width:2}.storage{fill:#f6f7f8;stroke:#294b68;stroke-width:2}.gfx{fill:#eef5ea;stroke:#426649;stroke-width:2.5}.wire{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}</style>
+</defs>
+<rect width="1500" height="900" fill="white"/>
+<text x="45" y="50" class="title">From game data to a picture</text>
+<text x="45" y="82" class="minor">Functional routes: the program chooses the operations and coordinates their results.</text>
+<text x="45" y="130" class="section">Geometry and game logic</text>
+<rect x="45" y="155" width="225" height="104" rx="8" class="unit"/>
+<text x="157" y="192" class="head" text-anchor="middle">CPU program</text><text x="157" y="226" text-anchor="middle" class="minor">operands and commands</text>
+<rect x="345" y="155" width="235" height="104" rx="8" class="unit"/>
+<text x="462" y="192" class="head" text-anchor="middle">GTE</text><text x="462" y="226" text-anchor="middle" class="minor">register-fed arithmetic</text>
+<rect x="675" y="155" width="250" height="104" rx="8" class="unit"/>
+<text x="800" y="192" class="head" text-anchor="middle">CPU program</text><text x="800" y="226" text-anchor="middle" class="minor">builds drawing packets</text>
+<path d="M270 207H345" class="wire"/><path d="M580 207H675" class="wire"/><text x="628" y="190" class="minor" text-anchor="middle">results</text>
+<rect x="45" y="325" width="225" height="104" rx="8" class="storage"/>
+<text x="157" y="362" class="head" text-anchor="middle" style="font-size:19px">RAM / ROM / cartridge</text><text x="157" y="396" text-anchor="middle" class="minor">geometry records</text>
+<rect x="345" y="325" width="235" height="104" rx="8" class="unit"/>
+<text x="462" y="362" class="head" text-anchor="middle">GEO</text><text x="462" y="396" text-anchor="middle" class="minor">transform / collision</text>
+<rect x="675" y="325" width="250" height="104" rx="8" class="storage"/>
+<text x="800" y="362" class="head" text-anchor="middle">Main RAM</text><text x="800" y="396" text-anchor="middle" class="minor">geometry results</text>
+<path d="M270 377H345" class="wire"/><path d="M580 377H675" class="wire"/><path d="M800 325V259" class="wire"/>
+<text x="845" y="298" class="minor">game reads</text>
+<text x="45" y="501" class="section">Compressed image upload</text>
+<rect x="45" y="526" width="225" height="104" rx="8" class="storage"/>
+<text x="157" y="563" class="head" text-anchor="middle">RAM / ROM</text><text x="157" y="597" text-anchor="middle" class="minor">compressed words</text>
+<rect x="345" y="526" width="235" height="104" rx="8" class="unit"/>
+<text x="462" y="563" class="head" text-anchor="middle">IMGDEC</text><text x="462" y="597" text-anchor="middle" class="minor">expands image stream</text>
+<rect x="675" y="526" width="250" height="104" rx="8" class="unit"/>
+<text x="800" y="563" class="head" text-anchor="middle">CPU / DMA</text><text x="800" y="597" text-anchor="middle" class="minor">forwards upload words</text>
+<path d="M270 578H345" class="wire"/><text x="307" y="559" class="minor" text-anchor="middle">CPU/DMA</text><path d="M580 578H675" class="wire"/>
+<rect x="1050" y="155" width="360" height="475" rx="10" class="gfx"/>
+<text x="1230" y="196" class="head" text-anchor="middle">GFX</text>
+<rect x="1090" y="229" width="280" height="95" rx="7" class="storage"/><text x="1230" y="266" class="head" text-anchor="middle">GPU · GP0</text><text x="1230" y="298" text-anchor="middle" class="minor">draw and upload words</text>
+<rect x="1090" y="374" width="280" height="85" rx="7" class="storage"/><text x="1230" y="408" class="head" text-anchor="middle">Video memory</text><text x="1230" y="436" text-anchor="middle" class="minor">2 MiB</text>
+<rect x="1090" y="509" width="280" height="85" rx="7" class="storage"/><text x="1230" y="543" class="head" text-anchor="middle">PCRTC</text><text x="1230" y="571" text-anchor="middle" class="minor">reads and composes</text>
+<path d="M1230 324V374" class="wire"/><path d="M1230 459V509" class="wire"/>
+<path d="M925 207H1000V255H1090" class="wire"/><text x="967" y="192" class="minor" text-anchor="middle">CPU/DMA</text>
+<path d="M925 578H1000V300H1090" class="wire"/><text x="968" y="559" class="minor" text-anchor="middle">GP0</text>
+<path d="M1230 630V690" class="wire"/><text x="1230" y="724" class="head" text-anchor="middle">Video output</text>
+<text x="45" y="743" class="minor">GTE and GEO do not submit GPU commands: the program uses their results. The two routes are independently optional.</text>
+<text x="45" y="774" class="minor">IMGDEC produces upload headers and image words; the GPU performs the video-memory writes.</text>
+<text x="45" y="805" class="minor">This is a functional overview, not an electrical bus or a timing guarantee.</text>
+</svg>

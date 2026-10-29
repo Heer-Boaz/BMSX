@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name "BMSX_GFX") (type "KiCad") (uri "${KIPRJMOD}/BMSX_GFX.kicad_sym") (options "") (descr "Micron MT5LC256K16D4 manufacturer pinout"))
+)

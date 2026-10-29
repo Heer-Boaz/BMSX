@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 760" role="img" aria-labelledby="title desc">
+<title id="title">Accessory plug — conceptual contact section</title>
+<desc id="desc">A section through one proposed accessory-plug contact. A round console contact enters a spring socket retained in an insulating plug housing. A crimp connects the socket to a wire; a separate clamp holds the cable jacket. Other contacts, socket keying and dimensions are omitted. This is a functional diagram, not a proven mechanical design.</desc>
+<defs><style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:23px}.title{font-size:32px;font-weight:bold}.head{font-size:24px;font-weight:bold}.small{font-size:20px}.note{font-size:19px;fill:#435b6d}.call{fill:none;stroke:#294b68;stroke-width:2}.housing{fill:#dce7ed;stroke:#294b68;stroke-width:3}.shell{fill:#e9eff2;stroke:#294b68;stroke-width:3}.metal{fill:#c4a05e;stroke:#765b29;stroke-width:3}.spring{fill:none;stroke:#765b29;stroke-width:6;stroke-linecap:round}.wire{fill:none;stroke:#b45348;stroke-width:12}.jacket{fill:#687c8a;stroke:#294b68;stroke-width:3}.clamp{fill:#9aafbc;stroke:#294b68;stroke-width:3}
+</style></defs>
+<rect width="1400" height="760" fill="#fff"/>
+<text x="45" y="53" class="title">Accessory plug — conceptual contact section</text>
+<text x="45" y="91" class="small">One of nine contacts · seated view · not to scale</text>
+<!-- Console socket body and plug housing are shown in section. -->
+<path d="M105 260 H310 V304 H265 V447 H310 V492 H105 Z" class="shell"/>
+<path d="M310 244 H1012 Q1040 244 1040 272 V311 H388 V441 H1040 V480 Q1040 508 1012 508 H310 V466 H350 V286 H310 Z" class="housing"/>
+<!-- One representative console pin and the spring contact. -->
+<rect x="190" y="363" width="355" height="25" rx="8" class="metal"/>
+<path d="M455 342 H626 Q649 342 660 352 L735 352 V399 H660 Q649 410 626 410 H455" class="metal"/>
+<path d="M455 354 H530 Q542 355 555 365 H617 M455 398 H530 Q542 397 555 387 H617" class="spring"/>
+<!-- Wire termination, wire and cable jacket. -->
+<path d="M735 364 H851 V388 H735" class="wire"/>
+<path d="M846 349 H1360 V403 H846 Q832 403 832 389 V363 Q832 349 846 349 Z" class="jacket"/>
+<path d="M735 376 H1015" class="wire"/>
+<path d="M912 326 H968 V349 H912 Z M912 403 H968 V426 H912 Z" class="clamp"/>
+<!-- The stop represents a possible retention method, not production geometry. -->
+<path d="M676 311 H708 V352 H676 Z" class="clamp"/>
+<path d="M190 363 V196 H95" class="call"/><text x="75" y="163" class="head">Console contact</text><text x="75" y="190" class="small">Round pin</text>
+<path d="M540 354 V186 H430" class="call"/><text x="390" y="153" class="head">Spring socket</text><text x="390" y="180" class="small">Makes electrical contact</text>
+<path d="M692 324 V185 H720" class="call"/><text x="733" y="153" class="head">Contact retention</text><text x="733" y="180" class="small">Holds socket in housing</text>
+<path d="M940 326 V185 H1005" class="call"/><text x="1015" y="153" class="head">Cable restraint</text><text x="1015" y="180" class="small">Holds cable jacket</text>
+<path d="M382 476 V566 H275" class="call"/><text x="75" y="596" class="small">Insulating plug housing</text>
+<path d="M719 399 V566 H680" class="call"/><text x="570" y="596" class="small">Wire termination</text>
+<path d="M1145 402 V566 H1200" class="call"/><text x="1210" y="596" class="small">Cable</text>
+<text x="45" y="677" class="note">Schematic only. Contact shape, retention, cable restraint and mating tolerances require design and verification.</text>
+<text x="45" y="707" class="note">The existing plug model contains empty contact channels; it does not establish the fit of this arrangement.</text>
+</svg>

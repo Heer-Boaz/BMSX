@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 900" role="img" aria-labelledby="title description">
+<title id="title">Proposed GFX and INPUT integration</title>
+<desc id="description">The proposed four-chip construction places INPUT alongside PCRTC in GFX. A single local ordering owner relates VBlank and INPUT control writes, publishes armed input and then signals the CORE VBlank interrupt. Keyboard and four pad lanes terminate at GFX. The separate I/O and ROM chip retains its firmware flash interface. All four devices connect to the shared system bus. A separate schematic and unrouted PCB assign the candidate pins; integrated logic, physical clocks and timing remain to be established.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+  text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:18px}.device{fill:#f6f9fb;stroke:#7f99aa;stroke-width:2}.unit{fill:#e1edf4;stroke:#294b68;stroke-width:2}.input{fill:#e8f4ee;stroke:#426b53;stroke-width:2}.proposal{fill:#fff4df;stroke:#997031;stroke-width:2}.bus{fill:none;stroke:#294b68;stroke-width:5}.line{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}.order{fill:none;stroke:#426b53;stroke-width:3;marker-end:url(#arrow)}
+ </style>
+</defs>
+<rect width="1500" height="900" fill="white"/>
+<text x="42" y="48" class="title">Proposed four-chip input and display integration</text>
+<text x="42" y="80" class="small">Candidate pin assignment exists; internal integration and timing remain proposals.</text>
+
+<text x="750" y="133" class="head" text-anchor="middle">Shared system bus</text>
+<path d="M165 163H1330" class="bus"/>
+
+<rect x="42" y="235" width="240" height="160" rx="10" class="device"/>
+<text x="162" y="273" text-anchor="middle" class="head">U1 · CORE</text>
+<text x="162" y="305" text-anchor="middle" class="small">CPU · DMA · GEO</text>
+<text x="162" y="331" text-anchor="middle" class="small">central interrupt controller</text>
+<text x="162" y="359" text-anchor="middle" class="small">main RAM · cartridges</text>
+<path d="M162 163V235" class="line both"/>
+
+<rect x="350" y="205" width="690" height="446" rx="12" class="device"/>
+<text x="375" y="242" class="head">U2 · GFX — proposed INPUT owner</text>
+<path d="M694 163V205" class="line both"/>
+<rect x="392" y="285" width="260" height="115" rx="8" class="unit"/>
+<text x="522" y="323" text-anchor="middle" class="head">PCRTC</text>
+<text x="522" y="352" text-anchor="middle" class="small">display latch and VBlank</text>
+<text x="522" y="378" text-anchor="middle" class="small">video-memory display reads</text>
+<rect x="727" y="285" width="263" height="115" rx="8" class="input"/>
+<text x="858" y="323" text-anchor="middle" class="head">INPUT</text>
+<text x="858" y="352" text-anchor="middle" class="small">live banks and snapshot</text>
+<text x="858" y="378" text-anchor="middle" class="small">keyboard and pad links</text>
+<rect x="475" y="461" width="440" height="110" rx="8" class="proposal"/>
+<text x="695" y="499" text-anchor="middle" class="head">Local event / write ordering</text>
+<text x="695" y="529" text-anchor="middle" class="small">VBlank and INPUT ARM / RESET writes</text>
+<text x="695" y="553" text-anchor="middle" class="small">publication and synchronous IRQ set</text>
+<path d="M522 400V461" class="order"/>
+<text x="539" y="438" class="small">1</text>
+<path d="M858 461V400" class="order"/>
+<text x="875" y="438" class="small">2</text>
+
+<rect x="1110" y="235" width="340" height="160" rx="10" class="device"/>
+<text x="1280" y="273" text-anchor="middle" class="head">U7 · firmware ROM bridge</text>
+<text x="1280" y="305" text-anchor="middle" class="small">system ROM read sequencer</text>
+<text x="1280" y="331" text-anchor="middle" class="small">U33 · 8 MiB firmware flash</text>
+<text x="1280" y="359" text-anchor="middle" class="small">INPUT moves to U2 in this proposal</text>
+<path d="M1280 163V235" class="line both"/>
+
+<rect x="1110" y="475" width="340" height="120" rx="10" class="device"/>
+<text x="1280" y="513" text-anchor="middle" class="head">U4 · APU</text>
+<text x="1280" y="545" text-anchor="middle" class="small">sample RAM · stereo output</text>
+<path d="M1330 163H1470V535H1450" class="line both"/>
+
+<rect x="365" y="705" width="260" height="90" rx="8" class="unit"/>
+<text x="495" y="743" text-anchor="middle" class="head">Keyboard</text>
+<text x="495" y="772" text-anchor="middle" class="small">PS/2 link</text>
+<rect x="755" y="705" width="260" height="90" rx="8" class="unit"/>
+<text x="885" y="743" text-anchor="middle" class="head">Four pad ports</text>
+<text x="885" y="772" text-anchor="middle" class="small">independent serial lanes</text>
+<path d="M495 705V651" class="line both"/>
+<path d="M885 705V651" class="line both"/>
+
+<path d="M990 365H1025V620H315V315H282" class="order"/>
+<text x="360" y="609" class="small">3 · VBlank set to CORE, including unarmed events</text>
+<text x="42" y="851" class="small">The move requires a new pin and interconnect allocation; electrical timing, source sampling and event handling remain to be verified.</text>
+</svg>

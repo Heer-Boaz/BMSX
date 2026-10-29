@@ -1,0 +1,7038 @@
+(kicad_sch
+	(version 20230121)
+	(generator bmsx_s4)
+	(uuid 8ecee244-dd2a-55d9-91c5-51747db772e3)
+	(paper "A2")
+	(lib_symbols
+		(symbol "BMSX:BMSX_L1"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "L"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "47uH"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_L1_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_L1_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C100"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1500uF 16V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C100_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C100_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C101"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1000uF 10V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C101_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C101_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C102"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1000uF 10V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C102_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C102_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C103"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "330pF C0G 5%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C103_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C103_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R21"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R21_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R21_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C107"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1uF 25V X7R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C107_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C107_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C108"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "100nF 25V X7R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C108_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C108_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R22"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "2.2R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R22_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R22_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R23"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "2.2R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R23_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R23_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R24"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "0R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R24_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R24_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_L2"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "L"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "47uH"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_L2_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_L2_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C109"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1500uF 16V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C109_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C109_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C110"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1000uF 10V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C110_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C110_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C111"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1000uF 10V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C111_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C111_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C112"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "270pF C0G 5%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C112_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C112_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R26"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R26_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R26_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C116"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1uF 25V X7R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C116_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C116_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C117"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "100nF 25V X7R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C117_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C117_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R27"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "2.2R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R27_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R27_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R28"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "2.2R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R28_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R28_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R29"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "0R"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R29_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R29_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP1"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "VIN9"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP1_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP1_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP2"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "GND"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP2_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP2_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP3"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "V3V3"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP3_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP3_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP4"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "V5"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP4_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP4_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP5"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "SHDN"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP5_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP5_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_U60"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 -8.89 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "LTC1326IS8"
+				(at 0 8.89 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_U60_0_1"
+				(rectangle
+					(start -8.89 6.35)
+					(end 8.89 -6.35)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_U60_1_1"
+				(pin power_in line
+					(at -11.43 3.81 0)
+					(length 2.54)
+					(name "VCC3"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin power_in line
+					(at -11.43 1.27 0)
+					(length 2.54)
+					(name "VCC5"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin input line
+					(at -11.43 -1.27 0)
+					(length 2.54)
+					(name "VCCA"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "3"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin power_in line
+					(at -11.43 -3.81 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "4"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin output line
+					(at 11.43 3.81 180)
+					(length 2.54)
+					(name "RST_H"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "5"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin open_collector line
+					(at 11.43 1.27 180)
+					(length 2.54)
+					(name "RESET_N"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "6"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin open_collector line
+					(at 11.43 -1.27 180)
+					(length 2.54)
+					(name "SRST_N"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "7"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin input line
+					(at 11.43 -3.81 180)
+					(length 2.54)
+					(name "PBR"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "8"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C60"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "100nF 25V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C60_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C60_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C61"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "100nF 25V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C61_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C61_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R100"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "60.4k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R100_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R100_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R101"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "10k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R101_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R101_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C62"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1nF C0G"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C62_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C62_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R102"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R102_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R102_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R103"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "10k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R103_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R103_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R104"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "100k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R104_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R104_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R105"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "1k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R105_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R105_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_R107"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "100k 1%"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_R107_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_R107_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP60"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "RESET_N"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP60_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP60_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP61"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "POWER_SW"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP61_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP61_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP62"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "RESET_SW"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP62_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP62_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_F60"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "F"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "0451005.MRL 5A fast"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_F60_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_F60_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_C65"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "100nF 25V"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_C65_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_C65_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP63"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "RAW9 boundary"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP63_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP63_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_TP64"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "T"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "GND boundary"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_TP64_0_1"
+				(rectangle
+					(start -8.89 3.81)
+					(end 8.89 -3.81)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_TP64_1_1"
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX:BMSX_J60"
+			(pin_names
+				(offset 0.8))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 -7.62 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "CAP CONTROLS 5pos"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "BMSX_J60_0_1"
+				(rectangle
+					(start -8.89 5.08)
+					(end 8.89 -5.08)
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "BMSX_J60_1_1"
+				(pin passive line
+					(at -11.43 2.54 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "1"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at -11.43 0 0)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "2"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at -11.43 -2.54 0)
+					(length 2.54)
+					(name "3"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "3"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 2.54 180)
+					(length 2.54)
+					(name "4"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "4"
+						(effects
+							(font
+								(size 1.0 1.0)))))
+				(pin passive line
+					(at 11.43 0 180)
+					(length 2.54)
+					(name "5"
+						(effects
+							(font
+								(size 1.0 1.0))))
+					(number "5"
+						(effects
+							(font
+								(size 1.0 1.0)))))))
+		(symbol "BMSX_R10:PWR_FLAG"
+			(power)
+			(pin_numbers
+				(hide yes))
+			(pin_names
+				(offset 0)
+				(hide yes))
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#FLG"
+				(at 0 1.905 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(property "Value" "PWR_FLAG"
+				(at 0 3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(property "Datasheet" "~"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(property "Description" "Special symbol for telling ERC where power comes from"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(property "ki_keywords" "flag power"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(symbol "PWR_FLAG_0_0"
+				(pin power_out line
+					(at 0 0 90)
+					(length 0)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27))))))
+			(symbol "PWR_FLAG_0_1"
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 1.27)
+						(xy -1.016 1.905)
+						(xy 0 2.54)
+						(xy 1.016 1.905)
+						(xy 0 1.27))
+					(stroke
+						(width 0)
+						(type default))
+					(fill
+						(type none))))
+			(embedded_fonts no))
+		(symbol "BMSX_IntegratedBuck:TPS56637RPAR"
+			(pin_names
+				(offset 0.254))
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 1.27 10.16 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "TPS56637RPAR"
+				(at 1.27 7.62 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Footprint" "BMSX_IntegratedBuck:TPS56637RPAR_RPA0010A"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(property "Datasheet" "https://www.ti.com/lit/ds/symlink/tps56637.pdf"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(property "Description" "4.5V-28V 6A synchronous buck, active-high EN, open-drain PG, RPA0010A"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(property "ki_fp_filters" "TPS56637RPAR_RPA0010A"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27))
+					(hide yes)))
+			(symbol "TPS56637RPAR_0_1"
+				(rectangle
+					(start -6.35 6.35)
+					(end 6.35 -6.35)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "TPS56637RPAR_1_1"
+				(pin input line
+					(at -8.89 2.54 0)
+					(length 2.54)
+					(name "EN"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin input line
+					(at 8.89 -2.54 180)
+					(length 2.54)
+					(name "FB"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin power_in line
+					(at -2.54 -8.89 90)
+					(length 2.54)
+					(name "AGND"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin open_collector line
+					(at 8.89 0 180)
+					(length 2.54)
+					(name "PG"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "4"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin no_connect line
+					(at -8.89 -2.54 0)
+					(length 2.54)
+					(name "NC"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "5"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin power_out line
+					(at 8.89 2.54 180)
+					(length 2.54)
+					(name "SW"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "6"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin input line
+					(at 8.89 5.08 180)
+					(length 2.54)
+					(name "BOOT"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "7"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin power_in line
+					(at -8.89 5.08 0)
+					(length 2.54)
+					(name "VIN"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "8"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin power_in line
+					(at 2.54 -8.89 90)
+					(length 2.54)
+					(name "PGND"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "9"
+						(effects
+							(font
+								(size 1.27 1.27)))))
+				(pin input line
+					(at -8.89 0 0)
+					(length 2.54)
+					(name "MODE"
+						(effects
+							(font
+								(size 1.27 1.27))))
+					(number "10"
+						(effects
+							(font
+								(size 1.27 1.27)))))))
+		(symbol "BMSX_POWER:FAN_5V_2"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "M20-8770242 FAN5V"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Footprint" "BMSX_HEADER:Harwin_M20-8770242"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1 1))
+					(hide yes)))
+			(symbol "FAN_5V_2_0_1"
+				(rectangle
+					(start -2.54 2.54)
+					(end 2.54 -2.54)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background))))
+			(symbol "FAN_5V_2_1_1"
+				(pin passive line
+					(at -5.08 1.27 0)
+					(length 2.54)
+					(name "1"
+						(effects
+							(font
+								(size 1 1))))
+					(number "1"
+						(effects
+							(font
+								(size 1 1)))))
+				(pin passive line
+					(at -5.08 -1.27 0)
+					(length 2.54)
+					(name "2"
+						(effects
+							(font
+								(size 1 1))))
+					(number "2"
+						(effects
+							(font
+								(size 1 1))))))))
+	(wire
+		(pts
+			(xy 436.88 196.85)
+			(xy 431.8 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 529d6814-03aa-5258-8a11-17311e585f96))
+	(wire
+		(pts
+			(xy 504.19 196.85)
+			(xy 499.11 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e35e1763-8b7a-5ade-8e69-509ee732c9a3))
+	(wire
+		(pts
+			(xy 27.94 237.49)
+			(xy 22.86 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 92feb39e-114f-50a4-8663-376b6c1fe24a))
+	(wire
+		(pts
+			(xy 96.52 237.49)
+			(xy 91.44 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 927ad8e0-42bd-529d-bf37-33709cf03126))
+	(wire
+		(pts
+			(xy 165.1 237.49)
+			(xy 160.02 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 619e9941-9eb9-58db-8eb8-ffbf9d756ef1))
+	(wire
+		(pts
+			(xy 232.41 233.68)
+			(xy 227.33 233.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a6018aa9-f7ed-5de5-8632-16b3f0cdf705))
+	(wire
+		(pts
+			(xy 232.41 236.22)
+			(xy 227.33 236.22))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2cbbb93f-ef11-5da3-8cc4-8858a77bd638))
+	(wire
+		(pts
+			(xy 232.41 238.76)
+			(xy 227.33 238.76))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3690e1b0-4f64-52b4-86ed-73510ddd2062))
+	(wire
+		(pts
+			(xy 232.41 241.3)
+			(xy 227.33 241.3))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3515ad0f-8e96-5c98-8bc5-b13a24abe7eb))
+	(wire
+		(pts
+			(xy 255.27 236.22)
+			(xy 260.35 236.22))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 869ddfe0-e34d-501f-ad6f-0ba21478db78))
+	(wire
+		(pts
+			(xy 255.27 241.3)
+			(xy 260.35 241.3))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c45668f7-2fb9-5c81-91b5-45ce1155c411))
+	(wire
+		(pts
+			(xy 300.99 237.49)
+			(xy 295.91 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid dcc2e5b7-8d97-5e64-8983-348c8bd9adce))
+	(wire
+		(pts
+			(xy 323.85 237.49)
+			(xy 328.93 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f9622bfa-e513-5b04-b911-7ac385ebb17f))
+	(wire
+		(pts
+			(xy 368.3 237.49)
+			(xy 363.22 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d1e1b171-f084-5169-b4a0-8a517321fe4e))
+	(wire
+		(pts
+			(xy 391.16 237.49)
+			(xy 396.24 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5f46e83f-c6c3-532b-a11d-bfb8b2dcbc01))
+	(wire
+		(pts
+			(xy 436.88 237.49)
+			(xy 431.8 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 49079b1d-c15c-59ad-94c4-638fc0dce607))
+	(wire
+		(pts
+			(xy 459.74 237.49)
+			(xy 464.82 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid aba265a2-3ed2-5373-8646-9107d7767191))
+	(wire
+		(pts
+			(xy 504.19 237.49)
+			(xy 499.11 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f886e51f-aef8-5920-b7cc-5de7da3356f6))
+	(wire
+		(pts
+			(xy 527.05 237.49)
+			(xy 532.13 237.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f77d367c-eabf-5950-834e-2cf769260022))
+	(wire
+		(pts
+			(xy 27.94 279.4)
+			(xy 22.86 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 05ff19d7-599e-547e-81bc-40a594faadf8))
+	(wire
+		(pts
+			(xy 50.8 279.4)
+			(xy 55.88 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1368f237-e93a-55f6-9905-cc243094c6d4))
+	(wire
+		(pts
+			(xy 96.52 279.4)
+			(xy 91.44 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 022605d7-6986-5ec5-8fe2-d83de9fe361a))
+	(wire
+		(pts
+			(xy 119.38 279.4)
+			(xy 124.46 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2326f733-4580-5971-a70f-4d3b133f6af0))
+	(wire
+		(pts
+			(xy 165.1 279.4)
+			(xy 160.02 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8b7a7ef0-6c9a-53eb-a13d-7d2495f10952))
+	(wire
+		(pts
+			(xy 187.96 279.4)
+			(xy 193.04 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 249c0530-1da3-5bcd-823f-5e2ac0c4f4bf))
+	(wire
+		(pts
+			(xy 323.85 279.4)
+			(xy 328.93 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b09eabe4-8a68-5ec2-b40e-71752e1d2c07))
+	(wire
+		(pts
+			(xy 368.3 279.4)
+			(xy 363.22 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid cf89556c-047d-5f1e-8a98-adcb4d3219af))
+	(wire
+		(pts
+			(xy 391.16 279.4)
+			(xy 396.24 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 01faed56-18b2-5984-9bdf-078dc7296022))
+	(wire
+		(pts
+			(xy 119.38 320.04)
+			(xy 124.46 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 60ce32d2-56e0-5f48-a2d1-08d923f49932))
+	(wire
+		(pts
+			(xy 165.1 320.04)
+			(xy 160.02 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid bb157e46-2c66-5c87-9c13-2159914658a7))
+	(wire
+		(pts
+			(xy 232.41 320.04)
+			(xy 227.33 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 024d470b-7f81-54a7-bf46-182ffabb42ee))
+	(wire
+		(pts
+			(xy 300.99 320.04)
+			(xy 295.91 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 10a1828d-6622-517e-b877-a99546759eb2))
+	(wire
+		(pts
+			(xy 368.3 320.04)
+			(xy 363.22 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b28df8fa-a94b-5b4b-8e56-f83f3fb16e9a))
+	(wire
+		(pts
+			(xy 391.16 320.04)
+			(xy 396.24 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6d0704bb-1740-54d8-b8aa-31b28fa8d42b))
+	(wire
+		(pts
+			(xy 119.38 360.68)
+			(xy 124.46 360.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 04896bf8-3f4c-56a3-b276-de1b248c0900))
+	(wire
+		(pts
+			(xy 165.1 360.68)
+			(xy 160.02 360.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6f32c3d3-e443-5720-aaee-0ae95c98f43d))
+	(wire
+		(pts
+			(xy 232.41 360.68)
+			(xy 227.33 360.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ac96cc2b-cff7-528f-9698-329b0fa8c2f2))
+	(wire
+		(pts
+			(xy 300.99 358.14)
+			(xy 295.91 358.14))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f53852d4-0ce7-596f-8c4c-b7f9791f5cba))
+	(wire
+		(pts
+			(xy 300.99 360.68)
+			(xy 295.91 360.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c29b04fc-79cf-5a0f-9e27-0138592e5f00))
+	(wire
+		(pts
+			(xy 300.99 363.22)
+			(xy 295.91 363.22))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid af9feabe-c962-5ffa-a97b-dab2174406cc))
+	(wire
+		(pts
+			(xy 323.85 358.14)
+			(xy 328.93 358.14))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 512c5917-503b-54c6-9a35-1c95ecf56636))
+	(wire
+		(pts
+			(xy 323.85 360.68)
+			(xy 328.93 360.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0a7800d2-1cd1-5b5a-92a4-cd1a60028461))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 431.8 196.85 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 11e40e04-2405-5fdb-ae62-df4f2fe9035c))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 499.11 196.85 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid b27b18ea-8ee4-541d-b1b1-72881b9d99dc))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 22.86 237.49 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid e0163b3b-8c1f-568b-8e55-24760a059f14))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 91.44 237.49 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 4ced2720-1bf3-58fe-a4a7-0e2675bd7de6))
+	(global_label "BUCK_EN"
+		(shape bidirectional)
+		(at 160.02 237.49 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 1b0aa244-dca6-5df8-8525-167c7f276820))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 227.33 233.68 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 5cfced29-e133-50be-a0c9-b8613fed06a6))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 227.33 236.22 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid ed4270f4-40b7-5d50-b735-1a43e6afce52))
+	(global_label "V9_SENSE"
+		(shape bidirectional)
+		(at 227.33 238.76 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 3eb08377-d4ed-5876-8e76-218fda592f05))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 227.33 241.3 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid aaf9f390-3b01-5246-9b81-12cfa7108080))
+	(global_label "RESET_N"
+		(shape bidirectional)
+		(at 260.35 236.22 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 901750fe-d40e-59fa-8af4-02b0dc09d082))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 260.35 241.3 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 230afbef-2aa1-5a80-a605-6cc62b1404b0))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 295.91 237.49 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 4c4e0b4d-2537-5213-a221-7ee89d22284c))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 328.93 237.49 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid ed83a9e8-b5ca-5925-a687-a4e578523672))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 363.22 237.49 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 967bd06f-b0d1-5d8b-99e3-b5c0a6c5a802))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 396.24 237.49 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid adce263a-51eb-5218-b0f9-163b383c5aed))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 431.8 237.49 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 74d76e26-1031-5f87-ac7d-b1d646630995))
+	(global_label "V9_SENSE"
+		(shape bidirectional)
+		(at 464.82 237.49 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid bf4e5e78-7849-5d5b-8f63-e904b0ad6fbd))
+	(global_label "V9_SENSE"
+		(shape bidirectional)
+		(at 499.11 237.49 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid f66b83dc-9318-5c27-afd0-cb7cc872952e))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 532.13 237.49 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 2bf125a9-2b1c-5f28-85e5-eb8c5ea0cb7c))
+	(global_label "V9_SENSE"
+		(shape bidirectional)
+		(at 22.86 279.4 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 7961e366-fa80-57a0-82fd-2965eb83526a))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 55.88 279.4 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid ce0beb53-e71d-52cc-876d-3d301d477f32))
+	(global_label "V9_SENSE"
+		(shape bidirectional)
+		(at 91.44 279.4 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 7be3a386-ae1f-5056-81aa-f5e18421d6fb))
+	(global_label "RESET_SW"
+		(shape bidirectional)
+		(at 124.46 279.4 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 42a9efe9-f6b1-5c6b-934e-c375a1be153e))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 160.02 279.4 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 81c0c58e-2571-5f13-ba49-89a1911246c5))
+	(global_label "RESET_N"
+		(shape bidirectional)
+		(at 193.04 279.4 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 7129669c-b247-5208-ba87-99bf25c7cdd9))
+	(global_label "POWER_SW"
+		(shape bidirectional)
+		(at 328.93 279.4 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 8b28f7b0-67e4-52c9-a1ac-f15d8273fbb9))
+	(global_label "BUCK_ENABLE_DRIVE"
+		(shape bidirectional)
+		(at 363.22 279.4 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 0241881a-0032-5bc0-a52c-b9a6a12e9b28))
+	(global_label "BUCK_EN"
+		(shape bidirectional)
+		(at 396.24 279.4 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 42f6ab18-fd98-5983-a5e5-1fc3678ceba6))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 124.46 320.04 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid bd54d716-c9d3-5867-9a24-ee61d0c7bd9d))
+	(global_label "RESET_N"
+		(shape bidirectional)
+		(at 160.02 320.04 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid af5c404a-b198-5eb8-9b3d-6afc4e605528))
+	(global_label "POWER_SW"
+		(shape bidirectional)
+		(at 227.33 320.04 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid d8bbed62-b97d-5bd8-bc51-0da515da605d))
+	(global_label "RESET_SW"
+		(shape bidirectional)
+		(at 295.91 320.04 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 13ad0ad4-b5ca-5a1f-868d-58dc88cde90b))
+	(global_label "RAW9"
+		(shape bidirectional)
+		(at 363.22 320.04 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid f7cba63a-d0f9-5eaf-8c4a-434cb21905e9))
+	(global_label "FUSED9"
+		(shape bidirectional)
+		(at 396.24 320.04 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 6e8ca6b7-edd6-5a7e-8511-98998ef48573))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 124.46 360.68 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 54c2f6c9-2ea1-5f5e-b993-e9a84e99373a))
+	(global_label "RAW9"
+		(shape bidirectional)
+		(at 160.02 360.68 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 36f9c175-eca0-586f-bd07-3f254e3dd5ff))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 227.33 360.68 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 53d1f5c2-defc-54dc-8ef0-bcc7af1a9148))
+	(global_label "POWER_SW"
+		(shape bidirectional)
+		(at 295.91 358.14 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 41550855-e711-53f2-b3c0-afe17a55a031))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 295.91 360.68 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 2ee69a3e-5d1a-5d4b-91e1-112cfb44b6e5))
+	(global_label "RESET_SW"
+		(shape bidirectional)
+		(at 295.91 363.22 0)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid acf99478-9556-595e-bbe6-e371540b5913))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 328.93 358.14 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 11970fd2-6bcf-5ebf-85ec-ab9ecca635a3))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 328.93 360.68 180)
+		(effects
+			(font
+				(size .9 .9))
+			(justify left bottom))
+		(uuid 5c55113c-fb9f-545f-b465-ff64c6a2cfa9))
+	(no_connect
+		(at 255.27 233.68)
+		(uuid 178aa8ac-309e-5d92-bc09-73eaafa100ca))
+	(no_connect
+		(at 255.27 238.76)
+		(uuid e3126e26-90d5-5a60-8cba-5883e74f031a))
+	(symbol
+		(lib_id "BMSX_IntegratedBuck:TPS56637RPAR")
+		(at 39.37 33.02 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid d3c93dd0-2e04-5171-8fb6-4b57aa063b1e)
+		(property "Reference" "U20"
+			(at 39.37 20.36 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "TPS56637RPAR"
+			(at 39.37 45.68 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:TPS56637RPAR_RPA0010A"
+			(at 39.37 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "U20")
+					(unit 1))))
+		(pin "1"
+			(uuid a603b922-6391-5931-bbd5-39d9283905a0))
+		(pin "2"
+			(uuid 2b7bfe4d-de6c-56ff-b42b-2bf937492651))
+		(pin "3"
+			(uuid 07a9c5d6-9560-5034-bd43-202165469a4d))
+		(pin "4"
+			(uuid e022826e-987a-5066-96e4-874237a9310b))
+		(pin "5"
+			(uuid 1b3f181d-e3de-5993-8a73-65bb57f51b8e))
+		(pin "6"
+			(uuid dfda0af7-d227-568c-8dd2-108be86ca565))
+		(pin "7"
+			(uuid 40b4c83c-1189-5273-9eda-7ddbc15be720))
+		(pin "8"
+			(uuid 3ea9ff49-6cda-5a48-9fa2-6f6d001ea47d))
+		(pin "9"
+			(uuid ad2d6032-8c07-5234-aa17-4d7af6a89271))
+		(pin "10"
+			(uuid 0462d982-9dba-5237-9a4b-78584eb3e2c1))
+		(property "Manufacturer" "Texas Instruments"
+			(at 39.37 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "TPS56637RPAR"
+			(at 39.37 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/tps56637.pdf"
+			(at 39.37 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 39.37 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_L1")
+		(at 312.42 33.02 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid b5cce875-3f89-5c48-91b3-623f4b827aca)
+		(property "Reference" "L1"
+			(at 312.42 26.71 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "2.2uH"
+			(at 312.42 39.33 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:L_Vishay_IHLP-3232"
+			(at 312.42 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 83c3c70b-4d4c-5e9f-9173-684410f26c73))
+		(pin "2"
+			(uuid bfc315c9-b757-5057-ac7f-fd84936a5f37))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "L1")
+					(unit 1))))
+		(property "Datasheet" "https://www.vishay.com/docs/34313/ihlp3232dz-11.pdf"
+			(at 312.42 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Vishay"
+			(at 312.42 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "IHLP3232DZER2R2M11"
+			(at 312.42 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 312.42 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C100")
+		(at 448.31 33.02 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 1ff7e14b-3d22-59f8-a63f-1a5ab44623ce)
+		(property "Reference" "C100"
+			(at 448.31 26.71 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10uF 35V X7R 10%"
+			(at 448.31 39.33 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_1210_3225Metric"
+			(at 448.31 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid ec966a34-e611-5dcb-8b69-55d8b35b5f51))
+		(pin "2"
+			(uuid ed1811e2-2d2a-53f3-9461-c67536e05411))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C100")
+					(unit 1))))
+		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/JPN/GRM32ER7YA106KA12-04A.pdf"
+			(at 448.31 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Murata"
+			(at 448.31 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "GRM32ER7YA106KA12L"
+			(at 448.31 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 448.31 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C101")
+		(at 515.62 33.02 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ceda8539-205b-5b75-9fd9-0cbde7933791)
+		(property "Reference" "C101"
+			(at 515.62 26.71 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "22uF 25V X7R 10%"
+			(at 515.62 39.33 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_1210_3225Metric"
+			(at 515.62 33.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 1756c03b-efbd-56e6-97c5-4432164d6e08))
+		(pin "2"
+			(uuid d81d702c-73fc-5474-b8b7-067eea1ceaab))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C101")
+					(unit 1))))
+		(property "Datasheet" "https://www.murata.com/en-global/api/pdfdownloadapi?cate=luCeramicCapacitorsSMD&partno=GRM32ER71E226KE15%23"
+			(at 515.62 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Murata"
+			(at 515.62 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "GRM32ER71E226KE15L"
+			(at 515.62 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 515.62 33.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C102")
+		(at 39.37 73.66 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid b1d987c0-56b9-5ffa-b6a6-a754955538ad)
+		(property "Reference" "C102"
+			(at 39.37 67.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "22uF 25V X7R 10%"
+			(at 39.37 79.97 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_1210_3225Metric"
+			(at 39.37 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 9aabf54d-d083-5d6e-86b6-5864ea06a899))
+		(pin "2"
+			(uuid 8ba24f81-eca1-565b-9513-82f8bec3a778))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C102")
+					(unit 1))))
+		(property "Datasheet" "https://www.murata.com/en-global/api/pdfdownloadapi?cate=luCeramicCapacitorsSMD&partno=GRM32ER71E226KE15%23"
+			(at 39.37 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Murata"
+			(at 39.37 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "GRM32ER71E226KE15L"
+			(at 39.37 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 39.37 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C103")
+		(at 107.95 73.66 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid dbe3e291-d9b8-5351-8466-5c07688b77f1)
+		(property "Reference" "C103"
+			(at 107.95 67.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 50V X7R 10%"
+			(at 107.95 79.97 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_0603_1608Metric"
+			(at 107.95 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid e53e96bd-d947-5f1c-9cac-928c27c7fb8b))
+		(pin "2"
+			(uuid 1befe28b-a1fc-5b43-bd9d-c15cdb347ded))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C103")
+					(unit 1))))
+		(property "Manufacturer" "Wurth Elektronik"
+			(at 107.95 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "885012206095"
+			(at 107.95 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.we-online.com/components/products/datasheet/885012206095.pdf"
+			(at 107.95 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 107.95 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R21")
+		(at 243.84 73.66 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 562ba491-8336-53e3-ab97-26b0d58f9d34)
+		(property "Reference" "R21"
+			(at 243.84 67.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "45.3k 0.1% 25ppm/K"
+			(at 243.84 79.97 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:TNPW0603_Vishay_28950"
+			(at 243.84 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 5f5c0604-0e4b-5c99-8a49-b783cec78b6c))
+		(pin "2"
+			(uuid 3f2c3bdd-c4ec-5f4e-bc1b-d2b63656106e))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R21")
+					(unit 1))))
+		(property "Manufacturer" "Vishay"
+			(at 243.84 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "TNPW060345K3BEEA"
+			(at 243.84 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.vishay.com/doc?28950"
+			(at 243.84 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 243.84 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C107")
+		(at 448.31 73.66 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 88537aa7-dda4-5e04-85b3-f26ec25eaa2d)
+		(property "Reference" "C107"
+			(at 448.31 67.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10uF 35V X7R 10%"
+			(at 448.31 79.97 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_1210_3225Metric"
+			(at 448.31 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 531d2d50-a940-5ef8-8ba3-84f1035b4259))
+		(pin "2"
+			(uuid 708f4abf-0fc8-5fc1-8b07-3187789e22e2))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C107")
+					(unit 1))))
+		(property "Manufacturer" "Murata"
+			(at 448.31 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "GRM32ER7YA106KA12L"
+			(at 448.31 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/JPN/GRM32ER7YA106KA12-04A.pdf"
+			(at 448.31 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 448.31 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C108")
+		(at 515.62 73.66 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ebcc000b-7ee4-5f00-844a-f2e0f8e36406)
+		(property "Reference" "C108"
+			(at 515.62 67.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 50V X7R 10%"
+			(at 515.62 79.97 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_0603_1608Metric"
+			(at 515.62 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid f17440b8-d032-51c6-8e6b-fc5f8960ab7d))
+		(pin "2"
+			(uuid d191fa7d-bd07-59ae-a3e7-2e4e2a0b813f))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C108")
+					(unit 1))))
+		(property "Datasheet" "https://www.we-online.com/components/products/datasheet/885012206095.pdf"
+			(at 515.62 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Wurth Elektronik"
+			(at 515.62 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "885012206095"
+			(at 515.62 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 515.62 73.66 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R22")
+		(at 39.37 115.57 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 9ec0f38b-25e9-55d9-8e46-7b0552188cf0)
+		(property "Reference" "R22"
+			(at 39.37 109.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 0.1% 25ppm/K"
+			(at 39.37 121.88 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:TNPW0603_Vishay_28950"
+			(at 39.37 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid c4d460a4-13c4-5984-8be0-3e7e7c16ee9e))
+		(pin "2"
+			(uuid a643ba15-c3c3-5e81-a9f5-83a6b6cc7f19))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R22")
+					(unit 1))))
+		(property "Manufacturer" "Vishay"
+			(at 39.37 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "TNPW060310K0BEEA"
+			(at 39.37 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.vishay.com/doc?28950"
+			(at 39.37 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 39.37 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R23")
+		(at 107.95 115.57 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid cd0028b0-5926-52dc-96a2-093854d0256a)
+		(property "Reference" "R23"
+			(at 107.95 109.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "0R"
+			(at 107.95 121.88 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 107.95 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid bf9caaf3-9a0f-584d-b789-7f159a368d18))
+		(pin "2"
+			(uuid 7534a8be-20f7-5cde-892f-8b92c5b35206))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R23")
+					(unit 1))))
+		(property "Manufacturer" "Vishay"
+			(at 107.95 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "CRCW06030000Z0EA"
+			(at 107.95 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.ti.com/lit/ug/slvube3b/slvube3b.pdf"
+			(at 107.95 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 107.95 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R24")
+		(at 176.53 115.57 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid b48e5d3b-4969-51d2-9c32-fa8ffc64d432)
+		(property "Reference" "R24"
+			(at 176.53 109.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "0R"
+			(at 176.53 121.88 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 176.53 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 25a85dff-68e9-5da4-bfbb-6462288b51fc))
+		(pin "2"
+			(uuid 4e62ba21-e954-565a-8e24-611a4802ed26))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R24")
+					(unit 1))))
+		(property "Manufacturer" "Vishay"
+			(at 176.53 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "CRCW06030000Z0EA"
+			(at 176.53 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.ti.com/lit/ug/slvube3b/slvube3b.pdf"
+			(at 176.53 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 176.53 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX_IntegratedBuck:TPS56637RPAR")
+		(at 243.84 115.57 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 83ae3066-4d6e-5fba-8934-646550c5c27a)
+		(property "Reference" "U21"
+			(at 243.84 102.91 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "TPS56637RPAR"
+			(at 243.84 128.23 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:TPS56637RPAR_RPA0010A"
+			(at 243.84 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "U21")
+					(unit 1))))
+		(pin "1"
+			(uuid 8ef22ac5-5ce0-589b-95b0-fbe34946e23d))
+		(pin "2"
+			(uuid 300d3821-edc0-5234-874b-dd420b1ebeea))
+		(pin "3"
+			(uuid 346cbd92-693f-5d71-b231-69dfa8cccb90))
+		(pin "4"
+			(uuid e4f97e65-3ed1-5d17-a729-06802971ea5b))
+		(pin "5"
+			(uuid beb94f84-0104-5986-a7a8-01e982cab64d))
+		(pin "6"
+			(uuid 141e7bd7-4c54-5e99-9760-5a7a7cb075a9))
+		(pin "7"
+			(uuid b82f5860-5474-5988-8fc5-2c3a592156a5))
+		(pin "8"
+			(uuid c18eb9d2-92cf-5c29-b53c-0f0de941128b))
+		(pin "9"
+			(uuid d9e363b9-530f-593e-809c-53dc8c2df60a))
+		(pin "10"
+			(uuid 82eac398-b539-5e68-9fbd-37ecf5193659))
+		(property "Manufacturer" "Texas Instruments"
+			(at 243.84 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "TPS56637RPAR"
+			(at 243.84 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/tps56637.pdf"
+			(at 243.84 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 243.84 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_L2")
+		(at 515.62 115.57 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 7e680d38-b9e3-5b78-bcc3-5471de905513)
+		(property "Reference" "L2"
+			(at 515.62 109.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "3.3uH"
+			(at 515.62 121.88 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:L_Vishay_IHLP-3232"
+			(at 515.62 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 301a0db7-f9f3-5cc2-bf2b-ed1ee6726ff1))
+		(pin "2"
+			(uuid b6084298-8655-5614-b768-ad2bacd4ea1d))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "L2")
+					(unit 1))))
+		(property "Datasheet" "https://www.vishay.com/docs/34313/ihlp3232dz-11.pdf"
+			(at 515.62 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Vishay"
+			(at 515.62 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "IHLP3232DZER3R3M11"
+			(at 515.62 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 515.62 115.57 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C109")
+		(at 107.95 156.21 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 46a8bf15-2146-5fc7-859c-e4d06e542a96)
+		(property "Reference" "C109"
+			(at 107.95 149.9 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10uF 35V X7R 10%"
+			(at 107.95 162.52 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_1210_3225Metric"
+			(at 107.95 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 533f9794-e00a-50f8-8b54-d41fa21132a9))
+		(pin "2"
+			(uuid cedfdd31-1d02-5c8a-ba3c-25fab19e9b22))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C109")
+					(unit 1))))
+		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/JPN/GRM32ER7YA106KA12-04A.pdf"
+			(at 107.95 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Murata"
+			(at 107.95 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "GRM32ER7YA106KA12L"
+			(at 107.95 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 107.95 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C110")
+		(at 176.53 156.21 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 9fa52b3b-eca1-507a-b789-b917a457d2af)
+		(property "Reference" "C110"
+			(at 176.53 149.9 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "22uF 25V X7R 10%"
+			(at 176.53 162.52 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_1210_3225Metric"
+			(at 176.53 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid e21ac1a0-6f7f-5233-a7c2-4a856bdfcdbd))
+		(pin "2"
+			(uuid 97041a4f-dbf3-578e-bdaa-c7e74febe4bc))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C110")
+					(unit 1))))
+		(property "Datasheet" "https://www.murata.com/en-global/api/pdfdownloadapi?cate=luCeramicCapacitorsSMD&partno=GRM32ER71E226KE15%23"
+			(at 176.53 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Murata"
+			(at 176.53 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "GRM32ER71E226KE15L"
+			(at 176.53 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 176.53 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C111")
+		(at 243.84 156.21 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid b027d40a-3ef8-5932-9941-0cdbb67df023)
+		(property "Reference" "C111"
+			(at 243.84 149.9 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "22uF 25V X7R 10%"
+			(at 243.84 162.52 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_1210_3225Metric"
+			(at 243.84 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid e05cc804-8a27-53c5-96f3-df548b58c568))
+		(pin "2"
+			(uuid 04a16375-2788-5bf9-a5c3-1a07a8bd997e))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C111")
+					(unit 1))))
+		(property "Datasheet" "https://www.murata.com/en-global/api/pdfdownloadapi?cate=luCeramicCapacitorsSMD&partno=GRM32ER71E226KE15%23"
+			(at 243.84 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Murata"
+			(at 243.84 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "GRM32ER71E226KE15L"
+			(at 243.84 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 243.84 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C112")
+		(at 312.42 156.21 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 3ae0c248-80bd-5fca-bcd3-8bc1fa2662bf)
+		(property "Reference" "C112"
+			(at 312.42 149.9 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 50V X7R 10%"
+			(at 312.42 162.52 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_0603_1608Metric"
+			(at 312.42 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 9f09824c-c385-581e-ba55-d324cd3949a3))
+		(pin "2"
+			(uuid cec3b60f-1ab1-504b-967e-6a2f33a9faf8))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C112")
+					(unit 1))))
+		(property "Manufacturer" "Wurth Elektronik"
+			(at 312.42 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "885012206095"
+			(at 312.42 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.we-online.com/components/products/datasheet/885012206095.pdf"
+			(at 312.42 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 312.42 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R26")
+		(at 448.31 156.21 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid e59f2d8a-f5df-539e-ac17-0b3829355ac4)
+		(property "Reference" "R26"
+			(at 448.31 149.9 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "73.2k 0.1% 25ppm/K"
+			(at 448.31 162.52 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:TNPW0603_Vishay_28950"
+			(at 448.31 156.21 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid cbc82d01-27f0-5da0-9d47-99b480c12f05))
+		(pin "2"
+			(uuid db082242-eab9-5ec9-b842-2cd3bc6c77c0))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R26")
+					(unit 1))))
+		(property "Manufacturer" "Vishay"
+			(at 448.31 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "TNPW060373K2BEEA"
+			(at 448.31 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.vishay.com/doc?28950"
+			(at 448.31 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 448.31 156.21 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C116")
+		(at 107.95 196.85 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 100e9e99-df6e-5afa-ab73-08152f8e5c85)
+		(property "Reference" "C116"
+			(at 107.95 190.54 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10uF 35V X7R 10%"
+			(at 107.95 203.16 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_1210_3225Metric"
+			(at 107.95 196.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 7ee2ca44-f8da-502b-b007-87a2d970f0dc))
+		(pin "2"
+			(uuid 6f19c4b4-e380-5968-9323-6d072320d243))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C116")
+					(unit 1))))
+		(property "Manufacturer" "Murata"
+			(at 107.95 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "GRM32ER7YA106KA12L"
+			(at 107.95 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://search.murata.co.jp/Ceramy/image/img/A01X/G101/JPN/GRM32ER7YA106KA12-04A.pdf"
+			(at 107.95 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 107.95 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C117")
+		(at 176.53 196.85 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 961b38c7-f7cf-54f9-ad11-a0e5d84b47ee)
+		(property "Reference" "C117"
+			(at 176.53 190.54 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 50V X7R 10%"
+			(at 176.53 203.16 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_IntegratedBuck:C_0603_1608Metric"
+			(at 176.53 196.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 2f88e6be-4624-5ba0-b316-98f22d83bc24))
+		(pin "2"
+			(uuid 35ae4978-2618-5c7b-9f81-225ba2a5abd2))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C117")
+					(unit 1))))
+		(property "Datasheet" "https://www.we-online.com/components/products/datasheet/885012206095.pdf"
+			(at 176.53 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Wurth Elektronik"
+			(at 176.53 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "885012206095"
+			(at 176.53 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 176.53 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R27")
+		(at 243.84 196.85 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 955fc5d4-d426-5445-9e9e-b425a038fb62)
+		(property "Reference" "R27"
+			(at 243.84 190.54 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 0.1% 25ppm/K"
+			(at 243.84 203.16 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:TNPW0603_Vishay_28950"
+			(at 243.84 196.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 727273f6-c2eb-5500-bea8-d7223f93191e))
+		(pin "2"
+			(uuid 004981a1-b9ca-5245-86c8-a3d51d6ef70e))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R27")
+					(unit 1))))
+		(property "Manufacturer" "Vishay"
+			(at 243.84 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "TNPW060310K0BEEA"
+			(at 243.84 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.vishay.com/doc?28950"
+			(at 243.84 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 243.84 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R28")
+		(at 312.42 196.85 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 71199c53-f5c5-5c14-a99e-911f67b83fba)
+		(property "Reference" "R28"
+			(at 312.42 190.54 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "0R"
+			(at 312.42 203.16 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 312.42 196.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 0d651d29-830d-54d2-996e-93352698c768))
+		(pin "2"
+			(uuid 35af6931-f50d-5fb2-9a3b-79469750766f))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R28")
+					(unit 1))))
+		(property "Manufacturer" "Vishay"
+			(at 312.42 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "CRCW06030000Z0EA"
+			(at 312.42 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.ti.com/lit/ug/slvube3b/slvube3b.pdf"
+			(at 312.42 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 312.42 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R29")
+		(at 379.73 196.85 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid d41947be-72d9-5685-b213-01b8b5853849)
+		(property "Reference" "R29"
+			(at 379.73 190.54 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "0R"
+			(at 379.73 203.16 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 379.73 196.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 6cffb7ab-3b28-5148-b683-3e11ce203f8a))
+		(pin "2"
+			(uuid dde3c152-98f7-52d4-9ded-8447def2cb84))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R29")
+					(unit 1))))
+		(property "Manufacturer" "Vishay"
+			(at 379.73 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "CRCW06030000Z0EA"
+			(at 379.73 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.ti.com/lit/ug/slvube3b/slvube3b.pdf"
+			(at 379.73 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Integrated buck ECO; manufacturer reference network/native package placement. No full routing, loop/PVT/thermal qualification."
+			(at 379.73 196.85 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP1")
+		(at 448.31 196.85 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid e64cc829-266c-5d4d-a45b-0d8e26e954fb)
+		(property "Reference" "TP1"
+			(at 448.31 190.54 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "VIN9"
+			(at 448.31 203.16 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP1"
+			(at 448.31 196.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 48049642-a2c1-5975-81bb-4e213fdbc7d8))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP1")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP2")
+		(at 515.62 196.85 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid 3ec24c63-c88a-536e-81c1-9eb5aa47dd6f)
+		(property "Reference" "TP2"
+			(at 515.62 190.54 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "GND"
+			(at 515.62 203.16 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP2"
+			(at 515.62 196.85 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid dab83be8-4b7f-5a4b-b980-b90c0d892ab5))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP2")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP3")
+		(at 39.37 237.49 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid 125b08e2-b222-5bf0-a3d3-b82c3b4d4932)
+		(property "Reference" "TP3"
+			(at 39.37 231.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "V3V3"
+			(at 39.37 243.8 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP3"
+			(at 39.37 237.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 12d6cc93-e350-54fc-9c1f-d6e16b60e67e))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP3")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP4")
+		(at 107.95 237.49 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid 80bec8c6-b160-5eaf-b312-7564ae659773)
+		(property "Reference" "TP4"
+			(at 107.95 231.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "V5"
+			(at 107.95 243.8 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP4"
+			(at 107.95 237.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 1f514923-2eda-5b1d-9caa-5109ce075eca))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP4")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP5")
+		(at 176.53 237.49 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid 1e797dc6-402a-5f84-98be-d5f7b93f2ef7)
+		(property "Reference" "TP5"
+			(at 176.53 231.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "BUCK_EN"
+			(at 176.53 243.8 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP5"
+			(at 176.53 237.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid c87a8933-1eab-5f07-a588-d1b5f14202ba))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP5")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_U60")
+		(at 243.84 237.49 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 7fe2814b-3381-5389-834e-9e40dc8cc6e1)
+		(property "Reference" "U60"
+			(at 243.84 228.64 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "LTC1326IS8"
+			(at 243.84 246.34 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:LTC1326IS8_PBF_S8_retained_IPC"
+			(at 243.84 237.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 437f3cd5-7c58-50c2-8938-e8c899ff6187))
+		(pin "2"
+			(uuid 766a4b6f-bad2-51e8-9937-a325580dab12))
+		(pin "3"
+			(uuid 8c85af87-e446-5f33-a02b-e9adae34acd4))
+		(pin "4"
+			(uuid 3fff309d-a5a0-5d32-865e-628678c90fb5))
+		(pin "5"
+			(uuid e6b80e3a-e059-5085-b47a-f2df2965ba7e))
+		(pin "6"
+			(uuid 89e89641-0df3-5c83-8106-600ebc542455))
+		(pin "7"
+			(uuid 6c41d46b-bc5f-5a59-80e7-16ae86bf888a))
+		(pin "8"
+			(uuid 2e11235e-93c3-5d38-b939-4519fd2ae70c))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "U60")
+					(unit 1))))
+		(property "Datasheet" "https://mds.analog.com/api/public/content/05081610_G_SO8.pdf"
+			(at 243.84 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Analog Devices"
+			(at 243.84 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "LTC1326IS8#PBF"
+			(at 243.84 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Exact S8/I/PBF selection. All eight pad IDs/anchors/stacks retained, central native import preserves actual instance/padUUID/net/pin ownership. Retained Fab rectangle is reference geometry, not a fabricated vendor solid. Courtyard Y expanded explicitly for conservative maximum body+flash plus existing0.25mm design margin; physical lead span is inside retained copper envelope. Exact procurement status remains open. Published external component thickness/package limit only. Solder lift/tilt, PCB/copper/finish tolerances and mounting process are not included; no assembled-board height guarantee or vendor 3D solid. The unchanged0.25mm courtyard allowance is a lateral design margin, not a vertical assembly qualification."
+			(at 243.84 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C60")
+		(at 312.42 237.49 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid c6acc22d-a577-5181-b1a5-596239284053)
+		(property "Reference" "C60"
+			(at 312.42 231.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 25V"
+			(at 312.42 243.8 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:CL10B104KA8NNNC_retained_0603"
+			(at 312.42 237.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid b28647c0-b70e-5e42-ac4f-b759a3d8eb1c))
+		(pin "2"
+			(uuid d4923049-b290-507b-a97c-9e10f452c284))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C60")
+					(unit 1))))
+		(property "Datasheet" "https://product.samsungsem.com/mlcc/CL10B104KA8NNN.do"
+			(at 312.42 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Samsung Electro-Mechanics"
+			(at 312.42 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "CL10B104KA8NNNC"
+			(at 312.42 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Original Murata candidate consulted but not asserted currently qualified/obsolete; Samsung MPN selected explicitly. No nominal value change, package remains0603. Original generic project copper, Fab and courtyard retained; not manufacturer-exact lands. Published external component thickness/package limit only. Solder lift/tilt, PCB/copper/finish tolerances and mounting process are not included; no assembled-board height guarantee or vendor 3D solid. The unchanged0.25mm courtyard allowance is a lateral design margin, not a vertical assembly qualification."
+			(at 312.42 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C61")
+		(at 379.73 237.49 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid d9988aeb-4d79-571e-873c-4bdde5059df6)
+		(property "Reference" "C61"
+			(at 379.73 231.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 25V"
+			(at 379.73 243.8 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:CL10B104KA8NNNC_retained_0603"
+			(at 379.73 237.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid f82d45b2-0471-5b64-b01d-65e49db20873))
+		(pin "2"
+			(uuid 16c6b8b3-accd-5cf1-96d1-66a469fd963e))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C61")
+					(unit 1))))
+		(property "Datasheet" "https://product.samsungsem.com/mlcc/CL10B104KA8NNN.do"
+			(at 379.73 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Samsung Electro-Mechanics"
+			(at 379.73 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "CL10B104KA8NNNC"
+			(at 379.73 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Original Murata candidate consulted but not asserted currently qualified/obsolete; Samsung MPN selected explicitly. No nominal value change, package remains0603. Original generic project copper, Fab and courtyard retained; not manufacturer-exact lands. Published external component thickness/package limit only. Solder lift/tilt, PCB/copper/finish tolerances and mounting process are not included; no assembled-board height guarantee or vendor 3D solid. The unchanged0.25mm courtyard allowance is a lateral design margin, not a vertical assembly qualification."
+			(at 379.73 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R100")
+		(at 448.31 237.49 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 33486714-a068-5dc3-95dd-706810c22446)
+		(property "Reference" "R60"
+			(at 448.31 231.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "60.4k 0.1% 25ppm/K"
+			(at 448.31 243.8 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:TNPW0603_Vishay_28950"
+			(at 448.31 237.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid afb21e95-fa41-534b-86c3-5c344d33b024))
+		(pin "2"
+			(uuid 86f8fdd4-d4af-57f5-9f01-4a222018a95e))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R60")
+					(unit 1))))
+		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
+			(at 448.31 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Vishay"
+			(at 448.31 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "TNPW060360K4BEEA"
+			(at 448.31 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Exact MPN format, selected resistance range, package bounds and reflow lands verified against the cached primary sources. Native pads 1/2 are non-polarized; the application producer must retain instance UUID, pad UUID, net, pin function/type, side, pose and field ownership. Manufacturer 3D model, film-temperature proof, actual lifetime environment, humidity/other drift mechanisms, supplier availability and completed assembled-board qualification remain open."
+			(at 448.31 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R101")
+		(at 515.62 237.49 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid b91217d0-f41b-5fc1-bbdd-296ca1d5218e)
+		(property "Reference" "R61"
+			(at 515.62 231.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 0.1% 25ppm/K"
+			(at 515.62 243.8 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:TNPW0603_Vishay_28950"
+			(at 515.62 237.49 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 19081274-90d8-5cfd-985b-637652004a2b))
+		(pin "2"
+			(uuid 52afeb67-f48c-5e9f-90ed-2e9daa4a3e2d))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R61")
+					(unit 1))))
+		(property "Datasheet" "https://www.vishay.com/docs/28758/tnpw_e3.pdf"
+			(at 515.62 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Vishay"
+			(at 515.62 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "TNPW060310K0BEEA"
+			(at 515.62 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Exact MPN format, selected resistance range, package bounds and reflow lands verified against the cached primary sources. Native pads 1/2 are non-polarized; the application producer must retain instance UUID, pad UUID, net, pin function/type, side, pose and field ownership. Manufacturer 3D model, film-temperature proof, actual lifetime environment, humidity/other drift mechanisms, supplier availability and completed assembled-board qualification remain open."
+			(at 515.62 237.49 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_C62")
+		(at 39.37 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 849c2be3-ea65-5009-a87a-fd73e08e7fad)
+		(property "Reference" "C62"
+			(at 39.37 273.09 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1nF C0G"
+			(at 39.37 285.71 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:CL10C102JB8NNNC_retained_0603"
+			(at 39.37 279.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 9a1c6914-336d-5d6d-8021-97e93566f251))
+		(pin "2"
+			(uuid d3d3f986-b1b6-5970-8031-9e37bdea446e))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C62")
+					(unit 1))))
+		(property "Datasheet" "https://product.samsungsem.com/mlcc/CL10C102JB8NNN.do"
+			(at 39.37 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Samsung Electro-Mechanics"
+			(at 39.37 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "CL10C102JB8NNNC"
+			(at 39.37 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Original Murata candidate consulted but not asserted currently qualified/obsolete; Samsung MPN selected explicitly. No nominal value change, package remains0603. Original generic project copper, Fab and courtyard retained; not manufacturer-exact lands. Published external component thickness/package limit only. Solder lift/tilt, PCB/copper/finish tolerances and mounting process are not included; no assembled-board height guarantee or vendor 3D solid. The unchanged0.25mm courtyard allowance is a lateral design margin, not a vertical assembly qualification."
+			(at 39.37 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R102")
+		(at 107.95 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 7c32a4fb-a1c7-5cc0-ae91-80d5f5dd5cac)
+		(property "Reference" "R62"
+			(at 107.95 273.09 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1k 1%"
+			(at 107.95 285.71 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 107.95 279.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid d6c0ad56-b027-5230-8c43-643ee8827c79))
+		(pin "2"
+			(uuid b899ea9e-6af5-56ba-99da-b42b1521a3d5))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R62")
+					(unit 1))))
+		(property "Datasheet" "https://yageogroup.com/component-documentation/download/specsheet/RC0603FR-071KL"
+			(at 107.95 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "YAGEO"
+			(at 107.95 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "RC0603FR-071KL"
+			(at 107.95 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Exact value/1%/package selected from primary part-specific manufacturer sheet. Original generic0603 lands retained. Not manufacturer-exact lands; procurement availability, resistor power/temperature and long-term drift remain subject to qualification. Published external component thickness/package limit only. Solder lift/tilt, PCB/copper/finish tolerances and mounting process are not included; no assembled-board height guarantee or vendor 3D solid. The unchanged0.25mm courtyard allowance is a lateral design margin, not a vertical assembly qualification."
+			(at 107.95 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R103")
+		(at 176.53 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 5f1e9b11-f750-5a27-af56-910d1aefecce)
+		(property "Reference" "R63"
+			(at 176.53 273.09 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 1%"
+			(at 176.53 285.71 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 176.53 279.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 49300dea-4607-5358-ad37-1a2b255c4d07))
+		(pin "2"
+			(uuid 8a96fc0a-3505-5aa6-9973-5d693d95b147))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R63")
+					(unit 1))))
+		(property "Datasheet" "https://yageogroup.com/component-documentation/download/specsheet/RC0603FR-0710KL"
+			(at 176.53 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "YAGEO"
+			(at 176.53 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "RC0603FR-0710KL"
+			(at 176.53 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Exact value/1%/package selected from primary part-specific manufacturer sheet. Original generic0603 lands retained. Not manufacturer-exact lands; procurement availability, resistor power/temperature and long-term drift remain subject to qualification. Published external component thickness/package limit only. Solder lift/tilt, PCB/copper/finish tolerances and mounting process are not included; no assembled-board height guarantee or vendor 3D solid. The unchanged0.25mm courtyard allowance is a lateral design margin, not a vertical assembly qualification."
+			(at 176.53 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R104")
+		(at 312.42 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid c9ac165e-8a32-5019-bf40-8469d8484986)
+		(property "Reference" "R64"
+			(at 312.42 273.09 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "20k 1%"
+			(at 312.42 285.71 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 312.42 279.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid de140c0c-753f-5a7d-876b-dc0a22fd8541))
+		(pin "2"
+			(uuid 21b7b419-29fb-5f25-86c0-fd4cfdf1bc92))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R64")
+					(unit 1))))
+		(property "Datasheet" "https://yageogroup.com/component-documentation/download/specsheet/RC0603FR-0720KL"
+			(at 312.42 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "YAGEO"
+			(at 312.42 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "RC0603FR-0720KL"
+			(at 312.42 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Selected 1% CONTROL resistor; retained project package lands. Electrical tolerance/low-supply screen is conditional, not final PVT qualification."
+			(at 312.42 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R105")
+		(at 379.73 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 97614285-4577-565a-a114-093188ea5bcd)
+		(property "Reference" "R65"
+			(at 379.73 273.09 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1k 1%"
+			(at 379.73 285.71 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 379.73 279.4 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid ade5a35f-cfc8-5bb7-8ea9-5c47996466fa))
+		(pin "2"
+			(uuid 06e409e6-64f8-5409-9a24-7911986cbcaf))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R65")
+					(unit 1))))
+		(property "Datasheet" "https://yageogroup.com/component-documentation/download/specsheet/RC0603FR-071KL"
+			(at 379.73 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "YAGEO"
+			(at 379.73 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "RC0603FR-071KL"
+			(at 379.73 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Selected 1% CONTROL resistor; retained project package lands. Electrical tolerance/low-supply screen is conditional, not final PVT qualification."
+			(at 379.73 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_R107")
+		(at 107.95 320.04 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 83a17c4e-ae55-5050-bf44-017318fb1a53)
+		(property "Reference" "R67"
+			(at 107.95 313.73 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 1%"
+			(at 107.95 326.35 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 107.95 320.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid f053bf0c-e836-5229-983c-356c3a4681ee))
+		(pin "2"
+			(uuid 402835b1-cc83-5a27-9ca9-57b74b0d7325))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R67")
+					(unit 1))))
+		(property "Datasheet" "https://yageogroup.com/component-documentation/download/specsheet/RC0603FR-0710KL"
+			(at 107.95 320.04 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "YAGEO"
+			(at 107.95 320.04 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "RC0603FR-0710KL"
+			(at 107.95 320.04 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Selected 1% CONTROL resistor; retained project package lands. Electrical tolerance/low-supply screen is conditional, not final PVT qualification."
+			(at 107.95 320.04 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP60")
+		(at 176.53 320.04 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid 698f0935-a4c1-5b5a-abb4-ae58f725fffe)
+		(property "Reference" "TP60"
+			(at 176.53 313.73 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "RESET_N"
+			(at 176.53 326.35 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP60"
+			(at 176.53 320.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 81e6a7dd-fd81-58fd-b07b-634639e8b1fa))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP60")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP61")
+		(at 243.84 320.04 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid 70e9bc21-bf14-5370-be61-0a08053090f2)
+		(property "Reference" "TP61"
+			(at 243.84 313.73 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "POWER_SW"
+			(at 243.84 326.35 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP61"
+			(at 243.84 320.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 651d361f-6969-5164-b27d-6a2a59562796))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP61")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP62")
+		(at 312.42 320.04 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid b8e34d0b-2cc8-5bab-9706-3eee09ad56d9)
+		(property "Reference" "TP62"
+			(at 312.42 313.73 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "RESET_SW"
+			(at 312.42 326.35 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP62"
+			(at 312.42 320.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 85f79049-01e3-5647-a483-0b33399cf610))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP62")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_F60")
+		(at 379.73 320.04 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid b17e9024-4a8e-58a9-b618-3b5fd5d3dca8)
+		(property "Reference" "F60"
+			(at 379.73 313.73 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "0451005.MRL 5A fast"
+			(at 379.73 326.35 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:F60"
+			(at 379.73 320.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid e68bd690-ec2d-5a8d-8442-b952b64d932a))
+		(pin "2"
+			(uuid 826e9fc8-6c93-5483-82c4-694998b2d6f4))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "F60")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_C65")
+		(at 107.95 360.68 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ac297f65-5ee9-5d2f-9525-aa12691eaa75)
+		(property "Reference" "C65"
+			(at 107.95 354.37 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 50V X7R 10%"
+			(at 107.95 366.99 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:CL21B104KBCNNNC"
+			(at 107.95 360.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid c9abfe55-dbe2-5379-9482-2bc6788df393))
+		(pin "2"
+			(uuid 6c485c4c-09ba-5b25-aee8-39a2e2703370))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "C65")
+					(unit 1))))
+		(property "Datasheet" "https://product.samsungsem.com/mlcc/CL21B104KBCNNN.do"
+			(at 107.95 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Samsung Electro-Mechanics"
+			(at 107.95 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "CL21B104KBCNNNC"
+			(at 107.95 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Selected 100nF50V X7R0805 MPN and manufacturer nominal lands. Nominal100nF is not a guaranteed effective100nF minimum: typical bias curves are screening data only. PVT/aging/lot capacitance, mounted bypass performance, solder process and manufacturer3D remain unqualified."
+			(at 107.95 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP63")
+		(at 176.53 360.68 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid ef31b8d7-13af-5386-ab83-f72a9bb86e8e)
+		(property "Reference" "TP63"
+			(at 176.53 354.37 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "RAW9 boundary"
+			(at 176.53 366.99 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP63"
+			(at 176.53 360.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 71511ae9-d87d-5b5b-943e-32dc9f708c05))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP63")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_TP64")
+		(at 243.84 360.68 0)
+		(unit 1)
+		(in_bom no)
+		(on_board yes)
+		(dnp yes)
+		(uuid e88fb977-8383-50d5-953e-2e5987fe4439)
+		(property "Reference" "TP64"
+			(at 243.84 354.37 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "GND boundary"
+			(at 243.84 366.99 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:TP64"
+			(at 243.84 360.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 87e3c7c5-ca8a-5fde-be9c-c992e1db0c69))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "TP64")
+					(unit 1)))))
+	(symbol
+		(lib_id "BMSX:BMSX_J60")
+		(at 312.42 360.68 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid fb289cf1-1d1f-5579-a9a9-b92bd9f25514)
+		(property "Reference" "J60"
+			(at 312.42 353.1 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "CAP CONTROLS 5pos"
+			(at 312.42 368.26 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_R10:J60"
+			(at 312.42 360.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 6632e89e-b7e1-5eb4-8ca5-607c9508c8e5))
+		(pin "2"
+			(uuid 38949509-42fc-5212-aa45-5b94be8ff4c5))
+		(pin "3"
+			(uuid 78522fbe-bea1-57d8-9303-742301ff56bd))
+		(pin "4"
+			(uuid 4047c77e-c143-5dcf-88c2-1973f60b66a5))
+		(pin "5"
+			(uuid 065654e7-cc66-5300-9acf-d236eb8be4c2))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "J60")
+					(unit 1))))
+		(property "Manufacturer" "Harwin"
+			(at 312.42 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "M20-9770542"
+			(at 312.42 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://content.harwin.com/asset/0ccbe35a-d97f-49e8-b38b-80dcafe4a7d7/DRG-00459-Technical-Drawing-Datasheet-M20-977-pdf.pdf"
+			(at 312.42 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Same-manufacturer gold male forM20-1060500/M20-1180042; existing2.54pitch/1mmholes lie inside maker1.02+/-0.05 recommendation. Retained oversized genericFab/courtyard, not exactmanufacturergeometry. Factorypin1/crimp/retention qualification remains."
+			(at 312.42 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(sheet_instances
+		(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+			(page "2")))
+	(wire
+		(pts
+			(xy 300.99 279.4)
+			(xy 293.37 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid cac4a70e-d3f3-5a65-8b34-7b72dfabda5e))
+	(global_label "RUN_REF"
+		(shape bidirectional)
+		(at 293.37 279.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7b63a117-66de-5cca-86d8-2a9c1b47fddb))
+	(wire
+		(pts
+			(xy 96.52 320.04)
+			(xy 88.9 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2cc558ad-6426-5398-9481-4d9e45d14cc9))
+	(global_label "BUCK_EN"
+		(shape bidirectional)
+		(at 88.9 320.04 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9cd6660a-3c5e-5469-947b-3d60539069ac))
+	(wire
+		(pts
+			(xy 96.52 360.68)
+			(xy 88.9 360.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid dede78e1-b046-5222-91c9-b84608de7464))
+	(global_label "VCTRL3V3"
+		(shape bidirectional)
+		(at 88.9 360.68 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5f0fa5d2-2245-54ca-a0c7-83687c006560))
+	(title_block
+		(title "R8 converters and buffered shutdown")
+		(date "2026-10-21")
+		(rev "4ASIC ECO")
+		(company "BMSX")
+		(comment 1 "ENGINEERING DESIGN - NOT FOR MANUFACTURE"))
+	(symbol
+		(lib_id "BMSX_R10:PWR_FLAG")
+		(at 69.85 391.16 0)
+		(unit 1)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid 6af32b88-e3f8-5de4-9902-c660f2afb62a)
+		(property "Reference" "#FLG0801"
+			(at 69.85 389.255 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Value" "PWR_FLAG"
+			(at 69.85 387.35 0)
+			(effects
+				(font
+					(size 1 1))))
+		(pin "1"
+			(uuid 2296a765-861b-5c65-ba6a-029ace6f885f))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "#FLG0801")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 69.85 391.16)
+			(xy 69.85 396.24))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3557725e-665e-5cc1-9e66-1a1f4a544c77))
+	(global_label "GND"
+		(shape input)
+		(at 69.85 396.24 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 57bb2d48-5a9e-5a58-8baf-53350e3f0aa7))
+	(symbol
+		(lib_id "BMSX_R10:PWR_FLAG")
+		(at 160.02 391.16 0)
+		(unit 1)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid 5ed9c41b-5511-5f78-abdb-c92a523277de)
+		(property "Reference" "#FLG0802"
+			(at 160.02 389.255 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Value" "PWR_FLAG"
+			(at 160.02 387.35 0)
+			(effects
+				(font
+					(size 1 1))))
+		(pin "1"
+			(uuid 43db02d5-e609-5cb6-8de1-b0409a0f3717))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "#FLG0802")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 160.02 391.16)
+			(xy 160.02 396.24))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1e38a3d6-430d-55ec-be8e-a092a48ba389))
+	(global_label "FUSED9"
+		(shape input)
+		(at 160.02 396.24 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 87c9d968-2190-5c89-b796-1ff066e6b1f9))
+	(symbol
+		(lib_id "BMSX_R10:PWR_FLAG")
+		(at 250.19 391.16 0)
+		(unit 1)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid 8bc681a7-5c6e-5c6e-be17-7159c7449b76)
+		(property "Reference" "#FLG0803"
+			(at 250.19 389.255 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Value" "PWR_FLAG"
+			(at 250.19 387.35 0)
+			(effects
+				(font
+					(size 1 1))))
+		(pin "1"
+			(uuid 3e77382e-1184-576d-a426-0930c95c0700))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "#FLG0803")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 250.19 391.16)
+			(xy 250.19 396.24))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid edcb4808-9b06-572b-8e83-7c597097c6d1))
+	(global_label "V3V3"
+		(shape input)
+		(at 250.19 396.24 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 91f92249-0f46-5204-8f33-a0a2870aac30))
+	(symbol
+		(lib_id "BMSX_R10:PWR_FLAG")
+		(at 340.36 391.16 0)
+		(unit 1)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid 20978a69-231f-5d14-b6eb-c34571430e5f)
+		(property "Reference" "#FLG0804"
+			(at 340.36 389.255 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Value" "PWR_FLAG"
+			(at 340.36 387.35 0)
+			(effects
+				(font
+					(size 1 1))))
+		(pin "1"
+			(uuid 9fe5c7ba-671f-5e40-ab16-7bb371eab25f))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "#FLG0804")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 340.36 391.16)
+			(xy 340.36 396.24))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 54a3c074-f3e5-5893-8411-2a8eac637823))
+	(global_label "V5"
+		(shape input)
+		(at 340.36 396.24 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3dcc3c1c-3520-5e07-a3c5-210c6333b82f))
+	(symbol
+		(lib_id "BMSX_R10:PWR_FLAG")
+		(at 430.53 391.16 0)
+		(unit 1)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid 5cd79f13-be21-591a-923c-0c79b46edff4)
+		(property "Reference" "#FLG0805"
+			(at 430.53 389.255 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Value" "PWR_FLAG"
+			(at 430.53 387.35 0)
+			(effects
+				(font
+					(size 1 1))))
+		(pin "1"
+			(uuid c645569f-0bc1-5899-a02c-c583fcb1f0de))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "#FLG0805")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 430.53 391.16)
+			(xy 430.53 396.24))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5197e6c2-5145-5d0e-8ffe-14341b23500d))
+	(global_label "A_SGND"
+		(shape input)
+		(at 430.53 396.24 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ad8ebc4f-0ad4-5efc-94e4-bce43b9ef2b4))
+	(symbol
+		(lib_id "BMSX_R10:PWR_FLAG")
+		(at 520.7 391.16 0)
+		(unit 1)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid 26029042-0ec3-563a-ace8-aebd3a32c4fe)
+		(property "Reference" "#FLG0806"
+			(at 520.7 389.255 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Value" "PWR_FLAG"
+			(at 520.7 387.35 0)
+			(effects
+				(font
+					(size 1 1))))
+		(pin "1"
+			(uuid 9d46c8f8-60f1-550e-ae21-1d2c307267b4))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "#FLG0806")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 520.7 391.16)
+			(xy 520.7 396.24))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2508453f-3838-576b-9328-a93853354fd8))
+	(global_label "B_SGND"
+		(shape input)
+		(at 520.7 396.24 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e78dd82a-7ef9-5f46-8379-be27fb740694))
+	(symbol
+		(lib_id "BMSX:BMSX_R107")
+		(at 39.37 320.04 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 481d2c92-c91f-52d6-8aab-3f803a2de4a1)
+		(property "Reference" "R68"
+			(at 39.37 313.73 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 1%"
+			(at 39.37 326.35 0)
+			(effects
+				(font
+					(size 1.1 1.1))))
+		(property "Footprint" "BMSX_POWER:Yageo_RC0603_retained"
+			(at 39.37 320.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)) hide))
+		(pin "1"
+			(uuid 278144f3-7860-592b-914d-02126f1fb7f0))
+		(pin "2"
+			(uuid 6d66e435-0513-58cd-b7f3-05967189922d))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "R68")
+					(unit 1))))
+		(property "Datasheet" "https://yageogroup.com/component-documentation/download/specsheet/RC0603FR-0710KL"
+			(at 39.37 320.04 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "YAGEO"
+			(at 39.37 320.04 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "RC0603FR-0710KL"
+			(at 39.37 320.04 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Qualification" "Selected 1% CONTROL resistor; retained project package lands. Electrical tolerance/low-supply screen is conditional, not final PVT qualification."
+			(at 39.37 320.04 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes))))
+	(wire
+		(pts
+			(xy 27.94 320.04)
+			(xy 22.86 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a6a2494d-8e2b-5f7e-9a48-7210e2c92598))
+	(global_label "BUCK_EN"
+		(shape bidirectional)
+		(at 22.86 320.04 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a20452e9-54a2-5d00-80b3-e792ae6316cc))
+	(wire
+		(pts
+			(xy 50.8 320.04)
+			(xy 55.88 320.04))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b5588df3-98d9-57bb-b443-b34c6edc5bb7))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 55.88 320.04 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1a5a8ce6-806e-5dbb-b67a-c37cf5d17a8f))
+	(wire
+		(pts
+			(xy 30.48 30.48)
+			(xy 22.86 30.48))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 38b0534a-855f-579d-87dc-59694a1e19cd))
+	(global_label "BUCK_EN"
+		(shape bidirectional)
+		(at 22.86 30.48 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 709d2b10-be6b-564b-b467-d8af308e0e80))
+	(wire
+		(pts
+			(xy 48.26 35.56)
+			(xy 55.88 35.56))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 11a2c61d-c583-50a9-a202-d0f8b5989cba))
+	(global_label "A_FB"
+		(shape bidirectional)
+		(at 55.88 35.56 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b0063610-4738-52eb-aa09-4d6a50aaa252))
+	(wire
+		(pts
+			(xy 36.83 41.91)
+			(xy 29.21 41.91))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 63195206-00eb-5dbc-a996-3bd17d4f8f0c))
+	(global_label "A_SGND"
+		(shape bidirectional)
+		(at 29.21 41.91 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 59b5c4dc-7892-581d-a031-7b1357971be2))
+	(no_connect
+		(at 48.26 33.02)
+		(uuid 8591cd76-0880-5ccf-a568-59bdd98f8f39))
+	(no_connect
+		(at 30.48 35.56)
+		(uuid f9ae50a8-ed30-5ef8-9281-ed8ad651b22f))
+	(wire
+		(pts
+			(xy 48.26 30.48)
+			(xy 55.88 30.48))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 881b4f9e-5aaf-5f59-82bd-fdaf95960005))
+	(global_label "A_SW"
+		(shape bidirectional)
+		(at 55.88 30.48 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ccb355dc-5ecf-5cd1-8b1f-c35ac8c187b2))
+	(wire
+		(pts
+			(xy 48.26 27.94)
+			(xy 55.88 27.94))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8e93b5d9-257a-551e-b99d-45499932f395))
+	(global_label "A_BOOT"
+		(shape bidirectional)
+		(at 55.88 27.94 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 0bd49380-aa5a-5053-90c1-50ddd6377f9b))
+	(wire
+		(pts
+			(xy 30.48 27.94)
+			(xy 22.86 27.94))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5af3741b-7ef0-5757-8e9e-763c51ec49a2))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 22.86 27.94 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b95fd3e1-1b1c-5377-aad6-1789508d19c1))
+	(wire
+		(pts
+			(xy 41.91 41.91)
+			(xy 49.53 41.91))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d026dd97-037b-5c4f-b8dc-078e5ef7e670))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 49.53 41.91 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a5a6171a-2441-55c6-8625-c6deef8fef9a))
+	(wire
+		(pts
+			(xy 30.48 33.02)
+			(xy 22.86 33.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 00b3af3d-cec3-5846-83ec-8c13a4bf1c05))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 22.86 33.02 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e88d0084-1fd3-53d2-bea9-f17162ee916a))
+	(wire
+		(pts
+			(xy 300.99 33.02)
+			(xy 293.37 33.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a5a46e55-74f9-5ec2-90fb-7521e4fe4c43))
+	(global_label "A_SW"
+		(shape bidirectional)
+		(at 293.37 33.02 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2312a4ca-127e-5c78-9acc-934c75bd4109))
+	(wire
+		(pts
+			(xy 323.85 33.02)
+			(xy 331.47 33.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9a143443-ee26-5810-8787-7fb4212a3b8c))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 331.47 33.02 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e342a675-3f3d-594d-aeee-6f597f22ab7f))
+	(wire
+		(pts
+			(xy 436.88 33.02)
+			(xy 429.26 33.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 99e35f70-5b8a-5de0-a04a-2e94914ae88c))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 429.26 33.02 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8c703f90-4332-5084-95dc-2a009e64bbc2))
+	(wire
+		(pts
+			(xy 459.74 33.02)
+			(xy 467.36 33.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4e60c1d2-7ccf-5100-b67d-25ebe5458101))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 467.36 33.02 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6c6d9a52-692a-502f-9c1f-aed3b4069a38))
+	(wire
+		(pts
+			(xy 436.88 73.66)
+			(xy 429.26 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0e51e10d-485e-5b9f-8415-5d31f3bc81cb))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 429.26 73.66 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8cda93df-75d9-52df-99ad-4049b95bb4f4))
+	(wire
+		(pts
+			(xy 459.74 73.66)
+			(xy 467.36 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 531ba088-c010-5849-b20c-a9086baca8c3))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 467.36 73.66 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid bba37037-f8f3-5b62-b5a9-1f9513d6c7a1))
+	(wire
+		(pts
+			(xy 504.19 33.02)
+			(xy 496.57 33.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b2928120-9e14-5628-b740-00cfbc03140a))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 496.57 33.02 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid efcdf90b-0226-5bf3-ba7e-0aa12da711ff))
+	(wire
+		(pts
+			(xy 527.05 33.02)
+			(xy 534.67 33.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e9718dfc-1b96-595c-a446-f92642310842))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 534.67 33.02 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid fb96a303-528f-5dd5-adce-469e12bba55e))
+	(wire
+		(pts
+			(xy 27.94 73.66)
+			(xy 20.32 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 14381165-38f8-5180-9601-a3e56ec28a4b))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 20.32 73.66 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 00eddece-7d91-5a60-8eee-37e7f87e36ff))
+	(wire
+		(pts
+			(xy 50.8 73.66)
+			(xy 58.42 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 859fdc51-aec1-51d5-b0a3-fed8c9cf0e08))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 58.42 73.66 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b5911906-f8c4-5490-8871-375cc277864b))
+	(wire
+		(pts
+			(xy 504.19 73.66)
+			(xy 496.57 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c05e49e7-ca07-5003-834b-482926a42e43))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 496.57 73.66 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 25c8ac03-79f5-53a4-a0b1-e2f802a9fced))
+	(wire
+		(pts
+			(xy 527.05 73.66)
+			(xy 534.67 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8651e380-77a1-5152-bfb7-6f11190ac03b))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 534.67 73.66 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 55b0454a-66c8-5046-91b3-dfb1410042bc))
+	(wire
+		(pts
+			(xy 96.52 73.66)
+			(xy 88.9 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fce17e18-bf54-5fa5-9195-3be35cd89777))
+	(global_label "A_BOOT_CAP"
+		(shape bidirectional)
+		(at 88.9 73.66 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 0d50e82c-8bf6-5649-add7-4672ab808d3e))
+	(wire
+		(pts
+			(xy 119.38 73.66)
+			(xy 127.0 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d20edf60-fe13-5f28-a5fe-6b4e25c8e5ad))
+	(global_label "A_SW"
+		(shape bidirectional)
+		(at 127.0 73.66 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f85135e4-6691-5624-b798-737724252d14))
+	(wire
+		(pts
+			(xy 232.41 73.66)
+			(xy 224.79 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a7858a2f-393c-538d-8b11-f4e35ca79ab1))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 224.79 73.66 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f741affb-30a0-5475-8e4f-6c2250c45c38))
+	(wire
+		(pts
+			(xy 255.27 73.66)
+			(xy 262.89 73.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8097f210-e207-5fc6-a1fe-3bf9daa24b62))
+	(global_label "A_FB"
+		(shape bidirectional)
+		(at 262.89 73.66 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f6542809-7631-5554-b9a6-a396c44e837f))
+	(wire
+		(pts
+			(xy 27.94 115.57)
+			(xy 20.32 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fa6a5441-4f8f-5e01-bba1-7c57b2ed7fca))
+	(global_label "A_FB"
+		(shape bidirectional)
+		(at 20.32 115.57 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 77882bcf-4b30-5497-9d9d-fa6d2189fd05))
+	(wire
+		(pts
+			(xy 50.8 115.57)
+			(xy 58.42 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6acee660-97bc-5226-9f2a-0d61c2d9fbdf))
+	(global_label "A_SGND"
+		(shape bidirectional)
+		(at 58.42 115.57 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b0eb2833-b869-51f5-b3eb-d01ad80eaf60))
+	(wire
+		(pts
+			(xy 96.52 115.57)
+			(xy 88.9 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8a4873db-0b95-5c36-a743-187152dcb60c))
+	(global_label "A_BOOT"
+		(shape bidirectional)
+		(at 88.9 115.57 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7d8761cb-9a1d-5075-8f09-62584bc6a9c0))
+	(wire
+		(pts
+			(xy 119.38 115.57)
+			(xy 127.0 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 26b98853-1b05-5bd7-84a7-e8b0548aa583))
+	(global_label "A_BOOT_CAP"
+		(shape bidirectional)
+		(at 127.0 115.57 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5902663a-5658-57e5-aa72-789b6181f265))
+	(wire
+		(pts
+			(xy 165.1 115.57)
+			(xy 157.48 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c8294dcb-9383-5f06-a1b4-22515c822923))
+	(global_label "A_SGND"
+		(shape bidirectional)
+		(at 157.48 115.57 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 997cfa9a-129f-5857-8482-fa4171fbe323))
+	(wire
+		(pts
+			(xy 187.96 115.57)
+			(xy 195.58 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7edfbcc1-e1cd-5d94-9dbf-8ba5941f3d42))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 195.58 115.57 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid bdd54df6-48c1-5609-a431-a21b83c13d57))
+	(wire
+		(pts
+			(xy 234.95 113.03)
+			(xy 227.33 113.03))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid bfd3e1d7-7a84-520a-a70e-d33b322bf9ad))
+	(global_label "BUCK_EN"
+		(shape bidirectional)
+		(at 227.33 113.03 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 05f4eb1a-78e4-500b-9f3b-0116b994602e))
+	(wire
+		(pts
+			(xy 252.73 118.11)
+			(xy 260.35 118.11))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 010eeb01-c40a-5a31-86c3-2d67f028f35a))
+	(global_label "B_FB"
+		(shape bidirectional)
+		(at 260.35 118.11 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1d4d34ac-688a-5763-a41a-a89c1a3fdc66))
+	(wire
+		(pts
+			(xy 241.3 124.46)
+			(xy 233.68 124.46))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7066a0a7-b516-5e16-b6c8-e9614215de6c))
+	(global_label "B_SGND"
+		(shape bidirectional)
+		(at 233.68 124.46 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 687f12a2-97dc-513e-a981-bac4f521899f))
+	(no_connect
+		(at 252.73 115.57)
+		(uuid cb067d4c-3cf3-5bb3-a69e-b9dca82c920b))
+	(no_connect
+		(at 234.95 118.11)
+		(uuid c5cf7dbb-1ecf-5f70-9bae-709acf9d1a83))
+	(wire
+		(pts
+			(xy 252.73 113.03)
+			(xy 260.35 113.03))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fa6e8101-da53-50b6-9589-db797b5da1c1))
+	(global_label "B_SW"
+		(shape bidirectional)
+		(at 260.35 113.03 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1b36da82-9a53-5e8f-8a8a-919027f38a67))
+	(wire
+		(pts
+			(xy 252.73 110.49)
+			(xy 260.35 110.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 94ba26ad-f698-5210-9dc3-0e253d8401b2))
+	(global_label "B_BOOT"
+		(shape bidirectional)
+		(at 260.35 110.49 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 0ad80355-5dc7-5b9e-b0e0-51371f181e1f))
+	(wire
+		(pts
+			(xy 234.95 110.49)
+			(xy 227.33 110.49))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7a0439ac-d708-5363-a71b-4f0dbb8aa7c9))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 227.33 110.49 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9300115d-53cc-5a12-a735-5bd8402952ae))
+	(wire
+		(pts
+			(xy 246.38 124.46)
+			(xy 254.0 124.46))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7e514387-e0df-5138-80ba-eacf3494fe89))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 254.0 124.46 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a2c4c1fb-65e1-553b-a0e6-4c8313ca7082))
+	(wire
+		(pts
+			(xy 234.95 115.57)
+			(xy 227.33 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d937cc79-de29-56af-9ea9-e6a88844457b))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 227.33 115.57 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7d868cfb-9297-5920-b30b-4bba72565df8))
+	(wire
+		(pts
+			(xy 504.19 115.57)
+			(xy 496.57 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d974bb81-b2c2-5ca2-ab3c-b2c8734f985e))
+	(global_label "B_SW"
+		(shape bidirectional)
+		(at 496.57 115.57 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a27a9199-9b70-5a2c-b929-3a19b209f836))
+	(wire
+		(pts
+			(xy 527.05 115.57)
+			(xy 534.67 115.57))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3665f699-edea-5b7a-a07c-44a3fde4c48a))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 534.67 115.57 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b034da45-0329-5ad1-b32c-604d3329b9d8))
+	(wire
+		(pts
+			(xy 96.52 156.21)
+			(xy 88.9 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid da09495e-6fa4-5655-a447-5a51af9cb312))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 88.9 156.21 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid be5ab97e-3077-5c16-a1c8-57c455357450))
+	(wire
+		(pts
+			(xy 119.38 156.21)
+			(xy 127.0 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2311b8c0-3a94-59e7-b80b-f2a6ce49cc19))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 127.0 156.21 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4434973b-83c2-536b-95f0-dcff9ca90121))
+	(wire
+		(pts
+			(xy 96.52 196.85)
+			(xy 88.9 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 40687955-6c35-5c32-a2e3-4409cef5fd8a))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 88.9 196.85 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid fb68d569-b219-5a9f-a54e-d3fce60dec72))
+	(wire
+		(pts
+			(xy 119.38 196.85)
+			(xy 127.0 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 16046c69-a9e0-5360-95ab-71efebb9514b))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 127.0 196.85 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f7ae89f9-107d-5354-a588-9dbb3903d865))
+	(wire
+		(pts
+			(xy 165.1 156.21)
+			(xy 157.48 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5534a9a3-0ad7-5846-8a8a-b42d01207bc7))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 157.48 156.21 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 19206709-c6d4-57fb-b00c-eabaab88f16c))
+	(wire
+		(pts
+			(xy 187.96 156.21)
+			(xy 195.58 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 592dabbe-4e57-53b3-9fde-e5ea815beb95))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 195.58 156.21 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 537defac-4f73-53f0-8ed9-9c60633ab1c2))
+	(wire
+		(pts
+			(xy 232.41 156.21)
+			(xy 224.79 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 426fec78-4e95-517e-bf52-44d40f58f3bc))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 224.79 156.21 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ab16e381-a21d-59a6-b77a-29959c5013ec))
+	(wire
+		(pts
+			(xy 255.27 156.21)
+			(xy 262.89 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 67b5612d-e79d-57fd-aea1-65bdc95a05a8))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 262.89 156.21 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9e99fa76-46d4-5ecb-a792-d7e8dee97a6a))
+	(wire
+		(pts
+			(xy 165.1 196.85)
+			(xy 157.48 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 619a3610-8f31-5b05-a6ce-ac39480cfb61))
+	(global_label "VIN9"
+		(shape bidirectional)
+		(at 157.48 196.85 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 37fa1386-8aa9-57a4-b5e0-9444f0be84be))
+	(wire
+		(pts
+			(xy 187.96 196.85)
+			(xy 195.58 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4978f86d-99cf-5dc7-bb99-675d93cce4d4))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 195.58 196.85 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid de3a6e4d-7f09-5157-8ca3-ed7bfcc8ce9a))
+	(wire
+		(pts
+			(xy 300.99 156.21)
+			(xy 293.37 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b7446e17-db62-5fc7-a225-e7a309963d4e))
+	(global_label "B_BOOT_CAP"
+		(shape bidirectional)
+		(at 293.37 156.21 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9b0b1685-3b3a-598c-8e94-152f4e045aa4))
+	(wire
+		(pts
+			(xy 323.85 156.21)
+			(xy 331.47 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 18a38464-753a-5fb7-bf56-06d88238fd6e))
+	(global_label "B_SW"
+		(shape bidirectional)
+		(at 331.47 156.21 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 134a2485-6cb5-539a-9603-37f215bb5ff4))
+	(wire
+		(pts
+			(xy 436.88 156.21)
+			(xy 429.26 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 46a4b2c8-2712-5de2-a5f5-6dec5d264e19))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 429.26 156.21 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7b32c10e-7557-5169-a070-b65f8d9db5e1))
+	(wire
+		(pts
+			(xy 459.74 156.21)
+			(xy 467.36 156.21))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a9a0ab71-9ecf-5805-905c-1cdb1f37f8bc))
+	(global_label "B_FB"
+		(shape bidirectional)
+		(at 467.36 156.21 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 42264307-a430-5df9-b876-0c5dcf06c417))
+	(wire
+		(pts
+			(xy 232.41 196.85)
+			(xy 224.79 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 18f161da-9c37-5976-bbbb-694e373ab506))
+	(global_label "B_FB"
+		(shape bidirectional)
+		(at 224.79 196.85 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4a9b62f9-11b0-5656-92e7-c55d8ff7d298))
+	(wire
+		(pts
+			(xy 255.27 196.85)
+			(xy 262.89 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2a52b851-2090-58de-8d40-2f16e6292527))
+	(global_label "B_SGND"
+		(shape bidirectional)
+		(at 262.89 196.85 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d1c09205-6eef-57c9-8436-6918cac70802))
+	(wire
+		(pts
+			(xy 300.99 196.85)
+			(xy 293.37 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2625024d-f1d3-5b16-91b2-51bdc5bbfa6c))
+	(global_label "B_BOOT"
+		(shape bidirectional)
+		(at 293.37 196.85 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4e37177d-2150-5835-97f3-7800c08dcbf6))
+	(wire
+		(pts
+			(xy 323.85 196.85)
+			(xy 331.47 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7e367288-15f5-5fc4-b55d-907355d9c4c2))
+	(global_label "B_BOOT_CAP"
+		(shape bidirectional)
+		(at 331.47 196.85 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 94fece24-c03e-5718-ba3b-105500221dbc))
+	(wire
+		(pts
+			(xy 368.3 196.85)
+			(xy 360.68 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e234ce44-eb61-5533-9b5e-369013513a5c))
+	(global_label "B_SGND"
+		(shape bidirectional)
+		(at 360.68 196.85 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b1d49dac-ce3f-5803-9183-c484055d5c7d))
+	(wire
+		(pts
+			(xy 391.16 196.85)
+			(xy 398.78 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 99fc4499-6508-5b57-9876-77bddf5818a8))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 398.78 196.85 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 64ef06bb-4c41-55b9-91fb-8f955a131a9d))
+	(text "Integrated synchronous bucks: U20 V3V3/2.2uH, U21 V5/3.3uH. TI TPS56637 Table4 and EVM-029 starting network.\nBUCK_EN requires closed RUN AND eFuse PG; TLV7031 POR output LOW. U60 independently supervises rails/reset.\nR24/R29 are quiet AGND ground-star straps; do not carry switched-current returns through them. Effective output C must remain20..100uF.\nPlaced-package engineering proposal. No full copper routing, fabrication release or prototype/PVT/thermal qualification."
+		(at 285.75 16.51 0)
+		(effects
+			(font
+				(size 1.1 1.1)))
+		(uuid 36729dad-0742-5946-8ebd-66301d632e8b))
+	(symbol
+		(lib_id "BMSX_POWER:FAN_5V_2")
+		(at 448.31 360.68 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 3a22855f-33ad-5412-8ebc-d828b8fe8dbc)
+		(property "Reference" "J70"
+			(at 448.31 355.6 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "M20-8770242"
+			(at 448.31 365.76 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_HEADER:Harwin_M20-8770242"
+			(at 448.31 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Manufacturer" "Harwin"
+			(at 448.31 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "MPN" "M20-8770242"
+			(at 448.31 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://content.harwin.com/asset/78040b49-a9b7-410c-b55a-a933379a0337/DRG-00409-Technical-Drawing-Datasheet-M20-877-pdf.pdf"
+			(at 448.31 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Function" "V5/GND two-fan supply;0.4A continuous allocation,0.64A aggregate startup procurement limit; no PWM/tach pins"
+			(at 448.31 360.68 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(pin "1"
+			(uuid 4d111372-a31b-5bf5-a745-4ff2284d37dd))
+		(pin "2"
+			(uuid 0c10ba65-3d60-595b-b43a-ebac946dd321))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5f4ef8ac-1fd8-5cc9-af01-5e1fb5f9abde"
+					(reference "J70")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 443.23 359.41)
+			(xy 435.61 359.41))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 61afd2a8-369d-5bff-a1f2-44a964e36364))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 435.61 359.41 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 71b6611d-3cda-50a4-9fa0-06cfaca3d595))
+	(wire
+		(pts
+			(xy 443.23 361.95)
+			(xy 435.61 361.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5936c8f8-bc57-5840-ac97-94fba14e62ee))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 435.61 361.95 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7af009c8-673c-5bf1-8769-0f514fb1478a)))

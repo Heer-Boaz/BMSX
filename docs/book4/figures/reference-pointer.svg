@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+<title id="title">Proposed wired BMSX pointer</title>
+<desc id="desc">A schematic mouse-like pointing accessory with a cable to one BMSX pad socket, primary and secondary buttons, and a scroll wheel. The drawing is a concept, not a mechanical or compatibility specification.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#31566f"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.title{font-size:30px;font-weight:bold}.small{font-size:18px}.body{fill:#e0ded6;stroke:#465861;stroke-width:4}.dark{fill:#313d45;stroke:#172b38;stroke-width:3}.control{fill:#657b88;stroke:#253e4e;stroke-width:3}.panel{fill:#f7f9fa;stroke:#a2b3bc;stroke-width:2}.line{fill:none;stroke:#31566f;stroke-width:2.5;marker-end:url(#arrow)}</style>
+</defs>
+<rect width="1200" height="650" fill="white"/>
+<text x="48" y="52" class="title">Wired BMSX pointer — concept</text>
+<text x="48" y="84" class="small">Schematic accessory illustration; not a mechanical drawing or compatibility specification.</text>
+<rect x="40" y="110" width="1120" height="445" rx="12" class="panel"/>
+<path d="M600 165 C600 135 730 130 805 145" fill="none" stroke="#313d45" stroke-width="9" stroke-linecap="round"/>
+<path d="M805 145 H950" class="line"/><text x="966" y="152" class="small">To one BMSX pad port</text>
+<path d="M600 165 C492 165 438 235 438 352 C438 470 494 515 600 515 C706 515 762 470 762 352 C762 235 708 165 600 165Z" class="body"/>
+<path d="M600 165 V288 M450 288 H750" fill="none" stroke="#465861" stroke-width="3"/>
+<rect x="585" y="214" width="30" height="70" rx="15" class="control"/>
+<path d="M470 230 H315" class="line"/><text x="299" y="237" text-anchor="end" class="small">Primary button</text>
+<path d="M730 230 H885" class="line"/><text x="901" y="237" class="small">Secondary button</text>
+<path d="M615 255 H855 V340" class="line"/><text x="872" y="348" class="small">Scroll wheel</text>
+<text x="48" y="598" class="small">The pointer shares the four BMSX pad ports; it does not add a fifth socket.</text>
+<text x="48" y="627" class="small">A separate pointer occupies one port. Compatible games use the pointer record.</text>
+</svg>

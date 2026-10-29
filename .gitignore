@@ -109,3 +109,11 @@ carts/pietious/res/_ignore/**
 
 # Workspace artifact/job store, independent of dist exports
 /.bmsx/
+
+# Hardware source toolchain and generated output
+!/hardware/requirements.txt
+!/hardware/third_party/dawson_fpu/COPYING.txt
+!/hardware/third_party/dawson_fpu/ORIGIN.txt
+/hardware/.venv/
+/hardware/build/
+/hardware/**/*.kicad_prl

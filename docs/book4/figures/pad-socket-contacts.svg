@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 520" role="img" aria-labelledby="title desc">
+<title id="title">BMSX pad socket: contact positions</title>
+<desc id="desc">Schematic view facing the console socket. Contacts 1 to 5 form the lower row from left to right; contacts 6 to 9 form the upper row, staggered between them. An indexing rib projects into the opening from the right.</desc>
+<style>text{font-family:Arial,sans-serif;fill:#183044;font-size:22px}.title{font-size:30px;font-weight:bold}.small{font-size:19px}.num{font-size:24px;font-weight:bold}.housing{fill:#29333a;stroke:#182d3a;stroke-width:4}.opening{fill:#111a20;stroke:#7b8e99;stroke-width:3}.contact{fill:#d7c48c;stroke:#9a864e;stroke-width:1}</style>
+<rect width="1000" height="520" fill="white"/>
+<text x="50" y="55" class="title">Pad socket — contact positions</text>
+<text x="50" y="91" class="small">View facing the socket on the front of the console</text>
+<rect x="185" y="135" width="630" height="205" rx="22" class="housing"/>
+<rect x="225" y="163" width="550" height="150" rx="10" class="opening"/>
+<path d="M775 217 H756 V254 H775" fill="#29333a" stroke="#7b8e99" stroke-width="3"/>
+<circle cx="320" cy="272" r="9" class="contact"/><text x="320" y="381" text-anchor="middle" class="num">1</text>
+<circle cx="410" cy="272" r="9" class="contact"/><text x="410" y="381" text-anchor="middle" class="num">2</text>
+<circle cx="500" cy="272" r="9" class="contact"/><text x="500" y="381" text-anchor="middle" class="num">3</text>
+<circle cx="590" cy="272" r="9" class="contact"/><text x="590" y="381" text-anchor="middle" class="num">4</text>
+<circle cx="680" cy="272" r="9" class="contact"/><text x="680" y="381" text-anchor="middle" class="num">5</text>
+<circle cx="365" cy="204" r="9" class="contact"/><text x="365" y="124" text-anchor="middle" class="num">6</text>
+<circle cx="455" cy="204" r="9" class="contact"/><text x="455" y="124" text-anchor="middle" class="num">7</text>
+<circle cx="545" cy="204" r="9" class="contact"/><text x="545" y="124" text-anchor="middle" class="num">8</text>
+<circle cx="635" cy="204" r="9" class="contact"/><text x="635" y="124" text-anchor="middle" class="num">9</text>
+<text x="50" y="441" class="small">Contact numbers correspond to the assignment in the following table.</text>
+<text x="50" y="474" class="small">Illustrative positions and right-hand indexing rib; housing shape is schematic.</text>
+</svg>

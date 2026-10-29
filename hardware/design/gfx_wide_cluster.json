@@ -1,0 +1,7 @@
+{
+  "scope": "Unrouted placement study, not an ASIC package, footprint or assembly qualification",
+  "gfx_body_reservation_mm": [40, 40],
+  "vram_reservation_mm": [14, 24],
+  "underside_reservation_y_mm": 50,
+  "marker_thickness_mm": 0.05
+}

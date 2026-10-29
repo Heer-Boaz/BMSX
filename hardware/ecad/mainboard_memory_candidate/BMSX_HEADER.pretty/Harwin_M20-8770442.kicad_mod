@@ -1,0 +1,181 @@
+(footprint "Harwin_M20-8770442"
+	(layer "F.Cu")
+	(descr "Harwin M20-8770442; nominal manufacturer body envelope; 0.64 mm square gold mating posts, 5.80 +/-0.20 mm exposed; manufacturer 9.93 mm nominal above PCB. Existing lands exactly match drawing.")
+	(tags "Surface mounted pin header SMD 1x04 2.54mm single row style1 pin1 left")
+	(property "Reference" "REF**"
+		(at 0 0 0)
+		(layer "F.SilkS")
+		(uuid "1d5dff92-3638-46ea-accf-889e086fbcc8")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Value" "M20-8770442"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "e3af04e2-fe4a-4042-92ee-8467947c48a7")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Datasheet" "https://content.harwin.com/asset/78040b49-a9b7-410c-b55a-a933379a0337/DRG-00409-Technical-Drawing-Datasheet-M20-877-pdf.pdf"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "626d940f-197c-4316-a403-24246a27cf8a")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(property "Description" "Harwin M20-8770442; nominal manufacturer body envelope; 0.64 mm square gold mating posts, 5.80 +/-0.20 mm exposed; manufacturer 9.93 mm nominal above PCB. Existing lands exactly match drawing."
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "182345ea-0824-4b4f-b11e-b7bbe60bd8aa")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(attr smd)
+	(fp_line
+		(start -1.38 -5.19)
+		(end -1.38 -4.62)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "df349296-f30d-4aee-aba9-8e065dd5a48b"))
+	(fp_line
+		(start -1.38 -5.19)
+		(end 1.38 -5.19)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "96597086-d7cb-442c-b0f6-c0731431f9b9"))
+	(fp_line
+		(start -1.38 -4.62)
+		(end -2.85 -4.62)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "ac7ad1cb-a086-40d8-afc9-0f7486365bab"))
+	(fp_line
+		(start -1.38 -3)
+		(end -1.38 0.46)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "f9ed1dd2-f011-4755-8e36-fd0c540bc797"))
+	(fp_line
+		(start -1.38 2.08)
+		(end -1.38 5.19)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "8d03928f-b286-403b-904d-847ac361968e"))
+	(fp_line
+		(start -1.38 5.19)
+		(end 1.38 5.19)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "a2af1dc1-f09f-4c55-8723-8618daab0aed"))
+	(fp_line
+		(start 1.38 -4.62)
+		(end 1.38 -2.08)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "7a5248ea-66a1-4642-919b-22bc65c0ccf9"))
+	(fp_line
+		(start 1.38 -0.46)
+		(end 1.38 3)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "da128426-730b-4b18-b9c9-c13e61b77853"))
+	(fp_line
+		(start 1.38 4.62)
+		(end 1.38 5.19)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "99af6826-17f8-474d-bbf9-dc567677af62"))
+	(fp_rect
+		(start -3.41 -5.58)
+		(end 3.41 5.58)
+		(stroke
+			(width 0.05)
+			(type solid))
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "1f74530d-1617-418a-a5c1-2dccbd03cb50"))
+	(fp_text user "${REFERENCE}"
+		(at 0 0 90)
+		(layer "F.Fab")
+		(uuid "09a4bbd7-a1f0-410d-8394-2d6fe5521706")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(pad "1" smd rect
+		(at -1.655 -3.81)
+		(size 2.51 1)
+		(layers "F.Cu" "F.Mask" "F.Paste"))
+	(pad "2" smd rect
+		(at 1.655 -1.27)
+		(size 2.51 1)
+		(layers "F.Cu" "F.Mask" "F.Paste"))
+	(pad "3" smd rect
+		(at -1.655 1.27)
+		(size 2.51 1)
+		(layers "F.Cu" "F.Mask" "F.Paste"))
+	(pad "4" smd rect
+		(at 1.655 3.81)
+		(size 2.51 1)
+		(layers "F.Cu" "F.Mask" "F.Paste"))
+	(embedded_fonts no)
+	(fp_rect
+		(start -1.25 -5.08)
+		(end 1.25 5.08)
+		(stroke
+			(width 0.1)
+			(type solid))
+		(fill none)
+		(layer "F.Fab"))
+	(property "Manufacturer" "Harwin"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1))))
+	(property "MPN" "M20-8770442"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1))))
+	(property "Function" "Keyboard harness; DATA/GND/+5V/CLK; unpolarised four-way crimp-wire interface"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1))))
+	(property "Qualification" "Exact manufacturer land pattern and mating interface; unpolarised. No assembled-harness/process qualification."
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1)))))

@@ -1,0 +1,164 @@
+{
+  "revision": "BMSX-MECH-A04",
+  "units": "mm",
+  "case": {
+    "width": 300.0,
+    "depth": 210.0,
+    "body_top": 54.0,
+    "deck_top": 60.0,
+    "wall": 2.4,
+    "corner_radius": 10.0,
+    "split_z": 16.0,
+    "seam_gap": 0.3,
+    "foot_height": 6.0
+  },
+  "pcb": {
+    "x": 20.0,
+    "y": 27.0,
+    "width": 260.0,
+    "depth": 145.0,
+    "bottom_z": 10.0,
+    "thickness": 1.6
+  },
+  "cartridges": {
+    "centers_x": [
+      85.0,
+      215.0
+    ],
+    "center_y": 149.0,
+    "shell_width": 110.0,
+    "shell_depth": 18.0,
+    "shell_height": 75.0,
+    "shell_bottom_z": 34.4,
+    "tongue_width": 80.8,
+    "tongue_thickness": 1.6,
+    "tongue_tip_z": 21.2,
+    "connector_length": 99.95,
+    "connector_width": 9.4,
+    "connector_height": 15.24,
+    "pin_below_pcb": 2.85,
+    "guide_clearance_each_side": 0.6,
+    "tail_from_seating_plane": 4.45,
+    "tail_row_spacing": 5.08
+  },
+  "cooling": {
+    "floor_slots": 36,
+    "floor_slot_width": 3.0,
+    "floor_slot_length": 40.0,
+    "side_slots_each": 24,
+    "side_slot_width": 3.0,
+    "side_slot_length": 10.0,
+    "front_exhaust_slots": 48,
+    "front_exhaust_width": 3.0,
+    "front_exhaust_length": 42.0,
+    "rear_exhaust_slots": 40,
+    "rear_exhaust_width": 3.0,
+    "rear_exhaust_length": 20.0,
+    "heatsink_x": 85.0,
+    "heatsink_y": 48.0,
+    "heatsink_width": 140.0,
+    "heatsink_depth": 72.0,
+    "heatsink_bottom_z": 16.7,
+    "heatsink_base": 3.0,
+    "heatsink_fin_height": 26.0,
+    "heatsink_fin_thickness": 1.5,
+    "heatsink_fin_count": 19,
+    "front_exhaust_center_y": 93.0
+  },
+  "pcb_mounts": [
+    [
+      26.0,
+      33.0
+    ],
+    [
+      150.0,
+      33.0
+    ],
+    [
+      274.0,
+      33.0
+    ],
+    [
+      26.0,
+      166.0
+    ],
+    [
+      274.0,
+      166.0
+    ]
+  ],
+  "frame_posts": [
+    [
+      15.0,
+      132.0
+    ],
+    [
+      150.0,
+      132.0
+    ],
+    [
+      285.0,
+      132.0
+    ],
+    [
+      15.0,
+      166.0
+    ],
+    [
+      150.0,
+      166.0
+    ],
+    [
+      285.0,
+      166.0
+    ]
+  ],
+  "case_screws": [
+    [
+      12.0,
+      14.0
+    ],
+    [
+      150.0,
+      14.0
+    ],
+    [
+      288.0,
+      14.0
+    ],
+    [
+      12.0,
+      196.0
+    ],
+    [
+      150.0,
+      196.0
+    ],
+    [
+      288.0,
+      196.0
+    ]
+  ],
+  "front_port_x": [
+    60.0,
+    120.0,
+    180.0,
+    240.0
+  ],
+  "assumptions": [
+    "Electrical architecture, PCB routing, processor die size and dissipation are not validated by this mechanical model.",
+    "QFP208, SOJ42/SOJ40 and SGRAM QFP100 use mechanical reference dimensions; BMSX ASIC integration and package allocations remain explicit design hypotheses.",
+    "External regulated 9 V adapter; internal dual synchronous buck regulators with explicit A04 component envelopes, circuit values and current/thermal budgets, not yet a verified board.",
+    "Custom controller connector and cartridge pinout are mechanical proposals, not established electrical standards.",
+    "CAD has nominal prototype geometry; tooling draft, snap/latch details, full tolerance drawings and production qualification remain open."
+  ],
+  "electronics": {
+    "stage": "named functional-block placement with explicitly assumed ASIC allocation; no electrical routing release",
+    "main_ram_bytes": 4194304,
+    "gpu_vram_bytes": 2097152,
+    "apu_sample_ram_bytes": 524288,
+    "nominal_input_V": 9.0,
+    "logic_V": 3.3,
+    "analogue_and_peripheral_V": 5.0
+  }
+}

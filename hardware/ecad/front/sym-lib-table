@@ -1,0 +1,1 @@
+(sym_lib_table (version 7) (lib (name "Panel") (type "KiCad") (uri "${KIPRJMOD}/Panel.kicad_sym") (options "") (descr "Passive panel terminals")))

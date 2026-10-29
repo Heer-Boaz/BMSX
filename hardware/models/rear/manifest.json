@@ -1,0 +1,45 @@
+{
+  "scope": "Immutable native inputs copied from sealed R4 context and physical baseline, not new vendor internals.",
+  "source_release_sha256": "43973d707d4d17c5d5fcacde0713da1489caaf7a35485cc00d84aeca306efa9a",
+  "parts": [
+    {
+      "name": "DC__DC_REAR_CARRIER",
+      "sha256": "00ce324ad0284f4d4db1b323886294e2a0a5c2b5af30f369570aed95248d3a11",
+      "source_bounds_mm": [
+        27.0,
+        208.4,
+        19.0,
+        51.0,
+        210.0,
+        41.0
+      ],
+      "brep": "models/rear/DC__DC_REAR_CARRIER.brep"
+    },
+    {
+      "name": "DC__DC_JACK_AND_INSULATED_LUGS",
+      "sha256": "9f26e9fb742db9af6bfc019eb2a2cb38426e843882e14bb7dfd494ac8b364457",
+      "source_bounds_mm": [
+        33.0,
+        191.5,
+        23.0,
+        47.0,
+        217.0,
+        37.0
+      ],
+      "brep": "models/rear/DC__DC_JACK_AND_INSULATED_LUGS.brep"
+    },
+    {
+      "name": "AV__SCART_MAX_ACCEPTANCE_NOT_VENDOR_MODEL",
+      "sha256": "ef1fdf06af04354c5532fbe767e37734d57f3f67797daeacec0f2db5d1593094",
+      "source_bounds_mm": [
+        187.9,
+        192.2,
+        26.0,
+        254.1,
+        210.6,
+        43.0
+      ],
+      "brep": "models/rear/AV__SCART_MAX_ACCEPTANCE_NOT_VENDOR_MODEL.brep"
+    }
+  ]
+}

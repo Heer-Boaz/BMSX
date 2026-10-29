@@ -1,0 +1,3635 @@
+(kicad_sch
+	(version 20250114)
+	(generator eeschema)
+	(uuid a31541e2-f6cc-5f2f-9041-57483f0558bc)
+	(paper "A2")
+	(lib_symbols
+		(symbol "R9_interfaces:J300"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 16.51 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "Front harness - four keyed BMSX pad sockets"
+				(at 0 -16.51 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "J300_1_1"
+				(rectangle
+					(start -25.4 13.97)
+					(end 25.4 -13.97)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -27.94 11.43 0)
+					(length 2.54)
+					(name "PAD_CLK_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 8.89 0)
+					(length 2.54)
+					(name "PAD_CMD0_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 6.35 0)
+					(length 2.54)
+					(name "PAD_CMD1_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 3.81 0)
+					(length 2.54)
+					(name "PAD_CMD2_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 1.27 0)
+					(length 2.54)
+					(name "PAD_CMD3_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -1.27 0)
+					(length 2.54)
+					(name "PAD_DATA0_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -3.81 0)
+					(length 2.54)
+					(name "PAD_DATA1_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -6.35 0)
+					(length 2.54)
+					(name "PAD_DATA2_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -8.89 0)
+					(length 2.54)
+					(name "PAD_DATA3_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "9"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -11.43 0)
+					(length 2.54)
+					(name "PAD_SELECT0_N_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "10"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 11.43 180)
+					(length 2.54)
+					(name "PAD_SELECT1_N_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "11"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 8.89 180)
+					(length 2.54)
+					(name "PAD_SELECT2_N_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "12"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 6.35 180)
+					(length 2.54)
+					(name "PAD_SELECT3_N_EXT"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "13"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 3.81 180)
+					(length 2.54)
+					(name "V3V3"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "14"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 1.27 180)
+					(length 2.54)
+					(name "V5"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "15"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 -1.27 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "16"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 -3.81 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "17"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 -6.35 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "18"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 -8.89 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "19"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 -11.43 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "20"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "R9_interfaces:R430"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R430_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R431"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R431_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R432"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R432_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R433"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R433_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R434"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R434_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R435"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R435_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R436"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R436_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R437"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R437_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R438"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R438_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R439"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R439_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R440"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R440_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R441"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R441_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R442"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R442_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R450"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R450_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R451"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R451_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R452"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R452_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R453"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R453_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:J301"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "Keyboard harness - Mini-DIN6: DATA/GND/+5V/CLK"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "J301_1_1"
+				(rectangle
+					(start -25.4 3.81)
+					(end 25.4 -3.81)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -27.94 1.27 0)
+					(length 2.54)
+					(name "DATA"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin power_in line
+					(at -27.94 -1.27 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin power_in line
+					(at 27.94 1.27 180)
+					(length 2.54)
+					(name "V5"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 -1.27 180)
+					(length 2.54)
+					(name "CLK"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "R9_interfaces:Q300"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "Q"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "BSS138"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "Q300_1_1"
+				(rectangle
+					(start -25.4 3.81)
+					(end 25.4 -3.81)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin input line
+					(at -27.94 1.27 0)
+					(length 2.54)
+					(name "G"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -1.27 0)
+					(length 2.54)
+					(name "S"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 1.27 180)
+					(length 2.54)
+					(name "D"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "R9_interfaces:R460"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "4.7k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R460_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R461"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "4.7k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R461_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:Q301"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "Q"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "BSS138"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "Q301_1_1"
+				(rectangle
+					(start -25.4 3.81)
+					(end 25.4 -3.81)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin input line
+					(at -27.94 1.27 0)
+					(length 2.54)
+					(name "G"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -1.27 0)
+					(length 2.54)
+					(name "S"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 1.27 180)
+					(length 2.54)
+					(name "D"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "R9_interfaces:R462"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "4.7k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R462_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R463"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "4.7k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R463_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none))))))
+	(title_block
+		(title "Pad and PS/2 keyboard interfaces")
+		(date "2026-10-25")
+		(rev "4ASIC ECO")
+		(company "BMSX")
+		(comment 1 "PROPOSED ASIC INTERFACES - NOT FOR MANUFACTURE"))
+	(text "Front harness uses the retained custom 9-contact pad sockets; no USB or SNES electrical compatibility."
+		(at 290 25.0 0)
+		(effects
+			(font
+				(size 1.27 1.27)))
+		(uuid 18a0d149-d4fe-50d2-b570-564a43401b38))
+	(text "BMSX-PAD v1: 250kHz, mode0, four parallel 64-byte frames; 3V3 push-pull DATA. Armed VBlank publishes held records. Pointer uses a pad socket; cable/ESD qualification remains open."
+		(at 290 30.08 0)
+		(effects
+			(font
+				(size 1.27 1.27)))
+		(uuid bb22e830-6f5f-5211-a4cc-4d354392766b))
+	(wire
+		(pts
+			(xy 91.44 99.06)
+			(xy 83.82 99.06))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 809da9b0-feec-5d48-8754-e8a79649d841))
+	(global_label "PAD_CLK_EXT"
+		(shape bidirectional)
+		(at 83.82 99.06 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 231bca6f-467f-5d43-8bf4-2538cc35cabc))
+	(wire
+		(pts
+			(xy 91.44 101.6)
+			(xy 83.82 101.6))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b9b11be4-51bf-599c-885d-bde5677b7bfe))
+	(global_label "PAD_CMD0_EXT"
+		(shape bidirectional)
+		(at 83.82 101.6 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5a075df5-1024-55f5-8bc8-95a010eca22c))
+	(wire
+		(pts
+			(xy 91.44 104.14)
+			(xy 83.82 104.14))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 79372beb-6583-5820-90c5-ebe681943bfa))
+	(global_label "PAD_CMD1_EXT"
+		(shape bidirectional)
+		(at 83.82 104.14 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f8f1d77c-fc7c-53dc-863d-f0e64a6daf88))
+	(wire
+		(pts
+			(xy 91.44 106.68)
+			(xy 83.82 106.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 765c5c11-60bf-58e8-b0a6-18545a0e720f))
+	(global_label "PAD_CMD2_EXT"
+		(shape bidirectional)
+		(at 83.82 106.68 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8cedbe48-45e3-5e48-9720-3cdcc7257599))
+	(wire
+		(pts
+			(xy 91.44 109.22)
+			(xy 83.82 109.22))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d51198d8-6d02-503f-bf2d-b9f5676d0407))
+	(global_label "PAD_CMD3_EXT"
+		(shape bidirectional)
+		(at 83.82 109.22 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f415ae72-88fb-5da4-99b7-280c671bbc0e))
+	(wire
+		(pts
+			(xy 91.44 111.76)
+			(xy 83.82 111.76))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 145e2caa-7acb-5d6b-b3ca-2ebf5c8f1029))
+	(global_label "PAD_DATA0_EXT"
+		(shape bidirectional)
+		(at 83.82 111.76 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2b47f875-0f94-5eb2-9e1b-738d3874d69c))
+	(wire
+		(pts
+			(xy 91.44 114.3)
+			(xy 83.82 114.3))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2aead74f-3025-504a-8c6b-2b8f7701d180))
+	(global_label "PAD_DATA1_EXT"
+		(shape bidirectional)
+		(at 83.82 114.3 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3bbf2dee-6496-5403-a3a7-37ca367dfac7))
+	(wire
+		(pts
+			(xy 91.44 116.84)
+			(xy 83.82 116.84))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f7d674a9-72bf-5e86-8e7d-e719783a1230))
+	(global_label "PAD_DATA2_EXT"
+		(shape bidirectional)
+		(at 83.82 116.84 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 34f72be6-ba2d-5ee1-9e3e-d37487614df6))
+	(wire
+		(pts
+			(xy 91.44 119.38)
+			(xy 83.82 119.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5c6298cf-3683-565d-b198-722cc55b4fe3))
+	(global_label "PAD_DATA3_EXT"
+		(shape bidirectional)
+		(at 83.82 119.38 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6161ec17-4134-5b6e-ab0a-ff47d7b7fbee))
+	(wire
+		(pts
+			(xy 91.44 121.92)
+			(xy 83.82 121.92))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 49f463e9-93e3-592b-b885-da9726bbf851))
+	(global_label "PAD_SELECT0_N_EXT"
+		(shape bidirectional)
+		(at 83.82 121.92 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c184897e-afe6-5ffa-b2e9-cc58ed511616))
+	(wire
+		(pts
+			(xy 147.32 99.06)
+			(xy 154.94 99.06))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e1289a84-7fb6-53fb-92d4-154056566b6c))
+	(global_label "PAD_SELECT1_N_EXT"
+		(shape bidirectional)
+		(at 154.94 99.06 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7d28ffde-dcd5-52b3-aacd-c318c4af67dc))
+	(wire
+		(pts
+			(xy 147.32 101.6)
+			(xy 154.94 101.6))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 78ded641-a94c-5518-8399-f8a24cafeb46))
+	(global_label "PAD_SELECT2_N_EXT"
+		(shape bidirectional)
+		(at 154.94 101.6 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e7b3187d-8a0f-5b5e-b0c3-dd41561535a6))
+	(wire
+		(pts
+			(xy 147.32 104.14)
+			(xy 154.94 104.14))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2d8193e6-c443-5c58-b481-d4dd6f921321))
+	(global_label "PAD_SELECT3_N_EXT"
+		(shape bidirectional)
+		(at 154.94 104.14 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid cb861211-dcb1-5afa-8a37-d44876b08311))
+	(wire
+		(pts
+			(xy 147.32 106.68)
+			(xy 154.94 106.68))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ee9419ca-707e-56b1-86da-3ada4a069528))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 154.94 106.68 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3310f3fb-8354-5278-a2fc-67f69b38cbb0))
+	(wire
+		(pts
+			(xy 147.32 109.22)
+			(xy 154.94 109.22))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid dbd63232-fd03-5f3e-a855-d80fe90e30f9))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 154.94 109.22 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 059c760a-4615-5f76-b41d-e3e4c77e0f35))
+	(wire
+		(pts
+			(xy 147.32 111.76)
+			(xy 154.94 111.76))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 41e66015-34fe-5264-a5d0-8ba80e9905b2))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 154.94 111.76 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d5cee7aa-d4e9-5962-bbf1-b10c797b34d1))
+	(wire
+		(pts
+			(xy 147.32 114.3)
+			(xy 154.94 114.3))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a41a60c9-e03c-55fd-a4b2-ea349d06c5f6))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 154.94 114.3 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 86e49a6e-8ed3-5b70-aced-c71cb4b09834))
+	(wire
+		(pts
+			(xy 147.32 116.84)
+			(xy 154.94 116.84))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1f7cc825-8cf9-5cf8-9073-71a7e0fc73bd))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 154.94 116.84 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c4699594-9314-5045-83ec-e06ccf02a624))
+	(wire
+		(pts
+			(xy 147.32 119.38)
+			(xy 154.94 119.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fd0322a0-41d1-5e11-ae39-c49d4a2fafa2))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 154.94 119.38 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8435c860-9e05-50b9-b119-3a4d3221dae7))
+	(wire
+		(pts
+			(xy 147.32 121.92)
+			(xy 154.94 121.92))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 87c66130-ad5f-5868-ad32-8b901bf9a4a9))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 154.94 121.92 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ccaab3c8-2f35-5f3a-9996-4d6f6216f191))
+	(symbol
+	(lib_id "R9_interfaces:J300")
+	(at 119.38 110.49 0)
+	(unit 1)
+	(in_bom yes)
+	(on_board yes)
+	(dnp no)
+	(uuid b412ff12-bca7-5332-bad9-06e65f069eb2)
+	(property "Reference" "J300"
+		(at 119.38 92.71 0)
+		(effects
+			(font
+				(size 1.27 1.27))))
+	(property "Value" "B20B-PHDSS"
+		(at 119.38 128.27 0)
+		(effects
+			(font
+				(size 0.85 0.85))))
+	(property "Footprint" "BMSX_HEADER:JST_PHD_B20B-PHDSS_2x10_P2.00mm_Vertical"
+		(at 119.38 110.49 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(property "Datasheet" "https://www.jst-mfg.com/product/pdf/eng/ePHD.pdf"
+		(at 119.38 110.49 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(instances
+		(project "BMSX_4ASIC"
+			(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+				(reference "J300")
+				(unit 1))))
+	(pin "1"
+		(uuid e3cc863d-dcd0-5a84-be80-a18663d04a8f))
+	(pin "2"
+		(uuid e4042958-302c-5c2a-a116-19ef80d2cabd))
+	(pin "3"
+		(uuid 8eecf21a-f4f5-568f-baea-f747096269f2))
+	(pin "4"
+		(uuid d1dae1c6-b83a-5e00-b936-1e76e255fafb))
+	(pin "5"
+		(uuid fa1992f0-4c7b-50ae-b74b-97abaff6e972))
+	(pin "6"
+		(uuid 22ad4122-7cb2-5dd8-ad8c-2554fe6468a7))
+	(pin "7"
+		(uuid ec93f268-166f-538f-80f7-c0a682c56fcb))
+	(pin "8"
+		(uuid 41d4d90d-3891-532a-b88f-6c0602796d0f))
+	(pin "9"
+		(uuid be3017e7-c4f0-5525-9aba-8e0caf37e8c5))
+	(pin "10"
+		(uuid 02e7199f-f7b4-5784-b303-e0d1618a361a))
+	(pin "11"
+		(uuid 8b5f730b-0284-5651-93f4-4bfad0f4d238))
+	(pin "12"
+		(uuid 7d3d1027-da13-5ec7-a5d9-319b70864ca2))
+	(pin "13"
+		(uuid afe7c222-546c-5c40-a599-534755526957))
+	(pin "14"
+		(uuid 9cf32558-4a62-583f-9625-b371919bd232))
+	(pin "15"
+		(uuid b2e1eab2-0342-5fc6-b741-c45b02796431))
+	(pin "16"
+		(uuid 0dad56d2-a90d-5a04-a15c-5df8a206847f))
+	(pin "17"
+		(uuid f49229b5-8d3d-53a4-aac3-03891bc163f8))
+	(pin "18"
+		(uuid 5d1ea157-c637-5dc6-8749-3aa839b3efae))
+	(pin "19"
+		(uuid 97436769-4669-54b2-bbb3-6f441ddf1ad1))
+	(pin "20"
+		(uuid e1be5f85-d707-590d-9c6e-d16b1ffdfa2f))
+	(property "Manufacturer" "JST"
+		(at 119.38 110.49 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(property "MPN" "B20B-PHDSS"
+		(at 119.38 110.49 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(property "Function" "Four gamepad front harness; polarised 20-way crimp-wire interface"
+		(at 119.38 110.49 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(property "Qualification" "JST reference land pattern and polarised mating interface; drill and assembled loom require qualification."
+		(at 119.38 110.49 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes))))
+	(wire
+		(pts
+			(xy 294.64 49.53)
+			(xy 287.02 49.53))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid eea7bd7a-f805-56b6-826d-68a9b6c4179b))
+	(global_label "PAD_CLK"
+		(shape bidirectional)
+		(at 287.02 49.53 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6c3acab9-8f81-5f85-bdc2-e9eb7bb05987))
+	(wire
+		(pts
+			(xy 304.8 49.53)
+			(xy 312.42 49.53))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f6abe037-8b5d-50b7-b309-354bba7a0194))
+	(global_label "PAD_CLK_EXT"
+		(shape bidirectional)
+		(at 312.42 49.53 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 080e568f-9eaf-52c0-aa4e-fae0aaaddd8e))
+	(symbol
+		(lib_id "R9_interfaces:R430")
+		(at 299.72 49.53 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 624203fd-75ae-5191-8fb9-87bae6692f50)
+		(property "Reference" "R430"
+			(at 299.72 43.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 299.72 55.88 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R430"
+			(at 299.72 49.53 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 299.72 49.53 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R430")
+					(unit 1))))
+		(pin "1"
+			(uuid abcea64c-69e0-5847-bfac-b2a6d90089f7))
+		(pin "2"
+			(uuid f9a29818-156b-5336-bec4-e8fc2998f7b1)))
+	(wire
+		(pts
+			(xy 454.66 49.53)
+			(xy 447.04 49.53))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 395bb533-7ea3-5b20-ba17-e2f9cb3c05a5))
+	(global_label "PAD_CMD0"
+		(shape bidirectional)
+		(at 447.04 49.53 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 683bd731-0667-57bd-b7a2-5c79d609b701))
+	(wire
+		(pts
+			(xy 464.82 49.53)
+			(xy 472.44 49.53))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 893b38c0-c80e-5e14-bbad-fbd0cbe3f227))
+	(global_label "PAD_CMD0_EXT"
+		(shape bidirectional)
+		(at 472.44 49.53 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4b3bc19a-d748-5f6e-99ab-163178c5a4a1))
+	(symbol
+		(lib_id "R9_interfaces:R431")
+		(at 459.74 49.53 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 0d1ba6e0-6235-505f-8f2f-a9944070e983)
+		(property "Reference" "R431"
+			(at 459.74 43.18 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 459.74 55.88 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R431"
+			(at 459.74 49.53 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 459.74 49.53 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R431")
+					(unit 1))))
+		(pin "1"
+			(uuid 4f6d8282-2f63-5b70-be3b-8dad0ef987a9))
+		(pin "2"
+			(uuid 4e321bab-e23d-5985-a301-6a2cb7170295)))
+	(wire
+		(pts
+			(xy 294.64 85.09)
+			(xy 287.02 85.09))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid bef04384-1fba-5ac9-a9ca-4787feb1b9bf))
+	(global_label "PAD_CMD1"
+		(shape bidirectional)
+		(at 287.02 85.09 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 544f0fef-1918-5187-89d2-4a119780b76c))
+	(wire
+		(pts
+			(xy 304.8 85.09)
+			(xy 312.42 85.09))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 23166092-3322-52a5-ad65-345b647d449b))
+	(global_label "PAD_CMD1_EXT"
+		(shape bidirectional)
+		(at 312.42 85.09 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3a105a62-8b9a-56d1-8ae2-00602a421621))
+	(symbol
+		(lib_id "R9_interfaces:R432")
+		(at 299.72 85.09 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid c91a207f-f724-5423-81c0-05f2a4b6ada7)
+		(property "Reference" "R432"
+			(at 299.72 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 299.72 91.44 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R432"
+			(at 299.72 85.09 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 299.72 85.09 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R432")
+					(unit 1))))
+		(pin "1"
+			(uuid d056c4f6-1244-58dd-9a0c-f93d2bc451a5))
+		(pin "2"
+			(uuid aa6a2f1f-a963-54c6-b8aa-1a5470d70b32)))
+	(wire
+		(pts
+			(xy 454.66 85.09)
+			(xy 447.04 85.09))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6e0dbe97-61d8-5961-a6a6-b224256ce55d))
+	(global_label "PAD_CMD2"
+		(shape bidirectional)
+		(at 447.04 85.09 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a85eb394-8fc6-5292-889f-3b5c92c80a3e))
+	(wire
+		(pts
+			(xy 464.82 85.09)
+			(xy 472.44 85.09))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f12504b8-fc09-5ea1-9c35-385e8230fd25))
+	(global_label "PAD_CMD2_EXT"
+		(shape bidirectional)
+		(at 472.44 85.09 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2ca617ab-1780-5aa4-b90a-9a8775885fdc))
+	(symbol
+		(lib_id "R9_interfaces:R433")
+		(at 459.74 85.09 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 1af88fb0-0517-5a05-a477-76c0c7906231)
+		(property "Reference" "R433"
+			(at 459.74 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 459.74 91.44 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R433"
+			(at 459.74 85.09 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 459.74 85.09 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R433")
+					(unit 1))))
+		(pin "1"
+			(uuid 8d8a0a61-d876-582a-be80-fd296241f01e))
+		(pin "2"
+			(uuid cbb8d234-1ceb-59e9-8080-0f4f72bd2ae8)))
+	(wire
+		(pts
+			(xy 294.64 119.38)
+			(xy 287.02 119.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 47c1ecde-7987-5e62-9495-ba5dd67bc3dc))
+	(global_label "PAD_CMD3"
+		(shape bidirectional)
+		(at 287.02 119.38 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6002d995-8da5-50f7-ae0d-c0fee7023f8c))
+	(wire
+		(pts
+			(xy 304.8 119.38)
+			(xy 312.42 119.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 20777ef9-a467-5e8e-9a17-f7bfbe4807fb))
+	(global_label "PAD_CMD3_EXT"
+		(shape bidirectional)
+		(at 312.42 119.38 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ec874736-a264-5584-b590-0472f73d2f74))
+	(symbol
+		(lib_id "R9_interfaces:R434")
+		(at 299.72 119.38 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 5b250d0e-2952-5cd0-b65b-460ab8da82f0)
+		(property "Reference" "R434"
+			(at 299.72 113.03 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 299.72 125.73 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R434"
+			(at 299.72 119.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 299.72 119.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R434")
+					(unit 1))))
+		(pin "1"
+			(uuid df11198e-3653-5957-ab90-5bea474eb1b2))
+		(pin "2"
+			(uuid 3b3dbee6-b3fd-5f31-8dae-894221373126)))
+	(wire
+		(pts
+			(xy 454.66 119.38)
+			(xy 447.04 119.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ce675b66-48c3-5a28-b972-a9484c35c24c))
+	(global_label "PAD_DATA0"
+		(shape bidirectional)
+		(at 447.04 119.38 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e964cafb-eb25-5545-9ab1-d3bb15f17d75))
+	(wire
+		(pts
+			(xy 464.82 119.38)
+			(xy 472.44 119.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8f3ec8db-b5a9-5d7b-8236-8c6bff2c69d0))
+	(global_label "PAD_DATA0_EXT"
+		(shape bidirectional)
+		(at 472.44 119.38 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b862a0cd-6166-5eba-8fc2-3260f9b73fa4))
+	(symbol
+		(lib_id "R9_interfaces:R435")
+		(at 459.74 119.38 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 34f94914-bb3d-558d-9c6f-4fa43a32bd13)
+		(property "Reference" "R435"
+			(at 459.74 113.03 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 459.74 125.73 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R435"
+			(at 459.74 119.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 459.74 119.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R435")
+					(unit 1))))
+		(pin "1"
+			(uuid 3313cd9b-44b3-53ae-a754-e9423c427699))
+		(pin "2"
+			(uuid 9800eb33-7e3d-552a-87e4-c015e7ebf93f)))
+	(wire
+		(pts
+			(xy 294.64 154.94)
+			(xy 287.02 154.94))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 365e40d2-b645-5ff3-bd82-c319b2250f28))
+	(global_label "PAD_DATA1"
+		(shape bidirectional)
+		(at 287.02 154.94 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 959aebf8-803e-522d-bb8e-6bb34a546285))
+	(wire
+		(pts
+			(xy 304.8 154.94)
+			(xy 312.42 154.94))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5871e004-652c-5707-8db2-d8879d01458d))
+	(global_label "PAD_DATA1_EXT"
+		(shape bidirectional)
+		(at 312.42 154.94 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 45445da8-cbeb-5968-8cff-dc32ed0dfe5a))
+	(symbol
+		(lib_id "R9_interfaces:R436")
+		(at 299.72 154.94 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 3c7752ae-2814-5796-bec7-2564c125a743)
+		(property "Reference" "R436"
+			(at 299.72 148.59 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 299.72 161.29 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R436"
+			(at 299.72 154.94 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 299.72 154.94 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R436")
+					(unit 1))))
+		(pin "1"
+			(uuid a29f7ba5-5616-5e13-bbc2-ef5891cb0b04))
+		(pin "2"
+			(uuid 0997e352-3a2e-54ae-ade2-eb40982a8dd1)))
+	(wire
+		(pts
+			(xy 454.66 154.94)
+			(xy 447.04 154.94))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8377ce88-4c53-5fd0-832f-5467de43a778))
+	(global_label "PAD_DATA2"
+		(shape bidirectional)
+		(at 447.04 154.94 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e76126ca-7188-50d7-a699-4cf51627e4c3))
+	(wire
+		(pts
+			(xy 464.82 154.94)
+			(xy 472.44 154.94))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8cf1493c-b1ba-535d-b3f5-eada18c323fc))
+	(global_label "PAD_DATA2_EXT"
+		(shape bidirectional)
+		(at 472.44 154.94 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1145f62e-006c-53b7-9bea-6ccaff26dd9b))
+	(symbol
+		(lib_id "R9_interfaces:R437")
+		(at 459.74 154.94 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 9ee5b63d-0664-5932-a41d-2a65f77915fa)
+		(property "Reference" "R437"
+			(at 459.74 148.59 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 459.74 161.29 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R437"
+			(at 459.74 154.94 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 459.74 154.94 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R437")
+					(unit 1))))
+		(pin "1"
+			(uuid 0f1311b9-0a98-5f55-9bf2-52fa0e4566a9))
+		(pin "2"
+			(uuid de7c66bc-2114-516a-a5b9-afecad3f1cb2)))
+	(wire
+		(pts
+			(xy 294.64 190.5)
+			(xy 287.02 190.5))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f2a0403b-dee4-58fd-b43c-f6b0088bc931))
+	(global_label "PAD_DATA3"
+		(shape bidirectional)
+		(at 287.02 190.5 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 59347eeb-7732-50f2-a937-b8455ab7c900))
+	(wire
+		(pts
+			(xy 304.8 190.5)
+			(xy 312.42 190.5))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 41e48ebf-d38e-5f1c-a62b-def13b15cd0c))
+	(global_label "PAD_DATA3_EXT"
+		(shape bidirectional)
+		(at 312.42 190.5 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d7557a58-9495-56fb-a550-e3cd961a1069))
+	(symbol
+		(lib_id "R9_interfaces:R438")
+		(at 299.72 190.5 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 966fc49c-2315-565f-99dd-039c746458ed)
+		(property "Reference" "R438"
+			(at 299.72 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 299.72 196.85 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R438"
+			(at 299.72 190.5 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 299.72 190.5 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R438")
+					(unit 1))))
+		(pin "1"
+			(uuid 93277863-1f81-5f95-b99e-1023bf5598f1))
+		(pin "2"
+			(uuid 57a0a746-a292-5048-ab0e-e7a0481a6034)))
+	(wire
+		(pts
+			(xy 454.66 190.5)
+			(xy 447.04 190.5))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e36cd8fd-8369-536e-b129-b1889a9803b0))
+	(global_label "PAD_SELECT0_N"
+		(shape bidirectional)
+		(at 447.04 190.5 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid fc4a1b07-0e05-52c1-9ee1-969cc3e687a5))
+	(wire
+		(pts
+			(xy 464.82 190.5)
+			(xy 472.44 190.5))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a66eb383-4881-5c67-b1cc-588319d626ba))
+	(global_label "PAD_SELECT0_N_EXT"
+		(shape bidirectional)
+		(at 472.44 190.5 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b5ebaca6-264c-5287-b83b-163e56802da8))
+	(symbol
+		(lib_id "R9_interfaces:R439")
+		(at 459.74 190.5 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 664fb38b-4cae-5a47-ad82-78fe551232e2)
+		(property "Reference" "R439"
+			(at 459.74 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 459.74 196.85 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R439"
+			(at 459.74 190.5 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 459.74 190.5 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R439")
+					(unit 1))))
+		(pin "1"
+			(uuid e961f983-7a78-5509-8aeb-fb2573137a6b))
+		(pin "2"
+			(uuid 2eaadaad-d436-553e-afa3-3e6196f8680d)))
+	(wire
+		(pts
+			(xy 294.64 224.79)
+			(xy 287.02 224.79))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b028e683-4f93-5ef2-a823-58ab39c739a3))
+	(global_label "PAD_SELECT1_N"
+		(shape bidirectional)
+		(at 287.02 224.79 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6f74e426-15a3-5cdc-a001-93710438add4))
+	(wire
+		(pts
+			(xy 304.8 224.79)
+			(xy 312.42 224.79))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7c8b3867-2c22-5339-8320-e04cad766f64))
+	(global_label "PAD_SELECT1_N_EXT"
+		(shape bidirectional)
+		(at 312.42 224.79 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8e3c7bd2-1a4a-5725-a38b-1e310dcad6cc))
+	(symbol
+		(lib_id "R9_interfaces:R440")
+		(at 299.72 224.79 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 4459c6b3-4dfa-5fc3-907d-effcfc3909c1)
+		(property "Reference" "R440"
+			(at 299.72 218.44 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 299.72 231.14 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R440"
+			(at 299.72 224.79 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 299.72 224.79 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R440")
+					(unit 1))))
+		(pin "1"
+			(uuid 60d6e59e-2e34-589f-a1ec-fbd94d355c6d))
+		(pin "2"
+			(uuid 5d29ea1f-f5a6-51fe-9ca5-075ed1b93a79)))
+	(wire
+		(pts
+			(xy 454.66 224.79)
+			(xy 447.04 224.79))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d4bba508-e341-582f-872e-60f52a4c64da))
+	(global_label "PAD_SELECT2_N"
+		(shape bidirectional)
+		(at 447.04 224.79 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9391a080-2065-55d1-9fd7-9704f3f26419))
+	(wire
+		(pts
+			(xy 464.82 224.79)
+			(xy 472.44 224.79))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 86e7e8b9-8a3b-5e8f-944b-5a46dd97b19f))
+	(global_label "PAD_SELECT2_N_EXT"
+		(shape bidirectional)
+		(at 472.44 224.79 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d03357e1-22f8-568e-9a33-78505c9dd7ae))
+	(symbol
+		(lib_id "R9_interfaces:R441")
+		(at 459.74 224.79 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 76f3995d-e9c4-5728-9c36-aad7f61a5dab)
+		(property "Reference" "R441"
+			(at 459.74 218.44 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 459.74 231.14 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R441"
+			(at 459.74 224.79 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 459.74 224.79 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R441")
+					(unit 1))))
+		(pin "1"
+			(uuid eef9e870-7580-5e6a-8897-4da2e3da1f0b))
+		(pin "2"
+			(uuid 2530859d-4c81-576b-857e-3c5a3043a310)))
+	(wire
+		(pts
+			(xy 294.64 260.35)
+			(xy 287.02 260.35))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e7d06236-3b0f-5787-b3b4-169b6d13fedb))
+	(global_label "PAD_SELECT3_N"
+		(shape bidirectional)
+		(at 287.02 260.35 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ca5f31ae-1c33-56c4-b08f-6268a402ce09))
+	(wire
+		(pts
+			(xy 304.8 260.35)
+			(xy 312.42 260.35))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid abb53087-b117-50bb-966c-57c448fe64f0))
+	(global_label "PAD_SELECT3_N_EXT"
+		(shape bidirectional)
+		(at 312.42 260.35 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ec4efd27-0472-5b1c-a45c-14d300dad3a8))
+	(symbol
+		(lib_id "R9_interfaces:R442")
+		(at 299.72 260.35 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 4b200396-9754-52d7-be76-4105084a58d8)
+		(property "Reference" "R442"
+			(at 299.72 254.0 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47R"
+			(at 299.72 266.7 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R442"
+			(at 299.72 260.35 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 299.72 260.35 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R442")
+					(unit 1))))
+		(pin "1"
+			(uuid b4bc80d3-56d7-58d3-bb33-819ba135cf88))
+		(pin "2"
+			(uuid 440005cc-35a9-578a-b842-79cddb729465)))
+	(wire
+		(pts
+			(xy 95.25 299.72)
+			(xy 87.63 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid db5bf361-8300-593e-8902-76a893ba7a49))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 87.63 299.72 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 718710ad-9f73-5a28-82cf-aa457d221230))
+	(wire
+		(pts
+			(xy 105.41 299.72)
+			(xy 113.03 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 79a34cea-fb1c-57b3-b9fe-2e3f4b4fb231))
+	(global_label "PAD_DATA0"
+		(shape bidirectional)
+		(at 113.03 299.72 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 179d67af-d65c-5365-8a8e-947f03f05d8b))
+	(symbol
+		(lib_id "R9_interfaces:R450")
+		(at 100.33 299.72 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 22ea11b9-82a4-5cb3-983a-4d78d149e1d6)
+		(property "Reference" "R450"
+			(at 100.33 293.37 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47k"
+			(at 100.33 306.07 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R450"
+			(at 100.33 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 100.33 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R450")
+					(unit 1))))
+		(pin "1"
+			(uuid 4db0bf82-8397-5160-bdc2-9101378b5dcc))
+		(pin "2"
+			(uuid 297a39cf-9e5e-57cd-a3ab-7021e0459677)))
+	(wire
+		(pts
+			(xy 219.71 299.72)
+			(xy 212.09 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8f2724a3-f5a5-5f5c-9c00-b28a685af6a2))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 212.09 299.72 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f8b5d602-531a-5e62-bf2a-f0e2ab17746f))
+	(wire
+		(pts
+			(xy 229.87 299.72)
+			(xy 237.49 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c65ebbea-378b-5745-9846-93a754447a73))
+	(global_label "PAD_DATA1"
+		(shape bidirectional)
+		(at 237.49 299.72 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9b053e24-e070-51a1-91fe-b9031e2b8064))
+	(symbol
+		(lib_id "R9_interfaces:R451")
+		(at 224.79 299.72 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 155d6e36-5122-571c-b7b2-2247b70151f2)
+		(property "Reference" "R451"
+			(at 224.79 293.37 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47k"
+			(at 224.79 306.07 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R451"
+			(at 224.79 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 224.79 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R451")
+					(unit 1))))
+		(pin "1"
+			(uuid 59506848-f31b-58a8-a118-69899dd646d8))
+		(pin "2"
+			(uuid e99a531a-fdfe-56f8-99ab-12bc53ca93e5)))
+	(wire
+		(pts
+			(xy 345.44 299.72)
+			(xy 337.82 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0703062d-31bd-501c-9283-ddd93c8bdd3a))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 337.82 299.72 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5d75ace4-1bac-54cf-af82-bc84f6798768))
+	(wire
+		(pts
+			(xy 355.6 299.72)
+			(xy 363.22 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9f0f602b-7709-58d9-8aa7-d20cda9ede4a))
+	(global_label "PAD_DATA2"
+		(shape bidirectional)
+		(at 363.22 299.72 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 960693a6-c082-5c12-8e6c-9da463dcfffd))
+	(symbol
+		(lib_id "R9_interfaces:R452")
+		(at 350.52 299.72 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 307dc6ae-667a-5b9a-b924-4736ed1dc54b)
+		(property "Reference" "R452"
+			(at 350.52 293.37 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47k"
+			(at 350.52 306.07 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R452"
+			(at 350.52 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 350.52 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R452")
+					(unit 1))))
+		(pin "1"
+			(uuid 8d3d3fdd-4e7d-5b6d-b8fc-7807f9cd1df1))
+		(pin "2"
+			(uuid 7f22eca8-3819-5945-ba40-59bbebd223f7)))
+	(wire
+		(pts
+			(xy 469.9 299.72)
+			(xy 462.28 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e89d353d-2ba1-5721-8802-ad3134465b2c))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 462.28 299.72 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e42d5c4a-a7c1-5ae2-90cb-235cdb2f46bf))
+	(wire
+		(pts
+			(xy 480.06 299.72)
+			(xy 487.68 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 661a54b7-34e5-516a-abff-3649817829ca))
+	(global_label "PAD_DATA3"
+		(shape bidirectional)
+		(at 487.68 299.72 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 97b458a4-84dd-58f4-bc7a-aaab46141c64))
+	(symbol
+		(lib_id "R9_interfaces:R453")
+		(at 474.98 299.72 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 6ee7a7c4-508c-5a99-a750-285f62aeba5e)
+		(property "Reference" "R453"
+			(at 474.98 293.37 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47k"
+			(at 474.98 306.07 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R453"
+			(at 474.98 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 474.98 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R453")
+					(unit 1))))
+		(pin "1"
+			(uuid ef5897bb-c3dc-5b26-87b6-c1475733ba95))
+		(pin "2"
+			(uuid 30e2829b-6cad-5961-a674-968631aa6ffc)))
+	(wire
+		(pts
+			(xy 87.63 223.52)
+			(xy 80.01 223.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0d5a0feb-0351-5ab7-9dcd-8c3d9e37aac7))
+	(global_label "PS2_KBD_DATA_5V"
+		(shape bidirectional)
+		(at 80.01 223.52 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 472ef85c-5ff6-588d-bc67-241ce3de38fe))
+	(wire
+		(pts
+			(xy 87.63 226.06)
+			(xy 80.01 226.06))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 30fd410d-8965-5a65-ae5e-5d3b4eec32da))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 80.01 226.06 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e3a76387-7cf2-5d05-9aa7-79d4c77bd929))
+	(wire
+		(pts
+			(xy 143.51 223.52)
+			(xy 151.13 223.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1b0eea33-a945-57c2-9d77-e819b56321ef))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 151.13 223.52 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 680f5e8c-c781-53e6-b9de-54a9d9d4b58f))
+	(wire
+		(pts
+			(xy 143.51 226.06)
+			(xy 151.13 226.06))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8f6f4a0e-9515-52ef-8a5a-edfd3cf0a230))
+	(global_label "PS2_KBD_CLK_5V"
+		(shape bidirectional)
+		(at 151.13 226.06 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ea6ecf3d-bc74-56cd-9001-282fcad1d0ab))
+	(symbol
+	(lib_id "R9_interfaces:J301")
+	(at 115.57 224.79 0)
+	(unit 1)
+	(in_bom yes)
+	(on_board yes)
+	(dnp no)
+	(uuid 7a986fc0-a9f5-517d-8694-1ff7cd787223)
+	(property "Reference" "J301"
+		(at 115.57 217.17 0)
+		(effects
+			(font
+				(size 1.27 1.27))))
+	(property "Value" "B4B-PH-K-S"
+		(at 115.57 232.41 0)
+		(effects
+			(font
+				(size 0.85 0.85))))
+	(property "Footprint" "BMSX_HEADER:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical"
+		(at 115.57 224.79 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(property "Datasheet" "https://www.jst-mfg.com/product/pdf/eng/ePH.pdf"
+		(at 115.57 224.79 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(instances
+		(project "BMSX_4ASIC"
+			(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+				(reference "J301")
+				(unit 1))))
+	(pin "1"
+		(uuid aa9f77d1-a251-5ae3-84cb-cfa76cf0f16a))
+	(pin "2"
+		(uuid 85e78855-838a-5a31-ba61-9b21d7f1d478))
+	(pin "3"
+		(uuid a58da174-6be7-574c-8e10-4634c49da585))
+	(pin "4"
+		(uuid 05ae152c-968a-5330-8f6b-207c6efb93e3))
+	(property "Manufacturer" "JST"
+		(at 115.57 224.79 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(property "MPN" "B4B-PH-K-S"
+		(at 115.57 224.79 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(property "Function" "Keyboard harness; DATA/GND/+5V/CLK; polarised four-way crimp-wire interface"
+		(at 115.57 224.79 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes)))
+	(property "Qualification" "Nominal 8 mm mated height; mated harness geometry and crimp require qualification."
+		(at 115.57 224.79 0)
+		(effects
+			(font
+				(size 1 1))
+			(hide yes))))
+	(wire
+		(pts
+			(xy 271.78 349.25)
+			(xy 264.16 349.25))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 346d397c-89ba-5261-a820-c3b058c75191))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 264.16 349.25 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6252512f-4158-5e6b-a4c9-9de3884e3ba1))
+	(wire
+		(pts
+			(xy 271.78 351.79)
+			(xy 264.16 351.79))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c3dced52-fb19-5790-958f-64119129f528))
+	(global_label "PS2_KBD_CLK"
+		(shape bidirectional)
+		(at 264.16 351.79 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid dbf2fae6-5c61-5ee7-a8b9-e061edde6b7c))
+	(wire
+		(pts
+			(xy 327.66 349.25)
+			(xy 335.28 349.25))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 63d86ae2-f21e-5901-a399-b85adbbdaa44))
+	(global_label "PS2_KBD_CLK_5V"
+		(shape bidirectional)
+		(at 335.28 349.25 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8dd44a1a-a0d4-5ab1-9183-8319389131e8))
+	(symbol
+		(lib_id "R9_interfaces:Q300")
+		(at 299.72 350.52 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid cffffa7d-a1b0-5740-9e2e-85c4230efa6d)
+		(property "Reference" "Q300"
+			(at 299.72 342.9 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "BSS138"
+			(at 299.72 358.14 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:Q300"
+			(at 299.72 350.52 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.onsemi.com/pdf/datasheet/bss138-d.pdf"
+			(at 299.72 350.52 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "Q300")
+					(unit 1))))
+		(pin "1"
+			(uuid 3ff3d1af-8efa-5f40-9626-59beaac02e6d))
+		(pin "2"
+			(uuid c2a53b72-5443-5990-837c-d21db2061d32))
+		(pin "3"
+			(uuid 577cef52-8bee-5b56-98d9-c75312c62293)))
+	(wire
+		(pts
+			(xy 74.93 350.52)
+			(xy 67.31 350.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 68bff1c6-a046-5268-bca2-afbec6a6aa19))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 67.31 350.52 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ce09aca5-04c9-5b45-b362-c086520c1a37))
+	(wire
+		(pts
+			(xy 85.09 350.52)
+			(xy 92.71 350.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7e16fc43-f758-5599-8d32-130df2657f63))
+	(global_label "PS2_KBD_CLK"
+		(shape bidirectional)
+		(at 92.71 350.52 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f235486a-05fc-55d9-bb9c-f0cb56ee982f))
+	(symbol
+		(lib_id "R9_interfaces:R460")
+		(at 80.01 350.52 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 001dba2b-d398-5adb-a38b-608015f4703a)
+		(property "Reference" "R460"
+			(at 80.01 344.17 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "4.7k"
+			(at 80.01 356.87 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R460"
+			(at 80.01 350.52 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 80.01 350.52 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R460")
+					(unit 1))))
+		(pin "1"
+			(uuid f4f78844-3bf4-53b6-8003-488a99938dba))
+		(pin "2"
+			(uuid 59ea4cd3-0d47-5ce1-a289-d39d3fb94e91)))
+	(wire
+		(pts
+			(xy 74.93 379.73)
+			(xy 67.31 379.73))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 98d416ee-9525-52d8-8dbc-7b95bd4a8be2))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 67.31 379.73 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4c116c14-7f0d-50c4-a9c1-be69f4e0c27c))
+	(wire
+		(pts
+			(xy 85.09 379.73)
+			(xy 92.71 379.73))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 72b58698-be75-5d90-a5cf-a694e2c8e9df))
+	(global_label "PS2_KBD_CLK_5V"
+		(shape bidirectional)
+		(at 92.71 379.73 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid cfe42642-0e5c-51c4-a0a2-e7469f11a560))
+	(symbol
+		(lib_id "R9_interfaces:R461")
+		(at 80.01 379.73 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid a3c5608d-6aa8-5326-96d9-2bf8470b8e0c)
+		(property "Reference" "R461"
+			(at 80.01 373.38 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "4.7k"
+			(at 80.01 386.08 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R461"
+			(at 80.01 379.73 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 80.01 379.73 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R461")
+					(unit 1))))
+		(pin "1"
+			(uuid 3dfc0c37-9199-5a1f-a8ea-dca1f4adf16a))
+		(pin "2"
+			(uuid fa3cc62b-0b22-545a-aaa4-73804d816e77)))
+	(wire
+		(pts
+			(xy 431.8 349.25)
+			(xy 424.18 349.25))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid dd94884e-672f-531b-808e-c7341df151a2))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 424.18 349.25 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e3d3741f-77d8-5bf8-82d6-0997d74d40bb))
+	(wire
+		(pts
+			(xy 431.8 351.79)
+			(xy 424.18 351.79))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ec76c760-cb24-5435-ac47-ee6b71fba85d))
+	(global_label "PS2_KBD_DATA"
+		(shape bidirectional)
+		(at 424.18 351.79 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 531d84f4-a683-5ba0-8202-8ad3901c1a44))
+	(wire
+		(pts
+			(xy 487.68 349.25)
+			(xy 495.3 349.25))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0ce3c781-1f21-559e-9571-c4e4569504e3))
+	(global_label "PS2_KBD_DATA_5V"
+		(shape bidirectional)
+		(at 495.3 349.25 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4c2863c4-0b1a-5ba1-a507-1691c76ec18c))
+	(symbol
+		(lib_id "R9_interfaces:Q301")
+		(at 459.74 350.52 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid fe801c2e-cd91-553c-81c7-ac4ab5bdfd14)
+		(property "Reference" "Q301"
+			(at 459.74 342.9 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "BSS138"
+			(at 459.74 358.14 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:Q301"
+			(at 459.74 350.52 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.onsemi.com/pdf/datasheet/bss138-d.pdf"
+			(at 459.74 350.52 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "Q301")
+					(unit 1))))
+		(pin "1"
+			(uuid 0b34bf1f-a481-55a3-8413-b5a4f27f717e))
+		(pin "2"
+			(uuid f356e02e-5eba-5369-aae0-3906119df02d))
+		(pin "3"
+			(uuid d977321f-34e6-5aa3-90be-dd7e921921d9)))
+	(wire
+		(pts
+			(xy 325.12 350.52)
+			(xy 317.5 350.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4c4a0cf0-26b7-53b6-be9d-046f53431844))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 317.5 350.52 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b8710677-1787-5174-9cd4-07ede795f5cf))
+	(wire
+		(pts
+			(xy 335.28 350.52)
+			(xy 342.9 350.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 21504cba-3d32-590e-a516-e6fa4cc50514))
+	(global_label "PS2_KBD_DATA"
+		(shape bidirectional)
+		(at 342.9 350.52 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1b6e2ecb-5306-5d42-a0bf-58166ba411f1))
+	(symbol
+		(lib_id "R9_interfaces:R462")
+		(at 330.2 350.52 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 192c7d56-e54c-521c-b6d4-5e0f878fef1f)
+		(property "Reference" "R462"
+			(at 330.2 344.17 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "4.7k"
+			(at 330.2 356.87 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R462"
+			(at 330.2 350.52 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 330.2 350.52 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R462")
+					(unit 1))))
+		(pin "1"
+			(uuid eaec73bd-05b7-5de3-85d4-1387001a0c97))
+		(pin "2"
+			(uuid 7e62d99d-23f6-5875-831c-b38f231c0bf7)))
+	(wire
+		(pts
+			(xy 325.12 379.73)
+			(xy 317.5 379.73))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d45d2e37-f88d-5efc-95aa-db3f38a3406d))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 317.5 379.73 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d6feefb4-13f9-51ee-a363-2cedfec83e44))
+	(wire
+		(pts
+			(xy 335.28 379.73)
+			(xy 342.9 379.73))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid de9ab7f5-6f35-5ff0-bedc-4922ce4b9779))
+	(global_label "PS2_KBD_DATA_5V"
+		(shape bidirectional)
+		(at 342.9 379.73 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9e0fb9ae-057e-5bbc-8317-144b1b5ca691))
+	(symbol
+		(lib_id "R9_interfaces:R463")
+		(at 330.2 379.73 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ca35b358-aa51-5e88-9764-45ab65be98fd)
+		(property "Reference" "R463"
+			(at 330.2 373.38 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "4.7k"
+			(at 330.2 386.08 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R463"
+			(at 330.2 379.73 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 330.2 379.73 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/b607fc06-f2e8-586b-88de-54e4112a506d"
+					(reference "R463")
+					(unit 1))))
+		(pin "1"
+			(uuid 39648be6-57cf-509b-8333-6a70285e3fca))
+		(pin "2"
+			(uuid 4eaeae09-5b9e-55df-804c-ecff8470d711))))

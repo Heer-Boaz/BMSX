@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 950" role="img" aria-labelledby="title desc">
+<title id="title">BMSX video timing and output proposal</title>
+<desc id="desc">Functional diagram of the proposed GFX video output. The programmer-visible live beam and VSINT are logically distinct from the displayed timing state. A candidate phase and pulse sequencer uses that displayed state and the 13.5 MHz reference to coordinate the compositor's RGB and blanking with the separate composite-sync path. Video RAM supplies the display circuits. RGB passes through the DAC while composite sync passes through a buffer and filter before both reach SCART. The two examples use this same proposed architecture; the complete implementation and display compatibility are not established.</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#294b68"/></marker>
+<style>text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:22px}.title{font-size:34px;font-weight:bold}.head{font-size:25px;font-weight:bold}.sub{font-size:20px}.tiny{font-size:18px}.chip{fill:#e3eff5;stroke:#294b68;stroke-width:2.5}.storage{fill:#f3f6f7;stroke:#294b68;stroke-width:2}.proposal{fill:#fff8e8;stroke:#9b6d21;stroke-width:2.5;stroke-dasharray:8 5}.group{fill:#fbfcfd;stroke:#93a9b8;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.timing{fill:none;stroke:#9b6d21;stroke-width:3;stroke-dasharray:8 5;marker-end:url(#arrow)}</style>
+</defs>
+<rect width="1600" height="950" fill="white"/>
+<text x="45" y="57" class="title">GFX — video timing and output</text>
+<text x="45" y="95" class="sub">One proposed physical path for startup and the separate 625-line example</text>
+<rect x="285" y="135" width="790" height="650" rx="13" class="group"/>
+<text x="310" y="174" class="head">U2 · GFX</text>
+<rect x="32" y="405" width="215" height="112" rx="8" class="storage"/>
+<text x="140" y="447" text-anchor="middle" class="head">Video RAM</text>
+<text x="140" y="480" text-anchor="middle" class="sub">U30 + U31 · 2 MiB</text>
+<path d="M247 461 H320" class="line"/>
+<rect x="320" y="210" width="260" height="122" rx="8" class="chip"/>
+<text x="450" y="249" text-anchor="middle" class="head">Live beam</text>
+<text x="450" y="279" text-anchor="middle" class="sub">CPU-visible timing</text>
+<text x="450" y="306" text-anchor="middle" class="sub">Events including VSINT</text>
+<rect x="680" y="210" width="300" height="122" rx="8" class="chip"/>
+<text x="830" y="249" text-anchor="middle" class="head">Displayed state</text>
+<text x="830" y="280" text-anchor="middle" class="sub">Latched timing and image</text>
+<text x="830" y="307" text-anchor="middle" class="sub">configuration</text>
+<path d="M580 272 H680" class="line"/>
+<text x="630" y="253" text-anchor="middle" class="tiny">Latch</text>
+<rect x="320" y="405" width="260" height="142" rx="8" class="chip"/>
+<text x="450" y="444" text-anchor="middle" class="head">Display circuits</text>
+<text x="450" y="473" text-anchor="middle" class="sub">and compositor</text>
+<text x="450" y="503" text-anchor="middle" class="sub">Windows · RGB samples</text>
+<text x="450" y="530" text-anchor="middle" class="tiny">Blanking follows output phase</text>
+<rect x="680" y="405" width="300" height="142" rx="8" class="proposal"/>
+<text x="830" y="444" text-anchor="middle" class="head">Physical sequencer</text>
+<text x="830" y="474" text-anchor="middle" class="sub">Sample phase · blanking</text>
+<text x="830" y="504" text-anchor="middle" class="sub">Line and vertical sync pulses</text>
+<text x="830" y="531" text-anchor="middle" class="tiny">Proposed, not yet integrated</text>
+<path d="M830 332 V405" class="timing"/>
+<path d="M680 315 H610 V372 H450 V405" class="line"/>
+<text x="530" y="363" text-anchor="middle" class="tiny">Image configuration</text>
+<path d="M680 480 H580" class="timing"/>
+<text x="630" y="460" text-anchor="middle" class="tiny">Phase</text>
+<rect x="32" y="650" width="245" height="89" rx="8" class="storage"/>
+<text x="154" y="687" text-anchor="middle" class="head">13.5 MHz</text>
+<text x="154" y="715" text-anchor="middle" class="sub">Output reference</text>
+<path d="M277 694 H830 V547" class="timing"/>
+<path d="M580 424 H630 V360 H1130 V275 H1190" class="line"/>
+<text x="1105" y="348" text-anchor="end" class="sub">RGB / blank</text>
+<path d="M980 470 H1190" class="timing"/>
+<text x="1084" y="452" text-anchor="middle" class="sub">CSYNC_N</text>
+<rect x="1190" y="213" width="340" height="122" rx="8" class="chip"/>
+<text x="1360" y="252" text-anchor="middle" class="head">RGB DAC · U35</text>
+<text x="1360" y="282" text-anchor="middle" class="sub">ADV7125 · 13.5 MHz</text>
+<text x="1360" y="309" text-anchor="middle" class="tiny">Captures RGB and blanking</text>
+<rect x="1190" y="405" width="340" height="130" rx="8" class="chip"/>
+<text x="1360" y="445" text-anchor="middle" class="head">Composite-sync path</text>
+<text x="1360" y="475" text-anchor="middle" class="sub">U42 buffer · U43 filter</text>
+<text x="1360" y="503" text-anchor="middle" class="tiny">Low is sync tip</text>
+<rect x="1200" y="675" width="320" height="93" rx="8" class="storage"/>
+<text x="1360" y="713" text-anchor="middle" class="head">SCART output</text>
+<text x="1360" y="741" text-anchor="middle" class="sub">RGB and composite sync</text>
+<path d="M1530 274 H1560 V721 H1520" class="line"/>
+<path d="M1360 535 V675" class="line"/>
+<text x="45" y="847" class="sub">Dashed paths are the proposed physical phase and pulse service. The 13.5 MHz reference also clocks the DAC.</text>
+<text x="45" y="882" class="sub">The live VSINT event is not defined by the analogue pin edge. Clock transfer, path alignment and display compatibility remain open.</text>
+</svg>

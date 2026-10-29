@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1420 1000" role="img" aria-labelledby="title desc">
+<title id="title">CORE memory paths and separate retained I/O storage</title>
+<desc id="desc">CPU and DMA use mapped word requests. GEO reads ROM, raw main RAM and cartridge data. The CORE router accepts a per-request access class for mapped summary writes; the GEO producer is not yet connected. Each target retains its response owner, allowing independent paths to run concurrently. Admission can retain a DMA block. Separate retained I/O storage does not alias underlying DRAM. The DRAM controller maintains refresh during system reset; power-on reset initializes its waveform engine.</desc>
+<defs>
+ <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#294b68"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:26px;font-weight:bold}.minor{font-size:18px}.chip{fill:#f5f7f8;stroke:#294b68;stroke-width:2}.block{fill:#e1edf4;stroke:#294b68;stroke-width:2}.port{fill:white;stroke:#667d8c;stroke-width:2;stroke-dasharray:7 4}.line{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}</style>
+</defs>
+<rect width="1420" height="1000" fill="white"/>
+<text x="35" y="42" class="title">Main-memory access and retained I/O storage</text>
+<rect x="250" y="80" width="870" height="760" rx="12" class="chip"/>
+<text x="275" y="118" class="title">U1 CORE · word-memory subsystem</text>
+<rect x="285" y="150" width="235" height="80" rx="7" class="block"/>
+<text x="402" y="184" text-anchor="middle" class="title">CPU</text>
+<text x="402" y="213" text-anchor="middle" class="minor">Mapped word requests</text>
+<rect x="285" y="255" width="235" height="80" rx="7" class="block"/>
+<text x="402" y="289" text-anchor="middle" class="title">DMA</text>
+<text x="402" y="318" text-anchor="middle" class="minor">Mapped words / block hold</text>
+<rect x="285" y="360" width="235" height="80" rx="7" class="block"/>
+<text x="402" y="394" text-anchor="middle" class="title">GEO</text>
+<text x="402" y="423" text-anchor="middle" class="minor">ROM / raw RAM / cartridge</text>
+<path d="M520,190 H600" class="line"/><path d="M520,295 H600" class="line"/><path d="M520,400 H600" class="line"/>
+<rect x="600" y="150" width="475" height="290" rx="7" class="block"/>
+<text x="625" y="187" class="title">Arbitration and address decode</text>
+<text x="625" y="225">Per-target request / latched owner</text>
+<text x="625" y="260">Round-robin between clients or blocks</text>
+<text x="625" y="295">Full installed-range address decode</text>
+<text x="625" y="330">First-pending fault + per-word response</text>
+<text x="625" y="371" class="minor">ROM / INPUT / GPU / PCRTC / APU → SYS</text>
+<text x="625" y="405" class="minor">Native byte lanes / retained access flags</text>
+<rect x="1190" y="175" width="200" height="205" rx="7" class="chip"/>
+<text x="1290" y="212" text-anchor="middle" class="title">SYS bus</text>
+<text x="1290" y="251" text-anchor="middle">U7 ROM / INPUT</text>
+<text x="1290" y="287" text-anchor="middle">U2 GPU / PCRTC</text>
+<text x="1290" y="323" text-anchor="middle">U4 APU</text>
+<text x="1290" y="355" text-anchor="middle" class="minor">Five chipselects</text>
+<path d="M1075,270 H1190" class="line both"/>
+<rect x="285" y="500" width="350" height="165" rx="7" class="block"/>
+<text x="460" y="538" text-anchor="middle" class="title">Retained I/O bank</text>
+<text x="460" y="575" text-anchor="middle">16K × 32 SRAM + one word</text>
+<text x="460" y="608" text-anchor="middle">64 KiB + 4 bytes</text>
+<text x="460" y="641" text-anchor="middle" class="minor">Separate from all 4 MiB main RAM</text>
+<path d="M660,440 V480 H460 V500" class="line both"/>
+<rect x="700" y="500" width="375" height="165" rx="7" class="block"/>
+<text x="887" y="538" text-anchor="middle" class="title">DRAM controller</text>
+<text x="887" y="575" text-anchor="middle">Row / column / byte strobes</text>
+<text x="887" y="608" text-anchor="middle">Early writes / CBR refresh</text>
+<text x="887" y="641" text-anchor="middle" class="minor">No full-RAM reset clear</text>
+<path d="M887,440 V500" class="line both"/>
+<rect x="1190" y="500" width="200" height="165" rx="7" class="chip"/>
+<text x="1290" y="538" text-anchor="middle" class="title">U10 + U11</text>
+<text x="1290" y="575" text-anchor="middle">4 MiB · 1M × 32</text>
+<text x="1290" y="608" text-anchor="middle">MD[31:0]</text>
+<text x="1290" y="641" text-anchor="middle" class="minor">MA[9:0] + controls</text>
+<path d="M1075,585 H1190" class="line both"/>
+<rect x="285" y="720" width="350" height="77" rx="7" class="port"/>
+<text x="460" y="750" text-anchor="middle">Local CORE-unit ports</text>
+<text x="460" y="780" text-anchor="middle" style="font-size:16px">IRQ / SYSTEM / GTE / GEO / DMA / IMGDEC</text>
+<rect x="700" y="720" width="375" height="77" rx="7" class="port"/>
+<text x="887" y="750" text-anchor="middle">Cartridge-controller port</text>
+<text x="887" y="780" text-anchor="middle" class="minor">Full cartridge byte address and access flags</text>
+<path d="M625,440 H550 V455 H265 V700 H460 V720" class="line"/>
+<path d="M710,440 V480 H680 V690 H887 V720" class="line"/>
+<text x="275" y="850" class="minor">GEO supplies access class per request; mapped summary producer is not yet connected.</text>
+<text x="275" y="888">System RESET: clear retained I/O; finish legal DRAM cycles and continue refresh.</text>
+<text x="275" y="926">Internal power-on reset: initialise DRAM timing, then 200 µs and eight CBR cycles.</text>
+<text x="275" y="965" class="minor">Dashed blocks identify the interfaces to local control units and cartridge decoding.</text>
+</svg>

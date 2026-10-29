@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1030" role="img" aria-labelledby="title desc">
+<title id="title">Protected-input power-good and front POWER enable circuit</title>
+<desc id="desc">U62 PG has a 10 kilohm pull-up R77 to VCTRL3V3 and feeds the positive comparator input through R80 and R81. R82 and R64 form the RUN reference at the negative input when the front POWER switch closes to ground. TLV7031 U64 output drives both buck enables through R65 with separate 10 kilohm pull-downs R67 and R68.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0L8,4L0,8Z" fill="#285b83"/></marker>
+<style>text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.wire{fill:none;stroke:#285b83;stroke-width:3;stroke-linejoin:round}.part{fill:white;stroke:#243b4b;stroke-width:3}.supply{fill:none;stroke:#934a35;stroke-width:3}.ground{fill:none;stroke:#243b4b;stroke-width:2.5}.node{fill:#285b83}.small{font-size:17px}.ref{font-weight:bold}.title{font-size:27px;font-weight:bold}.note{font-size:19px}</style></defs>
+<rect width="1600" height="1030" fill="white"/>
+<text x="45" y="40" class="title">Power-good / RUN comparator and buck-enable circuit</text>
+<text x="45" y="72" class="note">Component values and pin numbers identify the reference circuit; this is not a start-up waveform.</text>
+
+<!-- Power-good pull-up, divider and its actual source pin. -->
+<text x="250" y="125" text-anchor="middle" class="ref">VCTRL3V3</text>
+<path d="M250,140V165" class="supply"/>
+<rect x="237" y="165" width="26" height="70" class="part"/>
+<text x="215" y="189" text-anchor="end" class="ref">R77</text><text x="215" y="217" text-anchor="end">10 kΩ, 1%</text>
+<path d="M250,235V280H345" class="wire"/>
+<circle cx="250" cy="280" r="5" class="node"/>
+<text x="155" y="260" class="ref">EFUSE_PG</text>
+<rect x="45" y="315" width="130" height="86" rx="5" class="part"/>
+<text x="110" y="344" text-anchor="middle" class="ref">U62</text>
+<text x="110" y="374" text-anchor="middle" class="small">PG output</text>
+<path d="M175,357H250V280" class="wire"/><text x="190" y="345" class="small">3</text>
+<rect x="345" y="267" width="80" height="26" class="part"/>
+<text x="385" y="225" text-anchor="middle" class="ref">R80</text><text x="385" y="251" text-anchor="middle">10 kΩ, 1%</text>
+<text x="330" y="308" class="small">1</text><text x="435" y="308" class="small">2</text>
+<path d="M425,280H560V360H820" class="wire"/>
+<circle cx="560" cy="280" r="5" class="node"/>
+<text x="580" y="266" class="ref">PG_SCALED</text>
+<path d="M560,280V410" class="wire"/>
+<rect x="547" y="410" width="26" height="70" class="part"/>
+<text x="585" y="433" class="ref">R81</text><text x="585" y="461">100 kΩ, 1%</text>
+<path d="M560,480V530" class="wire"/>
+<path d="M538,530H582M544,538H576M551,546H569" class="ground"/>
+<text x="560" y="577" text-anchor="middle" class="small">GND</text>
+
+<!-- Comparator, including the real DBV supply pins. -->
+<path d="M820,300V540L1050,420Z" class="part"/>
+<text x="840" y="367" font-size="30">+</text><text x="840" y="488" font-size="30">−</text>
+<text x="795" y="347" class="small">3</text><text x="795" y="507" class="small">4</text>
+<text x="885" y="412" class="ref">U64</text><text x="872" y="442" class="small">TLV7031</text>
+<text x="865" y="465" class="small">push-pull</text>
+<text x="920" y="125" text-anchor="middle" class="ref">VCTRL3V3</text>
+<path d="M920,140V352.17" class="supply"/>
+<text x="934" y="280" class="small">5 (VCC)</text>
+<path d="M920,487.83V590" class="wire"/>
+<text x="934" y="552" class="small">2 (GND)</text>
+<path d="M898,590H942M904,598H936M911,606H929" class="ground"/>
+<text x="920" y="637" text-anchor="middle" class="small">GND</text>
+
+<!-- R82/R64 and the actual wired contacts of the maintained SPDT switch. -->
+<text x="700" y="425" text-anchor="middle" class="ref">VCTRL3V3</text>
+<path d="M700,440V465" class="supply"/>
+<rect x="687" y="465" width="26" height="65" class="part"/>
+<text x="665" y="486" text-anchor="end" class="ref">R82</text><text x="665" y="514" text-anchor="end">10 kΩ, 1%</text>
+<path d="M700,530V565H780V480H820" class="wire"/>
+<circle cx="700" cy="565" r="5" class="node"/>
+<text x="670" y="557" text-anchor="end" class="ref">RUN_REF</text>
+<path d="M700,565V610" class="wire"/>
+<rect x="687" y="610" width="26" height="65" class="part"/>
+<text x="725" y="631" class="ref">R64</text><text x="725" y="659">20 kΩ, 1%</text>
+<path d="M700,675V760M700,715H630" class="wire"/>
+<circle cx="700" cy="715" r="5" class="node"/><circle cx="630" cy="715" r="5" fill="white" stroke="#285b83" stroke-width="2.5"/>
+<text x="610" y="707" text-anchor="end" class="small">J60.1</text><text x="725" y="707" class="ref">POWER_SW</text>
+<circle cx="700" cy="760" r="5" class="part"/><circle cx="660" cy="820" r="5" class="part"/><circle cx="750" cy="820" r="5" class="part"/>
+<path d="M700,760L663,816" class="ground"/>
+<text x="713" y="764" class="small">2</text><text x="642" y="841" class="small">1</text><text x="762" y="830" class="small">3</text>
+<text x="810" y="775" class="ref">Front POWER</text>
+<text x="810" y="804" class="small">Shown OFF: 2–1</text><text x="810" y="832" class="small">RUN closes 2–3</text>
+<text x="610" y="835" text-anchor="end" class="small">Contact 1 individually insulated</text>
+<path d="M750,820V885H650" class="wire"/><circle cx="650" cy="885" r="5" fill="white" stroke="#285b83" stroke-width="2.5"/>
+<text x="630" y="880" text-anchor="end" class="small">J60.2</text>
+<path d="M728,885H772M734,893H766M741,901H759" class="ground"/>
+<text x="750" y="931" text-anchor="middle" class="small">GND</text>
+
+<!-- Output resistor and the two actual parallel enable pulldowns. -->
+<path d="M1050,420H1130" class="wire"/>
+<text x="1062" y="448" class="small">1 (OUT)</text>
+<text x="1105" y="347" text-anchor="middle" class="small">BUCK_ENABLE_DRIVE</text>
+<rect x="1130" y="407" width="80" height="26" class="part"/>
+<text x="1170" y="371" text-anchor="middle" class="ref">R65</text><text x="1170" y="397" text-anchor="middle">1 kΩ, 1%</text>
+<path d="M1210,420H1400V390H1480M1400,420V450H1480" class="wire"/>
+<text x="1320" y="369" text-anchor="middle" class="ref">BUCK_EN / TP5</text>
+<text x="1490" y="395" class="small">U20 EN (1)</text><text x="1490" y="455" class="small">U21 EN (1)</text>
+<circle cx="1250" cy="420" r="5" class="node"/><circle cx="1340" cy="420" r="5" class="node"/><circle cx="1400" cy="420" r="5" class="node"/>
+<path d="M1250,420V515M1340,420V515" class="wire"/>
+<rect x="1237" y="515" width="26" height="70" class="part"/><rect x="1327" y="515" width="26" height="70" class="part"/>
+<text x="1220" y="538" text-anchor="end" class="ref">R67</text><text x="1220" y="566" text-anchor="end" class="small">10 kΩ, 1%</text>
+<text x="1370" y="538" class="ref">R68</text><text x="1370" y="566" class="small">10 kΩ, 1%</text>
+<path d="M1250,585V635M1340,585V635" class="wire"/>
+<path d="M1228,635H1272M1234,643H1266M1241,651H1259M1318,635H1362M1324,643H1356M1331,651H1349" class="ground"/>
+<text x="1295" y="685" text-anchor="middle" class="small">GND</text>
+
+<text x="45" y="978" class="note">Omitted: U62 input protection/ramp networks, U63 and D71, local supply decoupling, and the buck power stages.</text>
+<text x="45" y="1006" class="note">Repeated VCTRL3V3 and GND labels denote common nets. No LED or timing waveform is implied.</text>
+</svg>

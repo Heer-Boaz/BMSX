@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1700 900" role="img" aria-labelledby="title description">
+<title id="title">GPU raster, texture and local-memory paths</title>
+<desc id="description">GP0 packets select drawing or raw memory operations. Drawing generates coverage, chooses colours and optional texture, then applies transparency, destination mask and blending rules. Texture, destination, transfer and display accesses use the shared video-memory scheduler. PCRTC independently selects stored pixels for output. This functional diagram is not evidence of physical timing.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.title{font-size:30px;font-weight:bold}.head{font-size:23px;font-weight:bold}.small{font-size:18px}.chip{fill:#e4eff6;stroke:#294b68;stroke-width:2}.store{fill:#f8f2e8;stroke:#997031;stroke-width:2}.control{fill:#edf5ec;stroke:#537659;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}
+ </style>
+</defs>
+<rect width="1700" height="900" fill="white"/>
+<text x="42" y="48" class="title">GFX — drawing and video-memory paths</text>
+<text x="42" y="81" class="small">Functional organisation: individual drawing, transfer and display deadlines are not established by this diagram.</text>
+
+<rect x="35" y="180" width="220" height="170" rx="8" class="chip"/>
+<text x="145" y="220" text-anchor="middle" class="head">GP0 stream</text>
+<text x="145" y="252" text-anchor="middle" class="small">Assemble packets</text>
+<text x="145" y="280" text-anchor="middle" class="small">Retained draw state</text>
+<text x="145" y="308" text-anchor="middle" class="small">CPU / DMA admission</text>
+
+<rect x="305" y="180" width="225" height="170" rx="8" class="chip"/>
+<text x="417" y="220" text-anchor="middle" class="head">Coverage</text>
+<text x="417" y="252" text-anchor="middle" class="small" style="font-size:16px">Polygons · lines · rectangles</text>
+<text x="417" y="280" text-anchor="middle" class="small">Area · offset · row rules</text>
+<text x="417" y="308" text-anchor="middle" class="small">Screen-space colour / UV</text>
+
+<rect x="585" y="180" width="240" height="170" rx="8" class="chip"/>
+<text x="705" y="220" text-anchor="middle" class="head">Source colour</text>
+<text x="705" y="252" text-anchor="middle" class="small">Untextured or texture lookup</text>
+<text x="705" y="280" text-anchor="middle" class="small">Window · direct / CLUT</text>
+<text x="705" y="308" text-anchor="middle" class="small">Zero texture word: no write</text>
+
+<rect x="880" y="180" width="250" height="170" rx="8" class="chip"/>
+<text x="1005" y="220" text-anchor="middle" class="head">Pixel write</text>
+<text x="1005" y="252" text-anchor="middle" class="small">Modulation / eligible dither</text>
+<text x="1005" y="280" text-anchor="middle" class="small">Destination check · blend</text>
+<text x="1005" y="308" text-anchor="middle" class="small">RGB555 and output mask bit</text>
+
+<rect x="1200" y="180" width="205" height="170" rx="8" class="control"/>
+<text x="1302" y="220" text-anchor="middle" class="head">VRAM service</text>
+<text x="1302" y="252" text-anchor="middle" class="small">Scheduler and</text>
+<text x="1302" y="280" text-anchor="middle" class="small">memory interface</text>
+<text x="1302" y="308" text-anchor="middle" class="small">draw and display</text>
+
+<rect x="1480" y="180" width="185" height="170" rx="8" class="store"/>
+<text x="1572" y="220" text-anchor="middle" class="head">Video SRAM</text>
+<text x="1572" y="252" text-anchor="middle" class="small">2 MiB</text>
+<text x="1572" y="280" text-anchor="middle" class="small">32-bit physical bus</text>
+<text x="1572" y="308" text-anchor="middle" class="small">16-bit pixel words</text>
+
+<path d="M255 265H305" class="line"/>
+<path d="M530 265H585" class="line"/>
+<path d="M825 265H880" class="line"/>
+<path d="M1130 265H1200" class="line both"/>
+<path d="M1405 265H1480" class="line both"/>
+<path d="M705 180V125H1302V180" class="line both"/>
+<text x="955" y="116" text-anchor="middle" class="small">Texture and palette reads</text>
+
+<rect x="305" y="455" width="310" height="150" rx="8" class="chip"/>
+<text x="460" y="493" text-anchor="middle" class="head">Memory commands</text>
+<text x="460" y="525" text-anchor="middle" class="small">Fill · upload · copy · readback</text>
+<text x="460" y="554" text-anchor="middle" class="small">Distinct from primitive rasterization</text>
+<text x="460" y="581" text-anchor="middle" class="small">Command-specific write controls</text>
+<path d="M145 350V530H305" class="line"/>
+<path d="M615 530H1200V350" class="line both"/>
+
+<rect x="755" y="675" width="265" height="100" rx="8" class="chip"/>
+<text x="887" y="713" text-anchor="middle" class="head">GPUREAD</text>
+<text x="887" y="743" text-anchor="middle" class="small">Readback / query latch</text>
+<path d="M460 605V725H755" class="line"/>
+<text x="1045" y="714" class="small">CPU or DMA reads</text>
+<path d="M1020 725H1180" class="line"/>
+<path d="M887 808V775" class="line"/>
+<text x="905" y="802" class="small">GP1 info query</text>
+
+<rect x="1370" y="455" width="295" height="150" rx="8" class="control"/>
+<text x="1517" y="493" text-anchor="middle" class="head">PCRTC display</text>
+<text x="1517" y="525" text-anchor="middle" class="small">Two independent readers</text>
+<text x="1517" y="554" text-anchor="middle" class="small">Composition and video output</text>
+<text x="1517" y="581" text-anchor="middle" class="small">Separate from GPU completion</text>
+<path d="M1405 310H1440V455" class="line both"/>
+
+<text x="42" y="837" class="small">A texture source's bit 15 controls eligible textured blending; the old destination bit 15 independently controls mask rejection.</text>
+<text x="42" y="866" class="small">Commands execute in stream order. This organisation does not assert a fixed per-pixel memory or execution rate.</text>
+</svg>

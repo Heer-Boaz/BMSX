@@ -1,0 +1,29 @@
+{
+  "scope": "Visual-only nominal rear connector shapes in console coordinates; not manufacturer CAD, complete connectors, fitting geometry or a manufacturing specification.",
+  "manufacturer_sources": {
+    "scart": "https://www.relayspec.com/suppliers/k/kycon/news/2000/10_01a/2000_10a_a.pdf",
+    "dc": "https://www.switchcraft.com/assets/1/6/EDG41.pdf"
+  },
+  "scart": {
+    "body_centre_X_mm": 179.0,
+    "face_Y_mm": 190.0,
+    "body_bottom_Z_mm": 33.0,
+    "body_height_mm": 16.5,
+    "face_right_of_centre_mm": 23.2,
+    "face_left_of_centre_mm": 23.7,
+    "body_depth_mm": 10.0,
+    "illustrative_profile_slope_mm": 2.0,
+    "illustrative_opening_inset_mm": 2.0,
+    "illustrative_opening_depth_mm": 5.0
+  },
+  "dc": {
+    "centre_XZ_mm": [32.0, 30.0],
+    "illustrative_face_Y_mm": 197.0,
+    "illustrative_body_depth_mm": 4.0,
+    "bushing_diameter_mm": 7.9375,
+    "illustrative_mating_diameter_mm": 5.5,
+    "centre_pin_diameter_mm": 2.0,
+    "illustrative_pin_depth_mm": 3.0
+  },
+  "limitations": "SCART cavity and DC bore depths/shapes are illustrative; no contacts, mating parts, attachment, electrical or mechanical qualification are modeled. The DC face datum is the end of the retained procurement envelope, not a manufacturer-stated assembly face."
+}

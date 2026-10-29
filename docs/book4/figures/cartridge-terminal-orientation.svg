@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" role="img" aria-labelledby="title desc">
+<title id="title">Cartridge PCB terminal orientation, top view</title>
+<desc id="desc">Front case slot1 is controller socket0; rear case slot2 is controller socket1. Looking down into the console, rowA is frontward, rowB rearward, and both rows run from position1 at left to31 at right. This is not a cartridge-face or solder-side view.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#294b68"/></marker><style>text{font-family:Arial,sans-serif;fill:#183044;font-size:18px}.title{font-size:23px;font-weight:bold}.minor{font-size:16px}.outline{fill:#f4f7fa;stroke:#637989;stroke-width:1.5}.pad{fill:#ffffff;stroke:#294b68;stroke-width:1.5}.axis{fill:none;stroke:#294b68;stroke-width:2;marker-end:url(#arrow)}</style></defs>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="450" y="32" text-anchor="middle" class="title">TOP VIEW INTO CONSOLE — MAINBOARD TERMINALS</text>
+<path d="M450,100 V55" class="axis"/><text x="470" y="76">REAR</text>
+<text x="450" y="578" text-anchor="middle" class="title">FRONT — KEYBOARD AND GAME-PAD PORTS</text>
+<rect x="139" y="174" width="575" height="92" rx="7" class="outline"/>
+<path d="M145,220 H708" stroke="#899aa6" stroke-width="1.5" stroke-dasharray="7,5"/>
+<text x="426" y="147" text-anchor="middle" class="title">Case slot 2 — controller socket 1</text>
+<text x="125" y="208" text-anchor="end">B row</text><text x="125" y="244" text-anchor="end">A row</text>
+<circle cx="160.000" cy="237.780" r="3.4" class="pad"/>
+<text x="160.000" y="262.780" text-anchor="middle" class="minor">A1</text>
+<circle cx="177.780" cy="237.780" r="3.4" class="pad"/>
+<circle cx="195.560" cy="237.780" r="3.4" class="pad"/>
+<circle cx="213.340" cy="237.780" r="3.4" class="pad"/>
+<circle cx="231.120" cy="237.780" r="3.4" class="pad"/>
+<circle cx="248.900" cy="237.780" r="3.4" class="pad"/>
+<circle cx="266.680" cy="237.780" r="3.4" class="pad"/>
+<circle cx="284.460" cy="237.780" r="3.4" class="pad"/>
+<circle cx="302.240" cy="237.780" r="3.4" class="pad"/>
+<circle cx="320.020" cy="237.780" r="3.4" class="pad"/>
+<circle cx="337.800" cy="237.780" r="3.4" class="pad"/>
+<circle cx="355.580" cy="237.780" r="3.4" class="pad"/>
+<circle cx="373.360" cy="237.780" r="3.4" class="pad"/>
+<circle cx="391.140" cy="237.780" r="3.4" class="pad"/>
+<circle cx="408.920" cy="237.780" r="3.4" class="pad"/>
+<circle cx="426.700" cy="237.780" r="3.4" class="pad"/>
+<circle cx="444.480" cy="237.780" r="3.4" class="pad"/>
+<circle cx="462.260" cy="237.780" r="3.4" class="pad"/>
+<circle cx="480.040" cy="237.780" r="3.4" class="pad"/>
+<circle cx="497.820" cy="237.780" r="3.4" class="pad"/>
+<circle cx="515.600" cy="237.780" r="3.4" class="pad"/>
+<circle cx="533.380" cy="237.780" r="3.4" class="pad"/>
+<circle cx="551.160" cy="237.780" r="3.4" class="pad"/>
+<circle cx="568.940" cy="237.780" r="3.4" class="pad"/>
+<circle cx="586.720" cy="237.780" r="3.4" class="pad"/>
+<circle cx="604.500" cy="237.780" r="3.4" class="pad"/>
+<circle cx="622.280" cy="237.780" r="3.4" class="pad"/>
+<circle cx="640.060" cy="237.780" r="3.4" class="pad"/>
+<circle cx="657.840" cy="237.780" r="3.4" class="pad"/>
+<circle cx="675.620" cy="237.780" r="3.4" class="pad"/>
+<circle cx="693.400" cy="237.780" r="3.4" class="pad"/>
+<text x="693.400" y="262.780" text-anchor="middle" class="minor">A31</text>
+<circle cx="160.000" cy="202.220" r="3.4" class="pad"/>
+<text x="160.000" y="188.220" text-anchor="middle" class="minor">B1</text>
+<circle cx="177.780" cy="202.220" r="3.4" class="pad"/>
+<circle cx="195.560" cy="202.220" r="3.4" class="pad"/>
+<circle cx="213.340" cy="202.220" r="3.4" class="pad"/>
+<circle cx="231.120" cy="202.220" r="3.4" class="pad"/>
+<circle cx="248.900" cy="202.220" r="3.4" class="pad"/>
+<circle cx="266.680" cy="202.220" r="3.4" class="pad"/>
+<circle cx="284.460" cy="202.220" r="3.4" class="pad"/>
+<circle cx="302.240" cy="202.220" r="3.4" class="pad"/>
+<circle cx="320.020" cy="202.220" r="3.4" class="pad"/>
+<circle cx="337.800" cy="202.220" r="3.4" class="pad"/>
+<circle cx="355.580" cy="202.220" r="3.4" class="pad"/>
+<circle cx="373.360" cy="202.220" r="3.4" class="pad"/>
+<circle cx="391.140" cy="202.220" r="3.4" class="pad"/>
+<circle cx="408.920" cy="202.220" r="3.4" class="pad"/>
+<circle cx="426.700" cy="202.220" r="3.4" class="pad"/>
+<circle cx="444.480" cy="202.220" r="3.4" class="pad"/>
+<circle cx="462.260" cy="202.220" r="3.4" class="pad"/>
+<circle cx="480.040" cy="202.220" r="3.4" class="pad"/>
+<circle cx="497.820" cy="202.220" r="3.4" class="pad"/>
+<circle cx="515.600" cy="202.220" r="3.4" class="pad"/>
+<circle cx="533.380" cy="202.220" r="3.4" class="pad"/>
+<circle cx="551.160" cy="202.220" r="3.4" class="pad"/>
+<circle cx="568.940" cy="202.220" r="3.4" class="pad"/>
+<circle cx="586.720" cy="202.220" r="3.4" class="pad"/>
+<circle cx="604.500" cy="202.220" r="3.4" class="pad"/>
+<circle cx="622.280" cy="202.220" r="3.4" class="pad"/>
+<circle cx="640.060" cy="202.220" r="3.4" class="pad"/>
+<circle cx="657.840" cy="202.220" r="3.4" class="pad"/>
+<circle cx="675.620" cy="202.220" r="3.4" class="pad"/>
+<circle cx="693.400" cy="202.220" r="3.4" class="pad"/>
+<text x="693.400" y="188.220" text-anchor="middle" class="minor">B31</text>
+<text x="426" y="298" text-anchor="middle" class="minor">Position 1 → 31, increasing toward the right</text>
+<rect x="139" y="384" width="575" height="92" rx="7" class="outline"/>
+<path d="M145,430 H708" stroke="#899aa6" stroke-width="1.5" stroke-dasharray="7,5"/>
+<text x="426" y="357" text-anchor="middle" class="title">Case slot 1 — controller socket 0</text>
+<text x="125" y="418" text-anchor="end">B row</text><text x="125" y="454" text-anchor="end">A row</text>
+<circle cx="160.000" cy="447.780" r="3.4" class="pad"/>
+<text x="160.000" y="472.780" text-anchor="middle" class="minor">A1</text>
+<circle cx="177.780" cy="447.780" r="3.4" class="pad"/>
+<circle cx="195.560" cy="447.780" r="3.4" class="pad"/>
+<circle cx="213.340" cy="447.780" r="3.4" class="pad"/>
+<circle cx="231.120" cy="447.780" r="3.4" class="pad"/>
+<circle cx="248.900" cy="447.780" r="3.4" class="pad"/>
+<circle cx="266.680" cy="447.780" r="3.4" class="pad"/>
+<circle cx="284.460" cy="447.780" r="3.4" class="pad"/>
+<circle cx="302.240" cy="447.780" r="3.4" class="pad"/>
+<circle cx="320.020" cy="447.780" r="3.4" class="pad"/>
+<circle cx="337.800" cy="447.780" r="3.4" class="pad"/>
+<circle cx="355.580" cy="447.780" r="3.4" class="pad"/>
+<circle cx="373.360" cy="447.780" r="3.4" class="pad"/>
+<circle cx="391.140" cy="447.780" r="3.4" class="pad"/>
+<circle cx="408.920" cy="447.780" r="3.4" class="pad"/>
+<circle cx="426.700" cy="447.780" r="3.4" class="pad"/>
+<circle cx="444.480" cy="447.780" r="3.4" class="pad"/>
+<circle cx="462.260" cy="447.780" r="3.4" class="pad"/>
+<circle cx="480.040" cy="447.780" r="3.4" class="pad"/>
+<circle cx="497.820" cy="447.780" r="3.4" class="pad"/>
+<circle cx="515.600" cy="447.780" r="3.4" class="pad"/>
+<circle cx="533.380" cy="447.780" r="3.4" class="pad"/>
+<circle cx="551.160" cy="447.780" r="3.4" class="pad"/>
+<circle cx="568.940" cy="447.780" r="3.4" class="pad"/>
+<circle cx="586.720" cy="447.780" r="3.4" class="pad"/>
+<circle cx="604.500" cy="447.780" r="3.4" class="pad"/>
+<circle cx="622.280" cy="447.780" r="3.4" class="pad"/>
+<circle cx="640.060" cy="447.780" r="3.4" class="pad"/>
+<circle cx="657.840" cy="447.780" r="3.4" class="pad"/>
+<circle cx="675.620" cy="447.780" r="3.4" class="pad"/>
+<circle cx="693.400" cy="447.780" r="3.4" class="pad"/>
+<text x="693.400" y="472.780" text-anchor="middle" class="minor">A31</text>
+<circle cx="160.000" cy="412.220" r="3.4" class="pad"/>
+<text x="160.000" y="398.220" text-anchor="middle" class="minor">B1</text>
+<circle cx="177.780" cy="412.220" r="3.4" class="pad"/>
+<circle cx="195.560" cy="412.220" r="3.4" class="pad"/>
+<circle cx="213.340" cy="412.220" r="3.4" class="pad"/>
+<circle cx="231.120" cy="412.220" r="3.4" class="pad"/>
+<circle cx="248.900" cy="412.220" r="3.4" class="pad"/>
+<circle cx="266.680" cy="412.220" r="3.4" class="pad"/>
+<circle cx="284.460" cy="412.220" r="3.4" class="pad"/>
+<circle cx="302.240" cy="412.220" r="3.4" class="pad"/>
+<circle cx="320.020" cy="412.220" r="3.4" class="pad"/>
+<circle cx="337.800" cy="412.220" r="3.4" class="pad"/>
+<circle cx="355.580" cy="412.220" r="3.4" class="pad"/>
+<circle cx="373.360" cy="412.220" r="3.4" class="pad"/>
+<circle cx="391.140" cy="412.220" r="3.4" class="pad"/>
+<circle cx="408.920" cy="412.220" r="3.4" class="pad"/>
+<circle cx="426.700" cy="412.220" r="3.4" class="pad"/>
+<circle cx="444.480" cy="412.220" r="3.4" class="pad"/>
+<circle cx="462.260" cy="412.220" r="3.4" class="pad"/>
+<circle cx="480.040" cy="412.220" r="3.4" class="pad"/>
+<circle cx="497.820" cy="412.220" r="3.4" class="pad"/>
+<circle cx="515.600" cy="412.220" r="3.4" class="pad"/>
+<circle cx="533.380" cy="412.220" r="3.4" class="pad"/>
+<circle cx="551.160" cy="412.220" r="3.4" class="pad"/>
+<circle cx="568.940" cy="412.220" r="3.4" class="pad"/>
+<circle cx="586.720" cy="412.220" r="3.4" class="pad"/>
+<circle cx="604.500" cy="412.220" r="3.4" class="pad"/>
+<circle cx="622.280" cy="412.220" r="3.4" class="pad"/>
+<circle cx="640.060" cy="412.220" r="3.4" class="pad"/>
+<circle cx="657.840" cy="412.220" r="3.4" class="pad"/>
+<circle cx="675.620" cy="412.220" r="3.4" class="pad"/>
+<circle cx="693.400" cy="412.220" r="3.4" class="pad"/>
+<text x="693.400" y="398.220" text-anchor="middle" class="minor">B31</text>
+<text x="426" y="508" text-anchor="middle" class="minor">Position 1 → 31, increasing toward the right</text>
+<path d="M790,505 H867 M790,505 V438" class="axis"/><text x="852" y="531">+X</text><text x="804" y="447">+Y</text>
+<text x="450" y="552" text-anchor="middle" class="minor">A/B identify PCB rows, not assumed card-face lettering.</text>
+</svg>

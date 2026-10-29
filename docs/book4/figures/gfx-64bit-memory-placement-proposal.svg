@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1580 850" role="img" aria-labelledby="title desc">
+<title id="title">Conceptual wide video-memory placement</title>
+<desc id="desc">Two projected top views of the proposed mainboard, one for each component side. Four rectangular video-memory reservations keep two existing centres on the top and propose two on the underside. The existing TP4 through-hole overlaps an underside reservation; a possible relocated TP4 is shown. Cartridge socket outlines and the hypothetical larger GFX body are shown as context. Both views use the same top-view board coordinates; this is not a mirrored physical underside view or a fit qualification.</desc>
+<defs>
+<style>
+ text{font-family:Arial,Helvetica,sans-serif;fill:#203746;font-size:19px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:17px}.board{fill:#e9f1e9;stroke:#42704d;stroke-width:.6}.gfx{fill:#d5e6f2;stroke:#315e7d;stroke-width:.45}.context{fill:#d5d9db;stroke:#687881;stroke-width:.4}.memory{fill:#fff1d7;stroke:#aa6c18;stroke-width:.55;stroke-dasharray:1.7 1}.through{fill:#f5f2ed;stroke:#a03f32;stroke-width:.6}.possible{fill:white;stroke:#1c7851;stroke-width:.55;stroke-dasharray:1.3 .8}.projected{fill:none;stroke:#6e808a;stroke-width:.5;stroke-dasharray:1.5 1}.boardtext{font-size:4.7px;text-anchor:middle;fill:#203746}.tiny{font-size:3.6px;text-anchor:middle;fill:#203746}
+</style>
+</defs>
+<rect width="1580" height="850" fill="white"/>
+<text x="45" y="48" class="title">Wide video memory — placement study</text>
+<text x="45" y="80" class="small">Conceptual reservations on the current 220 × 150 mm board; no component moves or copper are committed.</text>
+<text x="70" y="150" class="head">Top-side proposal</text>
+<text x="850" y="150" class="head">Underside proposal, projected from above</text>
+<!-- Both board views use the same absolute KiCad XY coordinates. -->
+<g transform="translate(70 180) scale(3) translate(-10 -25)">
+ <rect x="10" y="25" width="220" height="150" rx="1.5" class="board"/>
+ <rect x="131" y="62" width="40" height="40" class="gfx"/>
+ <text x="151" y="80" class="boardtext">U2 · 40 × 40</text><text x="151" y="86" class="tiny">hypothetical body</text>
+ <rect x="119.525" y="104.775" width="100.95" height="10.45" rx="1" class="context"/>
+ <text x="170" y="111.5" class="boardtext">J_CART0</text>
+ <rect x="119.525" y="134.775" width="100.95" height="10.45" rx="1" class="context"/>
+ <text x="170" y="141.5" class="boardtext">J_CART1</text>
+ <rect x="194.5" y="60" width="14" height="24" class="memory"/><text x="201.5" y="74" class="boardtext">1</text>
+ <rect x="212" y="60" width="14" height="24" class="memory"/><text x="219" y="74" class="boardtext">2</text>
+ <circle cx="214" cy="52" r="1.1" class="through"/><text x="214" y="48" class="tiny">TP4</text>
+ <circle cx="190" cy="35" r="1.3" class="possible"/><text x="190" y="31" class="tiny">TP4?</text>
+</g>
+<g transform="translate(850 180) scale(3) translate(-10 -25)">
+ <rect x="10" y="25" width="220" height="150" rx="1.5" class="board"/>
+ <rect x="131" y="62" width="40" height="40" class="projected"/>
+ <text x="151" y="80" class="boardtext">U2 projection</text><text x="151" y="86" class="tiny">top-side body</text>
+ <rect x="119.525" y="104.775" width="100.95" height="10.45" rx="1" class="context"/>
+ <text x="170" y="111.5" class="boardtext">J_CART0 projection</text>
+ <rect x="119.525" y="134.775" width="100.95" height="10.45" rx="1" class="context"/>
+ <text x="170" y="141.5" class="boardtext">J_CART1 projection</text>
+ <rect x="194.5" y="38" width="14" height="24" class="memory"/><text x="201.5" y="52" class="boardtext">3</text>
+ <rect x="212" y="38" width="14" height="24" class="memory"/><text x="219" y="48" class="boardtext">4</text>
+ <circle cx="214" cy="52" r="1.1" class="through"/>
+ <circle cx="190" cy="35" r="1.3" class="possible"/><text x="190" y="31" class="tiny">TP4?</text>
+</g>
+<text x="45" y="695" class="small">Amber: 14 × 24 mm reservations, not exact footprints; 1 and 2 use the U30/U31 centres. Red TP4 conflicts with 4.</text>
+<text x="45" y="728" class="small">Green dashed: one possible TP4 relocation; this is not present on the existing PCB. The underside reservations face the top-side power area.</text>
+<text x="45" y="761" class="small">Both views use the same top-view KiCad coordinates: the underside panel is a projection, not a mirrored physical bottom view.</text>
+<text x="45" y="794" class="small">No routing, full footprint clearance, deck fit, power integrity, thermals or manufacturing qualification is established.</text>
+</svg>

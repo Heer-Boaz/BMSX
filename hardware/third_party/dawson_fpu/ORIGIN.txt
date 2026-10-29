@@ -1,0 +1,35 @@
+Dawson IEEE-754 synthesizable floating point arithmetic cores
+https://github.com/dawsonjon/fpu
+Upstream commit c45d5e0a9f1b7e945e2be6770dbc1203825a05c4
+Files: double_adder/double_adder.v, double_multiplier/double_multiplier.v,
+double_divider/double_divider.v. These files are unmodified. 2013-2014 source;
+not evidence of timing, gate count or process availability in the 1990s.
+Copyright and license are reproduced in COPYING.txt.
+
+double_adder_fast.v is a BMSX derivative of double_adder.v, retaining the MIT
+license. The ALIGN stage uses a parallel shift with sticky jam instead of a
+single shift per clock. Leading-zero detection and a barrel shift replace
+serial left normalization while retaining guard, round and sticky. Exact
+opposite-value cancellation takes the +0 path under round-to-nearest/ties-even.
+The parallel leading-zero/shift organisation was compared with Berkeley
+HardFloat's `AddRecFN` implementation:
+https://github.com/ucb-bar/berkeley-hardfloat/blob/master/hardfloat/src/main/scala/AddRecFN.scala
+The original Dawson file remains unmodified. The derivative has directed
+comparisons but is not a qualified arithmetic macro.
+
+double_divider_corrected.v is a minimally corrected serial derivative. The
+rounding-overflow comparison uses all 53 significand bits instead of the
+upstream 24-bit literal. The unchanged upstream returns 0020000001000000 for
+0000000002000000 / 4000000000000001; the binary64 result is 0000000001000000.
+The CPU/GEO service therefore uses the corrected derivative by default; the
+original remains only as an explicitly characterized historical reference.
+
+double_multiplier_fast.v and double_divider_fast.v are separate derivatives
+under the same MIT license. Both use a parallel leading-zero tree and a
+single sticky-jam underflow shift. The divider preloads the 52 initial radix-2
+steps whose quotient is necessarily zero, and then computes one quotient bit
+per clock for 56 iterations; it also retains the corrected rounding comparison.
+These are bounded-work candidate datapaths, not qualified area or clock timing.
+The separation of IEEE classifications, significand division and rounded
+output was also checked against Berkeley HardFloat's DivSqrtRecFN_small:
+https://github.com/ucb-bar/berkeley-hardfloat/blob/master/hardfloat/src/main/scala/DivSqrtRecFN_small.scala

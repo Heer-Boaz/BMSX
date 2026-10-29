@@ -1,0 +1,108 @@
+{
+  "revision": "COMPACT_BANK_POLARISED_2",
+  "scope": "Constructive native two-slot bank. Socket centres share X and are30mm apart in Y. Original socket, PCB, all62 fingers and electronics retain rigid placements and original Z seating. Each shell receives the independently owned returned polarisation channel. No copper routing or fabrication qualification.",
+  "units": "mm; local slot0 atX0/Y0; slot1 atX0/Y30; Z retains original motherboard datum.",
+  "input_manifest": "models/cartridge/manifest.json",
+  "slots": [
+    {
+      "slot": 0,
+      "source_socket_centre_XY_mm": [
+        85,
+        149
+      ],
+      "target_socket_centre_XY_mm": [
+        0,
+        0
+      ],
+      "translation_mm": [
+        -85,
+        -149,
+        0
+      ]
+    },
+    {
+      "slot": 1,
+      "source_socket_centre_XY_mm": [
+        215,
+        149
+      ],
+      "target_socket_centre_XY_mm": [
+        0,
+        30
+      ],
+      "translation_mm": [
+        -215,
+        -119,
+        0
+      ]
+    }
+  ],
+  "global_placement": "The floorplan owner places this local module; no inherited case dimensions or AI/reference-image slot positions are mandatory.",
+  "selected_connector": {
+    "manufacturer": "EDAC",
+    "mpn": "395-062-520-202",
+    "nominal_dimensions_mm": {
+      "overall_length_A": 99.95,
+      "mount_axis_pitch_B": 93.35,
+      "raised_central_body_C": 85.34,
+      "overall_depth": 9.4,
+      "body_height_above_board": 15.24,
+      "flush_lug_height_above_board": 6.35,
+      "mount_hole_diameter": 3.25,
+      "contact_pitch": 2.54,
+      "contact_row_spacing": 5.08,
+      "tail_length": 4.45
+    },
+    "nominal_local_mount_axes_X_mm": [
+      -46.675,
+      46.675
+    ],
+    "representation": "Retained own nominal native connector model corrected to published flush lug geometry. Real part, tolerance and contact mating qualification are not inferred from this nominal solid.",
+    "sources": [
+      {
+        "url": "https://files.edac.net/edac/content/395/395-062-520-202%20-%20EDAC%20Card%20Edge%20Connector.PDF",
+        "pages_one_based": [
+          1
+        ],
+        "identity": "Exact configured part drawing, May16/2017."
+      },
+      {
+        "url": "https://www.farnell.com/datasheets/2916867.pdf",
+        "pages_one_based": [
+          1,
+          2
+        ],
+        "identity": "EDAC345/395series manufacturer datasheet hosted by distributor."
+      }
+    ],
+    "insertion_test_condition": {
+      "maximum_force_per_contact_pair_N": 4.45,
+      "test_gauge_thickness_mm": 1.78,
+      "source_page_one_based": 1,
+      "interpretation": "Manufacturer test condition, not measured force of a normal BMSX card or a new universal bank load/deflection requirement."
+    }
+  },
+  "preserved_seating_Z_mm": {
+    "motherboard_top": 11.6,
+    "socket_tail_bottom": 7.15,
+    "socket_body_top": 26.84,
+    "flush_lug_top": 17.95,
+    "card_shell_bottom": 34.4,
+    "card_shell_top": 109.4
+  },
+  "expected_native_shell_plan_span_mm": [
+    110,
+    48
+  ],
+  "expected_native_shell_gap_mm": 12,
+  "meaning_of_spacing": "One physically bounded candidate with12mm shell-to-shell gap. This does not establish hand clearance, preferred industrial design or a required final slot separation.",
+  "mating_scope": "Native contact/card solids retain their seated poses. Shell channel geometry belongs to design/cartridge_polarisation.json. All material intersections are reported; no overlap suppression or invented spring/contact behaviour.",
+  "not_proven": [
+    "Whole mainboard placement or enclosure fit",
+    "Hand/grip clearance and card extraction in a finished case",
+    "Carrier/support and real connector load path",
+    "Contact force/wipe/reliability and PCB tolerance qualification",
+    "Electrical timing, copper routing, SI/PI and fabrication approval"
+  ],
+  "fabrication_release": false
+}

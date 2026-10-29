@@ -1,0 +1,24 @@
+{
+  "manufacturer_part": {
+    "manufacturer": "SPIROL",
+    "item": "151051",
+    "designation": "INS 29/M2 / .125S EK",
+    "source": "https://shop.spirol.com/en-gb/item/series-29-30-short-heat-ultrasonic-insert-metric/series-29-short-heat-ultrasonic-insert-metric/151051",
+    "facts": "M2x0.4; brass; overknurl reference3.63mm; pilot3.12mm; nominal length3.18mm; recommended hole3.20mm +0.08/-0.00."
+  },
+  "installation": {
+    "source": "https://my.spirol.com/resources/white-papers/how-to-design-the-proper-hole-for-heat-ultrasonic-inserts/",
+    "facts": "Heat installation embeds knurls/undercuts in host plastic. Bore depth at least insert length plus two pitches. Mating clearance hole smaller than insert pilot. Boss diameter2..3times insert diameter. Screws must not bottom out."
+  },
+  "production_references_inspected": [
+    {
+      "source": "https://github.com/CadQuery/cadquery/blob/master/cadquery/occ_impl/shapes.py",
+      "used_for": "Native shape booleans and BRep operations; fuse additions then subtract blind tools, preserve shape ownership."
+    },
+    {
+      "source": "https://github.com/prusa3d/Original-Prusa-i3/blob/MK3/Printed-Parts/scad/x-end.scad",
+      "used_for": "Separate positive stock from explicit internal fastening receivers, not a cosmetic exterior-head deletion."
+    }
+  ],
+  "model_scope": "Named manufacturer insert installed receiving envelope, not reverse-engineered detailed knurl geometry. Original POWER/RESET/LED maker receiving dimensions and every harness route remain at their existing owners."
+}

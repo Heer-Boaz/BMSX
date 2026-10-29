@@ -1,0 +1,916 @@
+{
+  "revision": "COMPACT_CARTRIDGE_FRAME_POLARISED_2",
+  "scope": "Exact R4 machined rail/contact geometry transplanted into two close slots. Continuous side wings, bottom-fastened round columns and two pairs of integral shell polarising ribs owned by design/cartridge_polarisation.json; not a force, deflection, thermal or fabrication qualification.",
+  "input_manifest": "models/frame/manifest.json",
+  "slots": [
+    {
+      "slot": 0,
+      "original_centre_XY_mm": [
+        85,
+        149
+      ],
+      "translation_mm": [
+        85,
+        -39,
+        0
+      ],
+      "upper_crop_mm": [
+        25,
+        137,
+        18.4,
+        145,
+        161,
+        34.4
+      ],
+      "spreader_crop_mm": [
+        33,
+        138.5,
+        4.5,
+        137,
+        159.5,
+        8
+      ]
+    },
+    {
+      "slot": 1,
+      "original_centre_XY_mm": [
+        215,
+        149
+      ],
+      "translation_mm": [
+        -45,
+        -9,
+        0
+      ],
+      "upper_crop_mm": [
+        155,
+        137,
+        18.4,
+        275,
+        161,
+        34.4
+      ],
+      "spreader_crop_mm": [
+        163,
+        138.5,
+        4.5,
+        267,
+        159.5,
+        8
+      ]
+    }
+  ],
+  "wing_bounds_mm": [
+    [
+      110,
+      99.5,
+      18.4,
+      117,
+      150.5,
+      33.4
+    ],
+    [
+      223,
+      99.5,
+      18.4,
+      230,
+      150.5,
+      33.4
+    ]
+  ],
+  "columns": [
+    {
+      "axis_XY_mm": [
+        112,
+        107
+      ],
+      "diameter_mm": 7.5,
+      "z_range_mm": [
+        3,
+        18.4
+      ],
+      "tap_pilot_mm": 2.5,
+      "pilot_z_range_mm": [
+        3,
+        11
+      ],
+      "thread": "M3x0.5"
+    },
+    {
+      "axis_XY_mm": [
+        116,
+        126
+      ],
+      "diameter_mm": 7.5,
+      "z_range_mm": [
+        3,
+        18.4
+      ],
+      "tap_pilot_mm": 2.5,
+      "pilot_z_range_mm": [
+        3,
+        11
+      ],
+      "thread": "M3x0.5"
+    },
+    {
+      "axis_XY_mm": [
+        226,
+        105
+      ],
+      "diameter_mm": 7.5,
+      "z_range_mm": [
+        3,
+        18.4
+      ],
+      "tap_pilot_mm": 2.5,
+      "pilot_z_range_mm": [
+        3,
+        11
+      ],
+      "thread": "M3x0.5"
+    },
+    {
+      "axis_XY_mm": [
+        226,
+        146
+      ],
+      "diameter_mm": 7.5,
+      "z_range_mm": [
+        3,
+        18.4
+      ],
+      "tap_pilot_mm": 2.5,
+      "pilot_z_range_mm": [
+        3,
+        11
+      ],
+      "thread": "M3x0.5"
+    }
+  ],
+  "spreader_bridge_bounds_mm": [
+    118,
+    120.4,
+    4.5,
+    222,
+    129.6,
+    8
+  ],
+  "spreader_column_clearance_diameter_mm": 8.2,
+  "frame_finish_operations": {
+    "group": "FRAME_METAL_R2",
+    "material": "aluminium",
+    "source_parts": [
+      "FRAME__BEAM_0",
+      "FRAME__BEAM_1",
+      "FRAME__LEFT_FRONT_COLUMN",
+      "FRAME__LEFT_REAR_COLUMN",
+      "FRAME__LEFT_FRONT_FOOT",
+      "FRAME__LEFT_REAR_FOOT",
+      "FRAME__CENTRE_FRONT_ARM",
+      "FRAME__CENTRE_REAR_ARM",
+      "FRAME__RIGHT_FRONT_COLUMN",
+      "FRAME__RIGHT_FRONT_FOOT",
+      "FRAME__RIGHT_SIDE_CANTILEVER",
+      "FRAME__CENTRE_COLUMN_0",
+      "FRAME__CENTRE_COLUMN_1",
+      "FRAME__SOCKET_0_ARM_0",
+      "FRAME__SOCKET_0_ARM_1",
+      "FRAME__SOCKET_0_ARM_2",
+      "FRAME__SOCKET_0_ARM_3",
+      "FRAME__SOCKET_1_ARM_0",
+      "FRAME__SOCKET_1_ARM_1",
+      "FRAME__SOCKET_1_ARM_2",
+      "FRAME__SOCKET_1_ARM_3"
+    ],
+    "holes": [
+      {
+        "axis": "Y",
+        "centre_mm": [
+          28,
+          141.5,
+          32
+        ],
+        "diameter_mm": 1.6,
+        "through_length_mm": 4.2
+      },
+      {
+        "axis": "Y",
+        "centre_mm": [
+          142,
+          141.5,
+          32
+        ],
+        "diameter_mm": 1.6,
+        "through_length_mm": 4.2
+      },
+      {
+        "axis": "Y",
+        "centre_mm": [
+          166,
+          141.5,
+          32
+        ],
+        "diameter_mm": 1.6,
+        "through_length_mm": 4.2
+      },
+      {
+        "axis": "Y",
+        "centre_mm": [
+          264,
+          141.5,
+          32
+        ],
+        "diameter_mm": 1.6,
+        "through_length_mm": 4.2
+      },
+      {
+        "axis": "Y",
+        "centre_mm": [
+          36,
+          156.5,
+          32
+        ],
+        "diameter_mm": 1.6,
+        "through_length_mm": 4.2
+      },
+      {
+        "axis": "Y",
+        "centre_mm": [
+          142,
+          156.5,
+          32
+        ],
+        "diameter_mm": 1.6,
+        "through_length_mm": 4.2
+      },
+      {
+        "axis": "Y",
+        "centre_mm": [
+          166,
+          156.5,
+          32
+        ],
+        "diameter_mm": 1.6,
+        "through_length_mm": 4.2
+      },
+      {
+        "axis": "Y",
+        "centre_mm": [
+          264,
+          156.5,
+          32
+        ],
+        "diameter_mm": 1.6,
+        "through_length_mm": 4.2
+      }
+    ],
+    "cutboxes": [
+      {
+        "id": "FRAME_STOP_0_0_G10_T_FOOT",
+        "bounds_mm": [
+          30.85,
+          139.4,
+          31.9,
+          33.15,
+          146.5,
+          32.6
+        ]
+      },
+      {
+        "id": "FRAME_STOP_0_0_G10_T_THROAT",
+        "bounds_mm": [
+          31.45,
+          139.4,
+          32.6,
+          32.55,
+          146.5,
+          33.5
+        ]
+      },
+      {
+        "id": "FRAME_STOP_0_1_G10_T_FOOT",
+        "bounds_mm": [
+          136.85,
+          139.4,
+          31.9,
+          139.15,
+          146.5,
+          32.6
+        ]
+      },
+      {
+        "id": "FRAME_STOP_0_1_G10_T_THROAT",
+        "bounds_mm": [
+          137.45,
+          139.4,
+          32.6,
+          138.55,
+          146.5,
+          33.5
+        ]
+      },
+      {
+        "id": "FRAME_STOP_0_2_G10_T_FOOT",
+        "bounds_mm": [
+          30.85,
+          151.5,
+          31.9,
+          33.15,
+          158.6,
+          32.6
+        ]
+      },
+      {
+        "id": "FRAME_STOP_0_2_G10_T_THROAT",
+        "bounds_mm": [
+          31.45,
+          151.5,
+          32.6,
+          32.55,
+          158.6,
+          33.5
+        ]
+      },
+      {
+        "id": "FRAME_STOP_0_3_G10_T_FOOT",
+        "bounds_mm": [
+          136.85,
+          151.5,
+          31.9,
+          139.15,
+          158.6,
+          32.6
+        ]
+      },
+      {
+        "id": "FRAME_STOP_0_3_G10_T_THROAT",
+        "bounds_mm": [
+          137.45,
+          151.5,
+          32.6,
+          138.55,
+          158.6,
+          33.5
+        ]
+      },
+      {
+        "id": "FRAME_GUIDE_0_0_G10_T_FOOT",
+        "bounds_mm": [
+          31.6,
+          139.4,
+          28.8,
+          33.4,
+          150.5,
+          29.5
+        ]
+      },
+      {
+        "id": "FRAME_GUIDE_0_0_G10_T_THROAT",
+        "bounds_mm": [
+          32.0,
+          139.4,
+          29.5,
+          33.0,
+          150.5,
+          30.1
+        ]
+      },
+      {
+        "id": "FRAME_GUIDE_0_1_G10_T_FOOT",
+        "bounds_mm": [
+          136.6,
+          139.4,
+          28.8,
+          138.4,
+          150.5,
+          29.5
+        ]
+      },
+      {
+        "id": "FRAME_GUIDE_0_1_G10_T_THROAT",
+        "bounds_mm": [
+          137.0,
+          139.4,
+          29.5,
+          138.0,
+          150.5,
+          30.1
+        ]
+      },
+      {
+        "id": "FRAME_STOP_1_0_G10_T_FOOT",
+        "bounds_mm": [
+          160.85,
+          139.4,
+          31.9,
+          163.15,
+          146.5,
+          32.6
+        ]
+      },
+      {
+        "id": "FRAME_STOP_1_0_G10_T_THROAT",
+        "bounds_mm": [
+          161.45,
+          139.4,
+          32.6,
+          162.55,
+          146.5,
+          33.5
+        ]
+      },
+      {
+        "id": "FRAME_STOP_1_1_G10_T_FOOT",
+        "bounds_mm": [
+          266.85,
+          139.4,
+          31.9,
+          269.15,
+          146.5,
+          32.6
+        ]
+      },
+      {
+        "id": "FRAME_STOP_1_1_G10_T_THROAT",
+        "bounds_mm": [
+          267.45,
+          139.4,
+          32.6,
+          268.55,
+          146.5,
+          33.5
+        ]
+      },
+      {
+        "id": "FRAME_STOP_1_2_G10_T_FOOT",
+        "bounds_mm": [
+          160.85,
+          151.5,
+          31.9,
+          163.15,
+          158.6,
+          32.6
+        ]
+      },
+      {
+        "id": "FRAME_STOP_1_2_G10_T_THROAT",
+        "bounds_mm": [
+          161.45,
+          151.5,
+          32.6,
+          162.55,
+          158.6,
+          33.5
+        ]
+      },
+      {
+        "id": "FRAME_STOP_1_3_G10_T_FOOT",
+        "bounds_mm": [
+          266.85,
+          151.5,
+          31.9,
+          269.15,
+          158.6,
+          32.6
+        ]
+      },
+      {
+        "id": "FRAME_STOP_1_3_G10_T_THROAT",
+        "bounds_mm": [
+          267.45,
+          151.5,
+          32.6,
+          268.55,
+          158.6,
+          33.5
+        ]
+      },
+      {
+        "id": "FRAME_GUIDE_1_0_G10_T_FOOT",
+        "bounds_mm": [
+          161.6,
+          139.4,
+          28.8,
+          163.4,
+          150.5,
+          29.5
+        ]
+      },
+      {
+        "id": "FRAME_GUIDE_1_0_G10_T_THROAT",
+        "bounds_mm": [
+          162.0,
+          139.4,
+          29.5,
+          163.0,
+          150.5,
+          30.1
+        ]
+      },
+      {
+        "id": "FRAME_GUIDE_1_1_G10_T_FOOT",
+        "bounds_mm": [
+          266.6,
+          139.4,
+          28.8,
+          268.4,
+          150.5,
+          29.5
+        ]
+      },
+      {
+        "id": "FRAME_GUIDE_1_1_G10_T_THROAT",
+        "bounds_mm": [
+          267.0,
+          139.4,
+          29.5,
+          268.0,
+          150.5,
+          30.1
+        ]
+      }
+    ],
+    "hex_pockets": []
+  },
+  "base_additions": [
+    {
+      "origin_mm": [
+        123.325,
+        110,
+        3
+      ],
+      "direction": [
+        0,
+        0,
+        1
+      ],
+      "diameter_mm": 9,
+      "length_mm": 1.5
+    },
+    {
+      "origin_mm": [
+        216.675,
+        110,
+        3
+      ],
+      "direction": [
+        0,
+        0,
+        1
+      ],
+      "diameter_mm": 9,
+      "length_mm": 1.5
+    },
+    {
+      "origin_mm": [
+        123.325,
+        140,
+        3
+      ],
+      "direction": [
+        0,
+        0,
+        1
+      ],
+      "diameter_mm": 9,
+      "length_mm": 1.5
+    },
+    {
+      "origin_mm": [
+        216.675,
+        140,
+        3
+      ],
+      "direction": [
+        0,
+        0,
+        1
+      ],
+      "diameter_mm": 9,
+      "length_mm": 1.5
+    }
+  ],
+  "base_holes": [
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        112,
+        107,
+        2
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        116,
+        126,
+        2
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        226,
+        105,
+        2
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        226,
+        146,
+        2
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        123.325,
+        110,
+        2
+      ],
+      "diameter_mm": 6,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        123.325,
+        110,
+        3.75
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 1.7
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        216.675,
+        110,
+        2
+      ],
+      "diameter_mm": 6,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        216.675,
+        110,
+        3.75
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 1.7
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        123.325,
+        140,
+        2
+      ],
+      "diameter_mm": 6,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        123.325,
+        140,
+        3.75
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 1.7
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        216.675,
+        140,
+        2
+      ],
+      "diameter_mm": 6,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        216.675,
+        140,
+        3.75
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 1.7
+    }
+  ],
+  "fastener_plan": {
+    "components": {
+      "M3_CAP_8": {
+        "kind": "screw",
+        "designation": "ISO 4762 M3x8",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "length_mm": 8,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          7.8,
+          8.2
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 5.5,
+        "head_max_height_mm": 3,
+        "hex_key_AF_mm": 2.5,
+        "minimum_threaded_length_mm": 8,
+        "source_refs": [
+          "M3cap16"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 3
+      }
+    },
+    "fastening_interfaces": [
+      {
+        "id": "COMPACT_FRAME_COLUMN_0",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          112,
+          107,
+          1
+        ],
+        "tip_position_mm": [
+          112,
+          107,
+          9
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "FASTENER__COMPACT_FRAME_COLUMN_0_SCREW",
+          "head_top_axis_mm": -2
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "owner": "COMPACT_FRAME_METAL",
+          "axis_range_mm": [
+            3,
+            9
+          ],
+          "thread": "M3x0.5",
+          "tap_drill_mm": 2.5,
+          "cad_screw_core_diameter_mm": 2.4,
+          "nominal_engagement_mm": 6
+        }
+      },
+      {
+        "id": "COMPACT_FRAME_COLUMN_1",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          116,
+          126,
+          1
+        ],
+        "tip_position_mm": [
+          116,
+          126,
+          9
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "FASTENER__COMPACT_FRAME_COLUMN_1_SCREW",
+          "head_top_axis_mm": -2
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "owner": "COMPACT_FRAME_METAL",
+          "axis_range_mm": [
+            3,
+            9
+          ],
+          "thread": "M3x0.5",
+          "tap_drill_mm": 2.5,
+          "cad_screw_core_diameter_mm": 2.4,
+          "nominal_engagement_mm": 6
+        }
+      },
+      {
+        "id": "COMPACT_FRAME_COLUMN_2",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          226,
+          105,
+          1
+        ],
+        "tip_position_mm": [
+          226,
+          105,
+          9
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "FASTENER__COMPACT_FRAME_COLUMN_2_SCREW",
+          "head_top_axis_mm": -2
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "owner": "COMPACT_FRAME_METAL",
+          "axis_range_mm": [
+            3,
+            9
+          ],
+          "thread": "M3x0.5",
+          "tap_drill_mm": 2.5,
+          "cad_screw_core_diameter_mm": 2.4,
+          "nominal_engagement_mm": 6
+        }
+      },
+      {
+        "id": "COMPACT_FRAME_COLUMN_3",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          226,
+          146,
+          1
+        ],
+        "tip_position_mm": [
+          226,
+          146,
+          9
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "FASTENER__COMPACT_FRAME_COLUMN_3_SCREW",
+          "head_top_axis_mm": -2
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "owner": "COMPACT_FRAME_METAL",
+          "axis_range_mm": [
+            3,
+            9
+          ],
+          "thread": "M3x0.5",
+          "tap_drill_mm": 2.5,
+          "cad_screw_core_diameter_mm": 2.4,
+          "nominal_engagement_mm": 6
+        }
+      }
+    ]
+  },
+  "preserved_interfaces": [
+    "Eight exact native keyed G10 stop tops Z34.4; native T-feet/neck clearance retained after final stock fusion.",
+    "Four exact native keyed X guides; working faces translated rigidly with selected sockets.",
+    "Four cropped exact native closure bars with their original screw and rebate geometry.",
+    "Four exact native keyed G10 board bearings; updated native loadspreader bearing-key pockets.",
+    "Four original nominal EDAC lug screw/nut/washer clamps and exact OD6.4/ID3.4 bypass sleeves.",
+    "Integral asymmetric ribs intercept the reversed shell before its board edge reaches either connector mouth; all62 terminals and existing seating stops retained."
+  ],
+  "not_proven": [
+    "No generic force/deflection or temperature norm adopted.",
+    "Actual machined fits, finish, thread engagement and physical assembly/load validation remain open.",
+    "Source fastener CAD retains its explicit nominal thread-core model; thread helices are not modelled.",
+    "Column/mainboard holes are owned by root PCB producer; this owner does not modify PCB or thermal sources."
+  ],
+  "fabrication_release": false
+}

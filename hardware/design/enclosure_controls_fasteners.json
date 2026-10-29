@@ -1,0 +1,728 @@
+{
+  "revision": "COMPACT_HIDDEN_CONTROL_MOUNT",
+  "scope": "Four internally inserted M2x6 cap screws and washers into SPIROL151051 blind roof inserts; two original POWER U-tab M2x6 countersunk/captured-nut joints unchanged.",
+  "components": {
+    "M2_NUT": {
+      "kind": "nut",
+      "designation": "ISO 4032 / DIN 934 M2 hexagon nut",
+      "material": "A2 stainless",
+      "thread_major_diameter_mm": 2,
+      "pitch_mm": 0.4,
+      "max_across_flats_mm": 4,
+      "max_across_corners_mm": 4.618802,
+      "max_height_mm": 1.6,
+      "min_height_mm": 1.35,
+      "source_refs": [
+        "nut"
+      ],
+      "cad_thread_clear_bore_mm": 2,
+      "source_scope": "Across-corner maximum is conservative regular-hex geometry derived from AF maximum, NOT the source e-minimum.",
+      "quantity_this_scope": 2
+    },
+    "M2_WASHER": {
+      "kind": "washer",
+      "designation": "ISO 7089 M2 plain washer",
+      "material": "stainless steel",
+      "OD_mm": 5,
+      "ID_mm": 2.2,
+      "thickness_mm": 0.3,
+      "incoming_thickness_acceptance_mm": [
+        0.25,
+        0.35
+      ],
+      "source_refs": [
+        "M2washer"
+      ],
+      "source_scope": "Nominal product dimensions; +/-0.05mm thickness is own receiving acceptance.",
+      "quantity_this_scope": 4
+    },
+    "M2_CSK_6": {
+      "kind": "screw",
+      "designation": "ISO10642M2x6",
+      "material": "A2stainless",
+      "thread_major_diameter_mm": 2,
+      "pitch_mm": 0.4,
+      "length_mm": 6,
+      "length_includes_head": true,
+      "head_style": "countersunk",
+      "head_max_OD_mm": 3.8,
+      "head_max_height_mm": 1.1,
+      "hex_key_AF_mm": 1.3,
+      "source_refs": [
+        "ExistingISO10642familyowner; selectedM2dimensionreceivinglimit"
+      ],
+      "source_scope": "FinishedselectedheadOD<=3.8,height<=1.1; design receivingcriteria,notallISOmfgextremes."
+    },
+    "M2_CAP_6": {
+      "kind": "screw",
+      "designation": "ISO 4762 M2x6",
+      "material": "A2 stainless",
+      "thread_major_diameter_mm": 2,
+      "pitch_mm": 0.4,
+      "length_mm": 6,
+      "length_includes_head": false,
+      "head_style": "cap",
+      "head_max_OD_mm": 3.8,
+      "head_max_height_mm": 2,
+      "hex_key_AF_mm": 1.5,
+      "source_refs": [
+        "Existing ISO4762 M2 cap family owner"
+      ],
+      "quantity_this_scope": 4,
+      "source_scope": "Nominal M2x6 installed receiving geometry. Retain 0.5mm nominal tip space; verify finished screws and blind bore depth during assembly."
+    },
+    "SPIROL_151051": {
+      "manufacturer": "SPIROL",
+      "item": "151051",
+      "designation": "INS 29/M2 / .125S EK",
+      "material": "Brass ASTM B16 / EN 12164 CW603N CuZn36Pb3",
+      "thread": "M2 x 0.4",
+      "thread_pitch_mm": 0.4,
+      "overknurl_diameter_ref_mm": 3.63,
+      "pilot_diameter_mm": 3.12,
+      "length_mm": 3.18,
+      "length_tolerance_mm": 0.13,
+      "axis_range_mm": [
+        51,
+        54.18
+      ],
+      "moulded_or_finished_preinstallation_bore_diameter_mm": 3.2,
+      "preinstallation_bore_diameter_tolerance_mm": [
+        0,
+        0.08
+      ],
+      "maker_minimum_bore_depth_L_plus_two_pitches_mm": 3.98,
+      "receiving_bore_depth_mm": 4.2,
+      "nominal_screw_tip_mm": 54.7,
+      "screw_tip_to_blind_end_mm": 0.5,
+      "source": "https://shop.spirol.com/en-gb/item/series-29-30-short-heat-ultrasonic-insert-metric/series-29-short-heat-ultrasonic-insert-metric/151051",
+      "installation_source": "https://my.spirol.com/resources/white-papers/how-to-design-the-proper-hole-for-heat-ultrasonic-inserts/",
+      "representation": "Nominal installed overknurl receiving envelope, not factory-detail knurl geometry. The blind assembly cutter includes the overknurl envelope displaced by heat installation; it is not the preinstallation drill size. Heat-set knurl/undercut retention belongs to the named manufacturer insert, not loose nuts or printed threads.",
+      "kind": "heat_set_insert",
+      "quantity_this_scope": 4
+    }
+  },
+  "fastening_interfaces": [
+    {
+      "id": "TOP_CARRIER_0",
+      "axis": "Z",
+      "axis_direction": [
+        0,
+        0,
+        1
+      ],
+      "under_head_position_mm": [
+        12,
+        6,
+        48.7
+      ],
+      "tip_position_mm": [
+        12,
+        6,
+        54.7
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__TOP_CARRIER_0_SCREW",
+        "head_top_axis_mm": 46.7
+      },
+      "washers": [
+        {
+          "component_ref": "M2_WASHER",
+          "part_name": "FASTENER__TOP_CARRIER_0_WASHER",
+          "axis_range_mm": [
+            48.7,
+            49
+          ]
+        }
+      ],
+      "stack": [
+        {
+          "owner": "M2 cap screw head",
+          "axis_range_mm": [
+            46.7,
+            48.7
+          ]
+        },
+        {
+          "owner": "M2 washer",
+          "axis_range_mm": [
+            48.7,
+            49
+          ]
+        },
+        {
+          "owner": "PA12 carrier ear",
+          "axis_range_mm": [
+            49,
+            51
+          ]
+        },
+        {
+          "owner": "SPIROL151051 insert within integral roof boss/roof",
+          "axis_range_mm": [
+            51,
+            54.18
+          ]
+        },
+        {
+          "owner": "screw tip clearance to blind bore end",
+          "axis_range_mm": [
+            54.7,
+            55.2
+          ]
+        },
+        {
+          "owner": "closed roof exterior skin",
+          "axis_range_mm": [
+            55.2,
+            56
+          ]
+        }
+      ],
+      "assembly_stage": 59,
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "approach_segment_mm": [
+          [
+            12,
+            6,
+            21.7
+          ],
+          [
+            12,
+            6,
+            46.7
+          ]
+        ],
+        "maximum_tool_shaft_OD_mm": 2,
+        "required_sequence": "Case bench preassembly from inside before fixed body is fitted to base/boards. Heat-install inserts before cap/carrier; no exterior tool approach or nut driver."
+      },
+      "notes": "Upward M2x6 shaft48.7..54.7; insert51..54.18 gives3.18mm nominal engagement. Washer bears on carrier at49, ear seats on boss/insert face51. Blind bore ends55.2 with0.5mm screw-tip space and0.8mm closed exterior roof. No loose top-carrier nuts.",
+      "insert": {
+        "component_ref": "SPIROL_151051",
+        "part_name": "TOP_CONTROLS__SPIROL_151051_INSERT_0",
+        "axis_range_mm": [
+          51,
+          54.18
+        ],
+        "thread_engagement_mm": 3.18,
+        "retention": "Manufacturer heat-set knurls/undercuts retained in integral roof boss; not an unretained nut."
+      }
+    },
+    {
+      "id": "TOP_CARRIER_1",
+      "axis": "Z",
+      "axis_direction": [
+        0,
+        0,
+        1
+      ],
+      "under_head_position_mm": [
+        48,
+        6,
+        48.7
+      ],
+      "tip_position_mm": [
+        48,
+        6,
+        54.7
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__TOP_CARRIER_1_SCREW",
+        "head_top_axis_mm": 46.7
+      },
+      "washers": [
+        {
+          "component_ref": "M2_WASHER",
+          "part_name": "FASTENER__TOP_CARRIER_1_WASHER",
+          "axis_range_mm": [
+            48.7,
+            49
+          ]
+        }
+      ],
+      "stack": [
+        {
+          "owner": "M2 cap screw head",
+          "axis_range_mm": [
+            46.7,
+            48.7
+          ]
+        },
+        {
+          "owner": "M2 washer",
+          "axis_range_mm": [
+            48.7,
+            49
+          ]
+        },
+        {
+          "owner": "PA12 carrier ear",
+          "axis_range_mm": [
+            49,
+            51
+          ]
+        },
+        {
+          "owner": "SPIROL151051 insert within integral roof boss/roof",
+          "axis_range_mm": [
+            51,
+            54.18
+          ]
+        },
+        {
+          "owner": "screw tip clearance to blind bore end",
+          "axis_range_mm": [
+            54.7,
+            55.2
+          ]
+        },
+        {
+          "owner": "closed roof exterior skin",
+          "axis_range_mm": [
+            55.2,
+            56
+          ]
+        }
+      ],
+      "assembly_stage": 59,
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "approach_segment_mm": [
+          [
+            48,
+            6,
+            21.7
+          ],
+          [
+            48,
+            6,
+            46.7
+          ]
+        ],
+        "maximum_tool_shaft_OD_mm": 2,
+        "required_sequence": "Case bench preassembly from inside before fixed body is fitted to base/boards. Heat-install inserts before cap/carrier; no exterior tool approach or nut driver."
+      },
+      "notes": "Upward M2x6 shaft48.7..54.7; insert51..54.18 gives3.18mm nominal engagement. Washer bears on carrier at49, ear seats on boss/insert face51. Blind bore ends55.2 with0.5mm screw-tip space and0.8mm closed exterior roof. No loose top-carrier nuts.",
+      "insert": {
+        "component_ref": "SPIROL_151051",
+        "part_name": "TOP_CONTROLS__SPIROL_151051_INSERT_1",
+        "axis_range_mm": [
+          51,
+          54.18
+        ],
+        "thread_engagement_mm": 3.18,
+        "retention": "Manufacturer heat-set knurls/undercuts retained in integral roof boss; not an unretained nut."
+      }
+    },
+    {
+      "id": "TOP_CARRIER_2",
+      "axis": "Z",
+      "axis_direction": [
+        0,
+        0,
+        1
+      ],
+      "under_head_position_mm": [
+        12,
+        26,
+        48.7
+      ],
+      "tip_position_mm": [
+        12,
+        26,
+        54.7
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__TOP_CARRIER_2_SCREW",
+        "head_top_axis_mm": 46.7
+      },
+      "washers": [
+        {
+          "component_ref": "M2_WASHER",
+          "part_name": "FASTENER__TOP_CARRIER_2_WASHER",
+          "axis_range_mm": [
+            48.7,
+            49
+          ]
+        }
+      ],
+      "stack": [
+        {
+          "owner": "M2 cap screw head",
+          "axis_range_mm": [
+            46.7,
+            48.7
+          ]
+        },
+        {
+          "owner": "M2 washer",
+          "axis_range_mm": [
+            48.7,
+            49
+          ]
+        },
+        {
+          "owner": "PA12 carrier ear",
+          "axis_range_mm": [
+            49,
+            51
+          ]
+        },
+        {
+          "owner": "SPIROL151051 insert within integral roof boss/roof",
+          "axis_range_mm": [
+            51,
+            54.18
+          ]
+        },
+        {
+          "owner": "screw tip clearance to blind bore end",
+          "axis_range_mm": [
+            54.7,
+            55.2
+          ]
+        },
+        {
+          "owner": "closed roof exterior skin",
+          "axis_range_mm": [
+            55.2,
+            56
+          ]
+        }
+      ],
+      "assembly_stage": 59,
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "approach_segment_mm": [
+          [
+            12,
+            26,
+            21.7
+          ],
+          [
+            12,
+            26,
+            46.7
+          ]
+        ],
+        "maximum_tool_shaft_OD_mm": 2,
+        "required_sequence": "Case bench preassembly from inside before fixed body is fitted to base/boards. Heat-install inserts before cap/carrier; no exterior tool approach or nut driver."
+      },
+      "notes": "Upward M2x6 shaft48.7..54.7; insert51..54.18 gives3.18mm nominal engagement. Washer bears on carrier at49, ear seats on boss/insert face51. Blind bore ends55.2 with0.5mm screw-tip space and0.8mm closed exterior roof. No loose top-carrier nuts.",
+      "insert": {
+        "component_ref": "SPIROL_151051",
+        "part_name": "TOP_CONTROLS__SPIROL_151051_INSERT_2",
+        "axis_range_mm": [
+          51,
+          54.18
+        ],
+        "thread_engagement_mm": 3.18,
+        "retention": "Manufacturer heat-set knurls/undercuts retained in integral roof boss; not an unretained nut."
+      }
+    },
+    {
+      "id": "TOP_CARRIER_3",
+      "axis": "Z",
+      "axis_direction": [
+        0,
+        0,
+        1
+      ],
+      "under_head_position_mm": [
+        48,
+        26,
+        48.7
+      ],
+      "tip_position_mm": [
+        48,
+        26,
+        54.7
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__TOP_CARRIER_3_SCREW",
+        "head_top_axis_mm": 46.7
+      },
+      "washers": [
+        {
+          "component_ref": "M2_WASHER",
+          "part_name": "FASTENER__TOP_CARRIER_3_WASHER",
+          "axis_range_mm": [
+            48.7,
+            49
+          ]
+        }
+      ],
+      "stack": [
+        {
+          "owner": "M2 cap screw head",
+          "axis_range_mm": [
+            46.7,
+            48.7
+          ]
+        },
+        {
+          "owner": "M2 washer",
+          "axis_range_mm": [
+            48.7,
+            49
+          ]
+        },
+        {
+          "owner": "PA12 carrier ear",
+          "axis_range_mm": [
+            49,
+            51
+          ]
+        },
+        {
+          "owner": "SPIROL151051 insert within integral roof boss/roof",
+          "axis_range_mm": [
+            51,
+            54.18
+          ]
+        },
+        {
+          "owner": "screw tip clearance to blind bore end",
+          "axis_range_mm": [
+            54.7,
+            55.2
+          ]
+        },
+        {
+          "owner": "closed roof exterior skin",
+          "axis_range_mm": [
+            55.2,
+            56
+          ]
+        }
+      ],
+      "assembly_stage": 59,
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "approach_segment_mm": [
+          [
+            48,
+            26,
+            21.7
+          ],
+          [
+            48,
+            26,
+            46.7
+          ]
+        ],
+        "maximum_tool_shaft_OD_mm": 2,
+        "required_sequence": "Case bench preassembly from inside before fixed body is fitted to base/boards. Heat-install inserts before cap/carrier; no exterior tool approach or nut driver."
+      },
+      "notes": "Upward M2x6 shaft48.7..54.7; insert51..54.18 gives3.18mm nominal engagement. Washer bears on carrier at49, ear seats on boss/insert face51. Blind bore ends55.2 with0.5mm screw-tip space and0.8mm closed exterior roof. No loose top-carrier nuts.",
+      "insert": {
+        "component_ref": "SPIROL_151051",
+        "part_name": "TOP_CONTROLS__SPIROL_151051_INSERT_3",
+        "axis_range_mm": [
+          51,
+          54.18
+        ],
+        "thread_engagement_mm": 3.18,
+        "retention": "Manufacturer heat-set knurls/undercuts retained in integral roof boss; not an unretained nut."
+      }
+    },
+    {
+      "id": "SLIDE_TABS_0",
+      "axis": "Z",
+      "axis_direction": [
+        0,
+        0,
+        -1
+      ],
+      "under_head_position_mm": [
+        21.235,
+        15,
+        51.9
+      ],
+      "tip_position_mm": [
+        21.235,
+        15,
+        47
+      ],
+      "screw": {
+        "component_ref": "M2_CSK_6",
+        "part_name": "FASTENER__SLIDE_TABS_0_SCREW",
+        "head_top_axis_mm": 53
+      },
+      "washers": [],
+      "nut": {
+        "component_ref": "M2_NUT",
+        "part_name": "FASTENER__SLIDE_TABS_0_NUT",
+        "axis_range_mm": [
+          48.85,
+          50.45
+        ],
+        "hex_clocking_deg": 30,
+        "thread_engagement_mm": 1.6
+      },
+      "stack": [
+        {
+          "owner": "M2nut in PA12hextrap",
+          "axis_range_mm": [
+            48.85,
+            50.45
+          ]
+        },
+        {
+          "owner": "E-Switch M1 open U-tab at maximum0.55mm thickness",
+          "axis_range_mm": [
+            50.45,
+            51
+          ]
+        },
+        {
+          "owner": "PA12carrier",
+          "axis_range_mm": [
+            51,
+            53
+          ]
+        }
+      ],
+      "assembly_stage": 58,
+      "tool_access": {
+        "screw_key_AF_mm": 1.3,
+        "approach_segment_mm": [
+          [
+            21.235,
+            15,
+            78
+          ],
+          [
+            21.235,
+            15,
+            53
+          ]
+        ],
+        "maximum_tool_shaft_OD_mm": 2.0,
+        "required_sequence": "Bench preassembly: insert30deg-clockedM2nut through outboard opening; open pocket captures rotation while allowing0.5mm axial travel for actual tab thickness. Align open U-tabs under existing carrier axes and tighten from above; no nut-driver beside switch body."
+      },
+      "notes": "M2x6 overall headtop53 to tip47 unchanged. Native nut pose is the maximum-tab-thickness corner, with1.6mm engagement. At thinner tabs nut rises by up to0.5mm within open trap; minimum screw protrusion below nut remains1.85mm. Inspect actual tab seating, no plastic ledge as false clamp stop.",
+      "tab_thickness_range_mm": [
+        0.05,
+        0.55
+      ],
+      "nut_seating_top_Z_range_mm": [
+        50.45,
+        50.95
+      ]
+    },
+    {
+      "id": "SLIDE_TABS_1",
+      "axis": "Z",
+      "axis_direction": [
+        0,
+        0,
+        -1
+      ],
+      "under_head_position_mm": [
+        38.764999999999986,
+        15,
+        51.9
+      ],
+      "tip_position_mm": [
+        38.764999999999986,
+        15,
+        47
+      ],
+      "screw": {
+        "component_ref": "M2_CSK_6",
+        "part_name": "FASTENER__SLIDE_TABS_1_SCREW",
+        "head_top_axis_mm": 53
+      },
+      "washers": [],
+      "nut": {
+        "component_ref": "M2_NUT",
+        "part_name": "FASTENER__SLIDE_TABS_1_NUT",
+        "axis_range_mm": [
+          48.85,
+          50.45
+        ],
+        "hex_clocking_deg": 30,
+        "thread_engagement_mm": 1.6
+      },
+      "stack": [
+        {
+          "owner": "M2nut in PA12hextrap",
+          "axis_range_mm": [
+            48.85,
+            50.45
+          ]
+        },
+        {
+          "owner": "E-Switch M1 open U-tab at maximum0.55mm thickness",
+          "axis_range_mm": [
+            50.45,
+            51
+          ]
+        },
+        {
+          "owner": "PA12carrier",
+          "axis_range_mm": [
+            51,
+            53
+          ]
+        }
+      ],
+      "assembly_stage": 58,
+      "tool_access": {
+        "screw_key_AF_mm": 1.3,
+        "approach_segment_mm": [
+          [
+            38.764999999999986,
+            15,
+            78
+          ],
+          [
+            38.764999999999986,
+            15,
+            53
+          ]
+        ],
+        "maximum_tool_shaft_OD_mm": 2.0,
+        "required_sequence": "Bench preassembly: insert30deg-clockedM2nut through outboard opening; open pocket captures rotation while allowing0.5mm axial travel for actual tab thickness. Align open U-tabs under existing carrier axes and tighten from above; no nut-driver beside switch body."
+      },
+      "notes": "M2x6 overall headtop53 to tip47 unchanged. Native nut pose is the maximum-tab-thickness corner, with1.6mm engagement. At thinner tabs nut rises by up to0.5mm within open trap; minimum screw protrusion below nut remains1.85mm. Inspect actual tab seating, no plastic ledge as false clamp stop.",
+      "tab_thickness_range_mm": [
+        0.05,
+        0.55
+      ],
+      "nut_seating_top_Z_range_mm": [
+        50.45,
+        50.95
+      ]
+    }
+  ],
+  "chassis_holes": [],
+  "context_cuts": [],
+  "replaced_context_parts": [],
+  "omitted_original_nominal_hardware": [],
+  "assembly_sequence": [
+    "Preassemble POWER30,15 to PA12 carrier with twoM2x6 and captured nuts; heads flushZ53.",
+    "Insertbluecapfrominsidecase, flangeunderlip. Capcannotpullupthroughmouth.",
+    "With the case open on the bench, heat-install four SPIROL151051 inserts from below flush at boss Z51 into 3.20..3.28mm blind pilot bores. Insert POWER cap from inside, then seat carrier ears on bosses and tighten four M2x6 cap screws upward with M2 washers. All heads remain inside, Z46.7..48.7; roof Z56 remains closed.",
+    "Install RESET with supplied lockwasher/nut and anti-rotation flat; no whole-case IP rating implied.",
+    "InstallretainedAPEMLEDin6.1hole; suppliednut/washerand0.04Nmexistinglimit.",
+    "Wireandinsulateall5J60pins; continuitytestPOWER/OFF/RUN, RESETrelease/press andLEDpolarity beforepower."
+  ],
+  "service_sequence": [
+    "Remove fixed body from base/boards before working on controls. From the open underside, undo four carrier M2 cap screws; retained roof inserts stay in the case. Capture POWER cap when carrier is released. No wiring runs to removable lid."
+  ],
+  "procurement_and_process_acceptance": [
+    "Selected POWER part must remain within its exact configured -30..85C operating range. Measure its local temperature; this is not a global85C console rating. Maker lifetime/lower-temperature disagreements are recorded in reference/top_controls_selection.json.",
+    "ProcureactualconfiguredPNPordercode andverifyfactorydrawing/samples. Familyconfigurationisnotastockavailabilitypromise.",
+    "Verify3.3Vresetpullupcurrent<=10mAandgoldcontactlowlevelconditionsagainstnativepowerowner; no alteredrailpath.",
+    "Checkactualterminalinsulationwithinexplicitbodies/fanouts, fullCAPstrokeandcapturedflangefit.",
+    "MakerfasteningtorquelimitsarenotASA/PA12jointproof; no automaticwholecaseIP/ESD/thermalqualification."
+  ],
+  "fabrication_release": false
+}

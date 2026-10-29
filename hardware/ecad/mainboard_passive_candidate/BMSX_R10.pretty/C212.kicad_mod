@@ -1,0 +1,13 @@
+(footprint
+"C212"
+(version 20221018)
+(generator bmsx_r5)
+(layer "F.Cu")
+(attr smd)
+(fp_text reference "REF**" (at 0 -2.1) (layer "F.SilkS") (effects (font (size 1 1) (thickness .15))))
+(fp_text value "100nF 16V X7R 0805" (at 0 2.1) (layer "F.Fab") hide (effects (font (size .8 .8) (thickness .12))))
+(fp_rect (start -1.0 -0.625) (end 1.0 0.625) (stroke (width .1) (type default)) (fill none) (layer "F.Fab"))
+(fp_rect (start -1.75 -1.1) (end 1.75 1.1) (stroke (width .05) (type default)) (fill none) (layer "F.CrtYd"))
+(pad "1" smd rect (at -1 0) (size 1 1.3) (layers "F.Cu" "F.Paste" "F.Mask") (pinfunction "V3V3") (pintype "passive"))
+(pad "2" smd rect (at 1 0) (size 1 1.3) (layers "F.Cu" "F.Paste" "F.Mask") (pinfunction "GND") (pintype "passive"))
+(fp_circle (center -1 0) (end -0.72 0) (stroke (width .12) (type default)) (fill none) (layer "F.Fab")))

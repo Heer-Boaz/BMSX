@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 700" role="img" aria-labelledby="title desc">
+<title id="title">CORE value storage and arithmetic: candidate organisation</title>
+<desc id="desc">The instruction controller reads and writes frame values through an owner. The language runtime maintains frame metadata and object identities. A candidate shared binary64 service receives CPU and GEO operations. Physical backing for the value and object store and the FPU arbitration are unresolved; main RAM is separately mapped.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#294b68"/></marker><style>
+text{font-family:Arial,sans-serif;fill:#183044;font-size:19px}.head{font-size:25px;font-weight:bold}.sub{font-size:21px;font-weight:bold}.small{font-size:16px}.frame{fill:#fbfcfd;stroke:#294b68;stroke-width:3}.unit{fill:#e1edf4;stroke:#294b68;stroke-width:2}.storage{fill:#f6f7f8;stroke:#294b68;stroke-width:2}.candidate{fill:#fff9e7;stroke:#9b6d21;stroke-width:2;stroke-dasharray:8 5}.wire{fill:none;stroke:#294b68;stroke-width:2.5;marker-start:url(#arrow);marker-end:url(#arrow)}
+</style></defs>
+<rect width="1320" height="700" fill="white"/>
+<rect x="24" y="24" width="1272" height="556" rx="12" class="frame"/>
+<text x="56" y="63" class="head">CORE — logical execution and arithmetic</text>
+<text x="1258" y="62" text-anchor="end" class="small">Functional view, not a completed ASIC</text>
+<rect x="58" y="100" width="285" height="152" rx="8" class="unit"/>
+<text x="200" y="136" text-anchor="middle" class="sub">Instruction execution</text>
+<text x="200" y="171" text-anchor="middle">Interpreter or specialized logic</text>
+<text x="200" y="201" text-anchor="middle">Writeback · execution order</text>
+<text x="200" y="230" text-anchor="middle" class="small">Operations may take multiple steps</text>
+<rect x="58" y="319" width="285" height="155" rx="8" class="unit"/>
+<text x="200" y="355" text-anchor="middle" class="sub">Language runtime control</text>
+<text x="200" y="390" text-anchor="middle">Frames · objects · references</text>
+<text x="200" y="420" text-anchor="middle">Allocation · tracing / GC</text>
+<text x="200" y="449" text-anchor="middle" class="small">May be software or hardware</text>
+<path d="M200 252V319" class="wire"/>
+<rect x="422" y="100" width="325" height="152" rx="8" class="unit"/>
+<text x="584" y="136" text-anchor="middle" class="sub">Frame-value access</text>
+<text x="584" y="171" text-anchor="middle">Number or typed reference</text>
+<text x="584" y="201" text-anchor="middle">Retained request / response</text>
+<text x="584" y="230" text-anchor="middle" class="small">Physical representation not selected</text>
+<path d="M343 176H422" class="wire"/>
+<rect x="422" y="319" width="325" height="155" rx="8" class="candidate"/>
+<text x="584" y="355" text-anchor="middle" class="sub">Value and object backing</text>
+<text x="584" y="390" text-anchor="middle">Values · frames · object data</text>
+<text x="584" y="420" text-anchor="middle">Handle / collector metadata</text>
+<text x="584" y="449" text-anchor="middle" class="small">Capacity, memory and access open</text>
+<path d="M584 252V319" class="wire"/>
+<path d="M343 396H422" class="wire"/>
+<rect x="840" y="100" width="397" height="176" rx="8" class="candidate"/>
+<text x="1038" y="136" text-anchor="middle" class="sub">Binary64 arithmetic service</text>
+<text x="1038" y="171" text-anchor="middle">Classification · add/subtract · multiply</text>
+<text x="1038" y="201" text-anchor="middle">Divide / square-root · rounding</text>
+<text x="1038" y="231" text-anchor="middle">Sequenced modulo, floor division, power</text>
+<text x="1038" y="258" text-anchor="middle" class="small">Sharing, timing and silicon implementation open</text>
+<path d="M747 176H840" class="wire"/>
+<rect x="840" y="343" width="397" height="119" rx="8" class="unit"/>
+<text x="1038" y="380" text-anchor="middle" class="sub">GEO collision engine</text>
+<text x="1038" y="415" text-anchor="middle">Binary64 operations and comparisons</text>
+<text x="1038" y="443" text-anchor="middle" class="small">May share service or use its own</text>
+<path d="M1038 276V343" class="wire"/>
+<rect x="58" y="604" width="1179" height="62" rx="7" class="storage"/>
+<text x="647" y="630" text-anchor="middle">Main DRAM remains the separately mapped 4 MiB system memory</text>
+<text x="647" y="653" text-anchor="middle" class="small">Runtime storage, execution method and physical performance are not selected.</text>
+</svg>

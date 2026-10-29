@@ -1,0 +1,49 @@
+(sym_lib_table
+	(lib
+		(name "BMSX")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX.kicad_sym")
+		(options "")
+		(descr "Project-local circuit symbols and proposed custom-device interfaces."))
+	(lib
+		(name "BMSX_R2")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_R2.kicad_sym")
+		(options "")
+		(descr "Project-local circuit symbols and proposed custom-device interfaces."))
+	(lib
+		(name "BMSX_R3")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_R3.kicad_sym")
+		(options "")
+		(descr "Project-local circuit symbols and proposed custom-device interfaces."))
+	(lib
+		(name "BMSX_R10")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_R10.kicad_sym")
+		(options "")
+		(descr "Project-local circuit symbols and proposed custom-device interfaces."))
+	(lib
+		(name "R9_interfaces")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/R9_interfaces.kicad_sym")
+		(options "")
+		(descr "Project-local circuit symbols and proposed custom-device interfaces."))
+	(lib
+		(name "BMSX_4ASIC")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_4ASIC.kicad_sym")
+		(options "")
+		(descr "Project-local circuit symbols and proposed custom-device interfaces."))
+	(lib
+		(name "BMSX_POWER")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_POWER.kicad_sym")
+		(options "")
+		(descr "Project-local circuit symbols and proposed custom-device interfaces."))
+	(lib
+		(name "BMSX_IntegratedBuck")
+		(type "KiCad")
+		(uri "${KIPRJMOD}/BMSX_IntegratedBuck.kicad_sym")
+		(options "")
+		(descr "Project-local circuit symbols and proposed custom-device interfaces.")))

@@ -1,0 +1,5 @@
+{
+  "scope": "Separate nominal wider-nose candidate for the existing nine-contact pad plug; the socket, contact centres, key and cable body are unchanged.",
+  "nose_bounds_mm": [53.0, -0.4, 17.6, 67.0, 4.8, 22.4],
+  "limitation": "The 0.70 mm nominal nose web is a design hypothesis, not evidence of mouldability, strength, fire performance or tolerances."
+}

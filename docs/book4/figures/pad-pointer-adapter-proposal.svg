@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1020" role="img" aria-labelledby="title desc">
+<title id="title">Pad-and-pointer adapter functional proposal</title>
+<desc id="desc">An active adapter occupies one console accessory socket. Buffered console clock, command and select go unchanged to a pad; the adapter receives and retains the last complete valid pad reply, including its receipt. An independent controller sends validated display context to a pointer and retains its last complete valid reply. A separate upstream DATA driver sends a composed reply with a new CRC. Downstream DATA outputs are not connected to one another.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:23px}.title{font-size:34px;font-weight:700}.head{font-size:25px;font-weight:700}.small{font-size:20px}.note{font-size:19px;fill:#435b6d}.device{fill:#e3eff5;stroke:#294b68;stroke-width:2.5}.part{fill:#f4f7f8;stroke:#294b68;stroke-width:2}.frame{fill:#fff;stroke:#90a7b5;stroke-width:2;stroke-dasharray:9 5}.link{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}
+ </style>
+</defs>
+<rect width="1600" height="1020" fill="#fff"/>
+<text x="55" y="55" class="title">Pad-and-pointer adapter — functional proposal</text>
+<text x="55" y="91" class="small">One console port, one pad and one pointer · active electronics, not a passive splitter</text>
+<rect x="52" y="315" width="220" height="240" rx="10" class="device"/>
+<text x="162" y="367" text-anchor="middle" class="head">Console</text><text x="162" y="405" text-anchor="middle" class="small">One existing</text><text x="162" y="435" text-anchor="middle" class="small">accessory port</text>
+<rect x="335" y="125" width="875" height="680" rx="14" class="frame"/><text x="365" y="165" class="head">Proposed active adapter</text>
+<rect x="400" y="215" width="330" height="120" rx="8" class="part"/><text x="565" y="258" text-anchor="middle" class="head">Control buffer</text><text x="565" y="294" text-anchor="middle" class="small">CLK / CMD / SELECT_N</text>
+<rect x="850" y="215" width="300" height="120" rx="8" class="part"/><text x="1000" y="258" text-anchor="middle" class="head">Pad reply bank</text><text x="1000" y="294" text-anchor="middle" class="small">Valid record + receipt</text>
+<rect x="400" y="420" width="330" height="130" rx="8" class="part"/><text x="565" y="464" text-anchor="middle" class="head">Request receiver</text><text x="565" y="501" text-anchor="middle" class="small">Validate frame and context</text>
+<rect x="850" y="630" width="300" height="120" rx="8" class="part"/><text x="1000" y="674" text-anchor="middle" class="head">Pointer host</text><text x="1000" y="711" text-anchor="middle" class="small">POLL + valid reply bank</text>
+<rect x="400" y="635" width="330" height="115" rx="8" class="part"/><text x="565" y="678" text-anchor="middle" class="head">Reply composer</text><text x="565" y="714" text-anchor="middle" class="small">Records + CRC, next frame</text>
+<rect x="1280" y="215" width="260" height="120" rx="10" class="device"/><text x="1410" y="259" text-anchor="middle" class="head">Pad</text><text x="1410" y="295" text-anchor="middle" class="small">Validates and acts</text>
+<rect x="1280" y="630" width="260" height="120" rx="10" class="device"/><text x="1410" y="674" text-anchor="middle" class="head">Pointer</text><text x="1410" y="710" text-anchor="middle" class="small">Own serial link</text>
+<path d="M272 350H360V275H400" class="link"/><path d="M730 245H780V190H1230V245H1280" class="link"/>
+<text x="900" y="178" class="small">Unchanged request · every APPLY</text>
+<path d="M1280 315H1150" class="link"/><text x="1220" y="367" text-anchor="middle" class="small">Pad DATA</text>
+<path d="M272 485H400" class="link"/><text x="280" y="470" class="small">Request</text>
+<path d="M730 495H785V690H850" class="link"/><text x="745" y="564" class="small">Valid display</text><text x="745" y="589" class="small">context</text>
+<path d="M1150 670H1280" class="link"/><path d="M1280 710H1150" class="link"/>
+<path d="M1000 335V380H800V675H730" class="link"/><text x="805" y="407" class="small">Held pad</text><text x="805" y="432" class="small">record</text>
+<path d="M850 730H730" class="link"/>
+<path d="M400 690H305V520H272" class="link"/><text x="306" y="610" class="small">Composed</text><text x="306" y="635" class="small">DATA</text>
+<text x="55" y="882" class="note">The two downstream DATA outputs are received separately; the adapter alone drives upstream DATA.</text>
+<text x="55" y="916" class="note">Supply budget, cable timing, disconnect/reconnect and delivery latency remain to be established.</text>
+<text x="55" y="950" class="note">Functional proposal only; no complete circuit, implemented accessory or hot-plug guarantee.</text>
+</svg>

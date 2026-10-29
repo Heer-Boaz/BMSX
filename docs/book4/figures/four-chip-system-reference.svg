@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 1470" role="img" aria-labelledby="title desc">
+<title id="title">Four-device BMSX system organisation — integration candidate</title>
+<desc id="desc">Four ASICs share a 32-bit system bus. CORE connects public main DRAM, a proposed private runtime DRAM bank and two cartridge sockets. One possible execution layer is a native processor running an interpreter from private program ROM alongside separate GTE, GEO, DMA and IMGDEC units. GFX connects video SRAM and proposed private readback SRAM on one selected memory bus and contains a proposed INPUT controller for the keyboard and four accessory ports; a pointer may use one of those ports. APU reads sample SRAM or system or selected cartridge ROM and produces serial audio. U7 connects system firmware flash. Dashed orange boxes mark proposed functions and memory banks. A separate schematic and unrouted board assign the added memory and INPUT connections; they do not implement the ASIC functions.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <marker id="candidate-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#9b6d21"/></marker>
+ <style>
+ text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.title{font-size:31px;font-weight:bold}.head{font-size:26px;font-weight:bold}.sub{font-size:22px;font-weight:bold}.small{font-size:18px}.tiny{font-size:17px}
+ .chip{fill:#e1edf4;stroke:#294b68;stroke-width:2.5}.storage{fill:#f5f7f8;stroke:#294b68;stroke-width:2}.candidate{fill:#fff8e8;stroke:#9b6d21;stroke-width:2.5;stroke-dasharray:9 6}.line{fill:none;stroke:#294b68;stroke-width:3;marker-start:url(#arrow);marker-end:url(#arrow)}.event{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.proposed{fill:none;stroke:#9b6d21;stroke-width:3;stroke-dasharray:9 6;marker-start:url(#candidate-arrow);marker-end:url(#candidate-arrow)}.bus{fill:none;stroke:#294b68;stroke-width:6}
+ </style>
+</defs>
+<rect width="1800" height="1470" fill="white"/>
+<text x="45" y="46" class="title">BMSX four-device organisation — system integration candidate</text>
+<text x="45" y="79" class="small">Functional allocation and buses; the separate board candidate assigns the INPUT and memory connections.</text>
+
+<!-- Local memory banks -->
+<rect x="65" y="125" width="235" height="145" rx="8" class="storage"/>
+<text x="182" y="162" text-anchor="middle" class="sub">Main DRAM</text>
+<text x="182" y="195" text-anchor="middle" class="small">4 MiB · U10/U11</text>
+<text x="182" y="227" text-anchor="middle" class="small">Guest-visible RAM</text>
+<rect x="340" y="125" width="235" height="145" rx="8" class="candidate"/>
+<text x="457" y="162" text-anchor="middle" class="sub">Runtime DRAM</text>
+<text x="457" y="195" text-anchor="middle" class="small">4 MiB candidate</text>
+<text x="457" y="227" text-anchor="middle" class="small">Private runtime pool</text>
+<rect x="635" y="125" width="235" height="145" rx="8" class="storage"/>
+<text x="752" y="162" text-anchor="middle" class="sub">Video SRAM</text>
+<text x="752" y="195" text-anchor="middle" class="small">2 MiB · U30/U31</text>
+<text x="752" y="227" text-anchor="middle" class="small">Shared VRAM</text>
+<rect x="910" y="125" width="235" height="145" rx="8" class="candidate"/>
+<text x="1027" y="162" text-anchor="middle" class="sub">Snapshot SRAM</text>
+<text x="1027" y="195" text-anchor="middle" class="small">2 MiB candidate</text>
+<text x="1027" y="227" text-anchor="middle" class="small">Private readback</text>
+<rect x="1330" y="125" width="260" height="145" rx="8" class="storage"/>
+<text x="1460" y="162" text-anchor="middle" class="sub">Sample SRAM</text>
+<text x="1460" y="195" text-anchor="middle" class="small">512 KiB · U32</text>
+<text x="1460" y="227" text-anchor="middle" class="small">APU sample storage</text>
+
+<path d="M182 270V325H320V400" class="line"/>
+<path d="M457 270V325H320" class="proposed"/>
+<text x="320" y="371" text-anchor="middle" class="tiny">Shared 32-bit data / bank selects</text>
+<path d="M752 270V325H890V400" class="line"/>
+<path d="M1027 270V325H890" class="proposed"/>
+<text x="890" y="371" text-anchor="middle" class="tiny">Shared 32-bit data / bank selects</text>
+<path d="M1460 270V400" class="line"/>
+<text x="1482" y="339" class="tiny">16-bit memory path</text>
+
+<!-- Four-device functional ownership -->
+<rect x="95" y="400" width="450" height="360" rx="10" class="chip"/>
+<text x="320" y="443" text-anchor="middle" class="head">U1 CORE</text>
+<rect x="125" y="462" width="390" height="105" rx="7" class="candidate"/>
+<text x="320" y="496" text-anchor="middle" class="sub">32-bit execution layer</text>
+<text x="320" y="527" text-anchor="middle" class="small">Native CPU + interpreter: one option</text>
+<text x="320" y="601" text-anchor="middle" class="sub">Separate GTE · GEO · IMGDEC · DMA</text>
+<text x="320" y="638" text-anchor="middle" class="small">Memory / cartridge controllers · IRQ</text>
+<text x="320" y="671" text-anchor="middle" class="small">EXEC socket · data SELECT · DMA sockets</text>
+<text x="320" y="711" text-anchor="middle" class="small">Main-memory and shared-bus arbitration</text>
+
+<rect x="665" y="400" width="450" height="360" rx="10" class="chip"/>
+<text x="890" y="443" text-anchor="middle" class="head">U2 GFX</text>
+<text x="890" y="483" text-anchor="middle" class="sub">GPU · PCRTC · memory scheduler</text>
+<text x="890" y="518" text-anchor="middle" class="small">Draw / scanout / snapshot service</text>
+<rect x="700" y="542" width="380" height="95" rx="7" class="candidate"/>
+<text x="890" y="576" text-anchor="middle" class="sub">INPUT controller in GFX</text>
+<text x="890" y="607" text-anchor="middle" class="small">Keyboard · 4 pad lanes · VBlank sample</text>
+<text x="890" y="683" text-anchor="middle" class="small">RGB / blank → DAC · sync → sync path</text>
+<text x="890" y="719" text-anchor="middle" class="small">VBlank publication → CORE IRQ (proposed)</text>
+<path d="M665 680H545" class="event"/>
+<text x="605" y="668" text-anchor="middle" class="tiny">VBlank</text>
+
+<rect x="1235" y="400" width="450" height="360" rx="10" class="chip"/>
+<text x="1460" y="443" text-anchor="middle" class="head">U4 APU</text>
+<text x="1460" y="492" text-anchor="middle" class="sub">Voices · sample engine · mixer</text>
+<text x="1460" y="532" text-anchor="middle" class="small">Sources include PCM, BADP and square</text>
+<text x="1460" y="568" text-anchor="middle" class="small">Sample RAM · system ROM · cartridge ROM</text>
+<text x="1460" y="635" text-anchor="middle" class="small">Stereo serial audio → audio DAC</text>
+<text x="1460" y="673" text-anchor="middle" class="small">Shared SYS request / grant</text>
+
+<!-- Shared system bus: solid nodes are actual logical junctions. -->
+<path d="M320 760V850 M890 760V850 M1460 760V850 M320 850H1460 M890 850V1000" class="bus"/>
+<circle cx="320" cy="850" r="6" fill="#294b68"/><circle cx="890" cy="850" r="6" fill="#294b68"/><circle cx="1460" cy="850" r="6" fill="#294b68"/>
+<text x="890" y="897" text-anchor="middle" class="sub">Shared 32-bit multiplexed system bus</text>
+<text x="890" y="928" text-anchor="middle" class="small">Control, firmware data and peripheral transfer ports; local memories remain separate</text>
+
+<rect x="95" y="1000" width="450" height="175" rx="8" class="storage"/>
+<text x="320" y="1040" text-anchor="middle" class="sub">Two cartridge sockets</text>
+<text x="320" y="1075" text-anchor="middle" class="small">ROM · optional RAM and mapped devices</text>
+<text x="320" y="1109" text-anchor="middle" class="small">16-bit cartridge bus · shared transfer path</text>
+<text x="320" y="1143" text-anchor="middle" class="small">Separate presence, IRQ and request signals</text>
+<path d="M95 650H40V1080H95" class="line"/>
+
+<rect x="665" y="1000" width="450" height="175" rx="8" class="chip"/>
+<text x="890" y="1040" text-anchor="middle" class="head">U7 ROM bridge</text>
+<text x="890" y="1077" text-anchor="middle" class="small">System firmware flash access</text>
+<text x="890" y="1111" text-anchor="middle" class="small">Read-only during normal operation</text>
+<text x="890" y="1145" text-anchor="middle" class="small">Returns firmware words on the system bus</text>
+<rect x="1235" y="1000" width="450" height="175" rx="8" class="storage"/>
+<text x="1460" y="1040" text-anchor="middle" class="sub">System firmware flash</text>
+<text x="1460" y="1075" text-anchor="middle" class="small">8 MiB fitted · U33</text>
+<text x="1460" y="1109" text-anchor="middle" class="small">Guest-visible BIOS / system ROM</text>
+<text x="1460" y="1143" text-anchor="middle" class="small">16-bit flash interface</text>
+<path d="M1115 1088H1235" class="line"/>
+
+<rect x="665" y="1240" width="450" height="115" rx="8" class="storage"/>
+<text x="890" y="1281" text-anchor="middle" class="sub">Keyboard + four accessory ports</text>
+<text x="890" y="1318" text-anchor="middle" class="small">Pads or pointer · one lane per port</text>
+<!-- Crosses the system bus without a junction. -->
+<path d="M665 590H610V1295H665" class="proposed"/>
+<text x="590" y="968" text-anchor="end" class="tiny" transform="rotate(-90 590 968)">INPUT lanes</text>
+
+<rect x="94" y="1400" width="32" height="25" rx="3" class="storage"/>
+<text x="138" y="1420" class="tiny">Existing interface or storage</text>
+<rect x="460" y="1400" width="32" height="25" rx="3" class="candidate"/>
+<text x="504" y="1420" class="tiny">Proposed function or memory bank</text>
+<text x="1050" y="1420" class="tiny">Candidate board assigns pins; ASIC integration remains proposed.</text>
+</svg>

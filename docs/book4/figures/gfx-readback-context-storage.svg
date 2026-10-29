@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1040" role="img" aria-labelledby="title desc">
+<title id="title">Proposed GPU readback storage for two contexts</title>
+<desc id="desc">GFX reads the source pixels from shared video memory after the earlier drawing fence, then writes them into the selected cartridge or supervisor half of a two-mebibyte snapshot SRAM. These memories share one address and data bus and are selected in separate turns. Each context keeps its own read position, state and GPUREAD latch. READY is published only after the full capture. This is an unimplemented physical proposal, not a latency guarantee.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:23px}.title{font-size:34px;font-weight:700}.head{font-size:26px;font-weight:700}.small{font-size:20px}.note{font-size:19px}.block{fill:#e3eff5;stroke:#294b68;stroke-width:2.5}.memory{fill:#f3f6f7;stroke:#294b68;stroke-width:2.5}.proposal{fill:#fff8e8;stroke:#9b6d21;stroke-width:2.5;stroke-dasharray:8 5}.path{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.bus{fill:none;stroke:#294b68;stroke-width:5}.thin{fill:none;stroke:#294b68;stroke-width:2.5}
+ </style>
+</defs>
+<rect width="1600" height="1040" fill="#fff"/>
+<text x="50" y="55" class="title">GPU readback — proposed context storage</text>
+<text x="50" y="94" class="small">Separate saved results for cartridge and supervisor · shared local-memory service</text>
+
+<rect x="50" y="145" width="370" height="200" rx="10" class="memory"/>
+<text x="235" y="190" text-anchor="middle" class="head">Video RAM</text>
+<text x="235" y="226" text-anchor="middle" class="small">U30 / U31 · 2 MiB</text>
+<text x="235" y="261" text-anchor="middle" class="small">Shared drawing and display storage</text>
+<text x="235" y="294" text-anchor="middle" class="small">Source pixels after earlier work fence</text>
+
+<rect x="570" y="135" width="450" height="225" rx="10" class="block"/>
+<text x="795" y="181" text-anchor="middle" class="head">U2 GFX local-memory service</text>
+<text x="795" y="218" text-anchor="middle" class="small">Drawing · display · readback</text>
+<text x="795" y="255" text-anchor="middle" class="small">1. Read pixels from video RAM</text>
+<text x="795" y="291" text-anchor="middle" class="small">2. Write the selected snapshot half</text>
+<text x="795" y="326" text-anchor="middle" class="small">READY after the complete capture</text>
+
+<rect x="1170" y="145" width="380" height="200" rx="10" class="proposal"/>
+<text x="1360" y="189" text-anchor="middle" class="head">Snapshot SRAM</text>
+<text x="1360" y="225" text-anchor="middle" class="small">U152 / U153 · 2 MiB proposed</text>
+<text x="1360" y="261" text-anchor="middle" class="small">Cartridge: 1 MiB</text>
+<text x="1360" y="296" text-anchor="middle" class="small">Supervisor: 1 MiB</text>
+
+<path d="M420 245 H570" class="path"/>
+<path d="M1020 245 H1170" class="path"/>
+<path d="M235 345 V410 H1360 V345" class="bus"/>
+<text x="795" y="448" text-anchor="middle" class="small">Shared address and 32-bit data lines; separate memory selects and service turns</text>
+
+<rect x="50" y="525" width="700" height="210" rx="10" class="proposal"/>
+<text x="400" y="570" text-anchor="middle" class="head">Cartridge context</text>
+<text x="400" y="609" text-anchor="middle" class="small">Completed unread pixels remain in the cartridge half.</text>
+<text x="400" y="644" text-anchor="middle" class="small">Read position, state and GPUREAD latch are retained.</text>
+<text x="400" y="679" text-anchor="middle" class="small">Resume at the saved position after supervisor use.</text>
+<rect x="850" y="525" width="700" height="210" rx="10" class="proposal"/>
+<text x="1200" y="570" text-anchor="middle" class="head">Supervisor context</text>
+<text x="1200" y="609" text-anchor="middle" class="small">A separate half holds its own readback result.</text>
+<text x="1200" y="644" text-anchor="middle" class="small">Supervisor writes still change shared video RAM.</text>
+<text x="1200" y="679" text-anchor="middle" class="small">Its scratch readback is discarded on return.</text>
+<path d="M1360 345 V485 H400 V525" class="path"/>
+<path d="M1360 485 H1200 V525" class="path"/>
+
+<rect x="50" y="790" width="1500" height="190" rx="10" class="memory"/>
+<text x="75" y="833" class="head">Capacity and operation</text>
+<text x="75" y="871" class="small">Maximum result: 1024 × 512 pixels × 2 bytes = 1 MiB per context.</text>
+<text x="75" y="906" class="small">A stream clear or reset discards an incomplete capture; an incomplete result is not published as READY.</text>
+<text x="75" y="945" class="note">Construction proposal only. Arbitration, completion timing and full ASIC integration remain to be established.</text>
+</svg>

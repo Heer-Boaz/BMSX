@@ -1,0 +1,1723 @@
+{
+  "revision": "BMSX-A04-CARTRIDGE-STRUCTURE",
+  "units": "mm",
+  "status": "nominal physical load-path design; no structural qualification",
+  "contact_pairs": [
+    {
+      "a": "cartridge_load_spreader",
+      "b": "lower_shell",
+      "kind": "rib and boss bearing at z5.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_guide_0",
+      "b": "cartridge_carrier",
+      "kind": "guide seat and lug bearing at z34",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_connector_0",
+      "b": "cartridge_socket_sleeve_0_0",
+      "kind": "socket ear bearing directly on metal at z11.6",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_socket_sleeve_0_0",
+      "b": "cartridge_load_spreader",
+      "kind": "compression sleeve to lower metal frame at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_socket_nut_0_0",
+      "b": "cartridge_floor_washer_0_0",
+      "kind": "external full-height M3 nut upper face at z-1.2",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_screw_0_0",
+      "b": "cartridge_connector_0",
+      "kind": "screw-head bearing at z26.84",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_connector_0",
+      "b": "cartridge_socket_sleeve_0_1",
+      "kind": "socket ear bearing directly on metal at z11.6",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_socket_sleeve_0_1",
+      "b": "cartridge_load_spreader",
+      "kind": "compression sleeve to lower metal frame at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_socket_nut_0_1",
+      "b": "cartridge_floor_washer_0_1",
+      "kind": "external full-height M3 nut upper face at z-1.2",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_screw_0_1",
+      "b": "cartridge_connector_0",
+      "kind": "screw-head bearing at z26.84",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_pcb_insulator_0_0",
+      "b": "cartridge_load_spreader",
+      "kind": "insulator on welded rail seat at z9",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_pcb_insulator_0_0",
+      "b": "main_pcb",
+      "kind": "local insulated PCB backing at z10",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_pcb_insulator_0_1",
+      "b": "cartridge_load_spreader",
+      "kind": "insulator on welded rail seat at z9",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_pcb_insulator_0_1",
+      "b": "main_pcb",
+      "kind": "local insulated PCB backing at z10",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_nut_0_0",
+      "b": "cartridge_carrier",
+      "kind": "guide nut bearing at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_screw_0_0",
+      "b": "cartridge_guide_0",
+      "kind": "guide screw head bearing at z37",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_nut_0_1",
+      "b": "cartridge_carrier",
+      "kind": "guide nut bearing at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_screw_0_1",
+      "b": "cartridge_guide_0",
+      "kind": "guide screw head bearing at z37",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_nut_0_2",
+      "b": "cartridge_carrier",
+      "kind": "guide nut bearing at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_screw_0_2",
+      "b": "cartridge_guide_0",
+      "kind": "guide screw head bearing at z37",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_nut_0_3",
+      "b": "cartridge_carrier",
+      "kind": "guide nut bearing at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_screw_0_3",
+      "b": "cartridge_guide_0",
+      "kind": "guide screw head bearing at z37",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_guide_1",
+      "b": "cartridge_carrier",
+      "kind": "guide seat and lug bearing at z34",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_connector_1",
+      "b": "cartridge_socket_sleeve_1_0",
+      "kind": "socket ear bearing directly on metal at z11.6",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_socket_sleeve_1_0",
+      "b": "cartridge_load_spreader",
+      "kind": "compression sleeve to lower metal frame at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_socket_nut_1_0",
+      "b": "cartridge_floor_washer_1_0",
+      "kind": "external full-height M3 nut upper face at z-1.2",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_screw_1_0",
+      "b": "cartridge_connector_1",
+      "kind": "screw-head bearing at z26.84",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_connector_1",
+      "b": "cartridge_socket_sleeve_1_1",
+      "kind": "socket ear bearing directly on metal at z11.6",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_socket_sleeve_1_1",
+      "b": "cartridge_load_spreader",
+      "kind": "compression sleeve to lower metal frame at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_socket_nut_1_1",
+      "b": "cartridge_floor_washer_1_1",
+      "kind": "external full-height M3 nut upper face at z-1.2",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_screw_1_1",
+      "b": "cartridge_connector_1",
+      "kind": "screw-head bearing at z26.84",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_pcb_insulator_1_0",
+      "b": "cartridge_load_spreader",
+      "kind": "insulator on welded rail seat at z9",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_pcb_insulator_1_0",
+      "b": "main_pcb",
+      "kind": "local insulated PCB backing at z10",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_pcb_insulator_1_1",
+      "b": "cartridge_load_spreader",
+      "kind": "insulator on welded rail seat at z9",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_pcb_insulator_1_1",
+      "b": "main_pcb",
+      "kind": "local insulated PCB backing at z10",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_nut_1_0",
+      "b": "cartridge_carrier",
+      "kind": "guide nut bearing at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_screw_1_0",
+      "b": "cartridge_guide_1",
+      "kind": "guide screw head bearing at z37",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_nut_1_1",
+      "b": "cartridge_carrier",
+      "kind": "guide nut bearing at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_screw_1_1",
+      "b": "cartridge_guide_1",
+      "kind": "guide screw head bearing at z37",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_nut_1_2",
+      "b": "cartridge_carrier",
+      "kind": "guide nut bearing at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_screw_1_2",
+      "b": "cartridge_guide_1",
+      "kind": "guide screw head bearing at z37",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_nut_1_3",
+      "b": "cartridge_carrier",
+      "kind": "guide nut bearing at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "guide_screw_1_3",
+      "b": "cartridge_guide_1",
+      "kind": "guide screw head bearing at z37",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_1",
+      "b": "cartridge_load_spreader",
+      "kind": "metal post lower face at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_1",
+      "b": "cartridge_carrier",
+      "kind": "metal post upper face at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_top_screw_1",
+      "b": "cartridge_carrier",
+      "kind": "top screw head bearing at z34",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_washer_1",
+      "b": "lower_shell",
+      "kind": "load-spreading washer against exterior floor at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_screw_1",
+      "b": "carrier_base_washer_1",
+      "kind": "base screw head bearing at z-0.8",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_2",
+      "b": "cartridge_load_spreader",
+      "kind": "metal post lower face at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_2",
+      "b": "cartridge_carrier",
+      "kind": "metal post upper face at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_top_screw_2",
+      "b": "cartridge_carrier",
+      "kind": "top screw head bearing at z34",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_washer_2",
+      "b": "lower_shell",
+      "kind": "load-spreading washer against exterior floor at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_screw_2",
+      "b": "carrier_base_washer_2",
+      "kind": "base screw head bearing at z-0.8",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_3",
+      "b": "cartridge_load_spreader",
+      "kind": "metal post lower face at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_3",
+      "b": "cartridge_carrier",
+      "kind": "metal post upper face at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_top_screw_3",
+      "b": "cartridge_carrier",
+      "kind": "top screw head bearing at z34",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_washer_3",
+      "b": "lower_shell",
+      "kind": "load-spreading washer against exterior floor at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_screw_3",
+      "b": "carrier_base_washer_3",
+      "kind": "base screw head bearing at z-0.8",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_4",
+      "b": "cartridge_load_spreader",
+      "kind": "metal post lower face at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_4",
+      "b": "cartridge_carrier",
+      "kind": "metal post upper face at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_top_screw_4",
+      "b": "cartridge_carrier",
+      "kind": "top screw head bearing at z34",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_washer_4",
+      "b": "lower_shell",
+      "kind": "load-spreading washer against exterior floor at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_screw_4",
+      "b": "carrier_base_washer_4",
+      "kind": "base screw head bearing at z-0.8",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_5",
+      "b": "cartridge_load_spreader",
+      "kind": "metal post lower face at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_5",
+      "b": "cartridge_carrier",
+      "kind": "metal post upper face at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_top_screw_5",
+      "b": "cartridge_carrier",
+      "kind": "top screw head bearing at z34",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_washer_5",
+      "b": "lower_shell",
+      "kind": "load-spreading washer against exterior floor at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_screw_5",
+      "b": "carrier_base_washer_5",
+      "kind": "base screw head bearing at z-0.8",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_6",
+      "b": "cartridge_load_spreader",
+      "kind": "metal post lower face at z7.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_standoff_6",
+      "b": "cartridge_carrier",
+      "kind": "metal post upper face at z33",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_top_screw_6",
+      "b": "cartridge_carrier",
+      "kind": "top screw head bearing at z34",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_washer_6",
+      "b": "lower_shell",
+      "kind": "load-spreading washer against exterior floor at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "carrier_base_screw_6",
+      "b": "carrier_base_washer_6",
+      "kind": "base screw head bearing at z-0.8",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_0_shell",
+      "b": "cartridge_guide_0",
+      "kind": "nominal cartridge shell/endstop seating at z34.4",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_0_shell",
+      "b": "cartridge_0_pcb",
+      "kind": "nominal positive PCB axial retention",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0,
+      "local_interfaces": [
+        {
+          "z_mm": 102.2,
+          "x_ranges": [
+            [
+              50,
+              60
+            ],
+            [
+              110,
+              120
+            ]
+          ],
+          "kind": "top-edge insertion stops"
+        },
+        {
+          "z_mm": [
+            48,
+            50
+          ],
+          "x_ranges": [
+            [
+              34,
+              39.8
+            ],
+            [
+              130.2,
+              136
+            ]
+          ],
+          "kind": "internal PCB-notch keys for axial capture"
+        }
+      ],
+      "caution": "global zero-distance alone cannot prove each local face; inspect listed local interfaces"
+    },
+    {
+      "a": "cartridge_0_cover",
+      "b": "cartridge_guide_0",
+      "kind": "nominal cartridge shell/endstop seating at z34.4",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_0_cover",
+      "b": "cartridge_0_pcb",
+      "kind": "nominal positive PCB axial retention",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0,
+      "local_interfaces": [
+        {
+          "z_mm": 102.2,
+          "x_ranges": [
+            [
+              50,
+              60
+            ],
+            [
+              110,
+              120
+            ]
+          ],
+          "kind": "top-edge insertion stops"
+        },
+        {
+          "z_mm": [
+            48,
+            50
+          ],
+          "x_ranges": [
+            [
+              34,
+              39.8
+            ],
+            [
+              130.2,
+              136
+            ]
+          ],
+          "kind": "internal PCB-notch keys for axial capture"
+        }
+      ],
+      "caution": "global zero-distance alone cannot prove each local face; inspect listed local interfaces"
+    },
+    {
+      "a": "cartridge_0_shell",
+      "b": "cartridge_0_cover",
+      "kind": "four compression hard stops at y149.6",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "heatsink_nut_1",
+      "b": "lower_shell",
+      "kind": "A04 rigid support boss under cooler nut at z7.6; root model integration",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "heatsink_nut_2",
+      "b": "lower_shell",
+      "kind": "A04 rigid support boss under cooler nut at z7.6; root model integration",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "heatsink_nut_3",
+      "b": "lower_shell",
+      "kind": "A04 rigid support boss under cooler nut at z7.6; root model integration",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "heatsink_nut_4",
+      "b": "lower_shell",
+      "kind": "A04 rigid support boss under cooler nut at z7.6; root model integration",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_0_0",
+      "b": "cartridge_load_spreader",
+      "kind": "direct metal support under socket ear at z5.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_0_0",
+      "b": "lower_shell",
+      "kind": "inside flange bearing against floor at z2.4",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_washer_0_0",
+      "b": "lower_shell",
+      "kind": "exterior washer against floor underside at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_0_0",
+      "b": "cartridge_floor_washer_0_0",
+      "kind": "metal compression stop between barrel and washer at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_0_1",
+      "b": "cartridge_load_spreader",
+      "kind": "direct metal support under socket ear at z5.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_0_1",
+      "b": "lower_shell",
+      "kind": "inside flange bearing against floor at z2.4",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_washer_0_1",
+      "b": "lower_shell",
+      "kind": "exterior washer against floor underside at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_0_1",
+      "b": "cartridge_floor_washer_0_1",
+      "kind": "metal compression stop between barrel and washer at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_1_0",
+      "b": "cartridge_load_spreader",
+      "kind": "direct metal support under socket ear at z5.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_1_0",
+      "b": "lower_shell",
+      "kind": "inside flange bearing against floor at z2.4",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_washer_1_0",
+      "b": "lower_shell",
+      "kind": "exterior washer against floor underside at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_1_0",
+      "b": "cartridge_floor_washer_1_0",
+      "kind": "metal compression stop between barrel and washer at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_1_1",
+      "b": "cartridge_load_spreader",
+      "kind": "direct metal support under socket ear at z5.5",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_1_1",
+      "b": "lower_shell",
+      "kind": "inside flange bearing against floor at z2.4",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_washer_1_1",
+      "b": "lower_shell",
+      "kind": "exterior washer against floor underside at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    },
+    {
+      "a": "cartridge_floor_bushing_1_1",
+      "b": "cartridge_floor_washer_1_1",
+      "kind": "metal compression stop between barrel and washer at z0",
+      "expected_distance_mm": 0,
+      "expected_intersection_mm3": 0
+    }
+  ],
+  "driver_access": [
+    {
+      "screw": "cartridge_screw_0_0",
+      "radius_mm": 3.4,
+      "start_z_mm": 28.49,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "cartridge_screw_0_0"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell and cartridges removed; both slot leaves held at 90 degrees; socket bolt head accessed through guide and pan",
+      "nut_access": "exterior underside, console supported upside down; socket electrical replacement still requires unplugging/lifting module and solder-side access",
+      "part_poses": {
+        "dust_flap_0_front": 90,
+        "dust_flap_0_rear": 90
+      }
+    },
+    {
+      "screw": "cartridge_screw_0_1",
+      "radius_mm": 3.4,
+      "start_z_mm": 28.49,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "cartridge_screw_0_1"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell and cartridges removed; both slot leaves held at 90 degrees; socket bolt head accessed through guide and pan",
+      "nut_access": "exterior underside, console supported upside down; socket electrical replacement still requires unplugging/lifting module and solder-side access",
+      "part_poses": {
+        "dust_flap_0_front": 90,
+        "dust_flap_0_rear": 90
+      }
+    },
+    {
+      "screw": "guide_screw_0_0",
+      "radius_mm": 3.4,
+      "start_z_mm": 38.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "guide_screw_0_0"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; guide subassembly; underside nut access before fitting module"
+    },
+    {
+      "screw": "guide_screw_0_1",
+      "radius_mm": 3.4,
+      "start_z_mm": 38.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "guide_screw_0_1"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; guide subassembly; underside nut access before fitting module"
+    },
+    {
+      "screw": "guide_screw_0_2",
+      "radius_mm": 3.4,
+      "start_z_mm": 38.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "guide_screw_0_2"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; guide subassembly; underside nut access before fitting module"
+    },
+    {
+      "screw": "guide_screw_0_3",
+      "radius_mm": 3.4,
+      "start_z_mm": 38.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "guide_screw_0_3"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; guide subassembly; underside nut access before fitting module"
+    },
+    {
+      "screw": "cartridge_screw_1_0",
+      "radius_mm": 3.4,
+      "start_z_mm": 28.49,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "cartridge_screw_1_0"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell and cartridges removed; both slot leaves held at 90 degrees; socket bolt head accessed through guide and pan",
+      "nut_access": "exterior underside, console supported upside down; socket electrical replacement still requires unplugging/lifting module and solder-side access",
+      "part_poses": {
+        "dust_flap_1_front": 90,
+        "dust_flap_1_rear": 90
+      }
+    },
+    {
+      "screw": "cartridge_screw_1_1",
+      "radius_mm": 3.4,
+      "start_z_mm": 28.49,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "cartridge_screw_1_1"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell and cartridges removed; both slot leaves held at 90 degrees; socket bolt head accessed through guide and pan",
+      "nut_access": "exterior underside, console supported upside down; socket electrical replacement still requires unplugging/lifting module and solder-side access",
+      "part_poses": {
+        "dust_flap_1_front": 90,
+        "dust_flap_1_rear": 90
+      }
+    },
+    {
+      "screw": "guide_screw_1_0",
+      "radius_mm": 3.4,
+      "start_z_mm": 38.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "guide_screw_1_0"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; guide subassembly; underside nut access before fitting module"
+    },
+    {
+      "screw": "guide_screw_1_1",
+      "radius_mm": 3.4,
+      "start_z_mm": 38.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "guide_screw_1_1"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; guide subassembly; underside nut access before fitting module"
+    },
+    {
+      "screw": "guide_screw_1_2",
+      "radius_mm": 3.4,
+      "start_z_mm": 38.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "guide_screw_1_2"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; guide subassembly; underside nut access before fitting module"
+    },
+    {
+      "screw": "guide_screw_1_3",
+      "radius_mm": 3.4,
+      "start_z_mm": 38.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "guide_screw_1_3"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; guide subassembly; underside nut access before fitting module"
+    },
+    {
+      "screw": "carrier_top_screw_1",
+      "radius_mm": 3.4,
+      "start_z_mm": 35.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "carrier_top_screw_1"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; top frame attachment"
+    },
+    {
+      "screw": "carrier_base_screw_1",
+      "radius_mm": 3.4,
+      "start_z_mm": -2.45,
+      "end_z_mm": -30,
+      "excluded_parts": [
+        "carrier_base_screw_1"
+      ],
+      "excluded_groups": [],
+      "montagefase": "underside access with console inverted",
+      "direction": [
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "screw": "carrier_top_screw_2",
+      "radius_mm": 3.4,
+      "start_z_mm": 35.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "carrier_top_screw_2"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; top frame attachment"
+    },
+    {
+      "screw": "carrier_base_screw_2",
+      "radius_mm": 3.4,
+      "start_z_mm": -2.45,
+      "end_z_mm": -30,
+      "excluded_parts": [
+        "carrier_base_screw_2"
+      ],
+      "excluded_groups": [],
+      "montagefase": "underside access with console inverted",
+      "direction": [
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "screw": "carrier_top_screw_3",
+      "radius_mm": 3.4,
+      "start_z_mm": 35.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "carrier_top_screw_3"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; top frame attachment"
+    },
+    {
+      "screw": "carrier_base_screw_3",
+      "radius_mm": 3.4,
+      "start_z_mm": -2.45,
+      "end_z_mm": -30,
+      "excluded_parts": [
+        "carrier_base_screw_3"
+      ],
+      "excluded_groups": [],
+      "montagefase": "underside access with console inverted",
+      "direction": [
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "screw": "carrier_top_screw_4",
+      "radius_mm": 3.4,
+      "start_z_mm": 35.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "carrier_top_screw_4"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; top frame attachment"
+    },
+    {
+      "screw": "carrier_base_screw_4",
+      "radius_mm": 3.4,
+      "start_z_mm": -2.45,
+      "end_z_mm": -30,
+      "excluded_parts": [
+        "carrier_base_screw_4"
+      ],
+      "excluded_groups": [],
+      "montagefase": "underside access with console inverted",
+      "direction": [
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "screw": "carrier_top_screw_5",
+      "radius_mm": 3.4,
+      "start_z_mm": 35.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "carrier_top_screw_5"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; top frame attachment"
+    },
+    {
+      "screw": "carrier_base_screw_5",
+      "radius_mm": 3.4,
+      "start_z_mm": -2.45,
+      "end_z_mm": -30,
+      "excluded_parts": [
+        "carrier_base_screw_5"
+      ],
+      "excluded_groups": [],
+      "montagefase": "underside access with console inverted",
+      "direction": [
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "screw": "carrier_top_screw_6",
+      "radius_mm": 3.4,
+      "start_z_mm": 35.65,
+      "end_z_mm": 85,
+      "excluded_parts": [
+        "carrier_top_screw_6"
+      ],
+      "excluded_groups": [
+        "lid",
+        "lid_controls",
+        "cart"
+      ],
+      "montagefase": "upper shell removed; top frame attachment"
+    },
+    {
+      "screw": "carrier_base_screw_6",
+      "radius_mm": 3.4,
+      "start_z_mm": -2.45,
+      "end_z_mm": -30,
+      "excluded_parts": [
+        "carrier_base_screw_6"
+      ],
+      "excluded_groups": [],
+      "montagefase": "underside access with console inverted",
+      "direction": [
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "screw": "cartridge_socket_nut_0_0",
+      "radius_mm": 4.5,
+      "start_z_mm": -3.6,
+      "end_z_mm": -20,
+      "excluded_parts": [
+        "cartridge_socket_nut_0_0",
+        "cartridge_screw_0_0"
+      ],
+      "excluded_groups": [],
+      "montagefase": "unpowered console upside down on service supports; hollow nut-driver clears own protruding bolt; cartridges removed",
+      "note": "tool envelope is external; matching bolt is inside hollow nut driver and explicitly excluded"
+    },
+    {
+      "screw": "cartridge_socket_nut_0_1",
+      "radius_mm": 4.5,
+      "start_z_mm": -3.6,
+      "end_z_mm": -20,
+      "excluded_parts": [
+        "cartridge_socket_nut_0_1",
+        "cartridge_screw_0_1"
+      ],
+      "excluded_groups": [],
+      "montagefase": "unpowered console upside down on service supports; hollow nut-driver clears own protruding bolt; cartridges removed",
+      "note": "tool envelope is external; matching bolt is inside hollow nut driver and explicitly excluded"
+    },
+    {
+      "screw": "cartridge_socket_nut_1_0",
+      "radius_mm": 4.5,
+      "start_z_mm": -3.6,
+      "end_z_mm": -20,
+      "excluded_parts": [
+        "cartridge_socket_nut_1_0",
+        "cartridge_screw_1_0"
+      ],
+      "excluded_groups": [],
+      "montagefase": "unpowered console upside down on service supports; hollow nut-driver clears own protruding bolt; cartridges removed",
+      "note": "tool envelope is external; matching bolt is inside hollow nut driver and explicitly excluded"
+    },
+    {
+      "screw": "cartridge_socket_nut_1_1",
+      "radius_mm": 4.5,
+      "start_z_mm": -3.6,
+      "end_z_mm": -20,
+      "excluded_parts": [
+        "cartridge_socket_nut_1_1",
+        "cartridge_screw_1_1"
+      ],
+      "excluded_groups": [],
+      "montagefase": "unpowered console upside down on service supports; hollow nut-driver clears own protruding bolt; cartridges removed",
+      "note": "tool envelope is external; matching bolt is inside hollow nut driver and explicitly excluded"
+    }
+  ],
+  "hole_keepouts": [
+    {
+      "x": 38.325,
+      "y": 149,
+      "pcb_hole_radius_mm": 3.6,
+      "metal_sleeve_radius_mm": 3.2,
+      "routing_keepout_radius_mm": 4.2,
+      "z_min_mm": 7.5,
+      "z_max_mm": 11.6,
+      "purpose": "socket compression sleeve; PCB is not part of the clamp stack"
+    },
+    {
+      "x": 131.675,
+      "y": 149,
+      "pcb_hole_radius_mm": 3.6,
+      "metal_sleeve_radius_mm": 3.2,
+      "routing_keepout_radius_mm": 4.2,
+      "z_min_mm": 7.5,
+      "z_max_mm": 11.6,
+      "purpose": "socket compression sleeve; PCB is not part of the clamp stack"
+    },
+    {
+      "x": 168.325,
+      "y": 149,
+      "pcb_hole_radius_mm": 3.6,
+      "metal_sleeve_radius_mm": 3.2,
+      "routing_keepout_radius_mm": 4.2,
+      "z_min_mm": 7.5,
+      "z_max_mm": 11.6,
+      "purpose": "socket compression sleeve; PCB is not part of the clamp stack"
+    },
+    {
+      "x": 261.675,
+      "y": 149,
+      "pcb_hole_radius_mm": 3.6,
+      "metal_sleeve_radius_mm": 3.2,
+      "routing_keepout_radius_mm": 4.2,
+      "z_min_mm": 7.5,
+      "z_max_mm": 11.6,
+      "purpose": "socket compression sleeve; PCB is not part of the clamp stack"
+    },
+    {
+      "x": 150.0,
+      "y": 132.0,
+      "pcb_hole_radius_mm": 4.1,
+      "metal_post_radius_mm": 3,
+      "routing_keepout_radius_mm": 5.1,
+      "purpose": "existing carrier-post passage; not a PCB support"
+    },
+    {
+      "x": 150.0,
+      "y": 166.0,
+      "pcb_hole_radius_mm": 4.1,
+      "metal_post_radius_mm": 3,
+      "routing_keepout_radius_mm": 5.1,
+      "purpose": "existing carrier-post passage; not a PCB support"
+    }
+  ],
+  "pcb_support_keepouts": [
+    {
+      "part": "cartridge_pcb_insulator_0_0",
+      "bbox_min": [
+        42.5,
+        141.5,
+        9
+      ],
+      "bbox_max": [
+        127.5,
+        144.5,
+        10
+      ],
+      "underside_no_pad_via_zone": {
+        "x_min": 42.0,
+        "x_max": 128.0,
+        "y_min": 141,
+        "y_max": 145
+      },
+      "requires_pcb_hole": false
+    },
+    {
+      "part": "cartridge_pcb_insulator_0_1",
+      "bbox_min": [
+        42.5,
+        153.5,
+        9
+      ],
+      "bbox_max": [
+        127.5,
+        156.5,
+        10
+      ],
+      "underside_no_pad_via_zone": {
+        "x_min": 42.0,
+        "x_max": 128.0,
+        "y_min": 153,
+        "y_max": 157
+      },
+      "requires_pcb_hole": false
+    },
+    {
+      "part": "cartridge_pcb_insulator_1_0",
+      "bbox_min": [
+        172.5,
+        141.5,
+        9
+      ],
+      "bbox_max": [
+        257.5,
+        144.5,
+        10
+      ],
+      "underside_no_pad_via_zone": {
+        "x_min": 172.0,
+        "x_max": 258.0,
+        "y_min": 141,
+        "y_max": 145
+      },
+      "requires_pcb_hole": false
+    },
+    {
+      "part": "cartridge_pcb_insulator_1_1",
+      "bbox_min": [
+        172.5,
+        153.5,
+        9
+      ],
+      "bbox_max": [
+        257.5,
+        156.5,
+        10
+      ],
+      "underside_no_pad_via_zone": {
+        "x_min": 172.0,
+        "x_max": 258.0,
+        "y_min": 153,
+        "y_max": 157
+      },
+      "requires_pcb_hole": false
+    }
+  ],
+  "lower_spreader": {
+    "bbox_xy": [
+      9,
+      124,
+      291,
+      174
+    ],
+    "plate_z_mm": [
+      5.5,
+      7.5
+    ],
+    "rail_seat_top_z_mm": 9,
+    "material": "HC340LA, minimum yield 340 MPa",
+    "tail_windows": [
+      {
+        "center_x": 85.0,
+        "center_y": 146.46,
+        "size_xy_mm": [
+          82,
+          3.2
+        ]
+      },
+      {
+        "center_x": 85.0,
+        "center_y": 151.54,
+        "size_xy_mm": [
+          82,
+          3.2
+        ]
+      },
+      {
+        "center_x": 215.0,
+        "center_y": 146.46,
+        "size_xy_mm": [
+          82,
+          3.2
+        ]
+      },
+      {
+        "center_x": 215.0,
+        "center_y": 151.54,
+        "size_xy_mm": [
+          82,
+          3.2
+        ]
+      }
+    ]
+  },
+  "base_ribs": {
+    "transverse_y_mm": [
+      130.5,
+      145.5,
+      155.5,
+      166
+    ],
+    "longitudinal_x_mm": [
+      85.0,
+      215.0
+    ],
+    "width_mm": 1.2,
+    "z_mm": [
+      2.4,
+      5.5
+    ],
+    "scope": "ribs join base walls/bosses; local bearing excludes tail-window openings"
+  },
+  "service_sequence": [
+    "remove cartridges, unplug console and remove upper shell",
+    "hold both dust leaves of the serviced slot at 90 degrees for top-driver access",
+    "support console upside down to hold the four exterior socket-anchor nuts; loosen socket bolts only when needed",
+    "unplug harnesses and undo remaining base/module fasteners before lifting PCB/socket/frame module for solder-side work",
+    "reinstall metal floor bushings and exterior washers; verify full nut engagement, foot clearance and grip/tolerance condition before powering"
+  ],
+  "cartridge_cover": {
+    "parts": [
+      "cartridge_0_shell",
+      "cartridge_0_cover"
+    ],
+    "m2_cover_screws": [
+      "cartridge_pcb_screw_2",
+      "cartridge_pcb_screw_3",
+      "cartridge_pcb_screw_4",
+      "cartridge_pcb_screw_5"
+    ],
+    "access_direction": [
+      0,
+      -1,
+      0
+    ],
+    "access_from": "rear face of removed cartridge",
+    "pcb_axial_stops_z_mm": [
+      48,
+      50,
+      102.2
+    ],
+    "socket_bolt_top_to_lower_capture_mm": 19.51,
+    "scope": "nominal split cover, hard stops and axial capture; ABS strength/tolerance not released"
+  },
+  "hand_calculations": {
+    "selected_load_cases_not_standards": [
+      {
+        "id": "AXIAL_PUSH",
+        "force_N": [
+          0,
+          0,
+          -150.0
+        ],
+        "description": "one cartridge; illustrative strong insertion/overpush"
+      },
+      {
+        "id": "AXIAL_PULL",
+        "force_N": [
+          0,
+          0,
+          150.0
+        ],
+        "description": "one cartridge; illustrative extraction force"
+      },
+      {
+        "id": "LATERAL",
+        "force_N": [
+          0,
+          30.0,
+          0
+        ],
+        "application_z_mm": 109.4,
+        "description": "illustrative fore/aft force; opposite direction and lateral X remain separate checks"
+      }
+    ],
+    "assumed_steel_modulus_N_per_mm2": 200000.0,
+    "upper_carrier_ideal_bay": {
+      "span_mm": 135,
+      "force_N": 150.0,
+      "second_moment_mm4": 1170.6333333333334,
+      "ideal_deflection_mm": 0.03283979558785842,
+      "nominal_bending_stress_MPa": 47.13794527179019,
+      "limits": "continuous full flanges and simply supported bay; local holes, sheet buckling, joints and ABS compliance omitted",
+      "nominal_allowable_MPa": 170.0,
+      "nominal_utilization": 0.2772820310105305,
+      "nominal_yield_ratio": 7.212872730018502,
+      "passes_nominal_strip_screen": true
+    },
+    "lower_spreader_local_socket_ear_strip": {
+      "span_mm": 10,
+      "rib_y_mm": [
+        145.5,
+        155.5
+      ],
+      "thickness_mm": 2.0,
+      "gross_strip_width_mm": 10,
+      "net_width_after_3p4_bolt_hole_mm": 6.6,
+      "force_N": 150.0,
+      "second_moment_mm4": 4.3999999999999995,
+      "ideal_deflection_mm": 0.0035511363636363644,
+      "nominal_bending_stress_MPa": 85.22727272727273,
+      "limits": "Historical intact 10 mm span comparison used to select 2.0 mm plate. The actual A04 flange relief removes these local ABS rib supports. Direct flanged steel bushes now support the socket ears; this strip result is not a current A04 stress or deflection prediction.",
+      "nominal_allowable_MPa": 170.0,
+      "nominal_utilization": 0.5013368983957219,
+      "nominal_yield_ratio": 3.989333333333333,
+      "passes_nominal_strip_screen": true,
+      "applicable_load_case": "HISTORICAL_COMPARISON_ONLY_NOT_CURRENT_A04",
+      "actual_A04_deflection_claim": false
+    },
+    "compression_sleeve_gross_section": {
+      "force_N": 150.0,
+      "area_mm2": 23.090706003884986,
+      "nominal_compression_MPa": 6.496120126199808,
+      "limits": "gross metal compression only; no socket plastic bearing or fastener proof",
+      "applicable_load_case": "AXIAL_PUSH_ONLY"
+    },
+    "lateral_moment": {
+      "lever_arm_mm": 75.4,
+      "moment_Nm": 2.262,
+      "post_row_spacing_mm": 34,
+      "opposing_row_reaction_N": 66.52941176470588,
+      "limits": "illustrative rigid-body reaction only; gap take-up, torsion and actual load sharing not resolved"
+    },
+    "structural_qualification_pass": false,
+    "unproved": [
+      "connector housing and contact load distribution",
+      "cartridge ABS retention stops and threaded bosses",
+      "base ABS ribs, floor and wall joints including creep/fatigue",
+      "fastener grade, preload, thread pullout and weld schedule",
+      "PCB strain and solder-joint fatigue",
+      "tolerances and loaded contact sequence",
+      "combined misuse and impact cases",
+      "integral floor-bushing flange and external washer contact/bending including mold floor-thickness variation",
+      "minimum bolt-tip clearance to the supporting table at compressed-foot and bolt-length tolerance extremes"
+    ],
+    "selected_steel": {
+      "grade": "HC340LA",
+      "minimum_yield_strength_MPa": 340.0,
+      "source_url": "https://www.ssab.com/en/brands-and-products/ssab-domex/product-offer/340la",
+      "source_scope": "current primary material specification: 0.40-3.00 mm stock and 340-420 MPa yield; not proof of a particular supplier brand in 1995",
+      "yield_partial_factor_for_nominal_screen": 2.0,
+      "nominal_screen_allowable_MPa": 170.0,
+      "scope": "upper 1.0 mm carrier and lower 2.0 mm plate; coating and weld procedure remain to be qualified"
+    },
+    "lower_plate_A03_comparison": {
+      "prior_thickness_mm": 1.5,
+      "prior_stress_MPa": 151.51515151515153,
+      "new_thickness_mm": 2.0,
+      "new_stress_MPa": 85.22727272727273,
+      "stress_reduction_percent": 43.75,
+      "ideal_stiffness_ratio": 2.37037037037037,
+      "scope": "Historical same-span material-thickness comparison only: same intact net strip, 150 N and 10 mm span. A04 floor-anchor rib relief removes that actual local support; no assembly performance is inferred."
+    },
+    "base_washer_gross_bearing": {
+      "force_N": 150.0,
+      "outer_diameter_mm": 14,
+      "floor_clearance_hole_diameter_mm": 6.8,
+      "clearance_hole_diameter_mm": 6.8,
+      "assumed_one_anchor_takes_whole_force": true,
+      "area_mm2": 117.62122895040184,
+      "gross_average_contact_pressure_MPa": 1.2752799927235206,
+      "applicable_load_cases": [
+        "AXIAL_PUSH_INTERIOR_FLANGE",
+        "AXIAL_PULL_EXTERIOR_WASHER"
+      ],
+      "limits": "Effective ABS bearing annulus excludes the actual 6.8 mm floor hole, not merely the 3.4 mm washer hole. Average contact pressure only; no ABS allowable or creep/fatigue conclusion. Nonuniform contact, ring bending, gross floor flexure and tolerances remain unqualified."
+    },
+    "proof_test_plan": [
+      {
+        "id": "PUSH_PULL",
+        "condition": "150 N axial push and pull on either slot; repeat with both carts fitted",
+        "measure": "socket and floor displacement, force-displacement, local ring/floor contact, bolt/nut retention, PCB strain and solder integrity before/after; both push and pull",
+        "acceptance_proposal": "no cracking/loosening/electrical interruption; residual slot offset <=0.2 mm; final acceptablePCBstrain per actual components"
+      },
+      {
+        "id": "ROCK",
+        "condition": "30 N forward/back/left/right at cart top,109.4 mm above console datum",
+        "measure": "guide/frame deflection and shell separation",
+        "acceptance_proposal": "no permanent damage or contact interruption; maximum live displacement criterion set from connector drawing"
+      },
+      {
+        "id": "CYCLE",
+        "condition": "5000 insert/remove cycles at selected connector rated force, elevated temperature corner included",
+        "measure": "contact resistance, insertion force, screw retention and capturedPCB stops",
+        "acceptance_proposal": "selected connector and solder-joint limits;5000 is a project objective, not an asserted standard"
+      }
+    ],
+    "extraction_load_path_scope": {
+      "old_A03_path": "socket ear -> bolt head -> tension bolt -> nut under lower steel plate -> flat lower plate -> frame posts/anchors -> ABS base/feet",
+      "actual_A04_push_path": "socket -> upper sleeve -> lower spreader -> flanged steel floor bushing -> interior flange -> ABS floor",
+      "actual_A04_pull_path": "socket -> bolt -> exterior M3 nut -> OD14 exterior washer -> ABS floor",
+      "metal_preload_path": "socket/sleeve/spreader/bushing/washer/nut; nominal floor grip equals ABS thickness but tolerances may create preload or clearance",
+      "status": "Four implemented local floor anchors close the push and pull paths. Gross demands are calculated; assembled strength, stiffness and preload remain unqualified.",
+      "reason": "Unilateral ABS rib contacts cannot resist upward tension. Flange rib clearances also invalidate the previous local 10 mm push-strip support.",
+      "nominal_bolt_tip_to_foot_plane_mm": 1.64,
+      "stack_tolerances_qualified": false
+    },
+    "socket_floor_bushing_gross_section": {
+      "force_N": 150.0,
+      "outer_diameter_mm": 6.4,
+      "inner_diameter_mm": 3.4,
+      "area_mm2": 23.090706003884986,
+      "nominal_compression_MPa": 6.496120126199808,
+      "applicable_load_case": "AXIAL_PUSH",
+      "assumed_one_anchor_takes_whole_force": true,
+      "limits": "Gross local metal compression only; flange bending, bushing length stability, bearing distribution, socket ear and floor deformation omitted."
+    },
+    "floor_perimeter_shear_demand": {
+      "force_N": 150.0,
+      "outer_diameter_mm": 14,
+      "floor_thickness_mm": 2.4,
+      "ideal_cylindrical_shear_area_mm2": 105.55751316061705,
+      "gross_shear_demand_MPa": 1.4210262776062084,
+      "limits": "Illustrative nominal demand along an ideal OD14 cylindrical perimeter. It is not a punching-shear capacity model for injection-molded ABS and is not compared with a resin allowable."
+    },
+    "integral_flange_radial_strip_comparator": {
+      "force_N": 150.0,
+      "fixed_inner_radius_mm": 3.2,
+      "floor_contact_inner_radius_mm": 3.4,
+      "outer_radius_mm": 7.0,
+      "thickness_mm": 1.2,
+      "assumed_uniform_pressure_MPa": 1.2752799927235206,
+      "moment_per_unit_inner_circumference_N": 16.470241106024275,
+      "nominal_bending_stress_MPa": 68.62600460843449,
+      "assumed_minimum_material_yield_MPa": 340.0,
+      "nominal_screen_allowable_MPa": 170.0,
+      "nominal_utilization": 0.4036823800496146,
+      "limits": "Illustrative independently bending radial strips with uniformly distributed floor reaction, fixed at the bus OD. Circumferential plate coupling, joint radius, nonuniform ABS contact, external washer/nut contact and floor flexibility are omitted. Not FEA, not a guaranteed upper bound, and not structural acceptance."
+    }
+  },
+  "A04_lower_spreader": {
+    "thickness_mm": 2.0,
+    "bottom_z_mm": 5.5,
+    "top_z_mm": 7.5,
+    "steel_grade_requirement": "HC340LA minimum yield 340 MPa",
+    "socket_nut_bottom_z_mm": -3.6,
+    "socket_nut_top_z_mm": -1.2,
+    "floor_clearance_below_nuts_mm": null,
+    "production_gate": "Forming/welding, notch stresses, plastic bearing and complete assembly abuse testing remain unqualified."
+  },
+  "source_base_sha256": "323548db426c6b52a35795f769103ddaee1afcdebef911855088f99ff396b910",
+  "A04_shutters": {
+    "leaf_thickness_mm": 1.0,
+    "hinge_pin_diameter_mm": 1.2,
+    "hinge_bore_diameter_mm": 1.4,
+    "nominal_open_angle_deg": 90,
+    "angle_sampling_deg": 5,
+    "pivot_axis_z_mm": 58.5,
+    "pivot_axis_y_mm": [
+      138.3,
+      159.7
+    ],
+    "spring_wire_diameter_mm": 0.3,
+    "spring_mean_diameter_mm": 2.4,
+    "spring_active_turns": 6,
+    "spring_coil_allocation_only": true,
+    "spring_legs_and_stops_qualified": false,
+    "scope": "Real separate leaves, pins, guide-wall pockets and hinge bearings. Torsion-coil space reserved; spring legs/anchors, compliance, force curve and life are not released.",
+    "upper_shell_opening_mm": [
+      118,
+      26
+    ]
+  },
+  "A04_socket_floor_anchors": {
+    "count": 4,
+    "bushing_OD_mm": 6.4,
+    "bushing_ID_mm": 3.4,
+    "bushing_body_z_mm": [
+      0,
+      5.5
+    ],
+    "bushing_flange_OD_mm": 14,
+    "bushing_flange_z_mm": [
+      2.4,
+      3.6
+    ],
+    "floor_clearance_hole_diameter_mm": 6.8,
+    "rib_flange_relief_diameter_mm": 14.4,
+    "rib_flange_relief_z_mm": [
+      2.4,
+      3.7
+    ],
+    "rib_tube_relief_diameter_mm": 6.9,
+    "rib_tube_relief_z_mm": [
+      3.6,
+      5.6
+    ],
+    "external_washer_OD_mm": 14,
+    "external_washer_ID_mm": 3.4,
+    "external_washer_z_mm": [
+      -1.2,
+      0
+    ],
+    "nut_z_mm": [
+      -3.6,
+      -1.2
+    ],
+    "bolt_underhead_length_mm": 31.2,
+    "bolt_length_tolerance_mm": 0.1,
+    "bolt_length_is_procurement_requirement": true,
+    "bolt_tip_z_mm": -4.36,
+    "bolt_projection_beyond_nut_mm": 0.76,
+    "nominal_bolt_tip_to_foot_plane_mm": 1.64,
+    "nominal_metal_grip_mm": 2.4,
+    "nominal_floor_thickness_mm": 2.4,
+    "stack_tolerances_qualified": false,
+    "push_path": "socket -> upper sleeve -> lower spreader -> flanged steel floor bushing -> interior flange -> ABS floor",
+    "pull_path": "socket -> bolt -> exterior M3 nut -> OD14 exterior washer -> ABS floor",
+    "metal_preload_path": "socket/sleeve/spreader/bushing/washer/nut; nominal floor grip equals ABS thickness but tolerances may create preload or clearance",
+    "limits": [
+      "ABS floor punching, creep, flange/washer bending and joints need prototype qualification.",
+      "Local rib relief removes the old 10 mm strip support assumption at each socket ear; use direct support model.",
+      "Selected screw length must be procured or trimmed, deburred and gauge checked; not silently treated as a standard stocked length.",
+      "Minimum foot clearance must be checked with fastener tolerances and foot compression."
+    ],
+    "flange_outer_diameter_mm": 14,
+    "floor_hole_diameter_mm": 6.8,
+    "bus_outer_diameter_mm": 6.4,
+    "bus_inner_diameter_mm": 3.4,
+    "flange_thickness_mm": 1.2,
+    "washer_thickness_mm": 1.2,
+    "washer_z_mm": [
+      -1.2,
+      0
+    ],
+    "bolt_length_mm": 31.2,
+    "material_requirement": "steel minimum yield 340 MPa; integral turned bushing and stamped washer procurement, final grade/process qualification required"
+  }
+}

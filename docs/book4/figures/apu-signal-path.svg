@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 610" role="img" aria-labelledby="title desc">
+<title id="title">BMSX audio signal and memory paths</title>
+<desc id="desc">System ROM, cartridge ROM and local sample RAM provide sampled sound. A generator is another source. Sixteen voice slots handle source position, decoding and filtering; the contributions are mixed to stereo and delivered over I2S to the DAC and analog output. A separate transfer path uploads samples into local RAM.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#294b68"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:19px}.title{font-size:27px;font-weight:bold}.heading{font-size:21px;font-weight:bold}.small{font-size:17px}.chip{fill:#e1edf4;stroke:#294b68;stroke-width:2}.storage{fill:#f5f7f8;stroke:#294b68;stroke-width:2}.path{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}.group{fill:#fbfcfd;stroke:#93a9b8;stroke-width:2}</style>
+</defs>
+<rect width="1320" height="610" fill="white"/>
+<text x="40" y="52" class="title">APU — source, playback and stereo output</text>
+<rect x="35" y="108" width="225" height="92" rx="8" class="storage"/>
+<text x="147" y="142" text-anchor="middle" class="heading" style="font-size:18px">System / cartridge ROM</text>
+<text x="147" y="173" text-anchor="middle" class="small">External source access</text>
+<rect x="35" y="266" width="225" height="92" rx="8" class="storage"/>
+<text x="147" y="300" text-anchor="middle" class="heading" style="font-size:18px">Sample RAM · 512 KiB</text>
+<text x="147" y="331" text-anchor="middle" class="small">Local to APU</text>
+<rect x="35" y="424" width="225" height="92" rx="8" class="storage"/>
+<text x="147" y="458" text-anchor="middle" class="heading">System transfers</text>
+<text x="147" y="489" text-anchor="middle" class="small">Upload / readback</text>
+<path d="M147 424 V358" class="path" marker-start="url(#arrow)"/>
+<rect x="350" y="90" width="580" height="390" rx="12" class="group"/>
+<text x="380" y="130" class="heading">U4 · APU</text>
+<rect x="400" y="170" width="240" height="115" rx="8" class="chip"/>
+<text x="520" y="207" text-anchor="middle" class="heading">16 voice slots</text>
+<text x="520" y="239" text-anchor="middle" class="small">PCM / BADP / generator</text>
+<text x="520" y="265" text-anchor="middle" class="small">Position · interpolation · filter</text>
+<path d="M260 154 H310 V205 H400" class="path"/>
+<path d="M260 312 H310 V250 H400" class="path"/>
+<rect x="690" y="170" width="195" height="115" rx="8" class="chip"/>
+<text x="787" y="207" text-anchor="middle" class="heading">Stereo mixer</text>
+<text x="787" y="239" text-anchor="middle" class="small">Left / right sums</text>
+<text x="787" y="265" text-anchor="middle" class="small">44,100 frames/s</text>
+<path d="M640 227 H690" class="path"/>
+<rect x="400" y="347" width="485" height="82" rx="8" class="storage"/>
+<text x="642" y="381" text-anchor="middle" class="heading">Commands and transfer control</text>
+<text x="642" y="410" text-anchor="middle" class="small">Source binding · playback state · sample publication</text>
+<path d="M260 470 H335 V388 H400" class="path"/>
+<path d="M520 347 V285" class="path"/>
+<rect x="1010" y="170" width="255" height="115" rx="8" class="chip"/>
+<text x="1137" y="207" text-anchor="middle" class="heading">Audio DAC + filters</text>
+<text x="1137" y="239" text-anchor="middle" class="small">PCM1754 · OPA2353</text>
+<text x="1137" y="265" text-anchor="middle" class="small">I²S input · analogue L/R</text>
+<path d="M885 227 H1010" class="path"/>
+<text x="947" y="214" text-anchor="middle" class="small">I²S</text>
+<rect x="1010" y="347" width="255" height="82" rx="8" class="storage"/>
+<text x="1137" y="381" text-anchor="middle" class="heading">A/V output</text>
+<text x="1137" y="410" text-anchor="middle" class="small">Stereo to SCART</text>
+<path d="M1137 285 V347" class="path"/>
+<text x="40" y="568" class="small">Logical paths; supported workloads and physical deadlines depend on the final implementation.</text>
+</svg>

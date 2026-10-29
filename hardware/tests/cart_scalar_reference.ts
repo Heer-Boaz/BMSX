@@ -1,0 +1,21 @@
+import { CartridgeCard } from '../../machine/ts/machine/devices/cartridge/card';
+
+const card = new CartridgeCard({ rom: Uint8Array.of(0x10, 0x11, 0x12, 0x13, 0x14), ramByteCount: 5, mailboxPresent: true }, 0);
+const ram = 0x30000000, rom = 0x10000000, mmio = 0x30f00000;
+const output: number[] = [];
+card.writeU32(ram + 1, 0x11223344);
+output.push(card.readU32(ram + 1), card.readU16(ram + 3), card.readU8(ram + 4));
+card.writeU32(ram + 2, 0xff00ff00);
+output.push(card.readU32(ram + 3), card.readU32(rom + 3));
+card.writeU32(mmio, 0x89abcdef);
+output.push(card.readU32(mmio + 1), card.readU16(mmio + 1), card.readU8(mmio + 1));
+card.writeU32(mmio + 1, 0x11223344);
+card.writeU16(mmio, 0x1122);
+output.push(card.readU32(mmio));
+card.writeU32(mmio + 4, 0x80000007);
+output.push(card.readU32(mmio + 4), card.readU32(mmio + 8));
+card.writeU32(mmio + 12, 0);
+output.push(card.readU32(mmio + 8));
+card.writeU32(mmio + 12, 1);
+output.push(card.readU32(mmio + 8));
+console.log(output.map(v => (v >>> 0).toString(16).padStart(8, '0')).join('\n'));

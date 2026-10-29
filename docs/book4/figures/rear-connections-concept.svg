@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 780" role="img" aria-labelledby="title desc">
+<title id="title">BMSX rear connections, conceptual view</title>
+<desc id="desc">Schematic rear view of the console showing an illustrative SCART receptacle on the left and a round locking DC inlet on the right. The positions follow the existing design's rear-facing orientation. Connector faces are conceptual and do not show qualified dimensions or contact numbering.</desc>
+<defs>
+ <style>
+ text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:22px}
+ .title{font-size:32px;font-weight:700}.label{font-size:25px;font-weight:700}.small{font-size:19px}.caption{font-size:18px;fill:#4b606d}
+ .body{fill:#eae7df;stroke:#536875;stroke-width:3}.panel{fill:#343c40;stroke:#202c34;stroke-width:3}
+ .socket{fill:#171d20;stroke:#a8afb0;stroke-width:3}.rim{fill:#9fa6a6;stroke:#626b6e;stroke-width:2}
+ .contact{fill:#b7ad8e;stroke:#8f856d;stroke-width:1}.leader{fill:none;stroke:#315169;stroke-width:3}
+ </style>
+ <g id="contact-row">
+  <rect class="contact" x="0" y="0" width="7" height="19" rx="2"/><rect class="contact" x="23" y="0" width="7" height="19" rx="2"/><rect class="contact" x="46" y="0" width="7" height="19" rx="2"/><rect class="contact" x="69" y="0" width="7" height="19" rx="2"/><rect class="contact" x="92" y="0" width="7" height="19" rx="2"/><rect class="contact" x="115" y="0" width="7" height="19" rx="2"/><rect class="contact" x="138" y="0" width="7" height="19" rx="2"/><rect class="contact" x="161" y="0" width="7" height="19" rx="2"/><rect class="contact" x="184" y="0" width="7" height="19" rx="2"/><rect class="contact" x="207" y="0" width="7" height="19" rx="2"/>
+ </g>
+</defs>
+<rect width="1500" height="780" fill="#fff"/>
+<text x="55" y="60" class="title">BMSX console — rear connections</text>
+<text x="55" y="97" class="small">View facing the rear; connector faces are illustrative, not manufacturing drawings.</text>
+<!-- Rear view follows the existing SCART-left, DC-right placement. -->
+<path class="body" d="M135 204 Q135 175 164 175 H1336 Q1365 175 1365 204 V505 Q1365 534 1336 534 H164 Q135 534 135 505 Z"/>
+<path class="panel" d="M151 235 H1349 V480 Q1349 505 1324 505 H176 Q151 505 151 480 Z"/>
+<path d="M135 490 Q135 534 164 534 H1336 Q1365 534 1365 490 V542 Q1365 557 1345 557 H155 Q135 557 135 542 Z" fill="#20282c"/>
+<!-- Stylised recessed SCART. Contact positions are not a wiring map. -->
+<path class="rim" d="M310 249 H629 L616 331 Q615 338 607 338 H330 Q322 338 321 331 Z"/>
+<path class="socket" d="M319 256 H620 L608 326 Q607 330 603 330 H335 Q331 330 330 326 Z"/>
+<use href="#contact-row" x="359" y="268"/><use href="#contact-row" x="346" y="299"/>
+<!-- The ports below are identification sketches; shell details are illustrative. -->
+<circle cx="1180" cy="357" r="34" fill="#929a9d" stroke="#535d60" stroke-width="3"/>
+<circle cx="1180" cy="357" r="25" fill="#161d20" stroke="#ced0c8" stroke-width="2"/>
+<circle cx="1180" cy="357" r="6" fill="#c7c9be" stroke="#6f7778" stroke-width="2"/>
+<!-- Subtle rear vents are indicative only, not aperture geometry. -->
+<g fill="#171d20"><rect x="770" y="327" width="7" height="27" rx="3"/><rect x="794" y="327" width="7" height="27" rx="3"/><rect x="818" y="327" width="7" height="27" rx="3"/><rect x="842" y="327" width="7" height="27" rx="3"/><rect x="866" y="327" width="7" height="27" rx="3"/><rect x="890" y="327" width="7" height="27" rx="3"/><rect x="914" y="327" width="7" height="27" rx="3"/><rect x="938" y="327" width="7" height="27" rx="3"/></g>
+<path class="leader" d="M472 338 V599 H160"/><circle cx="472" cy="338" r="5" fill="#315169"/>
+<text x="160" y="635" class="label">RGB / AUDIO — SCART</text>
+<text x="160" y="665" class="small">RGB, composite sync and stereo audio</text>
+<path class="leader" d="M1180 392 V599 H950"/><circle cx="1180" cy="392" r="5" fill="#315169"/>
+<text x="950" y="635" class="label">DC IN — 9 V</text>
+<text x="950" y="665" class="small">Centre positive · locking plug · 2 mm pin</text>
+<text x="55" y="748" class="caption">Conceptual panel identification. The SCART shield and contacts are schematic; use the contact tables for wiring. Plug fit is not established.</text>
+</svg>

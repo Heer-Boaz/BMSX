@@ -7,7 +7,7 @@ quarto-required: ">=1.10.19"
 profile:
   default: html
   group:
-    - [html, book-i, book-ii, book-iii]
+    - [html, book-i, book-ii, book-iii, book-iv]
 
 book:
   author: BMSX

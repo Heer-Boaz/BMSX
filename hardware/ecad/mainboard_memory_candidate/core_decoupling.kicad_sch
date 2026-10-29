@@ -1,0 +1,638 @@
+(kicad_sch
+	(version 20230121)
+	(generator bmsx_r3)
+	(uuid 4da0dc59-8eb5-5e91-b9a7-bb3c88539b4d)
+	(paper "A4")
+	(lib_symbols
+		(symbol "BMSX_R3:CoreBypass"
+			(pin_names
+				(offset 0))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 2.54 1.27 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(property "Value" "100nF"
+				(at 2.54 -1.27 0)
+				(effects
+					(font
+						(size 1.27 1.27))))
+			(symbol "CoreBypass_0_1"
+				(polyline
+					(pts
+						(xy -2.54 .762)
+						(xy 2.54 .762))
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy -2.54 -.762)
+						(xy 2.54 -.762))
+					(stroke
+						(width .254)
+						(type default))
+					(fill
+						(type none))))
+			(symbol "CoreBypass_1_1"
+				(pin passive line
+					(at 0 5.08 270)
+					(length 4.318)
+					(name "1"
+						(effects
+							(font
+								(size 1 1))))
+					(number "1"
+						(effects
+							(font
+								(size 1 1)))))
+				(pin passive line
+					(at 0 -5.08 90)
+					(length 4.318)
+					(name "2"
+						(effects
+							(font
+								(size 1 1))))
+					(number "2"
+						(effects
+							(font
+								(size 1 1))))))))
+	(text "Four-ASIC ECO bypass inventory: one 100nF per VDD pad and one 4.7uF bulk per package.\nOwnership labels refer to the new package pin numbers; placement and PDN qualification are separate."
+		(at 145 18 0)
+		(effects
+			(font
+				(size 1.4 1.4)))
+		(uuid 5e693ec6-5041-5381-a167-278384f3050a))
+	(wire
+		(pts
+			(xy 54.61 59.69)
+			(xy 54.61 52.07))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9f3750b6-94e1-5b53-bc83-677fcac83e5f))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 54.61 52.07 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid b6138efa-7a5e-5565-8200-287ae3ff98fe))
+	(wire
+		(pts
+			(xy 54.61 69.85)
+			(xy 54.61 77.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 96dfab92-2868-51e7-944f-67262197aca3))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 54.61 77.47 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 4f782307-2808-5f58-9aba-918dcebcb081))
+	(symbol
+		(lib_id "BMSX_R3:CoreBypass")
+		(at 54.61 64.77 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid f953c3a4-6d4c-5276-8587-24fe53e814b2)
+		(property "Reference" "C220"
+			(at 62.61 62.77 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R 0603"
+			(at 62.61 66.77 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_R10:C220"
+			(at 54.61 64.77 0)
+			(effects
+				(font
+					(size 1 1)) hide))
+		(pin "1"
+			(uuid acaa30b7-b28d-5ee1-89f4-485a736352e1))
+		(pin "2"
+			(uuid a91ec5bd-25e4-517e-a332-757b87848412))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+					(reference "C220")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 115.57 59.69)
+			(xy 115.57 52.07))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 46a5f19b-3395-5eef-afcb-94ee2b0b92cf))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 115.57 52.07 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 1b2bae5c-7734-57b9-937b-92069902946e))
+	(wire
+		(pts
+			(xy 115.57 69.85)
+			(xy 115.57 77.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4aa6943b-a6bf-5256-96fa-5b1dc3996bc2))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 115.57 77.47 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 1e3e545e-aa65-5984-b373-2a0b00945514))
+	(symbol
+		(lib_id "BMSX_R3:CoreBypass")
+		(at 115.57 64.77 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 6cc1f280-ea20-571b-b7ec-b1afd7583990)
+		(property "Reference" "C221"
+			(at 123.57 62.77 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R 0603"
+			(at 123.57 66.77 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_R10:C221"
+			(at 115.57 64.77 0)
+			(effects
+				(font
+					(size 1 1)) hide))
+		(pin "1"
+			(uuid 91733c55-25d8-53be-94e5-fe27a5ffddae))
+		(pin "2"
+			(uuid 4e4cd3f9-2425-5186-a5a4-14331d4d0868))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+					(reference "C221")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 175.26 59.69)
+			(xy 175.26 52.07))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4d9018e3-db57-570b-b915-26424c15247c))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 175.26 52.07 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 93f5a669-b5a4-5fdf-9fb6-1a22c95a7dfa))
+	(wire
+		(pts
+			(xy 175.26 69.85)
+			(xy 175.26 77.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 049ff3fc-50cb-5b4c-8a6d-b5ce070da38c))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 175.26 77.47 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 63ad26f3-56ad-5f29-9724-7e53ddbf8a4b))
+	(symbol
+		(lib_id "BMSX_R3:CoreBypass")
+		(at 175.26 64.77 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid f6a2fed4-6530-536e-842d-6fe74c95798f)
+		(property "Reference" "C222"
+			(at 183.26 62.77 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R 0603"
+			(at 183.26 66.77 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_R10:C222"
+			(at 175.26 64.77 0)
+			(effects
+				(font
+					(size 1 1)) hide))
+		(pin "1"
+			(uuid 61953dde-8901-5cb3-9076-23f7639c1a6f))
+		(pin "2"
+			(uuid fa75917f-6da1-5060-b819-f45d35a7d770))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+					(reference "C222")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 234.95 59.69)
+			(xy 234.95 52.07))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f1798a1c-596a-588d-b9ec-d5952ea99e91))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 234.95 52.07 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 2991c8c9-45ee-5601-adbf-5cc43cac0e77))
+	(wire
+		(pts
+			(xy 234.95 69.85)
+			(xy 234.95 77.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid edb957c1-5c5f-5a72-9fbe-bb7cda027920))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 234.95 77.47 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 9e352e82-d2f0-50e4-b5ea-5f1059621741))
+	(symbol
+		(lib_id "BMSX_R3:CoreBypass")
+		(at 234.95 64.77 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 2b72e9a0-4f9c-502b-9915-a3c4d96b367e)
+		(property "Reference" "C223"
+			(at 242.95 62.77 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R 0603"
+			(at 242.95 66.77 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_R10:C223"
+			(at 234.95 64.77 0)
+			(effects
+				(font
+					(size 1 1)) hide))
+		(pin "1"
+			(uuid d2ca91f1-d618-516a-8d0c-1caf3c02571b))
+		(pin "2"
+			(uuid 4fa4381c-1470-53a7-b43d-7889f530114b))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+					(reference "C223")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 54.61 134.62)
+			(xy 54.61 127))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid cd85ff4f-2b1a-52ea-8ad1-c8eac006b7b1))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 54.61 127 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid a33352f1-a454-5c78-ab57-31b48f729efe))
+	(wire
+		(pts
+			(xy 54.61 144.78)
+			(xy 54.61 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f5b472ba-b17e-5afb-8266-0b244817d039))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 54.61 152.4 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 1a17f7ff-68d3-55c5-93e2-b3fe426adf5a))
+	(symbol
+		(lib_id "BMSX_R3:CoreBypass")
+		(at 54.61 139.7 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 549c80e6-9b1a-5b34-bd82-7ff5a92e1adc)
+		(property "Reference" "C224"
+			(at 62.61 137.7 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R 0603"
+			(at 62.61 141.7 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_R10:C224"
+			(at 54.61 139.7 0)
+			(effects
+				(font
+					(size 1 1)) hide))
+		(pin "1"
+			(uuid 11f10b10-9913-5304-895f-0abe3ce8208f))
+		(pin "2"
+			(uuid b73511b2-78a0-5fb5-8e02-d29cf187315f))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+					(reference "C224")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 115.57 134.62)
+			(xy 115.57 127))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 999cb19c-224d-532e-980d-15def6fc9d10))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 115.57 127 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid b53d7ef9-0459-5f88-8679-c7363675479c))
+	(wire
+		(pts
+			(xy 115.57 144.78)
+			(xy 115.57 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 102a97ac-52aa-558f-bcf8-6bc93b8dcd42))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 115.57 152.4 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid e9226692-dfd7-55a9-ae4a-12ff9037ef69))
+	(symbol
+		(lib_id "BMSX_R3:CoreBypass")
+		(at 115.57 139.7 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid aa18ecd9-15e4-5cac-916a-6cc2662e6095)
+		(property "Reference" "C225"
+			(at 123.57 137.7 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R 0603"
+			(at 123.57 141.7 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_R10:C225"
+			(at 115.57 139.7 0)
+			(effects
+				(font
+					(size 1 1)) hide))
+		(pin "1"
+			(uuid b382e36e-1754-5a35-bdc6-633a209e08bd))
+		(pin "2"
+			(uuid 2b47130d-d8c0-5f0e-a2e9-043cd48d9ead))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+					(reference "C225")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 175.26 134.62)
+			(xy 175.26 127))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 01427657-5071-50c8-a9a9-bb502aedcb0c))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 175.26 127 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 449e9b24-e206-566a-b30a-4722816dd629))
+	(wire
+		(pts
+			(xy 175.26 144.78)
+			(xy 175.26 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c8dc81d3-99a1-5fbe-96a5-6dac353d56ae))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 175.26 152.4 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid b319af1e-6e2a-5642-a04b-99481680e204))
+	(symbol
+		(lib_id "BMSX_R3:CoreBypass")
+		(at 175.26 139.7 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 9cfca750-d17d-5be8-bb3e-14fe505915b6)
+		(property "Reference" "C226"
+			(at 183.26 137.7 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R 0603"
+			(at 183.26 141.7 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_R10:C226"
+			(at 175.26 139.7 0)
+			(effects
+				(font
+					(size 1 1)) hide))
+		(pin "1"
+			(uuid a00cf2eb-8fb5-5076-8a4a-4bd432004054))
+		(pin "2"
+			(uuid f8f50af5-8f91-58b9-9bb2-7453cf61c0d0))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+					(reference "C226")
+					(unit 1)))))
+	(wire
+		(pts
+			(xy 234.95 134.62)
+			(xy 234.95 127))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 75707f17-4d21-5565-a41b-9978fd219921))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 234.95 127 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 6502b45e-972d-5c0b-acb8-80d83494b826))
+	(wire
+		(pts
+			(xy 234.95 144.78)
+			(xy 234.95 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6b7aded4-68b9-5906-b626-b6580abb87d9))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 234.95 152.4 90)
+		(effects
+			(font
+				(size 1 1))
+			(justify left))
+		(uuid 68b5f891-2640-5546-9195-15047237432d))
+	(symbol
+		(lib_id "BMSX_R3:CoreBypass")
+		(at 234.95 139.7 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid e6ac4057-5f09-5b76-80da-60319b0824ce)
+		(property "Reference" "C227"
+			(at 242.95 137.7 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R 0603"
+			(at 242.95 141.7 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_R10:C227"
+			(at 234.95 139.7 0)
+			(effects
+				(font
+					(size 1 1)) hide))
+		(pin "1"
+			(uuid f639cbf7-ae8e-5be9-942f-fdb39c62b6e0))
+		(pin "2"
+			(uuid cbcecbeb-57db-5aee-b18c-cc5efb7a69c7))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+					(reference "C227")
+					(unit 1)))))
+	(sheet_instances
+		(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/1dbdc3fe-83cd-5ffb-8d94-ac82a1394570"
+			(page "4")))
+	(title_block
+		(title "Core bypass and plane connections")
+		(date "2026-10-21")
+		(rev "4ASIC ECO")
+		(company "BMSX")
+		(comment 1 "ENGINEERING DESIGN - NOT FOR MANUFACTURE"))
+	(text "U1: VDD pad 2"
+		(at 54.61 74.93 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 865cd720-d925-5481-a4de-befc7f72d33d))
+	(text "U1: VDD pad 11"
+		(at 115.57 74.93 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 57160716-bcac-5a29-90dd-d7f1b6134ba5))
+	(text "U1: VDD pad 20"
+		(at 175.26 74.93 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid f0b56f3a-4383-58ea-ad9f-92baad1c2fb9))
+	(text "U1: VDD pad 29"
+		(at 234.95 74.93 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 7db2425b-36d7-5d2e-95be-c85bbed9f95d))
+	(text "U1: VDD pad 38"
+		(at 54.61 149.86 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 3e5eb735-fab1-54b4-9b2d-3cecf94b3c4c))
+	(text "U1: VDD pad 52"
+		(at 115.57 149.86 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 62beeebe-307a-576f-a162-c201c0bb34c2))
+	(text "U1: VDD pad 54"
+		(at 175.26 149.86 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 54e69464-8345-5ab0-bcea-5cc38c052735))
+	(text "U1: VDD pad 63"
+		(at 234.95 149.86 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid bd900103-6f0d-5f5e-878c-4ef306c85a94)))

@@ -1,0 +1,2827 @@
+{
+  "revision": "COMPACT_REAR_IO_KYCON_DC_R10_4",
+  "scope": "Compact rear assembly with inside-only mounting, selectedLAPP0.5mm2 R10DCleads, a numberedKyconSCARTterminationboard and preservedexternalportdatums. PCBcopper remains unrouted.",
+  "input_manifest": "models/rear/manifest.json",
+  "immutable_main_owner": "build/reports/mainboard.json",
+  "mainboard_pcb_top_Z_mm": 11.6,
+  "case": {
+    "outer_XY_mm": [
+      0,
+      0,
+      240,
+      190
+    ],
+    "inside_rear_Y_mm": 187,
+    "inside_roof_Z_mm": 53,
+    "base_upper_Z_mm": 3,
+    "base_lower_Z_mm": -1,
+    "styled_outer_XY_mm": [
+      -4,
+      -4,
+      244,
+      194
+    ]
+  },
+  "DC": {
+    "selected_jack": "Switchcraft L722A",
+    "selected_plug": "Switchcraft S761K",
+    "nominal_pin_mm": 2.0,
+    "centre_XZ_mm": [
+      32,
+      30
+    ],
+    "source_translation_mm": [
+      -8,
+      -20,
+      0
+    ],
+    "native_receiving_scope": "Preserved whole jack and insulated-lug procurement envelope, not exact vendor internals.",
+    "wire_selection_status": "LAPP H05V-K0.5mm2 red4510041/black4510011; maximumOD2.5mm, stationary4D=R10. Paths use tiltedR10 service loops and larger-radius return bends; the old R8 path and2.4mm lead-axis spacing are removed.",
+    "external_reservations": [
+      {
+        "name": "DC_LOCKED_PLUG",
+        "bounds_mm": [
+          24,
+          194,
+          22,
+          40,
+          235,
+          38
+        ]
+      },
+      {
+        "name": "DC_EXTERNAL_SERVICE",
+        "bounds_mm": [
+          17,
+          190,
+          15,
+          47,
+          254,
+          45
+        ]
+      },
+      {
+        "name": "DC_EXTERNAL_STRAIGHT_CORD",
+        "bounds_mm": [
+          29.35,
+          230,
+          27.35,
+          34.65,
+          265,
+          32.65
+        ]
+      }
+    ],
+    "carrier_rework": {
+      "fill_old_fixing_holes_XZ_mm": [
+        [
+          22,
+          22
+        ],
+        [
+          22,
+          38
+        ],
+        [
+          40,
+          22
+        ],
+        [
+          40,
+          38
+        ]
+      ],
+      "fill_diameter_mm": 3.2,
+      "fill_Y_range_mm": [
+        188.4,
+        190.0
+      ],
+      "scope": "Original G10 carrier with obsolete fixing bores filled and explicit channels for the newR10 wire routes. Jack and collar receiving model unchanged.",
+      "wire_radial_clearance_mm": 0.5,
+      "clearance_channels_from_wires": [
+        "DC_RAW9",
+        "DC_GND"
+      ],
+      "wire_channel_join_bounds_mm": [
+        38.8,
+        182.475,
+        29,
+        48.0,
+        185.975,
+        32.5
+      ],
+      "wire_channel_scope": "One merged rounded passage for the two individually insulated leads. No zero-width G10 web is retained between tangent clearance channels; abrasion sleeves remain separate."
+    },
+    "functional_collar": "Switchcraft supplied hex nut/flat washer and S761K locking ring remain functional retention/mating hardware. No decorative carrier screw heads remain on the rear face. Supplier collar remains within the preserved jack receiving allocation; not a newly invented supplier solid.",
+    "wire_departure": {
+      "maker_drawing": "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/556/5569/039300020_sd.pdf",
+      "maker_drawing_revision": "55690002-SD A2, 2026-06-29",
+      "maker_header_body_length_mm": 12.8,
+      "maker_peg_to_mating_face_mm": 6.6,
+      "maker_peg_to_pad1_mm": 7.3,
+      "maker_mated_length_reference_mm": 23.5,
+      "maker_mated_height_reference_mm": 13.8,
+      "maker_header_axes_above_PCB_mm": [
+        3.3,
+        7.5
+      ],
+      "PCB_top_Z_mm": 11.6,
+      "nominal_contact_axes_Z_mm": [
+        14.9,
+        19.1
+      ],
+      "reference_X_mm": 67.475,
+      "reference_X_scope": "Nominal cable-housing rear plane from maker 23.50 REF measured between header back and mated housing rear, with native header back at X43.975. REF is not a tolerance guarantee and does not specify the crimp or insulation position.",
+      "reference_Y_mm": 168.225
+    }
+  },
+  "SCART": {
+    "selected": "Kycon K-SCART-021 (documented legacy reference; active procurement unconfirmed)",
+    "centre_XZ_mm": [
+      179,
+      42
+    ],
+    "mating_face_Y_mm": 190,
+    "source_translation_mm": [
+      -42,
+      -20.6,
+      7
+    ],
+    "native_receiving_scope": "Preserved maximum receiving envelope for the dimensioned Kycon legacy connector, not a complete vendor body/cavity solid. Native SCART termination PCB owns numbered factory tails; own carrier slots remove the former fixed ear-Z assumption.",
+    "external_reservations": [
+      {
+        "name": "SCART_PLUG_HAND_ACCEPTANCE",
+        "bounds_mm": [
+          139,
+          190,
+          29,
+          219,
+          270,
+          60
+        ]
+      }
+    ],
+    "supplier_datum_owner": "models/scart/K-SCART-021.json",
+    "carrier_reference_axes_XZ_mm": [
+      [
+        149.8,
+        42
+      ],
+      [
+        208.2,
+        42
+      ]
+    ],
+    "own_vertical_adjustment_centre_travel_Z_mm": [
+      36,
+      49
+    ],
+    "axis_scope": "X positions follow58.4mm manufacturer pitch. Z42 is a CAD assembly reference only; actual ear-Z is not dimensioned. Align the socket body and PCB, then clamp within ownZ36..49 carrier travel."
+  },
+  "AV_breakout": {
+    "native_source": "AV__AV_BREAKOUT_NOMINAL_BOARD_NATIVE_DRILLS",
+    "follow_main_ref": "J500",
+    "flip_axis_world_X_at_YZ_mm": [
+      185.41,
+      25
+    ],
+    "flip_degrees": 180,
+    "post_flip_translation_mm": [
+      0,
+      -2,
+      0
+    ],
+    "bounds_mm": [
+      161.525,
+      181.81,
+      7,
+      191.525,
+      183.41,
+      27
+    ],
+    "native_numbered_J1_pads": "PTH row1..16; unchanged X order. Ribbon now enters B.Cu/front faceY181.81; F.Cu solderface isrearY183.41. No conductor reversal or unmodelled ribbon fold.",
+    "ribbon_external_straight_length_mm": 6.6,
+    "ribbon_width_basis": "Wurth 63911615521: 20.32 +/- 0.30 mm; receiving width 20.62 mm on the existing proposed centreline, not a proven IDC cable-exit datum.",
+    "ribbon_bounds_mm": [
+      166.325,
+      175.21,
+      24.5,
+      186.945,
+      181.81,
+      25.5
+    ],
+    "J1_PTH_line_Z_mm": 25
+  },
+  "coaxes": [
+    {
+      "name": "COAX_SYNC",
+      "ref": "J2",
+      "SCART_signal_return": [
+        19,
+        17
+      ],
+      "OD_mm": 2.61,
+      "minimum_static_radius_mm": 5,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            184.71,
+            13.5
+          ],
+          "end": [
+            150,
+            184.71,
+            13.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            150,
+            184.71,
+            13.5
+          ],
+          "mid": [
+            146.46446609406726,
+            184.71,
+            14.964466094067262
+          ],
+          "end": [
+            145,
+            184.71,
+            18.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            145,
+            184.71,
+            18.5
+          ],
+          "end": [
+            145,
+            184.71,
+            24
+          ]
+        }
+      ],
+      "termination_bay_endpoint_mm": [
+        145,
+        184.71,
+        24
+      ]
+    },
+    {
+      "name": "COAX_R",
+      "ref": "J3",
+      "SCART_signal_return": [
+        15,
+        13
+      ],
+      "OD_mm": 2.61,
+      "minimum_static_radius_mm": 5,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            180.51,
+            13.5
+          ],
+          "end": [
+            150,
+            180.51,
+            13.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            150,
+            180.51,
+            13.5
+          ],
+          "mid": [
+            146.46446609406726,
+            180.51,
+            14.964466094067262
+          ],
+          "end": [
+            145,
+            180.51,
+            18.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            145,
+            180.51,
+            18.5
+          ],
+          "end": [
+            145,
+            180.51,
+            24
+          ]
+        }
+      ],
+      "termination_bay_endpoint_mm": [
+        145,
+        180.51,
+        24
+      ]
+    },
+    {
+      "name": "COAX_G",
+      "ref": "J4",
+      "SCART_signal_return": [
+        11,
+        9
+      ],
+      "OD_mm": 2.61,
+      "minimum_static_radius_mm": 5,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            184.71,
+            9.5
+          ],
+          "end": [
+            140,
+            184.71,
+            9.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            140,
+            184.71,
+            9.5
+          ],
+          "mid": [
+            136.46446609406726,
+            184.71,
+            10.964466094067262
+          ],
+          "end": [
+            135,
+            184.71,
+            14.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            135,
+            184.71,
+            14.5
+          ],
+          "end": [
+            135,
+            184.71,
+            24
+          ]
+        }
+      ],
+      "termination_bay_endpoint_mm": [
+        135,
+        184.71,
+        24
+      ]
+    },
+    {
+      "name": "COAX_B",
+      "ref": "J5",
+      "SCART_signal_return": [
+        7,
+        5
+      ],
+      "OD_mm": 2.61,
+      "minimum_static_radius_mm": 5,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            180.51,
+            9.5
+          ],
+          "end": [
+            140,
+            180.51,
+            9.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            140,
+            180.51,
+            9.5
+          ],
+          "mid": [
+            136.46446609406726,
+            180.51,
+            10.964466094067262
+          ],
+          "end": [
+            135,
+            180.51,
+            14.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            135,
+            180.51,
+            14.5
+          ],
+          "end": [
+            135,
+            180.51,
+            24
+          ]
+        }
+      ],
+      "termination_bay_endpoint_mm": [
+        135,
+        180.51,
+        24
+      ]
+    }
+  ],
+  "auxiliary_wires": [
+    {
+      "name": "AV_AUX_1",
+      "J6_pin": 1,
+      "SCART_pin": 3,
+      "OD_mm": 1.0,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            163.025,
+            183.41,
+            18.5
+          ],
+          "end": [
+            163.025,
+            184.51,
+            18.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            163.025,
+            184.51,
+            18.5
+          ],
+          "mid": [
+            162.58566017,
+            185.57066017,
+            18.5
+          ],
+          "end": [
+            161.525,
+            186.01,
+            18.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            186.01,
+            18.5
+          ],
+          "end": [
+            152,
+            186.01,
+            18.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AV_AUX_2",
+      "J6_pin": 2,
+      "SCART_pin": 4,
+      "OD_mm": 1.0,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            163.025,
+            183.41,
+            19.5
+          ],
+          "end": [
+            163.025,
+            184.51,
+            19.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            163.025,
+            184.51,
+            19.5
+          ],
+          "mid": [
+            162.58566017,
+            185.57066017,
+            19.5
+          ],
+          "end": [
+            161.525,
+            186.01,
+            19.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            186.01,
+            19.5
+          ],
+          "end": [
+            152,
+            186.01,
+            19.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AV_AUX_3",
+      "J6_pin": 3,
+      "SCART_pin": 1,
+      "OD_mm": 1.0,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            163.025,
+            183.41,
+            20.5
+          ],
+          "end": [
+            163.025,
+            184.51,
+            20.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            163.025,
+            184.51,
+            20.5
+          ],
+          "mid": [
+            162.58566017,
+            185.57066017,
+            20.5
+          ],
+          "end": [
+            161.525,
+            186.01,
+            20.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            186.01,
+            20.5
+          ],
+          "end": [
+            152,
+            186.01,
+            20.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AV_AUX_4",
+      "J6_pin": 4,
+      "SCART_pin": 4,
+      "OD_mm": 1.0,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            163.025,
+            183.41,
+            21.5
+          ],
+          "end": [
+            163.025,
+            184.51,
+            21.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            163.025,
+            184.51,
+            21.5
+          ],
+          "mid": [
+            162.58566017,
+            185.57066017,
+            21.5
+          ],
+          "end": [
+            161.525,
+            186.01,
+            21.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            186.01,
+            21.5
+          ],
+          "end": [
+            152,
+            186.01,
+            21.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AV_AUX_5",
+      "J6_pin": 5,
+      "SCART_pin": 16,
+      "OD_mm": 1.0,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            163.025,
+            183.41,
+            22.5
+          ],
+          "end": [
+            163.025,
+            184.51,
+            22.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            163.025,
+            184.51,
+            22.5
+          ],
+          "mid": [
+            162.58566017,
+            185.57066017,
+            22.5
+          ],
+          "end": [
+            161.525,
+            186.01,
+            22.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            186.01,
+            22.5
+          ],
+          "end": [
+            152,
+            186.01,
+            22.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AV_AUX_6",
+      "J6_pin": 6,
+      "SCART_pin": 18,
+      "OD_mm": 1.0,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            163.025,
+            183.41,
+            23.5
+          ],
+          "end": [
+            163.025,
+            184.51,
+            23.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            163.025,
+            184.51,
+            23.5
+          ],
+          "mid": [
+            162.58566017,
+            185.57066017,
+            23.5
+          ],
+          "end": [
+            161.525,
+            186.01,
+            23.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            186.01,
+            23.5
+          ],
+          "end": [
+            152,
+            186.01,
+            23.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AV_AUX_7",
+      "J6_pin": 7,
+      "SCART_pin": 21,
+      "OD_mm": 1.0,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            163.025,
+            183.41,
+            24.5
+          ],
+          "end": [
+            163.025,
+            184.51,
+            24.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            163.025,
+            184.51,
+            24.5
+          ],
+          "mid": [
+            162.58566017,
+            185.57066017,
+            24.5
+          ],
+          "end": [
+            161.525,
+            186.01,
+            24.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            186.01,
+            24.5
+          ],
+          "end": [
+            152,
+            186.01,
+            24.5
+          ]
+        }
+      ]
+    },
+    {
+      "name": "AV_AUX_8",
+      "J6_pin": 8,
+      "SCART_pin": 21,
+      "OD_mm": 1.0,
+      "segments": [
+        {
+          "kind": "line",
+          "start": [
+            163.025,
+            183.41,
+            25.5
+          ],
+          "end": [
+            163.025,
+            184.51,
+            25.5
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            163.025,
+            184.51,
+            25.5
+          ],
+          "mid": [
+            162.58566017,
+            185.57066017,
+            25.5
+          ],
+          "end": [
+            161.525,
+            186.01,
+            25.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            161.525,
+            186.01,
+            25.5
+          ],
+          "end": [
+            152,
+            186.01,
+            25.5
+          ]
+        }
+      ]
+    }
+  ],
+  "DC_wires": [
+    {
+      "name": "DC_RAW9",
+      "OD_mm": 2.5,
+      "relaxed_straight_mm": 0,
+      "segments": [
+        {
+          "kind": "arc",
+          "start": [
+            67.475,
+            168.225,
+            14.9
+          ],
+          "mid": [
+            74.54606781186547,
+            167.6392135623731,
+            17.769755740857203
+          ],
+          "end": [
+            77.475,
+            166.225,
+            24.69795897113271
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            77.475,
+            166.225,
+            24.69795897113271
+          ],
+          "mid": [
+            74.54606781186547,
+            164.8107864376269,
+            31.62616220140822
+          ],
+          "end": [
+            67.475,
+            164.225,
+            34.49591794226542
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            67.475,
+            164.225,
+            34.49591794226542
+          ],
+          "mid": [
+            59.8292056534813,
+            167.10704183527997,
+            33.70394467062168
+          ],
+          "end": [
+            56.2375,
+            174.225,
+            31.74795897113271
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            56.2375,
+            174.225,
+            31.74795897113271
+          ],
+          "mid": [
+            52.64579434651869,
+            181.34295816472002,
+            29.79197327164374
+          ],
+          "end": [
+            45,
+            184.225,
+            29
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            45,
+            184.225,
+            29
+          ],
+          "end": [
+            39,
+            184.225,
+            29
+          ]
+        }
+      ],
+      "terminal_end": [
+        39,
+        184.225,
+        29
+      ],
+      "wire_MPN": "4510041",
+      "minimum_static_radius_mm": 10,
+      "wire_exit_scope": "Nominal PCB-referenced contact axes and maker-reference mated housing rear plane X67.475; not a tolerance guarantee or a dimension of the crimp or insulation position."
+    },
+    {
+      "name": "DC_GND",
+      "OD_mm": 2.5,
+      "relaxed_straight_mm": 0,
+      "segments": [
+        {
+          "kind": "arc",
+          "start": [
+            67.475,
+            168.225,
+            19.1
+          ],
+          "mid": [
+            74.54606781186547,
+            168.8107864376269,
+            21.969755740857202
+          ],
+          "end": [
+            77.475,
+            170.225,
+            28.89795897113271
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            77.475,
+            170.225,
+            28.89795897113271
+          ],
+          "mid": [
+            74.54606781186547,
+            171.6392135623731,
+            35.82616220140822
+          ],
+          "end": [
+            67.475,
+            172.225,
+            38.695917942265424
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            67.475,
+            172.225,
+            38.695917942265424
+          ],
+          "mid": [
+            60.91987307451599,
+            173.84037535633252,
+            37.86185684611592
+          ],
+          "end": [
+            56.2375,
+            178.225,
+            35.59795897113271
+          ]
+        },
+        {
+          "kind": "arc",
+          "start": [
+            56.2375,
+            178.225,
+            35.59795897113271
+          ],
+          "mid": [
+            51.555126925484004,
+            182.60962464366747,
+            33.334061096149505
+          ],
+          "end": [
+            45,
+            184.225,
+            32.5
+          ]
+        },
+        {
+          "kind": "line",
+          "start": [
+            45,
+            184.225,
+            32.5
+          ],
+          "end": [
+            39,
+            184.225,
+            32.5
+          ]
+        }
+      ],
+      "terminal_end": [
+        39,
+        184.225,
+        32.5
+      ],
+      "wire_MPN": "4510011",
+      "minimum_static_radius_mm": 10,
+      "wire_exit_scope": "Nominal PCB-referenced contact axes and maker-reference mated housing rear plane X67.475; not a tolerance guarantee or a dimension of the crimp or insulation position."
+    }
+  ],
+  "coax_termination": {
+    "bounds_mm": [
+      133.5,
+      173.0,
+      18,
+      158.5,
+      186.7,
+      31.4
+    ],
+    "fanout_regions_mm": [
+      [
+        133.5,
+        178.8,
+        18,
+        151.0,
+        186.7,
+        28.5
+      ],
+      [
+        145.0,
+        173.0,
+        24,
+        158.5,
+        186.7,
+        31.4
+      ]
+    ],
+    "pinmap_owner": "Native ecad/scart/BMSX_SCART_TERM schematic and PCB; BookIV SCART contact table owns external functions.",
+    "maximum_insulated_pigtail_mm": 25,
+    "maximum_insulated_pigtail_scope": "Own supported termination-bay allowance; not a manufacturer strip-length requirement.",
+    "status": "Existing loom ends feed the numbered underside SCART-PCB input joints. Receiving regions reserve the physical fanout; they are not fabricated factory tail solids or finished solder-joint geometry."
+  },
+  "fixtures": {
+    "parts": [
+      {
+        "id": "AV_BREAKOUT_BRACKET",
+        "group": "AV_BREAKOUT_BRACKET",
+        "bounds_mm": [
+          187,
+          176,
+          3,
+          197,
+          186,
+          7
+        ],
+        "holes": [
+          {
+            "axis": "Z",
+            "centre_mm": [
+              195,
+              178,
+              5
+            ],
+            "diameter_mm": 2.2,
+            "through_length_mm": 4
+          },
+          {
+            "axis": "Z",
+            "centre_mm": [
+              195,
+              184,
+              5
+            ],
+            "diameter_mm": 2.2,
+            "through_length_mm": 4
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "AV_BREAKOUT_UPRIGHT",
+        "group": "AV_BREAKOUT_BRACKET",
+        "bounds_mm": [
+          187,
+          176,
+          6,
+          192,
+          181.81,
+          28
+        ],
+        "holes": [
+          {
+            "axis": "Y",
+            "centre_mm": [
+              189.525,
+              178.905,
+              9
+            ],
+            "diameter_mm": 2.2,
+            "through_length_mm": 5.81
+          },
+          {
+            "axis": "Y",
+            "centre_mm": [
+              189.525,
+              178.905,
+              21
+            ],
+            "diameter_mm": 2.2,
+            "through_length_mm": 5.81
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": [
+          {
+            "axis": "Y",
+            "centre_mm": [
+              189.525,
+              177.3,
+              9
+            ],
+            "across_flats_mm": 4.2,
+            "length_mm": 1.8
+          },
+          {
+            "axis": "Y",
+            "centre_mm": [
+              189.525,
+              177.3,
+              21
+            ],
+            "across_flats_mm": 4.2,
+            "length_mm": 1.8
+          }
+        ]
+      },
+      {
+        "id": "AV_G10_HEAD_INSULATOR_9",
+        "group": "AV_G10_HEAD_INSULATOR_9",
+        "bounds_mm": [
+          187.625,
+          183.41,
+          7.1,
+          191.425,
+          183.61,
+          10.9
+        ],
+        "holes": [
+          {
+            "axis": "Y",
+            "centre_mm": [
+              189.525,
+              183.51,
+              9
+            ],
+            "diameter_mm": 2.2,
+            "through_length_mm": 0.2
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "AV_G10_HEAD_INSULATOR_21",
+        "group": "AV_G10_HEAD_INSULATOR_21",
+        "bounds_mm": [
+          187.625,
+          183.41,
+          19.1,
+          191.425,
+          183.61,
+          22.9
+        ],
+        "holes": [
+          {
+            "axis": "Y",
+            "centre_mm": [
+              189.525,
+              183.51,
+              21
+            ],
+            "diameter_mm": 2.2,
+            "through_length_mm": 0.2
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "SCART_FIXED_SIDE_EAR_CARRIER",
+        "group": "SCART_FIXED_SIDE_EAR_CARRIER",
+        "bounds_mm": [
+          137,
+          171.1,
+          30.5,
+          221,
+          172.6,
+          51.5
+        ],
+        "holes": [],
+        "slots": [
+          {
+            "axis": "Y",
+            "bounds_mm": [
+              148.70000000000002,
+              171.0,
+              34.8,
+              150.9,
+              172.7,
+              50.2
+            ],
+            "radius_mm": 1.0,
+            "purpose": "Own2.2mm-wideM2verticaladjustmentslot; screw-centretravelZ36..49. Not a supplier ear-Z coordinate."
+          },
+          {
+            "axis": "Y",
+            "bounds_mm": [
+              207.1,
+              171.0,
+              34.8,
+              209.29999999999998,
+              172.7,
+              50.2
+            ],
+            "radius_mm": 1.0,
+            "purpose": "Own2.2mm-wideM2verticaladjustmentslot; screw-centretravelZ36..49. Not a supplier ear-Z coordinate."
+          }
+        ],
+        "cutboxes": [
+          {
+            "bounds_mm": [
+              153.8,
+              171.0,
+              32.5,
+              204.2,
+              172.7,
+              50
+            ]
+          }
+        ],
+        "hex_pockets": []
+      },
+      {
+        "id": "AV_COAX_JACKET_CRADLE_FOOT",
+        "group": "AV_COAX_JACKET_CRADLE",
+        "bounds_mm": [
+          147,
+          178.4,
+          3,
+          160,
+          186.8,
+          5
+        ],
+        "holes": [
+          {
+            "axis": "Z",
+            "centre_mm": [
+              148.5,
+              180.51,
+              4
+            ],
+            "diameter_mm": 2.2,
+            "through_length_mm": 2
+          },
+          {
+            "axis": "Z",
+            "centre_mm": [
+              148.5,
+              184.71,
+              4
+            ],
+            "diameter_mm": 2.2,
+            "through_length_mm": 2
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "AV_COAX_JACKET_CRADLE_BODY",
+        "group": "AV_COAX_JACKET_CRADLE",
+        "bounds_mm": [
+          152,
+          178.6,
+          4.8,
+          157,
+          186.6,
+          17
+        ],
+        "holes": [
+          {
+            "axis": "X",
+            "centre_mm": [
+              154.5,
+              180.51,
+              9.5
+            ],
+            "diameter_mm": 3,
+            "through_length_mm": 5
+          },
+          {
+            "axis": "X",
+            "centre_mm": [
+              154.5,
+              180.51,
+              13.5
+            ],
+            "diameter_mm": 3,
+            "through_length_mm": 5
+          },
+          {
+            "axis": "X",
+            "centre_mm": [
+              154.5,
+              184.71,
+              9.5
+            ],
+            "diameter_mm": 3,
+            "through_length_mm": 5
+          },
+          {
+            "axis": "X",
+            "centre_mm": [
+              154.5,
+              184.71,
+              13.5
+            ],
+            "diameter_mm": 3,
+            "through_length_mm": 5
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "DC_INSIDE_LEFT_BAR",
+        "group": "DC_INTERNAL_G10_EARS",
+        "bounds_mm": [
+          18.5,
+          178,
+          19,
+          24.7,
+          179.5,
+          41
+        ],
+        "holes": [
+          {
+            "axis": "Y",
+            "centre_mm": [
+              22,
+              178.75,
+              22
+            ],
+            "diameter_mm": 3.2,
+            "through_length_mm": 1.5
+          },
+          {
+            "axis": "Y",
+            "centre_mm": [
+              22,
+              178.75,
+              38
+            ],
+            "diameter_mm": 3.2,
+            "through_length_mm": 1.5
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "DC_INSIDE_LEFT_LINK",
+        "group": "DC_INTERNAL_G10_EARS",
+        "bounds_mm": [
+          18.5,
+          179.4,
+          26,
+          24.7,
+          188.5,
+          33
+        ],
+        "holes": [],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "DC_INSIDE_RIGHT_BAR",
+        "group": "DC_INTERNAL_G10_EARS",
+        "bounds_mm": [
+          40.5,
+          178,
+          19,
+          47.5,
+          179.5,
+          41
+        ],
+        "holes": [
+          {
+            "axis": "Y",
+            "centre_mm": [
+              44,
+              178.75,
+              22
+            ],
+            "diameter_mm": 3.2,
+            "through_length_mm": 1.5
+          },
+          {
+            "axis": "Y",
+            "centre_mm": [
+              44,
+              178.75,
+              38
+            ],
+            "diameter_mm": 3.2,
+            "through_length_mm": 1.5
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "DC_INSIDE_RIGHT_LINK",
+        "group": "DC_INTERNAL_G10_EARS",
+        "bounds_mm": [
+          40.5,
+          179.4,
+          26,
+          47.5,
+          188.5,
+          33.8
+        ],
+        "holes": [],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "SCART_INSIDE_BAR_140",
+        "group": "SCART_FIXED_SIDE_EAR_CARRIER",
+        "bounds_mm": [
+          137,
+          178,
+          30.5,
+          143,
+          179.5,
+          51.5
+        ],
+        "holes": [
+          {
+            "axis": "Y",
+            "centre_mm": [
+              140,
+              178.75,
+              42
+            ],
+            "diameter_mm": 3.2,
+            "through_length_mm": 1.5
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "SCART_INSIDE_LINK_140_30.5",
+        "group": "SCART_FIXED_SIDE_EAR_CARRIER",
+        "bounds_mm": [
+          137,
+          171.1,
+          30.5,
+          143,
+          178.1,
+          36.5
+        ],
+        "holes": [],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "SCART_INSIDE_LINK_140_47.5",
+        "group": "SCART_FIXED_SIDE_EAR_CARRIER",
+        "bounds_mm": [
+          137,
+          171.1,
+          47.5,
+          143,
+          178.1,
+          51.5
+        ],
+        "holes": [],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "SCART_INSIDE_BAR_218",
+        "group": "SCART_FIXED_SIDE_EAR_CARRIER",
+        "bounds_mm": [
+          215,
+          178,
+          30.5,
+          221,
+          179.5,
+          51.5
+        ],
+        "holes": [
+          {
+            "axis": "Y",
+            "centre_mm": [
+              218,
+              178.75,
+              42
+            ],
+            "diameter_mm": 3.2,
+            "through_length_mm": 1.5
+          }
+        ],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "SCART_INSIDE_LINK_218_30.5",
+        "group": "SCART_FIXED_SIDE_EAR_CARRIER",
+        "bounds_mm": [
+          215,
+          171.1,
+          30.5,
+          221,
+          178.1,
+          36.5
+        ],
+        "holes": [],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      },
+      {
+        "id": "SCART_INSIDE_LINK_218_47.5",
+        "group": "SCART_FIXED_SIDE_EAR_CARRIER",
+        "bounds_mm": [
+          215,
+          171.1,
+          47.5,
+          221,
+          178.1,
+          51.5
+        ],
+        "holes": [],
+        "slots": [],
+        "cutboxes": [],
+        "hex_pockets": []
+      }
+    ],
+    "materials_by_group": {
+      "AV_BREAKOUT_BRACKET": "PA12",
+      "AV_G10_HEAD_INSULATOR_9": "G10",
+      "AV_G10_HEAD_INSULATOR_21": "G10",
+      "SCART_FIXED_SIDE_EAR_CARRIER": "aluminium",
+      "AV_COAX_JACKET_CRADLE": "PA12",
+      "DC_INTERNAL_G10_EARS": "G10"
+    },
+    "case_attachment_holes": [
+      {
+        "target": "chassis",
+        "axis": "Z",
+        "centre_mm": [
+          195,
+          178,
+          1
+        ],
+        "diameter_mm": 2.2,
+        "through_length_mm": 8
+      },
+      {
+        "target": "chassis",
+        "axis": "Z",
+        "centre_mm": [
+          195,
+          184,
+          1
+        ],
+        "diameter_mm": 2.2,
+        "through_length_mm": 8
+      },
+      {
+        "target": "chassis",
+        "axis": "Z",
+        "centre_mm": [
+          148.5,
+          180.51,
+          1
+        ],
+        "diameter_mm": 2.2,
+        "through_length_mm": 8
+      },
+      {
+        "target": "chassis",
+        "axis": "Z",
+        "centre_mm": [
+          148.5,
+          184.71,
+          1
+        ],
+        "diameter_mm": 2.2,
+        "through_length_mm": 8
+      }
+    ],
+    "case_capture_lips": [],
+    "case_clearance_cutboxes": []
+  },
+  "fasteners": {
+    "components": {
+      "M2_CAP_6": {
+        "kind": "screw",
+        "designation": "ISO 4762 M2x6",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 2,
+        "pitch_mm": 0.4,
+        "length_mm": 6,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          5.9,
+          6.0
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 3.8,
+        "head_max_height_mm": 2,
+        "hex_key_AF_mm": 1.5,
+        "minimum_threaded_length_mm": 6,
+        "source_refs": [
+          "M2cap"
+        ],
+        "source_scope": "ISO4762familyM2x6, inspectedlength5.9..6.0 forblindfrontretention. NotuniversalISOlengthtolerance; rejectorfinishlongertips.",
+        "quantity_this_scope": 0
+      },
+      "M2_CAP_10": {
+        "kind": "screw",
+        "designation": "ISO 4762 M2x10",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 2,
+        "pitch_mm": 0.4,
+        "length_mm": 10,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          9.8,
+          10.2
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 3.8,
+        "head_max_height_mm": 2,
+        "hex_key_AF_mm": 1.5,
+        "minimum_threaded_length_mm": 10,
+        "source_refs": [
+          "M2cap"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 4
+      },
+      "M2_NUT": {
+        "kind": "nut",
+        "designation": "ISO 4032 / DIN 934 M2 hexagon nut",
+        "material": "A2 stainless",
+        "thread_major_diameter_mm": 2,
+        "pitch_mm": 0.4,
+        "max_across_flats_mm": 4,
+        "max_across_corners_mm": 4.618802,
+        "max_height_mm": 1.6,
+        "min_height_mm": 1.35,
+        "source_refs": [
+          "nut"
+        ],
+        "cad_thread_clear_bore_mm": 2,
+        "source_scope": "Across-corner maximum is conservative regular-hex geometry derived from AF maximum, NOT the source e-minimum.",
+        "quantity_this_scope": 10
+      },
+      "M2_WASHER": {
+        "kind": "washer",
+        "designation": "ISO 7089 M2 plain washer",
+        "material": "stainless steel",
+        "OD_mm": 5,
+        "ID_mm": 2.2,
+        "thickness_mm": 0.3,
+        "incoming_thickness_acceptance_mm": [
+          0.25,
+          0.35
+        ],
+        "source_refs": [
+          "M2washer"
+        ],
+        "source_scope": "Nominal product dimensions; +/-0.05mm thickness is own receiving acceptance.",
+        "quantity_this_scope": 4
+      },
+      "M3_CAP_8": {
+        "kind": "screw",
+        "designation": "ISO 4762 M3x8",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "length_mm": 8,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          7.8,
+          8.2
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 5.5,
+        "head_max_height_mm": 3,
+        "hex_key_AF_mm": 2.5,
+        "minimum_threaded_length_mm": 8,
+        "source_refs": [
+          "M3cap16"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 6
+      },
+      "M3_NUT": {
+        "kind": "nut",
+        "designation": "ISO 4032 / DIN 934 M3 hexagon nut",
+        "material": "A2 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "max_across_flats_mm": 5.5,
+        "max_across_corners_mm": 6.350853,
+        "max_height_mm": 2.4,
+        "min_height_mm": 2.15,
+        "source_refs": [
+          "nut"
+        ],
+        "cad_thread_clear_bore_mm": 3,
+        "source_scope": "Across-corner maximum is conservative regular-hex geometry derived from AF maximum, NOT the source e-minimum.",
+        "quantity_this_scope": 0
+      },
+      "M3_WASHER": {
+        "kind": "washer",
+        "designation": "ISO 7089 M3 plain washer",
+        "material": "stainless steel",
+        "OD_mm": 7,
+        "ID_mm": 3.2,
+        "thickness_mm": 0.5,
+        "incoming_thickness_acceptance_mm": [
+          0.45,
+          0.55
+        ],
+        "source_refs": [
+          "M3washer"
+        ],
+        "source_scope": "Nominal product dimensions; +/-0.05mm thickness is own receiving acceptance.",
+        "quantity_this_scope": 0
+      },
+      "M2_CAP_8": {
+        "kind": "screw",
+        "designation": "ISO4762 M2x8",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 2,
+        "pitch_mm": 0.4,
+        "length_mm": 8,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          5.9,
+          6.0
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 3.8,
+        "head_max_height_mm": 2,
+        "hex_key_AF_mm": 1.5,
+        "minimum_threaded_length_mm": 6,
+        "source_refs": [
+          "M2cap"
+        ],
+        "source_scope": "ISO4762familyM2x6, inspectedlength5.9..6.0 forblindfrontretention. NotuniversalISOlengthtolerance; rejectorfinishlongertips.",
+        "quantity_this_scope": 4
+      },
+      "M2_CAP_16": {
+        "kind": "screw",
+        "designation": "ISO 4762 M2x16",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 2,
+        "pitch_mm": 0.4,
+        "length_mm": 16,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          15.8,
+          16.2
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 3.8,
+        "head_max_height_mm": 2,
+        "hex_key_AF_mm": 1.5,
+        "minimum_threaded_length_mm": 10,
+        "source_refs": [
+          "M2cap"
+        ],
+        "source_scope": "Existing ISO 4762 M2 cap-head family; selected length16mm. Full nut engagement is within final10mm threaded length; +/-0.2mm own incoming length acceptance. No new fastener standard.",
+        "quantity_this_scope": 2
+      },
+      "M2_SCART_STANDOFF_7_4": {
+        "kind": "spacer",
+        "designation": "Own turned SCART ear adapter bush5OD/2.2IDx7.4",
+        "material": "stainless steel",
+        "OD_mm": 5,
+        "ID_mm": 2.2,
+        "length_mm": 7.4,
+        "quantity_this_scope": 2,
+        "source_scope": "Own manufactured spacer, not a substituted manufacturer ear or connector geometry. Exact receiving length7.4mm closes internal stack from carrierY172.6 to source-ear required rear contactY180.0."
+      }
+    },
+    "fastening_interfaces": [
+      {
+        "id": "AV_BOARD_M2_9",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          189.525,
+          183.61,
+          9
+        ],
+        "tip_position_mm": [
+          189.525,
+          175.61,
+          9
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_8",
+          "part_name": "AV_BOARD_M2_9_SCREW",
+          "head_top_axis_mm": 185.61
+        },
+        "washers": [],
+        "nut": {
+          "component_ref": "M2_NUT",
+          "part_name": "AV_BOARD_M2_9_NUT",
+          "axis_range_mm": [
+            176.5,
+            178.1
+          ],
+          "hex_clocking_deg": 0
+        }
+      },
+      {
+        "id": "AV_BOARD_M2_21",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          189.525,
+          183.61,
+          21
+        ],
+        "tip_position_mm": [
+          189.525,
+          175.61,
+          21
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_8",
+          "part_name": "AV_BOARD_M2_21_SCREW",
+          "head_top_axis_mm": 185.61
+        },
+        "washers": [],
+        "nut": {
+          "component_ref": "M2_NUT",
+          "part_name": "AV_BOARD_M2_21_NUT",
+          "axis_range_mm": [
+            176.5,
+            178.1
+          ],
+          "hex_clocking_deg": 0
+        }
+      },
+      {
+        "id": "AV_BASE_M2_178",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          195,
+          178,
+          -1
+        ],
+        "tip_position_mm": [
+          195,
+          178,
+          9
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_10",
+          "part_name": "AV_BASE_M2_178_SCREW",
+          "head_top_axis_mm": -3
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "AV_BASE_M2_178_WASHER_0",
+            "axis_range_mm": [
+              7,
+              7.3
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M2_NUT",
+          "part_name": "AV_BASE_M2_178_NUT",
+          "axis_range_mm": [
+            7.3,
+            8.9
+          ],
+          "hex_clocking_deg": 0
+        }
+      },
+      {
+        "id": "AV_BASE_M2_184",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          195,
+          184,
+          -1
+        ],
+        "tip_position_mm": [
+          195,
+          184,
+          9
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_10",
+          "part_name": "AV_BASE_M2_184_SCREW",
+          "head_top_axis_mm": -3
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "AV_BASE_M2_184_WASHER_0",
+            "axis_range_mm": [
+              7,
+              7.3
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M2_NUT",
+          "part_name": "AV_BASE_M2_184_NUT",
+          "axis_range_mm": [
+            7.3,
+            8.9
+          ],
+          "hex_clocking_deg": 0
+        }
+      },
+      {
+        "id": "COAX_CRADLE_BASE_180.51",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          148.5,
+          180.51,
+          -1
+        ],
+        "tip_position_mm": [
+          148.5,
+          180.51,
+          7
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_8",
+          "part_name": "COAX_CRADLE_BASE_180.51_SCREW",
+          "head_top_axis_mm": -3
+        },
+        "washers": [],
+        "nut": {
+          "component_ref": "M2_NUT",
+          "part_name": "COAX_CRADLE_BASE_180.51_NUT",
+          "axis_range_mm": [
+            5,
+            6.6
+          ],
+          "hex_clocking_deg": 0
+        }
+      },
+      {
+        "id": "COAX_CRADLE_BASE_184.71",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          148.5,
+          184.71,
+          -1
+        ],
+        "tip_position_mm": [
+          148.5,
+          184.71,
+          7
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_8",
+          "part_name": "COAX_CRADLE_BASE_184.71_SCREW",
+          "head_top_axis_mm": -3
+        },
+        "washers": [],
+        "nut": {
+          "component_ref": "M2_NUT",
+          "part_name": "COAX_CRADLE_BASE_184.71_NUT",
+          "axis_range_mm": [
+            5,
+            6.6
+          ],
+          "hex_clocking_deg": 0
+        }
+      },
+      {
+        "id": "SCART_CASE_M3_140",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          1,
+          0
+        ],
+        "under_head_position_mm": [
+          140,
+          178,
+          42
+        ],
+        "tip_position_mm": [
+          140,
+          186,
+          42
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "SCART_CASE_M3_140_SCREW",
+          "head_top_axis_mm": 175
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            179.5,
+            186
+          ],
+          "cad_screw_core_diameter_mm": 2.5
+        }
+      },
+      {
+        "id": "SCART_CASE_M3_218",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          1,
+          0
+        ],
+        "under_head_position_mm": [
+          218,
+          178,
+          42
+        ],
+        "tip_position_mm": [
+          218,
+          186,
+          42
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "SCART_CASE_M3_218_SCREW",
+          "head_top_axis_mm": 175
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            179.5,
+            186
+          ],
+          "cad_screw_core_diameter_mm": 2.5
+        }
+      },
+      {
+        "id": "DC_CASE_M3_22_22",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          1,
+          0
+        ],
+        "under_head_position_mm": [
+          22,
+          178,
+          22
+        ],
+        "tip_position_mm": [
+          22,
+          186,
+          22
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "DC_CASE_M3_22_22_SCREW",
+          "head_top_axis_mm": 175
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            179.5,
+            186
+          ],
+          "cad_screw_core_diameter_mm": 2.5
+        }
+      },
+      {
+        "id": "DC_CASE_M3_22_38",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          1,
+          0
+        ],
+        "under_head_position_mm": [
+          22,
+          178,
+          38
+        ],
+        "tip_position_mm": [
+          22,
+          186,
+          38
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "DC_CASE_M3_22_38_SCREW",
+          "head_top_axis_mm": 175
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            179.5,
+            186
+          ],
+          "cad_screw_core_diameter_mm": 2.5
+        }
+      },
+      {
+        "id": "DC_CASE_M3_44_22",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          1,
+          0
+        ],
+        "under_head_position_mm": [
+          44,
+          178,
+          22
+        ],
+        "tip_position_mm": [
+          44,
+          186,
+          22
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "DC_CASE_M3_44_22_SCREW",
+          "head_top_axis_mm": 175
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            179.5,
+            186
+          ],
+          "cad_screw_core_diameter_mm": 2.5
+        }
+      },
+      {
+        "id": "DC_CASE_M3_44_38",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          1,
+          0
+        ],
+        "under_head_position_mm": [
+          44,
+          178,
+          38
+        ],
+        "tip_position_mm": [
+          44,
+          186,
+          38
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_8",
+          "part_name": "DC_CASE_M3_44_38_SCREW",
+          "head_top_axis_mm": 175
+        },
+        "washers": [],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            179.5,
+            186
+          ],
+          "cad_screw_core_diameter_mm": 2.5
+        }
+      },
+      {
+        "id": "SCART_SOCKET_EAR_M2_149.8",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          149.8,
+          183.3,
+          42
+        ],
+        "tip_position_mm": [
+          149.8,
+          167.3,
+          42
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_16",
+          "part_name": "SCART_SOCKET_EAR_M2_149.8_SCREW",
+          "head_top_axis_mm": 185.3
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "SCART_SOCKET_EAR_M2_149.8_BEARING_WASHER",
+            "axis_range_mm": [
+              183.0,
+              183.3
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M2_NUT",
+          "part_name": "SCART_SOCKET_EAR_M2_149.8_NUT",
+          "axis_range_mm": [
+            169.5,
+            171.1
+          ],
+          "hex_clocking_deg": 0
+        },
+        "spacer": {
+          "component_ref": "M2_SCART_STANDOFF_7_4",
+          "part_name": "SCART_SOCKET_EAR_M2_149.8_ADAPTER_BUSH",
+          "axis_range_mm": [
+            172.6,
+            180.0
+          ]
+        }
+      },
+      {
+        "id": "SCART_SOCKET_EAR_M2_208.2",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          208.2,
+          183.3,
+          42
+        ],
+        "tip_position_mm": [
+          208.2,
+          167.3,
+          42
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_16",
+          "part_name": "SCART_SOCKET_EAR_M2_208.2_SCREW",
+          "head_top_axis_mm": 185.3
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "SCART_SOCKET_EAR_M2_208.2_BEARING_WASHER",
+            "axis_range_mm": [
+              183.0,
+              183.3
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M2_NUT",
+          "part_name": "SCART_SOCKET_EAR_M2_208.2_NUT",
+          "axis_range_mm": [
+            169.5,
+            171.1
+          ],
+          "hex_clocking_deg": 0
+        },
+        "spacer": {
+          "component_ref": "M2_SCART_STANDOFF_7_4",
+          "part_name": "SCART_SOCKET_EAR_M2_208.2_ADAPTER_BUSH",
+          "axis_range_mm": [
+            172.6,
+            180.0
+          ]
+        }
+      }
+    ]
+  },
+  "rear_wall": {
+    "clearance_cutboxes": [
+      {
+        "id": "DC_CARRIER_FACE_RECESS",
+        "bounds_mm": [
+          18.8,
+          188.3,
+          18.8,
+          43.2,
+          190.2,
+          41.2
+        ]
+      },
+      {
+        "id": "DC_MAIN_BODY_WINDOW",
+        "bounds_mm": [
+          24.8,
+          186.8,
+          22.8,
+          39.2,
+          190.2,
+          37.2
+        ]
+      },
+      {
+        "id": "SCART_RECEIVING_BODY_WINDOW",
+        "bounds_mm": [
+          145.6,
+          186.8,
+          32.7,
+          212.4,
+          190.2,
+          50.3
+        ]
+      }
+    ],
+    "fixing_bores": []
+  },
+  "not_proven": [
+    "Exact IDC exit, Molex crimp/insulation positions, full mated housing shape, tolerances and physical mating remain component/assembly checks; the DC plane uses a manufacturer REF dimension, not a tolerance guarantee.",
+    "Kycon legacy original procurement is unconfirmed. Its relatedRoHSXvariantdiscontinuation is not an assertion about originalpartavailability.",
+    "Actual socket ear-Z is not dimensioned. OwnZ36..49carrieradjustment replaces the former unsupportedfixedZassumption; incoming part fit and mounting loads still require acceptance.",
+    "Native SCART PCB is unrouted. Finite loom-fanout receiving spaces do not qualify final solder joints, stripping or analogue75ohmperformance.",
+    "DCwirematerial/OD andR10route are selected; actualwirecutlength includes separately measured connector-end engagement, termination and assemblyslack.",
+    "Insulating abrasion sleeves are not adhesive strainrelief or a certified pull-load joint. External cable loads are carried by the fixedjack and SCARTflange.",
+    "Blindtappedpolymermount torque,pullout,creep and repeatedservice remain material/process qualification.",
+    "Whole-console poweredrail,thermal and physicalservice tests remain unqualified."
+  ],
+  "fabrication_release": false,
+  "jacket_retention_liners": [
+    {
+      "name": "COAX_JACKET_LINER_180.51_9.5",
+      "axis": "X",
+      "start_mm": [
+        152,
+        180.51,
+        9.5
+      ],
+      "length_mm": 5,
+      "outer_diameter_mm": 3,
+      "inner_diameter_mm": 2.61,
+      "scope": "Finished conforming elastomer liner; friction/pull acceptance remains qualification."
+    },
+    {
+      "name": "COAX_JACKET_LINER_180.51_13.5",
+      "axis": "X",
+      "start_mm": [
+        152,
+        180.51,
+        13.5
+      ],
+      "length_mm": 5,
+      "outer_diameter_mm": 3,
+      "inner_diameter_mm": 2.61,
+      "scope": "Finished conforming elastomer liner; friction/pull acceptance remains qualification."
+    },
+    {
+      "name": "COAX_JACKET_LINER_184.71_9.5",
+      "axis": "X",
+      "start_mm": [
+        152,
+        184.71,
+        9.5
+      ],
+      "length_mm": 5,
+      "outer_diameter_mm": 3,
+      "inner_diameter_mm": 2.61,
+      "scope": "Finished conforming elastomer liner; friction/pull acceptance remains qualification."
+    },
+    {
+      "name": "COAX_JACKET_LINER_184.71_13.5",
+      "axis": "X",
+      "start_mm": [
+        152,
+        184.71,
+        13.5
+      ],
+      "length_mm": 5,
+      "outer_diameter_mm": 3,
+      "inner_diameter_mm": 2.61,
+      "scope": "Finished conforming elastomer liner; friction/pull acceptance remains qualification."
+    },
+    {
+      "name": "DC_RAW9_GUIDE_LINER",
+      "axis": "X",
+      "start_mm": [
+        40.5,
+        184.225,
+        29
+      ],
+      "length_mm": 4,
+      "outer_diameter_mm": 3.5,
+      "inner_diameter_mm": 2.5,
+      "scope": "Maximum-OD insulating abrasion sleeve in the G10 passage, not an adhesive strain-relief joint. Fit insulation to actual wire OD; the upper passage is edge-open. External cable loads remain at the jack shoulder/nut, not at these internal leads."
+    },
+    {
+      "name": "DC_GND_GUIDE_LINER",
+      "axis": "X",
+      "start_mm": [
+        40.5,
+        184.225,
+        32.5
+      ],
+      "length_mm": 4,
+      "outer_diameter_mm": 3.5,
+      "inner_diameter_mm": 2.5,
+      "scope": "Maximum-OD insulating abrasion sleeve in the G10 passage, not an adhesive strain-relief joint. Fit insulation to actual wire OD; the upper passage is edge-open. External cable loads remain at the jack shoulder/nut, not at these internal leads."
+    }
+  ],
+  "inside_mounting": {
+    "construction": "G10 DC carrier with internal side ears; SCART aluminium U-carrier fixed by two inside M3 screws and carrying two inside M2 through-bolt ear joints. Six M3 carrier screws use integral blind tapped case bosses. No rear-visible carrier/ear fastener heads, nuts or tips; functional DC supplier collar retained.",
+    "case_anchors": [
+      {
+        "id": "SCART_CASE_M3_140",
+        "axis": "Y",
+        "centre_XZ_mm": [
+          140,
+          42
+        ],
+        "bounds_mm": [
+          136,
+          179.5,
+          37.5,
+          144,
+          189.8,
+          46.5
+        ],
+        "pilot_diameter_mm": 2.5,
+        "pilot_Y_range_mm": [
+          179.5,
+          187.0
+        ],
+        "thread": "M3x0.5 blind tapped",
+        "engagement_Y_range_mm": [
+          179.5,
+          186.0
+        ],
+        "screw_tip_Y_mm": 186.0,
+        "blind_tip_clearance_mm": 1.0,
+        "minimum_uncut_rear_web_mm": 3.0,
+        "manufacture": "Integral shell boss; drill 2.5 mm from inside to Y187 and bottom-tap M3x0.5. No nut friction pocket, press-fit loose cylinder or through-case fastening. Qualify tapped polymer pull-out and creep on final shell material."
+      },
+      {
+        "id": "SCART_CASE_M3_218",
+        "axis": "Y",
+        "centre_XZ_mm": [
+          218,
+          42
+        ],
+        "bounds_mm": [
+          214,
+          179.5,
+          37.5,
+          222,
+          189.8,
+          46.5
+        ],
+        "pilot_diameter_mm": 2.5,
+        "pilot_Y_range_mm": [
+          179.5,
+          187.0
+        ],
+        "thread": "M3x0.5 blind tapped",
+        "engagement_Y_range_mm": [
+          179.5,
+          186.0
+        ],
+        "screw_tip_Y_mm": 186.0,
+        "blind_tip_clearance_mm": 1.0,
+        "minimum_uncut_rear_web_mm": 3.0,
+        "manufacture": "Integral shell boss; drill 2.5 mm from inside to Y187 and bottom-tap M3x0.5. No nut friction pocket, press-fit loose cylinder or through-case fastening. Qualify tapped polymer pull-out and creep on final shell material."
+      },
+      {
+        "id": "DC_CASE_M3_22_22",
+        "axis": "Y",
+        "centre_XZ_mm": [
+          22,
+          22
+        ],
+        "bounds_mm": [
+          18.3,
+          179.5,
+          18.5,
+          24.7,
+          188.3,
+          25.5
+        ],
+        "pilot_diameter_mm": 2.5,
+        "pilot_Y_range_mm": [
+          179.5,
+          187.0
+        ],
+        "thread": "M3x0.5 blind tapped",
+        "engagement_Y_range_mm": [
+          179.5,
+          186.0
+        ],
+        "screw_tip_Y_mm": 186.0,
+        "blind_tip_clearance_mm": 1.0,
+        "minimum_uncut_rear_web_mm": 1.3,
+        "manufacture": "Integral shell boss; drill 2.5 mm from inside to Y187 and bottom-tap M3x0.5. No nut friction pocket, press-fit loose cylinder or through-case fastening. Qualify tapped polymer pull-out and creep on final shell material."
+      },
+      {
+        "id": "DC_CASE_M3_22_38",
+        "axis": "Y",
+        "centre_XZ_mm": [
+          22,
+          38
+        ],
+        "bounds_mm": [
+          18.3,
+          179.5,
+          34.5,
+          24.7,
+          188.3,
+          41.5
+        ],
+        "pilot_diameter_mm": 2.5,
+        "pilot_Y_range_mm": [
+          179.5,
+          187.0
+        ],
+        "thread": "M3x0.5 blind tapped",
+        "engagement_Y_range_mm": [
+          179.5,
+          186.0
+        ],
+        "screw_tip_Y_mm": 186.0,
+        "blind_tip_clearance_mm": 1.0,
+        "minimum_uncut_rear_web_mm": 1.3,
+        "manufacture": "Integral shell boss; drill 2.5 mm from inside to Y187 and bottom-tap M3x0.5. No nut friction pocket, press-fit loose cylinder or through-case fastening. Qualify tapped polymer pull-out and creep on final shell material."
+      },
+      {
+        "id": "DC_CASE_M3_44_22",
+        "axis": "Y",
+        "centre_XZ_mm": [
+          44,
+          22
+        ],
+        "bounds_mm": [
+          40.5,
+          179.5,
+          18.5,
+          47.5,
+          188.3,
+          25.5
+        ],
+        "pilot_diameter_mm": 2.5,
+        "pilot_Y_range_mm": [
+          179.5,
+          187.0
+        ],
+        "thread": "M3x0.5 blind tapped",
+        "engagement_Y_range_mm": [
+          179.5,
+          186.0
+        ],
+        "screw_tip_Y_mm": 186.0,
+        "blind_tip_clearance_mm": 1.0,
+        "minimum_uncut_rear_web_mm": 1.3,
+        "manufacture": "Integral shell boss; drill 2.5 mm from inside to Y187 and bottom-tap M3x0.5. No nut friction pocket, press-fit loose cylinder or through-case fastening. Qualify tapped polymer pull-out and creep on final shell material."
+      },
+      {
+        "id": "DC_CASE_M3_44_38",
+        "axis": "Y",
+        "centre_XZ_mm": [
+          44,
+          38
+        ],
+        "bounds_mm": [
+          40.5,
+          179.5,
+          34.5,
+          47.5,
+          188.3,
+          41.5
+        ],
+        "pilot_diameter_mm": 2.5,
+        "pilot_Y_range_mm": [
+          179.5,
+          187.0
+        ],
+        "thread": "M3x0.5 blind tapped",
+        "engagement_Y_range_mm": [
+          179.5,
+          186.0
+        ],
+        "screw_tip_Y_mm": 186.0,
+        "blind_tip_clearance_mm": 1.0,
+        "minimum_uncut_rear_web_mm": 1.3,
+        "manufacture": "Integral shell boss; drill 2.5 mm from inside to Y187 and bottom-tap M3x0.5. No nut friction pocket, press-fit loose cylinder or through-case fastening. Qualify tapped polymer pull-out and creep on final shell material."
+      }
+    ],
+    "SCART_retention": "Two actual M2 through-bolts and M2 hex nuts retain the supplier original mounting holes at X149.8/208.2,Z42 to the internal carrier. This is positive bolt retention, not an undefined flange pressure/friction clamp. Original receiving body and original manufacturer holes remain unscaled/undrilled. Rear washer OD5 bridges the existing supplier hole; own carrier has M2 clearance2.2. All screw heads/nuts/tips are inside Y190. Own OD5/ID2.2x7.4 adapter bushes occupyY172.6..180.0, and supplier ears are receivedY180..183. The exact supplier ear axial bearing planes remain explicit incoming-part acceptance because the source PDF does not fully dimension them.",
+    "assembly_sequence": [
+      "Retain functional Switchcraft jack collar and keyed native carrier aperture; fit jack at the unchanged centre and receiving pose.",
+      "Position the original SCART at its unchanged X179/Z42/faceY190 datum; fit two M2x16 ear bolts on original149.8/208.2,Z42 axes, OD5 bearing washersY183..183.3, carrierY171.1..172.6 own bushesY172.6..180.0, received earsY180..183, and nutsY169.5..171.1. Accept real supplier bearing faces against this grip stack; do not reduce or relocate the factory holes.",
+      "Engage all six carrier M3x8 screws from inside, Y178 toward Y186, into blind tapped integral shell bosses. Apply qualified polymer joint torque.",
+      "Unchanged underside rear cradle/AV bracket fastenings and all native electrical paths retain their original owners."
+    ],
+    "SCART_axial_capture_witness": {
+      "method": "TwoM2x16 through-bolts through actualKycon\u00d83.7earbores and ownverticalcarrieradjustmentslots. Locate body/PCB first, slidebolts to actualearaxes, thenclamp; Z42 is only the displayed assemblyreference.",
+      "manufacturer_source_url": "https://www.relayspec.com/suppliers/k/kycon/news/2000/10_01a/2000_10a_a.pdf",
+      "source_sha256": "e775f931aca925ea1c63e946b46b78338229036003ef6a4c0289e704cd325ea9",
+      "old_Y187_8_mounting_plane_status": "Not used as a supplier-bearing datum; KyconA4 sideview dimensions now locate nominal bearingY180/183.",
+      "own_required_receiving_ear_grip_Y_mm": [
+        180.0,
+        183.0
+      ],
+      "own_carrier_Y_mm": [
+        171.1,
+        172.6
+      ],
+      "nut_Y_mm": [
+        169.5,
+        171.1
+      ],
+      "washer_Y_mm": [
+        183.0,
+        183.3
+      ],
+      "head_Y_mm": [
+        183.3,
+        185.3
+      ],
+      "screw_tip_Y_mm": 167.3,
+      "supplier_holes": "Use original\u00d83.7factorybores; do not redrill the connector. Ownslotposition accommodates its measuredZ.",
+      "source_limit": "Nominal ear bore/thickness and tail pattern are dimensioned. Complete body/ear perimeter, tolerances, material load acceptance and current procurement are not certified by this drawing.",
+      "status": "NOMINAL_FACTORY_AXIAL_STACK_AND_BORE_DEFINED_WITH_OWN_VERTICAL_ADJUSTMENT",
+      "own_adapter_bush_Y_mm": [
+        172.6,
+        180.0
+      ],
+      "own_adapter_bush_dimensions_mm": {
+        "OD": 5,
+        "ID": 2.2,
+        "length": 7.4
+      },
+      "manufacturer_dimensions": {
+        "ear_hole_pitch_mm": 58.4,
+        "ear_height_mm": 7.5,
+        "ear_bore_diameter_mm": 3.7,
+        "ear_axial_thickness_mm": 3.0,
+        "nominal_bearing_Y_mm": [
+          180,
+          183
+        ],
+        "ear_Z_axis_position": "Not dimensioned; no bodymidpoint or7.5offset is inferred."
+      },
+      "own_vertical_slot_centre_travel_Z_mm": [
+        36,
+        49
+      ],
+      "slot_lower_limit_basis": "Z36 minusOD5bushradius2.5 leavesZ33.5,0.5mm above theSCARTPCBtopZ33.",
+      "nominal_CAD_axis_Z_mm": 42
+    },
+    "reference_implementations": [
+      {
+        "url": "https://github.com/CadQuery/cadquery/blob/master/cadquery/assembly.py",
+        "studied": "Named assembly and STEP native import/export; transforms preserve source solids."
+      },
+      {
+        "url": "https://github.com/CadQuery/cadquery/blob/master/cadquery/occ_impl/shapes.py",
+        "studied": "Native boolean union/cut and isValid volume checks."
+      },
+      {
+        "url": "https://github.com/prusa3d/Original-Prusa-i3/blob/MK3S/Printed-Parts/SCAD/x-end-idler.scad",
+        "local_source": "models/rear/inside_mount_reference/prusa_x_end_idler.scad",
+        "sha256": "d14d2fbc82609cedf947c009119707c82612a93b40f102f5bc0ea705fa0ef2d2",
+        "studied": "Production printed-part support material union followed by owned screw/nut access cuts."
+      }
+    ],
+    "carrier_wall_clearances": [
+      {
+        "id": "DC_G10_LEFT_LINK_REAR_WALL_CHASE",
+        "bounds_mm": [
+          18.3,
+          186.8,
+          25.8,
+          24.9,
+          188.7,
+          33.2
+        ]
+      },
+      {
+        "id": "DC_G10_RIGHT_LINK_REAR_WALL_CHASE",
+        "bounds_mm": [
+          40.3,
+          186.8,
+          25.8,
+          47.7,
+          188.7,
+          34.0
+        ]
+      }
+    ],
+    "carrier_wall_interface": "Two blind rear-wall clearance chases accept the own G10 carrier links between the lower and upper DC blind screw bosses. Chase depth stopsY188.7, retaining1.3mm rear skin outside the existing carrier-face recess. Link clearance is0.2mm inX/Z and at rearY; neither chase touches the pilot holes, engaged threads or their closed rear webs. Receiving jack, collar, native carrier face, all electrical datums and harness paths are unchanged."
+  }
+}

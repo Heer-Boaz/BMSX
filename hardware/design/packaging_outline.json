@@ -1,0 +1,14 @@
+{
+  "units": "mm; X right, Y rear, Z up",
+  "scope": "Mainboard mechanical mounting datum. Current native board owns copper geometry, holes, population and thickness.",
+  "mainboard_candidate": {
+    "outline_XY_mm": [
+      10,
+      25,
+      230,
+      175
+    ],
+    "bottom_Z_mm": 10,
+    "owner": "ecad/mainboard/BMSX.kicad_pcb"
+  }
+}

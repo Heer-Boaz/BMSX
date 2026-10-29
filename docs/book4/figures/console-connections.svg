@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1120" role="img" aria-labelledby="title desc">
+<title id="title">BMSX console connections and controls</title>
+<desc id="desc">Front view shows the keyboard socket on the left followed by four game-pad sockets. Rear view shows the SCART audio/video socket and DC inlet. Top view shows two cartridge doors and the POWER control, indicator and RESET button on the front band.</desc>
+<defs>
+ <style>
+  text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:22px}
+  .heading{font-size:31px;font-weight:bold}
+  .section{font-size:23px;font-weight:bold;letter-spacing:1px}
+  .label{font-size:22px;font-weight:bold}
+  .detail{font-size:17px;fill:#4d6373}
+  .outline{fill:#eae7df;stroke:#43596b;stroke-width:3}
+  .dark{fill:#29333a;stroke:#182d3a;stroke-width:2}
+  .opening{fill:#111a20;stroke:#7b8e99;stroke-width:2}
+  .line{fill:none;stroke:#6e8798;stroke-width:2}
+  .contact{fill:#d7c48c}
+ </style>
+</defs>
+<rect width="1500" height="1120" fill="#fff"/>
+<text x="66" y="65" class="heading">BMSX console — connections and controls</text>
+<text x="67" y="97" class="detail">Functional identification; symbols do not specify connector contact geometry.</text>
+<!-- front -->
+<text x="67" y="157" class="section">FRONT</text>
+<text x="1435" y="157" text-anchor="end" class="detail">View facing the front panel</text>
+<rect x="130" y="184" width="1240" height="150" rx="24" class="outline"/>
+<path d="M130 238h1240v66c0 17-13 30-30 30H160c-17 0-30-13-30-30z" class="dark"/>
+<circle cx="245" cy="272" r="29" class="opening"/>
+<path d="M236 252h18" stroke="#a5b3ba" stroke-width="3"/>
+<g class="opening"><rect x="384" y="249" width="132" height="48" rx="7"/><rect x="588" y="249" width="132" height="48" rx="7"/><rect x="792" y="249" width="132" height="48" rx="7"/><rect x="996" y="249" width="132" height="48" rx="7"/></g>
+<g class="contact">
+<circle cx="418" cy="279" r="2.5"/>
+<circle cx="434" cy="279" r="2.5"/>
+<circle cx="450" cy="279" r="2.5"/>
+<circle cx="466" cy="279" r="2.5"/>
+<circle cx="482" cy="279" r="2.5"/>
+<circle cx="426" cy="265" r="2.5"/>
+<circle cx="442" cy="265" r="2.5"/>
+<circle cx="458" cy="265" r="2.5"/>
+<circle cx="474" cy="265" r="2.5"/>
+<circle cx="622" cy="279" r="2.5"/>
+<circle cx="638" cy="279" r="2.5"/>
+<circle cx="654" cy="279" r="2.5"/>
+<circle cx="670" cy="279" r="2.5"/>
+<circle cx="686" cy="279" r="2.5"/>
+<circle cx="630" cy="265" r="2.5"/>
+<circle cx="646" cy="265" r="2.5"/>
+<circle cx="662" cy="265" r="2.5"/>
+<circle cx="678" cy="265" r="2.5"/>
+<circle cx="826" cy="279" r="2.5"/>
+<circle cx="842" cy="279" r="2.5"/>
+<circle cx="858" cy="279" r="2.5"/>
+<circle cx="874" cy="279" r="2.5"/>
+<circle cx="890" cy="279" r="2.5"/>
+<circle cx="834" cy="265" r="2.5"/>
+<circle cx="850" cy="265" r="2.5"/>
+<circle cx="866" cy="265" r="2.5"/>
+<circle cx="882" cy="265" r="2.5"/>
+<circle cx="1030" cy="279" r="2.5"/>
+<circle cx="1046" cy="279" r="2.5"/>
+<circle cx="1062" cy="279" r="2.5"/>
+<circle cx="1078" cy="279" r="2.5"/>
+<circle cx="1094" cy="279" r="2.5"/>
+<circle cx="1038" cy="265" r="2.5"/>
+<circle cx="1054" cy="265" r="2.5"/>
+<circle cx="1070" cy="265" r="2.5"/>
+<circle cx="1086" cy="265" r="2.5"/>
+</g>
+<text x="245" y="375" text-anchor="middle" class="label">KEYBOARD</text><text x="245" y="400" text-anchor="middle" class="detail">PS/2 mini-DIN</text>
+<text x="450" y="375" text-anchor="middle" class="label">PAD 1</text><text x="654" y="375" text-anchor="middle" class="label">PAD 2</text><text x="858" y="375" text-anchor="middle" class="label">PAD 3</text><text x="1062" y="375" text-anchor="middle" class="label">PAD 4</text>
+<text x="756" y="400" text-anchor="middle" class="detail">BMSX pad or pointer accessory</text>
+<!-- rear -->
+<text x="67" y="470" class="section">REAR</text><text x="1435" y="470" text-anchor="end" class="detail">View facing the rear panel</text>
+<rect x="130" y="496" width="1240" height="150" rx="24" class="outline"/>
+<path d="M130 550h1240v66c0 17-13 30-30 30H160c-17 0-30-13-30-30z" class="dark"/>
+<path d="M230 560h270l-9 47H239z" class="opening"/>
+<circle cx="1192" cy="583" r="25" class="opening"/><circle cx="1192" cy="583" r="6" fill="#b9c0c1"/>
+<text x="365" y="685" text-anchor="middle" class="label">RGB / AUDIO</text><text x="365" y="710" text-anchor="middle" class="detail">SCART · RGB, sync and stereo audio</text>
+<text x="1192" y="685" text-anchor="middle" class="label">DC IN</text><text x="1192" y="710" text-anchor="middle" class="detail">9 V · centre positive</text>
+<!-- top -->
+<text x="67" y="779" class="section">TOP</text><text x="1435" y="779" text-anchor="end" class="detail">Rear at top · front at bottom</text>
+<rect x="130" y="805" width="1240" height="218" rx="28" class="outline"/>
+<path d="M130 953h1240" class="line"/>
+<rect x="687" y="829" width="410" height="34" rx="5" class="dark"/><rect x="687" y="885" width="410" height="34" rx="5" class="dark"/>
+<text x="673" y="853" text-anchor="end" class="detail">SLOT 2</text><text x="673" y="909" text-anchor="end" class="detail">SLOT 1</text>
+<text x="1119" y="873" class="detail">Cartridge doors</text><text x="1119" y="896" class="detail">open inward</text>
+<rect x="225" y="978" width="90" height="24" rx="3" fill="#607e93" stroke="#273f50" stroke-width="2"/><circle cx="360" cy="990" r="8" fill="#61a55c" stroke="#244c31" stroke-width="2"/>
+<circle cx="1187" cy="990" r="17" class="dark"/>
+<text x="270" y="1059" text-anchor="middle" class="label">POWER</text><text x="360" y="1059" text-anchor="middle" class="detail">indicator</text><text x="1187" y="1059" text-anchor="middle" class="label">RESET</text>
+<text x="750" y="1095" text-anchor="middle" class="detail">Connector contact assignments and cartridge handling are described in the following chapters.</text>
+</svg>

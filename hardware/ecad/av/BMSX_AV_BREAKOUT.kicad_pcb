@@ -1,0 +1,940 @@
+(kicad_pcb
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(general
+		(thickness 1.6)
+		(legacy_teardrops no))
+	(paper "A4")
+	(layers
+		(0 "F.Cu" signal)
+		(4 "In1.Cu" signal)
+		(6 "In2.Cu" signal)
+		(2 "B.Cu" signal)
+		(9 "F.Adhes" user "F.Adhesive")
+		(11 "B.Adhes" user "B.Adhesive")
+		(13 "F.Paste" user)
+		(15 "B.Paste" user)
+		(5 "F.SilkS" user "F.Silkscreen")
+		(7 "B.SilkS" user "B.Silkscreen")
+		(1 "F.Mask" user)
+		(3 "B.Mask" user)
+		(17 "Dwgs.User" user "User.Drawings")
+		(19 "Cmts.User" user "User.Comments")
+		(21 "Eco1.User" user "User.Eco1")
+		(23 "Eco2.User" user "User.Eco2")
+		(25 "Edge.Cuts" user)
+		(27 "Margin" user)
+		(31 "F.CrtYd" user "F.Courtyard")
+		(29 "B.CrtYd" user "B.Courtyard")
+		(35 "F.Fab" user)
+		(33 "B.Fab" user)
+		(39 "User.1" user)
+		(41 "User.2" user)
+		(43 "User.3" user)
+		(45 "User.4" user))
+	(setup
+		(stackup
+			(layer "F.Mask"
+				(type "Top Solder Mask")
+				(thickness 0.01))
+			(layer "F.Cu"
+				(type "copper")
+				(thickness 0.035))
+			(layer "dielectric 1"
+				(type "prepreg")
+				(thickness 0.22)
+				(material "FR4")
+				(epsilon_r 4.2)
+				(loss_tangent 0.02))
+			(layer "In1.Cu"
+				(type "copper")
+				(thickness 0.035))
+			(layer "dielectric 2"
+				(type "core")
+				(thickness 1.0)
+				(material "FR4")
+				(epsilon_r 4.2)
+				(loss_tangent 0.02))
+			(layer "In2.Cu"
+				(type "copper")
+				(thickness 0.035))
+			(layer "dielectric 3"
+				(type "prepreg")
+				(thickness 0.22)
+				(material "FR4")
+				(epsilon_r 4.2)
+				(loss_tangent 0.02))
+			(layer "B.Cu"
+				(type "copper")
+				(thickness 0.035))
+			(layer "B.Mask"
+				(type "Bottom Solder Mask")
+				(thickness 0.01))
+			(copper_finish "ENIG")
+			(dielectric_constraints yes))
+		(pad_to_mask_clearance 0)
+		(solder_mask_min_width 0.1)
+		(allow_soldermask_bridges_in_footprints no)
+		(tenting front back)
+		(pcbplotparams
+			(layerselection 0x00000000_00000000_55555555_5755f5ff)
+			(plot_on_all_layers_selection 0x00000000_00000000_00000000_00000000)
+			(disableapertmacros no)
+			(usegerberextensions no)
+			(usegerberattributes yes)
+			(usegerberadvancedattributes yes)
+			(creategerberjobfile yes)
+			(dashed_line_dash_ratio 12.000000)
+			(dashed_line_gap_ratio 3.000000)
+			(svgprecision 4)
+			(plotframeref no)
+			(mode 1)
+			(useauxorigin no)
+			(hpglpennumber 1)
+			(hpglpenspeed 20)
+			(hpglpendiameter 15.000000)
+			(pdf_front_fp_property_popups yes)
+			(pdf_back_fp_property_popups yes)
+			(pdf_metadata yes)
+			(pdf_single_document no)
+			(dxfpolygonmode yes)
+			(dxfimperialunits yes)
+			(dxfusepcbnewfont yes)
+			(psnegative no)
+			(psa4output no)
+			(plot_black_and_white yes)
+			(sketchpadsonfab no)
+			(plotpadnumbers no)
+			(hidednponfab no)
+			(sketchdnponfab yes)
+			(crossoutdnponfab yes)
+			(subtractmaskfromsilk no)
+			(outputformat 1)
+			(mirror no)
+			(drillshape 1)
+			(scaleselection 1)
+			(outputdirectory "")))
+	(net 0 "")
+	(net 1 "GND")
+	(net 2 "SCART_AUD_L")
+	(net 3 "SCART_AUD_R")
+	(net 4 "SCART_B")
+	(net 5 "SCART_CSYNC")
+	(net 6 "SCART_G")
+	(net 7 "SCART_R")
+	(net 8 "SCART_RGB_SELECT")
+	(footprint "Panel:Aux8_HandSolder_P1.00mm"
+		(layer "F.Cu")
+		(uuid "5b49531c-d642-45c4-9b64-bab353702962")
+		(at 28.5 11.5)
+		(descr "Own hand-solder eight-wire auxiliary termination; PTH 0.4, land0.7, pitch1.0")
+		(property "Reference" "J6"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(hide yes)
+			(uuid "b61bb7db-ec0c-4918-9d40-cba4a7a2d99c")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Value" "Audio/select/shield wires"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "a7cc9816-9b78-45b2-8faa-23ef610c7b43")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "d2921512-a40f-4d0c-bd58-23e1de01d9ba")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "68e85fbf-2ed5-46e5-866e-b2c5caa353b0")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435/322226c9-5d5c-5fb1-a7a8-0e02e1703b33")
+		(attr through_hole)
+		(fp_rect
+			(start -0.65 -0.65)
+			(end 0.65 7.65)
+			(stroke
+				(width 0.05)
+				(type solid))
+			(fill no)
+			(layer "F.CrtYd")
+			(uuid "89c2cc6d-e33e-4fd6-8512-c2fd47e151ef"))
+		(pad "1" thru_hole circle
+			(at 0 0)
+			(size 0.7 0.7)
+			(drill 0.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 2 "SCART_AUD_L")
+			(pintype "passive")
+			(uuid "e2177a80-11cb-4d46-9603-a63916a72591"))
+		(pad "2" thru_hole circle
+			(at 0 1)
+			(size 0.7 0.7)
+			(drill 0.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "6f9b4654-de59-4af1-af35-c85aa63093c2"))
+		(pad "3" thru_hole circle
+			(at 0 2)
+			(size 0.7 0.7)
+			(drill 0.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 3 "SCART_AUD_R")
+			(pintype "passive")
+			(uuid "87f80394-4de8-4eb9-b239-6cc01d260b68"))
+		(pad "4" thru_hole circle
+			(at 0 3)
+			(size 0.7 0.7)
+			(drill 0.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "2ed08903-f3b0-4a75-b4f8-d4bbd9838869"))
+		(pad "5" thru_hole circle
+			(at 0 4)
+			(size 0.7 0.7)
+			(drill 0.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 8 "SCART_RGB_SELECT")
+			(pintype "passive")
+			(uuid "7e6b7269-2d19-400e-9249-2a45a3addcd3"))
+		(pad "6" thru_hole circle
+			(at 0 5)
+			(size 0.7 0.7)
+			(drill 0.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "b7c167fb-6c28-4f18-8918-671db17ea536"))
+		(pad "7" thru_hole circle
+			(at 0 6)
+			(size 0.7 0.7)
+			(drill 0.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "a398d7ef-467e-4082-82b7-aa44a24f9e7f"))
+		(pad "8" thru_hole circle
+			(at 0 7)
+			(size 0.7 0.7)
+			(drill 0.4)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "2736b80d-70f9-445f-b543-d6aa5a01a392"))
+		(embedded_fonts no))
+	(footprint "Panel:MountingHole_2.2mm"
+		(layer "F.Cu")
+		(uuid "799f15a9-0ffb-40ad-a1ed-59cc74b61421")
+		(at 2 14)
+		(property "Reference" "H2"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(hide yes)
+			(uuid "ecd93f22-ff43-4ce8-bfae-0bf27081c7c7")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Value" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "c28c55c1-4b68-43d4-a67a-b5960d16d946")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "fef9eb96-338a-4c36-a4a9-caec98fea1a5")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "316965e5-8118-4bba-b49b-01939d5c8130")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(attr board_only exclude_from_pos_files exclude_from_bom)
+		(fp_circle
+			(center 0 0)
+			(end 1.35 0)
+			(stroke
+				(width 0.05)
+				(type default))
+			(fill no)
+			(layer "F.CrtYd")
+			(uuid "5ab06aca-752b-40d7-ad1c-55e9c97a8972"))
+		(pad "" np_thru_hole circle
+			(at 0 0)
+			(size 2.2 2.2)
+			(drill 2.2)
+			(layers "*.Cu" "*.Mask")
+			(uuid "de992f11-30e6-4038-8ca5-0ec0e22752ad"))
+		(embedded_fonts no))
+	(footprint "Panel:Coax179_HandSolder_Launch"
+		(layer "F.Cu")
+		(uuid "a7a87c1a-c7f9-4b0f-b259-d4ac1c9a30bc")
+		(at 24.8 2.5)
+		(descr "Own hand-solder ENVIROFLEX179 launch, stripped braid and centre lead; no impedance qualification or vendor-footprint claim")
+		(property "Reference" "J4"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(hide yes)
+			(uuid "b51b810f-d611-4ca1-b498-498428f8ec4e")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Value" "SCART_G coax launch proposal"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "8a0d7175-a0c8-4a20-a0e6-6db28e29392b")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "2625c324-77a9-4654-8520-e2ade4385e3e")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "3e009055-e6b0-4c06-a70a-208186e4ea00")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435/22c8f4a2-748b-520e-8e19-4edfeab351c7")
+		(attr smd)
+		(fp_rect
+			(start -1.3 -1.95)
+			(end 6.7 1.95)
+			(stroke
+				(width 0.05)
+				(type solid))
+			(fill no)
+			(layer "F.CrtYd")
+			(uuid "adf7013c-c372-4f37-bda5-04160abe590c"))
+		(fp_line
+			(start 5.2 -1.305)
+			(end 6.7 -1.305)
+			(stroke
+				(width 0.1)
+				(type solid))
+			(layer "F.Fab")
+			(uuid "676b1b51-4911-48a0-ac51-f5337045885a"))
+		(fp_line
+			(start 5.2 1.305)
+			(end 6.7 1.305)
+			(stroke
+				(width 0.1)
+				(type solid))
+			(layer "F.Fab")
+			(uuid "f6c2cd2f-0d3f-40c1-a1b7-b3a7b61faaa4"))
+		(pad "1" smd rect
+			(at 0 0)
+			(size 1.6 1)
+			(layers "F.Cu" "F.Mask")
+			(net 6 "SCART_G")
+			(pintype "passive")
+			(uuid "4d0c5f24-40ae-49f5-9df3-308e08a1b034"))
+		(pad "2" smd rect
+			(at 3.2 -1.1)
+			(size 3 1.2)
+			(layers "F.Cu" "F.Mask")
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "6f532a9c-7ff4-4b35-a183-70ee825bfe9a"))
+		(pad "2" smd rect
+			(at 3.2 1.1)
+			(size 3 1.2)
+			(layers "F.Cu" "F.Mask")
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "474352d7-2fe7-4a3c-8dd2-7eed8e369195"))
+		(embedded_fonts no))
+	(footprint "Panel:Ribbon16_HandSolder_P1.27mm"
+		(layer "F.Cu")
+		(uuid "b8687cc4-e202-4539-ad16-968c21d8b6bd")
+		(at 5.365 18)
+		(descr "16 stripped AWG28 ribbon conductors, hand solder PTH; own breakout proposal, not an IDC contact footprint")
+		(property "Reference" "J1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(hide yes)
+			(uuid "6db9851c-315e-4871-9200-87fc26598204")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Value" "16-wire IDC stub termination"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "c67a373b-6c46-4fad-bd85-d953c22ee41e")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "b438b98e-8eb3-48da-bad7-97007e43b23d")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "4fc9aa5c-7b07-43fa-a0c0-6d91757b41dd")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435/97743c5e-79a4-5864-917f-367386986451")
+		(attr through_hole)
+		(fp_rect
+			(start -0.8 -0.8)
+			(end 19.85 0.8)
+			(stroke
+				(width 0.05)
+				(type solid))
+			(fill no)
+			(layer "F.CrtYd")
+			(uuid "7c71b327-4406-4da4-b395-392dc272225d"))
+		(pad "1" thru_hole circle
+			(at 0 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 7 "SCART_R")
+			(pintype "passive")
+			(uuid "805b0b38-f810-48ad-a81a-a12fdf28a779"))
+		(pad "2" thru_hole circle
+			(at 1.27 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "b7cd6260-55f7-4150-abf3-423353692529"))
+		(pad "3" thru_hole circle
+			(at 2.54 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 6 "SCART_G")
+			(pintype "passive")
+			(uuid "6e16ebad-98fd-4ea0-94d1-d7b330bf4046"))
+		(pad "4" thru_hole circle
+			(at 3.81 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "d0c3f691-ab10-45da-8b02-1f57bdd0b839"))
+		(pad "5" thru_hole circle
+			(at 5.08 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 4 "SCART_B")
+			(pintype "passive")
+			(uuid "e04ee347-0aa5-4e54-9e54-8b0d5979aa0a"))
+		(pad "6" thru_hole circle
+			(at 6.35 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "7f26149b-aa8b-4cd2-a598-9cb0e72ce05a"))
+		(pad "7" thru_hole circle
+			(at 7.62 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 5 "SCART_CSYNC")
+			(pintype "passive")
+			(uuid "81776c27-fc3b-4b0f-9a98-c575fa5ebb49"))
+		(pad "8" thru_hole circle
+			(at 8.89 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "09f44a10-41fd-4d07-bff3-08b93656b617"))
+		(pad "9" thru_hole circle
+			(at 10.16 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 2 "SCART_AUD_L")
+			(pintype "passive")
+			(uuid "7a60e84a-411d-456c-be22-c528f75342d6"))
+		(pad "10" thru_hole circle
+			(at 11.43 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "4de73fa8-4b39-435d-8caf-7a5b3402e09c"))
+		(pad "11" thru_hole circle
+			(at 12.7 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 3 "SCART_AUD_R")
+			(pintype "passive")
+			(uuid "55921a08-0633-4c68-8d7c-1fba961a01b1"))
+		(pad "12" thru_hole circle
+			(at 13.97 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "66b4c58f-aaed-4220-9ab1-465a172e8d3f"))
+		(pad "13" thru_hole circle
+			(at 15.24 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 8 "SCART_RGB_SELECT")
+			(pintype "passive")
+			(uuid "6a79fd33-6184-41fa-9331-01e0d8e1de2f"))
+		(pad "14" thru_hole circle
+			(at 16.51 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "355a4ec1-5b69-4474-abde-4ce6adc1cf5b"))
+		(pad "15" thru_hole circle
+			(at 17.78 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "2038d32a-ba86-4452-af33-79c3658f5776"))
+		(pad "16" thru_hole circle
+			(at 19.05 0)
+			(size 1 1)
+			(drill 0.6)
+			(layers "*.Cu" "*.Mask")
+			(remove_unused_layers no)
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "74083e1e-e69a-4c13-8351-7223fae19925"))
+		(embedded_fonts no))
+	(footprint "Panel:Coax179_HandSolder_Launch"
+		(layer "F.Cu")
+		(uuid "e2a14609-dcc9-4ca3-993f-5e314e7e4e59")
+		(at 24.8 6.5)
+		(descr "Own hand-solder ENVIROFLEX179 launch, stripped braid and centre lead; no impedance qualification or vendor-footprint claim")
+		(property "Reference" "J2"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(hide yes)
+			(uuid "fa99056a-86fc-48b3-b921-c21a14c87519")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Value" "SCART_CSYNC coax launch proposal"
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "dacfa66c-acf5-4eba-9fc1-56fc73b2d27a")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "f3b9fabf-6001-4cdd-b8d6-81f4b22ff376")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "0df7f966-41d7-4198-ac5a-fc6800999fb7")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435/ae3171aa-c405-585a-a7c2-3b3351845980")
+		(attr smd)
+		(fp_rect
+			(start -1.3 -1.95)
+			(end 6.7 1.95)
+			(stroke
+				(width 0.05)
+				(type solid))
+			(fill no)
+			(layer "F.CrtYd")
+			(uuid "7724100f-077d-4bca-bdda-c9fe2876847b"))
+		(fp_line
+			(start 5.2 -1.305)
+			(end 6.7 -1.305)
+			(stroke
+				(width 0.1)
+				(type solid))
+			(layer "F.Fab")
+			(uuid "d889d5d1-53c1-4516-a067-77bd162570bf"))
+		(fp_line
+			(start 5.2 1.305)
+			(end 6.7 1.305)
+			(stroke
+				(width 0.1)
+				(type solid))
+			(layer "F.Fab")
+			(uuid "029936cc-2e44-43d9-99e9-d075d900de3d"))
+		(pad "1" smd rect
+			(at 0 0)
+			(size 1.6 1)
+			(layers "F.Cu" "F.Mask")
+			(net 5 "SCART_CSYNC")
+			(pintype "passive")
+			(uuid "ff05af53-ec2c-4469-b8fe-f21b5996ddc1"))
+		(pad "2" smd rect
+			(at 3.2 -1.1)
+			(size 3 1.2)
+			(layers "F.Cu" "F.Mask")
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "5a9fb76b-971e-4d7c-95a6-2d0bf26bceb1"))
+		(pad "2" smd rect
+			(at 3.2 1.1)
+			(size 3 1.2)
+			(layers "F.Cu" "F.Mask")
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "d8fef09b-f4b1-4798-9bd9-8ab72e127310"))
+		(embedded_fonts no))
+	(footprint "Panel:MountingHole_2.2mm"
+		(layer "F.Cu")
+		(uuid "ea1f4c04-6b80-4cea-a620-d187747ba55c")
+		(at 2 2)
+		(property "Reference" "H1"
+			(at 0 0 0)
+			(layer "F.SilkS")
+			(hide yes)
+			(uuid "e935888d-d4fc-4b18-90e9-c956baefe104")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Value" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "5bf03b69-88a7-4f8e-8224-defbb13400fc")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "12980627-340e-43d4-8b38-e2859815054a")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "F.Fab")
+			(hide yes)
+			(uuid "2f0ab569-39ea-43d5-992e-6a237da0bb5e")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))))
+		(attr board_only exclude_from_pos_files exclude_from_bom)
+		(fp_circle
+			(center 0 0)
+			(end 1.35 0)
+			(stroke
+				(width 0.05)
+				(type default))
+			(fill no)
+			(layer "F.CrtYd")
+			(uuid "cd77dbe1-e33c-45c1-ab09-6dfdb92a81e9"))
+		(pad "" np_thru_hole circle
+			(at 0 0)
+			(size 2.2 2.2)
+			(drill 2.2)
+			(layers "*.Cu" "*.Mask")
+			(uuid "ca79a4d6-5132-4015-90a0-af3b67dcbec0"))
+		(embedded_fonts no))
+	(footprint "Panel:Coax179_HandSolder_Launch"
+		(layer "B.Cu")
+		(uuid "f172533c-0fe3-4f1b-9639-c8811a3282eb")
+		(at 24.8 6.5 180)
+		(descr "Own hand-solder ENVIROFLEX179 launch, stripped braid and centre lead; no impedance qualification or vendor-footprint claim")
+		(property "Reference" "J3"
+			(at 0 0 0)
+			(layer "B.SilkS")
+			(hide yes)
+			(uuid "154746fb-128d-4fa7-bf96-c98a5a7c5069")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))
+				(justify mirror)))
+		(property "Value" "SCART_R coax launch proposal"
+			(at 0 0 0)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "eb62a2e5-8e23-404c-b3ff-347beb434141")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))
+				(justify mirror)))
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "ab59f93a-d18e-4df7-b46e-0f3428c16e91")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))
+				(justify mirror)))
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "1cd59b01-2863-4ff3-b6d5-335c253150d8")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))
+				(justify mirror)))
+		(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435/2dff46c1-f3ce-5f78-b81b-4118afc1a170")
+		(attr smd)
+		(fp_rect
+			(start -1.3 1.95)
+			(end 6.7 -1.95)
+			(stroke
+				(width 0.05)
+				(type solid))
+			(fill no)
+			(layer "B.CrtYd")
+			(uuid "be4fea74-037f-49f8-8fa6-cc22e361c250"))
+		(fp_line
+			(start 5.2 1.305)
+			(end 6.7 1.305)
+			(stroke
+				(width 0.1)
+				(type solid))
+			(layer "B.Fab")
+			(uuid "2588eb81-34dc-493b-b3ff-ff9b9f2a9da2"))
+		(fp_line
+			(start 5.2 -1.305)
+			(end 6.7 -1.305)
+			(stroke
+				(width 0.1)
+				(type solid))
+			(layer "B.Fab")
+			(uuid "b42f4395-d470-4929-84ca-6aa77dff9bd3"))
+		(pad "1" smd rect
+			(at 0 0 180)
+			(size 1.6 1)
+			(layers "B.Cu" "B.Mask")
+			(net 7 "SCART_R")
+			(pintype "passive")
+			(uuid "e30171b1-9822-45b8-b677-dd6924372d9d"))
+		(pad "2" smd rect
+			(at 3.2 -1.1 180)
+			(size 3 1.2)
+			(layers "B.Cu" "B.Mask")
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "ff87ab44-a1ee-4873-867b-35d2cc6c3c6f"))
+		(pad "2" smd rect
+			(at 3.2 1.1 180)
+			(size 3 1.2)
+			(layers "B.Cu" "B.Mask")
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "26ba8464-fa93-45c9-9a3b-c392cfef610b"))
+		(embedded_fonts no))
+	(footprint "Panel:Coax179_HandSolder_Launch"
+		(layer "B.Cu")
+		(uuid "feefa463-d207-49fe-a3bd-24ac152e884c")
+		(at 24.8 2.5 180)
+		(descr "Own hand-solder ENVIROFLEX179 launch, stripped braid and centre lead; no impedance qualification or vendor-footprint claim")
+		(property "Reference" "J5"
+			(at 0 0 0)
+			(layer "B.SilkS")
+			(hide yes)
+			(uuid "718593f2-bbac-4c38-96e0-05438115aebf")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))
+				(justify mirror)))
+		(property "Value" "SCART_B coax launch proposal"
+			(at 0 0 0)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "d435608b-d67f-40a6-bd03-ec11ee1f4e61")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))
+				(justify mirror)))
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "fc3f2932-3c04-43c1-a32b-7a1e5e5a8419")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))
+				(justify mirror)))
+		(property "Description" ""
+			(at 0 0 0)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "27ffc2e5-3c50-48dc-9e60-d1e91c8bc03b")
+			(effects
+				(font
+					(size 1.27 1.27)
+					(thickness 0.15))
+				(justify mirror)))
+		(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435/844af826-e4a3-53c4-b19b-bb3ccfc6cdc8")
+		(attr smd)
+		(fp_rect
+			(start -1.3 1.95)
+			(end 6.7 -1.95)
+			(stroke
+				(width 0.05)
+				(type solid))
+			(fill no)
+			(layer "B.CrtYd")
+			(uuid "f89c5e7a-ace8-43e9-8f83-37a5294ef8ef"))
+		(fp_line
+			(start 5.2 1.305)
+			(end 6.7 1.305)
+			(stroke
+				(width 0.1)
+				(type solid))
+			(layer "B.Fab")
+			(uuid "123641d5-404f-47da-9642-ea0ff30f14f9"))
+		(fp_line
+			(start 5.2 -1.305)
+			(end 6.7 -1.305)
+			(stroke
+				(width 0.1)
+				(type solid))
+			(layer "B.Fab")
+			(uuid "5d48ed45-955e-4402-865e-2adda04235b5"))
+		(pad "1" smd rect
+			(at 0 0 180)
+			(size 1.6 1)
+			(layers "B.Cu" "B.Mask")
+			(net 4 "SCART_B")
+			(pintype "passive")
+			(uuid "64425287-c3bf-4e6f-9464-0c39936718c0"))
+		(pad "2" smd rect
+			(at 3.2 -1.1 180)
+			(size 3 1.2)
+			(layers "B.Cu" "B.Mask")
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "6e4e390a-1e63-4c2d-a2c6-91d038ba16d3"))
+		(pad "2" smd rect
+			(at 3.2 1.1 180)
+			(size 3 1.2)
+			(layers "B.Cu" "B.Mask")
+			(net 1 "GND")
+			(pintype "passive")
+			(uuid "307b4faf-ff3d-4c24-89e2-c5f790a63957"))
+		(embedded_fonts no))
+	(gr_rect
+		(start 0 0)
+		(end 30 20)
+		(stroke
+			(width 0.05)
+			(type default))
+		(fill no)
+		(layer "Edge.Cuts")
+		(uuid "d2690c1f-f71b-4363-9bc5-3a804cfeb777"))
+	(embedded_fonts no))

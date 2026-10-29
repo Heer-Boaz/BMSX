@@ -1,0 +1,1223 @@
+{
+  "revision": "BMSX-A04-PERIPHERALS",
+  "keyboard_case_nominal_mm": [
+    350,
+    155,
+    24
+  ],
+  "keyboard_key_top_local_z_mm": 31,
+  "keyboard_stance_angle_deg": 3,
+  "keyboard_keys": 83,
+  "key_pitch_mm": 19.05,
+  "key_travel_target_mm": 3.5,
+  "keys": [
+    {
+      "index": 0,
+      "label": "Esc",
+      "row": 0,
+      "u": 1,
+      "center": [
+        32.125,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 1,
+      "label": "F1",
+      "row": 0,
+      "u": 1,
+      "center": [
+        55.9375,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 2,
+      "label": "F2",
+      "row": 0,
+      "u": 1,
+      "center": [
+        74.98750000000001,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 3,
+      "label": "F3",
+      "row": 0,
+      "u": 1,
+      "center": [
+        94.0375,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 4,
+      "label": "F4",
+      "row": 0,
+      "u": 1,
+      "center": [
+        113.0875,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 5,
+      "label": "F5",
+      "row": 0,
+      "u": 1,
+      "center": [
+        136.9,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 6,
+      "label": "F6",
+      "row": 0,
+      "u": 1,
+      "center": [
+        155.95,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 7,
+      "label": "F7",
+      "row": 0,
+      "u": 1,
+      "center": [
+        175.0,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 8,
+      "label": "F8",
+      "row": 0,
+      "u": 1,
+      "center": [
+        194.05,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 9,
+      "label": "F9",
+      "row": 0,
+      "u": 1,
+      "center": [
+        217.8625,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 10,
+      "label": "F10",
+      "row": 0,
+      "u": 1,
+      "center": [
+        236.9125,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 11,
+      "label": "F11",
+      "row": 0,
+      "u": 1,
+      "center": [
+        255.9625,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 12,
+      "label": "F12",
+      "row": 0,
+      "u": 1,
+      "center": [
+        275.01250000000005,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 13,
+      "label": "Ins",
+      "row": 0,
+      "u": 1,
+      "center": [
+        298.82500000000005,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 14,
+      "label": "Del",
+      "row": 0,
+      "u": 1,
+      "center": [
+        317.87500000000006,
+        128.0
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 15,
+      "label": "`",
+      "row": 1,
+      "u": 1,
+      "center": [
+        32.125,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 16,
+      "label": "1",
+      "row": 1,
+      "u": 1,
+      "center": [
+        51.175000000000004,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 17,
+      "label": "2",
+      "row": 1,
+      "u": 1,
+      "center": [
+        70.225,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 18,
+      "label": "3",
+      "row": 1,
+      "u": 1,
+      "center": [
+        89.275,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 19,
+      "label": "4",
+      "row": 1,
+      "u": 1,
+      "center": [
+        108.32500000000002,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 20,
+      "label": "5",
+      "row": 1,
+      "u": 1,
+      "center": [
+        127.375,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 21,
+      "label": "6",
+      "row": 1,
+      "u": 1,
+      "center": [
+        146.425,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 22,
+      "label": "7",
+      "row": 1,
+      "u": 1,
+      "center": [
+        165.475,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 23,
+      "label": "8",
+      "row": 1,
+      "u": 1,
+      "center": [
+        184.525,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 24,
+      "label": "9",
+      "row": 1,
+      "u": 1,
+      "center": [
+        203.575,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 25,
+      "label": "0",
+      "row": 1,
+      "u": 1,
+      "center": [
+        222.625,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 26,
+      "label": "-",
+      "row": 1,
+      "u": 1,
+      "center": [
+        241.675,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 27,
+      "label": "=",
+      "row": 1,
+      "u": 1,
+      "center": [
+        260.725,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 28,
+      "label": "Back",
+      "row": 1,
+      "u": 2,
+      "center": [
+        289.3,
+        108.95
+      ],
+      "size": [
+        36.800000000000004,
+        17.75
+      ]
+    },
+    {
+      "index": 29,
+      "label": "Home",
+      "row": 1,
+      "u": 1,
+      "center": [
+        317.87500000000006,
+        108.95
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 30,
+      "label": "Tab",
+      "row": 2,
+      "u": 1.5,
+      "center": [
+        36.8875,
+        89.9
+      ],
+      "size": [
+        27.275000000000002,
+        17.75
+      ]
+    },
+    {
+      "index": 31,
+      "label": "Q",
+      "row": 2,
+      "u": 1,
+      "center": [
+        60.7,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 32,
+      "label": "W",
+      "row": 2,
+      "u": 1,
+      "center": [
+        79.75,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 33,
+      "label": "E",
+      "row": 2,
+      "u": 1,
+      "center": [
+        98.80000000000001,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 34,
+      "label": "R",
+      "row": 2,
+      "u": 1,
+      "center": [
+        117.85,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 35,
+      "label": "T",
+      "row": 2,
+      "u": 1,
+      "center": [
+        136.9,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 36,
+      "label": "Y",
+      "row": 2,
+      "u": 1,
+      "center": [
+        155.95,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 37,
+      "label": "U",
+      "row": 2,
+      "u": 1,
+      "center": [
+        175.0,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 38,
+      "label": "I",
+      "row": 2,
+      "u": 1,
+      "center": [
+        194.05,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 39,
+      "label": "O",
+      "row": 2,
+      "u": 1,
+      "center": [
+        213.1,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 40,
+      "label": "P",
+      "row": 2,
+      "u": 1,
+      "center": [
+        232.15,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 41,
+      "label": "[",
+      "row": 2,
+      "u": 1,
+      "center": [
+        251.20000000000002,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 42,
+      "label": "]",
+      "row": 2,
+      "u": 1,
+      "center": [
+        270.25,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 43,
+      "label": "\\",
+      "row": 2,
+      "u": 1.5,
+      "center": [
+        294.06250000000006,
+        89.9
+      ],
+      "size": [
+        27.275000000000002,
+        17.75
+      ]
+    },
+    {
+      "index": 44,
+      "label": "PgUp",
+      "row": 2,
+      "u": 1,
+      "center": [
+        317.87500000000006,
+        89.9
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 45,
+      "label": "Caps",
+      "row": 3,
+      "u": 1.75,
+      "center": [
+        39.26875,
+        70.85
+      ],
+      "size": [
+        32.0375,
+        17.75
+      ]
+    },
+    {
+      "index": 46,
+      "label": "A",
+      "row": 3,
+      "u": 1,
+      "center": [
+        65.4625,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 47,
+      "label": "S",
+      "row": 3,
+      "u": 1,
+      "center": [
+        84.5125,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 48,
+      "label": "D",
+      "row": 3,
+      "u": 1,
+      "center": [
+        103.5625,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 49,
+      "label": "F",
+      "row": 3,
+      "u": 1,
+      "center": [
+        122.61250000000001,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 50,
+      "label": "G",
+      "row": 3,
+      "u": 1,
+      "center": [
+        141.6625,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 51,
+      "label": "H",
+      "row": 3,
+      "u": 1,
+      "center": [
+        160.7125,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 52,
+      "label": "J",
+      "row": 3,
+      "u": 1,
+      "center": [
+        179.7625,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 53,
+      "label": "K",
+      "row": 3,
+      "u": 1,
+      "center": [
+        198.8125,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 54,
+      "label": "L",
+      "row": 3,
+      "u": 1,
+      "center": [
+        217.8625,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 55,
+      "label": ";",
+      "row": 3,
+      "u": 1,
+      "center": [
+        236.9125,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 56,
+      "label": "'",
+      "row": 3,
+      "u": 1,
+      "center": [
+        255.9625,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 57,
+      "label": "Enter",
+      "row": 3,
+      "u": 2.25,
+      "center": [
+        286.91875000000005,
+        70.85
+      ],
+      "size": [
+        41.56250000000001,
+        17.75
+      ]
+    },
+    {
+      "index": 58,
+      "label": "PgDn",
+      "row": 3,
+      "u": 1,
+      "center": [
+        317.87500000000006,
+        70.85
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 59,
+      "label": "Shift",
+      "row": 4,
+      "u": 2.25,
+      "center": [
+        44.03125,
+        51.8
+      ],
+      "size": [
+        41.56250000000001,
+        17.75
+      ]
+    },
+    {
+      "index": 60,
+      "label": "Z",
+      "row": 4,
+      "u": 1,
+      "center": [
+        74.98750000000001,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 61,
+      "label": "X",
+      "row": 4,
+      "u": 1,
+      "center": [
+        94.0375,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 62,
+      "label": "C",
+      "row": 4,
+      "u": 1,
+      "center": [
+        113.0875,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 63,
+      "label": "V",
+      "row": 4,
+      "u": 1,
+      "center": [
+        132.13750000000002,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 64,
+      "label": "B",
+      "row": 4,
+      "u": 1,
+      "center": [
+        151.1875,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 65,
+      "label": "N",
+      "row": 4,
+      "u": 1,
+      "center": [
+        170.2375,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 66,
+      "label": "M",
+      "row": 4,
+      "u": 1,
+      "center": [
+        189.2875,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 67,
+      "label": ",",
+      "row": 4,
+      "u": 1,
+      "center": [
+        208.3375,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 68,
+      "label": ".",
+      "row": 4,
+      "u": 1,
+      "center": [
+        227.3875,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 69,
+      "label": "/",
+      "row": 4,
+      "u": 1,
+      "center": [
+        246.4375,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 70,
+      "label": "Shift",
+      "row": 4,
+      "u": 1.75,
+      "center": [
+        272.63125,
+        51.8
+      ],
+      "size": [
+        32.0375,
+        17.75
+      ]
+    },
+    {
+      "index": 71,
+      "label": "Up",
+      "row": 4,
+      "u": 1,
+      "center": [
+        298.82500000000005,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 72,
+      "label": "End",
+      "row": 4,
+      "u": 1,
+      "center": [
+        317.87500000000006,
+        51.8
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 73,
+      "label": "Ctrl",
+      "row": 5,
+      "u": 1.25,
+      "center": [
+        34.50625,
+        32.75
+      ],
+      "size": [
+        22.5125,
+        17.75
+      ]
+    },
+    {
+      "index": 74,
+      "label": "Alt",
+      "row": 5,
+      "u": 1.25,
+      "center": [
+        58.31875,
+        32.75
+      ],
+      "size": [
+        22.5125,
+        17.75
+      ]
+    },
+    {
+      "index": 75,
+      "label": "Space",
+      "row": 5,
+      "u": 6.25,
+      "center": [
+        129.75625,
+        32.75
+      ],
+      "size": [
+        117.7625,
+        17.75
+      ]
+    },
+    {
+      "index": 76,
+      "label": "Alt",
+      "row": 5,
+      "u": 1.25,
+      "center": [
+        201.19375,
+        32.75
+      ],
+      "size": [
+        22.5125,
+        17.75
+      ]
+    },
+    {
+      "index": 77,
+      "label": "Menu",
+      "row": 5,
+      "u": 1,
+      "center": [
+        222.625,
+        32.75
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 78,
+      "label": "Ctrl",
+      "row": 5,
+      "u": 1,
+      "center": [
+        241.675,
+        32.75
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 79,
+      "label": "Fn",
+      "row": 5,
+      "u": 1,
+      "center": [
+        260.725,
+        32.75
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 80,
+      "label": "Left",
+      "row": 5,
+      "u": 1,
+      "center": [
+        279.77500000000003,
+        32.75
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 81,
+      "label": "Down",
+      "row": 5,
+      "u": 1,
+      "center": [
+        298.82500000000005,
+        32.75
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    },
+    {
+      "index": 82,
+      "label": "Right",
+      "row": 5,
+      "u": 1,
+      "center": [
+        317.87500000000006,
+        32.75
+      ],
+      "size": [
+        17.75,
+        17.75
+      ]
+    }
+  ],
+  "free_cable_length_mm": 2000.0,
+  "cable_outer_diameter_mm": 4.0,
+  "minimum_illustrated_bend_radius_mm": 25.0,
+  "keyboard_max_power_reservation_W": 0.4,
+  "matrix": "8 rows x 11 columns, 19 scan signals",
+  "interface": "PS/2 mini-DIN-6, 5 V open collector clock/data, pin1 data/pin3GND/pin4+5V/pin5clock/pins2&6NC",
+  "adapter_output_requirement": "regulated 9 V DC, 3 A, center-positive 5.5/2.1 mm barrel plug",
+  "adapter_max_body_mm": [
+    105,
+    60,
+    42
+  ],
+  "adapter_dc_cable_requirement": "2 m, 2 x 0.75 mm2 stranded conductors",
+  "assembly_limits": [
+    "Key stem flexure/snap retention, cap stability and dome force curve are unqualified.",
+    "Stabilizer wire, controller ASIC, membrane connector and mini-DIN plug are mechanical allocations.",
+    "Controller schematic, membrane conductor artwork and anti-ghosting policy are not released.",
+    "Mould draft, ejectors, runners, texture and production tolerances require final tool drawings.",
+    "External adapter is a purchased module envelope; no mains circuit or approvals are represented."
+  ],
+  "verification": {
+    "keyboard_export": {
+      "parts": 130,
+      "solids": 130,
+      "all_brep_valid": true,
+      "all_post_mesh_brep_valid": true,
+      "step_valid": true,
+      "step_solids": 130,
+      "volume_mm3": 539582.7598677902,
+      "step_volume_mm3": 539582.75986772,
+      "relative_volume_error": 1.3009763150854167e-13,
+      "source_sha256": "0f3a34cbfaff931a3842169c1573898002ecce406cc9e92ed06ec84bba81b17c"
+    },
+    "adapter_export": {
+      "parts": 10,
+      "solids": 10,
+      "all_brep_valid": true,
+      "all_post_mesh_brep_valid": true,
+      "step_valid": true,
+      "step_solids": 10,
+      "volume_mm3": 265253.23805680464,
+      "step_volume_mm3": 265253.2380568055,
+      "relative_volume_error": 3.2916277294041227e-15,
+      "source_sha256": "0f3a34cbfaff931a3842169c1573898002ecce406cc9e92ed06ec84bba81b17c"
+    }
+  }
+}

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="650" viewBox="0 0 1240 650">
+<defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto-start-reverse"><path d="M0 0L7 3.5L0 7Z" fill="#222"/></marker></defs>
+<rect width="1240" height="650" fill="white"/>
+<g font-family="Liberation Sans,Arial,sans-serif" fill="#222" font-size="18">
+<text x="50" y="35" font-size="23" font-weight="bold">Nominal dimensional envelopes</text>
+<text x="50" y="60">All dimensions in millimetres. Outlines represent envelopes, not moulded profiles.</text>
+<g stroke="#222" stroke-width="2" fill="none">
+<rect x="90" y="120" width="496" height="396" rx="16"/>
+<path d="M90 114H586" stroke-dasharray="7 5"/>
+<path d="M90 120V83M586 120V83M90 120H38M90 516H38M586 114H630M586 516H630"/>
+<g marker-start="url(#arrow)" marker-end="url(#arrow)">
+<path d="M90 90H586"/><path d="M48 120V516"/><path d="M620 114V516"/>
+</g>
+</g>
+<text x="338" y="83" text-anchor="middle">248 body width</text>
+<text x="27" y="318" text-anchor="middle" transform="rotate(-90 27 318)">198 body depth</text>
+<text x="641" y="315" text-anchor="middle" transform="rotate(-90 641 315)">201 occupied depth</text>
+<text x="338" y="549" text-anchor="middle" font-weight="bold">TOP ENVELOPE</text>
+<g transform="translate(70 0)">
+<g stroke="#222" stroke-width="2" fill="none">
+<rect x="694" y="261" width="396" height="125.6" rx="8"/>
+<rect x="730" y="386.6" width="32" height="8"/>
+<rect x="1018" y="386.6" width="32" height="8"/>
+<path d="M728 261V251.7H752V261M694 251.7H661M694 394.6H661M694 386.6V430M1090 386.6V430"/>
+<g marker-start="url(#arrow)" marker-end="url(#arrow)">
+<path d="M671 251.7V394.6"/><path d="M694 420H1090"/>
+</g>
+</g>
+<text x="650" y="324" text-anchor="middle" transform="rotate(-90 650 324)">71.45</text>
+<text x="892" y="448" text-anchor="middle">198 body depth</text>
+<text x="892" y="479" text-anchor="middle" font-weight="bold">SIDE ENVELOPE</text>
+</g>
+<text x="90" y="590">The occupied depth includes connector projections.</text>
+<text x="90" y="616">The height includes feet and the highest control; cartridges and external plugs are excluded.</text>
+</g></svg>

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 780" role="img" aria-labelledby="title desc">
+<title id="title">Candidate GFX readback snapshot memory</title>
+<desc id="desc">The GFX scheduler uses a shared 32-bit memory bus to read the video SRAM and write a distinct private snapshot SRAM pair. Cartridge and supervisor each have a one-mebibyte snapshot half and independent read positions. A sixteen-word FIFO prefetches from the selected snapshot. GX_READ requires both READY and readback DMA direction; FIFO occupancy does not select the request. This is an unimplemented physical candidate.</desc>
+<defs>
+ <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:22px}.title{font-size:32px;font-weight:bold}.head{font-size:25px;font-weight:bold}.small{font-size:19px}.chip{fill:#e4eff6;stroke:#294b68;stroke-width:2}.store{fill:#f8f2e8;stroke:#997031;stroke-width:2}.control{fill:#edf5ec;stroke:#537659;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#a)}.both{marker-start:url(#a)}</style>
+</defs>
+<rect width="1600" height="780" fill="white"/>
+<text x="48" y="50" class="title">GFX — readback and supervisor context</text>
+<text x="48" y="84" class="small">Physical candidate: the extra SRAMs and select signal are not present in the current board.</text>
+<rect x="45" y="155" width="335" height="190" rx="8" class="chip"/>
+<text x="212" y="194" text-anchor="middle" class="head">GFX scheduler</text>
+<text x="212" y="230" text-anchor="middle" class="small">Display, drawing and readback</text>
+<text x="212" y="264" text-anchor="middle" class="small">Read pixels; pack 2 per word</text>
+<text x="212" y="298" text-anchor="middle" class="small">Full copy precedes READY</text>
+<rect x="490" y="160" width="425" height="180" rx="8" class="control"/>
+<text x="702" y="201" text-anchor="middle" class="head">Shared 32-bit video bus</text>
+<text x="702" y="240" text-anchor="middle" class="small">Address, data and read/write controls</text>
+<text x="702" y="275" text-anchor="middle" class="small">Independent chip selects per SRAM pair</text>
+<path d="M380 250H490" class="line both"/>
+<rect x="1065" y="130" width="475" height="145" rx="8" class="store"/>
+<text x="1302" y="170" text-anchor="middle" class="head">Video SRAM · 2 MiB</text>
+<text x="1302" y="208" text-anchor="middle" class="small">Existing U30/U31 · shared VRAM</text>
+<text x="1302" y="241" text-anchor="middle" class="small">Display, rendering and readback source</text>
+<rect x="1065" y="345" width="475" height="230" rx="8" class="store"/>
+<text x="1302" y="386" text-anchor="middle" class="head">Private snapshot SRAM · 2 MiB</text>
+<text x="1302" y="422" text-anchor="middle" class="small">Proposed 2 × 512K × 16 devices</text>
+<text x="1302" y="459" text-anchor="middle" class="small">A18 = 0 · cartridge snapshot: 1 MiB</text>
+<text x="1302" y="493" text-anchor="middle" class="small">A18 = 1 · supervisor snapshot: 1 MiB</text>
+<text x="1302" y="535" text-anchor="middle" class="small">Separate chip select; never drive both pairs</text>
+<path d="M915 200H1065" class="line both"/>
+<path d="M915 300H975V460H1065" class="line both"/>
+<rect x="45" y="455" width="340" height="165" rx="8" class="chip"/>
+<text x="215" y="495" text-anchor="middle" class="head">Selected GPU context</text>
+<text x="215" y="530" text-anchor="middle" class="small">Read position · GPUREAD latch</text>
+<text x="215" y="565" text-anchor="middle" class="small">CPU / DMA read ownership</text>
+<path d="M212 345V455" class="line both"/>
+<rect x="490" y="435" width="425" height="190" rx="8" class="chip"/>
+<text x="702" y="474" text-anchor="middle" class="head">Readback port</text>
+<text x="702" y="510" text-anchor="middle" class="small">16-word prefetch · separate cursors</text>
+<text x="702" y="545" text-anchor="middle" class="small">Permitted GP0 read consumes one word</text>
+<text x="702" y="580" text-anchor="middle" class="small">GX_READ = READY AND direction 3</text>
+<path d="M385 535H490" class="line both"/>
+<path d="M702 340V435" class="line both"/>
+<path d="M702 625V663" class="line"/>
+<text x="720" y="657" class="small">GP0 reads by CPU or DMA</text>
+<text x="50" y="710" class="small">Snapshot storage preserves readback across supervisor VRAM writes. Timing, loading and board integration remain to be checked.</text>
+</svg>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+<title id="title">Keyboard socket front-aperture construction candidate</title>
+<desc id="desc">Front and side sketches of a proposed 15 millimetre round keyboard port opening. An 0.8 millimetre front lip is added outside the existing rectangular opening. The socket and its supporting board remain in their retained positions. The plug shoulder is represented only by a cylindrical space. Seating depth and strength are not established.</desc>
+<defs><marker id="ar" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#315169"/></marker><style>text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.title{font-size:32px;font-weight:700}.heading{font-size:24px;font-weight:700}.small{font-size:17px}.part{fill:#e8e7e1;stroke:#315169;stroke-width:3}.socket{fill:#e2edf2;stroke:#315169;stroke-width:2;stroke-dasharray:7 4}.line{fill:none;stroke:#315169;stroke-width:2}.dim{fill:none;stroke:#315169;stroke-width:2;marker-start:url(#ar);marker-end:url(#ar)}.callout{fill:none;stroke:#315169;stroke-width:2;marker-end:url(#ar)}</style></defs>
+<rect width="1200" height="700" fill="white"/><text x="55" y="55" class="title">Keyboard connection — front-aperture candidate</text>
+<text x="55" y="85" class="small">Local case-wall option; retained connector and keyboard-board positions. Diagram is not to scale.</text>
+<text x="85" y="155" class="heading">FRONT VIEW</text><text x="695" y="155" class="heading">SIDE VIEW</text>
+<!-- Relative front-view dimensions are 17 pixels/mm -->
+<rect x="125" y="205" width="280.5" height="280.5" class="part"/><circle cx="265.25" cy="344.4" r="127.5" fill="#fff" stroke="#315169" stroke-width="3"/>
+<rect x="144.25" y="233.05" width="242" height="222.7" class="socket" style="fill:none"/>
+<text x="420" y="254" class="small">Original socket body</text><text x="420" y="277" class="small">maximum envelope</text><path d="M415 270H391" class="callout"/>
+<path d="M137.75 523H392.75" class="dim"/><text x="265" y="553" text-anchor="middle">Ø15.0 opening</text>
+<path d="M230 216V194H320" class="line"/><text x="330" y="197" class="small">0.70 mm nominal minimum lip</text>
+<!-- side schematic: exterior is left; socket front Y=0 -->
+<rect x="855" y="222" width="235" height="250" class="socket"/><rect x="835" y="214" width="20" height="72" class="part"/><rect x="835" y="408" width="20" height="72" class="part"/>
+<rect x="700" y="307" width="155" height="80" fill="#eef4e6" stroke="#688356" stroke-width="2" stroke-dasharray="8 5"/>
+<text x="685" y="515" class="small">Plug-shoulder clearance model</text><text x="685" y="538" class="small">Ø14.4 through the lip only</text>
+<path d="M845 300V286" class="line"/><text x="860" y="296" class="small">Socket face at Y=0</text>
+<path d="M835 188H855" class="dim"/><text x="845" y="180" text-anchor="middle" class="small">0.8</text>
+<text x="705" y="265" class="small">Outside</text><text x="1030" y="265" class="small">Inside</text>
+<text x="55" y="625" class="small">Socket internals, plug boot and full insertion depth are not represented. Rim strength, manufacturing tolerances and</text><text x="55" y="651" class="small">actual mating require verification; this is not a validated mechanical interface.</text>
+</svg>

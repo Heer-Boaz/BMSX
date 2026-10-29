@@ -1,0 +1,47 @@
+{
+  "scope": "Steady reference-construction sensitivity, not operating limits or temperature qualification.",
+  "internal_heat_diagnostics_W": [10, 14, 18, 20, 22],
+  "room_temperature_examples_C": [25, 35],
+  "common_sink_heat_diagnostic_W": 5,
+  "post_patch_area_m2_each": 0.0015,
+  "base_air_exposed_reference_area_m2": 0.010,
+  "sink_to_roof_view_area_m2": 0.0072,
+  "sink_to_walls_view_area_m2": 0.0036,
+  "cartridges_installed": 2,
+  "cartridge_gap_ventilation_credit": false,
+  "air_conductivity_assumption_W_mK": 0.026,
+  "aluminium_conductivity_assumption_W_mK": 170,
+  "reference_profile": {
+    "inside_convection_W_m2K": 3,
+    "outside_convection_W_m2K": 3,
+    "underside_convection_W_m2K": 2,
+    "sink_effective_convection_area_m2": 0.040,
+    "sink_emissivity": 0.8,
+    "aluminium_emissivity": 0.1,
+    "plastic_emissivity": 0.9,
+    "plastic_conductivity_assumption_W_mK": 0.18,
+    "discharge_coefficient": 0.6,
+    "intake_free_fraction": 1,
+    "outlet_free_fraction": 1,
+    "post_contact_R_each_interface_K_W": 5,
+    "base_spreading_R_each_patch_K_W": 4,
+    "right_bridge_R_K_W": 4
+  },
+  "sensitivity_profiles": {
+    "higher_transfer": {"inside_convection_W_m2K": 5, "outside_convection_W_m2K": 5, "underside_convection_W_m2K": 3, "sink_effective_convection_area_m2": 0.055, "aluminium_emissivity": 0.8, "plastic_conductivity_assumption_W_mK": 0.25, "post_contact_R_each_interface_K_W": 1, "base_spreading_R_each_patch_K_W": 1, "right_bridge_R_K_W": 2},
+    "lower_transfer": {"inside_convection_W_m2K": 2, "underside_convection_W_m2K": 1.5, "sink_effective_convection_area_m2": 0.025, "sink_emissivity": 0.1, "plastic_conductivity_assumption_W_mK": 0.12, "discharge_coefficient": 0.4, "post_contact_R_each_interface_K_W": 20, "base_spreading_R_each_patch_K_W": 12, "right_bridge_R_K_W": 8},
+    "half_intake_obstructed": {"intake_free_fraction": 0.5},
+    "half_outlet_obstructed": {"outlet_free_fraction": 0.5},
+    "outlet_obstructed": {"outlet_free_fraction": 0}
+  },
+  "interpretation": [
+    "CORE is physically scoped against a PlayStation-class processor as an architectural assumption, not a verified implementation or a measured CPU wattage. The common 5 W heat input is a combined CORE/GFX diagnostic, not a Sony chip rating. The 10 W and 14 W total internal-heat cases are BMSX sensitivity examples, not derived from or identical to the consumption of any PlayStation model.",
+    "Heat loads and room examples are diagnostics, not measured consumption or permitted operating conditions.",
+    "ASIC package power, PVT and junction conditions remain unqualified; no universal junction or bulk-air limit is assigned.",
+    "Plastic conductivity and convection/emissivity/contact values are sensitivity assumptions, not selected material-grade properties.",
+    "The three aluminium regions and three inner/outer tray regions remain separate; no whole-enclosure isothermal boundary is imposed.",
+    "The aligned lower openings are series restrictions; no extra buoyancy credit is taken from the lower tray height.",
+    "Stationary gap conduction/radiation is a diagnostic local heat path; lateral gap circulation, local hotspots, cartridge heat return and detailed PCB/package heat paths are not resolved.",
+    "Old exposed-aluminium temperatures are not temperatures of the present plastic exterior."
+  ]
+}

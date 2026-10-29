@@ -1,0 +1,71 @@
+(footprint "CL10C102JB8NNNC_retained_0603"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(descr "Samsung CL10C102JB8NNNC; original project generic 0603 lands retained, not manufacturer-recommended lands.")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 0 -1.6 0)
+		(layer "F.SilkS")
+		(uuid "365e553f-b09c-406d-87ca-b27386c3ab82")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12))))
+	(property "Value" "1nF C0G"
+		(at 0 1.6 0)
+		(layer "F.Fab")
+		(uuid "3658ce4d-87a7-45da-a401-272c2881490c")
+		(effects
+			(font
+				(size 0.7 0.7)
+				(thickness 0.1))))
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "3ca74247-ac6d-405d-bf1c-4d231525a19f")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "b6659b15-0b57-40dd-ab5f-03b2154f5f67")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(zone_connect 2)
+	(attr smd)
+	(fp_rect
+		(start -1.5 -0.75)
+		(end 1.5 0.75)
+		(stroke
+			(width 0.05)
+			(type default))
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "bbff1a21-e914-4686-8e16-0d65ac8708b1"))
+	(fp_rect
+		(start -0.8 -0.4)
+		(end 0.8 0.4)
+		(stroke
+			(width 0.1)
+			(type default))
+		(fill no)
+		(layer "F.Fab")
+		(uuid "2f0b3a09-c5a1-405f-94e2-6472b5364591"))
+	(pad "1" smd rect
+		(at -0.8 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "054a94cf-1a18-4118-b3bd-da5de02e282e"))
+	(pad "2" smd rect
+		(at 0.8 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "397dbd05-e241-4b5d-b24d-78486cef7908"))
+	(embedded_fonts no))

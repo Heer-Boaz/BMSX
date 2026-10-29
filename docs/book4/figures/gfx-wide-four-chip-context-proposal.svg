@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1030" role="img" aria-labelledby="title desc">
+<title id="title">Wide video memory in the four-device console: qualitative proposal</title>
+<desc id="desc">A qualitative grouping, not a physical placement or scale drawing. CORE and GFX are grouped near each other with a proposed shared passive spreader; the APU and firmware bridge remain elsewhere on the board. GFX and INPUT use a proposed shared memory service connecting four video SRAMs and the existing proposed two-device snapshot bank. Two cartridge sockets remain below the GFX group in this schematic grouping. Keyboard and four pad ports connect to INPUT. Rear video and audio connect through their respective analogue circuits. The four video SRAMs include two top and two underside positions in one explored option; their true footprints, spacings, pins, thermal and mechanical fit are not established.</desc>
+<defs>
+<style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:19px}.title{font-size:30px;font-weight:bold}.heading{font-size:23px;font-weight:bold}.small{font-size:17px}.tiny{font-size:15px}.board{fill:#f2f7f2;stroke:#477053;stroke-width:2.5}.chip{fill:#e2edf5;stroke:#315e7d;stroke-width:2}.candidate{fill:#fff6e5;stroke:#a46d20;stroke-width:2;stroke-dasharray:8 5}.system{fill:#f3f5f6;stroke:#6a7b84;stroke-width:2}.cooler{fill:none;stroke:#579cb0;stroke-width:4;stroke-dasharray:12 7}.logical{fill:none;stroke:#315e7d;stroke-width:3}.note{fill:#fafbfc;stroke:#bec9ce;stroke-width:1.5}.rule{stroke:#c6d1d5;stroke-width:1.5}
+</style>
+</defs>
+<rect width="1600" height="1030" fill="white"/>
+<text x="45" y="48" class="title">Four-device console with wide video memory</text>
+<text x="45" y="82" class="small">Alternative integration proposal · qualitative groups, not to scale or a physical fit drawing</text>
+
+<!-- Board outline provides context only; groups are not footprints or reserved areas. -->
+<rect x="45" y="115" width="1060" height="650" rx="20" class="board"/>
+<text x="73" y="151" class="heading">Mainboard context</text>
+<text x="73" y="177" class="tiny">Existing nominal board: 220 × 150 mm · other components omitted</text>
+
+<!-- Spreader is only a functional grouping and not a representation of its actual outline. -->
+<rect x="170" y="220" width="520" height="190" rx="30" class="cooler"/>
+<text x="430" y="246" text-anchor="middle" class="small">Proposed passive spreader · outline illustrative</text>
+<rect x="205" y="265" width="190" height="115" rx="8" class="chip"/>
+<text x="300" y="308" text-anchor="middle" class="heading">U1 CORE</text>
+<text x="300" y="339" text-anchor="middle" class="small">CPU · DMA · GEO</text>
+<rect x="455" y="265" width="205" height="115" rx="8" class="candidate"/>
+<text x="557" y="307" text-anchor="middle" class="heading">U2 GFX</text>
+<text x="557" y="337" text-anchor="middle" class="small">Display · INPUT</text>
+<path d="M395 323H455" class="logical"/>
+<text x="427" y="310" text-anchor="middle" class="tiny">system</text>
+
+<rect x="755" y="220" width="300" height="140" rx="8" class="candidate"/>
+<text x="905" y="254" text-anchor="middle" class="heading">Video SRAM · 2 MiB</text>
+<text x="905" y="286" text-anchor="middle" class="small">4 × 256K × 16 · 64-bit</text>
+<text x="905" y="315" text-anchor="middle" class="tiny">One study: two above, two below PCB</text>
+<path d="M660 295H755" class="logical"/>
+<rect x="755" y="390" width="300" height="115" rx="8" class="candidate"/>
+<text x="905" y="424" text-anchor="middle" class="heading">Snapshot SRAM · 2 MiB</text>
+<text x="905" y="454" text-anchor="middle" class="small">U152 / U153 · 32-bit</text>
+<path d="M660 349H707V447H755" class="logical"/>
+
+<rect x="88" y="475" width="180" height="92" rx="8" class="chip"/>
+<text x="178" y="512" text-anchor="middle" class="heading">U7 firmware</text>
+<text x="178" y="541" text-anchor="middle" class="small">System ROM bridge</text>
+<rect x="300" y="475" width="180" height="92" rx="8" class="chip"/>
+<text x="390" y="512" text-anchor="middle" class="heading">U4 APU</text>
+<text x="390" y="541" text-anchor="middle" class="small">Sound · sample RAM</text>
+<rect x="550" y="560" width="365" height="48" rx="6" class="system"/>
+<text x="732" y="591" text-anchor="middle" class="small">Cartridge socket 1</text>
+<rect x="550" y="625" width="365" height="48" rx="6" class="system"/>
+<text x="732" y="656" text-anchor="middle" class="small">Cartridge socket 2</text>
+<text x="75" y="715" class="small">Grouping retains the four-chip and two-cartridge arrangement;</text>
+<text x="75" y="740" class="small">the boxes and connectors are not footprints or clearances.</text>
+
+<!-- Exterior interfaces shown as functional relationships, not mapped locations. -->
+<rect x="1140" y="115" width="415" height="650" rx="15" class="note"/>
+<text x="1165" y="154" class="heading">Console interfaces</text>
+<line x1="1165" y1="174" x2="1530" y2="174" class="rule"/>
+<text x="1165" y="214" class="small">Front</text>
+<text x="1165" y="246" class="small">4 pad sockets + keyboard socket</text>
+<text x="1165" y="274" class="tiny">Proposed INPUT function in U2</text>
+<line x1="1165" y1="306" x2="1530" y2="306" class="rule"/>
+<text x="1165" y="346" class="small">Rear</text>
+<text x="1165" y="378" class="small">SCART video/audio + DC input</text>
+<text x="1165" y="406" class="tiny">Video and audio via analogue circuits</text>
+<line x1="1165" y1="438" x2="1530" y2="438" class="rule"/>
+<text x="1165" y="478" class="small">Upper cover</text>
+<text x="1165" y="510" class="small">Two cartridge openings with doors</text>
+<text x="1165" y="538" class="tiny">Internal guides and seating frame</text>
+<line x1="1165" y1="570" x2="1530" y2="570" class="rule"/>
+<text x="1165" y="610" class="small">Cooling</text>
+<text x="1165" y="642" class="small">Passive · no fan</text>
+<text x="1165" y="670" class="tiny">Spreader contact and heat loads open</text>
+
+<text x="45" y="818" class="small">Amber dashed: alternative GFX, 64-bit video bank and proposed snapshot bank; U2 pinout is not assigned.</text>
+<text x="45" y="853" class="small">GFX selects one bank per memory-service turn; the lower 32 data lines are shared, not independent ports.</text>
+<text x="45" y="888" class="small">No footprint, connector clearance, cooler fit, PCB integration, thermal performance or timing is established by this diagram.</text>
+<text x="45" y="923" class="small">The two-on-top/two-underneath distribution is an explored possibility, not a committed placement.</text>
+<text x="45" y="958" class="small">For the investigated projected positions and TP4 conflict, see the separate placement study.</text>
+</svg>

@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1040" role="img" aria-labelledby="title desc">
+<title id="title">BMSX functional system overview</title>
+<desc id="desc">Four-device construction proposal showing CORE, GFX, APU and firmware bridge, their main local memories, shared system bus, cartridge sockets, keyboard and four accessory ports, audio-video output and regulated power. INPUT in GFX is a proposed integration. The diagram omits private construction memories.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:24px}.title{font-size:34px;font-weight:700}.head{font-size:27px;font-weight:700}.small{font-size:20px}.note{font-size:19px}.candidate{fill:#885b14}.mem{fill:#f3f6f7;stroke:#294b68;stroke-width:2.5}.chip{fill:#e3eff5;stroke:#294b68;stroke-width:3}.port{fill:#fff;stroke:#9bb0bd;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:3;marker-start:url(#arrow);marker-end:url(#arrow)}
+ </style>
+</defs>
+<rect width="1600" height="1040" fill="#fff"/>
+<text x="60" y="55" class="title">BMSX functional system overview</text>
+<text x="60" y="90" class="small">Four-device construction proposal · public storage paths · external connections</text>
+<!-- Visible memory paths; construction-only memory proposals are in the detailed figure. -->
+<rect x="50" y="140" width="335" height="100" rx="9" class="mem"/>
+<text x="217.5" y="180" text-anchor="middle" class="head">Main RAM</text><text x="217.5" y="213" text-anchor="middle" class="small">4 MiB</text>
+<rect x="435" y="140" width="335" height="100" rx="9" class="mem"/>
+<text x="602.5" y="180" text-anchor="middle" class="head">Video memory</text><text x="602.5" y="213" text-anchor="middle" class="small">2 MiB</text>
+<rect x="820" y="140" width="335" height="100" rx="9" class="mem"/>
+<text x="987.5" y="180" text-anchor="middle" class="head">Sample memory</text><text x="987.5" y="213" text-anchor="middle" class="small">512 KiB</text>
+<rect x="1205" y="140" width="335" height="100" rx="9" class="mem"/>
+<text x="1372.5" y="180" text-anchor="middle" class="head">System firmware</text><text x="1372.5" y="213" text-anchor="middle" class="small">8 MiB flash</text>
+<path d="M217.5 240V300" class="line"/><path d="M602.5 240V300" class="line"/>
+<path d="M987.5 240V300" class="line"/><path d="M1372.5 240V300" class="line"/>
+<!-- Main functional devices -->
+<rect x="50" y="300" width="335" height="190" rx="10" class="chip"/>
+<text x="217.5" y="342" text-anchor="middle" class="head">U1 · CORE</text>
+<text x="217.5" y="381" text-anchor="middle" class="small">BLua32 execution</text>
+<text x="217.5" y="415" text-anchor="middle" class="small">GTE · GEO · IMGDEC · DMA</text>
+<text x="217.5" y="449" text-anchor="middle" class="small">Memory and cartridge control</text>
+<rect x="435" y="300" width="335" height="190" rx="10" class="chip"/>
+<text x="602.5" y="342" text-anchor="middle" class="head">U2 · GFX</text>
+<text x="602.5" y="381" text-anchor="middle" class="small">Drawing and display</text>
+<text x="602.5" y="418" text-anchor="middle" class="small candidate">INPUT in GFX: proposed</text>
+<text x="602.5" y="449" text-anchor="middle" class="small">Keyboard and accessory data</text>
+<rect x="820" y="300" width="335" height="190" rx="10" class="chip"/>
+<text x="987.5" y="342" text-anchor="middle" class="head">U4 · APU</text>
+<text x="987.5" y="381" text-anchor="middle" class="small">Sample playback</text>
+<text x="987.5" y="415" text-anchor="middle" class="small">Voices and stereo mixing</text>
+<rect x="1205" y="300" width="335" height="190" rx="10" class="chip"/>
+<text x="1372.5" y="342" text-anchor="middle" class="head">U7 · ROM bridge</text>
+<text x="1372.5" y="381" text-anchor="middle" class="small">Firmware flash access</text>
+<path d="M217.5 490V560 M602.5 490V560 M987.5 490V560 M1372.5 490V560" stroke="#294b68" stroke-width="4" fill="none"/>
+<rect x="190" y="555" width="1210" height="10" rx="5" fill="#294b68"/>
+<text x="800" y="605" text-anchor="middle" class="head">Shared system bus</text>
+<!-- External functional paths, not the physical signal routing -->
+<text x="60" y="674" class="head">External paths</text>
+<rect x="60" y="698" width="720" height="74" rx="8" class="port"/>
+<text x="85" y="744" class="small">Two cartridge sockets ↔ U1 cartridge controller</text>
+<rect x="820" y="698" width="720" height="74" rx="8" class="port"/>
+<text x="845" y="744" class="small">U2 display → video DAC / sync → SCART</text>
+<rect x="60" y="787" width="720" height="74" rx="8" class="port"/>
+<text x="85" y="833" class="small">Keyboard + four accessory ports ↔ U2 INPUT</text>
+<rect x="820" y="787" width="720" height="74" rx="8" class="port"/>
+<text x="845" y="833" class="small">U4 mixer → audio DAC → SCART</text>
+<rect x="60" y="876" width="1480" height="63" rx="8" class="port"/>
+<text x="85" y="916" class="small">9 V DC input → input protection and regulators → internal board and accessory supplies</text>
+<text x="60" y="993" class="note">Functional paths, not copper routing. The detailed diagram identifies proposed private memories and INPUT integration.</text>
+</svg>

@@ -1,0 +1,31 @@
+{
+  "scope": "Separate nominal nine-position cable-plug construction concept; not a selected terminal, finished contact, cable specification, or manufacturer fitting approval.",
+  "axis": "Y, from cable toward console; dimensions in mm",
+  "nose_cavity_radius_mm": 0.55,
+  "rear_cavity_radius_mm": 0.8,
+  "rear_cavity_axis_y_mm": [-12.4, -1.85],
+  "nose_cavity_axis_y_mm": [-1.85, 4.8],
+  "terminal_axis_y_mm": [-5.0, 4.5],
+  "terminal_outer_radius_mm": 0.5,
+  "terminal_bore_radius_mm": 0.31,
+  "terminal_rear_radius_mm": 0.65,
+  "terminal_rear_axis_y_mm": [-5.0, -3.1],
+  "terminal_collar_radius_mm": 0.75,
+  "terminal_collar_axis_y_mm": [-2.5, -1.9],
+  "retainer_slot_bounds_mm": [52.5, -3.1, 15.9, 67.5, -2.5, 24.8],
+  "retainer_bounds_mm": [52.55, -3.05, 15.95, 67.45, -2.55, 24.75],
+  "retainer_channel_radius_mm": 0.55,
+  "boot_centre_xz_mm": [60.0, 20.2],
+  "boot_axis_y_mm": [-18.4, -12.4],
+  "boot_outer_radius_mm": 3.2,
+  "boot_inner_radius_mm": 2.0,
+  "cable_axis_y_mm": [-25.4, -12.4],
+  "cable_radius_mm": 2.0,
+  "limitations": [
+    "Nose web 0.30 mm is a nominal geometric hypothesis, not evidence of mouldability, strength or tolerance.",
+    "Terminal solids are annular envelopes without a modelled slit, spring deflection, crimp or electrical contact; they do not represent a selected manufacturer's part.",
+    "The retainer and cable boot show the arrangement only; latch, cable clamping, electrical performance and production assembly are not qualified.",
+    "The dimensions and clearances are nominal; no insertion force, wear, fault-current, cable-strain or tolerance qualification is implied."
+  ],
+  "reference": "https://www.te.com/en/product-60-0463-013-P00.html"
+}

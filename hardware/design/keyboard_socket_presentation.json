@@ -1,0 +1,20 @@
+{
+  "scope": "Illustrative MD-60S socket face only. The existing occupancy solid and PCB own the mechanical design; this presentation is not a manufacturer model, a contact model or a mating qualification.",
+  "units": "mm; console X right, Y rear, Z up",
+  "face_centre_xz_mm": [24.0, 23.55],
+  "nominal_aperture_diameter_mm": 8.0,
+  "face_y_mm": [-0.20, 0.0],
+  "notch_bounds_mm": [23.5, -0.21, 26.95, 24.5, 0.01, 27.65],
+  "contact_indication_size_mm": [0.70, 0.08, 0.70],
+  "contact_indication_y_mm": -0.19,
+  "contact_centres_xz_mm": {
+    "1": [25.4, 21.75],
+    "2": [22.6, 21.75],
+    "3": [27.0, 23.55],
+    "4": [21.0, 23.55],
+    "5": [26.4, 25.35],
+    "6": [21.6, 25.35]
+  },
+  "interpretation": "The face diameter, key orientation and numbered contact pattern follow the manufacturer's front drawing. Individual contact positions and marker sizes are graphical approximations, not dimensioned electrical contact or mating geometry.",
+  "reference": "https://www.sameskydevices.com/product/resource/md-s.pdf, page 3, MD-60S front view"
+}

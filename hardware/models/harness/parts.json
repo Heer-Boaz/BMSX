@@ -1,0 +1,358 @@
+{
+  "scope": "Cable mating components for the main/front, keyboard, A/V and DC assemblies. Supplier physical dimensions and termination conditions only; native KiCad contacts and the service-manual connector tables own electrical destinations.",
+  "parts": {
+    "39128": {
+      "manufacturer": "Belden",
+      "description": "Existing individual lead wire for front/keyboard looms; cut length belongs to the assembly route",
+      "wire_AWG": 28,
+      "stranding": "7x36 tinned copper",
+      "insulation": "PPO, AWM 11028",
+      "diameter_nominal_mm": 0.9906,
+      "diameter_scope": "Manufacturer nominal, not an OD tolerance. Existing incoming measured maximum remains 1.1 mm.",
+      "minimum_bend_radius_mm": 4.064,
+      "datasheet": "https://catalog.belden.com/techdata/EN/39128_techdata.pdf"
+    },
+    "61201623021": {
+      "manufacturer": "Wurth Elektronik",
+      "description": "16-way female IDC socket with strain relief",
+      "quantity_in_scope": 1,
+      "used_at": [
+        "MAIN J500"
+      ],
+      "mating_header": "61201621621",
+      "positions": 16,
+      "pitch_mm": 2.54,
+      "row_pitch_mm": 2.54,
+      "length_nominal_mm": 25.0,
+      "length_tolerance_mm": 0.15,
+      "contact_span_nominal_mm": 17.78,
+      "contact_span_tolerance_mm": 0.15,
+      "current_rating_A_per_contact": 1,
+      "retention": "Polarising projection and strain-relief bar; no ejector latch on the fitted header.",
+      "ribbon_part": "63911615521",
+      "IDC_tool": "600612282804",
+      "complete_mate_scope": "Catalog explicitly lists the fitted header as a mate. Exact seated-height and ribbon-exit datums have not been established from the loose socket drawing; existing receiving allocation is not a supplier solid.",
+      "product": "https://www.we-online.com/en/components/products/WTB_WR_BHD_BOX_HEADER_2_54MM_FEMALE_CABLE_SIDE",
+      "drawing": "https://www.we-online.com/components/products/datasheet/61201623021.pdf"
+    },
+    "63911615521": {
+      "manufacturer": "Wurth Elektronik",
+      "description": "16-conductor 1.27 mm-pitch ribbon cable; cut length belongs to the assembly route",
+      "positions": 16,
+      "wire_AWG": 28,
+      "pitch_mm": 1.27,
+      "width_nominal_mm": 20.32,
+      "width_tolerance_mm": 0.3,
+      "thickness_nominal_mm": 0.9,
+      "thickness_tolerance_mm": 0.1,
+      "orientation": "Marked edge to IDC contact 1; verify mating-face numbering before pressing.",
+      "datasheet": "https://www.we-online.com/components/products/datasheet/63911615521.pdf"
+    },
+    "39-01-2025": {
+      "manufacturer": "Molex",
+      "description": "Mini-Fit Jr two-circuit dual-row receptacle housing, UL94V-0 nylon",
+      "quantity_in_scope": 1,
+      "used_at": [
+        "MAIN J61"
+      ],
+      "mating_header": "39-30-0020",
+      "crimp_contact": "39-00-0039 loose or 39-00-0038 reel; two contacts total, according to the selected process",
+      "positions": 2,
+      "pitch_mm": 4.2,
+      "housing_length_nominal_mm": 19.6,
+      "housing_width_two_circuit_nominal_mm": 5.4,
+      "contact_axis_to_body_edge_nominal_mm": 2.7,
+      "housing_dimension_drawing": "https://datasheet.octopart.com/39-01-2060-Molex-datasheet-14711155.pdf",
+      "housing_dimension_scope": "Molex SD-5557-003 J4, sheets 1\u20132 explicitly include 39-01-2025. Nominal housing length and two-circuit width are not a full mated housing solid or tolerance stack.",
+      "complete_mate_height_above_PCB_reference_mm": 13.8,
+      "complete_mate_length_reference_mm": 23.5,
+      "mating_header_drawing": "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/556/5569/039300020_sd.pdf",
+      "header_body_height_nominal_mm": 9.6,
+      "header_body_standoff_nominal_mm": 0.4,
+      "upper_header_contact_below_body_top_nominal_mm": 2.5,
+      "header_contact_centres_above_PCB_nominal_mm": {
+        "1": 3.3,
+        "2": 7.5
+      },
+      "header_contact_axis_scope": "Nominal mating-contact axes derived from the dimensioned header front view, not the complete-mate roof or a gathered loom endpoint. Exact wire-exit plane and terminal float remain separate dimensions.",
+      "header_axis_drawing": "https://www.official.cz/static/_dokumenty/9/7/1/3/039300020_sd.pdf",
+      "header_axis_drawing_revision": "Original Molex SDA-5569-NA2*-*, M9, 2016-12-06; current 55690002-SD A2 adds the complete-mated reference view.",
+      "retention": "Polarised to mating header, positive housing latch. Leave wire dressing relaxed so contacts float in their pockets.",
+      "complete_mate_scope": "5557 housing to 5569 header compatibility is established by the maker drawing. No exact whole-mate wire-exit axis is inferred from the existing receiving allocation.",
+      "product": "https://www.molex.com/en-us/products/part-detail/39012025",
+      "drawing": "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/555/5557/039012025_sd.pdf"
+    },
+    "39-00-0039": {
+      "manufacturer": "Molex",
+      "description": "Loose Mini-Fit Jr female brass contact with tin plating",
+      "quantity_in_scope": 2,
+      "wire_AWG_range": [
+        18,
+        24
+      ],
+      "wire_cross_section_mm2_range": [
+        0.2,
+        0.8
+      ],
+      "wire_insulation_diameter_mm": [
+        1.3,
+        3.1
+      ],
+      "hand_tool": "63819-0900",
+      "hand_tool_strip_length_mm": [
+        3.0,
+        3.3
+      ],
+      "hand_tool_18_AWG_crimp_height_mm": [
+        1.0,
+        1.1
+      ],
+      "hand_tool_18_AWG_minimum_pull_force_N": 88,
+      "hand_tool_0_5_mm2_profile": "20-24 AWG",
+      "hand_tool_0_5_mm2_recommended_insulation_OD_mm": [
+        1.7,
+        2.3
+      ],
+      "hand_tool_scope": "For 63819-0900 and 20-24 AWG profile, 1.70\u20132.30 mm insulation is recommended to achieve IPC/WHMA-A-620 Class 2; this differs from the terminal maximum of 3.10 mm. Conductor-crimp height is a reference; pull-force testing excludes insulation grip.",
+      "hand_tool_0_5_mm2_crimp_height_mm": [
+        0.83,
+        0.93
+      ],
+      "hand_tool_0_5_mm2_minimum_pull_force_N": 58.7,
+      "current_rating_A_per_contact": 9,
+      "current_scope": "Component catalog maximum, not a continuous console or assembled harness rating.",
+      "product": "https://www.molex.com/en-us/products/part-detail/39000039",
+      "drawing": "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/555/5556/039000038_sd.pdf",
+      "tool_specification": "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/applicationtoolingspecificationpdf/638/63819/ATS-638190900-001.pdf"
+    },
+    "39-00-0038": {
+      "manufacturer": "Molex",
+      "description": "Mini-Fit Jr tin-plated female contact on reel; alternate packaging of 39-00-0039 for automatic or semi-automatic applicator",
+      "selection": "Process alternative to 39-00-0039; two contacts total, not additional contacts",
+      "wire_AWG_range": [
+        18,
+        24
+      ],
+      "wire_cross_section_mm2_range": [
+        0.2,
+        0.8
+      ],
+      "wire_insulation_diameter_mm": [
+        1.3,
+        3.1
+      ],
+      "applicator": "63902-4900",
+      "applicator_0_5_mm2_recommended_insulation_OD_mm": [
+        2.3,
+        2.6
+      ],
+      "applicator_strip_length_mm": [
+        3.0,
+        3.5
+      ],
+      "applicator_0_5_mm2_conductor_crimp_height_guideline_mm": [
+        0.95,
+        1.04
+      ],
+      "applicator_0_5_mm2_minimum_pull_force_N": 58.7,
+      "applicator_scope": "Use reel contact 39-00-0038 with the maker-listed 63902-4900 for measured 2.30\u20132.50 mm insulation, installed in a compatible press. The cited crimp dimensions are maker guidelines and the insulation range is an IPC-A-620 recommendation, not proof that a particular assembly passes. Verify crimp setup, tensile test without insulation support, retention and the finished loom.",
+      "product": "https://www.molex.com/en-us/products/part-detail/39000038",
+      "drawing": "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/555/5556/039000038_sd.pdf",
+      "tool_specification": "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/applicationtoolingspecificationpdf/639/63902/ATS-639024900-001.pdf"
+    },
+    "4510041": {
+      "manufacturer": "LAPP",
+      "description": "H05V-K 0.5 mm2 red stranded PVC lead wire for RAW9",
+      "selection": "SELECTED_FOR_R10_ROUTE",
+      "used_at": [
+        "DC RAW9"
+      ],
+      "wire_cross_section_mm2": 0.5,
+      "conductor": "Bare copper, IEC 60228 class 5",
+      "insulation": "PVC",
+      "colour": "red",
+      "diameter_minimum_mm": 2.1,
+      "diameter_maximum_mm": 2.5,
+      "minimum_bend_radius_diameters": 4,
+      "minimum_bend_radius_at_maximum_OD_mm": 10,
+      "bend_scope": "Fixed installation. The separate 2-diameter careful-bending allowance is not used for the installed route.",
+      "fixed_installation_conductor_temperature_C": [
+        -40,
+        70
+      ],
+      "installation_temperature_minimum_C": 5,
+      "maximum_conductor_resistance_20C_ohm_per_km": 39,
+      "current_scope": "Current loading depends on installation and VDE 0298-4; no numerical continuous console or assembled-loom rating is assigned here.",
+      "product": "https://products.lappgroup.com/online-catalogue/power-and-control-cables/control-cabinet-single-cores/various-applications/h05v-k.html",
+      "datasheet": "https://api-shop.lapp.com/occ/v2/us/products/export/specification-sheet-file/4510041?curr=USD&lang=en_US",
+      "conductor_resistance_source": "https://camunacavi.lappgroup.com/fileadmin/DAM/Lapp_Camunacavi/catalog_pages_1_17/T11_Conductor_resistances_and_strand_structure.pdf"
+    },
+    "4510011": {
+      "manufacturer": "LAPP",
+      "description": "H05V-K 0.5 mm2 black stranded PVC lead wire for return",
+      "selection": "SELECTED_FOR_R10_ROUTE",
+      "used_at": [
+        "DC GND"
+      ],
+      "wire_cross_section_mm2": 0.5,
+      "conductor": "Bare copper, IEC 60228 class 5",
+      "insulation": "PVC",
+      "colour": "black",
+      "diameter_minimum_mm": 2.1,
+      "diameter_maximum_mm": 2.5,
+      "minimum_bend_radius_diameters": 4,
+      "minimum_bend_radius_at_maximum_OD_mm": 10,
+      "bend_scope": "Fixed installation. The separate 2-diameter careful-bending allowance is not used for the installed route.",
+      "fixed_installation_conductor_temperature_C": [
+        -40,
+        70
+      ],
+      "installation_temperature_minimum_C": 5,
+      "maximum_conductor_resistance_20C_ohm_per_km": 39,
+      "current_scope": "Current loading depends on installation and VDE 0298-4; no numerical continuous console or assembled-loom rating is assigned here.",
+      "product": "https://products.lappgroup.com/online-catalogue/power-and-control-cables/control-cabinet-single-cores/various-applications/h05v-k.html",
+      "datasheet": "https://api-shop.lapp.com/occ/v2/us/products/export/specification-sheet-file/4510011?curr=USD&lang=en_US",
+      "conductor_resistance_source": "https://camunacavi.lappgroup.com/fileadmin/DAM/Lapp_Camunacavi/catalog_pages_1_17/T11_Conductor_resistances_and_strand_structure.pdf"
+    },
+    "PHR-4": {
+      "manufacturer": "JST",
+      "description": "Polarised 1x4 PH crimp receptacle housing",
+      "quantity_in_scope": 2,
+      "used_at": [
+        "MAIN J301",
+        "KEYBOARD J2"
+      ],
+      "mating_header": "B4B-PH-K-S",
+      "crimp_contact": "SPH-002T-P0.5S",
+      "positions": 4,
+      "pitch_mm": 2.0,
+      "mated_height_nominal_mm": 8.0,
+      "retention": "Polarised friction-lock housing; each crimp contact has a retaining lance.",
+      "datasheet": "https://www.jst-mfg.com/product/pdf/eng/ePH.pdf",
+      "dimensional_scope": "8 mm series mounting-height reference, not a maximum tolerance or wire-exit datum."
+    },
+    "SPH-002T-P0.5S": {
+      "manufacturer": "JST",
+      "description": "PH crimp receptacle contact, tin plated, reel",
+      "quantity_in_scope": 8,
+      "wire_AWG_range": [
+        24,
+        30
+      ],
+      "wire_insulation_diameter_mm": [
+        0.8,
+        1.5
+      ],
+      "hand_tool": "WC-240 with BPH-002T-P0.5S side-feed die",
+      "datasheet": "https://www.jst-mfg.com/product/pdf/eng/ePH.pdf",
+      "tooling": "https://media.digikey.com/pdf/Data%20Sheets/JST%20PDFs/Hand%20and%20Crimping%20Tools.pdf"
+    },
+    "PHDR-20VS": {
+      "manufacturer": "JST",
+      "description": "Polarised 20-position two-row crimp housing",
+      "quantity_in_scope": 2,
+      "used_at": [
+        "MAIN J300",
+        "FRONT J5"
+      ],
+      "mating_header": "B20B-PHDSS",
+      "positions": 20,
+      "pitch_mm": 2.0,
+      "mated_height_nominal_mm": 8.8,
+      "product": "https://www.jst-mfg.com/product/pdf/eng/ePHD.pdf"
+    },
+    "SPHD-002T-P0.5": {
+      "manufacturer": "JST",
+      "description": "Strip crimp contact for AWG28-24 signal wires",
+      "quantity_in_scope": 26,
+      "wire_AWG_range": [
+        24,
+        28
+      ],
+      "wire_insulation_diameter_mm": [
+        0.9,
+        1.5
+      ],
+      "product": "https://www.jst-mfg.com/product/pdf/eng/ePHD.pdf"
+    },
+    "SPHD-001T-P0.5": {
+      "manufacturer": "JST",
+      "description": "Strip crimp contact for AWG26-22 supply and return wires",
+      "quantity_in_scope": 14,
+      "wire_AWG_range": [
+        22,
+        26
+      ],
+      "wire_insulation_diameter_mm": [
+        1.0,
+        1.5
+      ],
+      "product": "https://www.jst-mfg.com/product/pdf/eng/ePHD.pdf"
+    },
+    "39122": {
+      "manufacturer": "Belden",
+      "description": "AWG22 individual supply and return lead; length belongs to assembly route",
+      "wire_AWG": 22,
+      "diameter_nominal_mm": 1.3462,
+      "minimum_bend_radius_mm": 5.588,
+      "datasheet": "https://catalog.belden.com/techdata/EN/39122_techdata.pdf"
+    }
+  },
+  "DC_precrimped_alternative": {
+    "status": "CANDIDATE_NOT_QUALIFIED",
+    "description": "Molex factory-crimped Mini-Fit Jr 5556 female-to-pigtail leads in the same 5557 housing; not substituted for the selected LAPP harness.",
+    "red_MPN": "2153412102",
+    "black_MPN": "2153411102",
+    "wire_AWG": 20,
+    "wire_style": "UL 1015",
+    "length_mm": [
+      145,
+      155
+    ],
+    "length_scope": "Drawing length L is 150 +/- 5 mm over the lead assembly; it is not a measured seated wire-exit-to-jack distance.",
+    "pigtail_finish": "Molex drawing specifies free end stripped, twisted and tinned over 5 +/- 1 mm, maximum tinning diameter 1.25 mm; cutting to length requires re-establishing the jack termination.",
+    "housing_compatibility": "Molex lists the Mini-Fit Jr 5557 receptacle family as a mating housing for these leads. Confirm contacts seat and latch in the specific 39-01-2025 housing.",
+    "qualification_scope": "Factory crimp avoids the selected hand-tool insulation-diameter issue but does not prove the jack solder joint or the completed loom. Obtain the actual wire's maximum OD, bend radius, resistance, conductor and insulation temperature rating, final contact float, route clearance, cut length and physical assembly before substitution. A nominal 20 AWG designation alone does not establish these properties.",
+    "red_product": "https://www.molex.com/en-us/products/part-detail/2153412102",
+    "black_product": "https://www.molex.com/en-us/products/part-detail/2153411102",
+    "drawing": "https://www.molex.com/content/dam/molex/molex-dot-com/products/automated/en-us/salesdrawingpdf/215/215341/2153411102_sd.pdf"
+  },
+  "DC_hookup_wire_alternative": {
+    "status": "CANDIDATE_NOT_QUALIFIED",
+    "manufacturer": "Alpha Wire",
+    "family_MPN": "892007",
+    "red_MPN": "892007 RD005",
+    "black_MPN": "892007 BK005",
+    "description": "20 AWG (7/28) stranded tinned copper hook-up wire, PVC insulation; 100 ft reels, red and black.",
+    "wire_AWG": 20,
+    "conductor_cross_section_nominal_mm2": 0.56,
+    "insulation_OD_in": [
+      0.068,
+      0.072
+    ],
+    "insulation_OD_mm": [
+      1.7272,
+      1.8288
+    ],
+    "tool_recommended_insulation_OD_mm": [
+      1.7,
+      2.3
+    ],
+    "minimum_bend_radius_diameters": 10,
+    "minimum_bend_radius_at_maximum_OD_mm": 18.288,
+    "existing_route_minimum_radius_mm": 10,
+    "conductor_resistance_nominal_20C_ohm_per_km": 33.13648293963254,
+    "resistance_scope": "10.1 ohm per 1000 ft nominal for engineering use only, not a maximum conductor resistance.",
+    "route_screen": "The complete published diameter tolerance falls inside the selected hand tool's 20\u201324 AWG recommended insulation range. The existing R10 path violates this wire's 10-diameter bend requirement, so it cannot be substituted into the selected route. One exploratory R18.288 path intersected modeled shell, a fixing screw and a J302 allocation, and the two wire solids intersected. This rejects that candidate path only; it is not a proof that all compliant paths are impossible. The actual supplier geometry, connector float, wire departure, strain relief and physical crimp require qualification.",
+    "power_scope": "The present 5 A design basis is not an established continuous-current rating of this wire, tool, connector, solder joint or finished loom; application and temperature must be qualified.",
+    "availability_scope": "Maker lists red RD005 and black BK005 variants. Distributor listings do not confirm an available order or lot.",
+    "product": "https://www.alphawire.com/products/wire/hook-up-wire/premium/892007",
+    "variant_list": "https://www.belden.com/products/cable/electronic-wire-cable/lead-wire-hook-up-wire/892007",
+    "supplier_red": "https://www.digikey.in/en/products/detail/alpha-wire/892007-RD005/3717446",
+    "supplier_black": "https://www.mouser.sg/ProductDetail/Alpha-Wire/892007-BK005?qs=ng8%252BTWoKejmUOYgyYOJCVg%3D%3D"
+  },
+  "production_references_inspected": [
+    "https://github.com/wireviz/WireViz/blob/master/src/wireviz/Harness.py",
+    "https://github.com/KiCad/kicad-footprints/blob/master/Connector_Molex.pretty/Molex_Mini-Fit_Jr_5569-02A2_2x01_P4.20mm_Horizontal.kicad_mod"
+  ]
+}

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 840" role="img" aria-labelledby="title desc">
+<title id="title">APU cartridge-ROM path and socket binding</title>
+<desc id="desc">In the proposed four-device construction, two cartridges connect through the cartridge bus to U1 CORE. U1 and U4 APU share the system bus. U4 requests source words for the socket bound to each voice; U1 controls the cartridge path. Selection is transferred to U4 through an ordered exchange on that same system bus. The selection exchange is a proposal and has not been integrated.</desc>
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+  <style>
+    text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:23px}
+    .title{font-size:33px;font-weight:bold}.head{font-size:25px;font-weight:bold}.small{font-size:20px}.note{font-size:19px}
+    .device{fill:#e3eff5;stroke:#294b68;stroke-width:3}.storage{fill:#f3f6f7;stroke:#294b68;stroke-width:2.5}
+    .proposal{fill:#fff8e8;stroke:#9b6d21;stroke-width:2;stroke-dasharray:8 5}
+    .path{fill:none;stroke:#294b68;stroke-width:3;marker-start:url(#arrow);marker-end:url(#arrow)}
+    .link{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}
+    .dashed{fill:none;stroke:#9b6d21;stroke-width:2.5;stroke-dasharray:8 5;marker-end:url(#arrow)}
+  </style>
+</defs>
+<rect width="1600" height="840" fill="white"/>
+<text x="45" y="51" class="title">APU cartridge-ROM path and socket binding</text>
+<text x="45" y="84" class="small">Four-device construction · selection exchange is a proposal</text>
+
+<rect x="45" y="200" width="260" height="160" rx="9" class="storage"/>
+<text x="175" y="241" text-anchor="middle" class="head">Cartridge sockets</text>
+<text x="175" y="278" text-anchor="middle" class="small">Socket 0 and socket 1</text>
+<text x="175" y="312" text-anchor="middle" class="small">ROM data and card control</text>
+<rect x="395" y="190" width="290" height="180" rx="9" class="device"/>
+<text x="540" y="233" text-anchor="middle" class="head">U1 · CORE</text>
+<text x="540" y="270" text-anchor="middle" class="small">Owns SELECT</text>
+<text x="540" y="303" text-anchor="middle" class="small">Cartridge controller</text>
+<text x="540" y="336" text-anchor="middle" class="small">System-bus arbitration</text>
+<path d="M305 280 H395" class="path"/>
+<text x="350" y="258" text-anchor="middle" class="note">CAD</text>
+
+<rect x="760" y="225" width="160" height="110" rx="9" class="storage"/>
+<text x="840" y="269" text-anchor="middle" class="head">Shared</text>
+<text x="840" y="301" text-anchor="middle" class="head">SYS bus</text>
+<path d="M685 280 H760 M920 280 H995" class="path"/>
+<rect x="995" y="190" width="300" height="180" rx="9" class="device"/>
+<text x="1145" y="233" text-anchor="middle" class="head">U4 · APU</text>
+<text x="1145" y="270" text-anchor="middle" class="small">Voice source binding</text>
+<text x="1145" y="303" text-anchor="middle" class="small">ROM word requests</text>
+<text x="1145" y="336" text-anchor="middle" class="small">Playback and stereo mix</text>
+<rect x="1350" y="225" width="205" height="110" rx="9" class="storage"/>
+<text x="1452" y="269" text-anchor="middle" class="head">Sample RAM</text>
+<text x="1452" y="302" text-anchor="middle" class="small">Local · 512 KiB</text>
+<path d="M1295 280 H1350" class="path"/>
+
+<rect x="394" y="465" width="902" height="210" rx="10" class="proposal"/>
+<text x="425" y="505" class="head">Proposed ordered selection exchange over SYS</text>
+<text x="425" y="543" class="small">U1 transfers the current socket selection to U4 before a dependent binding action.</text>
+<text x="425" y="578" class="small">PLAY binds at execution; a live source-field write binds at that access.</text>
+<text x="425" y="613" class="small">Previously bound voices and accepted ROM requests retain their socket.</text>
+<text x="425" y="649" class="small">No extra U4 SELECT pin; exchange and physical timing are not yet integrated.</text>
+<path d="M540 370 V410 H725 V465 M1145 370 V410 H965 V465" class="dashed"/>
+<text x="45" y="748" class="note">The diagram shows the cartridge-ROM path; system-ROM access and sample transfers use their respective bus endpoints.</text>
+<text x="45" y="781" class="note">A source bound to sample RAM uses the local memory path instead of the cartridge path.</text>
+</svg>

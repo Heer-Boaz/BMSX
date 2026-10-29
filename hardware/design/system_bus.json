@@ -1,0 +1,147 @@
+{
+  "scope": "Physical SYS transport and U1/U4 ownership proposal. Programmer-visible register contracts remain in Books I-III.",
+  "clock_hz": 33868800,
+  "word_bits": 32,
+  "metadata": "HEADER AD retains all 32 bits. Current CORE/APU producers send raw BusSignals in bits7:0 and zero bits31:8; BUS_FAULT_ACCESS is a separate internal word.",
+  "header_be_n": {
+    "15": "Normal operation",
+    "14": "U7 INPUT reserve/query: fullword read of 0800011C, no architectural register access",
+    "13": "U7 INPUT reservation cancel: same address/read width, returns zero"
+  },
+  "phases": [
+    {
+      "name": "HEADER",
+      "clocks": 1,
+      "AS_N": 0,
+      "RD_N": 1,
+      "WR_N": 1,
+      "AD": "initiator metadata",
+      "BE_N": "operation"
+    },
+    {
+      "name": "ADDRESS",
+      "clocks": 1,
+      "AS_N": 0,
+      "RD_N": 1,
+      "WR_N": 1,
+      "AD": "initiator byte address",
+      "BE_N": "byte enables"
+    },
+    {
+      "name": "TURN_DATA",
+      "clocks": 1,
+      "AS_N": 1,
+      "RD_N": 1,
+      "WR_N": 1,
+      "AD": "released"
+    },
+    {
+      "name": "DATA",
+      "clocks": "until ACK or enabled DATA timeout",
+      "AS_N": 1,
+      "AD": "read target or write initiator",
+      "BE_N": "byte enables"
+    },
+    {
+      "name": "TURN_RESPONSE",
+      "clocks": 2,
+      "AS_N": 1,
+      "RD_N": 1,
+      "WR_N": 1,
+      "AD": "released"
+    },
+    {
+      "name": "RESPONSE",
+      "clocks": "1..16",
+      "AS_N": 1,
+      "RD_N": 0,
+      "WR_N": 0,
+      "AD": "target full 32-bit fault word"
+    },
+    {
+      "name": "RELEASE",
+      "clocks": 1,
+      "AS_N": 1,
+      "RD_N": 1,
+      "WR_N": 1,
+      "AD": "released"
+    },
+    {
+      "name": "DONE",
+      "clocks": 1,
+      "AS_N": 1,
+      "RD_N": 1,
+      "WR_N": 1,
+      "AD": "released; internal completion"
+    }
+  ],
+  "timeouts": {
+    "data": "Enabled: raw 18-bit last counter permits last+1 clocks. Disabled: no counter advance and no DATA deadline.",
+    "control_data_clocks": 16,
+    "response_clocks": 16,
+    "result": "rsp_timeout is separate from the full endpoint fault word; final permitted ACK wins. No accepted write is retried or rolled back."
+  },
+  "minimum_packet_clocks_including_done": 9,
+  "packet_clocks_with_16_clock_data_and_response": [
+    9,
+    39
+  ],
+  "ownership": {
+    "request": "U4 REQ_APU remains asserted through complete packet release; U1 drives GNT_APU.",
+    "handover_quiet_clocks": 2,
+    "fairness": "Alternate competing masters at whole-packet boundaries. A CORE logical request waiting on its reservation timer does not own SYS.",
+    "pin_owners": "Only the granted initiator enables AS/RD/WR/BE and its AD driver. U1 continues address snooping and ROM/CAD target chip selection while U4 owns SYS.",
+    "apu_source": "Validated aligned source words from installed system ROM or the cartridge ROM socket already bound by the source owner. This transport does not implement voice binding, byte assembly or the codec cache."
+  },
+  "pad_pre_admission": {
+    "query_result": "Zero holds an available frame start. A positive word is a conservative countdown until another query; CORE releases SYS for this interval.",
+    "reservation": "Reserve only frame admission, not operands or an APPLY command. Hold until actual APPLY DATA acceptance, CANCEL or reset. Same-edge query suppresses an automatic POLL.",
+    "normal_core_write": "An untimed exact APPLY first queries, sleeps until the returned deadline, queries again and issues the architectural write once. Timed diagnostics preserve direct DATA timing.",
+    "query_failure": "After a failed QUERY, send one explicit CANCEL before reporting completion; retain the first fault/timeout. If cancellation also fails, do not claim the reservation is released. Reset is the recovery for a broken transport, not a hidden retry."
+  },
+  "ready_electrical": {
+    "scope": "Own-ASIC pad and unrouted-board acceptance budget; not extracted PCB capacitance or STA qualification.",
+    "pullup_ref": "R247",
+    "pullup_value": "470R 1%",
+    "pullup_ohms": 470,
+    "tolerance_fraction": 0.01,
+    "total_capacitance_max_pF": 50,
+    "input_high_fraction": 0.7,
+    "VDD_max_V": 3.6,
+    "VOL_max_V": 0.4,
+    "pad_sink_min_mA_at_VOL": 8,
+    "pad_release_max_ns": 10,
+    "board_delay_max_ns": 2,
+    "receiver_setup_max_ns": 3,
+    "turn_response_clocks": 2,
+    "topology": "One pullup to V3V3, open-drain READY from U1/U2/U4/U7. No extra U7 pad."
+  },
+  "references": [
+    {
+      "url": "https://github.com/TUT-ASI/leon3-grlib-gpl-mirror/blob/main/lib/grlib/amba/ahbctrl.vhd",
+      "use": "Whole-transaction ownership and releasing a shared bus while a target cannot admit work; not an imported AHB/SPLIT ABI."
+    },
+    {
+      "url": "https://github.com/lowRISC/opentitan/blob/master/hw/ip/tlul/rtl/tlul_socket_m1.sv",
+      "use": "Request arbitration and retained response ownership."
+    },
+    {
+      "url": "https://github.com/lowRISC/opentitan/blob/master/hw/ip/prim_generic/rtl/prim_pad_wrapper.sv",
+      "use": "Explicit integrated pad pull-up modelling with weak drive strengths, not invented external pullup components."
+    }
+  ],
+  "control_pad_bias": {
+    "owner": "U1 integrated pad pull-up cells on SYS_AS_N/RD_N/WR_N/BE[3:0]_N; no new PCB parts or pins",
+    "count": 7,
+    "ohms_nominal": 4700,
+    "tolerance_fraction": 0.2,
+    "total_capacitance_max_pF": 50,
+    "input_high_fraction": 0.7,
+    "minimum_board_reset_ns": 500,
+    "VDD_max_V": 3.6,
+    "VOL_max_V": 0.4,
+    "control_pad_sink_min_mA": 4,
+    "release": "Last initiator strongly drives all controls inactive in RELEASE/DONE before OE withdrawal. Bias holds those already-high levels across the two-clock handover; it does not generate normal timing edges. During reset, bias must settle before endpoint release.",
+    "model": "Verilog weak strength defines pad topology only; RC reset settling is an independent calculated budget."
+  }
+}

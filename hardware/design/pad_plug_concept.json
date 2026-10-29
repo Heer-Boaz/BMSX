@@ -1,0 +1,10 @@
+{
+  "scope": "Illustrative mating concept for the retained BMSX pad socket; dimensions are nominal design choices, not a manufacturer connector or production specification.",
+  "socket_reference": "FRONT__PAD_60",
+  "body_bounds_mm": [50.4, -12.4, 15.7, 69.6, -0.4, 24.7],
+  "nose_bounds_mm": [53.0, -0.4, 18.0, 67.0, 4.8, 22.0],
+  "key_groove_bounds_mm": [66.2, -0.45, 19.2, 67.2, 4.85, 20.9],
+  "contact_channel_radius_mm": 0.45,
+  "channel_axis_y_mm": [-12.5, 4.9],
+  "rotation_axis_mm": [[60.0, 0.0, 20.1], [60.0, 1.0, 20.1]]
+}

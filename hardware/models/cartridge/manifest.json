@@ -1,0 +1,210 @@
+{
+  "scope": "Portable unmodified native input copies for one compact two-socket/card bank candidate. Source delivery is immutable and every copied byte was verified against its sealed manifest. External source paths are provenance only; rerunning uses this local cache.",
+  "source_release_sha256": "43973d707d4d17c5d5fcacde0713da1489caaf7a35485cc00d84aeca306efa9a",
+  "parts": [
+    {
+      "name": "SLOT0__SOCKET",
+      "slot": 0,
+      "role": "SOCKET",
+      "sha256": "47adab1fed52e1ee7af8e2c4602262786115e214fa38383b224675fef818db74",
+      "original_named_part": "MAIN__J_CART0_NOMINAL_SELECTED_PROPOSAL",
+      "source_bounds_mm": [
+        35.025,
+        144.3,
+        7.15,
+        134.975,
+        153.7,
+        26.840000000000003
+      ],
+      "representation": "Preserved selected EDAC nominal receiving model with maker flush-lug geometry correction; not detailed spring CAD or a manufacturer maximum envelope.",
+      "brep": "models/cartridge/MAIN__J_CART0_NOMINAL_SELECTED_PROPOSAL.brep"
+    },
+    {
+      "name": "SLOT0__SHELL",
+      "slot": 0,
+      "role": "SHELL",
+      "sha256": "f200d4aa9802671a849f2886fef3a805c3a020cfde7aeec877b1156132284bce",
+      "original_named_part": "CARD0__CARTRIDGE_0_SHELL",
+      "source_bounds_mm": [
+        30.0,
+        140.0,
+        34.4,
+        140.0,
+        149.6,
+        109.4
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD0__CARTRIDGE_0_SHELL.brep"
+    },
+    {
+      "name": "SLOT0__COVER",
+      "slot": 0,
+      "role": "COVER",
+      "sha256": "a32c0cfa53098db10a86306eb5ca8b8381fac0d345dbcef03861371275726c59",
+      "original_named_part": "CARD0__CARTRIDGE_0_COVER",
+      "source_bounds_mm": [
+        30.0,
+        149.05,
+        34.4,
+        140.0,
+        158.0,
+        109.4
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD0__CARTRIDGE_0_COVER.brep"
+    },
+    {
+      "name": "SLOT0__PCB",
+      "slot": 0,
+      "role": "PCB",
+      "sha256": "c5757d7522330f6cf2fef233c26b74b2398559c3e035267f035c715a0b43075f",
+      "original_named_part": "CARD0__CARTRIDGE_0_PCB",
+      "source_bounds_mm": [
+        34.0,
+        148.2,
+        21.2,
+        136.0,
+        149.8,
+        102.2
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD0__CARTRIDGE_0_PCB.brep"
+    },
+    {
+      "name": "SLOT0__FINGERS",
+      "slot": 0,
+      "role": "FINGERS",
+      "sha256": "205871881717fcb422b6e34e99d3eb027f3922243e411a16c4356f370e7cc1cb",
+      "original_named_part": "CARD0__CARTRIDGE_0_FINGERS",
+      "source_bounds_mm": [
+        46.2,
+        148.165,
+        22.0,
+        123.8,
+        149.835,
+        28.6
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD0__CARTRIDGE_0_FINGERS.brep"
+    },
+    {
+      "name": "SLOT0__ROMS",
+      "slot": 0,
+      "role": "ROMS",
+      "sha256": "fc1149a13c43e559d362cac57b3c8139058d9313dbda6c069b5b693df86381cf",
+      "original_named_part": "CARD0__CARTRIDGE_0_ROMS",
+      "source_bounds_mm": [
+        48.0,
+        149.8,
+        55.0,
+        119.0,
+        152.3,
+        69.0
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD0__CARTRIDGE_0_ROMS.brep"
+    },
+    {
+      "name": "SLOT1__SOCKET",
+      "slot": 1,
+      "role": "SOCKET",
+      "sha256": "19f3fb958b1e88c7b8889c3d75f761d1615506384772f8ebf8a9be98ddffe327",
+      "original_named_part": "MAIN__J_CART1_NOMINAL_SELECTED_PROPOSAL",
+      "source_bounds_mm": [
+        165.025,
+        144.3,
+        7.15,
+        264.975,
+        153.7,
+        26.840000000000003
+      ],
+      "representation": "Preserved selected EDAC nominal receiving model with maker flush-lug geometry correction; not detailed spring CAD or a manufacturer maximum envelope.",
+      "brep": "models/cartridge/MAIN__J_CART1_NOMINAL_SELECTED_PROPOSAL.brep"
+    },
+    {
+      "name": "SLOT1__SHELL",
+      "slot": 1,
+      "role": "SHELL",
+      "sha256": "69bdc00abda69340ae29c3ef75db882f64e533bf7fe2a1e9aa248056c0051e1c",
+      "original_named_part": "CARD1__CARTRIDGE_1_SHELL",
+      "source_bounds_mm": [
+        160.0,
+        140.0,
+        34.4,
+        270.0,
+        149.6,
+        109.4
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD1__CARTRIDGE_1_SHELL.brep"
+    },
+    {
+      "name": "SLOT1__COVER",
+      "slot": 1,
+      "role": "COVER",
+      "sha256": "8022f329dcb0a128cca11bf7eb027db2f130e636a963b1279f4ce9b9b4cf0d42",
+      "original_named_part": "CARD1__CARTRIDGE_1_COVER",
+      "source_bounds_mm": [
+        160.0,
+        149.05,
+        34.4,
+        270.0,
+        158.0,
+        109.4
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD1__CARTRIDGE_1_COVER.brep"
+    },
+    {
+      "name": "SLOT1__PCB",
+      "slot": 1,
+      "role": "PCB",
+      "sha256": "197cb5fc3bb8dced2bb911cc77ea1fb38a8ad0ac6fb68d1eb7255bfad6e80452",
+      "original_named_part": "CARD1__CARTRIDGE_1_PCB",
+      "source_bounds_mm": [
+        164.0,
+        148.2,
+        21.2,
+        266.0,
+        149.8,
+        102.2
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD1__CARTRIDGE_1_PCB.brep"
+    },
+    {
+      "name": "SLOT1__FINGERS",
+      "slot": 1,
+      "role": "FINGERS",
+      "sha256": "a269f97846fcc846588a8d9c817ee6c5fbc0132ce20661e4df6c1b7883afedbb",
+      "original_named_part": "CARD1__CARTRIDGE_1_FINGERS",
+      "source_bounds_mm": [
+        176.2,
+        148.165,
+        22.0,
+        253.8,
+        149.835,
+        28.6
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD1__CARTRIDGE_1_FINGERS.brep"
+    },
+    {
+      "name": "SLOT1__ROMS",
+      "slot": 1,
+      "role": "ROMS",
+      "sha256": "635818a0d831be5705c59588aacab9d17cc76776c8574bdc36f1b208eef16e63",
+      "original_named_part": "CARD1__CARTRIDGE_1_ROMS",
+      "source_bounds_mm": [
+        178.0,
+        149.8,
+        55.0,
+        249.0,
+        152.3,
+        69.0
+      ],
+      "representation": "Exact retained original cartridge native part; no scaling, shell edit or replacement.",
+      "brep": "models/cartridge/CARD1__CARTRIDGE_1_ROMS.brep"
+    }
+  ]
+}

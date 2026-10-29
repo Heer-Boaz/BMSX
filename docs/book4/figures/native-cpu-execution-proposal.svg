@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1010" role="img" aria-labelledby="title desc">
+<title id="title">Proposed native execution of BLua32</title>
+<desc id="desc">A possible CORE implementation uses a conventional 32-bit native processor running an interpreter from private on-chip firmware ROM. The interpreter maintains BLua32 state using separate private runtime storage. At reset it initializes the guest and reads the BLua32 BIOS from the public system ROM; the BIOS chooses a cartridge. Guest instructions and data use the public system ROM, cartridge and 4 MiB main RAM through their existing paths. GTE, GEO, IMGDEC and DMA are separate hardware engines. Firmware capacity, runtime storage and real-time performance are not established.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.minor{font-size:18px}.core{fill:#fbfcfd;stroke:#92a9b8;stroke-width:2}.block{fill:#e3eef5;stroke:#294b68;stroke-width:2}.memory{fill:#f4f7f8;stroke:#698495;stroke-width:2}.candidate{fill:#fff5e4;stroke:#9a7135;stroke-width:2;stroke-dasharray:8 5}.wire{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.bus{fill:none;stroke:#294b68;stroke-width:3}.both{marker-start:url(#arrow)}.dashed{stroke-dasharray:8 5}
+ </style>
+</defs>
+<rect width="1600" height="1010" fill="white"/>
+<text x="40" y="49" class="title">CORE execution — native interpreter candidate</text>
+<text x="40" y="81" class="minor">Functional organisation, not a fitted CPU, firmware capacity or physical timing guarantee.</text>
+
+<rect x="35" y="110" width="1080" height="660" rx="12" class="core"/>
+<text x="60" y="147" class="head">U1 · CORE and logical runtime</text>
+<rect x="70" y="195" width="270" height="138" rx="8" class="candidate"/>
+<text x="205" y="232" text-anchor="middle" class="head">Private native ROM</text>
+<text x="205" y="263" text-anchor="middle" class="minor">On-chip firmware candidate</text>
+<text x="205" y="291" text-anchor="middle" class="minor">Interpreter and native boot</text>
+<path d="M340 264H410" class="wire"/>
+
+<rect x="410" y="185" width="335" height="158" rx="8" class="block"/>
+<text x="577" y="223" text-anchor="middle" class="head">32-bit native CPU</text>
+<text x="577" y="254" text-anchor="middle" class="minor">Executes native firmware</text>
+<text x="577" y="282" text-anchor="middle" class="minor">Runs BLua32 interpreter</text>
+<text x="577" y="311" text-anchor="middle" class="minor">Native addresses are separate</text>
+
+<rect x="800" y="185" width="270" height="158" rx="8" class="block"/>
+<text x="935" y="223" text-anchor="middle" class="head">BLua32 state</text>
+<text x="935" y="254" text-anchor="middle" class="minor">PC · frames · values</text>
+<text x="935" y="282" text-anchor="middle" class="minor">Calls · exceptions · IRQ</text>
+<text x="935" y="311" text-anchor="middle" class="minor">Guest execution model</text>
+<path d="M745 264H800" class="wire both"/>
+
+<rect x="420" y="415" width="320" height="135" rx="8" class="block"/>
+<text x="580" y="452" text-anchor="middle" class="head">Guest memory and I/O</text>
+<text x="580" y="483" text-anchor="middle" class="minor">Fetch guest instructions and data</text>
+<text x="580" y="511" text-anchor="middle" class="minor">Program devices through their ports</text>
+<path d="M575 343V415" class="wire both"/>
+
+<rect x="800" y="415" width="270" height="135" rx="8" class="block"/>
+<text x="935" y="452" text-anchor="middle" class="head">Hardware engines</text>
+<text x="935" y="483" text-anchor="middle" class="minor">GTE · GEO · IMGDEC · DMA</text>
+<text x="935" y="511" text-anchor="middle" class="minor">Separate from interpreter</text>
+<path d="M740 483H800" class="wire both"/>
+
+<rect x="410" y="625" width="350" height="100" rx="8" class="candidate"/>
+<text x="585" y="661" text-anchor="middle" class="head">Private runtime storage</text>
+<text x="585" y="691" text-anchor="middle" class="minor">Values · frames · objects · management</text>
+<text x="585" y="715" text-anchor="middle" class="minor">Off-chip DRAM candidate</text>
+<path d="M1070 320H1090V590H585V625" class="wire both dashed"/>
+
+<rect x="1200" y="175" width="345" height="130" rx="8" class="memory"/>
+<text x="1372" y="213" text-anchor="middle" class="head">System ROM · U33 / U7</text>
+<text x="1372" y="244" text-anchor="middle" class="minor">Guest-visible BLua32 BIOS</text>
+<text x="1372" y="274" text-anchor="middle" class="minor">Existing image and zero tail</text>
+<path d="M1145 235H1200" class="wire both"/>
+
+<rect x="1200" y="385" width="345" height="130" rx="8" class="memory"/>
+<text x="1372" y="423" text-anchor="middle" class="head">Cartridge sockets</text>
+<text x="1372" y="454" text-anchor="middle" class="minor">BIOS selects executable card</text>
+<text x="1372" y="484" text-anchor="middle" class="minor">Guest code and addressed data</text>
+<path d="M1145 445H1200" class="wire both"/>
+
+<rect x="1200" y="595" width="345" height="130" rx="8" class="memory"/>
+<text x="1372" y="633" text-anchor="middle" class="head">Public main RAM</text>
+<text x="1372" y="664" text-anchor="middle" class="minor">4 MiB · guest-addressable</text>
+<text x="1372" y="694" text-anchor="middle" class="minor">Separate from private runtime</text>
+<path d="M1145 655H1200" class="wire both"/>
+<path d="M580 550V575H1145" class="wire both"/>
+<path d="M1145 235V655" class="bus"/>
+
+<rect x="35" y="810" width="1510" height="145" rx="10" class="core"/>
+<text x="60" y="849" class="head">Startup sequence</text>
+<text x="60" y="881" class="minor">1 · Native reset starts private firmware.   2 · Firmware establishes BLua32 state and enters the guest BIOS.</text>
+<text x="60" y="911" class="minor">3 · BIOS selects a bootable cartridge; cartridge instruction fetches remain bound to that socket.</text>
+<text x="60" y="940" class="minor">The interpreter, storage size, arithmetic throughput and event timing remain unqualified; existing public contracts are unchanged.</text>
+</svg>

@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 730" role="img" aria-labelledby="title desc">
+ <title id="title">GFX drawing, memory and display paths</title>
+ <desc id="desc">CPU and DMA feed separate command ingress stores; the GPU assembles packets, executes drawing and transfers through local video memory, and returns readback data. PCRTC reads the same video memory and sends composed pixels to the DAC path.</desc>
+ <defs>
+  <marker id="arrow" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0 0 L9 4 L0 8 Z" fill="#294f70"/></marker>
+  <style>
+   text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}
+   .box{fill:#f4f7f9;stroke:#294f70;stroke-width:2}
+   .memory{fill:#f9f1e6;stroke:#9a6542;stroke-width:2}
+   .line{fill:none;stroke:#294f70;stroke-width:3;marker-end:url(#arrow)}
+   .small{font-size:17px}.heading{font-size:23px;font-weight:bold}.note{font-size:18px}
+  </style>
+ </defs>
+ <rect width="1440" height="730" fill="white"/>
+ <text x="35" y="38" class="heading">GFX — functional drawing and scanout organisation</text>
+
+ <rect x="35" y="80" width="210" height="84" rx="8" class="box"/>
+ <text x="140" y="115" text-anchor="middle" class="heading">CPU / GP0</text>
+ <text x="140" y="143" text-anchor="middle" class="small">direct word writes</text>
+ <rect x="35" y="215" width="210" height="84" rx="8" class="box"/>
+ <text x="140" y="250" text-anchor="middle" class="heading">DMA / GP0</text>
+ <text x="140" y="278" text-anchor="middle" class="small">admitted block</text>
+ <rect x="305" y="80" width="225" height="84" rx="8" class="box"/>
+ <text x="417" y="115" text-anchor="middle" class="heading">Command FIFO</text>
+ <text x="417" y="143" text-anchor="middle" class="small">16 × 32-bit words</text>
+ <rect x="305" y="215" width="225" height="84" rx="8" class="box"/>
+ <text x="417" y="250" text-anchor="middle" class="heading">DMA ingress</text>
+ <text x="417" y="278" text-anchor="middle" class="small">16 × 32-bit words</text>
+ <path d="M245 122 H305" class="line"/><path d="M245 257 H305" class="line"/><path d="M417 215 V164" class="line"/>
+ <text x="434" y="194" class="small">block hand-off</text>
+
+ <rect x="595" y="80" width="230" height="84" rx="8" class="box"/>
+ <text x="710" y="115" text-anchor="middle" class="heading">Packet assembly</text>
+ <text x="710" y="143" text-anchor="middle" class="small">ordered GP0 stream</text>
+ <path d="M530 122 H595" class="line"/>
+ <rect x="900" y="80" width="280" height="115" rx="8" class="box"/>
+ <text x="1040" y="114" text-anchor="middle" class="heading">Drawing engine</text>
+ <text x="1040" y="143" text-anchor="middle" class="small">geometry · texture · mask</text>
+ <text x="1040" y="169" text-anchor="middle" class="small">blending · fill · copy</text>
+ <path d="M825 122 H900" class="line"/>
+
+ <rect x="35" y="360" width="210" height="84" rx="8" class="box"/>
+ <text x="140" y="395" text-anchor="middle" class="heading">CPU / GP1</text>
+ <text x="140" y="423" text-anchor="middle" class="small">control and status</text>
+ <rect x="305" y="360" width="225" height="84" rx="8" class="box"/>
+ <text x="417" y="395" text-anchor="middle" class="heading">Control state</text>
+ <text x="417" y="423" text-anchor="middle" class="small">mode · reset · IRQ</text>
+ <path d="M245 392 H305" class="line"/><path d="M305 417 H245" class="line"/>
+ <path d="M530 402 H575 V225 H850 V155 H900" class="line"/>
+
+ <rect x="900" y="280" width="280" height="104" rx="8" class="box"/>
+ <text x="1040" y="317" text-anchor="middle" class="heading">Local-memory service</text>
+ <text x="1040" y="347" text-anchor="middle" class="small">drawing and display arbitration</text>
+ <path d="M1000 195 V280" class="line"/><path d="M1080 280 V195" class="line"/>
+ <rect x="1205" y="280" width="200" height="104" rx="8" class="memory"/>
+ <text x="1305" y="317" text-anchor="middle" class="heading">Video SRAM</text>
+ <text x="1305" y="347" text-anchor="middle" class="small">2 MiB · 32-bit</text>
+ <path d="M1180 315 H1205" class="line"/><path d="M1205 350 H1180" class="line"/>
+
+ <rect x="595" y="485" width="230" height="84" rx="8" class="box"/>
+ <text x="710" y="520" text-anchor="middle" class="heading">Readback</text>
+ <text x="710" y="548" text-anchor="middle" class="small">GPUREAD → CPU / DMA</text>
+ <path d="M900 333 H855 V527 H825" class="line"/>
+ <rect x="900" y="485" width="280" height="84" rx="8" class="box"/>
+ <text x="1040" y="520" text-anchor="middle" class="heading">PCRTC / display</text>
+ <text x="1040" y="548" text-anchor="middle" class="small">two readers and compositor</text>
+ <path d="M1040 384 V485" class="line"/>
+ <path d="M1180 527 H1290" class="line"/>
+ <text x="1304" y="522" class="small">RGB / sync</text>
+ <text x="1304" y="546" class="small">to output</text>
+
+ <text x="35" y="640" class="note">Functional paths, not a completed transistor-level implementation.</text>
+ <text x="35" y="670" class="small">A command hand-off, an empty queue, completed drawing and a displayed frame are distinct events.</text>
+</svg>

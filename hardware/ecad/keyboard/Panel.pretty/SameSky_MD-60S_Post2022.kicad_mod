@@ -1,0 +1,131 @@
+(footprint "SameSky_MD-60S_Post2022"
+	(version 20241229)
+	(generator "pcbnew")
+	(layer "F.Cu")
+	(descr "Same Sky MD-60S, post-03/03/2022 manufacturer land pattern; front-face centre datum; inward is negative footprint Y. Single earth terminal SH must connect to GND. Nominal model, not manufacturer STEP or tolerance proof.")
+	(tags "Mini-DIN 6 PS2 right-angle through-hole post2022")
+	(property "Reference" "REF**"
+		(at 0 -14.5)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Value" "MD-60S"
+		(at 0 2)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Datasheet" "https://www.sameskydevices.com/product/resource/md-s.pdf"
+		(at 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Manufacturer" "Same Sky"
+		(at 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "MPN" "MD-60S"
+		(at 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(attr through_hole)
+	(fp_rect
+		(start -7 -12.4)
+		(end 7 0)
+		(stroke
+			(width 0.1)
+			(type solid))
+		(fill none)
+		(layer "F.Fab"))
+	(fp_line
+		(start -7.15 -12.55)
+		(end 7.15 -12.55)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -7.15 -12.55)
+		(end -7.15 -3.2)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start 7.15 -12.55)
+		(end 7.15 -3.2)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_rect
+		(start -7.65 -13.2)
+		(end 7.65 0.5)
+		(stroke
+			(width 0.05)
+			(type solid))
+		(fill none)
+		(layer "F.CrtYd"))
+	(fp_text user "FACE"
+		(at 0 -0.7)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.1))))
+	(fp_text user "${REFERENCE}"
+		(at 0 -6.5)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(pad "1" thru_hole rect
+		(at 1.3 -8.5)
+		(size 1.8 1.8)
+		(drill 0.9)
+		(layers "*.Cu" "*.Mask"))
+	(pad "2" thru_hole circle
+		(at -1.3 -8.5)
+		(size 1.8 1.8)
+		(drill 0.9)
+		(layers "*.Cu" "*.Mask"))
+	(pad "3" thru_hole circle
+		(at 3.4 -8.5)
+		(size 1.8 1.8)
+		(drill 0.9)
+		(layers "*.Cu" "*.Mask"))
+	(pad "4" thru_hole circle
+		(at -3.4 -8.5)
+		(size 1.8 1.8)
+		(drill 0.9)
+		(layers "*.Cu" "*.Mask"))
+	(pad "5" thru_hole circle
+		(at 3.4 -11)
+		(size 1.8 1.8)
+		(drill 0.9)
+		(layers "*.Cu" "*.Mask"))
+	(pad "6" thru_hole circle
+		(at -3.4 -11)
+		(size 1.8 1.8)
+		(drill 0.9)
+		(layers "*.Cu" "*.Mask"))
+	(pad "SH" thru_hole oval
+		(at 0 -4.7)
+		(size 3.4 1.9)
+		(drill oval 2.2 0.7)
+		(layers "*.Cu" "*.Mask")))

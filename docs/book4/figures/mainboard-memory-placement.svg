@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1800 1200" role="img" aria-labelledby="title desc">
+<title id="title">BMSX mainboard memory placement</title>
+<desc id="desc">The candidate board, viewed from above, with labels for the main DRAM, video SRAM, sample SRAM, firmware flash and two proposed private memory banks. The private runtime and snapshot banks are construction proposals, not additional programmer-visible memory. The board is not fully routed.</desc>
+<defs><style>
+text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:24px;font-weight:600}
+.title{font-size:30px;font-weight:bold}.sub{font-size:18px;font-weight:400}.small{font-size:18px}
+.label{fill:#fff;fill-opacity:.96;stroke:#627e8c;stroke-width:1.5}.candidate{fill:#fff8e8;stroke:#9b6d21;stroke-width:2;stroke-dasharray:8 4}
+.leader{fill:none;stroke:#183f5b;stroke-width:3}.proposed{fill:none;stroke:#9b6d21;stroke-width:3;stroke-dasharray:8 5}.target{fill:#fff;stroke:#183f5b;stroke-width:3}.target-proposed{fill:#fff8e8;stroke:#9b6d21;stroke-width:3}
+</style></defs>
+<image x="0" y="0" width="1800" height="1200" xlink:href="motherboard-passive-candidate-top.png"/>
+<text x="900" y="52" text-anchor="middle" class="title">Mainboard — memory placement</text>
+<!-- Board coordinates: X 10..230 mm, Y 25..175 mm; rear is at top. -->
+<rect class="label" x="24" y="365" width="345" height="82" rx="9"/><text x="44" y="398">System firmware flash</text><text class="sub" x="44" y="426">U33 · 8 MiB</text>
+<path class="leader" d="M369 405 H400 L494 563"/><circle class="target" cx="494" cy="563" r="6"/>
+<rect class="label" x="24" y="548" width="345" height="82" rx="9"/><text x="44" y="581">Main RAM</text><text class="sub" x="44" y="609">U10 / U11 · 4 MiB total</text>
+<path class="leader" d="M369 589 H540 V631 H608 M540 631 V787 H608"/><circle class="target" cx="608" cy="631" r="6"/><circle class="target" cx="608" cy="787" r="6"/>
+<rect class="candidate" x="24" y="805" width="345" height="105" rx="9"/><text x="44" y="838">Private runtime RAM</text><text class="sub" x="44" y="866">U150 / U151 · 4 MiB candidate</text><text class="sub" x="44" y="891">Not guest-addressable</text>
+<path class="proposed" d="M369 857 H560 V812 H667 M560 812 H650 V651 H667"/><circle class="target-proposed" cx="667" cy="812" r="6"/><circle class="target-proposed" cx="667" cy="651" r="6"/>
+<rect class="label" x="944" y="91" width="330" height="82" rx="9"/><text x="964" y="124">Sample RAM</text><text class="sub" x="964" y="152">U32 · 512 KiB</text>
+<path class="leader" d="M1000 173 V228 L849 339"/><circle class="target" cx="849" cy="339" r="6"/>
+<rect class="label" x="1410" y="575" width="365" height="82" rx="9"/><text x="1430" y="608">Video RAM</text><text class="sub" x="1430" y="636">U30 / U31 · 2 MiB total</text>
+<path class="leader" d="M1410 616 H1385 V719 H1244 M1385 719 H1318"/><circle class="target" cx="1244" cy="719" r="6"/><circle class="target" cx="1318" cy="719" r="6"/>
+<rect class="candidate" x="1410" y="790" width="365" height="105" rx="9"/><text x="1430" y="823">Private snapshot RAM</text><text class="sub" x="1430" y="851">U152 / U153 · 2 MiB candidate</text><text class="sub" x="1430" y="876">Readback storage proposal</text>
+<path class="proposed" d="M1410 842 H1367 V800 H1183 M1367 800 H1145 V709 H1162"/><circle class="target-proposed" cx="1183" cy="800" r="6"/><circle class="target-proposed" cx="1162" cy="709" r="6"/>
+<text class="small" x="900" y="1080" text-anchor="middle">Placement candidate · private banks are proposals · board is not fully routed</text>
+</svg>

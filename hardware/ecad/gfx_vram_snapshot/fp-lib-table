@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name "R9_interfaces") (type "KiCad") (uri "${KIPRJMOD}/R9_interfaces.pretty") (options "") (descr "Existing candidate snapshot footprints"))
+)

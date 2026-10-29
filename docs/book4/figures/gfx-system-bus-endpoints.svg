@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1030" role="img" aria-labelledby="title description">
+<title id="title">Proposed GFX system-bus endpoints</title>
+<desc id="description">U1 provides CPU and DMA requests on the shared system bus and selects the GPU, PCRTC or INPUT endpoint in U2. A proposed U2 transaction and response owner directs each accepted request to its selected endpoint and provides one shared data and READY response. GPU CPU and DMA admission remain distinct, including DMA block-end information. The combined endpoint is not yet implemented or timing-qualified.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:23px}.title{font-size:32px;font-weight:700}.head{font-size:25px;font-weight:700}.small{font-size:20px}.note{font-size:19px}.chip{fill:#e3eff5;stroke:#294b68;stroke-width:2.5}.busbox{fill:#f3f6f7;stroke:#294b68;stroke-width:2}.candidate{fill:#fff8e8;stroke:#9b6d21;stroke-width:2.5;stroke-dasharray:8 5}.endpoint{fill:#e3eff5;stroke:#294b68;stroke-width:2.5}.path{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}.control{fill:none;stroke:#9b6d21;stroke-width:2.5;stroke-dasharray:8 5;marker-end:url(#arrow)}
+ </style>
+</defs>
+<rect width="1600" height="1030" fill="white"/>
+<text x="45" y="52" class="title">U2 GFX — proposed shared-bus endpoints</text>
+<text x="45" y="88" class="small">One physical system-bus connection · three selected functional endpoints</text>
+
+<rect x="45" y="170" width="260" height="205" rx="10" class="chip"/>
+<text x="175" y="210" text-anchor="middle" class="head">U1 · CORE</text>
+<text x="175" y="246" text-anchor="middle" class="small">CPU and DMA requests</text>
+<text x="175" y="278" text-anchor="middle" class="small">system-bus arbitration</text>
+<text x="175" y="310" text-anchor="middle" class="small">endpoint selections</text>
+<text x="175" y="342" text-anchor="middle" class="small">GPU / PCRTC / INPUT</text>
+
+<rect x="390" y="170" width="225" height="205" rx="10" class="busbox"/>
+<text x="502" y="210" text-anchor="middle" class="head">Shared SYS</text>
+<text x="502" y="246" text-anchor="middle" class="small">AD[31:0]</text>
+<text x="502" y="278" text-anchor="middle" class="small">strobes / byte enables</text>
+<text x="502" y="310" text-anchor="middle" class="small">open-drain READY</text>
+<text x="502" y="342" text-anchor="middle" class="small">other devices omitted</text>
+<path d="M305 272H390" class="path both"/>
+
+<rect x="700" y="145" width="850" height="640" rx="14" class="busbox"/>
+<text x="730" y="188" class="head">U2 · GFX</text>
+<rect x="748" y="225" width="350" height="260" rx="10" class="candidate"/>
+<text x="923" y="266" text-anchor="middle" class="head">Transaction owner</text>
+<text x="923" y="301" text-anchor="middle" class="small">Latch request and selection</text>
+<text x="923" y="333" text-anchor="middle" class="small">Route to selected endpoint</text>
+<text x="923" y="365" text-anchor="middle" class="small">Return its data and response</text>
+<text x="923" y="397" text-anchor="middle" class="small">Shared data / READY owner</text>
+<text x="923" y="445" text-anchor="middle" class="note">Combined logic proposed</text>
+<path d="M615 272H748" class="path both"/>
+
+<rect x="1180" y="225" width="320" height="145" rx="9" class="endpoint"/>
+<text x="1340" y="265" text-anchor="middle" class="head">GPU</text>
+<text x="1340" y="298" text-anchor="middle" class="small">GP0 / GP1 · status / readback</text>
+<text x="1340" y="330" text-anchor="middle" class="small">CPU and DMA admission distinct</text>
+<text x="1340" y="355" text-anchor="middle" class="note">DMA block-end retained</text>
+<rect x="1180" y="410" width="320" height="105" rx="9" class="endpoint"/>
+<text x="1340" y="450" text-anchor="middle" class="head">PCRTC</text>
+<text x="1340" y="484" text-anchor="middle" class="small">Display timing and registers</text>
+<rect x="1180" y="555" width="320" height="105" rx="9" class="endpoint"/>
+<text x="1340" y="595" text-anchor="middle" class="head">INPUT</text>
+<text x="1340" y="629" text-anchor="middle" class="small">Keyboard / accessory registers</text>
+<path d="M1098 282H1180" class="path both"/>
+<path d="M1098 355H1138V462H1180" class="path both"/>
+<path d="M1098 425H1120V607H1180" class="path both"/>
+
+<path d="M175 375V870H923V485" class="control"/>
+<rect x="45" y="480" width="555" height="205" rx="10" class="candidate"/>
+<text x="72" y="519" class="head">U1 selects the destination</text>
+<text x="72" y="559" class="small">CS_GPU_N → U2.55</text>
+<text x="72" y="594" class="small">CS_PCRTC_N → U2.56</text>
+<text x="72" y="629" class="small">CS_IO_N → U2.97</text>
+<text x="72" y="664" class="note">Selections are separate from the multiplexed bus.</text>
+<path d="M600 582H700" class="control"/>
+
+<text x="45" y="944" class="small">Only the selected endpoint supplies a response; unselected endpoints do not drive the shared bus.</text>
+<text x="45" y="977" class="small">Construction proposal: GPU endpoint, arbitration, reset interactions and physical timing remain to be integrated.</text>
+</svg>

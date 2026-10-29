@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 820" width="1500" height="820" role="img" aria-labelledby="title desc">
+<title id="title">Proposed user-operated supervisor sources</title>
+<desc id="desc">A proposed Ctrl Alt F12 detector and proposed request flags from four accessory replies combine with the existing separate internal supervisor input. INPUT samples the combined level at VBlank independently of ARM and sends a rising-edge request to SYSTEM. In USER it starts monitor entry; in ACTIVE and RESUMABLE it requests exit. Normal keyboard and pad records remain available to the program. The keyboard chord is represented in the INPUT candidate; accessory requests and the complete system integration remain proposals.</desc>
+<defs>
+ <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2a4b65"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:19px}.title{font-size:30px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:17px}.unit{fill:#e5f0f5;stroke:#315872;stroke-width:2}.existing{fill:#f4f5f0;stroke:#60726a;stroke-width:2}.logic{fill:#edf3e6;stroke:#506d4d;stroke-width:2}.path{fill:none;stroke:#2a4b65;stroke-width:3;marker-end:url(#arrow)}.proposal{stroke-dasharray:8 6}.normal{fill:none;stroke:#7a8d98;stroke-width:2;marker-end:url(#arrow)}</style>
+</defs>
+<rect width="1500" height="820" fill="#fff"/>
+<text x="45" y="52" class="title">Supervisor request · proposed user-operated sources</text>
+<text x="45" y="85" class="small">Keyboard chord in INPUT candidate; accessory requests are proposed. No console button is fitted.</text>
+<rect x="45" y="145" width="355" height="120" rx="10" class="unit"/>
+<text x="68" y="180" class="head">Reference keyboard chord</text>
+<text x="68" y="212">Ctrl + Alt + F12 from live keys</text>
+<text x="68" y="240" class="small">Physical keyboard rollover unverified</text>
+<rect x="45" y="320" width="355" height="140" rx="10" class="unit"/>
+<text x="68" y="355" class="head" style="font-size:19px">Four accessory requests · proposal</text>
+<text x="68" y="387">Reply byte 60, bit 0 per port</text>
+<text x="68" y="416" class="small">Complete valid reply updates held level</text>
+<text x="68" y="442" class="small">A missing reply does not clear it</text>
+<rect x="45" y="520" width="355" height="100" rx="10" class="existing"/>
+<text x="68" y="555" class="head">Separate external input</text>
+<text x="68" y="586" class="small">Present construction: internal test point</text>
+<rect x="510" y="302" width="180" height="150" rx="10" class="unit"/>
+<text x="600" y="345" text-anchor="middle" class="head">Combine</text>
+<text x="600" y="378" text-anchor="middle">request levels</text>
+<text x="600" y="409" text-anchor="middle" class="small">logical OR</text>
+<path d="M400 205 H465 V335 H510" class="path proposal"/>
+<path d="M400 390 H510" class="path proposal"/>
+<path d="M400 570 H465 V420 H510" class="path"/>
+<rect x="785" y="302" width="280" height="150" rx="10" class="existing"/>
+<text x="925" y="342" text-anchor="middle" class="head">INPUT</text>
+<text x="925" y="376" text-anchor="middle">Sample at VBlank</text>
+<text x="925" y="405" text-anchor="middle">Detect rising edge</text>
+<text x="925" y="434" text-anchor="middle" class="small">Independent of ARM</text>
+<path d="M690 377 H785" class="path proposal"/>
+<rect x="1150" y="248" width="300" height="258" rx="10" class="logic"/>
+<text x="1300" y="287" text-anchor="middle" class="head">CORE / SYSTEM</text>
+<text x="1170" y="330">USER: start monitor entry</text>
+<text x="1170" y="369">ACTIVE + RESUMABLE:</text>
+<text x="1187" y="398">request monitor exit</text>
+<text x="1170" y="437" class="small">Other stages ignore the edge</text>
+<text x="1170" y="472" class="small">Firmware completes LEAVE / RFE</text>
+<path d="M1065 377 H1150" class="path"/>
+<path d="M210 265 V285 H1105 V690 H1090" class="normal"/>
+<path d="M250 460 V675 H1090" class="normal"/>
+<rect x="1090" y="650" width="360" height="85" rx="10" class="existing"/>
+<text x="1270" y="682" text-anchor="middle" class="head">ARM + VBlank snapshot</text>
+<text x="1270" y="713" text-anchor="middle" class="small">Keys and pad bits remain visible to the game</text>
+<text x="45" y="760" class="small">For a new edge, the combined level must be observed inactive at a VBlank. Brief presses or releases can be missed.</text>
+<text x="45" y="790" class="small">Dashed paths indicate proposed system integration; the accessory request needs a protocol change.</text>
+</svg>

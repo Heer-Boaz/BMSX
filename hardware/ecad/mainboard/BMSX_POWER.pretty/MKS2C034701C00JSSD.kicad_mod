@@ -1,0 +1,145 @@
+(footprint "MKS2C034701C00JSSD"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "WIMA MKS 2 MKS2C034701C00JSSD; WIMA 03.26 p35: body L7.2 W3.5 H8.5mm, PCM5mm, lead diameter0.5mm. Retained native pads/drills and design courtyard; no manufacturer-max tolerance, recommended PCB drill/courtyard or vendor 3D qualification.")
+	(tags "WIMA MKS2 PET film radial 470nF 63V PCM5")
+	(property "Reference" "C70"
+		(at 2.5 -3 0)
+		(layer "F.SilkS")
+		(uuid "de5478bd-7c4d-4578-b29b-970a1eccfa2c")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "470nF 63V PET 5% MKS2C034701C00JSSD"
+		(at 2.5 3 0)
+		(layer "F.Fab")
+		(uuid "d95bf9d5-0436-4cf1-93b5-308c8af8be3e")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" "https://www.wima.de/wp-content/uploads/media/e_WIMA_MKS_2.pdf"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "46bf16d9-e28f-4095-9966-adf4307b670f")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "d233d309-78bf-4a51-8c24-df16ed11110a")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_line
+		(start -1.22 -1.87)
+		(end 6.22 -1.87)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "166cd118-4e5f-4367-9fea-e2e7098a5020")
+	)
+	(fp_line
+		(start -1.22 1.87)
+		(end -1.22 -1.87)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "a4fd864b-3421-46d4-a66b-dfbf97ed2653")
+	)
+	(fp_line
+		(start 6.22 -1.87)
+		(end 6.22 1.87)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "8f0bf094-7c3f-48c1-8b8c-3f642d82f64e")
+	)
+	(fp_line
+		(start 6.22 1.87)
+		(end -1.22 1.87)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "4f7317ea-8f7d-49e0-94d3-ef0a85be076f")
+	)
+	(fp_rect
+		(start -1.35 -2)
+		(end 6.35 2)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "a87b6293-8fa4-46fe-9c2f-257ae991b45c")
+	)
+	(fp_rect
+		(start -1.1 -1.75)
+		(end 6.1 1.75)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "cf517716-be84-412e-a244-ecabcd3a997f")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 2.5 0 0)
+		(layer "F.Fab")
+		(uuid "fee9f6a3-7132-4cd6-9d06-631cbcf25b39")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" thru_hole circle
+		(at 0 0)
+		(size 1.5 1.5)
+		(drill 0.75)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "784f2ff7-4bbe-4dc2-94a2-4a1f5b90f74c")
+	)
+	(pad "2" thru_hole circle
+		(at 5 0)
+		(size 1.5 1.5)
+		(drill 0.75)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "a69ca435-9ede-41a3-aeb7-724286e3aae1")
+	)
+	(embedded_fonts no)
+)

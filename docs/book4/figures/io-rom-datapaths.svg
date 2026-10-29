@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 820" role="img" aria-labelledby="title desc">
+<title id="title">U7 firmware and input datapaths</title>
+<desc id="desc">Separate ROM and INPUT endpoints share the system bus. The ROM sequencer collects two sixteen-bit flash reads. The upper half of the system ROM window returns zero. The INPUT endpoint connects keyboard, accessory banks and snapshot publication. The separate supervisor input is an internal test point, not a front-panel button. Reset reaches U7 and the flash together.</desc>
+<defs>
+  <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#294b68"/></marker>
+  <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:19px}.title{font-size:25px;font-weight:bold}.minor{font-size:17px}.chip{fill:#f5f7f8;stroke:#294b68;stroke-width:2}.block{fill:#e1edf4;stroke:#294b68;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}.reset{fill:none;stroke:#667d8c;stroke-width:2;stroke-dasharray:6 4}</style>
+</defs>
+<rect width="1320" height="820" fill="white"/>
+<text x="35" y="40" class="title">Firmware and input circuits</text>
+<rect x="280" y="80" width="650" height="620" rx="12" class="chip"/>
+<text x="305" y="116" class="title">U7 I/O / ROM bridge</text>
+<rect x="330" y="155" width="550" height="190" rx="7" class="block"/>
+<text x="355" y="190" class="title">ROM endpoint and read sequencer</text>
+<text x="355" y="224">00000000H–007FFFFFH → U33</text>
+<text x="355" y="252">00800000H–00FFFFFFH → zero</text>
+<text x="355" y="280">Two 16-bit captures → one 32-bit word</text>
+<text x="355" y="315" class="minor">Read DATA and full fault RESPONSE; writes: UNMAPPED</text>
+<rect x="1010" y="165" width="275" height="170" rx="7" class="chip"/>
+<text x="1147" y="201" text-anchor="middle" class="title">U33 firmware flash</text>
+<text x="1147" y="234" text-anchor="middle">8 MiB · 4M × 16</text>
+<text x="1147" y="263" text-anchor="middle">70 ns grade</text>
+<text x="1147" y="300" text-anchor="middle" class="minor">WE_N inactive · zero-tailed image</text>
+<path d="M880,205 H1010" class="line"/><text x="943" y="184" text-anchor="middle" class="minor">A / CE / OE</text>
+<path d="M1010,280 H880" class="line"/><text x="946" y="265" text-anchor="middle" class="minor">D[15:0]</text>
+<rect x="30" y="170" width="200" height="175" rx="7" class="chip"/>
+<text x="130" y="207" text-anchor="middle" class="title">Shared SYS</text>
+<text x="130" y="243" text-anchor="middle">AD[31:0]</text>
+<text x="130" y="274" text-anchor="middle">Phase / byte enables</text>
+<text x="130" y="309" text-anchor="middle" class="minor">Selected target only</text>
+<path d="M230,250 H330" class="line both"/>
+<path d="M255,250 V470 H330" class="line both"/>
+<rect x="330" y="400" width="550" height="190" rx="7" class="block"/>
+<text x="355" y="436" class="title">INPUT endpoint and snapshot bank</text>
+<text x="355" y="470">PS/2 receive → held keyboard bitmap</text>
+<text x="355" y="500">Four serial lanes → held pad / pointer banks</text>
+<text x="355" y="530">ARM + VBlank → one published snapshot</text>
+<text x="355" y="565" class="minor">Supervisor request capture is independent of ARM</text>
+<rect x="1010" y="410" width="275" height="130" rx="7" class="chip"/>
+<text x="1147" y="446" text-anchor="middle" class="title">Front connections</text>
+<text x="1147" y="483" text-anchor="middle">PS/2 keyboard</text>
+<text x="1147" y="514" text-anchor="middle">Four pad links</text>
+<path d="M880,485 H1010" class="line both"/>
+<rect x="1010" y="565" width="275" height="64" rx="7" class="chip"/>
+<text x="1147" y="590" text-anchor="middle">Supervisor input</text>
+<text x="1147" y="613" text-anchor="middle" class="minor">Internal test point; no button</text>
+<path d="M1010,597 H950 V565 H880" class="line"/>
+<text x="35" y="405" class="minor">CS_ROM_N / CS_IO_N</text>
+<text x="35" y="432" class="minor">Separate address selection</text>
+<text x="35" y="620" class="minor">GFX VBLANK_EVT</text>
+<text x="35" y="650" class="minor">GFX DISPLAY_CONTEXT</text>
+<path d="M230,630 H360 V590" class="line"/>
+<text x="1010" y="665" class="minor">CORE SUPERVISOR_N</text>
+<path d="M840,590 V655 H995" class="line"/>
+<text x="305" y="668" class="minor">CLK_IO: 33.8688 MHz · synchronous local reset release</text>
+<path d="M130,750 H1300 V320 H1285 M600,750 V700" class="reset"/>
+<text x="35" y="738">U60 RESET_N</text>
+<text x="305" y="790" class="minor">U7 and U33 share the supervised board reset; no flash programming path is exposed.</text>
+</svg>

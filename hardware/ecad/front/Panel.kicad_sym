@@ -1,0 +1,739 @@
+(kicad_symbol_lib
+	(version 20241209)
+	(generator kicad_symbol_editor)
+	(symbol "Terminals_J1"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "J"
+			(at 0 16.509999999999998 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "BMSX PAD9 proposal"
+			(at 0 -16.509999999999998 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(symbol "Terminals_J1_1_1"
+			(rectangle
+				(start -5.08 12.7)
+				(end 5.08 -12.7)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -7.62 10.16 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 7.62 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 5.08 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 2.54 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 0.0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -2.539999999999999 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -5.08 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -7.620000000000001 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -10.16 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "Terminals_J2"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "J"
+			(at 0 16.509999999999998 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "BMSX PAD9 proposal"
+			(at 0 -16.509999999999998 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(symbol "Terminals_J2_1_1"
+			(rectangle
+				(start -5.08 12.7)
+				(end 5.08 -12.7)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -7.62 10.16 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 7.62 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 5.08 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 2.54 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 0.0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -2.539999999999999 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -5.08 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -7.620000000000001 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -10.16 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "Terminals_J3"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "J"
+			(at 0 16.509999999999998 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "BMSX PAD9 proposal"
+			(at 0 -16.509999999999998 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(symbol "Terminals_J3_1_1"
+			(rectangle
+				(start -5.08 12.7)
+				(end 5.08 -12.7)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -7.62 10.16 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 7.62 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 5.08 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 2.54 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 0.0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -2.539999999999999 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -5.08 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -7.620000000000001 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -10.16 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "Terminals_J4"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "J"
+			(at 0 16.509999999999998 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "BMSX PAD9 proposal"
+			(at 0 -16.509999999999998 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(symbol "Terminals_J4_1_1"
+			(rectangle
+				(start -5.08 12.7)
+				(end 5.08 -12.7)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -7.62 10.16 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 7.62 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 5.08 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 2.54 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 0.0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -2.539999999999999 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -5.08 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -7.620000000000001 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -10.16 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "Terminals_J5"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "J"
+			(at 0 30.48 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "B20B-PHDSS"
+			(at 0 -30.48 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(symbol "Terminals_J5_1_1"
+			(rectangle
+				(start -5.08 26.67)
+				(end 5.08 -26.67)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -7.62 24.13 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 21.59 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 19.049999999999997 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 16.509999999999998 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 13.969999999999999 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 11.43 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 8.889999999999999 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 6.349999999999998 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 3.8099999999999987 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 1.2699999999999996 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -1.2699999999999996 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -3.8100000000000023 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -6.350000000000001 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -8.890000000000004 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -11.430000000000003 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -13.970000000000002 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -16.51 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -19.05 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -21.59 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -7.62 -24.13 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "20"
+					(effects
+						(font
+							(size 0.85 0.85))))))))

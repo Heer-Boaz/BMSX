@@ -1,0 +1,2154 @@
+(kicad_symbol_lib
+	(version 20220914)
+	(generator bmsx_r5)
+	(symbol "BMSX_L1"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "L"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47uH"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_L1_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_L1_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C100"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1500uF 16V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C100_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C100_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C101"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1000uF 10V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C101_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C101_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C102"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1000uF 10V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C102_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C102_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C103"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "330pF C0G 5%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C103_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C103_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R21"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R21_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R21_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C107"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1uF 25V X7R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C107_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C107_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C108"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 25V X7R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C108_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C108_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R22"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "2.2R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R22_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R22_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R23"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "2.2R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R23_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R23_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R24"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "0R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R24_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R24_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_L2"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "L"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47uH"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_L2_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_L2_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C109"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1500uF 16V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C109_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C109_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C110"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1000uF 10V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C110_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C110_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C111"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1000uF 10V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C111_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C111_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C112"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "270pF C0G 5%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C112_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C112_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R26"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R26_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R26_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C116"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1uF 25V X7R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C116_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C116_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C117"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 25V X7R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C117_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C117_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R27"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "2.2R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R27_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R27_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R28"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "2.2R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R28_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R28_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R29"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "0R"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R29_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R29_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP1"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "VIN9"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP1_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP1_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP2"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "GND"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP2_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP2_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP3"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "V3V3"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP3_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP3_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP4"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "V5"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP4_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP4_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP5"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "SHDN"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP5_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP5_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_U60"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 -8.89 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "LTC1326IS8"
+			(at 0 8.89 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_U60_0_1"
+			(rectangle
+				(start -8.89 6.35)
+				(end 8.89 -6.35)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_U60_1_1"
+			(pin power_in line
+				(at -11.43 3.81 0)
+				(length 2.54)
+				(name "VCC3"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin power_in line
+				(at -11.43 1.27 0)
+				(length 2.54)
+				(name "VCC5"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin input line
+				(at -11.43 -1.27 0)
+				(length 2.54)
+				(name "VCCA"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "3"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin power_in line
+				(at -11.43 -3.81 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "4"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin output line
+				(at 11.43 3.81 180)
+				(length 2.54)
+				(name "RST_H"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "5"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin open_collector line
+				(at 11.43 1.27 180)
+				(length 2.54)
+				(name "RESET_N"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "6"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin open_collector line
+				(at 11.43 -1.27 180)
+				(length 2.54)
+				(name "SRST_N"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "7"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin input line
+				(at 11.43 -3.81 180)
+				(length 2.54)
+				(name "PBR"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "8"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C60"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 25V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C60_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C60_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C61"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 25V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C61_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C61_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R100"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "60.4k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R100_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R100_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R101"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R101_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R101_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C62"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1nF C0G"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C62_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C62_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R102"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R102_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R102_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R103"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R103_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R103_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R104"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R104_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R104_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R105"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R105_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R105_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_R107"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "R"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100k 1%"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_R107_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_R107_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP60"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "RESET_N"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP60_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP60_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP61"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "POWER_SW"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP61_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP61_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP62"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "RESET_SW"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP62_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP62_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_F60"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "F"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "0451005.MRL 5A fast"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_F60_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_F60_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_C65"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "C"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 25V"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_C65_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_C65_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP63"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "RAW9 boundary"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP63_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP63_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_TP64"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "T"
+			(at 0 -6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "GND boundary"
+			(at 0 6.35 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_TP64_0_1"
+			(rectangle
+				(start -8.89 3.81)
+				(end 8.89 -3.81)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_TP64_1_1"
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))))
+	(symbol "BMSX_J60"
+		(pin_names
+			(offset 0.8))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "J"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "CAP CONTROLS 5pos"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(symbol "BMSX_J60_0_1"
+			(rectangle
+				(start -8.89 5.08)
+				(end 8.89 -5.08)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background))))
+		(symbol "BMSX_J60_1_1"
+			(pin passive line
+				(at -11.43 2.54 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "1"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at -11.43 0 0)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "2"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at -11.43 -2.54 0)
+				(length 2.54)
+				(name "3"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "3"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 2.54 180)
+				(length 2.54)
+				(name "4"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "4"
+					(effects
+						(font
+							(size 1.0 1.0)))))
+			(pin passive line
+				(at 11.43 0 180)
+				(length 2.54)
+				(name "5"
+					(effects
+						(font
+							(size 1.0 1.0))))
+				(number "5"
+					(effects
+						(font
+							(size 1.0 1.0))))))))

@@ -1,0 +1,71 @@
+(footprint "Yageo_RC0603_retained"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(descr "Yageo RC0603 family; original project generic 0603 lands retained, not manufacturer-recommended lands.")
+	(layer "F.Cu")
+	(property "Reference" "REF**"
+		(at 0 -1.6 0)
+		(layer "F.SilkS")
+		(uuid "00d51959-cbc7-4383-b3cd-64ea9fe389f2")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12))))
+	(property "Value" "RC0603 1%"
+		(at 0 1.6 0)
+		(layer "F.Fab")
+		(uuid "f9c6270e-5451-4949-ab7f-e86bf1f4be6b")
+		(effects
+			(font
+				(size 0.7 0.7)
+				(thickness 0.1))))
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "0eb457ec-994a-4d0f-82fb-8d57d7693af3")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "a0dbcafc-347f-4191-9e30-d7515f806db6")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(zone_connect 2)
+	(attr smd)
+	(fp_rect
+		(start -1.5 -0.75)
+		(end 1.5 0.75)
+		(stroke
+			(width 0.05)
+			(type default))
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "437669f1-66c9-4cd0-944a-68651c278b66"))
+	(fp_rect
+		(start -0.8 -0.4)
+		(end 0.8 0.4)
+		(stroke
+			(width 0.1)
+			(type default))
+		(fill no)
+		(layer "F.Fab")
+		(uuid "75a35366-27de-448b-8f45-92d66f2efbdb"))
+	(pad "1" smd rect
+		(at -0.8 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "cdba21f4-2f6e-40f8-97cb-9fa11c4a396f"))
+	(pad "2" smd rect
+		(at 0.8 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "aeb09005-ce91-49eb-b3a4-52f2cb657737"))
+	(embedded_fonts no))

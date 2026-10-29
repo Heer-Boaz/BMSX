@@ -1,0 +1,208 @@
+(footprint "Wurth_61201621621_2x08_P2.54mm_Vertical"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Wurth 61201621621 WR-BHD 2x8 2.54mm vertical box header; manufacturer nominal body 27.98x9.10mm, recommended hole 1.10mm; selected mating socket 61201623021. Model is explicit maximum-envelope geometry, not vendor STEP or mating proof.")
+	(tags "Wurth 61201621621 WR-BHD 2x8 keyed IDC header maximum envelope")
+	(property "Reference" "REF**"
+		(at 1.27 -6.1 0)
+		(layer "F.SilkS")
+		(uuid "b3295325-c273-47d2-8c2d-11e7d3e03b65")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Value" "61201621621"
+		(at 1.27 23.88 0)
+		(layer "F.Fab")
+		(uuid "829955f6-797e-4c94-a42c-c7980f919e1b")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Datasheet" "https://www.we-online.com/components/products/datasheet/61201621621.pdf"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "56c03723-aaa0-4a83-81fb-4ca5fed0b3d5")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "56ebc00c-f5ff-44f3-bdcb-d2a1ad7b9ca3")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(attr through_hole)
+	(pad "1" thru_hole roundrect
+		(at 0 0)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(roundrect_rratio 0.147059)
+		(uuid "515816df-fc21-44c1-900f-976fc7af325d"))
+	(pad "2" thru_hole circle
+		(at 2.54 0)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "bd41bf09-eda0-4169-8a36-1ac50442e01d"))
+	(pad "3" thru_hole circle
+		(at 0 2.54)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "88d5d2dd-06c3-40fd-bc7e-a6836dec10f2"))
+	(pad "4" thru_hole circle
+		(at 2.54 2.54)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "eec34e34-6e91-4a72-9517-5ccf396196cd"))
+	(pad "5" thru_hole circle
+		(at 0 5.08)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "1143b1d6-3678-4108-a933-920c75940a99"))
+	(pad "6" thru_hole circle
+		(at 2.54 5.08)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "39b40861-d282-4b85-bd1c-d74e63d9cec3"))
+	(pad "7" thru_hole circle
+		(at 0 7.62)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "04f843ca-df21-435b-880f-024e814944f0"))
+	(pad "8" thru_hole circle
+		(at 2.54 7.62)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "672d1c60-c53b-470b-a34f-1cdb5803a526"))
+	(pad "9" thru_hole circle
+		(at 0 10.16)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "aa982b62-edc1-4283-9fa9-edf6f2ee32c5"))
+	(pad "10" thru_hole circle
+		(at 2.54 10.16)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "bf0ca8de-a3e5-4fe6-8696-b1c40c3a8a54"))
+	(pad "11" thru_hole circle
+		(at 0 12.7)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "c305346f-6df0-47f7-b7fe-7c2496b9996b"))
+	(pad "12" thru_hole circle
+		(at 2.54 12.7)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "a461565f-8b0f-4cb5-a443-27a8207a3873"))
+	(pad "13" thru_hole circle
+		(at 0 15.24)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "0e995416-b320-4b03-853a-8a4163962e8a"))
+	(pad "14" thru_hole circle
+		(at 2.54 15.24)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "5d2b0bdf-63ab-423a-810d-c0eb6c98848b"))
+	(pad "15" thru_hole circle
+		(at 0 17.78)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "742afa09-a61e-4738-911c-0ed4054fdd20"))
+	(pad "16" thru_hole circle
+		(at 2.54 17.78)
+		(size 1.7 1.7)
+		(drill 1.1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "3d97dc63-850a-49fc-8667-6a924edb48c2"))
+	(embedded_fonts no)
+	(fp_rect
+		(start -3.28 -5.1)
+		(end 5.82 22.88)
+		(stroke
+			(width 0.1)
+			(type solid))
+		(fill none)
+		(layer "F.Fab"))
+	(fp_rect
+		(start -3.39 -5.21)
+		(end 5.93 22.99)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(fill none)
+		(layer "F.SilkS"))
+	(fp_rect
+		(start -3.9 -5.7)
+		(end 6.4 23.5)
+		(stroke
+			(width 0.05)
+			(type solid))
+		(fill none)
+		(layer "F.CrtYd"))
+	(fp_line
+		(start -4.65 -0.5)
+		(end -3.65 0)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -3.65 0)
+		(end -4.65 0.5)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -4.65 0.5)
+		(end -4.65 -0.5)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(model "${KIPRJMOD}/BMSX_AV.pretty/3d/61201621621_MAX_ENVELOPE.step"
+		(offset
+			(xyz 0 0 0))
+		(scale
+			(xyz 1 1 1))
+		(rotate
+			(xyz 0 0 0))))

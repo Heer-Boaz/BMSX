@@ -1,0 +1,17 @@
+project:
+  output-dir: _book-iv
+  resources:
+    - book4/figures/**
+    - "!_book-iv*/**"
+
+book:
+  title: "Book IV — Console Construction and Service Reference"
+  chapters:
+    - index.md
+    - book4/index.md
+    - book4/construction.md
+    - book4/hardware.md
+    - book4/power.md
+    - book4/connectors.md
+    - book4/pads.md
+    - book4/servicing.md

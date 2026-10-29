@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 550" role="img" aria-labelledby="title desc">
+<title id="title">BMSX pad link edge timing and signal ownership</title>
+<desc id="desc">SELECT is active low. The console drives clock and command; the accessory drives DATA while selected. Both sample on rising clock edges and advance on falling edges. Requests carry output commands and logical display context; replies carry controls and pointer records. The first bit is prepared before the first rising edge. A frame contains 512 rising edges followed by a hold and deselected preparation gap.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0L10,5L0,10Z" fill="#29485e"/></marker>
+<style>text{font-family:Arial,sans-serif;fill:#183044;font-size:18px}.title{font-size:27px;font-weight:bold}.label{font-weight:bold}.clock{fill:none;stroke:#285b83;stroke-width:3}.cmd{fill:none;stroke:#33674c;stroke-width:3}.data{fill:none;stroke:#a35d25;stroke-width:3}.guide{stroke:#8094a3;stroke-width:1.5;stroke-dasharray:5 5}.dim{fill:none;stroke:#29485e;stroke-width:1.5;marker-start:url(#arrow);marker-end:url(#arrow)}.small{font-size:16px}</style></defs>
+<rect width="1280" height="550" fill="white"/>
+<text x="36" y="42" class="title">BMSX-PAD selected transfer</text>
+<text x="36" y="75">Mode 0: sample on rising edges, advance on falling edges. Spacing is illustrative.</text>
+<text x="35" y="143" class="label">SELECT_N</text>
+<path d="M165,123H195V151H1075V123H1220" class="clock"/>
+<text x="35" y="229" class="label">CLK</text>
+<path d="M165,235H275V199H355V235H435V199H515V235H595V199H675V235H740M840,235H915V199H995V235H1220" class="clock"/>
+<text x="770" y="228" text-anchor="middle">…</text>
+<text x="35" y="310" class="label">CMD</text>
+<text x="35" y="332" class="small">console →</text>
+<path d="M165,288H195L207,300H343L367,324H503L527,300H663L687,324H740M840,300H1063L1075,288H1220M195,324H343L367,300H503L527,324H663L687,300H740M840,324H1075" class="cmd"/>
+<text x="275" y="318" text-anchor="middle" class="small">byte 0 bit 7</text>
+<text x="435" y="318" text-anchor="middle" class="small">byte 0 bit 6</text>
+<text x="995" y="318" text-anchor="middle" class="small">CRC bit 0</text>
+<text x="35" y="393" class="label">DATA</text>
+<text x="35" y="415" class="small">← accessory</text>
+<rect x="263" y="352" width="24" height="68" fill="#dce9f2"/>
+<path d="M165,392H195M1075,392H1220" class="guide"/>
+<path d="M195,380H343L367,404H503L527,380H663L687,404H740M840,380H1075M195,404H343L367,380H503L527,404H663L687,380H740M840,404H1075" class="data"/>
+<text x="275" y="398" text-anchor="middle" class="small">byte 0 bit 7</text>
+<text x="435" y="398" text-anchor="middle" class="small">byte 0 bit 6</text>
+<text x="995" y="398" text-anchor="middle" class="small">CRC bit 0</text>
+<path d="M275,178V423M435,178V423M915,178V423" class="guide"/>
+<path d="M195,174H275M995,174H1075" class="dim"/>
+<text x="235" y="110" text-anchor="middle" class="small">lead 68 clocks</text>
+<text x="1035" y="110" text-anchor="middle" class="small">hold 68 clocks</text>
+<path d="M275,452H435" class="dim"/>
+<text x="355" y="480" text-anchor="middle" class="small">135 or 136 reference clocks per bit</text>
+<text x="650" y="470" class="small">DATA at controller: ≥100 ns setup and ≥100 ns hold</text>
+<text x="650" y="497" class="small">Deselected DATA is high impedance; 47 kΩ provides idle bias.</text>
+<text x="36" y="533" class="small">64 bytes each way, including CRC. After SELECT rises: 8,192 reference clocks for reply preparation.</text>
+</svg>

@@ -1,0 +1,7 @@
+# Tested native CAD/geometry and analysis toolchain; Python 3.12.
+cadquery==2.8.0
+cadquery-ocp==7.9.3.1.1
+vtk==9.6.2
+numpy==2.5.4
+scipy==1.18.1
+ruff==0.17.2

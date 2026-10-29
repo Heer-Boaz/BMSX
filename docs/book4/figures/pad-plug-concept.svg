@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 780" role="img" aria-labelledby="title desc">
+<title id="title">BMSX pad connector — proposed cable plug</title>
+<desc id="desc">Schematic view facing a console socket and a transparent view through the rear of the cable plug in the same direction. The five lower and four upper contacts align by number. An indexing rib at the right of the socket is intended to fit a corresponding groove in the plug nose. A side view shows a plug body, proposed seating shoulder, flexible cable exit and console front.</desc>
+<defs><style>text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:18px}.num{font-size:19px;font-weight:bold}.shell{fill:#e1eaf0;stroke:#294b68;stroke-width:3}.hole{fill:#fff;stroke:#294b68;stroke-width:3}.pin{fill:#bd9851;stroke:#765b29;stroke-width:2}.pocket{fill:#fff;stroke:#765b29;stroke-width:3}.dash{fill:none;stroke:#9b6d21;stroke-width:4;stroke-dasharray:8 5}.call{fill:none;stroke:#294b68;stroke-width:2}</style></defs>
+<rect width="1400" height="780" fill="white"/>
+<text x="45" y="50" class="title">BMSX pad connector — proposed cable plug</text>
+<text x="45" y="86" class="small">Conceptual mating arrangement · existing socket and contact assignments unchanged</text>
+<text x="65" y="142" class="head">Console socket</text><text x="65" y="169" class="small">View facing the front panel</text>
+<rect x="60" y="190" width="510" height="210" rx="22" class="shell"/>
+<path d="M95 222 H535 V268 H518 V310 H535 V368 H95 Z" class="hole"/>
+<g class="pin"><circle cx="175" cy="316" r="9"/><circle cx="255" cy="316" r="9"/><circle cx="335" cy="316" r="9"/><circle cx="415" cy="316" r="9"/><circle cx="495" cy="316" r="9"/><circle cx="215" cy="268" r="9"/><circle cx="295" cy="268" r="9"/><circle cx="375" cy="268" r="9"/><circle cx="455" cy="268" r="9"/></g>
+<g class="num" text-anchor="middle"><text x="175" y="355">1</text><text x="255" y="355">2</text><text x="335" y="355">3</text><text x="415" y="355">4</text><text x="495" y="355">5</text><text x="215" y="254">6</text><text x="295" y="254">7</text><text x="375" y="254">8</text><text x="455" y="254">9</text></g>
+<path d="M527 289 H600" class="call"/><text x="605" y="295" class="small">Indexing rib</text>
+<text x="795" y="142" class="head">Plug nose — transparent alignment view</text><text x="795" y="169" class="small">Viewed from cable side toward the socket</text>
+<path d="M790 190 H1300 V400 H790 Z" class="shell"/>
+<path d="M825 222 H1265 V268 H1248 V310 H1265 V368 H825 Z" class="dash"/>
+<g class="pocket"><circle cx="905" cy="316" r="9"/><circle cx="985" cy="316" r="9"/><circle cx="1065" cy="316" r="9"/><circle cx="1145" cy="316" r="9"/><circle cx="1225" cy="316" r="9"/><circle cx="945" cy="268" r="9"/><circle cx="1025" cy="268" r="9"/><circle cx="1105" cy="268" r="9"/><circle cx="1185" cy="268" r="9"/></g>
+<g class="num" text-anchor="middle"><text x="905" y="355">1</text><text x="985" y="355">2</text><text x="1065" y="355">3</text><text x="1145" y="355">4</text><text x="1225" y="355">5</text><text x="945" y="254">6</text><text x="1025" y="254">7</text><text x="1105" y="254">8</text><text x="1185" y="254">9</text></g>
+<path d="M1255 289 H1350 V425 H1080" class="call"/><text x="1070" y="430" text-anchor="end" class="small">Groove to accept rib</text>
+<text x="65" y="510" class="head">Side view — proposed seating and cable exit</text>
+<rect x="750" y="535" width="24" height="125" fill="#98a9b3"/><rect x="180" y="551" width="80" height="95" rx="5" class="shell"/><rect x="260" y="566" width="480" height="65" rx="8" class="shell"/><rect x="740" y="576" width="65" height="45" rx="3" class="shell"/><path d="M180 596 H92" fill="none" stroke="#294b68" stroke-width="14"/><path d="M774 650 H1040" class="call"/><text x="1052" y="656" class="small">Console front</text>
+<path d="M740 630 V693 H770" class="call"/><text x="780" y="699" class="small">Proposed seating shoulder</text><path d="M125 605 V693 H65" class="call"/><text x="65" y="720" class="small">Flexible cable exit</text>
+<text x="45" y="751" class="small">Contact retention, shoulder geometry, cable restraint and mating tolerances remain to be designed and checked.</text>
+</svg>

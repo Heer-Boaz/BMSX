@@ -1,0 +1,1285 @@
+{
+  "revision": "COMPACT_HIDDEN_MOUNTS_DC_GUIDE_2",
+  "units": "mm, world X right Y rear Z up",
+  "authority": "Own compact mechanical proposal, not a public product dimension or a copied console shape. Native component and fixed port owners remain authoritative for occupancy.",
+  "case": {
+    "outer_bounds_mm": [
+      0,
+      0,
+      3,
+      240,
+      190,
+      56
+    ],
+    "plan_radius_mm": 6,
+    "outer_top_radius_mm": 3.5,
+    "inner_bounds_mm": [
+      3,
+      3,
+      2.9,
+      237,
+      187,
+      53
+    ],
+    "inner_plan_radius_mm": 3,
+    "inner_top_radius_mm": 0.5,
+    "wall_mm": 3,
+    "lid_opening_mm": [
+      3.5,
+      35,
+      52.9,
+      236.5,
+      180,
+      57
+    ],
+    "lid_opening_radius_mm": 1.4,
+    "lid_bounds_mm": [
+      3.9,
+      35.4,
+      53,
+      236.1,
+      179.6,
+      56
+    ],
+    "lid_plan_radius_mm": 1,
+    "nominal_seam_mm": 0.4
+  },
+  "base": {
+    "bounds_mm": [
+      0,
+      0,
+      1,
+      240,
+      190,
+      3
+    ],
+    "plan_radius_mm": 6,
+    "material": "6061-T6 prototype deck,2mm; no exposed top metal case",
+    "local_ribs": [
+      {
+        "bounds_mm": [
+          110,
+          105,
+          -3,
+          230,
+          115,
+          1
+        ]
+      },
+      {
+        "bounds_mm": [
+          110,
+          135,
+          -3,
+          230,
+          145,
+          1
+        ]
+      }
+    ],
+    "rear_screw_seating_pads": {
+      "axes_XY_mm": [
+        [
+          195,
+          178
+        ],
+        [
+          195,
+          184
+        ],
+        [
+          148.5,
+          180.51
+        ],
+        [
+          148.5,
+          184.71
+        ]
+      ],
+      "OD_mm": 6,
+      "lower_Z_mm": -1,
+      "upper_Z_mm": 1
+    },
+    "fastener_head_access": [
+      {
+        "axis": "Z",
+        "centre_mm": [
+          16,
+          66,
+          0.125
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 1.75
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          145,
+          29,
+          0.125
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 1.75
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          224,
+          29,
+          0.125
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 1.75
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          16,
+          169,
+          0.125
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 1.75
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          224,
+          169,
+          0.125
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 1.75
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          123.325,
+          110,
+          1.5
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 3.2
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          216.675,
+          110,
+          1.5
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 3.2
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          123.325,
+          140,
+          1.5
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 3.2
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          216.675,
+          140,
+          1.5
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 3.2
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          112,
+          107,
+          -0.5
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 3.2
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          116,
+          126,
+          -0.5
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 3.2
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          226,
+          105,
+          -0.5
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 3.2
+      },
+      {
+        "axis": "Z",
+        "centre_mm": [
+          226,
+          146,
+          -0.5
+        ],
+        "diameter_mm": 6,
+        "through_length_mm": 3.2
+      }
+    ],
+    "rear_screw_seating_bridges": [
+      {
+        "bounds_mm": [
+          192,
+          178,
+          -1,
+          198,
+          184,
+          1
+        ]
+      }
+    ]
+  },
+  "mainboard_stands": {
+    "axes_XY_mm": [
+      [
+        16,
+        66
+      ],
+      [
+        145,
+        29
+      ],
+      [
+        224,
+        29
+      ],
+      [
+        16,
+        169
+      ],
+      [
+        224,
+        169
+      ]
+    ],
+    "OD_mm": 7,
+    "bore_mm": 3.4,
+    "stand_range_Z_mm": [
+      3,
+      10
+    ],
+    "top_insulator_range_Z_mm": [
+      11.6,
+      12.1
+    ],
+    "material": "G10"
+  },
+  "feet": {
+    "axes_XY_mm": [
+      [
+        24,
+        12
+      ],
+      [
+        216,
+        12
+      ],
+      [
+        24,
+        178
+      ],
+      [
+        216,
+        178
+      ]
+    ],
+    "foot_OD_mm": 16,
+    "rubber_range_Z_mm": [
+      -10.8,
+      -6.8
+    ],
+    "attachment": "Selfadhesive16x4mm elastomerprototypefeet. No external footscrews; friction/adhesivequalification remainsprocurement."
+  },
+  "cartridge_roof_apertures": [
+    {
+      "centre_XY_mm": [
+        170,
+        110
+      ],
+      "size_XY_mm": [
+        113,
+        21
+      ],
+      "radius_mm": 1
+    },
+    {
+      "centre_XY_mm": [
+        170,
+        140
+      ],
+      "size_XY_mm": [
+        113,
+        21
+      ],
+      "radius_mm": 1
+    }
+  ],
+  "vents": {
+    "scope": "Small underside intake and rear upper outlet; no fan, no roof/side grille, no invented50Cbulk-air gate. Flow and touch temperatures need a powered prototype.",
+    "base_intake_slots": [
+      {
+        "bounds_mm": [
+          18,
+          45,
+          0,
+          20,
+          90,
+          4
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          24,
+          45,
+          0,
+          26,
+          90,
+          4
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          30,
+          45,
+          0,
+          32,
+          90,
+          4
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          36,
+          45,
+          0,
+          38,
+          90,
+          4
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          42,
+          45,
+          0,
+          44,
+          90,
+          4
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          48,
+          45,
+          0,
+          50,
+          90,
+          4
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          54,
+          45,
+          0,
+          56,
+          90,
+          4
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          60,
+          45,
+          0,
+          62,
+          90,
+          4
+        ],
+        "radius_mm": 0.9
+      }
+    ],
+    "rear_outlet_slots": [
+      {
+        "bounds_mm": [
+          60,
+          186.5,
+          44,
+          62,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          67,
+          186.5,
+          44,
+          69,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          74,
+          186.5,
+          44,
+          76,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          81,
+          186.5,
+          44,
+          83,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          88,
+          186.5,
+          44,
+          90,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          95,
+          186.5,
+          44,
+          97,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          102,
+          186.5,
+          44,
+          104,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          109,
+          186.5,
+          44,
+          111,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          116,
+          186.5,
+          44,
+          118,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      },
+      {
+        "bounds_mm": [
+          123,
+          186.5,
+          44,
+          125,
+          191,
+          50
+        ],
+        "radius_mm": 0.8,
+        "axis": "Y"
+      }
+    ]
+  },
+  "port_owners": [
+    "design/enclosure_front_io.json",
+    "design/enclosure_rear_io.json",
+    "design/enclosure_controls.json"
+  ],
+  "frame_owner": "design/enclosure_cartridge_frame.json",
+  "fastener_plan": {
+    "components": {
+      "M3_NUT": {
+        "kind": "nut",
+        "designation": "ISO 4032 / DIN 934 M3 hexagon nut",
+        "material": "A2 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "max_across_flats_mm": 5.5,
+        "max_across_corners_mm": 6.350853,
+        "max_height_mm": 2.4,
+        "min_height_mm": 2.15,
+        "source_refs": [
+          "nut"
+        ],
+        "cad_thread_clear_bore_mm": 3,
+        "source_scope": "Across-corner maximum is conservative regular-hex geometry derived from AF maximum, NOT the source e-minimum.",
+        "quantity_this_scope": 20
+      },
+      "M3_WASHER": {
+        "kind": "washer",
+        "designation": "ISO 7089 M3 plain washer",
+        "material": "stainless steel",
+        "OD_mm": 7,
+        "ID_mm": 3.2,
+        "thickness_mm": 0.5,
+        "incoming_thickness_acceptance_mm": [
+          0.45,
+          0.55
+        ],
+        "source_refs": [
+          "M3washer"
+        ],
+        "source_scope": "Nominal product dimensions; +/-0.05mm thickness is own receiving acceptance.",
+        "quantity_this_scope": 7
+      },
+      "M3_BUTTON_16": {
+        "kind": "screw",
+        "designation": "ISO 7380-1 M3x16",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "length_mm": 16,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          15.8,
+          16.2
+        ],
+        "head_style": "button",
+        "head_max_OD_mm": 5.7,
+        "head_max_height_mm": 1.65,
+        "hex_key_AF_mm": 2,
+        "minimum_threaded_length_mm": 16,
+        "source_refs": [
+          "M3button"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 8
+      },
+      "M3_BUTTON_14": {
+        "kind": "screw",
+        "designation": "ISO7380-1 M3x14",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "length_mm": 14,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          13.8,
+          14.2
+        ],
+        "head_style": "button",
+        "head_max_OD_mm": 5.7,
+        "head_max_height_mm": 1.65,
+        "hex_key_AF_mm": 2,
+        "minimum_threaded_length_mm": 14,
+        "source_refs": [
+          "M3button"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 8
+      },
+      "M3_CAP_55": {
+        "kind": "screw",
+        "designation": "ISO4762 M3x55",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "length_mm": 55,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          54.8,
+          55.2
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 5.5,
+        "head_max_height_mm": 3,
+        "hex_key_AF_mm": 2.5,
+        "minimum_threaded_length_mm": 18,
+        "source_refs": [
+          "M3cap16"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 4
+      }
+    },
+    "fastening_interfaces": [
+      {
+        "id": "MAIN_MOUNT_0",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          16,
+          66,
+          1
+        ],
+        "tip_position_mm": [
+          16,
+          66,
+          17
+        ],
+        "screw": {
+          "component_ref": "M3_BUTTON_16",
+          "part_name": "MAIN_MOUNT_0_SCREW",
+          "head_top_axis_mm": -0.6499999999999999
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "MAIN_MOUNT_0_WASHER",
+            "axis_range_mm": [
+              12.1,
+              12.6
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "MAIN_MOUNT_0_NUT",
+          "axis_range_mm": [
+            12.6,
+            15
+          ],
+          "hex_clocking_deg": 30
+        }
+      },
+      {
+        "id": "MAIN_MOUNT_1",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          145,
+          29,
+          1
+        ],
+        "tip_position_mm": [
+          145,
+          29,
+          15
+        ],
+        "screw": {
+          "component_ref": "M3_BUTTON_14",
+          "part_name": "MAIN_MOUNT_1_SCREW",
+          "head_top_axis_mm": -0.6499999999999999
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "MAIN_MOUNT_1_WASHER",
+            "axis_range_mm": [
+              12.1,
+              12.6
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "MAIN_MOUNT_1_NUT",
+          "axis_range_mm": [
+            12.6,
+            15
+          ],
+          "hex_clocking_deg": 30
+        }
+      },
+      {
+        "id": "MAIN_MOUNT_2",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          224,
+          29,
+          1
+        ],
+        "tip_position_mm": [
+          224,
+          29,
+          17
+        ],
+        "screw": {
+          "component_ref": "M3_BUTTON_16",
+          "part_name": "MAIN_MOUNT_2_SCREW",
+          "head_top_axis_mm": -0.6499999999999999
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "MAIN_MOUNT_2_WASHER",
+            "axis_range_mm": [
+              12.1,
+              12.6
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "MAIN_MOUNT_2_NUT",
+          "axis_range_mm": [
+            12.6,
+            15
+          ],
+          "hex_clocking_deg": 30
+        }
+      },
+      {
+        "id": "MAIN_MOUNT_3",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          16,
+          169,
+          1
+        ],
+        "tip_position_mm": [
+          16,
+          169,
+          17
+        ],
+        "screw": {
+          "component_ref": "M3_BUTTON_16",
+          "part_name": "MAIN_MOUNT_3_SCREW",
+          "head_top_axis_mm": -0.6499999999999999
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "MAIN_MOUNT_3_WASHER",
+            "axis_range_mm": [
+              12.1,
+              12.6
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "MAIN_MOUNT_3_NUT",
+          "axis_range_mm": [
+            12.6,
+            15
+          ],
+          "hex_clocking_deg": 30
+        }
+      },
+      {
+        "id": "MAIN_MOUNT_4",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          224,
+          169,
+          1
+        ],
+        "tip_position_mm": [
+          224,
+          169,
+          17
+        ],
+        "screw": {
+          "component_ref": "M3_BUTTON_16",
+          "part_name": "MAIN_MOUNT_4_SCREW",
+          "head_top_axis_mm": -0.6499999999999999
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "MAIN_MOUNT_4_WASHER",
+            "axis_range_mm": [
+              12.1,
+              12.6
+            ]
+          }
+        ],
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "MAIN_MOUNT_4_NUT",
+          "axis_range_mm": [
+            12.6,
+            15
+          ],
+          "hex_clocking_deg": 30
+        }
+      },
+      {
+        "id": "CASE_BOTTOM_0",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          8,
+          43,
+          -1.5
+        ],
+        "tip_position_mm": [
+          8,
+          43,
+          53.5
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_55",
+          "part_name": "CASE_BOTTOM_0_SCREW",
+          "head_top_axis_mm": -4.5
+        },
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "CASE_BOTTOM_0_NUT",
+          "axis_range_mm": [
+            51,
+            53.4
+          ],
+          "hex_clocking_deg": 30
+        },
+        "washers": []
+      },
+      {
+        "id": "CASE_BOTTOM_1",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          236.5,
+          58,
+          -1.5
+        ],
+        "tip_position_mm": [
+          236.5,
+          58,
+          53.5
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_55",
+          "part_name": "CASE_BOTTOM_1_SCREW",
+          "head_top_axis_mm": -4.5
+        },
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "CASE_BOTTOM_1_NUT",
+          "axis_range_mm": [
+            51,
+            53.4
+          ],
+          "hex_clocking_deg": 30
+        },
+        "washers": []
+      },
+      {
+        "id": "CASE_BOTTOM_2",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          8,
+          171,
+          -1.5
+        ],
+        "tip_position_mm": [
+          8,
+          171,
+          53.5
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_55",
+          "part_name": "CASE_BOTTOM_2_SCREW",
+          "head_top_axis_mm": -4.5
+        },
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "CASE_BOTTOM_2_NUT",
+          "axis_range_mm": [
+            51,
+            53.4
+          ],
+          "hex_clocking_deg": 30
+        },
+        "washers": []
+      },
+      {
+        "id": "CASE_BOTTOM_3",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          236.5,
+          171,
+          -1.5
+        ],
+        "tip_position_mm": [
+          236.5,
+          171,
+          53.5
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_55",
+          "part_name": "CASE_BOTTOM_3_SCREW",
+          "head_top_axis_mm": -4.5
+        },
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "CASE_BOTTOM_3_NUT",
+          "axis_range_mm": [
+            51,
+            53.4
+          ],
+          "hex_clocking_deg": 30
+        },
+        "washers": []
+      }
+    ]
+  },
+  "service": "Remove4 recessed bottomM3x55; lift uppercentralcap with captive nuts, then remove bottomtray downward. Controls/ports/harness/chassis remain fixed. No screwhead onroof/front/rear.",
+  "not_proven": [
+    "Injection-mould draft/tooling/ribs and production materials",
+    "Mechanical strength, insertion/abuse/lifetime tests",
+    "Actual populated copper routing/SI/PI",
+    "Own ASIC silicon/PVT/power and package thermal data",
+    "Powered enclosure thermal/touch measurements"
+  ],
+  "fabrication_release": false,
+  "closure": {
+    "axes_XY_mm": [
+      [
+        8,
+        43
+      ],
+      [
+        236.5,
+        58
+      ],
+      [
+        8,
+        171
+      ],
+      [
+        236.5,
+        171
+      ]
+    ],
+    "screw": "ISO4762 M3x55 fromunderside",
+    "screw_underhead_Z_mm": -1.5,
+    "screw_tip_Z_mm": 53.5,
+    "base_pad_OD_mm": 7,
+    "base_pad_range_Z_mm": [
+      0.5,
+      3
+    ],
+    "clearance_diameter_mm": 3.4,
+    "compression_range_Z_mm": [
+      3,
+      49.8
+    ],
+    "left_post_OD_mm": 9,
+    "left_mid_clip_X_mm": 9.5,
+    "left_mid_range_Z_mm": [
+      8,
+      35
+    ],
+    "right_post_OD_mm": 7,
+    "right_stock_min_X_mm": 235.5,
+    "lid_boss_OD_mm": 9,
+    "lid_boss_range_Z_mm": [
+      49.8,
+      54.2
+    ],
+    "lid_boss_min_X_mm": 3.9,
+    "nut_pocket_range_Z_mm": [
+      51,
+      53.6
+    ],
+    "nut_pocket_AF_mm": 5.8,
+    "nut_range_Z_mm": [
+      51,
+      53.4
+    ],
+    "nut_clocking_deg": 30,
+    "blind_shaft_end_Z_mm": 54.0,
+    "lid_side_regions": [
+      [
+        -5,
+        35.4,
+        49.8,
+        4.5,
+        179.6,
+        56.2
+      ],
+      [
+        235.5,
+        35.4,
+        49.8,
+        245,
+        179.6,
+        56.2
+      ]
+    ],
+    "case_side_clearances": [
+      [
+        -5,
+        35,
+        49.6,
+        4.9,
+        180,
+        56.2
+      ],
+      [
+        235.1,
+        35,
+        49.6,
+        245,
+        180,
+        56.2
+      ]
+    ],
+    "lid_bridges": [
+      [
+        -0.5,
+        35.4,
+        53,
+        5,
+        179.6,
+        56
+      ],
+      [
+        235,
+        35.4,
+        53,
+        240,
+        179.6,
+        56
+      ]
+    ],
+    "service_profile_boss_radius_mm": 4.5,
+    "load_path": "Bottomcaphead -> coverboss web -> Alpad -> compressioncolumn -> lidboss floor -> captiveM3nut. Right Ccolumns clear originalcontrollerloom; no longbolt at232/58. Nuts side-load frominside beforeassembly, no exterioraccesshole.",
+    "lid_carried_parts": [
+      "CASE__REMOVABLE_LID",
+      "CASE_BOTTOM_0_NUT",
+      "CASE_BOTTOM_1_NUT",
+      "CASE_BOTTOM_2_NUT",
+      "CASE_BOTTOM_3_NUT"
+    ],
+    "release_screws": [
+      "CASE_BOTTOM_0_SCREW",
+      "CASE_BOTTOM_1_SCREW",
+      "CASE_BOTTOM_2_SCREW",
+      "CASE_BOTTOM_3_SCREW"
+    ],
+    "nut_assembly": "Side-load nuts into closed-bottom hexpockets beforeassembly. Small non-structural assemblytack prevents unloaded handlingloss; screw tension is carried by1.2mm bossfloor, not adhesive. Fit/retention strength needs prototype acceptance."
+  },
+  "bottom_cover": {
+    "outer_bounds_mm": [
+      -2,
+      -2,
+      -6.8,
+      242,
+      192,
+      3
+    ],
+    "outer_radius_mm": 8,
+    "inner_bounds_mm": [
+      -0.4,
+      -0.4,
+      -4.8,
+      240.4,
+      190.4,
+      3.1
+    ],
+    "inner_radius_mm": 6.4,
+    "boss_OD_mm": 9,
+    "boss_range_Z_mm": [
+      -4.8,
+      0.5
+    ],
+    "head_counterbore_OD_mm": 6,
+    "counterbore_range_Z_mm": [
+      -6.9,
+      -1.5
+    ],
+    "shaft_range_Z_mm": [
+      -1.6,
+      0.6
+    ],
+    "floor_mm": 2,
+    "intake_slots": [
+      {
+        "bounds_mm": [
+          18,
+          45,
+          -6.9,
+          20,
+          90,
+          -4.7
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          24,
+          45,
+          -6.9,
+          26,
+          90,
+          -4.7
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          30,
+          45,
+          -6.9,
+          32,
+          90,
+          -4.7
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          36,
+          45,
+          -6.9,
+          38,
+          90,
+          -4.7
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          42,
+          45,
+          -6.9,
+          44,
+          90,
+          -4.7
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          48,
+          45,
+          -6.9,
+          50,
+          90,
+          -4.7
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          54,
+          45,
+          -6.9,
+          56,
+          90,
+          -4.7
+        ],
+        "radius_mm": 0.9
+      },
+      {
+        "bounds_mm": [
+          60,
+          45,
+          -6.9,
+          62,
+          90,
+          -4.7
+        ],
+        "radius_mm": 0.9
+      }
+    ],
+    "scope": "Opaque bottomtray hides chassis/PCB/framefasteners. Only four recessedcaseheads accessiblefromunderside. Existing8 intakeXYslots repeated throughtray; no new roof/sidegrilles. Addedairgap/skin changesheatpath, not a thermalqualification.",
+    "carried_parts": [
+      "CASE__BOTTOM_COVER",
+      "CASE__FOOT_0",
+      "CASE__FOOT_1",
+      "CASE__FOOT_2",
+      "CASE__FOOT_3"
+    ]
+  },
+  "thermal_scope": "Existingpassive study remainsbaseline. Bottomtray addsairgap/skin; no identical thermalperformance claimed, no fan or reducedclock/power/functions."
+}

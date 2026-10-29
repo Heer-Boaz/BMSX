@@ -1,0 +1,7659 @@
+(kicad_symbol_lib
+	(version 20241209)
+	(generator kicad_symbol_editor)
+	(symbol "U1"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "BMSX CORE: CPU + GTE + DMA + GEO + IMGDEC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_4ASIC:U1"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(symbol "U1_1_1"
+			(rectangle
+				(start -31.75 31.75)
+				(end 31.75 -31.75)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin power_in line
+				(at -34.29 29.21 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 26.67 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 24.13 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 21.59 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 19.05 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "20"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "28"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "29"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "37"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "38"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "51"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "52"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "53"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "54"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "62"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "63"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "71"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "72"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "80"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -19.05 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "81"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -21.59 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "89"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -24.13 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "90"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -26.67 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "103"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -29.21 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "104"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 29.21 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "105"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 26.67 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "106"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 24.13 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "119"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 21.59 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "120"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 19.05 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "128"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "129"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "137"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "138"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "146"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "147"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "155"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "156"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "157"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "158"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "171"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "172"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "180"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "181"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "189"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -19.05 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "190"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -21.59 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "198"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -24.13 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "199"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -26.67 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "207"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -29.21 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "208"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U1_2_1"
+			(rectangle
+				(start -31.75 33.02)
+				(end 31.75 -33.02)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin bidirectional line
+				(at -34.29 30.48 0)
+				(length 2.54)
+				(name "MD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 27.94 0)
+				(length 2.54)
+				(name "MD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 25.4 0)
+				(length 2.54)
+				(name "MD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 22.86 0)
+				(length 2.54)
+				(name "MD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 20.32 0)
+				(length 2.54)
+				(name "MD4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 17.78 0)
+				(length 2.54)
+				(name "MD5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 15.24 0)
+				(length 2.54)
+				(name "MD6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 12.7 0)
+				(length 2.54)
+				(name "MD7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 10.16 0)
+				(length 2.54)
+				(name "MD8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 7.62 0)
+				(length 2.54)
+				(name "MD9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 5.08 0)
+				(length 2.54)
+				(name "MD10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 2.54 0)
+				(length 2.54)
+				(name "MD11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 0.0 0)
+				(length 2.54)
+				(name "MD12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -2.54 0)
+				(length 2.54)
+				(name "MD13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -5.08 0)
+				(length 2.54)
+				(name "MD14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "21"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -7.62 0)
+				(length 2.54)
+				(name "MD15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "22"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -10.16 0)
+				(length 2.54)
+				(name "MD16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "23"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -12.7 0)
+				(length 2.54)
+				(name "MD17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "24"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -15.24 0)
+				(length 2.54)
+				(name "MD18"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "25"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -17.78 0)
+				(length 2.54)
+				(name "MD19"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "26"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -20.32 0)
+				(length 2.54)
+				(name "MD20"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "27"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -22.86 0)
+				(length 2.54)
+				(name "MD21"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "30"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -25.4 0)
+				(length 2.54)
+				(name "MD22"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "31"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -27.94 0)
+				(length 2.54)
+				(name "MD23"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "32"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -30.48 0)
+				(length 2.54)
+				(name "MD24"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "33"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 30.48 180)
+				(length 2.54)
+				(name "MD25"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "34"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 27.94 180)
+				(length 2.54)
+				(name "MD26"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "35"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 25.4 180)
+				(length 2.54)
+				(name "MD27"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "36"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 22.86 180)
+				(length 2.54)
+				(name "MD28"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "39"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 20.32 180)
+				(length 2.54)
+				(name "MD29"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "40"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 17.78 180)
+				(length 2.54)
+				(name "MD30"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "41"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 15.24 180)
+				(length 2.54)
+				(name "MD31"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "42"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 12.7 180)
+				(length 2.54)
+				(name "MRAS_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "43"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 10.16 180)
+				(length 2.54)
+				(name "MCAS0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "44"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 7.62 180)
+				(length 2.54)
+				(name "MCAS1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "45"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 5.08 180)
+				(length 2.54)
+				(name "MCAS2_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "46"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 2.54 180)
+				(length 2.54)
+				(name "MCAS3_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "47"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 0.0 180)
+				(length 2.54)
+				(name "MWE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "48"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -2.54 180)
+				(length 2.54)
+				(name "MOE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "49"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -5.08 180)
+				(length 2.54)
+				(name "MA9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "177"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -7.62 180)
+				(length 2.54)
+				(name "MA8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "178"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -10.16 180)
+				(length 2.54)
+				(name "MA7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "179"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -12.7 180)
+				(length 2.54)
+				(name "MA6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "182"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -15.24 180)
+				(length 2.54)
+				(name "MA5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "183"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -17.78 180)
+				(length 2.54)
+				(name "MA4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "184"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -20.32 180)
+				(length 2.54)
+				(name "MA3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "185"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -22.86 180)
+				(length 2.54)
+				(name "MA2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "186"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -25.4 180)
+				(length 2.54)
+				(name "MA1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "187"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -27.94 180)
+				(length 2.54)
+				(name "MA0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "188"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U1_3_1"
+			(rectangle
+				(start -31.75 22.86)
+				(end 31.75 -22.86)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin no_connect line
+				(at -34.29 20.32 0)
+				(length 2.54)
+				(name "RSVD_50"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "50"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 17.78 0)
+				(length 2.54)
+				(name "RSVD_101"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "101"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 15.24 0)
+				(length 2.54)
+				(name "RSVD_102"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "102"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 12.7 0)
+				(length 2.54)
+				(name "RSVD_159"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "159"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 10.16 0)
+				(length 2.54)
+				(name "RSVD_160"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "160"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 7.62 0)
+				(length 2.54)
+				(name "RSVD_161"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "161"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 5.08 0)
+				(length 2.54)
+				(name "RSVD_162"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "162"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 2.54 0)
+				(length 2.54)
+				(name "RSVD_163"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "163"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 0.0 0)
+				(length 2.54)
+				(name "RSVD_164"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "164"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -2.54 0)
+				(length 2.54)
+				(name "VBLANK_EVT"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "165"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -5.08 0)
+				(length 2.54)
+				(name "TRST_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "166"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -7.62 0)
+				(length 2.54)
+				(name "TMS"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "167"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -10.16 0)
+				(length 2.54)
+				(name "TESTMODE"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "168"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -12.7 0)
+				(length 2.54)
+				(name "TDO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "169"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -15.24 0)
+				(length 2.54)
+				(name "TDI"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "170"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -17.78 0)
+				(length 2.54)
+				(name "TCK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "173"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -20.32 0)
+				(length 2.54)
+				(name "SUPERVISOR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "174"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 20.32 180)
+				(length 2.54)
+				(name "RESET_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "175"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 17.78 180)
+				(length 2.54)
+				(name "REQ_APU"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "176"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 15.24 180)
+				(length 2.54)
+				(name "IRQ_PCRTC_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "191"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 12.7 180)
+				(length 2.54)
+				(name "IRQ_GPU_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "192"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 10.16 180)
+				(length 2.54)
+				(name "IRQ_APU_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "193"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 7.62 180)
+				(length 2.54)
+				(name "GNT_APU"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "194"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 5.08 180)
+				(length 2.54)
+				(name "DREQ_GPU_W"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "195"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 2.54 180)
+				(length 2.54)
+				(name "DREQ_GPU_R"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "196"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 0.0 180)
+				(length 2.54)
+				(name "DREQ_APU_W"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "197"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -2.54 180)
+				(length 2.54)
+				(name "DREQ_APU_R"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "200"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -5.08 180)
+				(length 2.54)
+				(name "CS_ROM_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "201"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -7.62 180)
+				(length 2.54)
+				(name "CS_PCRTC_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "202"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -10.16 180)
+				(length 2.54)
+				(name "CS_IO_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "203"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -12.7 180)
+				(length 2.54)
+				(name "CS_GPU_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "204"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -15.24 180)
+				(length 2.54)
+				(name "CS_APU_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "205"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -17.78 180)
+				(length 2.54)
+				(name "CLK_SYS"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "206"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U1_4_1"
+			(rectangle
+				(start -31.75 25.4)
+				(end 31.75 -25.4)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin bidirectional line
+				(at -34.29 22.86 0)
+				(length 2.54)
+				(name "CAD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "55"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 20.32 0)
+				(length 2.54)
+				(name "CAD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "56"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 17.78 0)
+				(length 2.54)
+				(name "CAD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "57"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 15.24 0)
+				(length 2.54)
+				(name "CAD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "58"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 12.7 0)
+				(length 2.54)
+				(name "CAD4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "59"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 10.16 0)
+				(length 2.54)
+				(name "CAD5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "60"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 7.62 0)
+				(length 2.54)
+				(name "CAD6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "61"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 5.08 0)
+				(length 2.54)
+				(name "CAD7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "64"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 2.54 0)
+				(length 2.54)
+				(name "CAD8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "65"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 0.0 0)
+				(length 2.54)
+				(name "CAD9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "66"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -2.54 0)
+				(length 2.54)
+				(name "CAD10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "67"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -5.08 0)
+				(length 2.54)
+				(name "CAD11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "68"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -7.62 0)
+				(length 2.54)
+				(name "CAD12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "69"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -10.16 0)
+				(length 2.54)
+				(name "CAD13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "70"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -12.7 0)
+				(length 2.54)
+				(name "CAD14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "73"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -15.24 0)
+				(length 2.54)
+				(name "CAD15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "74"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -17.78 0)
+				(length 2.54)
+				(name "CAL_HI"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "75"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -20.32 0)
+				(length 2.54)
+				(name "CAL_LO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "76"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -22.86 0)
+				(length 2.54)
+				(name "CART_CLK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "77"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 22.86 180)
+				(length 2.54)
+				(name "CART_DIR"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "78"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 20.32 180)
+				(length 2.54)
+				(name "CART_OE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "79"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 17.78 180)
+				(length 2.54)
+				(name "CART_PRESENT0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "82"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 15.24 180)
+				(length 2.54)
+				(name "CART_PRESENT1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "83"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 12.7 180)
+				(length 2.54)
+				(name "CART_READY0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "84"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 10.16 180)
+				(length 2.54)
+				(name "CART_READY1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "85"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 7.62 180)
+				(length 2.54)
+				(name "CART_RESET_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "86"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 5.08 180)
+				(length 2.54)
+				(name "CBE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "87"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 2.54 180)
+				(length 2.54)
+				(name "CBE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "88"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 0.0 180)
+				(length 2.54)
+				(name "CRD_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "91"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -2.54 180)
+				(length 2.54)
+				(name "CS_CART0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "92"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -5.08 180)
+				(length 2.54)
+				(name "CS_CART1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "93"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -7.62 180)
+				(length 2.54)
+				(name "CWR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "94"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -10.16 180)
+				(length 2.54)
+				(name "DREQ_C0_R"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "95"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -12.7 180)
+				(length 2.54)
+				(name "DREQ_C0_W"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "96"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -15.24 180)
+				(length 2.54)
+				(name "DREQ_C1_R"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "97"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -17.78 180)
+				(length 2.54)
+				(name "DREQ_C1_W"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "98"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -20.32 180)
+				(length 2.54)
+				(name "IRQ_CART0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "99"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -22.86 180)
+				(length 2.54)
+				(name "IRQ_CART1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "100"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U1_5_1"
+			(rectangle
+				(start -31.75 26.67)
+				(end 31.75 -26.67)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin bidirectional line
+				(at -34.29 24.13 0)
+				(length 2.54)
+				(name "SYS_READY_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "107"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 21.59 0)
+				(length 2.54)
+				(name "SYS_BE3_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "108"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 19.05 0)
+				(length 2.54)
+				(name "SYS_BE2_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "109"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "SYS_BE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "110"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "SYS_BE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "111"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "SYS_WR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "112"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "SYS_RD_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "113"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "SYS_AS_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "114"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "SYS_AD31"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "115"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "SYS_AD30"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "116"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "SYS_AD29"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "117"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "SYS_AD28"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "118"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "SYS_AD27"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "121"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "SYS_AD26"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "122"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "SYS_AD25"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "123"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "SYS_AD24"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "124"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "SYS_AD23"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "125"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -19.05 0)
+				(length 2.54)
+				(name "SYS_AD22"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "126"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -21.59 0)
+				(length 2.54)
+				(name "SYS_AD21"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "127"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -24.13 0)
+				(length 2.54)
+				(name "SYS_AD20"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "130"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 24.13 180)
+				(length 2.54)
+				(name "SYS_AD19"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "131"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 21.59 180)
+				(length 2.54)
+				(name "SYS_AD18"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "132"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 19.05 180)
+				(length 2.54)
+				(name "SYS_AD17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "133"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "SYS_AD16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "134"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "SYS_AD15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "135"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "SYS_AD14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "136"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "SYS_AD13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "139"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "SYS_AD12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "140"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "SYS_AD11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "141"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "SYS_AD10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "142"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "SYS_AD9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "143"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "SYS_AD8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "144"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "SYS_AD7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "145"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "SYS_AD6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "148"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "SYS_AD5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "149"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "SYS_AD4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "150"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "SYS_AD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "151"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -19.05 180)
+				(length 2.54)
+				(name "SYS_AD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "152"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -21.59 180)
+				(length 2.54)
+				(name "SYS_AD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "153"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -24.13 180)
+				(length 2.54)
+				(name "SYS_AD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "154"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "U2"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "BMSX GFX: GPU + PCRTC"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_4ASIC:U2"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(symbol "U2_1_1"
+			(rectangle
+				(start -31.75 31.75)
+				(end 31.75 -31.75)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin power_in line
+				(at -34.29 29.21 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 26.67 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 24.13 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 21.59 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 19.05 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "20"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "28"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "29"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "37"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "38"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "51"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "52"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "53"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "54"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "62"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "63"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "71"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "72"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "80"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -19.05 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "81"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -21.59 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "89"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -24.13 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "90"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -26.67 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "103"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -29.21 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "104"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 29.21 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "105"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 26.67 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "106"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 24.13 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "119"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 21.59 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "120"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 19.05 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "128"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "129"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "137"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "138"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "146"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "147"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "155"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "156"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "157"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "158"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "171"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "172"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "180"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "181"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "189"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -19.05 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "190"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -21.59 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "198"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -24.13 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "199"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -26.67 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "207"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -29.21 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "208"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U2_2_1"
+			(rectangle
+				(start -31.75 26.67)
+				(end 31.75 -26.67)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin bidirectional line
+				(at -34.29 24.13 0)
+				(length 2.54)
+				(name "SYS_AD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 21.59 0)
+				(length 2.54)
+				(name "SYS_AD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 19.05 0)
+				(length 2.54)
+				(name "SYS_AD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "SYS_AD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "SYS_AD4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "SYS_AD5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "SYS_AD6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "SYS_AD7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "SYS_AD8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "SYS_AD9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "SYS_AD10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "SYS_AD11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "SYS_AD12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "SYS_AD13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "SYS_AD14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "21"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "SYS_AD15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "22"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "SYS_AD16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "23"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -19.05 0)
+				(length 2.54)
+				(name "SYS_AD17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "24"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -21.59 0)
+				(length 2.54)
+				(name "SYS_AD18"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "25"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -24.13 0)
+				(length 2.54)
+				(name "SYS_AD19"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "26"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 24.13 180)
+				(length 2.54)
+				(name "SYS_AD20"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "27"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 21.59 180)
+				(length 2.54)
+				(name "SYS_AD21"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "30"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 19.05 180)
+				(length 2.54)
+				(name "SYS_AD22"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "31"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "SYS_AD23"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "32"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "SYS_AD24"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "33"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "SYS_AD25"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "34"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "SYS_AD26"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "35"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "SYS_AD27"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "36"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "SYS_AD28"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "39"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "SYS_AD29"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "40"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "SYS_AD30"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "41"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "SYS_AD31"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "42"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "SYS_AS_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "43"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "SYS_RD_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "44"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "SYS_WR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "45"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "SYS_BE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "46"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "SYS_BE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "47"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -19.05 180)
+				(length 2.54)
+				(name "SYS_BE2_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "48"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -21.59 180)
+				(length 2.54)
+				(name "SYS_BE3_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "49"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin tri_state line
+				(at 34.29 -24.13 180)
+				(length 2.54)
+				(name "SYS_READY_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "50"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U2_3_1"
+			(rectangle
+				(start -31.75 22.86)
+				(end 31.75 -22.86)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin input line
+				(at -34.29 20.32 0)
+				(length 2.54)
+				(name "CS_GPU_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "55"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 17.78 0)
+				(length 2.54)
+				(name "CS_PCRTC_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "56"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 15.24 0)
+				(length 2.54)
+				(name "DREQ_GPU_R"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "57"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 12.7 0)
+				(length 2.54)
+				(name "DREQ_GPU_W"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "58"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 10.16 0)
+				(length 2.54)
+				(name "IRQ_GPU_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "59"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 7.62 0)
+				(length 2.54)
+				(name "IRQ_PCRTC_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "60"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 5.08 0)
+				(length 2.54)
+				(name "RSVD_97"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "97"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 2.54 0)
+				(length 2.54)
+				(name "RSVD_98"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "98"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 0.0 0)
+				(length 2.54)
+				(name "RSVD_99"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "99"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 -2.54 0)
+				(length 2.54)
+				(name "RSVD_100"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "100"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 -5.08 0)
+				(length 2.54)
+				(name "RSVD_101"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "101"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 -7.62 0)
+				(length 2.54)
+				(name "RSVD_102"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "102"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 -10.16 0)
+				(length 2.54)
+				(name "RSVD_159"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "159"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 -12.7 0)
+				(length 2.54)
+				(name "RSVD_160"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "160"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 -15.24 0)
+				(length 2.54)
+				(name "RSVD_161"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "161"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 -17.78 0)
+				(length 2.54)
+				(name "RSVD_162"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "162"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -34.29 -20.32 0)
+				(length 2.54)
+				(name "RSVD_163"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "163"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 34.29 20.32 180)
+				(length 2.54)
+				(name "RSVD_164"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "164"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 34.29 17.78 180)
+				(length 2.54)
+				(name "RSVD_165"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "165"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 34.29 15.24 180)
+				(length 2.54)
+				(name "RSVD_166"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "166"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 34.29 12.7 180)
+				(length 2.54)
+				(name "RSVD_167"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "167"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 34.29 10.16 180)
+				(length 2.54)
+				(name "RSVD_168"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "168"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 34.29 7.62 180)
+				(length 2.54)
+				(name "RSVD_169"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "169"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 34.29 5.08 180)
+				(length 2.54)
+				(name "RSVD_170"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "170"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 34.29 2.54 180)
+				(length 2.54)
+				(name "RSVD_173"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "173"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 0.0 180)
+				(length 2.54)
+				(name "DISPLAY_CONTEXT"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "174"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -2.54 180)
+				(length 2.54)
+				(name "TRST_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "184"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -5.08 180)
+				(length 2.54)
+				(name "TMS"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "185"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -7.62 180)
+				(length 2.54)
+				(name "TDI"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "186"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -10.16 180)
+				(length 2.54)
+				(name "TCK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "187"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -12.7 180)
+				(length 2.54)
+				(name "RESET_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "188"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -15.24 180)
+				(length 2.54)
+				(name "TDO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "191"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -17.78 180)
+				(length 2.54)
+				(name "CLK_SYS"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "192"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -20.32 180)
+				(length 2.54)
+				(name "CLK_BEAM"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "193"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U2_4_1"
+			(rectangle
+				(start -31.75 19.05)
+				(end 31.75 -19.05)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin output line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "RGB_B0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "61"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "RGB_B1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "64"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "RGB_B2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "65"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "RGB_B3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "66"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "RGB_B4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "67"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "RGB_B5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "68"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "RGB_B6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "69"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "RGB_B7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "70"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "RGB_G0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "73"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "RGB_G1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "74"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "RGB_G2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "75"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "RGB_G3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "76"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "RGB_G4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "77"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "RGB_G5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "78"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "RGB_G6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "79"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "RGB_G7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "82"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "RGB_R0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "83"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "RGB_R1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "84"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "RGB_R2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "85"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "RGB_R3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "86"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "RGB_R4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "87"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "RGB_R5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "88"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "RGB_R6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "91"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "RGB_R7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "92"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "VBLANK_EVT"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "93"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "VIDEO_BLANK_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "94"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "VIDEO_CSYNC_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "95"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "VIDEO_PCLK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "96"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U2_5_1"
+			(rectangle
+				(start -31.75 38.1)
+				(end 31.75 -38.1)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin output line
+				(at -34.29 35.56 0)
+				(length 2.54)
+				(name "VRAM_A7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "107"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 33.02 0)
+				(length 2.54)
+				(name "VRAM_A6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "108"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 30.48 0)
+				(length 2.54)
+				(name "VRAM_A5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "109"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 27.94 0)
+				(length 2.54)
+				(name "VRAM_A4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "110"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 25.4 0)
+				(length 2.54)
+				(name "VRAM_A3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "111"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 22.86 0)
+				(length 2.54)
+				(name "VRAM_A2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "112"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 20.32 0)
+				(length 2.54)
+				(name "VRAM_A1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "113"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 17.78 0)
+				(length 2.54)
+				(name "VRAM_A0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "114"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 15.24 0)
+				(length 2.54)
+				(name "VRAM_D31"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "115"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 12.7 0)
+				(length 2.54)
+				(name "VRAM_D30"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "116"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 10.16 0)
+				(length 2.54)
+				(name "VRAM_D29"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "117"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 7.62 0)
+				(length 2.54)
+				(name "VRAM_D28"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "118"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 5.08 0)
+				(length 2.54)
+				(name "VRAM_D27"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "121"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 2.54 0)
+				(length 2.54)
+				(name "VRAM_D26"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "122"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 0.0 0)
+				(length 2.54)
+				(name "VRAM_D25"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "123"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -2.54 0)
+				(length 2.54)
+				(name "VRAM_D24"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "124"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -5.08 0)
+				(length 2.54)
+				(name "VRAM_D23"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "125"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -7.62 0)
+				(length 2.54)
+				(name "VRAM_D22"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "126"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -10.16 0)
+				(length 2.54)
+				(name "VRAM_D21"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "127"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -12.7 0)
+				(length 2.54)
+				(name "VRAM_D20"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "130"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -15.24 0)
+				(length 2.54)
+				(name "VRAM_D19"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "131"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -17.78 0)
+				(length 2.54)
+				(name "VRAM_D18"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "132"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -20.32 0)
+				(length 2.54)
+				(name "VRAM_D17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "133"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -22.86 0)
+				(length 2.54)
+				(name "VRAM_D16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "134"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -25.4 0)
+				(length 2.54)
+				(name "VRAM_D15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "135"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -27.94 0)
+				(length 2.54)
+				(name "VRAM_D14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "136"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -30.48 0)
+				(length 2.54)
+				(name "VRAM_D13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "139"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -33.02 0)
+				(length 2.54)
+				(name "VRAM_D12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "140"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -35.56 0)
+				(length 2.54)
+				(name "VRAM_D11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "141"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 35.56 180)
+				(length 2.54)
+				(name "VRAM_D10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "142"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 33.02 180)
+				(length 2.54)
+				(name "VRAM_D9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "143"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 30.48 180)
+				(length 2.54)
+				(name "VRAM_D8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "144"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 27.94 180)
+				(length 2.54)
+				(name "VRAM_D7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "145"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 25.4 180)
+				(length 2.54)
+				(name "VRAM_D6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "148"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 22.86 180)
+				(length 2.54)
+				(name "VRAM_D5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "149"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 20.32 180)
+				(length 2.54)
+				(name "VRAM_D4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "150"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 17.78 180)
+				(length 2.54)
+				(name "VRAM_D3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "151"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 15.24 180)
+				(length 2.54)
+				(name "VRAM_D2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "152"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 12.7 180)
+				(length 2.54)
+				(name "VRAM_D1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "153"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 10.16 180)
+				(length 2.54)
+				(name "VRAM_D0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "154"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 7.62 180)
+				(length 2.54)
+				(name "VRAM_WE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "175"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 5.08 180)
+				(length 2.54)
+				(name "VRAM_OE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "176"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 2.54 180)
+				(length 2.54)
+				(name "VRAM_CE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "177"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 0.0 180)
+				(length 2.54)
+				(name "VRAM_BE3_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "178"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -2.54 180)
+				(length 2.54)
+				(name "VRAM_BE2_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "179"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -5.08 180)
+				(length 2.54)
+				(name "VRAM_BE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "182"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -7.62 180)
+				(length 2.54)
+				(name "VRAM_BE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "183"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -10.16 180)
+				(length 2.54)
+				(name "VRAM_A18"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "194"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -12.7 180)
+				(length 2.54)
+				(name "VRAM_A17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "195"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -15.24 180)
+				(length 2.54)
+				(name "VRAM_A16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "196"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -17.78 180)
+				(length 2.54)
+				(name "VRAM_A15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "197"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -20.32 180)
+				(length 2.54)
+				(name "VRAM_A14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "200"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -22.86 180)
+				(length 2.54)
+				(name "VRAM_A13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "201"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -25.4 180)
+				(length 2.54)
+				(name "VRAM_A12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "202"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -27.94 180)
+				(length 2.54)
+				(name "VRAM_A11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "203"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -30.48 180)
+				(length 2.54)
+				(name "VRAM_A10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "204"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -33.02 180)
+				(length 2.54)
+				(name "VRAM_A9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "205"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -35.56 180)
+				(length 2.54)
+				(name "VRAM_A8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "206"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "U4"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "BMSX APU"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_4ASIC:U4"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(symbol "U4_1_1"
+			(rectangle
+				(start -31.75 21.59)
+				(end 31.75 -21.59)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin power_in line
+				(at -34.29 19.05 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "37"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "38"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "39"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "40"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "47"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "48"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "55"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "56"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "63"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -19.05 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "64"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 19.05 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "65"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "66"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "85"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "86"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "93"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "94"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "101"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "102"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "103"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "104"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "111"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "112"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "119"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "120"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "127"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -19.05 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "128"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U4_2_1"
+			(rectangle
+				(start -31.75 26.67)
+				(end 31.75 -26.67)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin bidirectional line
+				(at -34.29 24.13 0)
+				(length 2.54)
+				(name "SYS_AD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 21.59 0)
+				(length 2.54)
+				(name "SYS_AD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 19.05 0)
+				(length 2.54)
+				(name "SYS_AD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "SYS_AD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "SYS_AD4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "SYS_AD5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "SYS_AD6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "SYS_AD7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "SYS_AD8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "SYS_AD9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "SYS_AD10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "SYS_AD11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "SYS_AD12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "SYS_AD13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "20"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "SYS_AD14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "21"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "SYS_AD15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "22"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "SYS_AD16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "23"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -19.05 0)
+				(length 2.54)
+				(name "SYS_AD17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "24"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -21.59 0)
+				(length 2.54)
+				(name "SYS_AD18"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "25"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -24.13 0)
+				(length 2.54)
+				(name "SYS_AD19"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "26"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 24.13 180)
+				(length 2.54)
+				(name "SYS_AD20"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "27"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 21.59 180)
+				(length 2.54)
+				(name "SYS_AD21"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "28"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 19.05 180)
+				(length 2.54)
+				(name "SYS_AD22"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "29"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "SYS_AD23"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "30"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "SYS_AD24"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "31"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "SYS_AD25"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "32"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "SYS_AD26"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "33"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "SYS_AD27"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "34"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "SYS_AD28"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "35"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "SYS_AD29"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "36"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "SYS_READY_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "115"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "SYS_BE3_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "116"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "SYS_BE2_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "117"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "SYS_BE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "118"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "SYS_BE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "121"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "SYS_WR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "122"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "SYS_RD_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "123"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -19.05 180)
+				(length 2.54)
+				(name "SYS_AS_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "124"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -21.59 180)
+				(length 2.54)
+				(name "SYS_AD31"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "125"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -24.13 180)
+				(length 2.54)
+				(name "SYS_AD30"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "126"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U4_3_1"
+			(rectangle
+				(start -31.75 26.67)
+				(end 31.75 -26.67)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin output line
+				(at -34.29 24.13 0)
+				(length 2.54)
+				(name "ARAM_A14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "41"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 21.59 0)
+				(length 2.54)
+				(name "ARAM_A15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "42"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 19.05 0)
+				(length 2.54)
+				(name "ARAM_A16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "43"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "ARAM_A17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "44"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "ARAM_BE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "45"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "ARAM_BE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "46"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "ARAM_CE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "49"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "ARAM_OE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "50"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "ARAM_WE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "51"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "ARAM_A13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "67"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "ARAM_A12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "68"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "ARAM_A11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "69"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "ARAM_A10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "70"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "ARAM_A9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "71"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "ARAM_A8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "72"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "ARAM_A7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "73"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "ARAM_A6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "74"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -19.05 0)
+				(length 2.54)
+				(name "ARAM_A5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "75"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -21.59 0)
+				(length 2.54)
+				(name "ARAM_A4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "76"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -24.13 0)
+				(length 2.54)
+				(name "ARAM_A3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "77"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 24.13 180)
+				(length 2.54)
+				(name "ARAM_A2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "78"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 21.59 180)
+				(length 2.54)
+				(name "ARAM_A1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "79"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 19.05 180)
+				(length 2.54)
+				(name "ARAM_A0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "80"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "ARAM_D15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "81"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "ARAM_D14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "82"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "ARAM_D13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "83"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "ARAM_D12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "84"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "ARAM_D11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "87"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "ARAM_D10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "88"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "ARAM_D9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "89"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "ARAM_D8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "90"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "ARAM_D7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "91"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "ARAM_D6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "92"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "ARAM_D5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "95"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "ARAM_D4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "96"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "ARAM_D3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "97"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "ARAM_D2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "98"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -19.05 180)
+				(length 2.54)
+				(name "ARAM_D1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "99"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -21.59 180)
+				(length 2.54)
+				(name "ARAM_D0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "100"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U4_4_1"
+			(rectangle
+				(start -31.75 3.81)
+				(end 31.75 -3.81)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin output line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "AUD_BCLK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "52"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "AUD_DATA"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "53"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "AUD_LRCK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "54"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "AUD_MCLK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "57"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U4_5_1"
+			(rectangle
+				(start -31.75 10.16)
+				(end 31.75 -10.16)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin output line
+				(at -34.29 7.62 0)
+				(length 2.54)
+				(name "TDO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "58"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 5.08 0)
+				(length 2.54)
+				(name "TDI"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "59"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 2.54 0)
+				(length 2.54)
+				(name "TCK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "60"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 0.0 0)
+				(length 2.54)
+				(name "TMS"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "61"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -2.54 0)
+				(length 2.54)
+				(name "TRST_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "62"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -5.08 0)
+				(length 2.54)
+				(name "RESET_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "105"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -7.62 0)
+				(length 2.54)
+				(name "CLK_SYS"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "106"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 7.62 180)
+				(length 2.54)
+				(name "DREQ_APU_R"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "107"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 5.08 180)
+				(length 2.54)
+				(name "DREQ_APU_W"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "108"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 2.54 180)
+				(length 2.54)
+				(name "IRQ_APU_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "109"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 0.0 180)
+				(length 2.54)
+				(name "GNT_APU"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "110"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -2.54 180)
+				(length 2.54)
+				(name "REQ_APU"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "113"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -5.08 180)
+				(length 2.54)
+				(name "CS_APU_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "114"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "U7"
+		(pin_names
+			(offset 0.6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "BMSX IO + ROM bridge"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Footprint" "BMSX_4ASIC:U7"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(symbol "U7_1_1"
+			(rectangle
+				(start -31.75 13.97)
+				(end 31.75 -13.97)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin power_in line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "20"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "37"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "38"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "39"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "40"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "63"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "64"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "65"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "66"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "83"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "84"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "101"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "102"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "103"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "104"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "VDD"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "127"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "128"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U7_2_1"
+			(rectangle
+				(start -31.75 27.94)
+				(end 31.75 -27.94)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin input line
+				(at -34.29 25.4 0)
+				(length 2.54)
+				(name "ROM_D0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 22.86 0)
+				(length 2.54)
+				(name "ROM_D1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 20.32 0)
+				(length 2.54)
+				(name "ROM_D2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 17.78 0)
+				(length 2.54)
+				(name "ROM_D3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 15.24 0)
+				(length 2.54)
+				(name "ROM_D4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 12.7 0)
+				(length 2.54)
+				(name "ROM_D5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 10.16 0)
+				(length 2.54)
+				(name "ROM_D6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 7.62 0)
+				(length 2.54)
+				(name "ROM_D7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 5.08 0)
+				(length 2.54)
+				(name "ROM_D8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 2.54 0)
+				(length 2.54)
+				(name "ROM_D9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 0.0 0)
+				(length 2.54)
+				(name "ROM_D10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -2.54 0)
+				(length 2.54)
+				(name "ROM_D11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -5.08 0)
+				(length 2.54)
+				(name "ROM_D12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -7.62 0)
+				(length 2.54)
+				(name "ROM_D13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -10.16 0)
+				(length 2.54)
+				(name "ROM_D14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -12.7 0)
+				(length 2.54)
+				(name "ROM_D15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -15.24 0)
+				(length 2.54)
+				(name "ROM_A0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "21"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -17.78 0)
+				(length 2.54)
+				(name "ROM_A1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "22"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -20.32 0)
+				(length 2.54)
+				(name "ROM_A2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "23"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -22.86 0)
+				(length 2.54)
+				(name "ROM_A3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "24"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -25.4 0)
+				(length 2.54)
+				(name "ROM_A4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "25"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 25.4 180)
+				(length 2.54)
+				(name "ROM_A5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "26"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 22.86 180)
+				(length 2.54)
+				(name "ROM_A6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "27"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 20.32 180)
+				(length 2.54)
+				(name "ROM_A7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "28"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 17.78 180)
+				(length 2.54)
+				(name "ROM_A8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "29"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 15.24 180)
+				(length 2.54)
+				(name "ROM_A9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "30"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 12.7 180)
+				(length 2.54)
+				(name "ROM_A10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "31"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 10.16 180)
+				(length 2.54)
+				(name "ROM_A11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "32"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 7.62 180)
+				(length 2.54)
+				(name "ROM_A12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "33"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 5.08 180)
+				(length 2.54)
+				(name "ROM_A13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "34"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 2.54 180)
+				(length 2.54)
+				(name "ROM_A14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "35"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 0.0 180)
+				(length 2.54)
+				(name "ROM_A15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "36"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -2.54 180)
+				(length 2.54)
+				(name "CS_ROM_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "110"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -5.08 180)
+				(length 2.54)
+				(name "ROM_OE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "119"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -7.62 180)
+				(length 2.54)
+				(name "ROM_CE_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "120"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -10.16 180)
+				(length 2.54)
+				(name "ROM_A21"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "121"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -12.7 180)
+				(length 2.54)
+				(name "ROM_A20"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "122"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -15.24 180)
+				(length 2.54)
+				(name "ROM_A19"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "123"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -17.78 180)
+				(length 2.54)
+				(name "ROM_A18"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "124"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -20.32 180)
+				(length 2.54)
+				(name "ROM_A17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "125"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -22.86 180)
+				(length 2.54)
+				(name "ROM_A16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "126"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U7_3_1"
+			(rectangle
+				(start -31.75 8.89)
+				(end 31.75 -8.89)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin input line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "CLK_SYS"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "41"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "CS_IO_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "42"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "RESET_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "58"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin open_collector line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "SUPERVISOR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "59"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "SUPERVISOR_RAW_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "60"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "VBLANK_EVT"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "61"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "DISPLAY_CONTEXT"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "62"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "TDO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "105"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "TDI"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "106"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "TRST_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "107"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "TMS"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "108"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "TCK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "109"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U7_4_1"
+			(rectangle
+				(start -31.75 11.43)
+				(end 31.75 -11.43)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin output line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "PAD_CLK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "43"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "PAD_CMD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "44"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "PAD_CMD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "45"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "PAD_CMD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "46"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "PAD_CMD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "47"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "PAD_DATA0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "48"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "PAD_DATA1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "49"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "PAD_DATA2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "50"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "PAD_DATA3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "51"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "PAD_SELECT0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "52"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "PAD_SELECT1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "53"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "PAD_SELECT2_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "54"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "PAD_SELECT3_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "55"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "PS2_KBD_CLK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "56"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "PS2_KBD_DATA"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "57"
+					(effects
+						(font
+							(size 0.85 0.85))))))
+		(symbol "U7_5_1"
+			(rectangle
+				(start -31.75 26.67)
+				(end 31.75 -26.67)
+				(stroke
+					(width 0.254)
+					(type default))
+				(fill
+					(type background)))
+			(pin bidirectional line
+				(at -34.29 24.13 0)
+				(length 2.54)
+				(name "SYS_AD31"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "67"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 21.59 0)
+				(length 2.54)
+				(name "SYS_AD30"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "68"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 19.05 0)
+				(length 2.54)
+				(name "SYS_AD29"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "69"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 16.51 0)
+				(length 2.54)
+				(name "SYS_AD28"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "70"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 13.97 0)
+				(length 2.54)
+				(name "SYS_AD27"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "71"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 11.43 0)
+				(length 2.54)
+				(name "SYS_AD26"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "72"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 8.89 0)
+				(length 2.54)
+				(name "SYS_AD25"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "73"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 6.35 0)
+				(length 2.54)
+				(name "SYS_AD24"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "74"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 3.81 0)
+				(length 2.54)
+				(name "SYS_AD23"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "75"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 1.27 0)
+				(length 2.54)
+				(name "SYS_AD22"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "76"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -1.27 0)
+				(length 2.54)
+				(name "SYS_AD21"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "77"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -3.81 0)
+				(length 2.54)
+				(name "SYS_AD20"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "78"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -6.35 0)
+				(length 2.54)
+				(name "SYS_AD19"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "79"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -8.89 0)
+				(length 2.54)
+				(name "SYS_AD18"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "80"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -11.43 0)
+				(length 2.54)
+				(name "SYS_AD17"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "81"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -13.97 0)
+				(length 2.54)
+				(name "SYS_AD16"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "82"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -16.51 0)
+				(length 2.54)
+				(name "SYS_AD15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "85"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -19.05 0)
+				(length 2.54)
+				(name "SYS_AD14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "86"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -21.59 0)
+				(length 2.54)
+				(name "SYS_AD13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "87"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at -34.29 -24.13 0)
+				(length 2.54)
+				(name "SYS_AD12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "88"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 24.13 180)
+				(length 2.54)
+				(name "SYS_AD11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "89"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 21.59 180)
+				(length 2.54)
+				(name "SYS_AD10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "90"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 19.05 180)
+				(length 2.54)
+				(name "SYS_AD9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "91"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 16.51 180)
+				(length 2.54)
+				(name "SYS_AD8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "92"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 13.97 180)
+				(length 2.54)
+				(name "SYS_AD7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "93"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 11.43 180)
+				(length 2.54)
+				(name "SYS_AD6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "94"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 8.89 180)
+				(length 2.54)
+				(name "SYS_AD5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "95"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 6.35 180)
+				(length 2.54)
+				(name "SYS_AD4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "96"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 3.81 180)
+				(length 2.54)
+				(name "SYS_AD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "97"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 1.27 180)
+				(length 2.54)
+				(name "SYS_AD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "98"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -1.27 180)
+				(length 2.54)
+				(name "SYS_AD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "99"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin bidirectional line
+				(at 34.29 -3.81 180)
+				(length 2.54)
+				(name "SYS_AD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "100"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin tri_state line
+				(at 34.29 -6.35 180)
+				(length 2.54)
+				(name "SYS_READY_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "111"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -8.89 180)
+				(length 2.54)
+				(name "SYS_BE3_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "112"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -11.43 180)
+				(length 2.54)
+				(name "SYS_BE2_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "113"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -13.97 180)
+				(length 2.54)
+				(name "SYS_BE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "114"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -16.51 180)
+				(length 2.54)
+				(name "SYS_BE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "115"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -19.05 180)
+				(length 2.54)
+				(name "SYS_WR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "116"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -21.59 180)
+				(length 2.54)
+				(name "SYS_RD_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "117"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at 34.29 -24.13 180)
+				(length 2.54)
+				(name "SYS_AS_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "118"
+					(effects
+						(font
+							(size 0.85 0.85))))))))

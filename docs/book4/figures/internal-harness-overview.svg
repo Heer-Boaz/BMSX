@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1100" role="img" aria-labelledby="title desc">
+<title id="title">BMSX internal harness connections</title>
+<desc id="desc">A functional interconnect diagram with the mainboard in the centre. J300 connects to the four-pad front board, J301 to the keyboard board, J60 to the power switch, reset and indicator, J500 to the audio/video breakout, and J61 to the DC inlet. The breakout connects to the SCART contact board through separate video and sync pairs and audio, selection and shield conductors. The J500 ribbon is soldered at breakout J1. This drawing describes electrical connections, not cable routes.</desc>
+<defs><style>
+ text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:22px}.title{font-size:32px;font-weight:700}.head{font-size:25px;font-weight:700}.small{font-size:19px}.tiny{font-size:17px}.section{font-size:21px;font-weight:700;letter-spacing:1px}.board{fill:#e3eff5;stroke:#294b68;stroke-width:3}.unit{fill:#f5f7f8;stroke:#627e8c;stroke-width:2.5}.lead{fill:none;stroke:#294b68;stroke-width:4}.note{fill:#fff7e8;stroke:#9b6d21;stroke-width:2}.contact{fill:#fff;stroke:#294b68;stroke-width:2}
+</style></defs>
+<rect width="1600" height="1100" fill="#fff"/>
+<text x="55" y="58" class="title">Internal harness connections</text>
+<text x="55" y="93" class="small">Functional overview · connector numbers identify contacts, not cable paths or physical length</text>
+<text x="60" y="150" class="section">FRONT AND CONTROLS</text><text x="1125" y="150" class="section">REAR CONNECTIONS</text>
+<!-- Mainboard and its five attachment points. -->
+<rect x="590" y="187" width="390" height="760" rx="14" class="board"/>
+<text x="785" y="238" text-anchor="middle" class="head">Mainboard</text>
+<text x="785" y="273" text-anchor="middle" class="small">Four-device construction</text>
+<rect x="590" y="310" width="130" height="55" rx="6" class="contact"/><text x="655" y="345" text-anchor="middle">J300</text>
+<rect x="590" y="530" width="130" height="55" rx="6" class="contact"/><text x="655" y="565" text-anchor="middle">J301</text>
+<rect x="590" y="750" width="130" height="55" rx="6" class="contact"/><text x="655" y="785" text-anchor="middle">J60</text>
+<rect x="850" y="310" width="130" height="55" rx="6" class="contact"/><text x="915" y="345" text-anchor="middle">J500</text>
+<rect x="850" y="770" width="130" height="55" rx="6" class="contact"/><text x="915" y="805" text-anchor="middle">J61</text>
+<!-- Front board, keyboard, controls -->
+<rect x="60" y="255" width="385" height="140" rx="10" class="unit"/>
+<text x="82" y="292" class="head">Pad front board</text><text x="82" y="326" class="small">J5 → four BMSX pad ports</text><text x="82" y="357" class="small">20 contacts, numbered 1–20</text>
+<path d="M445 337 H590" class="lead"/><text x="518" y="320" text-anchor="middle" class="tiny">20 wires</text>
+<rect x="60" y="475" width="385" height="140" rx="10" class="unit"/>
+<text x="82" y="512" class="head">Keyboard board</text><text x="82" y="546" class="small">J2 → PS/2 socket</text><text x="82" y="577" class="small">4 contacts, numbered 1–4</text>
+<path d="M445 557 H590" class="lead"/><text x="518" y="540" text-anchor="middle" class="tiny">4 wires</text>
+<rect x="60" y="685" width="385" height="195" rx="10" class="unit"/>
+<text x="82" y="722" class="head">Controls and indicator</text>
+<text x="82" y="755" class="small">POWER and RESET switches</text>
+<text x="82" y="786" class="small">Green indicator, with 470 Ω</text>
+<text x="82" y="817" class="small">series resistor in its lead</text>
+<text x="82" y="853" class="tiny">J60.2: common switch return; .5: LED return</text>
+<path d="M445 777 H590" class="lead"/><text x="518" y="760" text-anchor="middle" class="tiny">5 wires</text>
+<!-- Rear A/V and DC -->
+<rect x="1125" y="253" width="415" height="165" rx="10" class="unit"/>
+<text x="1147" y="291" class="head">A/V breakout</text><text x="1147" y="326" class="small">J1: soldered ribbon termination</text><text x="1147" y="358" class="small">J2–J5: sync and RGB pairs</text><text x="1147" y="390" class="small">J6: audio, RGB selection and shield</text>
+<path d="M980 337 H1125" class="lead"/><text x="1052" y="320" text-anchor="middle" class="tiny">16-wire ribbon</text>
+<rect x="1125" y="535" width="415" height="120" rx="10" class="unit"/>
+<text x="1147" y="574" class="head">SCART contact board</text><text x="1147" y="607" class="small">RGB, sync and stereo audio</text><text x="1147" y="636" class="small">→ rear SCART socket</text>
+<path d="M1490 418 V535" class="lead"/><text x="1147" y="467" class="tiny">Signal/return pairs and</text><text x="1147" y="491" class="tiny">separate audio/control/shield leads</text>
+<rect x="1125" y="740" width="415" height="120" rx="10" class="unit"/>
+<text x="1147" y="779" class="head">DC inlet</text><text x="1147" y="813" class="small">Centre-positive 9 V and return</text>
+<path d="M980 797 H1125" class="lead"/><text x="1052" y="779" text-anchor="middle" class="tiny">2 wires</text>
+<rect x="60" y="985" width="1480" height="70" rx="8" class="note"/>
+<text x="80" y="1013" class="small">Remove external power before disconnecting harnesses. J300, J301 and J500 use the same contact numbers at both ends.</text>
+<text x="80" y="1040" class="small">The ribbon has a cable connector at J500; breakout J1 is soldered. Separate grounds and their associated signal returns are retained.</text>
+</svg>

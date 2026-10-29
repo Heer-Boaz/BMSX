@@ -1,0 +1,3453 @@
+(kicad_sch
+	(version 20250114)
+	(generator eeschema)
+	(uuid d3ae97e3-38cf-55f3-9a94-154967ca0fb2)
+	(paper "A2")
+	(lib_symbols
+		(symbol "R9_interfaces:R508"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "33R 1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R508_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R509"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "33R 1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R509_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R510"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "33R 1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R510_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R511"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "33R 1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R511_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C511"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C511_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C512"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "10uF 16V aluminum"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C512_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy -3.81 2.54)
+						(xy -1.27 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy -2.54 1.27)
+						(xy -2.54 3.81))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C513"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "10uF 16V aluminum"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C513_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy -3.81 2.54)
+						(xy -1.27 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy -2.54 1.27)
+						(xy -2.54 3.81))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:Q500"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "Q"
+				(at 0 6.35 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "BSS138"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "Q500_1_1"
+				(rectangle
+					(start -25.4 3.81)
+					(end 25.4 -3.81)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin input line
+					(at -27.94 1.27 0)
+					(length 2.54)
+					(name "G"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -1.27 0)
+					(length 2.54)
+					(name "S"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin open_collector line
+					(at 27.94 1.27 180)
+					(length 2.54)
+					(name "D"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "R9_interfaces:R512"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "10k 1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R512_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R513"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100k 1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R513_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R514"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "10k 1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R514_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:U40"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "SN74LVC1G125DBVR"
+				(at 0 -7.62 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "U40_1_1"
+				(rectangle
+					(start -25.4 5.08)
+					(end 25.4 -5.08)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin input line
+					(at -27.94 2.54 0)
+					(length 2.54)
+					(name "OE_N"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin input line
+					(at -27.94 0.0 0)
+					(length 2.54)
+					(name "A"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin power_in line
+					(at -27.94 -2.54 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin tri_state line
+					(at 27.94 2.54 180)
+					(length 2.54)
+					(name "Y"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin power_in line
+					(at 27.94 0.0 180)
+					(length 2.54)
+					(name "VCC"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "R9_interfaces:C514"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C514_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:U42"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "U"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "SN74LVC1G125DBVR"
+				(at 0 -7.62 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "U42_1_1"
+				(rectangle
+					(start -25.4 5.08)
+					(end 25.4 -5.08)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin input line
+					(at -27.94 2.54 0)
+					(length 2.54)
+					(name "OE_N"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin input line
+					(at -27.94 0.0 0)
+					(length 2.54)
+					(name "A"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin power_in line
+					(at -27.94 -2.54 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin tri_state line
+					(at 27.94 2.54 180)
+					(length 2.54)
+					(name "Y"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin power_in line
+					(at 27.94 0.0 180)
+					(length 2.54)
+					(name "VCC"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "R9_interfaces:C515"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C515_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R515"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "33R 1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R515_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C516"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C516_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C517"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "10nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C517_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C518"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C518_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C519"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "10nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C519_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C520"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C520_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C521"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "10nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C521_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C522"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "1uF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C522_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C523"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C523_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C524"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C524_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R516"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "536R 0.1%"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R516_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none))))))
+	(title_block
+		(title "R9 DAC bypass, mute and digital input conditioning")
+		(date "2026-10-21")
+		(rev "4ASIC ECO")
+		(company "BMSX")
+		(comment 1 "PROPOSED ASIC INTERFACES - NOT FOR MANUFACTURE"))
+	(text "PCM1754 active-high PCM_MUTE is default-pulled to V5. Q500 BSS138 pulls it low only when RESET_N is high; no V5 pull-up on 3V3 logic."
+		(at 290 25.0 0)
+		(effects
+			(font
+				(size 1.27 1.27)))
+		(uuid fc751cf8-7e13-5c7f-8ea1-8ed9b6a3bd92))
+	(text "SN74LVC1G125 supplies dedicated video clock drive and a separate sync line driver. Buffer delay and RGB setup/hold remain timing closure obligations."
+		(at 290 30.08 0)
+		(effects
+			(font
+				(size 1.27 1.27)))
+		(uuid dab0b962-750f-5d72-a7df-2b1effc0347d))
+	(wire
+		(pts
+			(xy 80.01 59.69)
+			(xy 72.39 59.69))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3fd04c6a-867e-5c99-bd0e-60267fdb4b26))
+	(global_label "AUD_MCLK"
+		(shape bidirectional)
+		(at 72.39 59.69 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a07cd94c-481d-5fad-a59d-f6e6f4a5788b))
+	(wire
+		(pts
+			(xy 90.17 59.69)
+			(xy 97.79 59.69))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid cedba7e2-ca36-5df5-9274-fbe3b994807f))
+	(global_label "AUD_MCLK_DAC"
+		(shape bidirectional)
+		(at 97.79 59.69 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 22777c02-2a86-5d27-91fa-6011f91366b9))
+	(symbol
+		(lib_id "R9_interfaces:R508")
+		(at 85.09 59.69 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid be54bdc7-f0a4-5b7e-87bd-781456935bc3)
+		(property "Reference" "R508"
+			(at 85.09 53.34 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "33R 1%"
+			(at 85.09 66.04 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R508"
+			(at 85.09 59.69 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 85.09 59.69 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R508")
+					(unit 1))))
+		(pin "1"
+			(uuid 9f704bf9-e468-5d50-b86e-da2e8aeb2854))
+		(pin "2"
+			(uuid 70cf7491-7f76-50eb-8b50-249aa325ced9)))
+	(wire
+		(pts
+			(xy 255.27 59.69)
+			(xy 247.65 59.69))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9b5cee47-de4d-5bd8-b539-fb2853b3c029))
+	(global_label "AUD_BCLK"
+		(shape bidirectional)
+		(at 247.65 59.69 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 455eb5c0-a0cb-5079-a286-8718f8fb8aa0))
+	(wire
+		(pts
+			(xy 265.43 59.69)
+			(xy 273.05 59.69))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d922fe04-2016-545c-9959-c24bf1a59676))
+	(global_label "AUD_BCLK_DAC"
+		(shape bidirectional)
+		(at 273.05 59.69 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1c996582-84c7-5ba6-95ec-eb4eea19d90e))
+	(symbol
+		(lib_id "R9_interfaces:R509")
+		(at 260.35 59.69 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 97174d97-9364-5c5e-962a-1ebd2c0bf612)
+		(property "Reference" "R509"
+			(at 260.35 53.34 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "33R 1%"
+			(at 260.35 66.04 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R509"
+			(at 260.35 59.69 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 260.35 59.69 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R509")
+					(unit 1))))
+		(pin "1"
+			(uuid edb076a2-fc95-5829-9de2-4c3e9d34998b))
+		(pin "2"
+			(uuid 8f4bb872-f804-5886-8a28-ed9000ab1f10)))
+	(wire
+		(pts
+			(xy 430.53 59.69)
+			(xy 422.91 59.69))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d802d05a-462c-52f8-ad0d-8dbf7facf73f))
+	(global_label "AUD_LRCK"
+		(shape bidirectional)
+		(at 422.91 59.69 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5dd32997-42c4-5bfa-9c88-b77cb9d76fad))
+	(wire
+		(pts
+			(xy 440.69 59.69)
+			(xy 448.31 59.69))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 20d20242-25e6-531e-bace-45b4b61a97a5))
+	(global_label "AUD_LRCK_DAC"
+		(shape bidirectional)
+		(at 448.31 59.69 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid afbec6bf-b09f-5433-9dbe-5d62b1914617))
+	(symbol
+		(lib_id "R9_interfaces:R510")
+		(at 435.61 59.69 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 0aeffb6d-bec1-52de-b924-3a4ed1b405c3)
+		(property "Reference" "R510"
+			(at 435.61 53.34 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "33R 1%"
+			(at 435.61 66.04 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R510"
+			(at 435.61 59.69 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 435.61 59.69 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R510")
+					(unit 1))))
+		(pin "1"
+			(uuid f0b78b30-69e0-5d9d-a440-72756fb17e90))
+		(pin "2"
+			(uuid 2c4ebaf8-bd98-574f-8ca0-cff92a7015f2)))
+	(wire
+		(pts
+			(xy 80.01 91.44)
+			(xy 72.39 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8afbf56d-2200-5d7a-8466-6e71d29e6283))
+	(global_label "AUD_DATA"
+		(shape bidirectional)
+		(at 72.39 91.44 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 221fed4c-d630-59b8-b2e8-50ae3dfbc509))
+	(wire
+		(pts
+			(xy 90.17 91.44)
+			(xy 97.79 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid bd7f1c97-dc97-5f25-a763-93840c0ae375))
+	(global_label "AUD_DATA_DAC"
+		(shape bidirectional)
+		(at 97.79 91.44 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8aae3007-e4ad-5420-a3ab-ad4638a4a965))
+	(symbol
+		(lib_id "R9_interfaces:R511")
+		(at 85.09 91.44 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 49f1aa99-eeb3-533e-9bdf-9d5912bd521a)
+		(property "Reference" "R511"
+			(at 85.09 85.09 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "33R 1%"
+			(at 85.09 97.79 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R511"
+			(at 85.09 91.44 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 85.09 91.44 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R511")
+					(unit 1))))
+		(pin "1"
+			(uuid def0b644-85aa-5015-ba5d-08bb912d125a))
+		(pin "2"
+			(uuid 4f3d1521-18ad-56c1-9b71-a59242171582)))
+	(wire
+		(pts
+			(xy 255.27 91.44)
+			(xy 247.65 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6915df85-71d8-58f1-8d41-b5881f937935))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 247.65 91.44 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a843d76f-47e4-5a61-b3ba-7f85556611cb))
+	(wire
+		(pts
+			(xy 265.43 91.44)
+			(xy 273.05 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e17e2d81-feea-5d70-a2f6-a6ba2636358a))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 273.05 91.44 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9d123308-fe18-5e11-b2ea-66fa1b752048))
+	(symbol
+		(lib_id "R9_interfaces:C511")
+		(at 260.35 91.44 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 95e88096-8c96-5c31-a9ed-6f8239a13576)
+		(property "Reference" "C511"
+			(at 260.35 85.09 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 260.35 97.79 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C511"
+			(at 260.35 91.44 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 260.35 91.44 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C511")
+					(unit 1))))
+		(pin "1"
+			(uuid 25490a58-e37f-5283-a0de-294bb20fa65d))
+		(pin "2"
+			(uuid d2d2ecd0-9e76-5b44-845b-c599302ee8b0)))
+	(wire
+		(pts
+			(xy 430.53 91.44)
+			(xy 422.91 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 96d51833-11b5-582d-8b5f-ad33519275b0))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 422.91 91.44 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5e25c3d9-64a4-545b-b2b4-66e41da88b2a))
+	(wire
+		(pts
+			(xy 440.69 91.44)
+			(xy 448.31 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c0b6f6f1-05c7-56bb-a173-d57e42f84ad0))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 448.31 91.44 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5e99efc5-6f7f-5de8-8bc6-2c086d3db59f))
+	(symbol
+		(lib_id "R9_interfaces:C512")
+		(at 435.61 91.44 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 55176fd9-996b-55b3-a71e-ba5e7e45a914)
+		(property "Reference" "C512"
+			(at 435.61 85.09 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10uF 16V aluminum"
+			(at 435.61 97.79 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C512"
+			(at 435.61 91.44 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.nichicon.co.jp/english/series_items/catalog_pdf/e-uwt.pdf"
+			(at 435.61 91.44 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C512")
+					(unit 1))))
+		(pin "1"
+			(uuid e23683ca-de7b-5a69-ab1d-8dba760aa522))
+		(pin "2"
+			(uuid 06ed4029-cbc1-5677-9119-c5eb07cd2307))
+		(property "Manufacturer" "Nichicon" (at 435.61 91.44 0) (effects (font (size 1 1)) (hide yes)))
+		(property "MPN" "UWT1C100MCL1GB" (at 435.61 91.44 0) (effects (font (size 1 1)) (hide yes)))
+		(property "Qualification" "Selected 10uF 16V aluminum type and manufacturer package/land evidence; existing 6mm mounted acceptance retained. Ripple, lifetime and closed-case thermal qualification open." (at 435.61 91.44 0) (effects (font (size 1 1)) (hide yes)))
+	)
+	(wire
+		(pts
+			(xy 80.01 121.92)
+			(xy 72.39 121.92))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fe62e6dd-cceb-5970-bc49-a615f21819b3))
+	(global_label "AUD_VCOM"
+		(shape bidirectional)
+		(at 72.39 121.92 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4d0c15ae-3e3e-5449-ab61-22c5f794c8b4))
+	(wire
+		(pts
+			(xy 90.17 121.92)
+			(xy 97.79 121.92))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f0ca8ce1-4a79-580f-bf1f-3fc2faedad4b))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 97.79 121.92 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7e24538a-519c-5a64-9225-0429513a2135))
+	(symbol
+		(lib_id "R9_interfaces:C513")
+		(at 85.09 121.92 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 2e21f729-615b-5019-b83b-788e47e1e3a1)
+		(property "Reference" "C513"
+			(at 85.09 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10uF 16V aluminum"
+			(at 85.09 128.27 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C513"
+			(at 85.09 121.92 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.nichicon.co.jp/english/series_items/catalog_pdf/e-uwt.pdf"
+			(at 85.09 121.92 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C513")
+					(unit 1))))
+		(pin "1"
+			(uuid 98b3a746-9740-552f-8e31-10a6fa286f9d))
+		(pin "2"
+			(uuid 762c39e0-5bd1-5669-8b2d-57cccc61767c))
+		(property "Manufacturer" "Nichicon" (at 85.09 121.92 0) (effects (font (size 1 1)) (hide yes)))
+		(property "MPN" "UWT1C100MCL1GB" (at 85.09 121.92 0) (effects (font (size 1 1)) (hide yes)))
+		(property "Qualification" "Selected 10uF 16V aluminum type and manufacturer package/land evidence; existing 6mm mounted acceptance retained. Ripple, lifetime and closed-case thermal qualification open." (at 85.09 121.92 0) (effects (font (size 1 1)) (hide yes)))
+	)
+	(wire
+		(pts
+			(xy 232.41 120.65)
+			(xy 224.79 120.65))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ed0f3f94-d261-5dcc-986f-d784ebbe4a8a))
+	(global_label "RESET_N"
+		(shape bidirectional)
+		(at 224.79 120.65 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ca5aba19-a8d4-5f57-84ab-a98ed649a652))
+	(wire
+		(pts
+			(xy 232.41 123.19)
+			(xy 224.79 123.19))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b94f14c7-32f7-505a-a4e5-79227ed8091e))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 224.79 123.19 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 302f55c1-f885-5dc5-a739-ad876d535640))
+	(wire
+		(pts
+			(xy 288.29 120.65)
+			(xy 295.91 120.65))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f7a6150a-c52f-5324-a171-7d70cdecebf5))
+	(global_label "PCM_MUTE"
+		(shape bidirectional)
+		(at 295.91 120.65 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c8b1e8ef-0d44-5079-bf3a-2ce3c96133c3))
+	(symbol
+		(lib_id "R9_interfaces:Q500")
+		(at 260.35 121.92 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 4c7fbe8d-ecff-5d1c-8a45-3ec5caed5cfa)
+		(property "Reference" "Q500"
+			(at 260.35 114.3 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "BSS138"
+			(at 260.35 129.54 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:Q500"
+			(at 260.35 121.92 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.onsemi.com/pdf/datasheet/bss138-d.pdf"
+			(at 260.35 121.92 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "Q500")
+					(unit 1))))
+		(pin "1"
+			(uuid ff41a634-2964-5a17-8d2f-b525e8f6f11d))
+		(pin "2"
+			(uuid 55300486-4ead-5a60-a4b2-8a94190df648))
+		(pin "3"
+			(uuid 14149215-c6a6-56de-b7b2-dbdc7b6b069d)))
+	(wire
+		(pts
+			(xy 430.53 121.92)
+			(xy 422.91 121.92))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d12c23a0-cca8-517b-9753-7f6bc85b3380))
+	(global_label "PCM_MUTE"
+		(shape bidirectional)
+		(at 422.91 121.92 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ac8de8ec-e0f5-59f4-8c57-cd96fb6ff1f5))
+	(wire
+		(pts
+			(xy 440.69 121.92)
+			(xy 448.31 121.92))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid aface781-b590-5a45-a4a0-42c549adebe7))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 448.31 121.92 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ac277131-aecc-56e3-bd22-1e53f79c39da))
+	(symbol
+		(lib_id "R9_interfaces:R512")
+		(at 435.61 121.92 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 24927e45-9e41-53b3-afb8-ae3fc4eca33c)
+		(property "Reference" "R512"
+			(at 435.61 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 1%"
+			(at 435.61 128.27 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R512"
+			(at 435.61 121.92 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 435.61 121.92 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R512")
+					(unit 1))))
+		(pin "1"
+			(uuid e05bda3e-8564-5f3f-a739-77cb0ee3d9ac))
+		(pin "2"
+			(uuid a89996bf-b139-5b15-a20b-37973c50c601)))
+	(wire
+		(pts
+			(xy 80.01 152.4)
+			(xy 72.39 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1172249f-684c-525e-b158-4879ee6e3252))
+	(global_label "RESET_N"
+		(shape bidirectional)
+		(at 72.39 152.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 27baeb48-a163-5465-9072-36b7878dee43))
+	(wire
+		(pts
+			(xy 90.17 152.4)
+			(xy 97.79 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e8f620dd-e3e1-5eda-9a46-bad4eeef61c9))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 97.79 152.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid feedd194-d102-50ec-a5dc-6f46c8ceeabf))
+	(symbol
+		(lib_id "R9_interfaces:R513")
+		(at 85.09 152.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 9a2c3f8b-cc8b-54d7-99d5-c04d8e975944)
+		(property "Reference" "R513"
+			(at 85.09 146.05 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100k 1%"
+			(at 85.09 158.75 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R513"
+			(at 85.09 152.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 85.09 152.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R513")
+					(unit 1))))
+		(pin "1"
+			(uuid 91c66da4-50bc-54bf-92c4-94ddf8bc4247))
+		(pin "2"
+			(uuid 9d15ab82-d642-56f4-84af-b02dfa976b1c)))
+	(wire
+		(pts
+			(xy 255.27 152.4)
+			(xy 247.65 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 004f76b4-3ae5-5e78-8ae2-122183178ad8))
+	(global_label "VIDEO_BLANK_N"
+		(shape bidirectional)
+		(at 247.65 152.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 264347af-7b3c-55ac-a1dc-09daf3f2a7d2))
+	(wire
+		(pts
+			(xy 265.43 152.4)
+			(xy 273.05 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e3926874-9423-5ca3-a87e-101f5bf5d456))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 273.05 152.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 076199f0-84ae-50a1-8f6d-7910193725f4))
+	(symbol
+		(lib_id "R9_interfaces:R514")
+		(at 260.35 152.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid e34a5e6a-90e1-5bd6-9975-88b2963cfaab)
+		(property "Reference" "R514"
+			(at 260.35 146.05 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k 1%"
+			(at 260.35 158.75 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R514"
+			(at 260.35 152.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 260.35 152.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R514")
+					(unit 1))))
+		(pin "1"
+			(uuid 011c8894-0778-512d-95ab-cf24c926f163))
+		(pin "2"
+			(uuid db5f0f8c-ddd3-563c-8496-503c26e19137)))
+	(wire
+		(pts
+			(xy 407.67 149.86)
+			(xy 400.05 149.86))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5acb4f60-c8db-5abc-8f22-29210381be4d))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 400.05 149.86 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e108ca43-d3d7-5283-a8fc-36610855c34c))
+	(wire
+		(pts
+			(xy 407.67 152.4)
+			(xy 400.05 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d1a8a7d3-f5a5-5b4d-9e72-c1b72b5358e0))
+	(global_label "VIDEO_PCLK"
+		(shape bidirectional)
+		(at 400.05 152.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 46537061-5fa2-51b0-accf-ce540ee82b01))
+	(wire
+		(pts
+			(xy 407.67 154.94)
+			(xy 400.05 154.94))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1f72cd3c-32fe-557c-b28a-f87b8685dcf1))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 400.05 154.94 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2a4a640f-bf99-5d40-b6c0-a59aee3ce7d1))
+	(wire
+		(pts
+			(xy 463.55 149.86)
+			(xy 471.17 149.86))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0bc3e04d-a1b8-5143-b61f-d31c29bfe3da))
+	(global_label "VIDEO_PCLK_BUF"
+		(shape bidirectional)
+		(at 471.17 149.86 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 93ca1d04-1236-5d5d-ba49-69d2a0275c00))
+	(wire
+		(pts
+			(xy 463.55 152.4)
+			(xy 471.17 152.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2372b8c3-fc68-51df-a661-dd4ec44f9399))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 471.17 152.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 72e92605-910f-5427-9293-cc294d9bdcdc))
+	(symbol
+		(lib_id "R9_interfaces:U40")
+		(at 435.61 152.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 66275765-17ee-51c1-855b-63609ba55e78)
+		(property "Reference" "U40"
+			(at 435.61 143.51 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "SN74LVC1G125DBVR"
+			(at 435.61 161.29 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:U40"
+			(at 435.61 152.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/sn74lvc1g125.pdf"
+			(at 435.61 152.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "U40")
+					(unit 1))))
+		(pin "1"
+			(uuid 2e11863f-59fc-5d3b-a01c-abfa7d0bfc05))
+		(pin "2"
+			(uuid ec4656ce-46f1-5cdd-8542-81170eb34857))
+		(pin "3"
+			(uuid 234c4b92-52b0-5953-8237-6a6ba4f6ae5c))
+		(pin "4"
+			(uuid 3769d9d6-c707-5b5b-abab-795598505e74))
+		(pin "5"
+			(uuid 19dd1b65-c4bc-51f4-bee8-7a832df3ddc6)))
+	(wire
+		(pts
+			(xy 80.01 184.15)
+			(xy 72.39 184.15))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0d168c80-6755-5fcd-bf79-88e4f7a29531))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 72.39 184.15 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 52dcdd3c-a737-5209-9935-6dd962a170ac))
+	(wire
+		(pts
+			(xy 90.17 184.15)
+			(xy 97.79 184.15))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid cad96d49-f6f5-5b79-98ff-0089b8c80db7))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 97.79 184.15 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid fbd213a2-276d-5201-bb16-18e83edd0234))
+	(symbol
+		(lib_id "R9_interfaces:C514")
+		(at 85.09 184.15 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 83b04efe-405b-5d3d-8aee-995ae536b6c5)
+		(property "Reference" "C514"
+			(at 85.09 177.8 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 85.09 190.5 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C514"
+			(at 85.09 184.15 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 85.09 184.15 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C514")
+					(unit 1))))
+		(pin "1"
+			(uuid 65ac788e-1530-5e08-be6c-83f99c9bce96))
+		(pin "2"
+			(uuid 81f54924-9ddc-5337-857b-73d0835e8865)))
+	(wire
+		(pts
+			(xy 232.41 181.61)
+			(xy 224.79 181.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d6dff61a-10cb-54a3-a9f0-eadedc7aac44))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 224.79 181.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 90570543-7d42-5d10-b8af-7e3bf61eeaa2))
+	(wire
+		(pts
+			(xy 232.41 184.15)
+			(xy 224.79 184.15))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8def5fd4-973e-5fc5-9346-74e11699b910))
+	(global_label "VIDEO_CSYNC_N"
+		(shape bidirectional)
+		(at 224.79 184.15 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7205f116-2774-5162-91a3-33e63bfbd4a9))
+	(wire
+		(pts
+			(xy 232.41 186.69)
+			(xy 224.79 186.69))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3a5e7487-73a6-5d7a-a005-caa67e1af959))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 224.79 186.69 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid bd3a10c5-350b-527a-a62f-a58adb574c32))
+	(wire
+		(pts
+			(xy 288.29 181.61)
+			(xy 295.91 181.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fb5cd3ee-d073-5b75-a93f-31616b71ca95))
+	(global_label "VIDEO_CSYNC_BUF"
+		(shape bidirectional)
+		(at 295.91 181.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ac1371a8-08ff-5ad9-b1a3-30fe058a80c9))
+	(wire
+		(pts
+			(xy 288.29 184.15)
+			(xy 295.91 184.15))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9810ef8a-fb72-5365-b06d-464a6990af91))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 295.91 184.15 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1f3bad95-4713-5fc0-9be0-5a78f3eb4e78))
+	(symbol
+		(lib_id "R9_interfaces:U42")
+		(at 260.35 184.15 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 81a51f4a-4162-5135-8b2f-56794b6409e2)
+		(property "Reference" "U42"
+			(at 260.35 175.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "SN74LVC1G125DBVR"
+			(at 260.35 193.04 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:U42"
+			(at 260.35 184.15 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/sn74lvc1g125.pdf"
+			(at 260.35 184.15 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "U42")
+					(unit 1))))
+		(pin "1"
+			(uuid e0cd3c06-01e9-507d-a643-62a95d0b6a8a))
+		(pin "2"
+			(uuid 5f48fe18-c306-56dd-ad01-1cfa2b0bbae6))
+		(pin "3"
+			(uuid 5ef8a1ac-89b7-51b7-b1a4-9d6a92c0b5d7))
+		(pin "4"
+			(uuid 85a74a32-2990-505a-b40a-d9d5a8fd9339))
+		(pin "5"
+			(uuid fed037ff-98bd-555a-8126-b15c9cdade02)))
+	(wire
+		(pts
+			(xy 430.53 184.15)
+			(xy 422.91 184.15))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 79fccbba-1a31-5ea1-913f-d0ff65c147dc))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 422.91 184.15 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ce4a4879-87b8-5553-9dc3-c7dd74e5dc44))
+	(wire
+		(pts
+			(xy 440.69 184.15)
+			(xy 448.31 184.15))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c6e38065-414b-5ff0-a71a-a02d883a992e))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 448.31 184.15 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8ad8bb2e-9193-56f0-90c8-6de7fac03b3c))
+	(symbol
+		(lib_id "R9_interfaces:C515")
+		(at 435.61 184.15 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 92f0c0ff-655e-5e49-8e1b-069d3e46ee3f)
+		(property "Reference" "C515"
+			(at 435.61 177.8 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 435.61 190.5 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C515"
+			(at 435.61 184.15 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 435.61 184.15 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C515")
+					(unit 1))))
+		(pin "1"
+			(uuid 78253731-d4ee-5d38-8153-ea85509ac2bb))
+		(pin "2"
+			(uuid 2fc993cd-6369-540c-852c-d17676e979b8)))
+	(wire
+		(pts
+			(xy 80.01 214.63)
+			(xy 72.39 214.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 17a265fb-0549-59d5-8a8e-c02952b01fdb))
+	(global_label "VIDEO_PCLK_BUF"
+		(shape bidirectional)
+		(at 72.39 214.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 269526b8-f6f7-52fb-86c5-62b2d9dc423b))
+	(wire
+		(pts
+			(xy 90.17 214.63)
+			(xy 97.79 214.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7e5f3579-c366-5a99-a65e-caf890053fed))
+	(global_label "VIDEO_PCLK_DAC"
+		(shape bidirectional)
+		(at 97.79 214.63 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1f76abb3-1262-5bdc-8e85-66f1b0f4dd3f))
+	(symbol
+		(lib_id "R9_interfaces:R515")
+		(at 85.09 214.63 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 19a5de39-d3f4-50bd-a300-68eed8bc9d33)
+		(property "Reference" "R515"
+			(at 85.09 208.28 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "33R 1%"
+			(at 85.09 220.98 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R515"
+			(at 85.09 214.63 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 85.09 214.63 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R515")
+					(unit 1))))
+		(pin "1"
+			(uuid b0b20be9-ca27-5f11-abce-3adcbf45a03d))
+		(pin "2"
+			(uuid b2ab9502-c71c-5cc2-9abc-3191b9684cd4)))
+	(wire
+		(pts
+			(xy 255.27 214.63)
+			(xy 247.65 214.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b5dbc490-ee69-596a-bd51-06554ce753dd))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 247.65 214.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9f8bd84a-f16a-5249-b2b5-74c796226a1e))
+	(wire
+		(pts
+			(xy 265.43 214.63)
+			(xy 273.05 214.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d2106bf1-f792-5c24-b4f9-8d39230ab1f8))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 273.05 214.63 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid edc59583-f120-54db-9bb2-ca152396acd3))
+	(symbol
+		(lib_id "R9_interfaces:C516")
+		(at 260.35 214.63 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ffd97044-5875-5bb1-bf66-b8e37321c475)
+		(property "Reference" "C516"
+			(at 260.35 208.28 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 260.35 220.98 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C516"
+			(at 260.35 214.63 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 260.35 214.63 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C516")
+					(unit 1))))
+		(pin "1"
+			(uuid 9aec3d59-10fc-5348-b91b-ba38c2dd5e77))
+		(pin "2"
+			(uuid 5050167d-cd20-5e0f-8162-6ce1e5f12d6d)))
+	(wire
+		(pts
+			(xy 430.53 214.63)
+			(xy 422.91 214.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6c885531-c1f1-5b6d-8e9e-4be232084cf7))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 422.91 214.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ccc4c752-5ab8-5be9-9393-d117fada5cf2))
+	(wire
+		(pts
+			(xy 440.69 214.63)
+			(xy 448.31 214.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 95521704-2319-52c0-9440-cf2e3df11404))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 448.31 214.63 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2a134c10-74ea-5876-a841-5e885b4a4ad9))
+	(symbol
+		(lib_id "R9_interfaces:C517")
+		(at 435.61 214.63 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 064dc08a-5021-527a-adfc-d98577133878)
+		(property "Reference" "C517"
+			(at 435.61 208.28 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10nF 16V X7R"
+			(at 435.61 220.98 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C517"
+			(at 435.61 214.63 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 435.61 214.63 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C517")
+					(unit 1))))
+		(pin "1"
+			(uuid 1e98e5d7-560e-57a1-8449-05f69379ffa7))
+		(pin "2"
+			(uuid 0f6b1f31-06bf-51fb-afe1-7b945d873c53)))
+	(wire
+		(pts
+			(xy 80.01 246.38)
+			(xy 72.39 246.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7957fc15-451f-5d98-bfac-8d50def82987))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 72.39 246.38 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e4f9c361-1895-5802-8480-023bbdc109f7))
+	(wire
+		(pts
+			(xy 90.17 246.38)
+			(xy 97.79 246.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f2c73b60-ce90-526a-84df-c8e2bd565d43))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 97.79 246.38 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d8703f08-3f4c-5a44-aeae-4461bfb9d7c1))
+	(symbol
+		(lib_id "R9_interfaces:C518")
+		(at 85.09 246.38 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 6c17f8e0-22ef-571b-b0a1-7fa7a097874f)
+		(property "Reference" "C518"
+			(at 85.09 240.03 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 85.09 252.73 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C518"
+			(at 85.09 246.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 85.09 246.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C518")
+					(unit 1))))
+		(pin "1"
+			(uuid bf6f7995-5193-550d-9221-ce7bdb0e9997))
+		(pin "2"
+			(uuid 46e5731b-7ae6-5bc7-9e5b-99531afacc6c)))
+	(wire
+		(pts
+			(xy 255.27 246.38)
+			(xy 247.65 246.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7e6665f0-cbf1-531d-adcb-76e747179cf9))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 247.65 246.38 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 71f09357-0696-5cb5-ab6a-fb037307c7b8))
+	(wire
+		(pts
+			(xy 265.43 246.38)
+			(xy 273.05 246.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7a286d0b-412e-5c29-bac9-4e583407ab16))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 273.05 246.38 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b55b4dda-12ae-52c4-addb-65ab6234c8ec))
+	(symbol
+		(lib_id "R9_interfaces:C519")
+		(at 260.35 246.38 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 4324cfb2-c26d-56c0-9a75-db2910d5f6ad)
+		(property "Reference" "C519"
+			(at 260.35 240.03 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10nF 16V X7R"
+			(at 260.35 252.73 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C519"
+			(at 260.35 246.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 260.35 246.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C519")
+					(unit 1))))
+		(pin "1"
+			(uuid c0c58543-bb39-5b24-bc3c-66ddae95d3aa))
+		(pin "2"
+			(uuid 1118dc16-177e-528d-9e9c-df5a40873b32)))
+	(wire
+		(pts
+			(xy 430.53 246.38)
+			(xy 422.91 246.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 62a69f0a-f69c-567e-a1e1-fa4340c34608))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 422.91 246.38 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b6a9cf13-ddf2-5c3e-8e7f-7ff325491375))
+	(wire
+		(pts
+			(xy 440.69 246.38)
+			(xy 448.31 246.38))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 148f98ff-518b-51c0-be76-e25dcdff91bd))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 448.31 246.38 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid fae28750-c59f-5729-bd2e-577958472779))
+	(symbol
+		(lib_id "R9_interfaces:C520")
+		(at 435.61 246.38 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid f68d83bb-ab58-5028-a424-809f37719c0a)
+		(property "Reference" "C520"
+			(at 435.61 240.03 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 435.61 252.73 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C520"
+			(at 435.61 246.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 435.61 246.38 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C520")
+					(unit 1))))
+		(pin "1"
+			(uuid 7231ef08-9ff2-549d-af44-69ec5713f900))
+		(pin "2"
+			(uuid d85f8bf5-da10-54c8-906c-1ffdad22e85b)))
+	(wire
+		(pts
+			(xy 80.01 276.86)
+			(xy 72.39 276.86))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f8d472ae-9aca-5f90-8050-59850dbcf172))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 72.39 276.86 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ef64b171-9033-502d-8f13-203e0ab3c38a))
+	(wire
+		(pts
+			(xy 90.17 276.86)
+			(xy 97.79 276.86))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 83396e95-2a30-5cb3-aa25-d993ce1a394b))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 97.79 276.86 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c5aa9ae8-fd47-59ef-9a0e-8a3459b86b64))
+	(symbol
+		(lib_id "R9_interfaces:C521")
+		(at 85.09 276.86 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid a2435476-e6df-5a0a-b1cf-9221547f0ab0)
+		(property "Reference" "C521"
+			(at 85.09 270.51 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10nF 16V X7R"
+			(at 85.09 283.21 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C521"
+			(at 85.09 276.86 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 85.09 276.86 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C521")
+					(unit 1))))
+		(pin "1"
+			(uuid 2ea36220-f344-5286-9910-650452cfc4f6))
+		(pin "2"
+			(uuid 6b99b725-b52d-5a73-bad7-72d04dbb4484)))
+	(wire
+		(pts
+			(xy 255.27 276.86)
+			(xy 247.65 276.86))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e6fe994e-0d01-5f11-82a0-0c147da3fd46))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 247.65 276.86 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 160c5c1c-5023-5147-b8c2-591d6df9e142))
+	(wire
+		(pts
+			(xy 265.43 276.86)
+			(xy 273.05 276.86))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e6a62c5b-0807-5699-b174-6b2c29e93d2a))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 273.05 276.86 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8aa8871c-870a-557f-8906-946537013e9d))
+	(symbol
+		(lib_id "R9_interfaces:C522")
+		(at 260.35 276.86 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 3b8c686e-6e59-5e82-a054-bcb74361369b)
+		(property "Reference" "C522"
+			(at 260.35 270.51 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "1uF 16V X7R"
+			(at 260.35 283.21 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C522"
+			(at 260.35 276.86 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 260.35 276.86 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C522")
+					(unit 1))))
+		(pin "1"
+			(uuid 82cf76fd-3915-5130-940f-6d2c448cf328))
+		(pin "2"
+			(uuid fa4cd077-6ef1-524a-bffd-b51be005b35f)))
+	(wire
+		(pts
+			(xy 430.53 276.86)
+			(xy 422.91 276.86))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f01a8196-ee9a-5767-8e3b-8cb701d2510c))
+	(global_label "VDAC_COMP"
+		(shape bidirectional)
+		(at 422.91 276.86 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 10251e0b-25cc-5b09-915b-584b4a21e2d9))
+	(wire
+		(pts
+			(xy 440.69 276.86)
+			(xy 448.31 276.86))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 264660a2-b5fc-54ca-a32d-d09d41ac8572))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 448.31 276.86 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d19d6963-34fb-50ab-85df-8d4c898f8f7d))
+	(symbol
+		(lib_id "R9_interfaces:C523")
+		(at 435.61 276.86 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 07e3e014-f360-5e7d-af4e-dded28684924)
+		(property "Reference" "C523"
+			(at 435.61 270.51 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 435.61 283.21 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C523"
+			(at 435.61 276.86 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 435.61 276.86 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C523")
+					(unit 1))))
+		(pin "1"
+			(uuid 8a6006d7-d5ef-578e-bc4a-5c9219ed5dee))
+		(pin "2"
+			(uuid a8156c7b-27e6-53b9-98e8-e22f9f6a592f)))
+	(wire
+		(pts
+			(xy 80.01 308.61)
+			(xy 72.39 308.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid bc7aca37-13bc-5333-86e0-3bf672dbc52f))
+	(global_label "VDAC_VREF"
+		(shape bidirectional)
+		(at 72.39 308.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c21beb41-eb9c-587e-b314-1acbfd9b2af8))
+	(wire
+		(pts
+			(xy 90.17 308.61)
+			(xy 97.79 308.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e2ff3697-2060-5e3c-ba4b-40699a6e7dac))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 97.79 308.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 38ae070a-7ba3-55ed-b082-b40319e6cf3a))
+	(symbol
+		(lib_id "R9_interfaces:C524")
+		(at 85.09 308.61 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 443d58c5-7161-523d-88bf-6633f6f209fb)
+		(property "Reference" "C524"
+			(at 85.09 302.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 85.09 314.96 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C524"
+			(at 85.09 308.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 85.09 308.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "C524")
+					(unit 1))))
+		(pin "1"
+			(uuid 4096343d-e01f-5411-8a82-db4521ea7d3a))
+		(pin "2"
+			(uuid 9be02b69-2001-541f-8b4e-dab894d67890)))
+	(wire
+		(pts
+			(xy 255.27 308.61)
+			(xy 247.65 308.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c6795c31-2c60-5ba7-8452-0dc24657ed72))
+	(global_label "VDAC_RSET"
+		(shape bidirectional)
+		(at 247.65 308.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid bb313e6a-806f-5c6c-bb3c-a91437ae3a4a))
+	(wire
+		(pts
+			(xy 265.43 308.61)
+			(xy 273.05 308.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 863060a8-faf4-5d76-ad38-c482cee56748))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 273.05 308.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1cb152cd-0839-5292-94cc-4aa39b82a60a))
+	(symbol
+		(lib_id "R9_interfaces:R516")
+		(at 260.35 308.61 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 93fc9e38-769b-53c4-bb3f-0f8432a84b3c)
+		(property "Reference" "R516"
+			(at 260.35 302.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "536R 0.1%"
+			(at 260.35 314.96 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R516"
+			(at 260.35 308.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 260.35 308.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5a031cdf-7f8d-555b-ba62-4a661e5b7ffa"
+					(reference "R516")
+					(unit 1))))
+		(pin "1"
+			(uuid de6aeb2f-ae6b-5fc8-8c45-7e5952e27407))
+		(pin "2"
+			(uuid 45a7c83a-27e6-5f98-bf57-bdc4f179f0df))))

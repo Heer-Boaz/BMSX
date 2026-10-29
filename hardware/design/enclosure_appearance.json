@@ -1,0 +1,200 @@
+{
+  "revision": "COMPACT_APPEARANCE_1",
+  "scope": "Own industrial-design concept, no copied console brand or invented vendor internals. Colours are editorial linearRGB; no emissivity or production finish qualification inferred.",
+  "palette": {
+    "shell": [
+      0.7,
+      0.67,
+      0.6
+    ],
+    "fascia": [
+      0.052,
+      0.061,
+      0.069
+    ],
+    "plinth": [
+      0.052,
+      0.061,
+      0.069
+    ],
+    "slot_well": [
+      0.07,
+      0.08,
+      0.088
+    ],
+    "cartridge_body": [
+      0.052,
+      0.061,
+      0.069
+    ],
+    "power": [
+      0.06,
+      0.135,
+      0.22
+    ],
+    "reset": [
+      0.07,
+      0.08,
+      0.085
+    ],
+    "led": [
+      0.04,
+      0.38,
+      0.12
+    ],
+    "legend_dark": [
+      0.075,
+      0.09,
+      0.1
+    ],
+    "legend_light": [
+      0.62,
+      0.65,
+      0.64
+    ]
+  },
+  "print_markings": [
+    {
+      "text": "BMSX",
+      "world_xyz_mm": [
+        42,
+        68,
+        56.03
+      ],
+      "plane": "XY",
+      "rotation_deg": 0,
+      "height_mm": 7,
+      "align": "left",
+      "color_key": "legend_dark",
+      "target": "lid"
+    },
+    {
+      "text": "POWER",
+      "world_xyz_mm": [
+        30,
+        30,
+        56.03
+      ],
+      "plane": "XY",
+      "rotation_deg": 0,
+      "height_mm": 1.7,
+      "align": "center",
+      "color_key": "legend_dark",
+      "target": "fixed_band"
+    },
+    {
+      "text": "RESET",
+      "world_xyz_mm": [
+        215,
+        29,
+        56.03
+      ],
+      "plane": "XY",
+      "rotation_deg": 0,
+      "height_mm": 1.7,
+      "align": "center",
+      "color_key": "legend_dark",
+      "target": "fixed_band"
+    },
+    {
+      "text": "KEYBOARD",
+      "world_xyz_mm": [
+        24,
+        -0.03,
+        33.6
+      ],
+      "plane": "XZ",
+      "rotation_deg": 0,
+      "height_mm": 1.25,
+      "align": "center",
+      "color_key": "legend_light",
+      "target": "fascia"
+    },
+    {
+      "text": "1",
+      "world_xyz_mm": [
+        60,
+        -0.03,
+        30.5
+      ],
+      "plane": "XZ",
+      "rotation_deg": 0,
+      "height_mm": 2,
+      "align": "center",
+      "color_key": "legend_light",
+      "target": "fascia"
+    },
+    {
+      "text": "2",
+      "world_xyz_mm": [
+        105,
+        -0.03,
+        30.5
+      ],
+      "plane": "XZ",
+      "rotation_deg": 0,
+      "height_mm": 2,
+      "align": "center",
+      "color_key": "legend_light",
+      "target": "fascia"
+    },
+    {
+      "text": "3",
+      "world_xyz_mm": [
+        150,
+        -0.03,
+        30.5
+      ],
+      "plane": "XZ",
+      "rotation_deg": 0,
+      "height_mm": 2,
+      "align": "center",
+      "color_key": "legend_light",
+      "target": "fascia"
+    },
+    {
+      "text": "4",
+      "world_xyz_mm": [
+        195,
+        -0.03,
+        30.5
+      ],
+      "plane": "XZ",
+      "rotation_deg": 0,
+      "height_mm": 2,
+      "align": "center",
+      "color_key": "legend_light",
+      "target": "fascia"
+    },
+    {
+      "text": "1",
+      "world_xyz_mm": [
+        170,
+        96.5,
+        55.43
+      ],
+      "plane": "XY",
+      "rotation_deg": 0,
+      "height_mm": 1.5,
+      "align": "center",
+      "color_key": "legend_light",
+      "target": "slot_well"
+    },
+    {
+      "text": "2",
+      "world_xyz_mm": [
+        170,
+        153,
+        55.43
+      ],
+      "plane": "XY",
+      "rotation_deg": 0,
+      "height_mm": 1.5,
+      "align": "center",
+      "color_key": "legend_light",
+      "target": "slot_well"
+    }
+  ],
+  "marking_scope": "Surface pad-print/artwork metadata, not raised mechanical obstacles or verified production print registration.",
+  "vendor_model_scope": "MD60S/SCART/DC maximum receiving bodies retain scope; no invented factory cavity."
+}

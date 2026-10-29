@@ -1,0 +1,847 @@
+{
+  "scope": "Retained original models and native keyboard-board/JST header revision; individual entries record their scope.",
+  "source_release_sha256": "43973d707d4d17c5d5fcacde0713da1489caaf7a35485cc00d84aeca306efa9a",
+  "parts": {
+    "FRONT__PAD_60_HOUSING_PROPOSAL": {
+      "sha256": "69fa8fd4e3d828da2d0302e3685498c702411c837af9b1c8421e80c3f7287c6b",
+      "bounds_mm": [
+        50.8,
+        -0.4,
+        13.6,
+        69.2,
+        20.6,
+        24.7
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_HOUSING_PROPOSAL.brep"
+    },
+    "FRONT__PAD_60_CONTACT_1": {
+      "sha256": "145d6510f893592dcad22d9cc8d2138b7328c1b983947d3240af59de4cc2be40",
+      "bounds_mm": [
+        54.6199999,
+        1.4,
+        10.8,
+        55.22,
+        11.8,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_1.brep"
+    },
+    "FRONT__PAD_60_CONTACT_2": {
+      "sha256": "64250c0dfde51d78237bd5b4044a68a9ae54ce3656a3ac28f3d4a6f50fac0376",
+      "bounds_mm": [
+        57.1599999,
+        1.4,
+        10.8,
+        57.76,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_2.brep"
+    },
+    "FRONT__PAD_60_CONTACT_3": {
+      "sha256": "85c42915d171c6c362f2e6b62bdd6a4e44b4ebd23150641004314a862535b824",
+      "bounds_mm": [
+        59.6999999,
+        1.4,
+        10.8,
+        60.3,
+        11.8,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_3.brep"
+    },
+    "FRONT__PAD_60_CONTACT_4": {
+      "sha256": "f98b908304fb692d08a67dfb6cdf3d7a2f1cc5fb3a65fe7104cfc734c6846922",
+      "bounds_mm": [
+        62.2399999,
+        1.4,
+        10.8,
+        62.84,
+        11.8000001,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_4.brep"
+    },
+    "FRONT__PAD_60_CONTACT_5": {
+      "sha256": "522143c587d1270ce4f040d6206ad615df2ad587452b8a41198cbfa93b6e61e2",
+      "bounds_mm": [
+        64.7799999,
+        1.4,
+        10.8,
+        65.38,
+        11.8000001,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_5.brep"
+    },
+    "FRONT__PAD_60_CONTACT_6": {
+      "sha256": "9b5ddb60cb9b7482ec2bd1ddbc43d117c8d3e7ce8340a86e1e5067c417dec779",
+      "bounds_mm": [
+        55.8899999,
+        1.4,
+        10.8,
+        56.49,
+        14.3400001,
+        21.45
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_6.brep"
+    },
+    "FRONT__PAD_60_CONTACT_7": {
+      "sha256": "78afd8ded09fe9c1114874b02b3d2b70395194805052f1814e3456fbbd03e102",
+      "bounds_mm": [
+        58.4299999,
+        1.4,
+        10.8,
+        59.03,
+        14.3400001,
+        21.45
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_7.brep"
+    },
+    "FRONT__PAD_60_CONTACT_8": {
+      "sha256": "51ec794c61c6c74a36638cb1a6933338d0afb4261466f41d43e55152fe578a12",
+      "bounds_mm": [
+        60.969999900000005,
+        1.4,
+        10.8,
+        61.57,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_8.brep"
+    },
+    "FRONT__PAD_60_CONTACT_9": {
+      "sha256": "d66ce57d79aae34621a23489a3a293c22f3885f31105e419aa12b06af367633f",
+      "bounds_mm": [
+        63.509999900000004,
+        1.4,
+        10.8,
+        64.11,
+        14.34,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_60_CONTACT_9.brep"
+    },
+    "FRONT__PAD_120_HOUSING_PROPOSAL": {
+      "sha256": "6d4cd85b002eb56fec097edca76c61df2aee45393cd8513346c85d15cb56070e",
+      "bounds_mm": [
+        110.8,
+        -0.4,
+        13.6,
+        129.20000000000002,
+        20.6,
+        24.7
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_HOUSING_PROPOSAL.brep"
+    },
+    "FRONT__PAD_120_CONTACT_1": {
+      "sha256": "b48f5b6395b4158a78fca748227cd59c8d4a2acc2cf808546f8c08b0448935c6",
+      "bounds_mm": [
+        114.61999990000001,
+        1.4,
+        10.8,
+        115.22,
+        11.8000001,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_1.brep"
+    },
+    "FRONT__PAD_120_CONTACT_2": {
+      "sha256": "e1c4f2c7b4ff30567907f8bac8655a518b00f03142118eebc140c97dfdf24b04",
+      "bounds_mm": [
+        117.1599999,
+        1.4,
+        10.8,
+        117.76,
+        11.8000001,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_2.brep"
+    },
+    "FRONT__PAD_120_CONTACT_3": {
+      "sha256": "00afdfaf7d6b28a8adba470aeff5d66229aa00eb8d99559e86392d6fe4faf376",
+      "bounds_mm": [
+        119.69999990000001,
+        1.4,
+        10.8,
+        120.3,
+        11.8000001,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_3.brep"
+    },
+    "FRONT__PAD_120_CONTACT_4": {
+      "sha256": "b9987e0d63a018647fc9bf6b614109664b033157459ef7655253b77fcd324583",
+      "bounds_mm": [
+        122.23999990000002,
+        1.4,
+        10.8,
+        122.84,
+        11.8000001,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_4.brep"
+    },
+    "FRONT__PAD_120_CONTACT_5": {
+      "sha256": "1d9196b121fe27f25340fc271dad8b4c5bde5682a40b474c45adad601b3772b3",
+      "bounds_mm": [
+        124.7799999,
+        1.4,
+        10.8,
+        125.38,
+        11.8000001,
+        19.150000000000002
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_5.brep"
+    },
+    "FRONT__PAD_120_CONTACT_6": {
+      "sha256": "da6e7e85f99a2213edd663a8ee39f6898da1d2ad62e6040fefe40a6536ab24e6",
+      "bounds_mm": [
+        115.8899999,
+        1.4,
+        10.8,
+        116.49,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_6.brep"
+    },
+    "FRONT__PAD_120_CONTACT_7": {
+      "sha256": "78d7a85e6174b64811e8fd4d1377820855617cdc5eb0589309b8db43c468cd01",
+      "bounds_mm": [
+        118.42999990000001,
+        1.4,
+        10.8,
+        119.03,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_7.brep"
+    },
+    "FRONT__PAD_120_CONTACT_8": {
+      "sha256": "f787184fc83ecc1788667ee12cb18cd714efb004158cd95f83cbf4d92224b9d8",
+      "bounds_mm": [
+        120.9699999,
+        1.4,
+        10.8,
+        121.57,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_8.brep"
+    },
+    "FRONT__PAD_120_CONTACT_9": {
+      "sha256": "3def5500868d56edb3c70bf3eba35c1983e71ae59a156551da8a1a466b577fac",
+      "bounds_mm": [
+        123.50999990000001,
+        1.4,
+        10.8,
+        124.11,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_120_CONTACT_9.brep"
+    },
+    "FRONT__PAD_180_HOUSING_PROPOSAL": {
+      "sha256": "3fb7b2d3c2229215c79819200d38e639eead5e2140db2127a80abcbb66b7e73a",
+      "bounds_mm": [
+        170.79999999999998,
+        -0.4,
+        13.6,
+        189.20000000000002,
+        20.6,
+        24.7
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_HOUSING_PROPOSAL.brep"
+    },
+    "FRONT__PAD_180_CONTACT_1": {
+      "sha256": "2c12057ad8e411e31ec8976d2fcd7ce548e978fa495242361609c6a58894c6d1",
+      "bounds_mm": [
+        174.61999989999998,
+        1.4,
+        10.8,
+        175.22,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_1.brep"
+    },
+    "FRONT__PAD_180_CONTACT_2": {
+      "sha256": "b7927999cb5ad6ed88ebd754c0777cf87ab62a3147834d8a7daacd065a4a64b9",
+      "bounds_mm": [
+        177.1599999,
+        1.4,
+        10.8,
+        177.76000000000002,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_2.brep"
+    },
+    "FRONT__PAD_180_CONTACT_3": {
+      "sha256": "ccea4bfda71991dbb7f78089a6754cfa80846f6c1897e3ca2898be3824031776",
+      "bounds_mm": [
+        179.6999999,
+        1.4,
+        10.8,
+        180.3,
+        11.8000001,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_3.brep"
+    },
+    "FRONT__PAD_180_CONTACT_4": {
+      "sha256": "1c579b47659993995c57705a1d573caf77b8e09511a7ec60e79e95d4f2eaa887",
+      "bounds_mm": [
+        182.2399999,
+        1.4,
+        10.8,
+        182.84,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_4.brep"
+    },
+    "FRONT__PAD_180_CONTACT_5": {
+      "sha256": "becde6ba141ca98e5c9c79580cc7e6002d1a0fb135a19bbe45aa14946e5fce04",
+      "bounds_mm": [
+        184.7799999,
+        1.4,
+        10.8,
+        185.38000000000002,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_5.brep"
+    },
+    "FRONT__PAD_180_CONTACT_6": {
+      "sha256": "342f149265cab4f58e74019fe1fdf512daad1a3d30d493b9874a903f9e1a4096",
+      "bounds_mm": [
+        175.8899999,
+        1.4,
+        10.8,
+        176.49,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_6.brep"
+    },
+    "FRONT__PAD_180_CONTACT_7": {
+      "sha256": "26849a54e8720b1ed5bb74eb8bf25087ed575faac6b44ea0f4cd12e0fdc419ff",
+      "bounds_mm": [
+        178.42999989999998,
+        1.4,
+        10.8,
+        179.03,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_7.brep"
+    },
+    "FRONT__PAD_180_CONTACT_8": {
+      "sha256": "b3ff46cded936551c23826f5c7a7a10f75915bc0dd416d0cd8d5f9baa838510b",
+      "bounds_mm": [
+        180.9699999,
+        1.4,
+        10.8,
+        181.57000000000002,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_8.brep"
+    },
+    "FRONT__PAD_180_CONTACT_9": {
+      "sha256": "33d02920159a826561cb380b898e97000410665c5feb42fbcbfb9f2c8e2b3990",
+      "bounds_mm": [
+        183.5099999,
+        1.4,
+        10.8,
+        184.11,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_180_CONTACT_9.brep"
+    },
+    "FRONT__PAD_240_HOUSING_PROPOSAL": {
+      "sha256": "e7ce67b9912a08044e266d1c4ca2d1378829b1dc4ad93af9d0ecc3c8607ee0f1",
+      "bounds_mm": [
+        230.79999999999998,
+        -0.4,
+        13.6,
+        249.20000000000002,
+        20.6,
+        24.7
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_HOUSING_PROPOSAL.brep"
+    },
+    "FRONT__PAD_240_CONTACT_1": {
+      "sha256": "a5c541caa54ea378c635a69436d05376ecb01b671c8af329e4d16251065017ad",
+      "bounds_mm": [
+        234.61999989999998,
+        1.4,
+        10.8,
+        235.22,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_1.brep"
+    },
+    "FRONT__PAD_240_CONTACT_2": {
+      "sha256": "70f7a9c72d0aa53c46b65872b1e02c5358a7bc883f0c58faadf71491e5bc86b2",
+      "bounds_mm": [
+        237.1599999,
+        1.4,
+        10.8,
+        237.76000000000002,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_2.brep"
+    },
+    "FRONT__PAD_240_CONTACT_3": {
+      "sha256": "33c3616f56211c1b5a6352408a8a54a00298fb27b6589ad2523cd10f11b39d56",
+      "bounds_mm": [
+        239.6999999,
+        1.4,
+        10.8,
+        240.3,
+        11.8000001,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_3.brep"
+    },
+    "FRONT__PAD_240_CONTACT_4": {
+      "sha256": "b6400349b547a65bb518f6029b77b40b56bed82b5538e09ecd9c0450c0d06c13",
+      "bounds_mm": [
+        242.2399999,
+        1.4,
+        10.8,
+        242.84,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_4.brep"
+    },
+    "FRONT__PAD_240_CONTACT_5": {
+      "sha256": "e5d3dc02e8d7b2d4d14290bb9b80048bd708f89d2356e96082215b5ac1e17113",
+      "bounds_mm": [
+        244.7799999,
+        1.4,
+        10.8,
+        245.38000000000002,
+        11.8,
+        19.1500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_5.brep"
+    },
+    "FRONT__PAD_240_CONTACT_6": {
+      "sha256": "082369f34b169660f0d14f282e256afb70e657dcfea08273d466d2a448fb7998",
+      "bounds_mm": [
+        235.8899999,
+        1.4,
+        10.8,
+        236.49,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_6.brep"
+    },
+    "FRONT__PAD_240_CONTACT_7": {
+      "sha256": "f994400604c7722f028e558bce9ea3084a649ae3d6cfc715b986f102343106f4",
+      "bounds_mm": [
+        238.42999989999998,
+        1.4,
+        10.8,
+        239.03,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_7.brep"
+    },
+    "FRONT__PAD_240_CONTACT_8": {
+      "sha256": "034e96d7bb8ec6c1c3f253c46087ad8195b8fa12e8807bf983e5b53a58ff90b2",
+      "bounds_mm": [
+        240.9699999,
+        1.4,
+        10.8,
+        241.57000000000002,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_8.brep"
+    },
+    "FRONT__PAD_240_CONTACT_9": {
+      "sha256": "fdb9b083d7063785ad2c7e19124fe6a8d1e1c711ebcd21afd40fe4807a043978",
+      "bounds_mm": [
+        243.5099999,
+        1.4,
+        10.8,
+        244.11,
+        14.3400001,
+        21.4500001
+      ],
+      "group": "front",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/FRONT__PAD_240_CONTACT_9.brep"
+    },
+    "KEYBOARD__KEYBOARD_NATIVE_DRILLED_BOARD": {
+      "sha256": "fdb60c28ed43ebe8e6643ba0a729dc3d87daf7d13ec7e5b47249078949b37bcf",
+      "bounds_mm": [
+        50.0,
+        181.0,
+        12.4,
+        74.0,
+        207.0,
+        14.0
+      ],
+      "group": "keyboard",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/KEYBOARD__KEYBOARD_NATIVE_DRILLED_BOARD.brep",
+      "source_pcb": "ecad/keyboard/BMSX_KEYBOARD.kicad_pcb",
+      "source_sha256": "11a6def195d035987181a34a1004364b21011fdf35861ee943261f4303ca7eaf"
+    },
+    "KEYBOARD__MD60S_MANUFACTURER_MAX_BODY_OCCUPANCY": {
+      "sha256": "78c541ea0f41859bab368a531a8397fc5be61cb2b66eab642110d62020422b49",
+      "bounds_mm": [
+        54.85,
+        197.3,
+        14.0,
+        69.15,
+        210.0,
+        27.1
+      ],
+      "group": "keyboard",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/front/KEYBOARD__MD60S_MANUFACTURER_MAX_BODY_OCCUPANCY.brep"
+    },
+    "KEYBOARD__J2_JST_PH_BODY": {
+      "sha256": "102658d6980568c1d444f6e75f2b499d3bdb0afeacd15090a13c00b3d9dba744",
+      "bounds_mm": [
+        59.2,
+        184.05,
+        14.0,
+        63.75,
+        193.95000000000002,
+        20.0
+      ],
+      "group": "keyboard",
+      "rgba": [
+        0.85,
+        0.85,
+        0.78,
+        1.0
+      ],
+      "brep": "models/front/KEYBOARD__J2_JST_PH_BODY.brep",
+      "representation": "JST_PH_nominal_header_body_bounding_box_excludes_tails_and_mated_housing",
+      "source_sha256": "0703774983dd0bf32b5175315a63ebb9c9439b35cb491768770aaa13ded27934"
+    },
+    "FRONT__J5_JST_PHD_BODY": {
+      "sha256": "aae09c1f3d1784baa64d110f84f50ad5cabd07eaa60c824aa00457251a0f5003",
+      "bounds_mm": [
+        210.05,
+        16.5,
+        13.6,
+        231.95,
+        21.5,
+        20.1
+      ],
+      "group": "front",
+      "rgba": [
+        0.8,
+        0.8,
+        0.75,
+        1.0
+      ],
+      "brep": "models/front/FRONT__J5_JST_PHD_BODY.brep",
+      "representation": "nominal_header_body_envelope_not_complete_mate"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 540" role="img" aria-labelledby="title desc">
+<title id="title">Keyboard socket contact positions</title>
+<desc id="desc">Schematic view facing the six-contact mini-DIN socket, with the key at the top. Contacts 6 and 5 are at the upper left and right; 4 and 3 at the middle left and right; 2 and 1 at the lower left and right.</desc>
+<style>text{font-family:Arial,sans-serif;fill:#183044;font-size:22px}.title{font-size:30px;font-weight:bold}.small{font-size:19px}.number{font-size:23px;font-weight:bold;fill:#f5f5ef}.housing{fill:#29333a;stroke:#182d3a;stroke-width:4}.opening{fill:#111a20;stroke:#7b8e99;stroke-width:3}.contact{fill:#d7c48c;stroke:#9a864e;stroke-width:1}</style>
+<rect width="1000" height="540" fill="white"/>
+<text x="50" y="55" class="title">Keyboard socket — contact positions</text>
+<text x="50" y="91" class="small">View facing the console socket; key shown at the top</text>
+<circle cx="500" cy="284" r="160" class="housing"/>
+<circle cx="500" cy="284" r="132" class="opening"/>
+<path d="M477 151h46v37h-46z" class="housing"/>
+<rect x="484" y="215" width="32" height="74" rx="3" class="housing"/>
+<rect x="408" y="208" width="26" height="26" rx="3" class="contact"/>
+<rect x="566" y="208" width="26" height="26" rx="3" class="contact"/>
+<rect x="385" y="277" width="26" height="26" rx="3" class="contact"/>
+<rect x="589" y="277" width="26" height="26" rx="3" class="contact"/>
+<rect x="443" y="337" width="26" height="26" rx="3" class="contact"/>
+<rect x="531" y="337" width="26" height="26" rx="3" class="contact"/>
+<text x="378" y="226" text-anchor="middle" class="number">6</text>
+<text x="622" y="226" text-anchor="middle" class="number">5</text>
+<text x="358" y="297" text-anchor="middle" class="number">4</text>
+<text x="642" y="297" text-anchor="middle" class="number">3</text>
+<text x="420" y="355" text-anchor="middle" class="number">2</text>
+<text x="580" y="355" text-anchor="middle" class="number">1</text>
+<text x="50" y="491" class="small">Contact numbers correspond to the following keyboard assignment.</text>
+<text x="50" y="521" class="small">Schematic mating-face view; it is not a connector manufacturing drawing.</text>
+</svg>

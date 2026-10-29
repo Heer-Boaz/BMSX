@@ -1,0 +1,1 @@
+(fp_lib_table (version 7) (lib (name "SCART") (type "KiCad") (uri "${KIPRJMOD}/SCART.pretty") (options "") (descr "Maker SCART tail grid and own lead pads")))

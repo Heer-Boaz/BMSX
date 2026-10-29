@@ -1,0 +1,28 @@
+[
+  {
+    "ref": "J500",
+    "name": "AV_IDC_COMPLETE_MATE_ACCEPTANCE",
+    "bounds_mm_local": [
+      -4.0,
+      -4.5,
+      13.8,
+      7.0,
+      22.5,
+      29.0
+    ],
+    "scope": "Complete mate receiving allocation; not detailed factory material."
+  },
+  {
+    "ref": "J61",
+    "name": "DC_COMPLETE_MOLEXS_MATE_ACCEPTANCE",
+    "bounds_mm_local": [
+      -3.5,
+      -28.0,
+      11.6,
+      5.0,
+      8.0,
+      26.5
+    ],
+    "scope": "Complete mate receiving allocation; not detailed factory material."
+  }
+]

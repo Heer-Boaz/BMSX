@@ -1,0 +1,3748 @@
+(kicad_sch
+	(version 20250114)
+	(generator eeschema)
+	(uuid 785c8c0e-1e56-5c4f-98f0-d5ed9d244628)
+	(paper "A2")
+	(lib_symbols
+		(symbol "R9_interfaces:C342"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C342_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C343"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "4.7uF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C343_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C344"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C344_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C345"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C345_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C346"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C346_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C347"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C347_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C348"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C348_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C349"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C349_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C350"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C350_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C351"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C351_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C352"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C352_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C364"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C364_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C365"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C365_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C366"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C366_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C367"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C367_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C368"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C368_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C369"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C369_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C371"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C371_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C372"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C372_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C373"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C373_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C374"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C374_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C375"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C375_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C376"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C376_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C377"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C377_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C378"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C378_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C379"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C379_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C380"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "100nF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C380_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:C381"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "C"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "4.7uF 16V X7R"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "C381_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 4.318)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(polyline
+					(pts
+						(xy -0.762 -2.54)
+						(xy -0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))
+				(polyline
+					(pts
+						(xy 0.762 -2.54)
+						(xy 0.762 2.54))
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none))))))
+	(title_block
+		(title "R9 ASIC local bypass 2")
+		(date "2026-10-21")
+		(rev "4ASIC ECO")
+		(company "BMSX")
+		(comment 1 "PROPOSED ASIC INTERFACES - NOT FOR MANUFACTURE"))
+	(text "Four-ASIC ECO bypass inventory: one 100nF per VDD pad and one 4.7uF bulk per package.\nOwnership labels refer to the new package pin numbers; placement and PDN qualification are separate."
+		(at 290 25.0 0)
+		(effects
+			(font
+				(size 1.27 1.27)))
+		(uuid 2c2377c7-6772-58e0-975a-e695479e42f8))
+	(text "Back-side placement under the package; PDN and current capability are not qualified."
+		(at 290 30.08 0)
+		(effects
+			(font
+				(size 1.27 1.27)))
+		(uuid 713ff18e-dda4-5bbe-8dc3-ffb2e984b464))
+	(wire
+		(pts
+			(xy 59.69 54.61)
+			(xy 52.07 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4c2b65d1-f46d-507a-858f-4ef75e49f747))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 52.07 54.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid cbed1914-5b5b-56d1-b700-753e00167256))
+	(wire
+		(pts
+			(xy 69.85 54.61)
+			(xy 77.47 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 079c754a-7851-546b-9d52-60cb99475eaa))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 77.47 54.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 68f88cf0-aed4-5886-9513-237e455e9ef6))
+	(symbol
+		(lib_id "R9_interfaces:C342")
+		(at 64.77 54.61 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 93835db6-242a-532a-a17b-88c3f0db1e22)
+		(property "Reference" "C342"
+			(at 64.77 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 64.77 60.96 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C342"
+			(at 64.77 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 64.77 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C342")
+					(unit 1))))
+		(pin "1"
+			(uuid a6450072-8541-5588-9f04-3ad8d65a4372))
+		(pin "2"
+			(uuid e442f223-5112-582f-b6f9-401e07a4b8d3)))
+	(wire
+		(pts
+			(xy 147.32 54.61)
+			(xy 139.7 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a175d7b9-76c2-56d1-8d37-931ba67138a1))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 139.7 54.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5db104c4-f022-557d-b40a-88c0f69d1acd))
+	(wire
+		(pts
+			(xy 157.48 54.61)
+			(xy 165.1 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4661ffd8-1f2d-5d4c-8de8-57118b886ddb))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 165.1 54.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid fa3d4cae-6b39-5c68-bf1c-67f8122efbf5))
+	(symbol
+		(lib_id "R9_interfaces:C343")
+		(at 152.4 54.61 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid b1243d29-cc94-50d7-8de5-a761d05aca17)
+		(property "Reference" "C343"
+			(at 152.4 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "4.7uF 16V X7R"
+			(at 152.4 60.96 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C343"
+			(at 152.4 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 152.4 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C343")
+					(unit 1))))
+		(pin "1"
+			(uuid 3eafe165-7cd4-5341-a713-333b861dcd76))
+		(pin "2"
+			(uuid 1ab55b56-1f64-52bc-b3f2-51a51cf8e165)))
+	(wire
+		(pts
+			(xy 236.22 54.61)
+			(xy 228.6 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 88c459d7-17bb-5def-829b-e309a033833b))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 228.6 54.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2126a8ad-efb8-5ae0-a354-dfc2e17f286b))
+	(wire
+		(pts
+			(xy 246.38 54.61)
+			(xy 254.0 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 473f754c-e26e-5dcd-a3d7-9b2397c1e5bb))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 254.0 54.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 53ed48d4-c182-5968-bc37-afd1c4407f41))
+	(symbol
+		(lib_id "R9_interfaces:C344")
+		(at 241.3 54.61 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 82ebb5b3-3b67-5c07-b81d-3971ac51e717)
+		(property "Reference" "C344"
+			(at 241.3 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 241.3 60.96 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C344"
+			(at 241.3 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 241.3 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C344")
+					(unit 1))))
+		(pin "1"
+			(uuid a5cecba9-21e0-5348-859a-b705fc7cbb81))
+		(pin "2"
+			(uuid 29f235ec-4c2a-586f-ad30-d9c7dc25b582)))
+	(wire
+		(pts
+			(xy 323.85 54.61)
+			(xy 316.23 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 60042dc5-cc84-5045-a6e0-6a526ce7f32f))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 316.23 54.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1421d1ca-1356-555d-b57a-a9b49b87e1be))
+	(wire
+		(pts
+			(xy 334.01 54.61)
+			(xy 341.63 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 187afcb8-c2b1-5dcb-8223-2da9bf6f7f4b))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 341.63 54.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9bc43d01-3f1b-5e21-8959-8926fa939f76))
+	(symbol
+		(lib_id "R9_interfaces:C345")
+		(at 328.93 54.61 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 5583b472-faf8-5124-9a06-b32bcb097ac0)
+		(property "Reference" "C345"
+			(at 328.93 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 328.93 60.96 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C345"
+			(at 328.93 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 328.93 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C345")
+					(unit 1))))
+		(pin "1"
+			(uuid 3ba271dc-2871-56ef-bd95-9a6aec0a89d4))
+		(pin "2"
+			(uuid e4254f4d-cbb2-5634-aea0-6aaf10574611)))
+	(wire
+		(pts
+			(xy 411.48 54.61)
+			(xy 403.86 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 48c6d3e9-2c49-5b12-a60d-e44d809a739d))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 403.86 54.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f8a9b569-8e30-5336-8820-5198336ca1ab))
+	(wire
+		(pts
+			(xy 421.64 54.61)
+			(xy 429.26 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6432ef26-8167-518e-9954-e98c3ca34e70))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 429.26 54.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8b431fca-5954-53d2-9238-186dbd588bd4))
+	(symbol
+		(lib_id "R9_interfaces:C346")
+		(at 416.56 54.61 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 02e70756-d560-5cdc-9184-8d26b8df3c26)
+		(property "Reference" "C346"
+			(at 416.56 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 416.56 60.96 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C346"
+			(at 416.56 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 416.56 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C346")
+					(unit 1))))
+		(pin "1"
+			(uuid aa9dd64f-5a13-52ce-b103-908262b7a6f6))
+		(pin "2"
+			(uuid 6bf77482-beeb-554b-81ba-91726f92856f)))
+	(wire
+		(pts
+			(xy 500.38 54.61)
+			(xy 492.76 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9f2827af-d352-5d70-9bc1-3f9c16573181))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 492.76 54.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f6f0638f-2e54-534c-93d6-6d783a2ef59b))
+	(wire
+		(pts
+			(xy 510.54 54.61)
+			(xy 518.16 54.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ad954500-620a-58fe-998a-1d3aa03d773e))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 518.16 54.61 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e477aab4-28fd-51a0-985c-673f13be4867))
+	(symbol
+		(lib_id "R9_interfaces:C347")
+		(at 505.46 54.61 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ce6bcb72-3490-5abb-8921-c328c7d139e2)
+		(property "Reference" "C347"
+			(at 505.46 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 505.46 60.96 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C347"
+			(at 505.46 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 505.46 54.61 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C347")
+					(unit 1))))
+		(pin "1"
+			(uuid 8fd31239-d6cc-5aa1-8a61-e6cd2b5c3395))
+		(pin "2"
+			(uuid 08a58861-4c27-5694-a571-1d91e88aee56)))
+	(wire
+		(pts
+			(xy 59.69 100.33)
+			(xy 52.07 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 63593da7-b93e-5b7e-b991-2a8e2f4f69ae))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 52.07 100.33 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2b095ebe-0fbf-5f1c-996d-b3cf3f658ed0))
+	(wire
+		(pts
+			(xy 69.85 100.33)
+			(xy 77.47 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 07d212cd-d225-5238-8a6e-120645639985))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 77.47 100.33 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 211b95c7-f6be-5a81-9f4b-8c3294bd56d9))
+	(symbol
+		(lib_id "R9_interfaces:C348")
+		(at 64.77 100.33 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid b6ddc5cd-43a5-5d09-be48-3b5a3cb7e515)
+		(property "Reference" "C348"
+			(at 64.77 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 64.77 106.68 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C348"
+			(at 64.77 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 64.77 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C348")
+					(unit 1))))
+		(pin "1"
+			(uuid 6e7214ab-cbd1-55f3-a348-23b3ae92693b))
+		(pin "2"
+			(uuid 7b848255-d298-50cd-b3ca-a76e18666e7c)))
+	(wire
+		(pts
+			(xy 147.32 100.33)
+			(xy 139.7 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8227cef4-23a4-5a5c-b2a3-2bac7ad5656f))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 139.7 100.33 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a0ff821a-ad74-5cb9-b187-47afe56af2e3))
+	(wire
+		(pts
+			(xy 157.48 100.33)
+			(xy 165.1 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid adf7ecfe-6b9d-5669-ac54-f271b91a0ef2))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 165.1 100.33 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 23bac203-a8b6-5f2c-b92f-6b10f69ed3cc))
+	(symbol
+		(lib_id "R9_interfaces:C349")
+		(at 152.4 100.33 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid bcaef060-b7c4-56fc-9b42-e12da5a96d68)
+		(property "Reference" "C349"
+			(at 152.4 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 152.4 106.68 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C349"
+			(at 152.4 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 152.4 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C349")
+					(unit 1))))
+		(pin "1"
+			(uuid 8a750fcc-c1dd-5365-830f-13311007d7bd))
+		(pin "2"
+			(uuid 2bca759c-3908-5ef6-823b-df269f22971e)))
+	(wire
+		(pts
+			(xy 236.22 100.33)
+			(xy 228.6 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 11a802b0-12f2-587e-9672-3d28b16fed29))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 228.6 100.33 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 34b18567-8a37-57d8-8a5c-545ee503fbe9))
+	(wire
+		(pts
+			(xy 246.38 100.33)
+			(xy 254.0 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fd0364b5-95d4-58f7-ba92-6881c97220d1))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 254.0 100.33 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6afa2a0b-c997-5db9-b031-87f9211f6010))
+	(symbol
+		(lib_id "R9_interfaces:C350")
+		(at 241.3 100.33 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 2789bae2-4168-56fb-a133-15d1b2d756da)
+		(property "Reference" "C350"
+			(at 241.3 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 241.3 106.68 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C350"
+			(at 241.3 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 241.3 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C350")
+					(unit 1))))
+		(pin "1"
+			(uuid bd4a14e0-d60f-50b2-9d76-2c2dfba32945))
+		(pin "2"
+			(uuid 541de2be-2961-50fb-af36-476b805474cb)))
+	(wire
+		(pts
+			(xy 323.85 100.33)
+			(xy 316.23 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8c4dda81-6834-51ed-9ff8-8b8617457d02))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 316.23 100.33 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4209efbe-45b5-5998-9740-a8c8f2a31e98))
+	(wire
+		(pts
+			(xy 334.01 100.33)
+			(xy 341.63 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ecb9e726-7ea2-520c-8ad4-5a61a098dc83))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 341.63 100.33 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1389976e-66a2-5674-9f49-0617ba5b3759))
+	(symbol
+		(lib_id "R9_interfaces:C351")
+		(at 328.93 100.33 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 0cd9f6c7-295b-550c-a149-614111b551c8)
+		(property "Reference" "C351"
+			(at 328.93 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 328.93 106.68 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C351"
+			(at 328.93 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 328.93 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C351")
+					(unit 1))))
+		(pin "1"
+			(uuid f8db5368-a991-5b62-88da-c134a8f65176))
+		(pin "2"
+			(uuid ec291cb8-d171-5c3d-97f1-ad92602085a9)))
+	(wire
+		(pts
+			(xy 411.48 100.33)
+			(xy 403.86 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ab5049be-516d-54ab-8d0e-53eceee60383))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 403.86 100.33 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 442db5c1-8702-5fa3-900f-346a84f54e68))
+	(wire
+		(pts
+			(xy 421.64 100.33)
+			(xy 429.26 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid caa8a809-717d-5643-a10b-d5c11736df38))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 429.26 100.33 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f246b136-6d02-5792-9040-dc268e743771))
+	(symbol
+		(lib_id "R9_interfaces:C352")
+		(at 416.56 100.33 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 88d3627e-c192-55e7-9b86-16727f9163fd)
+		(property "Reference" "C352"
+			(at 416.56 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 416.56 106.68 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C352"
+			(at 416.56 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 416.56 100.33 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C352")
+					(unit 1))))
+		(pin "1"
+			(uuid a391dff8-a9ef-59a6-9e86-7e1963cff52d))
+		(pin "2"
+			(uuid c5cf75dc-5c4a-5e13-8e52-c297562acf62)))
+	(wire
+		(pts
+			(xy 411.48 190.5)
+			(xy 403.86 190.5))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f82a7b19-31e4-5ec7-96fa-870bc1ae15d2))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 403.86 190.5 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 46955498-44fa-56e3-974f-f2d67c8602d4))
+	(wire
+		(pts
+			(xy 421.64 190.5)
+			(xy 429.26 190.5))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1fed0361-5d08-57ca-8e3b-954ee83347ae))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 429.26 190.5 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a674f084-31c5-57b2-9318-45fea23248bb))
+	(symbol
+		(lib_id "R9_interfaces:C364")
+		(at 416.56 190.5 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 3b1baa88-6a84-5983-8d83-b0c51cfd5fbf)
+		(property "Reference" "C364"
+			(at 416.56 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 416.56 196.85 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C364"
+			(at 416.56 190.5 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 416.56 190.5 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C364")
+					(unit 1))))
+		(pin "1"
+			(uuid a10ac965-fef0-51e3-82ac-12164cdde92d))
+		(pin "2"
+			(uuid ebd79080-c2b6-5fa8-9443-6415d6f37aa6)))
+	(wire
+		(pts
+			(xy 500.38 190.5)
+			(xy 492.76 190.5))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b69668fd-d4f7-578d-be9b-79d2e0765c17))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 492.76 190.5 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 0b5665de-8ca3-5203-aee9-87d623dc32b6))
+	(wire
+		(pts
+			(xy 510.54 190.5)
+			(xy 518.16 190.5))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f6246cbc-7dfd-5b1e-bc69-2131a33ea322))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 518.16 190.5 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3d859bb9-33b8-5c97-ba26-20c89b783f1a))
+	(symbol
+		(lib_id "R9_interfaces:C365")
+		(at 505.46 190.5 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 240a97da-72c3-5703-a68a-8825cb916568)
+		(property "Reference" "C365"
+			(at 505.46 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 505.46 196.85 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C365"
+			(at 505.46 190.5 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 505.46 190.5 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C365")
+					(unit 1))))
+		(pin "1"
+			(uuid c66cad4a-5374-54c5-8411-c6ed51bd0a43))
+		(pin "2"
+			(uuid fa80def9-9c3a-592c-9a15-c3350d8838e8)))
+	(wire
+		(pts
+			(xy 59.69 234.95)
+			(xy 52.07 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5441e4c3-9822-5ab8-977c-872a0287f8a4))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 52.07 234.95 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d7f76ec4-c7d6-5486-9680-878d1a75cfee))
+	(wire
+		(pts
+			(xy 69.85 234.95)
+			(xy 77.47 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b263be10-06e3-57e9-be26-7cf974e20468))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 77.47 234.95 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6ce96253-2e50-502a-81c2-9e5396482792))
+	(symbol
+		(lib_id "R9_interfaces:C366")
+		(at 64.77 234.95 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 1afa7a76-e83d-5f91-9f7a-e86c2aec59f4)
+		(property "Reference" "C366"
+			(at 64.77 228.6 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 64.77 241.3 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C366"
+			(at 64.77 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 64.77 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C366")
+					(unit 1))))
+		(pin "1"
+			(uuid f3353cfa-9506-5828-b886-2dae2113333a))
+		(pin "2"
+			(uuid f703d6a2-a0d6-510d-82f5-fc7350b49ddf)))
+	(wire
+		(pts
+			(xy 147.32 234.95)
+			(xy 139.7 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6815e5cc-42f7-5e36-bdc8-18f9a11ef9aa))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 139.7 234.95 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9fcb2063-23ac-58e3-95c2-7488eee9c9ad))
+	(wire
+		(pts
+			(xy 157.48 234.95)
+			(xy 165.1 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d221bbbc-dc93-5c4a-a21f-f6dc42d2f10d))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 165.1 234.95 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 92d56704-0bee-5b81-b713-a28a559330f4))
+	(symbol
+		(lib_id "R9_interfaces:C367")
+		(at 152.4 234.95 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 8f9f0b5f-24a5-583c-8dd3-61b939c3af3b)
+		(property "Reference" "C367"
+			(at 152.4 228.6 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 152.4 241.3 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C367"
+			(at 152.4 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 152.4 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C367")
+					(unit 1))))
+		(pin "1"
+			(uuid 021b5e6f-358b-5959-912d-bf2c4f6145ad))
+		(pin "2"
+			(uuid 0242e723-c442-5512-b8e1-fb1115b7bb7f)))
+	(wire
+		(pts
+			(xy 236.22 234.95)
+			(xy 228.6 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7066747a-95e6-52dd-980e-8314d51e25e5))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 228.6 234.95 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 62c45bbc-8d28-560d-9783-c61bc89dafd9))
+	(wire
+		(pts
+			(xy 246.38 234.95)
+			(xy 254.0 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 13a8ad10-cdac-5596-bd26-fabc050a5e72))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 254.0 234.95 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c2dbadc7-3028-5676-816c-7199a2a313fa))
+	(symbol
+		(lib_id "R9_interfaces:C368")
+		(at 241.3 234.95 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 0517f266-cfb0-5c52-9385-f85f7c69d138)
+		(property "Reference" "C368"
+			(at 241.3 228.6 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 241.3 241.3 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C368"
+			(at 241.3 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 241.3 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C368")
+					(unit 1))))
+		(pin "1"
+			(uuid ac5da4de-4b7c-5431-b1af-e47b4f68ce91))
+		(pin "2"
+			(uuid 2b2d7952-0879-5abc-b289-05e2d266b344)))
+	(wire
+		(pts
+			(xy 323.85 234.95)
+			(xy 316.23 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c5ce3a63-a136-571f-a7dc-88b75e5747f1))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 316.23 234.95 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 71824e4f-0c92-5840-a8c5-00a910d2b98f))
+	(wire
+		(pts
+			(xy 334.01 234.95)
+			(xy 341.63 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 93c991ce-1710-5e71-8b36-a47d47998d96))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 341.63 234.95 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 58570749-acee-511c-a7c3-a08dde22d76d))
+	(symbol
+		(lib_id "R9_interfaces:C369")
+		(at 328.93 234.95 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 72cc4a87-5057-58af-ab63-5c7446d32dc3)
+		(property "Reference" "C369"
+			(at 328.93 228.6 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 328.93 241.3 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C369"
+			(at 328.93 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 328.93 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C369")
+					(unit 1))))
+		(pin "1"
+			(uuid 37ca7110-ed0b-58af-b5fc-d27fd14708eb))
+		(pin "2"
+			(uuid ae01f268-6e2a-50ed-8692-aff3d14069bd)))
+	(wire
+		(pts
+			(xy 500.38 234.95)
+			(xy 492.76 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b3b42e6c-63e6-5564-ac5e-baac30b59293))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 492.76 234.95 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 25438fde-004c-5e50-bb80-dde8094baf35))
+	(wire
+		(pts
+			(xy 510.54 234.95)
+			(xy 518.16 234.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e5c00f64-9bab-5b6f-a94b-00176ee1041c))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 518.16 234.95 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 0a5f009d-2a3c-5cc5-948e-706542bf68ed))
+	(symbol
+		(lib_id "R9_interfaces:C371")
+		(at 505.46 234.95 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 5004e720-4eab-5aab-8bf9-48a80c48692e)
+		(property "Reference" "C371"
+			(at 505.46 228.6 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 505.46 241.3 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C371"
+			(at 505.46 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 505.46 234.95 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C371")
+					(unit 1))))
+		(pin "1"
+			(uuid 26ee8d1e-0091-54a7-97be-a1448adf3e4e))
+		(pin "2"
+			(uuid c65e9c79-c53c-5f35-9941-1aa8e44d6384)))
+	(wire
+		(pts
+			(xy 59.69 279.4)
+			(xy 52.07 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0c50ee67-bdd8-5437-a9de-2a861060c7ab))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 52.07 279.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 44bc4c91-60b3-534d-b2a9-00a462797994))
+	(wire
+		(pts
+			(xy 69.85 279.4)
+			(xy 77.47 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7f4642b5-7cbe-5b44-91ba-dcead32c0fd5))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 77.47 279.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid bf976082-b599-57ae-b8f5-9185610c9fb4))
+	(symbol
+		(lib_id "R9_interfaces:C372")
+		(at 64.77 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ddbdcb81-e7a5-5cbd-b7f0-78f658437cb9)
+		(property "Reference" "C372"
+			(at 64.77 273.05 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 64.77 285.75 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C372"
+			(at 64.77 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 64.77 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C372")
+					(unit 1))))
+		(pin "1"
+			(uuid e03a708c-536f-5e91-96e3-739419cb632e))
+		(pin "2"
+			(uuid f5650aae-1b88-5255-b477-0b3d78fe0275)))
+	(wire
+		(pts
+			(xy 147.32 279.4)
+			(xy 139.7 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e40e1843-1757-5295-8d9c-68f7e81af57a))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 139.7 279.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 40ef0572-d79a-5d8f-8ec4-344f1611e018))
+	(wire
+		(pts
+			(xy 157.48 279.4)
+			(xy 165.1 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e8239482-0553-59f6-a2eb-ab1eed988f9e))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 165.1 279.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9315ec02-55ec-5b15-a3f3-0e1baacc11b6))
+	(symbol
+		(lib_id "R9_interfaces:C373")
+		(at 152.4 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 6648249a-af25-5aa2-b686-2f9d425485d7)
+		(property "Reference" "C373"
+			(at 152.4 273.05 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 152.4 285.75 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C373"
+			(at 152.4 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 152.4 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C373")
+					(unit 1))))
+		(pin "1"
+			(uuid 12b045d8-2ad7-556c-8a10-d12172c5696a))
+		(pin "2"
+			(uuid c58a78d5-dcad-5d82-a662-c6c80715f5f9)))
+	(wire
+		(pts
+			(xy 236.22 279.4)
+			(xy 228.6 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 92754ede-cbc8-5c57-bc66-901269b5d96a))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 228.6 279.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 51690cf4-1d98-58d5-bc80-bbff05f7f977))
+	(wire
+		(pts
+			(xy 246.38 279.4)
+			(xy 254.0 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid da9e6ddb-57df-5cce-afeb-9353de571217))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 254.0 279.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a119bf8e-8688-5b21-9118-c8f59cb7c906))
+	(symbol
+		(lib_id "R9_interfaces:C374")
+		(at 241.3 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid a6849f38-b27d-5cc5-a81c-d1e21ee67585)
+		(property "Reference" "C374"
+			(at 241.3 273.05 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 241.3 285.75 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C374"
+			(at 241.3 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 241.3 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C374")
+					(unit 1))))
+		(pin "1"
+			(uuid 4312ebe1-a50f-5a84-b916-546eec493e42))
+		(pin "2"
+			(uuid 1b221163-70d5-5907-95cd-f05fd99109ba)))
+	(wire
+		(pts
+			(xy 323.85 279.4)
+			(xy 316.23 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f32cf22c-15c9-5166-8af4-c45fd05b085e))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 316.23 279.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2b0e7b6c-a701-5469-bcae-19e74af18cd9))
+	(wire
+		(pts
+			(xy 334.01 279.4)
+			(xy 341.63 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e13a66de-a88d-56ae-8862-46cab85e912e))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 341.63 279.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 93171e39-1ae2-5fbb-bc15-0cd933f31421))
+	(symbol
+		(lib_id "R9_interfaces:C375")
+		(at 328.93 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid a8e721ad-da25-592f-91e8-48132f203bd7)
+		(property "Reference" "C375"
+			(at 328.93 273.05 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 328.93 285.75 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C375"
+			(at 328.93 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 328.93 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C375")
+					(unit 1))))
+		(pin "1"
+			(uuid 6d6ed64b-bb09-53ef-bf36-463ae67f8e31))
+		(pin "2"
+			(uuid 4fdd0ac0-2280-5571-a7db-8e8415b6f904)))
+	(wire
+		(pts
+			(xy 411.48 279.4)
+			(xy 403.86 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a51078dc-31e2-5111-bdd9-b809ce947e2f))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 403.86 279.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b74c0ee5-5839-5f1f-9ae2-4eb096da46b2))
+	(wire
+		(pts
+			(xy 421.64 279.4)
+			(xy 429.26 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 03fe6480-e389-5e8c-b719-845fabcf379f))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 429.26 279.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f763066b-d6cb-574b-b83e-e12c4bb4165b))
+	(symbol
+		(lib_id "R9_interfaces:C376")
+		(at 416.56 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 8ddf1b27-ce3c-5945-b5cb-891b1c4a654f)
+		(property "Reference" "C376"
+			(at 416.56 273.05 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 416.56 285.75 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C376"
+			(at 416.56 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 416.56 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C376")
+					(unit 1))))
+		(pin "1"
+			(uuid cfeb4245-619c-5438-84ad-ad003dfdf248))
+		(pin "2"
+			(uuid 7884fb30-3573-5954-9620-2e9fad9f99e4)))
+	(wire
+		(pts
+			(xy 500.38 279.4)
+			(xy 492.76 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fa065d74-45e9-5856-bec2-cd5618de0afb))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 492.76 279.4 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3d04ee70-580c-5a73-b1dd-c8414a7e33c8))
+	(wire
+		(pts
+			(xy 510.54 279.4)
+			(xy 518.16 279.4))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 359f9799-e2dd-57bf-87d1-6647730ea067))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 518.16 279.4 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid eef57821-7204-5d8f-8d65-6ddcbd813f46))
+	(symbol
+		(lib_id "R9_interfaces:C377")
+		(at 505.46 279.4 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 41cfac04-9049-5db4-9d4e-a5c866e66b09)
+		(property "Reference" "C377"
+			(at 505.46 273.05 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 505.46 285.75 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C377"
+			(at 505.46 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 505.46 279.4 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C377")
+					(unit 1))))
+		(pin "1"
+			(uuid 95a22db4-19ec-591e-a911-54342c42d186))
+		(pin "2"
+			(uuid 13fafd8c-a6c9-5ee1-8135-30b82b0f368e)))
+	(wire
+		(pts
+			(xy 59.69 325.12)
+			(xy 52.07 325.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e814f54a-6ed6-53c9-b712-49b6d81d8372))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 52.07 325.12 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid bab6bd71-0993-5c8d-86a5-77a8b2c9a5b2))
+	(wire
+		(pts
+			(xy 69.85 325.12)
+			(xy 77.47 325.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e5881864-e331-510e-a306-55d4032e9413))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 77.47 325.12 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3f3e47a3-cc65-5f25-a208-d54644d59044))
+	(symbol
+		(lib_id "R9_interfaces:C378")
+		(at 64.77 325.12 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 0c22a6ca-ffdb-5ce8-9dee-9f3936592753)
+		(property "Reference" "C378"
+			(at 64.77 318.77 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 64.77 331.47 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C378"
+			(at 64.77 325.12 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 64.77 325.12 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C378")
+					(unit 1))))
+		(pin "1"
+			(uuid f6b532fa-de7d-5bb5-a6f3-27c3246386f6))
+		(pin "2"
+			(uuid 0140675f-265c-5911-a648-78e0fceb91d3)))
+	(wire
+		(pts
+			(xy 147.32 325.12)
+			(xy 139.7 325.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 36eeb96f-f085-54f5-b1fc-d1838c907c1e))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 139.7 325.12 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3a2e43dd-4331-5424-aef7-629603ca1037))
+	(wire
+		(pts
+			(xy 157.48 325.12)
+			(xy 165.1 325.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 8ae47504-a421-5472-8f56-5a98358b1c68))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 165.1 325.12 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 902049bf-1320-5cbc-9d96-3229dbf5ca97))
+	(symbol
+		(lib_id "R9_interfaces:C379")
+		(at 152.4 325.12 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 65354ddf-5f57-52c0-aa29-1ae2e94b78ed)
+		(property "Reference" "C379"
+			(at 152.4 318.77 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 152.4 331.47 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C379"
+			(at 152.4 325.12 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 152.4 325.12 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C379")
+					(unit 1))))
+		(pin "1"
+			(uuid 421206af-2c7e-5bf3-9419-49d396036f60))
+		(pin "2"
+			(uuid 8ca1f5c2-ae0b-5816-8524-fd58750cca50)))
+	(wire
+		(pts
+			(xy 236.22 325.12)
+			(xy 228.6 325.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 54123aa7-16a2-54a9-9342-4d316161fee6))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 228.6 325.12 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9804144b-65a3-5ca2-b608-762b8b0fc448))
+	(wire
+		(pts
+			(xy 246.38 325.12)
+			(xy 254.0 325.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1cb6d378-cc08-5e6e-9827-fdbe47fbe080))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 254.0 325.12 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d7726a7e-76e9-5881-ad6a-8c7ead342a06))
+	(symbol
+		(lib_id "R9_interfaces:C380")
+		(at 241.3 325.12 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 595297a2-7179-55b8-91ec-48023eb419b5)
+		(property "Reference" "C380"
+			(at 241.3 318.77 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "100nF 16V X7R"
+			(at 241.3 331.47 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C380"
+			(at 241.3 325.12 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 241.3 325.12 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C380")
+					(unit 1))))
+		(pin "1"
+			(uuid a4c7b070-83a6-5a23-8b73-0714767f9a10))
+		(pin "2"
+			(uuid b86009cf-ff7b-5454-be18-99d86d58bee6)))
+	(wire
+		(pts
+			(xy 323.85 325.12)
+			(xy 316.23 325.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 283e81d0-c640-50b8-bca0-b6b48b9fbd75))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 316.23 325.12 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 139d3457-f8f1-5631-92ed-6da14277af28))
+	(wire
+		(pts
+			(xy 334.01 325.12)
+			(xy 341.63 325.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2e0e17ff-170b-517d-b655-70428fae527f))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 341.63 325.12 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 959e0524-9efd-5e3c-8713-85f79e513814))
+	(symbol
+		(lib_id "R9_interfaces:C381")
+		(at 328.93 325.12 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ec32bf70-37d1-5fc0-89de-5e3157b047e4)
+		(property "Reference" "C381"
+			(at 328.93 318.77 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "4.7uF 16V X7R"
+			(at 328.93 331.47 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:C381"
+			(at 328.93 325.12 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 328.93 325.12 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/11350390-513e-5cc9-813e-09d59fe825b3"
+					(reference "C381")
+					(unit 1))))
+		(pin "1"
+			(uuid 47afe745-c111-53d2-9791-9faa87b129a7))
+		(pin "2"
+			(uuid db514057-eac8-50e1-8604-209bf7dc8c6d)))
+	(text "U4: VDD pad 127"
+		(at 64.77 64.77 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid c3065336-1ad6-5b31-8a83-3b887aa11c7e))
+	(text "U4: package bulk"
+		(at 152.4 64.77 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 71cdba42-2939-5815-873a-5022528faec4))
+	(text "U1: VDD pad 180"
+		(at 241.3 64.77 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 4d2d919d-dbba-5eac-9e30-ee6c0935f4ff))
+	(text "U1: VDD pad 189"
+		(at 328.93 64.77 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid dbbc2b34-9202-5c74-ae60-70d1ada0a57b))
+	(text "U1: VDD pad 198"
+		(at 416.56 64.77 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 1d4e56c4-6bcd-5e30-9d7e-e22ca0e4f832))
+	(text "U1: VDD pad 207"
+		(at 505.46 64.77 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid a93612c2-246f-54ff-9335-e7d3096d8e02))
+	(text "U2: VDD pad 171"
+		(at 64.77 110.49 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid c2165042-9668-5fe9-8067-4ec08d7cdad3))
+	(text "U2: VDD pad 180"
+		(at 152.4 110.49 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 7033321e-de4f-517a-bc90-f1045a569382))
+	(text "U2: VDD pad 189"
+		(at 241.3 110.49 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 378afa00-29ce-5877-abf2-b797aef04e14))
+	(text "U2: VDD pad 198"
+		(at 328.93 110.49 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 283279ca-631f-568e-8a18-95ac27979fda))
+	(text "U2: VDD pad 207"
+		(at 416.56 110.49 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 8f90b51a-b267-59ee-b725-4575d2ba2cad))
+	(text "U1: VDD pad 128"
+		(at 416.56 200.66 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid e864f34d-66d2-5e55-b82d-c699d67c0bb9))
+	(text "U1: VDD pad 137"
+		(at 505.46 200.66 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid f809682c-6885-592a-9bc0-0c65e8193b65))
+	(text "U1: VDD pad 146"
+		(at 64.77 245.11 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid d7275400-6a54-572f-bf6e-077b71b9724e))
+	(text "U1: VDD pad 155"
+		(at 152.4 245.11 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid fe6fd1fc-6e75-50ca-a41e-3b49edd4f368))
+	(text "U1: VDD pad 157"
+		(at 241.3 245.11 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid b06a7958-674a-5615-9d18-819b0774b296))
+	(text "U1: VDD pad 171"
+		(at 328.93 245.11 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid ad26ffc2-2f81-5b12-a7ae-c2d230243a2d))
+	(text "U7: VDD pad 2"
+		(at 505.46 245.11 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 3fe36bda-4292-553c-a800-edc699dab779))
+	(text "U7: VDD pad 20"
+		(at 64.77 289.56 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 10e1a071-886a-534a-be6f-1233561e26a8))
+	(text "U7: VDD pad 38"
+		(at 152.4 289.56 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 024d63bd-cb07-58f6-aebe-8358fe6027ec))
+	(text "U7: VDD pad 40"
+		(at 241.3 289.56 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 5da5e857-4717-551f-a972-6e0655dc6b04))
+	(text "U7: VDD pad 64"
+		(at 328.93 289.56 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid a48ec4fd-cfe2-539d-8b28-716d496ad090))
+	(text "U7: VDD pad 65"
+		(at 416.56 289.56 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 27834ed7-7428-5274-af4c-f38a204ce057))
+	(text "U7: VDD pad 83"
+		(at 505.46 289.56 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid e1d67295-a268-59ed-a152-6e9fa1ad962f))
+	(text "U7: VDD pad 101"
+		(at 64.77 335.28 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 4e96a0bb-5196-5b25-8935-3987837ea983))
+	(text "U7: VDD pad 103"
+		(at 152.4 335.28 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid f6fbb28f-37f6-54e4-8059-b598fc79bfa5))
+	(text "U7: VDD pad 127"
+		(at 241.3 335.28 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 152b6767-93d8-5f97-9ab5-17bffe66f72a))
+	(text "U7: package bulk"
+		(at 328.93 335.28 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 440a9154-f624-5d26-96f7-c18ee4dc34af)))

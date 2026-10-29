@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1520 1260" role="img" aria-labelledby="title desc">
+<title id="title">U1 CORE system ASIC: separate execution, arithmetic and transfer engines</title>
+<desc id="desc">The U1 functional organisation includes CPU execution and runtime services, register-fed GTE, memory-addressed GEO, two-channel DMA and IMGDEC. GEO reads operands from main RAM, system ROM or the cartridge bus and writes ordinary results to main RAM. OVERLAP2D summary writes use the mapped bus and can also address I/O. The CPU functions can be software, microcode or dedicated logic. CPU register accesses configure the engines and read their results. CPU and GEO memory requests, DMA transfers and IMGDEC data-port accesses meet at the internal memory and port arbiter. Separate controllers connect the existing main DRAM, cartridge CAD bus and shared system bus. The CPU constructs GPU packets; GTE does not submit them.</desc>
+<defs>
+ <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}
+ .boundary{fill:#fbfcfd;stroke:#294b68;stroke-width:3}
+ .block{fill:#e1edf4;stroke:#294b68;stroke-width:2.5}
+ .store{fill:#f5f7f8;stroke:#294b68;stroke-width:2}
+ .note{fill:#fff;stroke:#b5c4ce;stroke-width:1.5}
+ .data{fill:none;stroke:#294b68;stroke-width:3;marker-start:url(#arrow);marker-end:url(#arrow)}
+ .control{fill:none;stroke:#294b68;stroke-width:2;stroke-dasharray:7 5;marker-start:url(#arrow);marker-end:url(#arrow)}
+ .spine{fill:none;stroke:#294b68;stroke-width:2;stroke-dasharray:7 5}
+ .title{font-size:28px;font-weight:bold}.heading{font-size:23px;font-weight:bold}
+ .minor{font-size:18px}.small{font-size:17px}
+ </style>
+</defs>
+<rect width="1520" height="1260" fill="#fff"/>
+<rect x="30" y="45" width="1460" height="1015" rx="12" class="boundary"/>
+<text x="70" y="92" class="title">U1 CORE — system ASIC</text>
+<text x="1450" y="92" text-anchor="end" class="minor">Functional view · CPU may use software or logic</text>
+
+<rect x="70" y="130" width="420" height="260" rx="8" class="block"/>
+<text x="280" y="168" text-anchor="middle" class="heading">CPU execution</text>
+<text x="280" y="211" text-anchor="middle">32-bit instruction decode + WIDE</text>
+<text x="280" y="249" text-anchor="middle">Binary64 values and arithmetic</text>
+<text x="280" y="287" text-anchor="middle">32-bit word / bitwise datapath</text>
+<text x="280" y="325" text-anchor="middle">Call and frame-value addressing</text>
+<text x="280" y="365" text-anchor="middle" class="minor">Instruction fetch · scalar loads/stores</text>
+
+<rect x="70" y="435" width="420" height="140" rx="8" class="block"/>
+<text x="280" y="471" text-anchor="middle" class="heading">Runtime services</text>
+<text x="280" y="511" text-anchor="middle">Strings · tables · closures · threads</text>
+<text x="280" y="548" text-anchor="middle">Object allocation and GC</text>
+<path d="M280,390 V435" class="data"/>
+
+<rect x="610" y="130" width="320" height="200" rx="8" class="block"/>
+<text x="770" y="168" text-anchor="middle" class="heading">GTE</text>
+<text x="770" y="207" text-anchor="middle" class="minor">Vector / matrix / control registers</text>
+<text x="770" y="244" text-anchor="middle">3 × 44-bit MAC / reciprocal</text>
+<text x="770" y="281" text-anchor="middle" class="minor">Screen / depth / colour results</text>
+<text x="770" y="311" text-anchor="middle" class="small">257-byte reciprocal seed ROM</text>
+
+<rect x="1000" y="130" width="360" height="200" rx="8" class="block"/>
+<text x="1180" y="168" text-anchor="middle" class="heading">GEO</text>
+<text x="1180" y="205" text-anchor="middle" class="minor">Q16.16 transform · binary64 SAT/contact</text>
+<text x="1180" y="242" text-anchor="middle" class="minor">4 KiB clip · 2 KiB pair-bank candidate</text>
+<text x="1180" y="278" text-anchor="middle" class="small">Pairs reload · XFORM streams vertices</text>
+<text x="1180" y="310" text-anchor="middle" class="small">6 KiB local arrays + scalar state</text>
+
+<path d="M490,260 H550 V375 H1380" class="spine"/>
+<path d="M770,330 V375" class="control"/>
+<path d="M1180,330 V375" class="control"/>
+<path d="M770,375 V435" class="control"/>
+<path d="M1180,375 V435" class="control"/>
+<text x="975" y="407" text-anchor="middle" class="minor">Register / command / status / results</text>
+
+<rect x="610" y="435" width="320" height="170" rx="8" class="block"/>
+<text x="770" y="473" text-anchor="middle" class="heading">DMA controller</text>
+<text x="770" y="513" text-anchor="middle">Two channel register banks</text>
+<text x="770" y="548" text-anchor="middle" class="minor">One admitted block at a time</text>
+<text x="770" y="582" text-anchor="middle" class="minor">Shared 32-bit word staging</text>
+
+<rect x="1000" y="435" width="360" height="270" rx="8" class="block"/>
+<text x="1180" y="473" text-anchor="middle" class="heading">IMGDEC</text>
+<text x="1180" y="510" text-anchor="middle">IN FIFO: 32 × 32 bits</text>
+<text x="1180" y="548" text-anchor="middle">Token / run / back-reference decode</text>
+<text x="1180" y="586" text-anchor="middle">History: 4096 × 32 bits</text>
+<text x="1180" y="624" text-anchor="middle">OUT FIFO: 64 × 32 bits</text>
+<text x="1180" y="661" text-anchor="middle" class="minor">Upload headers + decoded payload</text>
+<text x="1180" y="690" text-anchor="middle" class="small">16.375 KiB FIFO + history storage</text>
+
+<rect x="70" y="630" width="420" height="125" rx="8" class="block"/>
+<text x="280" y="666" text-anchor="middle" class="heading">CPU memory-access path</text>
+<text x="280" y="704" text-anchor="middle">Fetch · scalar width / alignment</text>
+<text x="280" y="738" text-anchor="middle" class="minor">32-bit addresses and word transfers</text>
+<path d="M280,575 V630" class="data"/>
+<path d="M70,345 H50 V695 H70" class="data"/>
+
+<rect x="550" y="790" width="810" height="105" rx="8" class="block"/>
+<text x="955" y="830" text-anchor="middle" class="heading">Internal memory and port arbiter</text>
+<text x="955" y="870" text-anchor="middle">Addressed requests · endpoint data · device request / completion</text>
+<path d="M490,695 H525 V842 H550" class="data"/>
+<path d="M770,605 V790" class="data"/>
+<text x="785" y="658" class="minor">Read → stage → write</text>
+<text x="785" y="686" class="small">Then the next word</text>
+<path d="M1180,705 V790" class="data"/>
+<text x="1200" y="747" class="minor">DATA port / FIFO requests</text>
+<path d="M1360,230 H1430 V842 H1360" class="data"/>
+<text x="1407" y="722" transform="rotate(-90 1407 722)" class="minor">GEO: raw operands / results · mapped summary writes</text>
+
+<rect x="70" y="800" width="420" height="95" rx="8" class="note"/>
+<text x="280" y="836" text-anchor="middle" class="minor">CPU constructs GPU command packets</text>
+<text x="280" y="872" text-anchor="middle" class="minor">CPU or DMA supplies GP0 through SYS</text>
+
+<rect x="70" y="945" width="420" height="90" rx="8" class="block"/>
+<text x="280" y="980" text-anchor="middle" class="heading">Main-DRAM controller</text>
+<text x="280" y="1015" text-anchor="middle" class="minor">Row / column / refresh / byte lanes</text>
+<rect x="550" y="945" width="380" height="90" rx="8" class="block"/>
+<text x="740" y="980" text-anchor="middle" class="heading">Cartridge-bus controller</text>
+<text x="740" y="1015" text-anchor="middle" class="minor">Address latch / two 16-bit data halves</text>
+<rect x="1000" y="945" width="360" height="90" rx="8" class="block"/>
+<text x="1180" y="980" text-anchor="middle" class="heading">System-bus controller</text>
+<text x="1180" y="1015" text-anchor="middle" class="minor">Endpoint selection / APU grant</text>
+<path d="M640,895 V920 H280 V945" class="data"/>
+<path d="M740,895 V945" class="data"/>
+<path d="M1180,895 V945" class="data"/>
+
+<rect x="70" y="1110" width="420" height="90" rx="8" class="store"/>
+<text x="280" y="1147" text-anchor="middle" class="heading">U10 + U11 · main DRAM · 4 MiB</text>
+<text x="280" y="1183" text-anchor="middle" class="minor">MD[31:0] · MA[9:0] · controls</text>
+<rect x="550" y="1110" width="380" height="90" rx="8" class="store"/>
+<text x="740" y="1147" text-anchor="middle" class="heading">U51 → two cartridge sockets</text>
+<text x="740" y="1183" text-anchor="middle" class="minor">CAD[15:0] · latch / control / ready</text>
+<rect x="1000" y="1110" width="360" height="90" rx="8" class="store"/>
+<text x="1180" y="1147" text-anchor="middle" class="heading">GFX · APU · firmware bridge</text>
+<text x="1180" y="1183" text-anchor="middle" class="minor">SYS_AD[31:0] · strobes / BE / ready</text>
+<path d="M280,1035 V1110" class="data"/>
+<path d="M740,1035 V1110" class="data"/>
+<path d="M1180,1035 V1110" class="data"/>
+<path d="M70,1235 H140" class="data"/><text x="158" y="1242" class="minor">Data / addressed access</text>
+<path d="M550,1235 H620" class="control"/><text x="638" y="1242" class="minor">Register / control / result access</text>
+</svg>

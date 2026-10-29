@@ -1,0 +1,1872 @@
+(kicad_sch
+	(version 20250114)
+	(generator eeschema)
+	(uuid ec6e95ac-730b-582d-a66a-79002c6ed99c)
+	(paper "A3")
+	(lib_symbols
+		(symbol "Panel:Terminals_J1"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 16.509999999999998 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "BMSX PAD9 proposal"
+				(at 0 -16.509999999999998 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J1_1_1"
+				(rectangle
+					(start -5.08 12.7)
+					(end 5.08 -12.7)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 10.16 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 7.62 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 2.54 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 0.0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -2.539999999999999 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -7.620000000000001 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -10.16 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "9"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J2"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 16.509999999999998 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "BMSX PAD9 proposal"
+				(at 0 -16.509999999999998 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J2_1_1"
+				(rectangle
+					(start -5.08 12.7)
+					(end 5.08 -12.7)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 10.16 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 7.62 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 2.54 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 0.0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -2.539999999999999 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -7.620000000000001 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -10.16 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "9"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J3"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 16.509999999999998 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "BMSX PAD9 proposal"
+				(at 0 -16.509999999999998 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J3_1_1"
+				(rectangle
+					(start -5.08 12.7)
+					(end 5.08 -12.7)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 10.16 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 7.62 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 2.54 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 0.0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -2.539999999999999 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -7.620000000000001 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -10.16 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "9"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J4"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 16.509999999999998 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "BMSX PAD9 proposal"
+				(at 0 -16.509999999999998 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J4_1_1"
+				(rectangle
+					(start -5.08 12.7)
+					(end 5.08 -12.7)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 10.16 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 7.62 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 2.54 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 0.0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -2.539999999999999 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -7.620000000000001 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -10.16 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "9"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J5"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 30.48 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "B20B-PHDSS"
+				(at 0 -30.48 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J5_1_1"
+				(rectangle
+					(start -5.08 26.67)
+					(end 5.08 -26.67)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 24.13 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 21.59 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 19.049999999999997 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 16.509999999999998 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 13.969999999999999 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 11.43 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 8.889999999999999 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 6.349999999999998 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 3.8099999999999987 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "9"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 1.2699999999999996 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "10"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -1.2699999999999996 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "11"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -3.8100000000000023 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "12"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -6.350000000000001 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "13"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -8.890000000000004 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "14"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -11.430000000000003 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "15"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -13.970000000000002 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "16"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -16.51 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "17"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -19.05 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "18"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -21.59 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "19"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -24.13 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "20"
+						(effects
+							(font
+								(size 0.85 0.85))))))))
+	(title_block
+		(title "BMSX_FRONT — passive panel/harness wiring")
+		(date "2026-10-23")
+		(rev "Physical interface proposal")
+		(company "BMSX"))
+	(wire
+		(pts
+			(xy 68.58 78.74)
+			(xy 60.96 78.74))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 45e0de49-5f09-55b4-b205-8b61017cd931))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 78.74 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9da985b7-379e-56da-8cd5-e55fe452ddd3))
+	(wire
+		(pts
+			(xy 68.58 81.28)
+			(xy 60.96 81.28))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 55c7ed3c-549b-554c-ae18-f220861df40e))
+	(global_label "PAD_DATA0_EXT"
+		(shape bidirectional)
+		(at 60.96 81.28 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 282fea36-223c-5943-8b49-05a888c13376))
+	(wire
+		(pts
+			(xy 68.58 83.82)
+			(xy 60.96 83.82))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid dbb9a86d-ae20-5652-aad7-c835723fd3c4))
+	(global_label "PAD_CMD0_EXT"
+		(shape bidirectional)
+		(at 60.96 83.82 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 01ed0dae-1756-5df0-b559-de490a61b481))
+	(wire
+		(pts
+			(xy 68.58 86.36)
+			(xy 60.96 86.36))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6fd9a174-defa-54ec-8d82-cfc1a61451c4))
+	(global_label "PAD_CLK_EXT"
+		(shape bidirectional)
+		(at 60.96 86.36 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d1a07101-cae7-5a1a-a17b-32936a09b1a9))
+	(wire
+		(pts
+			(xy 68.58 88.9)
+			(xy 60.96 88.9))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d293b54c-27a7-5708-8408-492f426d3eec))
+	(global_label "PAD_SELECT0_N_EXT"
+		(shape bidirectional)
+		(at 60.96 88.9 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d7bb5425-d68b-55f4-83af-c000032186b7))
+	(wire
+		(pts
+			(xy 68.58 91.44)
+			(xy 60.96 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4b40e498-1b60-567a-a687-ec1fdd14cabd))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 60.96 91.44 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3789bc06-ddcb-5310-9f19-2fcddafe3552))
+	(wire
+		(pts
+			(xy 68.58 93.98)
+			(xy 60.96 93.98))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 48f50b2d-96c2-5509-93cb-90006fa38058))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 93.98 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 675c1456-1adf-5285-899b-bd9d07c38507))
+	(wire
+		(pts
+			(xy 68.58 96.52)
+			(xy 60.96 96.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d24fdab2-0663-57ec-9b43-37ba87df8366))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 60.96 96.52 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 231a8df2-d654-5275-8d33-89ae623db116))
+	(no_connect
+		(at 68.58 99.06)
+		(uuid 9c288c6e-dd3a-54fb-829c-250e4fc883bf))
+	(symbol
+		(lib_id "Panel:Terminals_J1")
+		(at 76.2 88.9 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 6cb4f551-2884-53a8-a9b8-338c18e6efce)
+		(property "Reference" "J1"
+			(at 76.2 72.39 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "BMSX PAD9 proposal"
+			(at 76.2 105.41000000000001 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:BMSX_PAD9"
+			(at 76.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_FRONT"
+				(path "/ec6e95ac-730b-582d-a66a-79002c6ed99c"
+					(reference "J1")
+					(unit 1))))
+		(pin "1"
+			(uuid b2c347e0-4836-590c-92a2-f2016fd9db49))
+		(pin "2"
+			(uuid b6856b55-83b8-5a73-9c43-5db0698c6691))
+		(pin "3"
+			(uuid b15942bd-0293-5aee-a20a-912175bafa4f))
+		(pin "4"
+			(uuid 22b9ed16-ce92-545b-b02f-a7df06b36fb1))
+		(pin "5"
+			(uuid aa6aaccd-5200-593a-a72a-7fe0c811a205))
+		(pin "6"
+			(uuid f9179445-e519-55aa-a78d-9caeec004c24))
+		(pin "7"
+			(uuid 46170cd6-8374-57e0-ab85-339df9b9779b))
+		(pin "8"
+			(uuid 69df0849-33e8-5d51-8b04-31d7842da4ee))
+		(pin "9"
+			(uuid 14505261-dd98-5653-913b-d36da6ca8522)))
+	(wire
+		(pts
+			(xy 195.58 78.74)
+			(xy 187.96 78.74))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5b4bc452-fa7d-57bf-9384-e77b2964ea44))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 78.74 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7e150034-0fac-5858-9180-ca105ec5486d))
+	(wire
+		(pts
+			(xy 195.58 81.28)
+			(xy 187.96 81.28))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 45b3976e-1ede-5234-aa2a-34d5a6cdaff0))
+	(global_label "PAD_DATA1_EXT"
+		(shape bidirectional)
+		(at 187.96 81.28 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid acc6c964-2e11-5a75-abcf-8b2b10d0e5c6))
+	(wire
+		(pts
+			(xy 195.58 83.82)
+			(xy 187.96 83.82))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid bbf34a79-d983-551a-b86a-0da7722b70ad))
+	(global_label "PAD_CMD1_EXT"
+		(shape bidirectional)
+		(at 187.96 83.82 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 771c7973-7330-5106-a7d2-53e7f51263d6))
+	(wire
+		(pts
+			(xy 195.58 86.36)
+			(xy 187.96 86.36))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f5b11c0d-ecef-530c-bdfe-d38a54a55af2))
+	(global_label "PAD_CLK_EXT"
+		(shape bidirectional)
+		(at 187.96 86.36 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 65c245d5-7d5e-5be7-8601-cb8afea8e469))
+	(wire
+		(pts
+			(xy 195.58 88.9)
+			(xy 187.96 88.9))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 73d80573-f50c-5677-bab8-c190589f3191))
+	(global_label "PAD_SELECT1_N_EXT"
+		(shape bidirectional)
+		(at 187.96 88.9 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a53ff354-8ce9-53e0-b13d-2e3bd0fb3d9d))
+	(wire
+		(pts
+			(xy 195.58 91.44)
+			(xy 187.96 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ada159bc-fa6e-5e2a-ba27-7cef3dd7d30d))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 187.96 91.44 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1b57555d-223d-589a-b208-c7ed79ce8b61))
+	(wire
+		(pts
+			(xy 195.58 93.98)
+			(xy 187.96 93.98))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e0577c71-ed55-58ed-8dde-a2dbbb9cd18f))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 93.98 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 93dba726-c2c6-56e7-a02a-d0a473e19091))
+	(wire
+		(pts
+			(xy 195.58 96.52)
+			(xy 187.96 96.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1dbfdd15-4bc4-51b4-9a56-8db8827c3697))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 187.96 96.52 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5f9a600f-eda3-59c2-aa0f-ebf438683184))
+	(no_connect
+		(at 195.58 99.06)
+		(uuid 8126e47b-7e04-544c-acdf-01d0dde000c1))
+	(symbol
+		(lib_id "Panel:Terminals_J2")
+		(at 203.2 88.9 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid d02f6c7d-2504-5c6d-aa61-9a5a98f7b0c3)
+		(property "Reference" "J2"
+			(at 203.2 72.39 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "BMSX PAD9 proposal"
+			(at 203.2 105.41000000000001 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:BMSX_PAD9"
+			(at 203.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_FRONT"
+				(path "/ec6e95ac-730b-582d-a66a-79002c6ed99c"
+					(reference "J2")
+					(unit 1))))
+		(pin "1"
+			(uuid 62e6f1fd-2119-54f1-bff7-eb93099bcea1))
+		(pin "2"
+			(uuid 646e5dcd-4b37-545b-9e68-0b55dc14ffad))
+		(pin "3"
+			(uuid 3bd2d4f0-15ee-50b7-a615-9e2ee65d71c3))
+		(pin "4"
+			(uuid 3434feee-ab3b-5882-b09f-73f59f4450f2))
+		(pin "5"
+			(uuid 1e80eb56-bdb0-5c79-8ec1-f7ae7fbcdc31))
+		(pin "6"
+			(uuid ffa2efb3-758e-5685-b6b4-1dc0cf367b39))
+		(pin "7"
+			(uuid de715fb7-07ff-59d4-b5af-2d551951b2ab))
+		(pin "8"
+			(uuid 1e022a9a-9ad4-51e9-b12d-c98db5f165ec))
+		(pin "9"
+			(uuid f9c0c207-41da-5d0b-976c-eab530d10026)))
+	(wire
+		(pts
+			(xy 322.58 78.74)
+			(xy 314.96 78.74))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid e36d42ec-f4cf-5e53-a249-c21bcde6d062))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 314.96 78.74 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4d33ac75-c6c3-5d93-806d-ab95312f099a))
+	(wire
+		(pts
+			(xy 322.58 81.28)
+			(xy 314.96 81.28))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 68295bd9-9072-5e2c-b936-e55c6eb86ef9))
+	(global_label "PAD_DATA2_EXT"
+		(shape bidirectional)
+		(at 314.96 81.28 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid dea89acd-4e47-5344-9305-0a91627d4c53))
+	(wire
+		(pts
+			(xy 322.58 83.82)
+			(xy 314.96 83.82))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid db61c79f-fdfd-5e36-9796-ca5a83720822))
+	(global_label "PAD_CMD2_EXT"
+		(shape bidirectional)
+		(at 314.96 83.82 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 89e0d47e-4b29-540b-bcfe-0e4651cfb63d))
+	(wire
+		(pts
+			(xy 322.58 86.36)
+			(xy 314.96 86.36))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 80108c23-3f2b-58a8-8ae0-d8d0e028f64b))
+	(global_label "PAD_CLK_EXT"
+		(shape bidirectional)
+		(at 314.96 86.36 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e8345149-7507-573d-a48a-8a6d71b3a532))
+	(wire
+		(pts
+			(xy 322.58 88.9)
+			(xy 314.96 88.9))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4ce60910-3598-5eb0-acd1-8b2b2db917c1))
+	(global_label "PAD_SELECT2_N_EXT"
+		(shape bidirectional)
+		(at 314.96 88.9 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 012b282a-e107-5026-bd12-db3c2c5e3e71))
+	(wire
+		(pts
+			(xy 322.58 91.44)
+			(xy 314.96 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9635dfc6-0d50-5395-b0eb-d9ae9086c620))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 314.96 91.44 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 0cd70505-4031-51bb-bf4a-65c03d3cd6d2))
+	(wire
+		(pts
+			(xy 322.58 93.98)
+			(xy 314.96 93.98))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3742854b-df01-5cce-bb3b-ca14531f0f6d))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 314.96 93.98 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid be586604-b529-593c-823a-d8cbde2c5ab0))
+	(wire
+		(pts
+			(xy 322.58 96.52)
+			(xy 314.96 96.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9305840b-152d-5518-9b5c-43fcd36fdee7))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 314.96 96.52 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f5e858a0-ede7-5257-a525-828b31a7aa66))
+	(no_connect
+		(at 322.58 99.06)
+		(uuid 64af3e09-5de3-5ce0-ad42-455431123c76))
+	(symbol
+		(lib_id "Panel:Terminals_J3")
+		(at 330.2 88.9 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 216c7fcf-471a-57ac-9cdc-798821c0b420)
+		(property "Reference" "J3"
+			(at 330.2 72.39 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "BMSX PAD9 proposal"
+			(at 330.2 105.41000000000001 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:BMSX_PAD9"
+			(at 330.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_FRONT"
+				(path "/ec6e95ac-730b-582d-a66a-79002c6ed99c"
+					(reference "J3")
+					(unit 1))))
+		(pin "1"
+			(uuid b734122d-e66d-5cbe-9c84-ee2f4c12ab2d))
+		(pin "2"
+			(uuid c418daf2-59bd-5f9c-a6d8-d14c693cbb85))
+		(pin "3"
+			(uuid aa917033-4f03-5909-9fdf-aeb26561c568))
+		(pin "4"
+			(uuid ddbf15c9-f4b7-555a-81d8-4c9e6ae2d34f))
+		(pin "5"
+			(uuid 3d3606d4-d317-55db-bdae-48ab6398b6f5))
+		(pin "6"
+			(uuid 90e550a9-d9a1-5583-b2be-ca4a554a761f))
+		(pin "7"
+			(uuid f97bea09-5615-5a66-852f-8dbd7038723c))
+		(pin "8"
+			(uuid 2d4ece32-8603-56a5-a6e8-46dbd798b0d7))
+		(pin "9"
+			(uuid 3c4cd318-462d-5aea-a115-a275fc8669b7)))
+	(wire
+		(pts
+			(xy 68.58 195.58)
+			(xy 60.96 195.58))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 42fcec49-8946-5887-b98d-b608465b4d1f))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 195.58 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b9a517fa-60c9-5b99-9401-0ff50614e745))
+	(wire
+		(pts
+			(xy 68.58 198.12)
+			(xy 60.96 198.12))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 00e28e0b-d640-5295-81f1-dbdd38b82216))
+	(global_label "PAD_DATA3_EXT"
+		(shape bidirectional)
+		(at 60.96 198.12 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 81136e3d-8f97-5ec1-90d0-f4d5b24b0f20))
+	(wire
+		(pts
+			(xy 68.58 200.66)
+			(xy 60.96 200.66))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6255007c-a282-583c-8b6a-a4e2146aa83c))
+	(global_label "PAD_CMD3_EXT"
+		(shape bidirectional)
+		(at 60.96 200.66 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 61820340-0d6e-57a5-b4f4-031f3e6a9722))
+	(wire
+		(pts
+			(xy 68.58 203.2)
+			(xy 60.96 203.2))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0c40d825-c094-58af-9b6d-02233f06e8a9))
+	(global_label "PAD_CLK_EXT"
+		(shape bidirectional)
+		(at 60.96 203.2 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 41a8d370-14f0-52bf-bd5a-44b4b4043d28))
+	(wire
+		(pts
+			(xy 68.58 205.74)
+			(xy 60.96 205.74))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1912e8d9-88be-5a8e-a6ff-c74b0f995d89))
+	(global_label "PAD_SELECT3_N_EXT"
+		(shape bidirectional)
+		(at 60.96 205.74 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 760436b7-5ef0-5495-920f-9c009a690f26))
+	(wire
+		(pts
+			(xy 68.58 208.28)
+			(xy 60.96 208.28))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 62ebe1c3-49a6-5896-b83f-83763ea545df))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 60.96 208.28 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d1141894-4d22-5356-b79d-9cbb30ca1b0b))
+	(wire
+		(pts
+			(xy 68.58 210.82)
+			(xy 60.96 210.82))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 47fd0689-5373-51c1-b16f-89fe6107d0d8))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 210.82 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a21dd61c-6a4c-51f6-9189-6f8edb075e30))
+	(wire
+		(pts
+			(xy 68.58 213.36)
+			(xy 60.96 213.36))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 54d8c21a-ab05-5430-beea-53b19d7a30d2))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 60.96 213.36 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7320d264-8cce-53b2-b7c4-bc3eadced4cb))
+	(no_connect
+		(at 68.58 215.9)
+		(uuid a4e42d5e-ad8a-54a7-8306-2f429c7cc5ad))
+	(symbol
+		(lib_id "Panel:Terminals_J4")
+		(at 76.2 205.74 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 4616eaee-10e3-543c-aaa5-9c034f03e898)
+		(property "Reference" "J4"
+			(at 76.2 189.23000000000002 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "BMSX PAD9 proposal"
+			(at 76.2 222.25 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:BMSX_PAD9"
+			(at 76.2 205.74 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_FRONT"
+				(path "/ec6e95ac-730b-582d-a66a-79002c6ed99c"
+					(reference "J4")
+					(unit 1))))
+		(pin "1"
+			(uuid 93b2e40f-9215-528d-a050-894110b3e244))
+		(pin "2"
+			(uuid 3c35f1fa-742a-5bfb-928f-4346aa90158a))
+		(pin "3"
+			(uuid d9c5f426-a952-59f4-88a3-ef13851edfef))
+		(pin "4"
+			(uuid 9e48f8f0-4edc-5849-bfa3-32ba7be4ecb9))
+		(pin "5"
+			(uuid 078f6df3-7ab6-5684-9749-e32adb2ba88c))
+		(pin "6"
+			(uuid 2f42996e-8a95-543a-8139-5ac5efdc8338))
+		(pin "7"
+			(uuid 55e49c6b-663f-5e66-8529-4df99f4a08cb))
+		(pin "8"
+			(uuid b13398dd-4105-5afb-9580-8e84005e0f53))
+		(pin "9"
+			(uuid 3b556eef-425d-558c-9bcc-66f73d4563ce)))
+	(wire
+		(pts
+			(xy 195.58 181.61)
+			(xy 187.96 181.61))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 856e9432-0b84-55cc-ab07-0764512f52cc))
+	(global_label "PAD_CLK_EXT"
+		(shape bidirectional)
+		(at 187.96 181.61 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7260cac1-f812-5cd2-bd37-f8fede48d94f))
+	(wire
+		(pts
+			(xy 195.58 184.15)
+			(xy 187.96 184.15))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 6906018a-bee3-590b-a8f4-443e071b9a9d))
+	(global_label "PAD_CMD0_EXT"
+		(shape bidirectional)
+		(at 187.96 184.15 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a3d9246f-8c29-5e92-8f19-332b5f0ddc30))
+	(wire
+		(pts
+			(xy 195.58 186.69)
+			(xy 187.96 186.69))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 619230da-965c-5ef2-b046-ebc9287ce975))
+	(global_label "PAD_CMD1_EXT"
+		(shape bidirectional)
+		(at 187.96 186.69 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 67dabacd-71cd-5d14-b7c4-b0eed03d94fd))
+	(wire
+		(pts
+			(xy 195.58 189.23)
+			(xy 187.96 189.23))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 21a8ae65-a0fd-556b-97ea-759942d3264c))
+	(global_label "PAD_CMD2_EXT"
+		(shape bidirectional)
+		(at 187.96 189.23 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7f3b3697-448b-54c4-ae7b-4a04ea9db093))
+	(wire
+		(pts
+			(xy 195.58 191.77)
+			(xy 187.96 191.77))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d0937f7a-fc47-5f65-8036-13b6a22bc98d))
+	(global_label "PAD_CMD3_EXT"
+		(shape bidirectional)
+		(at 187.96 191.77 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f1d453d6-f5ab-54ac-83f2-7fcc7f551917))
+	(wire
+		(pts
+			(xy 195.58 194.31)
+			(xy 187.96 194.31))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 22b80036-15ee-51c0-b4a6-f898a22811f5))
+	(global_label "PAD_DATA0_EXT"
+		(shape bidirectional)
+		(at 187.96 194.31 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1cf399f4-02b6-5bba-9152-53b6b772bb9d))
+	(wire
+		(pts
+			(xy 195.58 196.85)
+			(xy 187.96 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f9c346fa-e3d1-5734-8ddc-f01727f7907d))
+	(global_label "PAD_DATA1_EXT"
+		(shape bidirectional)
+		(at 187.96 196.85 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 271d6a24-d603-5236-ad35-89659d7b3b02))
+	(wire
+		(pts
+			(xy 195.58 199.39)
+			(xy 187.96 199.39))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fbb1351c-dbeb-5df3-b427-3e4118fb718a))
+	(global_label "PAD_DATA2_EXT"
+		(shape bidirectional)
+		(at 187.96 199.39 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4797b5ff-4f1e-5eaa-afcd-338934919fdf))
+	(wire
+		(pts
+			(xy 195.58 201.93)
+			(xy 187.96 201.93))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c5c895e1-f456-5120-940a-064eb44b162f))
+	(global_label "PAD_DATA3_EXT"
+		(shape bidirectional)
+		(at 187.96 201.93 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid df6f1393-343c-5f16-b4dc-09e12f6e2507))
+	(wire
+		(pts
+			(xy 195.58 204.47)
+			(xy 187.96 204.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a133e132-1db1-5947-a1cb-4db67543050f))
+	(global_label "PAD_SELECT0_N_EXT"
+		(shape bidirectional)
+		(at 187.96 204.47 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c2e176da-4b06-542f-bc8c-1022f2c93ece))
+	(wire
+		(pts
+			(xy 195.58 207.01)
+			(xy 187.96 207.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1ecb0c6a-601e-5bdc-aee2-2f8317afae83))
+	(global_label "PAD_SELECT1_N_EXT"
+		(shape bidirectional)
+		(at 187.96 207.01 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 69057d60-0c4c-509c-8c9a-17436a17ed89))
+	(wire
+		(pts
+			(xy 195.58 209.55)
+			(xy 187.96 209.55))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b2143392-6d69-57af-9426-dab85b296aaf))
+	(global_label "PAD_SELECT2_N_EXT"
+		(shape bidirectional)
+		(at 187.96 209.55 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6da725b6-819e-5aa3-939f-8acad9dcd009))
+	(wire
+		(pts
+			(xy 195.58 212.09)
+			(xy 187.96 212.09))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9ee43b2e-a824-5ddc-8152-e8c8cd0c9925))
+	(global_label "PAD_SELECT3_N_EXT"
+		(shape bidirectional)
+		(at 187.96 212.09 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a3ea755b-a426-5dd0-94f7-90c2345054fa))
+	(wire
+		(pts
+			(xy 195.58 214.63)
+			(xy 187.96 214.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 78ca1276-9ebd-5e36-b2bc-6ccd98835242))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 187.96 214.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7b4f30d9-82fd-55cc-8957-bfa86f81d785))
+	(wire
+		(pts
+			(xy 195.58 217.17)
+			(xy 187.96 217.17))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 35c4bf57-5f6a-5b17-bb68-6cfe3be91e00))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 187.96 217.17 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 844c8c4e-de5f-5220-8bd8-7015d4662748))
+	(wire
+		(pts
+			(xy 195.58 219.71)
+			(xy 187.96 219.71))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9a293161-f93b-5f74-8746-885d93bf89ad))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 219.71 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid bd668c74-cfa3-572e-81e3-9945ec781ce9))
+	(wire
+		(pts
+			(xy 195.58 222.25)
+			(xy 187.96 222.25))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d04c6397-e872-5bcb-8207-f560489a1e3b))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 222.25 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4ccff667-9674-50a7-a7c8-9294688e0118))
+	(wire
+		(pts
+			(xy 195.58 224.79)
+			(xy 187.96 224.79))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 66963bac-2021-5369-94a8-466fa567e2a7))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 224.79 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 306c2b3f-8e2e-519b-a139-1eb9a8e0c069))
+	(wire
+		(pts
+			(xy 195.58 227.33)
+			(xy 187.96 227.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b6c04521-f20a-5f76-95c5-1f8ef5df771e))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 227.33 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 98153dd9-262a-5820-8d7f-8cc0a3ddb8c8))
+	(wire
+		(pts
+			(xy 195.58 229.87)
+			(xy 187.96 229.87))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d8431c12-ca12-5db1-b6d8-91f22679cdc8))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 229.87 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 5834200e-4281-531b-95ea-df4babc14008))
+	(symbol
+		(lib_id "Panel:Terminals_J5")
+		(at 203.2 205.74 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 2a11cc97-46e0-5f15-a229-917314bc2ed8)
+		(property "Reference" "J5"
+			(at 203.2 175.26 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "B20B-PHDSS"
+			(at 203.2 236.22000000000003 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:JST_PHD_B20B-PHDSS_2x10_P2.00mm_Vertical"
+			(at 203.2 205.74 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_FRONT"
+				(path "/ec6e95ac-730b-582d-a66a-79002c6ed99c"
+					(reference "J5")
+					(unit 1))))
+		(property "Manufacturer" "JST"
+			(at 203.2 205.74 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(property "MPN" "B20B-PHDSS"
+			(at 203.2 205.74 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(property "Datasheet" "https://www.jst-mfg.com/product/pdf/eng/ePHD.pdf"
+			(at 203.2 205.74 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(pin "1"
+			(uuid 74e2eda8-8d1c-5b4f-9bb4-3cd01ee1c7ea))
+		(pin "2"
+			(uuid 0c137b16-eddd-513f-ac7f-a7da5ee61430))
+		(pin "3"
+			(uuid bd50ac7f-240f-5bcb-9e49-d962e87a23fb))
+		(pin "4"
+			(uuid 02a88deb-5311-5245-aad0-d5db8c665353))
+		(pin "5"
+			(uuid 63c9f738-4170-5d34-9b4f-2c01701a311a))
+		(pin "6"
+			(uuid cc509df3-cbb1-5673-bedb-47936297a2e3))
+		(pin "7"
+			(uuid b674ebb2-7196-532a-8dab-3af3294603fe))
+		(pin "8"
+			(uuid 8414ea22-4b24-5501-b88a-fc2bd9b7a43c))
+		(pin "9"
+			(uuid 3984f6d8-eb05-5532-8ad9-9f0483007a78))
+		(pin "10"
+			(uuid b7e26afc-d6d1-5009-9c4d-cf8fe4267ebe))
+		(pin "11"
+			(uuid 8834a14d-4f24-5881-90ec-328d5162a2f1))
+		(pin "12"
+			(uuid 4b35a2b2-d7a8-55d4-8ccc-8f2651211f90))
+		(pin "13"
+			(uuid ba622629-73ca-55f3-8431-b7c4abbfd9b1))
+		(pin "14"
+			(uuid b3c7bfeb-55ce-5aa4-a3f7-50a6b06f445d))
+		(pin "15"
+			(uuid 855181ca-30d0-564a-85cd-55f3ee3b779c))
+		(pin "16"
+			(uuid a698fe69-aeee-502a-a0d6-05a41bdbc360))
+		(pin "17"
+			(uuid a3b367b6-41b8-517e-a29d-9c381aea23cb))
+		(pin "18"
+			(uuid 1ae7825a-2789-5578-baa5-4f253389f653))
+		(pin "19"
+			(uuid 05c08601-bce1-53bd-b33a-0733fcbe5255))
+		(pin "20"
+			(uuid 8537a69d-80fb-589b-b70e-535816c90ea4)))
+	(text "Passive wiring only. Mainboard owns buffers, level translation and supply switching.\nOwn gamepad contacts and AV cable terminations remain physical design proposals. No routing or fabrication release."
+		(at 200 12.7 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 3f1d3890-d6f2-571b-be7e-9ae701d4bc07)))

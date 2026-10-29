@@ -1,0 +1,101 @@
+(footprint "CL21B104KBCNNNC"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Samsung CL21B104KBCNNNC 100nF 50V X7R 0805; recommended nominal reflow lands, Samsung specification DEC.13.2022 p33, 2012 +/-0.10mm row; body p1. No qualified 3D model.")
+	(tags "Samsung CL21 100nF 50V X7R 0805 2012")
+	(property "Reference" "REF**"
+		(at 0 -1.68 0)
+		(layer "F.SilkS")
+		(uuid "e3d85212-6766-401b-968d-9f570daef78c")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "CL21B104KBCNNNC"
+		(at 0 1.68 0)
+		(layer "F.Fab")
+		(uuid "c9552f57-f893-4f46-b8a0-9e644fa31614")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "6bb30a4a-af64-4f2d-8695-f4b5d9788131")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "b12c0414-c1e2-4cd7-8a9a-88c4e391fe28")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_rect
+		(start -1.6 -0.95)
+		(end 1.6 0.95)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "88c5d96f-5bee-475f-a324-2b1c13bb32c5")
+	)
+	(fp_rect
+		(start -1 -0.625)
+		(end 1 0.625)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "34a2e9d7-731b-44ab-9be8-b70cb0d89d9a")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "30f4e231-a7a3-458c-ba3a-37e3db577ad4")
+		(effects
+			(font
+				(size 0.5 0.5)
+				(thickness 0.08)
+			)
+		)
+	)
+	(pad "1" smd rect
+		(at -0.885 0)
+		(size 0.93 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "f1884a54-bb00-44e6-8aaf-017fe9e83a28")
+	)
+	(pad "2" smd rect
+		(at 0.885 0)
+		(size 0.93 1.3)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "79a4e528-e531-4bfb-bf4f-b1d49e1a3d80")
+	)
+	(embedded_fonts no)
+)

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1080" role="img" aria-labelledby="title desc">
+<title id="title">Proposed physical DMA service</title>
+<desc id="desc">Two independently programmed DMA channels in CORE use separate source and destination request selections and one shared block engine. Request levels come from GFX, APU, two cartridge sockets and the internal IMGDEC. CORE routes each word through main RAM, the cartridge controller or the shared system bus. Cartridge request selectors independently identify source and destination sockets. DMA transport completion is distinct from GPU or APU work completion. The physical integration and timing remain proposals.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:22px}.title{font-size:33px;font-weight:700}.head{font-size:26px;font-weight:700}.sub{font-size:21px}.small{font-size:19px}.outer{fill:#f6f9fa;stroke:#8da4b2;stroke-width:2}.chip{fill:#e4eff4;stroke:#294b68;stroke-width:3}.store{fill:#fff;stroke:#294b68;stroke-width:2}.proposal{fill:#fff9ec;stroke:#a06b19;stroke-width:2;stroke-dasharray:8 5}.link{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.bidir{fill:none;stroke:#294b68;stroke-width:3;marker-start:url(#arrow);marker-end:url(#arrow)}</style>
+</defs>
+<rect width="1600" height="1080" fill="#fff"/>
+<text x="45" y="52" class="title">DMA — proposed physical block service</text>
+<text x="45" y="89" class="sub">Two channels, one transfer engine; request selection and endpoint address are distinct</text>
+<rect x="35" y="135" width="1140" height="730" rx="14" class="outer"/>
+<text x="60" y="173" class="head">U1 · CORE</text>
+<rect x="75" y="210" width="300" height="145" rx="8" class="store"/>
+<text x="225" y="250" text-anchor="middle" class="head">Channel 0</text>
+<text x="225" y="282" text-anchor="middle" class="small">Source / destination addresses</text>
+<text x="225" y="312" text-anchor="middle" class="small">Count · control · requests</text>
+<rect x="75" y="385" width="300" height="145" rx="8" class="store"/>
+<text x="225" y="425" text-anchor="middle" class="head">Channel 1</text>
+<text x="225" y="457" text-anchor="middle" class="small">Source / destination addresses</text>
+<text x="225" y="487" text-anchor="middle" class="small">Count · control · requests</text>
+<rect x="455" y="245" width="310" height="245" rx="9" class="proposal"/>
+<text x="610" y="282" text-anchor="middle" class="head">Block admission</text>
+<text x="610" y="319" text-anchor="middle" class="small">Test source and destination</text>
+<text x="610" y="348" text-anchor="middle" class="small">request conditions separately</text>
+<text x="610" y="390" text-anchor="middle" class="small">One admitted block at a time</text>
+<text x="610" y="421" text-anchor="middle" class="small">Capture endpoints and control</text>
+<text x="610" y="457" text-anchor="middle" class="small">Request drop gates the next block</text>
+<path d="M375 280H415V315H455" class="link"/><path d="M375 455H415V420H455" class="link"/>
+<rect x="835" y="245" width="300" height="245" rx="9" class="chip"/>
+<text x="985" y="283" text-anchor="middle" class="head">Shared block engine</text>
+<text x="985" y="322" text-anchor="middle" class="small">Read one 32-bit word</text>
+<text x="985" y="352" text-anchor="middle" class="small">Write that word</text>
+<text x="985" y="382" text-anchor="middle" class="small">Repeat for the admitted block</text>
+<text x="985" y="425" text-anchor="middle" class="small">Write back count / addresses</text>
+<text x="985" y="455" text-anchor="middle" class="small">DONE / channel interrupt</text>
+<path d="M765 368H835" class="link"/>
+<rect x="75" y="610" width="375" height="194" rx="8" class="store"/>
+<text x="262" y="648" text-anchor="middle" class="head">Request sources</text>
+<text x="100" y="685" class="small">GFX and APU: read / write</text>
+<text x="100" y="716" class="small">Each cartridge: read / write</text>
+<text x="100" y="747" class="small">IMGDEC: internal read / write</text>
+<text x="100" y="778" class="small">FORCE / DISABLED remain distinct</text>
+<path d="M450 705H475V550H610V490" class="link"/>
+<rect x="500" y="610" width="635" height="194" rx="8" class="store"/>
+<text x="817" y="648" text-anchor="middle" class="head">Address and endpoint routing</text>
+<text x="525" y="686" class="small">Main RAM · cartridge controller · shared SYS devices</text>
+<text x="525" y="718" class="small">Cartridge request selectors can choose a socket independently</text>
+<text x="525" y="750" class="small">for each endpoint; otherwise SELECT is read at that access.</text>
+<text x="525" y="782" class="small">GPU block-end metadata accompanies each block's final DMA word.</text>
+<path d="M985 490V610" class="bidir"/>
+<rect x="1225" y="215" width="330" height="150" rx="9" class="store"/>
+<text x="1390" y="257" text-anchor="middle" class="head">Main RAM</text><text x="1390" y="292" text-anchor="middle" class="small">Shared DRAM service</text>
+<rect x="1225" y="400" width="330" height="150" rx="9" class="store"/>
+<text x="1390" y="442" text-anchor="middle" class="head">Cartridge sockets</text><text x="1390" y="477" text-anchor="middle" class="small">Independent source / sink choice</text>
+<rect x="1225" y="585" width="330" height="150" rx="9" class="store"/>
+<text x="1390" y="627" text-anchor="middle" class="head">Shared SYS</text><text x="1390" y="662" text-anchor="middle" class="small">GFX · APU · system ROM</text>
+<path d="M1135 665H1180V290H1225" class="bidir"/><path d="M1135 705H1190V475H1225" class="bidir"/><path d="M1135 745H1225" class="bidir"/>
+<rect x="35" y="900" width="1520" height="125" rx="8" class="proposal"/>
+<text x="60" y="937" class="sub">Construction proposal: the complete physical request and data paths are not yet integrated.</text>
+<text x="60" y="970" class="small">An admitted transfer does not imply the receiving GPU has finished drawing or the APU has committed its sample batch.</text>
+<text x="60" y="1000" class="small">Endpoint waits and arbitration affect elapsed time; the programming contracts remain in Books I–III.</text>
+</svg>

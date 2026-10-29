@@ -1,0 +1,900 @@
+{
+  "scope": "Unaccelerated actual-mixer source-demand feasibility at4/8/12/16 active voices; the physical BADP/checkpoint/publication execution is qualified separately, not by this model.",
+  "sample_RAM_bytes": 524288,
+  "fixed_rom_cache_words_per_voice": [
+    0,
+    4,
+    16
+  ],
+  "CORE_clocks_per_ROM_word_sensitivity": [
+    0,
+    9
+  ],
+  "assumptions": [
+    "Raw word offsets are traced from the actual TypeScript mixer and PCM/BADP decoders; the corresponding output-checksum and end-status results are compared with the actual C++ mixer. The current case count is emitted by the report, not fixed here.",
+    "Per-voice adjacent-byte assembly uses a one-word latch within an output epoch. RAM latches do not persist across epochs; intervening committed writes must invalidate/update them.",
+    "Optional4/16-word per-voice fully associative LRU caches apply only to fixed immutable system/cartridge ROM. They are proposals, not implemented hardware. Entries are tied to bound source/socket/address and reset/rebind invalidation. No future trace addresses or speculative prefetch are used.",
+    "Synchronous voices start at the same actual trace phase. Spread voices are existing warm playback offset by17epochs pervoice, up to255; no trace is cyclically wrapped or silently extended.",
+    "LocalRAM and externalSYS/CAD are physically independent paths. Each is screened against768clocks; combined nonoverlapped work is also shown. A complete concurrent APU scheduler is not implemented by this analysis.",
+    "Uploads are disjoint inactive-buffer physical writeback pressure: full16word/512clock batches yield alternating16/32word audio windows, average24. Both relative burst phases must be checked. No early visible active-source writes are authorised.",
+    "The optional9clocks perROMmiss is an explicit competing minimum-size CORE SYS packet sensitivity, not a measured arbitration guarantee or required workload.",
+    "A fitting memory window is not proof of arithmetic, coldstart, live MMIO latency, actual pad/PCB STA or coherent batch publication. ",
+    "Warm-result classification excludes only outputepoch0; its actual traffic and cold PLAY traffic remain separately reported. No arbitrary multi-frame warmup, prefetch or startup latency permission is assumed.",
+    "Localpeak checks place a32-word upload burst at any outputepoch for repeated full16-word batches; average remains24writes/window. This selected writeback screen is not an all-pattern arrival bound; variable admitted batches are qualified separately by the physical publication owner."
+  ],
+  "unclosed": [
+    "Cold PLAY/source rebind/START_SAMPLE seeks and synchronous many-voice starts; no new tolerated launch delay is inferred.",
+    "Complete transfer FIFO/MMIO, DMA_READ and voice integration of the separately implemented write-publication/render-snapshot owner; this source-demand model does not qualify those paths.",
+    "Complete voice/transfer arbitration, PCM/ROM byte paths, fixed-ROM cache implementation and full physical audio pipeline; the local BADP byte/recurrence path is qualified separately.",
+    "Live APU source-rebind/seek MMIO cannot retain SYS DATA while depending on its own ROM fetch over the same bus.",
+    "BADP arithmetic work at high/reverse rates, filters/gain, coefficient/register edge timing, command execution and silicon timing/power. Per-frame nibble/product demand is exposed, not assigned magic zero-cycle execution."
+  ],
+  "loads": [
+    {
+      "id": "4_monoPCM16_RAM",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_stereoPCM16_RAM_shared",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": true
+        }
+      ]
+    },
+    {
+      "id": "4_monoBADP22_RAM",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_stereoBADP44_RAM",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_monoBADP22_CART",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "cart",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_stereoBADP44_CART",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "cart",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_stereoPCM16_CART",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "cart",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_monoPCM16_CART",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "cart",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_stereoPCM16_SYSROM",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "system",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_stereoPCM16_unaligned_loop_RAM_shared",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_unaligned3_loop33_97",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": true
+        }
+      ]
+    },
+    {
+      "id": "4_stereoBADP_4x_RAM",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_4x",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_monoBADP_reverse_RAM",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_reverse_loop33_97",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "4_monoBADP_reverse_CART",
+      "active_voices": 4,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_reverse_loop33_97",
+          "storage": "cart",
+          "count": 4,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_monoPCM16_RAM",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_stereoPCM16_RAM_shared",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": true
+        }
+      ]
+    },
+    {
+      "id": "8_monoBADP22_RAM",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_stereoBADP44_RAM",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_monoBADP22_CART",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "cart",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_stereoBADP44_CART",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "cart",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_stereoPCM16_CART",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "cart",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_monoPCM16_CART",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "cart",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_stereoPCM16_SYSROM",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "system",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_stereoPCM16_unaligned_loop_RAM_shared",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_unaligned3_loop33_97",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": true
+        }
+      ]
+    },
+    {
+      "id": "8_stereoBADP_4x_RAM",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_4x",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_monoBADP_reverse_RAM",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_reverse_loop33_97",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "8_monoBADP_reverse_CART",
+      "active_voices": 8,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_reverse_loop33_97",
+          "storage": "cart",
+          "count": 8,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_monoPCM16_RAM",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "ram",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_stereoPCM16_RAM_shared",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "ram",
+          "count": 12,
+          "shared_source": true
+        }
+      ]
+    },
+    {
+      "id": "12_monoBADP22_RAM",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_stereoBADP44_RAM",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "ram",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_monoBADP22_CART",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "cart",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_stereoBADP44_CART",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "cart",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_stereoPCM16_CART",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "cart",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_monoPCM16_CART",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "cart",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_stereoPCM16_SYSROM",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "system",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_stereoPCM16_unaligned_loop_RAM_shared",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_unaligned3_loop33_97",
+          "storage": "ram",
+          "count": 12,
+          "shared_source": true
+        }
+      ]
+    },
+    {
+      "id": "12_stereoBADP_4x_RAM",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_4x",
+          "storage": "ram",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_monoBADP_reverse_RAM",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_reverse_loop33_97",
+          "storage": "ram",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "12_monoBADP_reverse_CART",
+      "active_voices": 12,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_reverse_loop33_97",
+          "storage": "cart",
+          "count": 12,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_monoPCM16_RAM",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "ram",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_stereoPCM16_RAM_shared",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "ram",
+          "count": 16,
+          "shared_source": true
+        }
+      ]
+    },
+    {
+      "id": "16_monoBADP22_RAM",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_monoBADP44_RAM",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_44100_1x",
+          "storage": "ram",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_stereoBADP44_RAM",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "ram",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_monoBADP22_CART",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "cart",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_stereoBADP44_CART",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "cart",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_stereoPCM16_CART",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "cart",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_monoPCM16_CART",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "cart",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_stereoPCM16_SYSROM",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "system",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_stereoPCM16_unaligned_loop_RAM_shared",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_2ch_unaligned3_loop33_97",
+          "storage": "ram",
+          "count": 16,
+          "shared_source": true
+        }
+      ]
+    },
+    {
+      "id": "16_stereoBADP_4x_RAM",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_2ch_b256_44100_4x",
+          "storage": "ram",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_monoBADP_reverse_RAM",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_reverse_loop33_97",
+          "storage": "ram",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "16_monoBADP_reverse_CART",
+      "active_voices": 16,
+      "generators": 0,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_reverse_loop33_97",
+          "storage": "cart",
+          "count": 16,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "mixed4",
+      "active_voices": 4,
+      "generators": 1,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 2,
+          "shared_source": false
+        },
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "cart",
+          "count": 1,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "mixed8",
+      "active_voices": 8,
+      "generators": 1,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": false
+        },
+        {
+          "case": "pcm16_1ch_22050_1x",
+          "storage": "ram",
+          "count": 2,
+          "shared_source": false
+        },
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "cart",
+          "count": 1,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "mixed12",
+      "active_voices": 12,
+      "generators": 2,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 6,
+          "shared_source": false
+        },
+        {
+          "case": "pcm16_1ch_22050_1x",
+          "storage": "ram",
+          "count": 2,
+          "shared_source": false
+        },
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "cart",
+          "count": 2,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "mixed16",
+      "active_voices": 16,
+      "generators": 2,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": false
+        },
+        {
+          "case": "pcm16_1ch_22050_1x",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": false
+        },
+        {
+          "case": "badp_2ch_b256_44100_1x",
+          "storage": "cart",
+          "count": 2,
+          "shared_source": false
+        }
+      ]
+    },
+    {
+      "id": "mixed16_PCMmusic",
+      "active_voices": 16,
+      "generators": 2,
+      "uploads": true,
+      "groups": [
+        {
+          "case": "pcm16_1ch_44100_1x",
+          "storage": "ram",
+          "count": 8,
+          "shared_source": false
+        },
+        {
+          "case": "badp_1ch_b256_22050_1x",
+          "storage": "ram",
+          "count": 4,
+          "shared_source": false
+        },
+        {
+          "case": "pcm16_2ch_44100_1x",
+          "storage": "cart",
+          "count": 2,
+          "shared_source": false
+        }
+      ]
+    }
+  ]
+}

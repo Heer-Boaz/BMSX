@@ -1,0 +1,13 @@
+{
+  "scope": "Separate nominal protective-skirt and frame-channel candidate. Both cartridges retain their connector contact geometry, shell keys and seating pose; this is not a production or continuous-insertion qualification.",
+  "units": "millimetres; X/Y relative to each cartridge socket centre, Z from motherboard datum",
+  "skirt_bounds": [-40.0, -5.9, 20.0, 40.0, -5.0, 35.4],
+  "frame_channel_bounds": [-40.2, -6.1, 19.8, 40.2, -4.8, 54.2],
+  "sample_angles_degrees": [0, 30, 45, 55, 58, 59, 70, 80, 85],
+  "limitations": [
+    "The skirt and channel are separate design candidates, not modifications of the retained cartridge or frame models.",
+    "Sampled straight insertion positions do not establish continuous motion, tilted insertion or contact forces.",
+    "Tolerance stacks, frame strength, skirt strength, moulding, wear and reversed insertion remain to be established.",
+    "No PCB, connector, contact, shell-key or software change is implied."
+  ]
+}

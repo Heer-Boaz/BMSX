@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1500" height="960" viewBox="0 0 1500 960" role="img" aria-labelledby="title desc">
+<title id="title">Two BMSX cartridge editions, one shell interface</title>
+<desc id="desc">Conceptual front views of two cartridges labelled Pietsona and The Maze of Pietious. Both use the same intended 110 by 75 millimetre shell silhouette. Separate screenshots show the retained game title artwork, not final printed cartridge labels. Contact detail and guide channels are not depicted.</desc>
+<rect width="1500" height="960" fill="#f4f5f3"/>
+<text x="60" y="66" font-family="sans-serif" font-size="32" font-weight="700" fill="#172d40">Two game cartridges · one console interface</text>
+<text x="60" y="103" font-family="sans-serif" font-size="19" fill="#344b5b">Shared shell and guide-channel design · conceptual front views, not a manufacturing drawing</text>
+<g stroke="#223847" stroke-width="4">
+ <rect x="95" y="155" width="520" height="355" rx="30" fill="#d7d4ca"/>
+ <rect x="885" y="155" width="520" height="355" rx="30" fill="#d7d4ca"/>
+ <rect x="160" y="510" width="390" height="30" rx="3" fill="#263d35"/>
+ <rect x="950" y="510" width="390" height="30" rx="3" fill="#263d35"/>
+</g>
+<g fill="#f3f2ec" stroke="#aaa99f" stroke-width="2">
+ <rect x="150" y="215" width="410" height="215" rx="16"/>
+ <rect x="940" y="215" width="410" height="215" rx="16"/>
+</g>
+<g font-family="sans-serif" text-anchor="middle" fill="#172d40">
+ <text x="355" y="297" font-size="37" font-weight="700">PIETSONA</text>
+ <text x="355" y="337" font-size="20">game edition</text>
+ <text x="1145" y="288" font-size="29" font-weight="700">THE MAZE OF</text>
+ <text x="1145" y="327" font-size="37" font-weight="700">PIETIOUS</text>
+ <text x="1145" y="365" font-size="20">game edition</text>
+</g>
+<g font-family="sans-serif" text-anchor="middle" fill="#344b5b" font-size="18">
+ <text x="355" y="585">Title-screen artwork retained with the original design</text>
+ <text x="1145" y="585">Title-screen artwork retained with the original design</text>
+</g>
+<g>
+ <rect x="235" y="608" width="240" height="180" rx="4" fill="#13202a"/>
+ <image x="235" y="608" width="240" height="180" preserveAspectRatio="xMidYMid meet" xlink:href="pietsona-title-reference.png"/>
+ <rect x="1025" y="608" width="240" height="180" rx="4" fill="#080808"/>
+ <image x="1025" y="608" width="240" height="180" preserveAspectRatio="xMidYMid meet" xlink:href="pietious-title-reference.png"/>
+</g>
+<text x="750" y="840" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#344b5b">Artwork is shown separately as a reference, not as a finished cartridge label.</text>
+<text x="750" y="875" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#344b5b">The earlier A04 models are retained; their fit with the current keyed guides is not established.</text>
+</svg>

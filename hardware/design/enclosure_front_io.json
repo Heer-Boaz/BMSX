@@ -1,0 +1,3633 @@
+{
+  "revision": "COMPACT_FRONT_INSIDE_BLIND_THREADED_BOSSES_2",
+  "units": "mm; frontY0, Zup",
+  "scope": "Original PAD4 and keyboard datum bodies, native unchanged front PCB, inside-only removable retainers on integral blind M2 tapped case bosses; no exterior mounting holes or hardware.",
+  "source_manifest": "models/front/manifest.json",
+  "pad_transforms": [
+    {
+      "original_x_mm": 60,
+      "new_x_mm": 60,
+      "translation_mm": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "original_x_mm": 120,
+      "new_x_mm": 105,
+      "translation_mm": [
+        -15,
+        0,
+        0
+      ]
+    },
+    {
+      "original_x_mm": 180,
+      "new_x_mm": 150,
+      "translation_mm": [
+        -30,
+        0,
+        0
+      ]
+    },
+    {
+      "original_x_mm": 240,
+      "new_x_mm": 195,
+      "translation_mm": [
+        -45,
+        0,
+        0
+      ]
+    }
+  ],
+  "keyboard_transform": {
+    "rotation_Z_deg": 180,
+    "translation_mm": [
+      86,
+      210,
+      3
+    ]
+  },
+  "parts": [
+    {
+      "id": "KBD_LEFT_RAIL",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        10,
+        3,
+        14.399999999999999,
+        11.7,
+        31.3,
+        18.2
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_RIGHT_RAIL",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        36.3,
+        3,
+        14.399999999999999,
+        39,
+        31.3,
+        18.2
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_REAR_EDGE_STOP",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        10,
+        29.3,
+        14.399999999999999,
+        39,
+        31.3,
+        18.2
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_LEFT_UNDERSEAT",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        11.7,
+        3.3,
+        14.399999999999999,
+        13.5,
+        28.7,
+        15.399999999999999
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_RIGHT_UNDERSEAT",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        34.5,
+        3.3,
+        14.399999999999999,
+        36.3,
+        28.7,
+        15.399999999999999
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_L_TOP_0",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        11.7,
+        6,
+        17.3,
+        13.5,
+        9,
+        18.2
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_L_TOP_1",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        11.7,
+        22,
+        17.3,
+        13.5,
+        25,
+        18.2
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_R_TOP_0",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        34.5,
+        6,
+        17.3,
+        36.3,
+        9,
+        18.2
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_R_TOP_1",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        34.5,
+        22,
+        17.3,
+        36.3,
+        25,
+        18.2
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_LEFT_FRONT_MAST",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        10,
+        3,
+        14.399999999999999,
+        11.7,
+        8,
+        34
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_RIGHT_FRONT_MAST",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        36.3,
+        3,
+        14.399999999999999,
+        39,
+        8,
+        34
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_LEFT_MOUNT_EAR",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        10,
+        3,
+        28.5,
+        15,
+        8,
+        34
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_RIGHT_MOUNT_EAR",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        33,
+        3,
+        28.5,
+        39,
+        8,
+        34
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_LEFT_SOCKET_BACKSTOP",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        10,
+        12.9,
+        17.3,
+        17.7,
+        16.5,
+        29.799999999999997
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_RIGHT_SOCKET_BACKSTOP",
+      "group": "KEYBOARD_FRONT_CRADLE",
+      "bounds_mm": [
+        30.299999999999997,
+        12.9,
+        17.3,
+        39,
+        16.5,
+        29.799999999999997
+      ],
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            4.75,
+            31
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            3.6,
+            31
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            12.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            35.5,
+            8.6,
+            31
+          ],
+          "diameter_mm": 5.4,
+          "through_length_mm": 4.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_LEFT_SOCKET_SHIM",
+      "group": "KEYBOARD_FRONT_BODY_SHIM_L",
+      "bounds_mm": [
+        16.9,
+        12.7,
+        18,
+        17.7,
+        12.9,
+        29.799999999999997
+      ],
+      "holes": [],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "KBD_RIGHT_SOCKET_SHIM",
+      "group": "KEYBOARD_FRONT_BODY_SHIM_R",
+      "bounds_mm": [
+        30.299999999999997,
+        12.7,
+        18,
+        31.1,
+        12.9,
+        29.799999999999997
+      ],
+      "holes": [],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "PAD0_RETAINER_L_EAR",
+      "group": "PAD0_RETAINER",
+      "bounds_mm": [
+        44,
+        3,
+        13.9,
+        50,
+        6.5,
+        25.2
+      ],
+      "material": "PA12",
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            46,
+            4.75,
+            19.15
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            46,
+            3.6,
+            19.15
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        }
+      ],
+      "purpose": "Inside M2x5 and washer clamp this retainer to the integral tapped case boss; front \u00d85.0 counterbore clears the \u00d84.8 boss. No exterior screw or loose nut.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD0_RETAINER_R_EAR",
+      "group": "PAD0_RETAINER",
+      "bounds_mm": [
+        70,
+        3,
+        13.9,
+        76,
+        6.5,
+        25.2
+      ],
+      "material": "PA12",
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            74,
+            4.75,
+            19.15
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            74,
+            3.6,
+            19.15
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        }
+      ],
+      "purpose": "Inside M2x5 and washer clamp this retainer to the integral tapped case boss; front \u00d85.0 counterbore clears the \u00d84.8 boss. No exterior screw or loose nut.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD0_RETAINER_L_ARM",
+      "group": "PAD0_RETAINER",
+      "bounds_mm": [
+        48.5,
+        6.2,
+        13.9,
+        50.5,
+        21.2,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm lateral free fit to retained18.4mm-wide body; abovePCB13.6 by0.3mm.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD0_RETAINER_R_ARM",
+      "group": "PAD0_RETAINER",
+      "bounds_mm": [
+        69.5,
+        6.2,
+        13.9,
+        71.5,
+        21.2,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm lateral free fit to retained18.4mm-wide body; abovePCB13.6 by0.3mm.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD0_RETAINER_REAR",
+      "group": "PAD0_RETAINER",
+      "bounds_mm": [
+        48.5,
+        20.9,
+        13.9,
+        71.5,
+        23.4,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm nominal gap behind housingY20.6; adjust hard insulating shim to unloaded contact before force/life acceptance. No preload or sole solder-tail thrust claim.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD1_RETAINER_L_EAR",
+      "group": "PAD1_RETAINER",
+      "bounds_mm": [
+        89,
+        3,
+        13.9,
+        95,
+        6.5,
+        25.2
+      ],
+      "material": "PA12",
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            91,
+            4.75,
+            19.15
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            91,
+            3.6,
+            19.15
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        }
+      ],
+      "purpose": "Inside M2x5 and washer clamp this retainer to the integral tapped case boss; front \u00d85.0 counterbore clears the \u00d84.8 boss. No exterior screw or loose nut.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD1_RETAINER_R_EAR",
+      "group": "PAD1_RETAINER",
+      "bounds_mm": [
+        115,
+        3,
+        13.9,
+        121,
+        6.5,
+        25.2
+      ],
+      "material": "PA12",
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            119,
+            4.75,
+            19.15
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            119,
+            3.6,
+            19.15
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        }
+      ],
+      "purpose": "Inside M2x5 and washer clamp this retainer to the integral tapped case boss; front \u00d85.0 counterbore clears the \u00d84.8 boss. No exterior screw or loose nut.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD1_RETAINER_L_ARM",
+      "group": "PAD1_RETAINER",
+      "bounds_mm": [
+        93.5,
+        6.2,
+        13.9,
+        95.5,
+        21.2,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm lateral free fit to retained18.4mm-wide body; abovePCB13.6 by0.3mm.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD1_RETAINER_R_ARM",
+      "group": "PAD1_RETAINER",
+      "bounds_mm": [
+        114.5,
+        6.2,
+        13.9,
+        116.5,
+        21.2,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm lateral free fit to retained18.4mm-wide body; abovePCB13.6 by0.3mm.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD1_RETAINER_REAR",
+      "group": "PAD1_RETAINER",
+      "bounds_mm": [
+        93.5,
+        20.9,
+        13.9,
+        116.5,
+        23.4,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm nominal gap behind housingY20.6; adjust hard insulating shim to unloaded contact before force/life acceptance. No preload or sole solder-tail thrust claim.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD2_RETAINER_L_EAR",
+      "group": "PAD2_RETAINER",
+      "bounds_mm": [
+        134,
+        3,
+        13.9,
+        140,
+        6.5,
+        25.2
+      ],
+      "material": "PA12",
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            136,
+            4.75,
+            19.15
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            136,
+            3.6,
+            19.15
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        }
+      ],
+      "purpose": "Inside M2x5 and washer clamp this retainer to the integral tapped case boss; front \u00d85.0 counterbore clears the \u00d84.8 boss. No exterior screw or loose nut.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD2_RETAINER_R_EAR",
+      "group": "PAD2_RETAINER",
+      "bounds_mm": [
+        160,
+        3,
+        13.9,
+        166,
+        6.5,
+        25.2
+      ],
+      "material": "PA12",
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            164,
+            4.75,
+            19.15
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            164,
+            3.6,
+            19.15
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        }
+      ],
+      "purpose": "Inside M2x5 and washer clamp this retainer to the integral tapped case boss; front \u00d85.0 counterbore clears the \u00d84.8 boss. No exterior screw or loose nut.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD2_RETAINER_L_ARM",
+      "group": "PAD2_RETAINER",
+      "bounds_mm": [
+        138.5,
+        6.2,
+        13.9,
+        140.5,
+        21.2,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm lateral free fit to retained18.4mm-wide body; abovePCB13.6 by0.3mm.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD2_RETAINER_R_ARM",
+      "group": "PAD2_RETAINER",
+      "bounds_mm": [
+        159.5,
+        6.2,
+        13.9,
+        161.5,
+        21.2,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm lateral free fit to retained18.4mm-wide body; abovePCB13.6 by0.3mm.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD2_RETAINER_REAR",
+      "group": "PAD2_RETAINER",
+      "bounds_mm": [
+        138.5,
+        20.9,
+        13.9,
+        161.5,
+        23.4,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm nominal gap behind housingY20.6; adjust hard insulating shim to unloaded contact before force/life acceptance. No preload or sole solder-tail thrust claim.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD3_RETAINER_L_EAR",
+      "group": "PAD3_RETAINER",
+      "bounds_mm": [
+        179,
+        3,
+        13.9,
+        185,
+        6.5,
+        25.2
+      ],
+      "material": "PA12",
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            181,
+            4.75,
+            19.15
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            181,
+            3.6,
+            19.15
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        }
+      ],
+      "purpose": "Inside M2x5 and washer clamp this retainer to the integral tapped case boss; front \u00d85.0 counterbore clears the \u00d84.8 boss. No exterior screw or loose nut.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD3_RETAINER_R_EAR",
+      "group": "PAD3_FRONT_R_RETAINER",
+      "bounds_mm": [
+        205,
+        3,
+        13.9,
+        211,
+        6.5,
+        25.2
+      ],
+      "material": "PA12",
+      "holes": [
+        {
+          "axis": "Y",
+          "centre_mm": [
+            209,
+            4.75,
+            19.15
+          ],
+          "diameter_mm": 2.2,
+          "through_length_mm": 3.7
+        },
+        {
+          "axis": "Y",
+          "centre_mm": [
+            209,
+            3.6,
+            19.15
+          ],
+          "diameter_mm": 5.0,
+          "through_length_mm": 1.4
+        }
+      ],
+      "purpose": "Inside M2x5 and washer clamp this retainer to the integral tapped case boss; front \u00d85.0 counterbore clears the \u00d84.8 boss. No exterior screw or loose nut.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD3_RETAINER_L_ARM",
+      "group": "PAD3_RETAINER",
+      "bounds_mm": [
+        183.5,
+        6.2,
+        13.9,
+        185.5,
+        21.2,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm lateral free fit to retained18.4mm-wide body; abovePCB13.6 by0.3mm.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD3_RETAINER_R_ARM",
+      "group": "PAD3_FRONT_R_RETAINER",
+      "bounds_mm": [
+        204.5,
+        6.2,
+        13.9,
+        206.5,
+        13.5,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm lateral free fit to retained18.4mm-wide body; abovePCB13.6 by0.3mm.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "PAD3_RETAINER_REAR",
+      "group": "PAD3_RETAINER",
+      "bounds_mm": [
+        183.5,
+        20.9,
+        13.9,
+        204.7,
+        23.4,
+        24.4
+      ],
+      "material": "PA12",
+      "holes": [],
+      "purpose": "0.3mm nominal gap behind housingY20.6; adjust hard insulating shim to unloaded contact before force/life acceptance. No preload or sole solder-tail thrust claim.",
+      "cutboxes": [],
+      "hex_pockets": [],
+      "slots": []
+    },
+    {
+      "id": "FRONT_PCB_STAND_0",
+      "group": "FRONT_PCB_STAND_0",
+      "bounds_mm": [
+        41,
+        18,
+        3,
+        47,
+        24,
+        12
+      ],
+      "holes": [
+        {
+          "axis": "Z",
+          "centre_mm": [
+            44,
+            21,
+            7.5
+          ],
+          "diameter_mm": 3.2,
+          "through_length_mm": 9.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "FRONT_PCB_STAND_1",
+      "group": "FRONT_PCB_STAND_1",
+      "bounds_mm": [
+        124.5,
+        18,
+        3,
+        130.5,
+        24,
+        12
+      ],
+      "holes": [
+        {
+          "axis": "Z",
+          "centre_mm": [
+            127.5,
+            21,
+            7.5
+          ],
+          "diameter_mm": 3.2,
+          "through_length_mm": 9.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    },
+    {
+      "id": "FRONT_PCB_STAND_2",
+      "group": "FRONT_PCB_STAND_2",
+      "bounds_mm": [
+        229,
+        7,
+        3,
+        235,
+        13,
+        12
+      ],
+      "holes": [
+        {
+          "axis": "Z",
+          "centre_mm": [
+            232,
+            10,
+            7.5
+          ],
+          "diameter_mm": 3.2,
+          "through_length_mm": 9.2
+        }
+      ],
+      "slots": [],
+      "cutboxes": [],
+      "hex_pockets": []
+    }
+  ],
+  "materials_by_group": {
+    "KEYBOARD_FRONT_CRADLE": "mount_pa12",
+    "KEYBOARD_FRONT_BODY_SHIM_L": "g10_insulator",
+    "KEYBOARD_FRONT_BODY_SHIM_R": "g10_insulator",
+    "PAD0_RETAINER": "mount_pa12",
+    "PAD1_RETAINER": "mount_pa12",
+    "PAD2_RETAINER": "mount_pa12",
+    "PAD3_RETAINER": "mount_pa12",
+    "FRONT_PCB_STAND_0": "mount_pa12",
+    "FRONT_PCB_STAND_1": "mount_pa12",
+    "FRONT_PCB_STAND_2": "mount_pa12",
+    "PAD3_FRONT_R_RETAINER": "mount_pa12"
+  },
+  "case_attachment_holes": [
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        44,
+        21,
+        1.5
+      ],
+      "diameter_mm": 3.2,
+      "through_length_mm": 3.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        127.5,
+        21,
+        1.5
+      ],
+      "diameter_mm": 3.2,
+      "through_length_mm": 3.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        232,
+        10,
+        1.5
+      ],
+      "diameter_mm": 3.2,
+      "through_length_mm": 3.2
+    }
+  ],
+  "case_capture_lips": [],
+  "case_clearance_cutboxes": [],
+  "case_apertures": [
+    {
+      "name": "PAD0",
+      "bounds_mm": [
+        50,
+        -1,
+        12.65,
+        70,
+        3.1,
+        25.65
+      ],
+      "axis": "Y",
+      "purpose": "20x13 frontmatingclearance; nativehousingfrontmax20/25.2 fits."
+    },
+    {
+      "name": "PAD1",
+      "bounds_mm": [
+        95,
+        -1,
+        12.65,
+        115,
+        3.1,
+        25.65
+      ],
+      "axis": "Y",
+      "purpose": "20x13 frontmatingclearance; nativehousingfrontmax20/25.2 fits."
+    },
+    {
+      "name": "PAD2",
+      "bounds_mm": [
+        140,
+        -1,
+        12.65,
+        160,
+        3.1,
+        25.65
+      ],
+      "axis": "Y",
+      "purpose": "20x13 frontmatingclearance; nativehousingfrontmax20/25.2 fits."
+    },
+    {
+      "name": "PAD3",
+      "bounds_mm": [
+        185,
+        -1,
+        12.65,
+        205,
+        3.1,
+        25.65
+      ],
+      "axis": "Y",
+      "purpose": "20x13 frontmatingclearance; nativehousingfrontmax20/25.2 fits."
+    },
+    {
+      "name": "KEYBOARD",
+      "bounds_mm": [
+        16,
+        -1,
+        15.5,
+        32,
+        3.1,
+        31.5
+      ],
+      "axis": "Y",
+      "purpose": "16x16 frontkeyboard aperture; nativePCBfrontedge outsideX12..28 remainscaptured."
+    }
+  ],
+  "mount_axes": [
+    {
+      "name": "PAD0_L",
+      "axis": "Y",
+      "centre_mm": [
+        46,
+        0,
+        19.15
+      ],
+      "retainer_range_mm": [
+        3,
+        6.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "PAD0_R",
+      "axis": "Y",
+      "centre_mm": [
+        74,
+        0,
+        19.15
+      ],
+      "retainer_range_mm": [
+        3,
+        6.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "PAD1_L",
+      "axis": "Y",
+      "centre_mm": [
+        91,
+        0,
+        19.15
+      ],
+      "retainer_range_mm": [
+        3,
+        6.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "PAD1_R",
+      "axis": "Y",
+      "centre_mm": [
+        119,
+        0,
+        19.15
+      ],
+      "retainer_range_mm": [
+        3,
+        6.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "PAD2_L",
+      "axis": "Y",
+      "centre_mm": [
+        136,
+        0,
+        19.15
+      ],
+      "retainer_range_mm": [
+        3,
+        6.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "PAD2_R",
+      "axis": "Y",
+      "centre_mm": [
+        164,
+        0,
+        19.15
+      ],
+      "retainer_range_mm": [
+        3,
+        6.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "PAD3_L",
+      "axis": "Y",
+      "centre_mm": [
+        181,
+        0,
+        19.15
+      ],
+      "retainer_range_mm": [
+        3,
+        6.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "PAD3_R",
+      "axis": "Y",
+      "centre_mm": [
+        209,
+        0,
+        19.15
+      ],
+      "retainer_range_mm": [
+        3,
+        6.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "FRONT_PCB_STAND_0",
+      "axis": "Z",
+      "centre_mm": [
+        44,
+        21,
+        0
+      ],
+      "stand_range_mm": [
+        3,
+        12
+      ],
+      "board_range_mm": [
+        12,
+        13.6
+      ],
+      "screw": "M3_CAP_18",
+      "nut_range_mm": [
+        -1.9,
+        0.5
+      ],
+      "base_washer_range_mm": [
+        0.5,
+        1
+      ],
+      "chassis_range_mm": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "FRONT_PCB_STAND_1",
+      "axis": "Z",
+      "centre_mm": [
+        127.5,
+        21,
+        0
+      ],
+      "stand_range_mm": [
+        3,
+        12
+      ],
+      "board_range_mm": [
+        12,
+        13.6
+      ],
+      "screw": "M3_CAP_18",
+      "nut_range_mm": [
+        -1.9,
+        0.5
+      ],
+      "base_washer_range_mm": [
+        0.5,
+        1
+      ],
+      "chassis_range_mm": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "FRONT_PCB_STAND_2",
+      "axis": "Z",
+      "centre_mm": [
+        232,
+        10,
+        0
+      ],
+      "stand_range_mm": [
+        3,
+        12
+      ],
+      "board_range_mm": [
+        12,
+        13.6
+      ],
+      "screw": "M3_CAP_18",
+      "nut_range_mm": [
+        -1.9,
+        0.5
+      ],
+      "base_washer_range_mm": [
+        0.5,
+        1
+      ],
+      "chassis_range_mm": [
+        1,
+        3
+      ]
+    },
+    {
+      "name": "KEYBOARD_FRONT_0",
+      "axis": "Y",
+      "centre_mm": [
+        12.5,
+        0,
+        31
+      ],
+      "cradle_range_mm": [
+        3,
+        10.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    },
+    {
+      "name": "KEYBOARD_FRONT_1",
+      "axis": "Y",
+      "centre_mm": [
+        35.5,
+        0,
+        31
+      ],
+      "cradle_range_mm": [
+        3,
+        10.5
+      ],
+      "screw": "M2_CAP_5",
+      "screw_insertion_direction": [
+        0,
+        -1,
+        0
+      ],
+      "blind_tapped_case_range_mm": [
+        1.8,
+        4.2
+      ]
+    }
+  ],
+  "connector_mate_envelopes": [
+    {
+      "name": "FRONT_J5_COMPLETE_MATE_ACCEPTANCE",
+      "contained_parts": [
+        "FRONT__J5_JST_PHD_BODY"
+      ],
+      "bounds_mm": [
+        205,
+        14,
+        13.6,
+        237,
+        25,
+        35
+      ],
+      "selected": "JST B20B-PHDSS + PHDR-20VS / SPHD-001T-P0.5 and SPHD-002T-P0.5",
+      "scope": "Nominal complete-mate allocation, not exact supplier geometry or fitted loom qualification."
+    },
+    {
+      "name": "KEYBOARD_J2_COMPLETE_MATE_ACCEPTANCE",
+      "contained_parts": [
+        "KEYBOARD__J2_JST_PH_BODY"
+      ],
+      "bounds_mm": [
+        18,
+        13.5,
+        17,
+        30,
+        28.5,
+        37
+      ],
+      "selected": "JST B4B-PH-K-S + PHR-4 / SPH-002T-P0.5S",
+      "scope": "Nominal allocation; JST 8 mm mated-height reference and wire departure require final assembly qualification."
+    }
+  ],
+  "fastener_plan": {
+    "components": {
+      "M3_NUT": {
+        "kind": "nut",
+        "designation": "ISO 4032 / DIN 934 M3 hexagon nut",
+        "material": "A2 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "max_across_flats_mm": 5.5,
+        "max_across_corners_mm": 6.350853,
+        "max_height_mm": 2.4,
+        "min_height_mm": 2.15,
+        "source_refs": [
+          "nut"
+        ],
+        "cad_thread_clear_bore_mm": 3,
+        "source_scope": "Across-corner maximum is conservative regular-hex geometry derived from AF maximum, NOT the source e-minimum.",
+        "quantity_this_scope": 3
+      },
+      "M3_WASHER": {
+        "kind": "washer",
+        "designation": "ISO 7089 M3 plain washer",
+        "material": "stainless steel",
+        "OD_mm": 7,
+        "ID_mm": 3.2,
+        "thickness_mm": 0.5,
+        "incoming_thickness_acceptance_mm": [
+          0.45,
+          0.55
+        ],
+        "source_refs": [
+          "M3washer"
+        ],
+        "source_scope": "Nominal product dimensions; +/-0.05mm thickness is own receiving acceptance.",
+        "quantity_this_scope": 6
+      },
+      "M2_WASHER": {
+        "kind": "washer",
+        "designation": "ISO 7089 M2 plain washer",
+        "material": "stainless steel",
+        "OD_mm": 5,
+        "ID_mm": 2.2,
+        "thickness_mm": 0.3,
+        "incoming_thickness_acceptance_mm": [
+          0.25,
+          0.35
+        ],
+        "source_refs": [
+          "M2washer"
+        ],
+        "source_scope": "Nominal product dimensions; +/-0.05mm thickness is own receiving acceptance.",
+        "quantity_this_scope": 10
+      },
+      "M2_CAP_5": {
+        "kind": "screw",
+        "designation": "ISO 4762 M2x5",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 2,
+        "pitch_mm": 0.4,
+        "length_mm": 5,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          4.9,
+          5.1
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 3.8,
+        "head_max_height_mm": 2,
+        "hex_key_AF_mm": 1.5,
+        "minimum_threaded_length_mm": 5,
+        "source_refs": [
+          "M2cap"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 10
+      },
+      "M3_CAP_18": {
+        "kind": "screw",
+        "designation": "ISO 4762 M3x18",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "length_mm": 18,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          17.9,
+          18.1
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 5.5,
+        "head_max_height_mm": 3,
+        "hex_key_AF_mm": 2.5,
+        "minimum_threaded_length_mm": 18,
+        "source_refs": [
+          "M3cap16"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance. For the source lug contract, sort/inspect the purchased nominal M3x20 lot to actual under-head length20.00..20.20; this is not claimed ISO tolerance.",
+        "quantity_this_scope": 3
+      }
+    },
+    "fastening_interfaces": [
+      {
+        "id": "PAD0_L",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          46,
+          6.8,
+          19.15
+        ],
+        "tip_position_mm": [
+          46,
+          1.8,
+          19.15
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__PAD0_L_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__PAD0_L_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "PAD0_R",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          74,
+          6.8,
+          19.15
+        ],
+        "tip_position_mm": [
+          74,
+          1.8,
+          19.15
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__PAD0_R_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__PAD0_R_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "PAD1_L",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          91,
+          6.8,
+          19.15
+        ],
+        "tip_position_mm": [
+          91,
+          1.8,
+          19.15
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__PAD1_L_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__PAD1_L_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "PAD1_R",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          119,
+          6.8,
+          19.15
+        ],
+        "tip_position_mm": [
+          119,
+          1.8,
+          19.15
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__PAD1_R_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__PAD1_R_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "PAD2_L",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          136,
+          6.8,
+          19.15
+        ],
+        "tip_position_mm": [
+          136,
+          1.8,
+          19.15
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__PAD2_L_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__PAD2_L_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "PAD2_R",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          164,
+          6.8,
+          19.15
+        ],
+        "tip_position_mm": [
+          164,
+          1.8,
+          19.15
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__PAD2_R_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__PAD2_R_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "PAD3_L",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          181,
+          6.8,
+          19.15
+        ],
+        "tip_position_mm": [
+          181,
+          1.8,
+          19.15
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__PAD3_L_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__PAD3_L_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "PAD3_R",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          209,
+          6.8,
+          19.15
+        ],
+        "tip_position_mm": [
+          209,
+          1.8,
+          19.15
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__PAD3_R_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__PAD3_R_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "FRONT_PCB_STAND_0",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          -1
+        ],
+        "under_head_position_mm": [
+          44,
+          21,
+          14.1
+        ],
+        "tip_position_mm": [
+          44,
+          21,
+          -3.9
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_18",
+          "part_name": "FASTENER__FRONT_PCB_STAND_0_SCREW",
+          "head_top_axis_mm": 17.1
+        },
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "FASTENER__FRONT_PCB_STAND_0_NUT",
+          "axis_range_mm": [
+            -1.9,
+            0.5
+          ],
+          "hex_clocking_deg": 0
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "FASTENER__FRONT_PCB_STAND_0_TOP_WASHER",
+            "axis_range_mm": [
+              13.6,
+              14.1
+            ]
+          },
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "FASTENER__FRONT_PCB_STAND_0_BASE_WASHER",
+            "axis_range_mm": [
+              0.5,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "id": "FRONT_PCB_STAND_1",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          -1
+        ],
+        "under_head_position_mm": [
+          127.5,
+          21,
+          14.1
+        ],
+        "tip_position_mm": [
+          127.5,
+          21,
+          -3.9
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_18",
+          "part_name": "FASTENER__FRONT_PCB_STAND_1_SCREW",
+          "head_top_axis_mm": 17.1
+        },
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "FASTENER__FRONT_PCB_STAND_1_NUT",
+          "axis_range_mm": [
+            -1.9,
+            0.5
+          ],
+          "hex_clocking_deg": 0
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "FASTENER__FRONT_PCB_STAND_1_TOP_WASHER",
+            "axis_range_mm": [
+              13.6,
+              14.1
+            ]
+          },
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "FASTENER__FRONT_PCB_STAND_1_BASE_WASHER",
+            "axis_range_mm": [
+              0.5,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "id": "FRONT_PCB_STAND_2",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          -1
+        ],
+        "under_head_position_mm": [
+          232,
+          10,
+          14.1
+        ],
+        "tip_position_mm": [
+          232,
+          10,
+          -3.9
+        ],
+        "screw": {
+          "component_ref": "M3_CAP_18",
+          "part_name": "FASTENER__FRONT_PCB_STAND_2_SCREW",
+          "head_top_axis_mm": 17.1
+        },
+        "nut": {
+          "component_ref": "M3_NUT",
+          "part_name": "FASTENER__FRONT_PCB_STAND_2_NUT",
+          "axis_range_mm": [
+            -1.9,
+            0.5
+          ],
+          "hex_clocking_deg": 0
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "FASTENER__FRONT_PCB_STAND_2_TOP_WASHER",
+            "axis_range_mm": [
+              13.6,
+              14.1
+            ]
+          },
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "FASTENER__FRONT_PCB_STAND_2_BASE_WASHER",
+            "axis_range_mm": [
+              0.5,
+              1
+            ]
+          }
+        ]
+      },
+      {
+        "id": "KEYBOARD_FRONT_0",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          12.5,
+          6.8,
+          31
+        ],
+        "tip_position_mm": [
+          12.5,
+          1.8,
+          31
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__KEYBOARD_FRONT_0_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__KEYBOARD_FRONT_0_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      },
+      {
+        "id": "KEYBOARD_FRONT_1",
+        "axis": "Y",
+        "axis_direction": [
+          0,
+          -1,
+          0
+        ],
+        "under_head_position_mm": [
+          35.5,
+          6.8,
+          31
+        ],
+        "tip_position_mm": [
+          35.5,
+          1.8,
+          31
+        ],
+        "screw": {
+          "component_ref": "M2_CAP_5",
+          "part_name": "FASTENER__KEYBOARD_FRONT_1_SCREW",
+          "head_top_axis_mm": 8.8
+        },
+        "washers": [
+          {
+            "component_ref": "M2_WASHER",
+            "part_name": "FASTENER__KEYBOARD_FRONT_1_INNER_WASHER",
+            "axis_range_mm": [
+              6.5,
+              6.8
+            ]
+          }
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            1.6,
+            4.2
+          ],
+          "cad_screw_core_diameter_mm": 1.5,
+          "full_thread_range_mm": [
+            2.0,
+            4.2
+          ],
+          "thread": "M2x0.4",
+          "owner": "Integral lower_shell boss; finish-machine blind pilot \u00d81.6 and bottoming-tap from the inside. The tapped transition extends to Y1.6; the \u00d81.6 pilot continues to Y1.2. Standard thread abstraction from cad/fasteners.py: nominal screw major outside engagement, core inside a tapped female hole; no collision suppression."
+        }
+      }
+    ]
+  },
+  "not_proven": [
+    "OriginalPADconnector remains custom/unqualified; no contactforce/plating/lifetime/toolingqualification.",
+    "Originalkeyboardmodel is manufacturermaximum-bodyreceivinggeometry, not a detailedfactorysolid.",
+    "No newforce/temperature acceptance norm or thermalqualification.",
+    "Harnessesandexternalplughandspace are separateowners.",
+    "Fixturefinishedfit, screwlengthreceiving and loadretention need physicalprototypeverification.",
+    "Fullsystemfit belongs to integratedcompactcaseowner.",
+    "Direct M2 threads in the proposed PC-ABS / prototype PA12 case need physical torque, creep and pull-out qualification; no universal load rating is claimed."
+  ],
+  "fabrication_release": false,
+  "blind_front_mounts": [
+    {
+      "id": "PAD0_L",
+      "axis": "Y",
+      "centre_mm": [
+        46,
+        0,
+        19.15
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "PAD0_RETAINER",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "PAD0_R",
+      "axis": "Y",
+      "centre_mm": [
+        74,
+        0,
+        19.15
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "PAD0_RETAINER",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "PAD1_L",
+      "axis": "Y",
+      "centre_mm": [
+        91,
+        0,
+        19.15
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "PAD1_RETAINER",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "PAD1_R",
+      "axis": "Y",
+      "centre_mm": [
+        119,
+        0,
+        19.15
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "PAD1_RETAINER",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "PAD2_L",
+      "axis": "Y",
+      "centre_mm": [
+        136,
+        0,
+        19.15
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "PAD2_RETAINER",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "PAD2_R",
+      "axis": "Y",
+      "centre_mm": [
+        164,
+        0,
+        19.15
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "PAD2_RETAINER",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "PAD3_L",
+      "axis": "Y",
+      "centre_mm": [
+        181,
+        0,
+        19.15
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "PAD3_RETAINER",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "PAD3_R",
+      "axis": "Y",
+      "centre_mm": [
+        209,
+        0,
+        19.15
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "PAD3_FRONT_R_RETAINER",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "KEYBOARD_FRONT_0",
+      "axis": "Y",
+      "centre_mm": [
+        12.5,
+        0,
+        31
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "KEYBOARD_FRONT_CRADLE",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    },
+    {
+      "id": "KEYBOARD_FRONT_1",
+      "axis": "Y",
+      "centre_mm": [
+        35.5,
+        0,
+        31
+      ],
+      "boss_stock_range_mm": [
+        2.8,
+        4.2
+      ],
+      "boss_diameter_mm": 4.8,
+      "retainer_counterbore_range_mm": [
+        2.9,
+        4.3
+      ],
+      "retainer_counterbore_diameter_mm": 5.0,
+      "pilot_diameter_mm": 1.6,
+      "pilot_range_mm": [
+        1.2,
+        4.25
+      ],
+      "tap": "M2x0.4 bottoming tap",
+      "full_thread_range_mm": [
+        2.0,
+        4.2
+      ],
+      "minimum_thread_engagement_at_shortest_screw_mm": 2.2,
+      "minimum_screw_tip_to_pilot_bottom_at_longest_screw_mm": 0.45,
+      "front_skin_minimum_mm": 1.2,
+      "retainer_rear_bearing_Y_mm": 6.5,
+      "head_range_mm": [
+        6.8,
+        8.8
+      ],
+      "washer_range_mm": [
+        6.5,
+        6.8
+      ],
+      "load_path": "Inside screw head -> inside washer -> retainer rear seat Y6.5 -> retainer front feet Y3 -> case inner wall. Screw tension -> machined female M2 thread -> case-integrated boss -> front wall. The boss end Y4.2 is recessed 0.1 from counterbore end Y4.3, so the retainer clamps to the wall and does not merely bottom on the boss. No loose nut or friction-only blind pocket.",
+      "manufacturing": "Integral PC-ABS case stock / PA12 prototype; finish pilot and bottoming tap to the declared depths before fitting retainers. Printed pilot is not an acceptance gauge. Torque and pull-out qualification remain physical prototype work.",
+      "retainer_group": "KEYBOARD_FRONT_CRADLE",
+      "underhead_receiving_range_mm": [
+        6.75,
+        6.85
+      ],
+      "worst_case_tip_receiving_range_mm": [
+        1.65,
+        1.95
+      ]
+    }
+  ],
+  "mounting_sequence": [
+    "Finish-machine and bottoming-tap each blind integral case boss from inside; verify Y1.2 pilot bottom and uninterrupted exterior skin.",
+    "Offer original PAD retainers and keyboard cradle forward onto bosses; their real \u00d85.0 counterbores clear \u00d84.8 stock and terminate 0.1 mm beyond the boss ends. Keep the original receiving parts and board transforms.",
+    "From the open case interior fit one M2 washer and M2x5 cap screw per front axis. Drive toward -Y with a 1.5 mm hex key. Heads are Y6.8..8.8, washers Y6.5..6.8; all hardware is inside.",
+    "Tighten against the retainer rear seat to clamp the retainer feet to the Y3 inner wall; do not rely on a loose nut, open pocket, glue or facade to hide exterior screws."
+  ],
+  "reference_implementations": [
+    {
+      "url": "https://github.com/CadQuery/cadquery/blob/master/doc/quickstart.rst",
+      "use": "Native real M2 clearance and counterbore construction, boolean solids and STEP export."
+    },
+    {
+      "url": "https://github.com/prusa3d/Original-Prusa-i3/blob/MK3/Printed-Parts/scad/Einsy-base.scad",
+      "use": "Studied actual housing mounting blocks, hole solids and supported nut load faces. This design instead uses blind integral tapped bosses and no unsupported nut pocket."
+    }
+  ],
+  "front_PCB_mount_stack": {
+    "chassis_range_Z_mm": [
+      1,
+      3
+    ],
+    "stand_range_Z_mm": [
+      3,
+      12
+    ],
+    "board_range_Z_mm": [
+      12,
+      13.6
+    ],
+    "top_washer_range_Z_mm": [
+      13.6,
+      14.1
+    ],
+    "underhead_Z_mm": 14.1,
+    "screw": "M3_CAP_18",
+    "tip_Z_mm": -3.9,
+    "base_washer_range_Z_mm": [
+      0.5,
+      1
+    ],
+    "nut_range_Z_mm": [
+      -1.9,
+      0.5
+    ],
+    "lower_cover_inner_Z_mm": -4.8,
+    "nominal_tip_to_lower_cover_clearance_mm": 0.9,
+    "load_path": "Cap head -> top washer -> unchanged native front PCB -> 9 mm stand -> aluminium chassis Z1..3 -> lower washer Z0.5..1 -> M3 nut Z-1.9..0.5. Nut and washer contact; no 1 mm floating gap."
+  },
+  "board_pose": {
+    "top_z_mm": 13.6,
+    "thickness_mm": 1.6
+  }
+}

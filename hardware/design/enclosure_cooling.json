@@ -1,0 +1,322 @@
+{
+  "revision": "COMPACT_PASSIVE_COOLING_1",
+  "scope": "Two-source passive heat spreader. Native receiving envelope and mount fit, not measured thermal approval or own-ASIC package qualification.",
+  "sink": {
+    "MPN": "Fischer SK50875SA",
+    "receiving_bounds_mm": [
+      73,
+      24.5,
+      16.7,
+      173,
+      96.5,
+      41.7
+    ],
+    "continuous_base_thickness_mm": 4.3,
+    "blind_pilots": [
+      {
+        "origin_mm": [
+          77,
+          50,
+          16.7
+        ],
+        "diameter_mm": 2.5,
+        "depth_mm": 3.7
+      },
+      {
+        "origin_mm": [
+          169,
+          58,
+          16.7
+        ],
+        "diameter_mm": 2.5,
+        "depth_mm": 3.7
+      }
+    ],
+    "source": "https://static.mercateo.com/2f/46120173547f4560a0f07fe7c8fbf31a/pdf/10020959de.pdf?v=443",
+    "machining": "Cut75mm stock to72mm finishedlength, deburr and retain4.3mm continuousbase. Two M3 blindtaps. This is own secondarymachining, NOT a fictitious72mm cataloguepart or silently resized makerbody. Keep swarf out of electronics.",
+    "stock_dimensions_mm": [
+      100,
+      75,
+      25
+    ],
+    "finished_dimensions_mm": [
+      100,
+      72,
+      25
+    ]
+  },
+  "support_posts": [
+    {
+      "name": "COOLING__LEFT_POST",
+      "axis_XY_mm": [
+        77,
+        50
+      ],
+      "range_Z_mm": [
+        3,
+        16.7
+      ],
+      "OD_mm": 7,
+      "top_stud": {
+        "range_Z_mm": [
+          16.7,
+          20.2
+        ],
+        "CAD_thread_core_mm": 2.45
+      }
+    },
+    {
+      "name": "COOLING__RIGHT_POST_BRIDGE",
+      "axis_XY_mm": [
+        175,
+        50
+      ],
+      "range_Z_mm": [
+        3,
+        16.7
+      ],
+      "OD_mm": 7,
+      "bridge_bounds_mm": [
+        165,
+        46.5,
+        15.7,
+        178.5,
+        61.5,
+        16.7
+      ]
+    }
+  ],
+  "TIMs": [
+    {
+      "name": "COOLING__TIM_U1",
+      "bounds_mm": [
+        82,
+        69,
+        15.7,
+        108,
+        95,
+        16.7
+      ]
+    },
+    {
+      "name": "COOLING__TIM_U2",
+      "bounds_mm": [
+        138,
+        69,
+        15.7,
+        164,
+        95,
+        16.7
+      ]
+    }
+  ],
+  "base_holes": [
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        77,
+        50,
+        2
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 2.2
+    },
+    {
+      "target": "chassis",
+      "axis": "Z",
+      "centre_mm": [
+        175,
+        50,
+        2
+      ],
+      "diameter_mm": 3.4,
+      "through_length_mm": 2.2
+    }
+  ],
+  "fastener_plan": {
+    "components": {
+      "M3_CAP_10": {
+        "kind": "screw",
+        "designation": "ISO 4762 M3x10",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "length_mm": 10,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          9.8,
+          10.2
+        ],
+        "head_style": "cap",
+        "head_max_OD_mm": 5.5,
+        "head_max_height_mm": 3,
+        "hex_key_AF_mm": 2.5,
+        "minimum_threaded_length_mm": 10,
+        "source_refs": [
+          "M3cap16"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 3
+      },
+      "M3_WASHER": {
+        "kind": "washer",
+        "designation": "ISO 7089 M3 plain washer",
+        "material": "stainless steel",
+        "OD_mm": 7,
+        "ID_mm": 3.2,
+        "thickness_mm": 0.5,
+        "incoming_thickness_acceptance_mm": [
+          0.45,
+          0.55
+        ],
+        "source_refs": [
+          "M3washer"
+        ],
+        "source_scope": "Nominal product dimensions; +/-0.05mm thickness is own receiving acceptance.",
+        "quantity_this_scope": 7
+      },
+      "M3_BUTTON_5": {
+        "kind": "screw",
+        "designation": "ISO7380-1 M3x5",
+        "material": "A2-70 stainless",
+        "thread_major_diameter_mm": 3,
+        "pitch_mm": 0.5,
+        "length_mm": 5,
+        "length_includes_head": false,
+        "length_incoming_acceptance_mm": [
+          4.8,
+          5.2
+        ],
+        "head_style": "button",
+        "head_max_OD_mm": 5.7,
+        "head_max_height_mm": 1.65,
+        "hex_key_AF_mm": 2,
+        "minimum_threaded_length_mm": 5,
+        "source_refs": [
+          "M3button"
+        ],
+        "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+        "quantity_this_scope": 8
+      }
+    },
+    "fastening_interfaces": [
+      {
+        "id": "COOLING_LEFT",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          77,
+          50,
+          1
+        ],
+        "tip_position_mm": [
+          77,
+          50,
+          11
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            3,
+            11
+          ],
+          "cad_screw_core_diameter_mm": 2.45
+        },
+        "screw": {
+          "component_ref": "M3_CAP_10",
+          "part_name": "COOLING_LEFT_SCREW",
+          "head_top_axis_mm": -2
+        },
+        "washers": []
+      },
+      {
+        "id": "COOLING_RIGHT",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          175,
+          50,
+          1
+        ],
+        "tip_position_mm": [
+          175,
+          50,
+          11
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            3,
+            11
+          ],
+          "cad_screw_core_diameter_mm": 2.45
+        },
+        "screw": {
+          "component_ref": "M3_CAP_10",
+          "part_name": "COOLING_RIGHT_SCREW",
+          "head_top_axis_mm": -2
+        },
+        "washers": []
+      },
+      {
+        "id": "COOLING_BRIDGE",
+        "axis": "Z",
+        "axis_direction": [
+          0,
+          0,
+          1
+        ],
+        "under_head_position_mm": [
+          169,
+          58,
+          15.2
+        ],
+        "tip_position_mm": [
+          169,
+          58,
+          20.2
+        ],
+        "tapped_engagement": {
+          "axis_range_mm": [
+            16.7,
+            20.2
+          ],
+          "cad_screw_core_diameter_mm": 2.45
+        },
+        "screw": {
+          "component_ref": "M3_BUTTON_5",
+          "part_name": "COOLING_BRIDGE_SCREW",
+          "head_top_axis_mm": 13.549999999999999
+        },
+        "washers": [
+          {
+            "component_ref": "M3_WASHER",
+            "part_name": "COOLING_BRIDGE_WASHER",
+            "axis_range_mm": [
+              15.2,
+              15.7
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "assembly": "Preassemble support/sink outside console; lower posts through8mm own PCB bypass holes. Fix from base. Metal supports do not clamp or short the PCB. TIM thickness/flatness/compression are selected and qualified against actual ASIC package; no unbounded force on the proposed package.",
+  "thermal_path": "ASICs -> insulating TIM -> continuous sink base -> passive profile. Integral metal supports also conduct to aluminium base. No claimed fixed K/W for support contacts or horizontal enclosed fins.",
+  "fan_count": 0,
+  "not_proven": [
+    "Exact extruded fin shape/factoryCAD; maximum envelope only",
+    "Two-source spreading and TIM pressure/contact on actual packages",
+    "PVT, measured ASIC power/junctions",
+    "Natural convection in assembled enclosure, local ambient and touch temperatures",
+    "Thread strength/tolerances and assembly prototype"
+  ],
+  "fabrication_release": false
+}

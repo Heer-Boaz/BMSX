@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="720" viewBox="0 0 1080 720" role="img" aria-labelledby="title desc">
+<title id="title">Passive heat paths through the reference construction</title>
+<desc id="desc">Two custom devices contact a common heatsink through separate thermal interface pads. The sink transfers heat to internal air and by finite support paths to the aluminium chassis. The lower plastic cover is separated from the chassis by an air gap. This is a functional thermal diagram, not a geometric cross-section or a temperature prediction.</desc>
+<defs>
+ <marker id="heat" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#9c4b34"/></marker>
+ <marker id="air" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#436b85"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#253b4c;font-size:21px} .small{font-size:18px} .box{stroke:#42586b;stroke-width:2;rx:7} .heat{stroke:#9c4b34;stroke-width:3;fill:none;marker-end:url(#heat)} .air{stroke:#436b85;stroke-width:3;fill:none;marker-end:url(#air)}</style>
+</defs>
+<rect x="70" y="24" width="235" height="65" class="box" fill="#dae4e8"/><text x="187" y="64" text-anchor="middle">CORE package</text>
+<rect x="405" y="24" width="235" height="65" class="box" fill="#dae4e8"/><text x="522" y="64" text-anchor="middle">GFX package</text>
+<path d="M187 89V150M522 89V150" class="heat"/>
+<text x="275" y="125" class="small">Separate 1 mm TIMs</text>
+<rect x="70" y="155" width="570" height="80" class="box" fill="#c7cfd3"/><text x="355" y="190" text-anchor="middle">Common passive heatsink</text><text x="355" y="219" class="small" text-anchor="middle">Machined stock; contact and spreading are finite</text>
+<path d="M640 192H755" class="air"/>
+<rect x="765" y="110" width="260" height="164" class="box" fill="#eaf0f2"/><text x="895" y="151" text-anchor="middle">Internal air</text><text x="895" y="184" text-anchor="middle">and case surfaces</text><text x="895" y="224" class="small" text-anchor="middle">Convection and radiation</text><text x="895" y="250" class="small" text-anchor="middle">Rear outlet / underside inlet</text>
+<path d="M187 235V322M522 235V322" class="heat"/>
+<text x="270" y="279" class="small">13.7 mm support paths</text><text x="270" y="306" class="small">Contact resistance at each joint</text>
+<rect x="70" y="329" width="570" height="70" class="box" fill="#d6dbdd"/><text x="355" y="360" text-anchor="middle">2 mm aluminium chassis</text><text x="355" y="387" class="small" text-anchor="middle">Local support patches; finite lateral spreading</text>
+<path d="M187 399V501M522 399V501" class="heat"/>
+<rect x="70" y="419" width="570" height="64" rx="6" fill="#f3eee2" stroke="#aa9670" stroke-dasharray="8 5"/><text x="355" y="447" text-anchor="middle">5.8 mm nominal air gap</text><text x="355" y="473" class="small" text-anchor="middle">Gap conduction / radiation; aligned intake openings</text>
+<rect x="70" y="507" width="570" height="65" class="box" fill="#c3c1bb"/><text x="355" y="546" text-anchor="middle">2 mm plastic lower-cover floor</text>
+<path d="M355 572V637" class="heat"/>
+<text x="355" y="677" text-anchor="middle">Room: convection and radiation</text>
+<rect x="765" y="344" width="260" height="224" rx="7" fill="#f7f7f3" stroke="#b8c0c4"/>
+<text x="790" y="378" class="small">No fan is installed.</text><text x="790" y="421" class="small">The aluminium chassis</text><text x="790" y="447" class="small">is inside the lower cover.</text><text x="790" y="490" class="small">Its temperature is not the</text><text x="790" y="516" class="small">plastic touch temperature.</text><text x="790" y="550" class="small">Functional path diagram.</text>
+</svg>

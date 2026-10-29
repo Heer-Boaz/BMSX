@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 910" role="img" aria-labelledby="title desc">
+<title id="title">Proposed reference cartridge skirt and frame channel</title>
+<desc id="desc">Two schematic side sections show the proposed reference cartridge with a plastic leading skirt and a matching channel in its support frame. During straight insertion the skirt pushes the dust-door leaf inward ahead of the exposed board; the second view shows the skirt in its frame channel and the board in the connector. The diagram is not to scale and does not prove fit or continuous clearance.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+  text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:22px}.title{font-size:31px;font-weight:700}.head{font-size:24px;font-weight:700}.small{font-size:19px}.tiny{font-size:17px}.panel{fill:#fbfcfd;stroke:#aab8c0;stroke-width:2}.cover{fill:#ddd8ca;stroke:#817d73;stroke-width:2}.shell{fill:#374148;stroke:#1d2b31;stroke-width:3}.skirt{fill:#536978;stroke:#1d2b31;stroke-width:3}.board{fill:#3d805d;stroke:#22523b;stroke-width:2}.contact{fill:#d6b45f;stroke:#826826;stroke-width:1}.frame{fill:#c5ccd0;stroke:#617481;stroke-width:2}.socket{fill:#afa191;stroke:#665d50;stroke-width:2}.leaf{stroke:#42545e;stroke-width:12;stroke-linecap:round}.hinge{fill:#b9c2c6;stroke:#42545e;stroke-width:2}.touch{fill:#e8b83f;stroke:#8f6917;stroke-width:2}.leader{fill:none;stroke:#617481;stroke-width:2}.movement{fill:none;stroke:#294b68;stroke-width:4;marker-end:url(#arrow)}
+ </style>
+</defs>
+<rect width="1600" height="910" fill="#fff"/>
+<text x="45" y="51" class="title">Proposed reference cartridge skirt and frame channel</text>
+<text x="45" y="83" class="small">Reference construction proposal · schematic side sections · not to scale</text>
+<!-- First panel: the skirt makes the initial opening contact. -->
+<g transform="translate(35 120)">
+ <rect width="740" height="655" rx="11" class="panel"/>
+ <text x="25" y="42" class="head">1 · INSERTION</text>
+ <text x="25" y="72" class="small">Skirt opens the independent dust door</text>
+ <rect x="55" y="270" width="112" height="23" class="cover"/><rect x="565" y="270" width="112" height="23" class="cover"/>
+ <circle cx="167" cy="281" r="9" class="hinge"/>
+ <path d="M167 281 L340 465" class="leaf"/>
+ <!-- Shell, skirt, and board remain distinct physical items. -->
+ <rect x="275" y="110" width="240" height="130" rx="6" class="shell"/>
+ <rect x="310" y="237" width="22" height="201" class="skirt"/>
+ <rect x="436" y="237" width="17" height="175" class="board"/>
+ <rect x="435" y="350" width="19" height="51" class="contact"/>
+ <circle cx="323" cy="447" r="8" class="touch"/>
+ <path d="M580 117 V213" class="movement"/>
+ <text x="595" y="153" class="small">Lower</text>
+ <path d="M248 475 L315 448" class="leader"/><text x="42" y="480" class="small">Plastic skirt / leaf contact</text>
+ <path d="M490 370 L455 376" class="leader"/><text x="495" y="375" class="small">PCB and contacts</text>
+ <!-- Gap through a schematic frame is the skirt channel. -->
+ <path d="M70 530 H291 V605 H70 Z M350 530 H411 V605 H350 Z M480 530 H662 V605 H480 Z" class="frame"/>
+ <rect x="413" y="535" width="65" height="60" rx="3" class="socket"/>
+ <text x="72" y="632" class="tiny">Frame channel for skirt</text><path d="M242 621 L306 586" class="leader"/>
+ <text x="495" y="632" class="tiny">Cartridge connector</text><path d="M493 617 L463 587" class="leader"/>
+</g>
+<!-- Second panel: seated, skirt occupies the separate channel. -->
+<g transform="translate(825 120)">
+ <rect width="740" height="655" rx="11" class="panel"/>
+ <text x="25" y="42" class="head">2 · SEATED</text>
+ <text x="25" y="72" class="small">Skirt and board enter separate spaces</text>
+ <rect x="55" y="270" width="112" height="23" class="cover"/><rect x="565" y="270" width="112" height="23" class="cover"/>
+ <circle cx="167" cy="281" r="9" class="hinge"/><path d="M167 281 L208 490" class="leaf"/>
+ <rect x="275" y="180" width="240" height="130" rx="6" class="shell"/>
+ <rect x="310" y="307" width="22" height="255" class="skirt"/>
+ <rect x="436" y="307" width="17" height="256" class="board"/>
+ <rect x="435" y="522" width="19" height="38" class="contact"/>
+ <path d="M70 530 H291 V605 H70 Z M350 530 H411 V605 H350 Z M480 530 H662 V605 H480 Z" class="frame"/>
+ <rect x="413" y="535" width="65" height="60" rx="3" class="socket"/>
+ <!-- Show the seated board and contact on top of the connector section. -->
+ <rect x="436" y="535" width="17" height="28" class="board"/><rect x="435" y="535" width="19" height="24" class="contact"/>
+ <path d="M246 350 L205 382" class="leader"/><text x="40" y="353" class="small">Open dust door</text>
+ <path d="M243 410 L310 418" class="leader"/><text x="40" y="417" class="small">Plastic skirt</text>
+ <path d="M488 568 L523 568" class="leader"/><text x="530" y="575" class="small">Connector</text>
+ <text x="72" y="632" class="tiny">Modified frame channel</text><path d="M260 620 L308 585" class="leader"/>
+</g>
+<text x="45" y="825" class="small">Existing contacts, card orientation and socket locations are unchanged; the skirt enters a separate frame channel.</text>
+<text x="45" y="858" class="small">The drawing does not establish continuous insertion, tolerances, forces, material strength or service life.</text>
+</svg>

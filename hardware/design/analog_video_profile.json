@@ -1,0 +1,110 @@
+{
+  "status": "Explicit physical U2 ASIC proposal and bounded numerical reference, not implemented RTL or analog-TV qualification.",
+  "profile": "625-line 50-field/s interlaced RGB plus separate composite sync; no PAL colour encoder or burst is proposed.",
+  "scope": {
+    "emulator_and_public_books": "Unchanged. Existing CPU-visible live beam, CSR, FIELD, register writes, display latch and epoch semantics remain owned by their current runtime.",
+    "raw_words": "Retained verbatim. This is one programmed profile, not a mode validator; other representable words remain deterministically sampled without clamping, rejection or black fallback.",
+    "baseline": "Extends design/video_baseline.json. Reset remains 628 half-lines at approximately 49.761146Hz, not this 625-half-line profile."
+  },
+  "raw_register_words": {
+    "SMODE1_LOW": "40806504",
+    "SMODE1_HIGH": "00000007",
+    "SMODE2_LOW": "00000001",
+    "SMODE2_HIGH": "00000000",
+    "SYNCH1_LOW": "0009A054",
+    "SYNCH1_HIGH": "00080000",
+    "SYNCH2_LOW": "002BE57C",
+    "SYNCH2_HIGH": "00000000",
+    "SYNCV_LOW": "02101401",
+    "SYNCV_HIGH": "00A90005"
+  },
+  "expected_fields": {
+    "HFP": 84,
+    "HBP": 308,
+    "HS": 256,
+    "HF": 1404,
+    "HB": 1404,
+    "RC": 4,
+    "LC": 32,
+    "divider": 1,
+    "D": 8,
+    "StepX": 4,
+    "CMOD": 3,
+    "U": 1,
+    "INT": 1,
+    "FFMD": 0,
+    "VFP": 1,
+    "VFPE": 5,
+    "VBP": 33,
+    "VBPE": 5,
+    "VDP": 576,
+    "VS": 5
+  },
+  "timing": {
+    "dac_hz": 13500000,
+    "samples_per_line": 864,
+    "samples_per_half_line": 432,
+    "half_lines_per_field": 625,
+    "fields_per_frame": 2,
+    "field_hz": 50,
+    "frame_hz": 25,
+    "line_sync_samples": 64,
+    "equalizing_samples": 32,
+    "broad_sync_samples": 368,
+    "broad_gap_samples": 64,
+    "horizontal_blank_samples": 162,
+    "active_samples_per_line": 702,
+    "front_porch_samples": 21,
+    "back_porch_samples": 77
+  },
+  "waveform": {
+    "polarity": "CSYNC low is sync tip; high is blank/reference level. RGB blanking is separate.",
+    "sample_zero": "Physical line-sync leading edge at global half-line zero; local field half-line zero begins active-display traversal. Horizontal blank includes sync [0,64), back porch [64,141), active [141,843), front porch [843,864).",
+    "pre_equalizing_half_lines": [
+      577,
+      582
+    ],
+    "broad_half_lines": [
+      582,
+      587
+    ],
+    "post_equalizing_half_lines": [
+      587,
+      592
+    ],
+    "interval_convention": "All intervals start inclusive and end exclusive. Each equalizing/broad half-line emits its pulse from that half-line leading edge; ordinary line sync occurs only at even global half-lines.",
+    "vertical_blank": "Local half-lines [576,625); during ordinary portions continue global line sync. 49 half-lines =24.5 lines of VBlank plus horizontal end blanking; no claim that this reproduces every BT.470 field-blanking edge.",
+    "phase": "Carry global half-line parity across every odd 625-half-line field wrap. Xn=(global_half_line&1)*N+P for source/horizontal coordinates too; never derive physical parity from the wrapped local field half-line.",
+    "epoch": "Only an explicitly coherent displayed-bank restart may establish a new physical phase origin. A field wrap does not reset it. This does not alter CPU-live beam/FIELD/CSR ownership."
+  },
+  "pipeline_alignment": {
+    "common_frontend": "Coordinate, memory, decode, RGB and sync tags share all front-end latency. Eight samples in video_baseline is a memory-model request-to-output budget, not complete pin latency.",
+    "edge_reference": "Let time0 be the falling VIDEO_PCLK edge when U2 launches a tagged RGB/control sample. U35 captures that sample at the next rising edge,T/2. Its one-clock pipeline presents the corresponding analog output about3T/2+t6 after the U2 launch. Reference CSYNC delay to that same U2 falling launch, not to a different DAC capture edge.",
+    "dac": "ADV7125 RevD Tables3/4 specify tPD=1clock. T=74.074074ns at13.5MHz; t6 is typically5.5ns at5V or7.5ns at3.3V. Thus the falling-U2-launch to RGB analog50% target is approximately116.61ns at5V or118.61ns at3.3V, before RGB board/buffer delays.",
+    "compensation": "U2 CSYNC bypasses U35. Account total latency from the same U2 falling launch:RGB captureT/2 + DAC pipelineT + t6; versus U42 + RC + video-filter/amp + PCB/load. Initial candidate uses the same falling launch with NO extra whole-sample CSYNC register:nominal ideal sync112.002ns is close to RGB116.611ns at5V or118.611ns at3.3V. Close remaining path terms by characterization and loaded-connector measurement, not by blindly adding aDAC sample.",
+    "sync_analog_path": "Canonical circuit owner:design/video_output.json. U42 light-load3.3V buffer -> R53336.5k/R5343.83k divider+C53318pF -> U43 THS7314 CH1 -> R52875ohm -> SCART_CSYNC. This profile does not own the circuit or duplicate its component model.",
+    "analog_delay": "Use the current video-circuit response report for the conditional input-RC and ideal-filter delay. It already includes both stages; do not add a separate guessed group delay. Manufacturer group delay is not a guaranteed step-edge delay.",
+    "prototype_acceptance": "At the loaded SCART connector, measure correspondingly tagged RGB blanking and CSYNC edges from the same U2 falling launch. Select fixed path compensation for <=one13.5MHz sample(74.074ns) residual relative displacement, and verify64/32/368-sample pulse widths at50% amplitude. This is an explicit prototype acceptance target, not a met result."
+  },
+  "references": [
+    {
+      "url": "https://github.com/torvalds/linux/blob/master/drivers/gpu/drm/vc4/vc4_vec.c",
+      "use": "Studied before implementation: mature DRM separates encoder configuration from scan timing and explicitly associates625/50 with864 horizontal samples; do not copy its mode rejection into raw-register hardware."
+    },
+    {
+      "url": "https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.470-6-199811-S!!PDF-E.pdf",
+      "use": "Primary waveform reference:625 systems64us lines; five half-line pulses each pre/equalizing,broad,post; nominal4.7us/2.35us/27.3us pulses. BT.470-7 delegates signal characteristics to BT.1700."
+    },
+    {
+      "url": "https://www.analog.com/media/en/technical-documentation/data-sheets/ADV7125.pdf",
+      "use": "RevD Tables3/4 and Figure2:one-cycle pipeline,t6 output delay,latched RGB/SYNC/BLANK; direct CSYNC bypass must be compensated."
+    }
+  ],
+  "qualification": {
+    "RTL_implemented": false,
+    "silicon_STA_closed": false,
+    "CDC_epoch_integration_tested": false,
+    "loaded_SCART_measured": false,
+    "all_raw_modes_TV_compatible": false
+  }
+}

@@ -1,0 +1,97 @@
+(footprint "L_Vishay_IHLP-3232"
+	(version 20241229)
+	(generator "kicad-footprint-generator")
+	(layer "F.Cu")
+	(descr "Inductor, Vishay, IHLP-3232, 8.18x8.18x4.0mm, (https://www.vishay.com/docs/34313/ihlp3232dz-11.pdf), generated with kicad-footprint-generator gen_inductor.py")
+	(tags "shielded SMT")
+	(property "Reference" "REF**"
+		(at 0 -5.04 0)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Value" "L_Vishay_IHLP-3232"
+		(at 0 5.04 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(attr smd)
+	(fp_line
+		(start -4.2 -4.2)
+		(end 4.2 -4.2)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -4.2 -2.927)
+		(end -4.2 -4.2)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start -4.2 4.2)
+		(end -4.2 2.927)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start 4.2 -4.2)
+		(end 4.2 -2.927)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start 4.2 2.927)
+		(end 4.2 4.2)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_line
+		(start 4.2 4.2)
+		(end -4.2 4.2)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS"))
+	(fp_rect
+		(start -4.09 -4.09)
+		(end 4.09 4.09)
+		(stroke
+			(width 0.1)
+			(type solid))
+		(fill no)
+		(layer "F.Fab"))
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(pad "1" smd roundrect
+		(at -3.6195 0)
+		(size 2.413 5.334)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.103605))
+	(pad "2" smd roundrect
+		(at 3.6195 0)
+		(size 2.413 5.334)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.103605))
+	(embedded_fonts no)
+	(fp_rect
+		(start -5.08 -4.378)
+		(end 5.08 4.378)
+		(stroke
+			(width 0.05)
+			(type solid))
+		(fill none)
+		(layer "F.CrtYd")))

@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 930" role="img" aria-labelledby="title desc">
+<title id="title">GEO addressed geometry and collision jobs</title>
+<desc id="desc">The CPU programs and launches a GEO job within CORE. The controller reads addressed records from system ROM, main RAM, or the selected cartridge bus. XFORM2 transforms Q16 vertices and can write bounds; SAT2 compares Q16 world vertices; OVERLAP2D consumes separate binary32 shape and translation data and generates contacts. Ordinary results go to main RAM. The job controller publishes status and progress and requests an interrupt on completion or fault. Software constructs drawing packets separately for GFX. The illustration is functional and does not prove physical timing or clipping capacity.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:29px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:18px}.minor{font-size:17px}.device{fill:#f8fafb;stroke:#91a9b8;stroke-width:2}.unit{fill:#e1edf4;stroke:#294b68;stroke-width:2}.store{fill:#f3f6f8;stroke:#294b68;stroke-width:2}.engine{fill:#eaf4ec;stroke:#426b53;stroke-width:2}.line{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}</style>
+</defs>
+<rect width="1600" height="930" fill="white"/>
+<text x="40" y="49" class="title">GEO — addressed geometry and collision jobs</text>
+<text x="40" y="80" class="minor">Functional system paths; no physical timing or clipping-capacity guarantee is implied.</text>
+
+<rect x="35" y="115" width="1530" height="590" rx="12" class="device"/>
+<text x="60" y="151" class="head">GEO processing and memory service</text>
+
+<rect x="65" y="195" width="230" height="125" rx="8" class="unit"/>
+<text x="180" y="234" text-anchor="middle" class="head">CPU · U1</text>
+<text x="180" y="265" text-anchor="middle" class="small">Program job words</text>
+<text x="180" y="292" text-anchor="middle" class="small">Launch CMD</text>
+
+<rect x="370" y="190" width="335" height="140" rx="8" class="unit"/>
+<text x="537" y="228" text-anchor="middle" class="head">GEO job controller</text>
+<text x="537" y="259" text-anchor="middle" class="small">U1 · capture command and addresses</text>
+<text x="537" y="286" text-anchor="middle" class="small">Select and process records</text>
+<text x="537" y="313" text-anchor="middle" class="small">STATUS · PROCESSED · FAULT</text>
+<path d="M295 255H370" class="line"/>
+
+<rect x="770" y="165" width="330" height="135" rx="8" class="engine"/>
+<text x="935" y="202" text-anchor="middle" class="head">XFORM2</text>
+<text x="935" y="233" text-anchor="middle" class="small">Q16 vertices and affine matrix</text>
+<text x="935" y="262" text-anchor="middle" class="small">Q16 vertices and optional bounds</text>
+
+<rect x="770" y="345" width="330" height="135" rx="8" class="engine"/>
+<text x="935" y="382" text-anchor="middle" class="head">SAT2</text>
+<text x="935" y="413" text-anchor="middle" class="small">Q16 world-vertex polygon pairs</text>
+<text x="935" y="442" text-anchor="middle" class="small">Hit · normal · depth · edge</text>
+
+<rect x="770" y="525" width="330" height="135" rx="8" class="engine"/>
+<text x="935" y="562" text-anchor="middle" class="head">OVERLAP2D</text>
+<text x="935" y="593" text-anchor="middle" class="small">Binary32 shapes and translations</text>
+<text x="935" y="622" text-anchor="middle" class="small">Bounds · exact contact · summary</text>
+
+<rect x="370" y="415" width="335" height="125" rx="8" class="store"/>
+<text x="537" y="452" text-anchor="middle" class="head">Addressed memory service</text>
+<text x="537" y="483" text-anchor="middle" class="small">Records · vertices · results</text>
+<text x="537" y="511" text-anchor="middle" class="small">Shared CORE arbitration</text>
+<path d="M537 330V415" class="line"/>
+<path d="M705 478H735V232H770" class="line"/>
+<path d="M735 412H770" class="line"/>
+<path d="M735 478V592H770" class="line"/>
+
+<rect x="1180" y="195" width="315" height="125" rx="8" class="store"/>
+<text x="1337" y="233" text-anchor="middle" class="head">Main RAM</text>
+<text x="1337" y="264" text-anchor="middle" class="small">Result records and summaries</text>
+<text x="1337" y="291" text-anchor="middle" class="small">Read by the program</text>
+<path d="M1100 232H1180" class="line"/>
+<path d="M1100 412H1140V280H1180" class="line"/>
+<path d="M1100 592H1160V300H1180" class="line"/>
+
+<rect x="1180" y="500" width="315" height="125" rx="8" class="unit"/>
+<text x="1337" y="538" text-anchor="middle" class="head">Central IRQ · U1</text>
+<text x="1337" y="569" text-anchor="middle" class="small">GEO_DONE or GEO_ERROR</text>
+<text x="1337" y="596" text-anchor="middle" class="small">Pending · mask · acknowledge</text>
+<path d="M705 315H1130V560H1180" class="line"/>
+
+<rect x="60" y="760" width="645" height="100" rx="8" class="store"/>
+<text x="382" y="798" text-anchor="middle" class="head">Readable record and geometry sources</text>
+<text x="382" y="829" text-anchor="middle" class="small">System ROM · main RAM · selected cartridge bus</text>
+<path d="M537 760V540" class="line"/>
+
+<rect x="895" y="760" width="600" height="100" rx="8" class="unit"/>
+<text x="1195" y="798" text-anchor="middle" class="head">U2 · GFX</text>
+<text x="1195" y="829" text-anchor="middle" class="small">Program prepares and submits drawing packets separately</text>
+<path d="M180 320V680H840V810H895" class="line"/>
+
+<text x="40" y="902" class="minor">Ordinary result spans target installed main RAM; OVERLAP2D summary writes use ordinary bus writes without a preceding span check.</text>
+</svg>

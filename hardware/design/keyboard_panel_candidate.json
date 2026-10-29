@@ -1,0 +1,12 @@
+{
+  "scope": "Local front-wall proposal; not a qualified mating or manufacturing design",
+  "units": "mm; X right, Y toward console rear, Z up",
+  "front_lip_bounds_mm": [15.75, -0.8, 15.25, 32.25, 0.0, 31.75],
+  "opening_axis_XZ_mm": [24.0, 23.55],
+  "opening_diameter_mm": 15.0,
+  "plug_shoulder_nominal_diameter_mm": 14.0,
+  "plug_shoulder_clearance_model_diameter_mm": 14.4,
+  "plug_shell_nominal_projection_mm": 6.3,
+  "plug_source": "https://docs.rs-online.com/bcd8/A700000009458704.pdf page 2; MD-60",
+  "limitations": "A 14.4 mm shoulder is only a local clearance model, not a complete plug. Actual mating depth, boot outline, part variation, wall strength and manufacturing tolerances need verification."
+}

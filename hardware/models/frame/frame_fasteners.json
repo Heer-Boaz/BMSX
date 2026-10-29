@@ -1,0 +1,660 @@
+{
+  "revision": "R2",
+  "scope": "Eight concrete screws for two frame T-key closurebars. Dedicated additive fastener plan; common/AV plans unchanged.",
+  "components": {
+    "M2_CAP_6": {
+      "kind": "screw",
+      "designation": "ISO 4762 M2x6",
+      "material": "A2-70 stainless",
+      "thread_major_diameter_mm": 2,
+      "pitch_mm": 0.4,
+      "length_mm": 6,
+      "length_includes_head": false,
+      "length_incoming_acceptance_mm": [
+        5.8,
+        6.2
+      ],
+      "head_style": "cap",
+      "head_max_OD_mm": 3.8,
+      "head_max_height_mm": 2,
+      "hex_key_AF_mm": 1.5,
+      "minimum_threaded_length_mm": 6,
+      "source_refs": [
+        "M2cap"
+      ],
+      "source_scope": "Standard-family dimensions; selected length and +/-0.2mm receiving limit are this design procurement acceptance, not a universal ISO length tolerance.",
+      "quantity_this_scope": 8
+    }
+  },
+  "fastening_interfaces": [
+    {
+      "id": "FRAME_KEY_FRONT_0",
+      "axis": "Y",
+      "axis_direction": [
+        0,
+        1,
+        0
+      ],
+      "under_head_position_mm": [
+        28,
+        138,
+        32
+      ],
+      "tip_position_mm": [
+        28,
+        144,
+        32
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__FRAME_KEY_FRONT_0_SCREW",
+        "head_top_axis_mm": 136
+      },
+      "washers": [],
+      "stack": [
+        {
+          "owner": "FRAME_KEY_RETAINER_FRONT",
+          "axis_range_mm": [
+            138,
+            139.5
+          ]
+        },
+        {
+          "owner": "FRAME_METAL_R2_tapped_beam",
+          "axis_range_mm": [
+            139.5,
+            143.5
+          ]
+        }
+      ],
+      "assembly_stage": 45,
+      "tapped_engagement": {
+        "owner": "FRAME_METAL_R2",
+        "thread": "M2x0.4",
+        "axis_range_mm": [
+          139.5,
+          143.5
+        ],
+        "nominal_engagement_mm": 4,
+        "minimum_engagement_after_length_acceptance_mm": 4,
+        "tap_drill_mm": 1.6,
+        "cad_screw_core_diameter_mm": 1.5,
+        "representation": "Exact native1.6pilot retained; engaged screw core1.5 represents explicit thread interface, free shaft remains2.0."
+      },
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "maximum_tool_shaft_OD_mm": 2.6,
+        "approach_segment_mm": [
+          [
+            28,
+            110,
+            32
+          ],
+          [
+            28,
+            136,
+            32
+          ]
+        ],
+        "required_sequence": "Frame removed and unoccupied; install keys before bars. Horizontal1.5AFdriver. No cartridge or roof present."
+      },
+      "reaction": "Bar closes G10 T-key end faces; screw clamp reacted by machinedAlbeam. No G10 microthread/nut.",
+      "nominal_thread_beyond_beam_mm": 0.5,
+      "notes": "FirstfrontaxisX28/barleft25.5 gives2.5mm edge distance, clearsTfootX>=30.9 and permanentPADfanoutX>=33.5. PreviousX30.5 intersectedkeyfoot; no harness exemption. Headtop33.9 belowcard34.4. Benchpreassembly."
+    },
+    {
+      "id": "FRAME_KEY_FRONT_1",
+      "axis": "Y",
+      "axis_direction": [
+        0,
+        1,
+        0
+      ],
+      "under_head_position_mm": [
+        142,
+        138,
+        32
+      ],
+      "tip_position_mm": [
+        142,
+        144,
+        32
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__FRAME_KEY_FRONT_1_SCREW",
+        "head_top_axis_mm": 136
+      },
+      "washers": [],
+      "stack": [
+        {
+          "owner": "FRAME_KEY_RETAINER_FRONT",
+          "axis_range_mm": [
+            138,
+            139.5
+          ]
+        },
+        {
+          "owner": "FRAME_METAL_R2_tapped_beam",
+          "axis_range_mm": [
+            139.5,
+            143.5
+          ]
+        }
+      ],
+      "assembly_stage": 45,
+      "tapped_engagement": {
+        "owner": "FRAME_METAL_R2",
+        "thread": "M2x0.4",
+        "axis_range_mm": [
+          139.5,
+          143.5
+        ],
+        "nominal_engagement_mm": 4,
+        "minimum_engagement_after_length_acceptance_mm": 4,
+        "tap_drill_mm": 1.6,
+        "cad_screw_core_diameter_mm": 1.5,
+        "representation": "Exact native1.6pilot retained; engaged screw core1.5 represents explicit thread interface, free shaft remains2.0."
+      },
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "maximum_tool_shaft_OD_mm": 2.6,
+        "approach_segment_mm": [
+          [
+            142,
+            110,
+            32
+          ],
+          [
+            142,
+            136,
+            32
+          ]
+        ],
+        "required_sequence": "Frame removed and unoccupied; install keys before bars. Horizontal1.5AFdriver. No cartridge or roof present."
+      },
+      "reaction": "Bar closes G10 T-key end faces; screw clamp reacted by machinedAlbeam. No G10 microthread/nut.",
+      "nominal_thread_beyond_beam_mm": 0.5,
+      "notes": "HeadOD<=3.8, topZ33.9 below card-shell bottom34.4. Fourpositions perbar limit unsupportedspan; source localwide cap startsX268 beyond finalboltX264."
+    },
+    {
+      "id": "FRAME_KEY_FRONT_2",
+      "axis": "Y",
+      "axis_direction": [
+        0,
+        1,
+        0
+      ],
+      "under_head_position_mm": [
+        166,
+        138,
+        32
+      ],
+      "tip_position_mm": [
+        166,
+        144,
+        32
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__FRAME_KEY_FRONT_2_SCREW",
+        "head_top_axis_mm": 136
+      },
+      "washers": [],
+      "stack": [
+        {
+          "owner": "FRAME_KEY_RETAINER_FRONT",
+          "axis_range_mm": [
+            138,
+            139.5
+          ]
+        },
+        {
+          "owner": "FRAME_METAL_R2_tapped_beam",
+          "axis_range_mm": [
+            139.5,
+            143.5
+          ]
+        }
+      ],
+      "assembly_stage": 45,
+      "tapped_engagement": {
+        "owner": "FRAME_METAL_R2",
+        "thread": "M2x0.4",
+        "axis_range_mm": [
+          139.5,
+          143.5
+        ],
+        "nominal_engagement_mm": 4,
+        "minimum_engagement_after_length_acceptance_mm": 4,
+        "tap_drill_mm": 1.6,
+        "cad_screw_core_diameter_mm": 1.5,
+        "representation": "Exact native1.6pilot retained; engaged screw core1.5 represents explicit thread interface, free shaft remains2.0."
+      },
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "maximum_tool_shaft_OD_mm": 2.6,
+        "approach_segment_mm": [
+          [
+            166,
+            110,
+            32
+          ],
+          [
+            166,
+            136,
+            32
+          ]
+        ],
+        "required_sequence": "Frame removed and unoccupied; install keys before bars. Horizontal1.5AFdriver. No cartridge or roof present."
+      },
+      "reaction": "Bar closes G10 T-key end faces; screw clamp reacted by machinedAlbeam. No G10 microthread/nut.",
+      "nominal_thread_beyond_beam_mm": 0.5,
+      "notes": "HeadOD<=3.8, topZ33.9 below card-shell bottom34.4. Fourpositions perbar limit unsupportedspan; source localwide cap startsX268 beyond finalboltX264."
+    },
+    {
+      "id": "FRAME_KEY_FRONT_3",
+      "axis": "Y",
+      "axis_direction": [
+        0,
+        1,
+        0
+      ],
+      "under_head_position_mm": [
+        264,
+        138,
+        32
+      ],
+      "tip_position_mm": [
+        264,
+        144,
+        32
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__FRAME_KEY_FRONT_3_SCREW",
+        "head_top_axis_mm": 136
+      },
+      "washers": [],
+      "stack": [
+        {
+          "owner": "FRAME_KEY_RETAINER_FRONT",
+          "axis_range_mm": [
+            138,
+            139.5
+          ]
+        },
+        {
+          "owner": "FRAME_METAL_R2_tapped_beam",
+          "axis_range_mm": [
+            139.5,
+            143.5
+          ]
+        }
+      ],
+      "assembly_stage": 45,
+      "tapped_engagement": {
+        "owner": "FRAME_METAL_R2",
+        "thread": "M2x0.4",
+        "axis_range_mm": [
+          139.5,
+          143.5
+        ],
+        "nominal_engagement_mm": 4,
+        "minimum_engagement_after_length_acceptance_mm": 4,
+        "tap_drill_mm": 1.6,
+        "cad_screw_core_diameter_mm": 1.5,
+        "representation": "Exact native1.6pilot retained; engaged screw core1.5 represents explicit thread interface, free shaft remains2.0."
+      },
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "maximum_tool_shaft_OD_mm": 2.6,
+        "approach_segment_mm": [
+          [
+            264,
+            110,
+            32
+          ],
+          [
+            264,
+            136,
+            32
+          ]
+        ],
+        "required_sequence": "Frame removed and unoccupied; install keys before bars. Horizontal1.5AFdriver. No cartridge or roof present."
+      },
+      "reaction": "Bar closes G10 T-key end faces; screw clamp reacted by machinedAlbeam. No G10 microthread/nut.",
+      "nominal_thread_beyond_beam_mm": 0.5,
+      "notes": "HeadOD<=3.8, topZ33.9 below card-shell bottom34.4. Fourpositions perbar limit unsupportedspan; source localwide cap startsX268 beyond finalboltX264."
+    },
+    {
+      "id": "FRAME_KEY_REAR_0",
+      "axis": "Y",
+      "axis_direction": [
+        0,
+        -1,
+        0
+      ],
+      "under_head_position_mm": [
+        36,
+        160,
+        32
+      ],
+      "tip_position_mm": [
+        36,
+        154,
+        32
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__FRAME_KEY_REAR_0_SCREW",
+        "head_top_axis_mm": 162
+      },
+      "washers": [],
+      "stack": [
+        {
+          "owner": "FRAME_KEY_RETAINER_REAR",
+          "axis_range_mm": [
+            158.5,
+            160
+          ]
+        },
+        {
+          "owner": "FRAME_METAL_R2_tapped_beam",
+          "axis_range_mm": [
+            154.5,
+            158.5
+          ]
+        }
+      ],
+      "assembly_stage": 45,
+      "tapped_engagement": {
+        "owner": "FRAME_METAL_R2",
+        "thread": "M2x0.4",
+        "axis_range_mm": [
+          154.5,
+          158.5
+        ],
+        "nominal_engagement_mm": 4,
+        "minimum_engagement_after_length_acceptance_mm": 4,
+        "tap_drill_mm": 1.6,
+        "cad_screw_core_diameter_mm": 1.5,
+        "representation": "Exact native1.6pilot retained; engaged screw core1.5 represents explicit thread interface, free shaft remains2.0."
+      },
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "maximum_tool_shaft_OD_mm": 2.6,
+        "approach_segment_mm": [
+          [
+            36,
+            180,
+            32
+          ],
+          [
+            36,
+            162,
+            32
+          ]
+        ],
+        "required_sequence": "Frame removed and unoccupied; install keys before bars. Horizontal1.5AFdriver. No cartridge or roof present."
+      },
+      "reaction": "Bar closes G10 T-key end faces; screw clamp reacted by machinedAlbeam. No G10 microthread/nut.",
+      "nominal_thread_beyond_beam_mm": 0.5,
+      "notes": "HeadOD<=3.8, topZ33.9 below card-shell bottom34.4. Fourpositions perbar limit unsupportedspan; source localwide cap startsX268 beyond finalboltX264."
+    },
+    {
+      "id": "FRAME_KEY_REAR_1",
+      "axis": "Y",
+      "axis_direction": [
+        0,
+        -1,
+        0
+      ],
+      "under_head_position_mm": [
+        142,
+        160,
+        32
+      ],
+      "tip_position_mm": [
+        142,
+        154,
+        32
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__FRAME_KEY_REAR_1_SCREW",
+        "head_top_axis_mm": 162
+      },
+      "washers": [],
+      "stack": [
+        {
+          "owner": "FRAME_KEY_RETAINER_REAR",
+          "axis_range_mm": [
+            158.5,
+            160
+          ]
+        },
+        {
+          "owner": "FRAME_METAL_R2_tapped_beam",
+          "axis_range_mm": [
+            154.5,
+            158.5
+          ]
+        }
+      ],
+      "assembly_stage": 45,
+      "tapped_engagement": {
+        "owner": "FRAME_METAL_R2",
+        "thread": "M2x0.4",
+        "axis_range_mm": [
+          154.5,
+          158.5
+        ],
+        "nominal_engagement_mm": 4,
+        "minimum_engagement_after_length_acceptance_mm": 4,
+        "tap_drill_mm": 1.6,
+        "cad_screw_core_diameter_mm": 1.5,
+        "representation": "Exact native1.6pilot retained; engaged screw core1.5 represents explicit thread interface, free shaft remains2.0."
+      },
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "maximum_tool_shaft_OD_mm": 2.6,
+        "approach_segment_mm": [
+          [
+            142,
+            180,
+            32
+          ],
+          [
+            142,
+            162,
+            32
+          ]
+        ],
+        "required_sequence": "Frame removed and unoccupied; install keys before bars. Horizontal1.5AFdriver. No cartridge or roof present."
+      },
+      "reaction": "Bar closes G10 T-key end faces; screw clamp reacted by machinedAlbeam. No G10 microthread/nut.",
+      "nominal_thread_beyond_beam_mm": 0.5,
+      "notes": "HeadOD<=3.8, topZ33.9 below card-shell bottom34.4. Fourpositions perbar limit unsupportedspan; source localwide cap startsX268 beyond finalboltX264."
+    },
+    {
+      "id": "FRAME_KEY_REAR_2",
+      "axis": "Y",
+      "axis_direction": [
+        0,
+        -1,
+        0
+      ],
+      "under_head_position_mm": [
+        166,
+        160,
+        32
+      ],
+      "tip_position_mm": [
+        166,
+        154,
+        32
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__FRAME_KEY_REAR_2_SCREW",
+        "head_top_axis_mm": 162
+      },
+      "washers": [],
+      "stack": [
+        {
+          "owner": "FRAME_KEY_RETAINER_REAR",
+          "axis_range_mm": [
+            158.5,
+            160
+          ]
+        },
+        {
+          "owner": "FRAME_METAL_R2_tapped_beam",
+          "axis_range_mm": [
+            154.5,
+            158.5
+          ]
+        }
+      ],
+      "assembly_stage": 45,
+      "tapped_engagement": {
+        "owner": "FRAME_METAL_R2",
+        "thread": "M2x0.4",
+        "axis_range_mm": [
+          154.5,
+          158.5
+        ],
+        "nominal_engagement_mm": 4,
+        "minimum_engagement_after_length_acceptance_mm": 4,
+        "tap_drill_mm": 1.6,
+        "cad_screw_core_diameter_mm": 1.5,
+        "representation": "Exact native1.6pilot retained; engaged screw core1.5 represents explicit thread interface, free shaft remains2.0."
+      },
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "maximum_tool_shaft_OD_mm": 2.6,
+        "approach_segment_mm": [
+          [
+            166,
+            180,
+            32
+          ],
+          [
+            166,
+            162,
+            32
+          ]
+        ],
+        "required_sequence": "Frame removed and unoccupied; install keys before bars. Horizontal1.5AFdriver. No cartridge or roof present."
+      },
+      "reaction": "Bar closes G10 T-key end faces; screw clamp reacted by machinedAlbeam. No G10 microthread/nut.",
+      "nominal_thread_beyond_beam_mm": 0.5,
+      "notes": "HeadOD<=3.8, topZ33.9 below card-shell bottom34.4. Fourpositions perbar limit unsupportedspan; source localwide cap startsX268 beyond finalboltX264."
+    },
+    {
+      "id": "FRAME_KEY_REAR_3",
+      "axis": "Y",
+      "axis_direction": [
+        0,
+        -1,
+        0
+      ],
+      "under_head_position_mm": [
+        264,
+        160,
+        32
+      ],
+      "tip_position_mm": [
+        264,
+        154,
+        32
+      ],
+      "screw": {
+        "component_ref": "M2_CAP_6",
+        "part_name": "FASTENER__FRAME_KEY_REAR_3_SCREW",
+        "head_top_axis_mm": 162
+      },
+      "washers": [],
+      "stack": [
+        {
+          "owner": "FRAME_KEY_RETAINER_REAR",
+          "axis_range_mm": [
+            158.5,
+            160
+          ]
+        },
+        {
+          "owner": "FRAME_METAL_R2_tapped_beam",
+          "axis_range_mm": [
+            154.5,
+            158.5
+          ]
+        }
+      ],
+      "assembly_stage": 45,
+      "tapped_engagement": {
+        "owner": "FRAME_METAL_R2",
+        "thread": "M2x0.4",
+        "axis_range_mm": [
+          154.5,
+          158.5
+        ],
+        "nominal_engagement_mm": 4,
+        "minimum_engagement_after_length_acceptance_mm": 4,
+        "tap_drill_mm": 1.6,
+        "cad_screw_core_diameter_mm": 1.5,
+        "representation": "Exact native1.6pilot retained; engaged screw core1.5 represents explicit thread interface, free shaft remains2.0."
+      },
+      "tool_access": {
+        "screw_key_AF_mm": 1.5,
+        "maximum_tool_shaft_OD_mm": 2.6,
+        "approach_segment_mm": [
+          [
+            264,
+            180,
+            32
+          ],
+          [
+            264,
+            162,
+            32
+          ]
+        ],
+        "required_sequence": "Frame removed and unoccupied; install keys before bars. Horizontal1.5AFdriver. No cartridge or roof present."
+      },
+      "reaction": "Bar closes G10 T-key end faces; screw clamp reacted by machinedAlbeam. No G10 microthread/nut.",
+      "nominal_thread_beyond_beam_mm": 0.5,
+      "notes": "HeadOD<=3.8, topZ33.9 below card-shell bottom34.4. Fourpositions perbar limit unsupportedspan; source localwide cap startsX268 beyond finalboltX264."
+    }
+  ],
+  "chassis_holes": [],
+  "context_cuts": [],
+  "replaced_context_parts": [],
+  "bore_owner": "design/frame_finish.json final-stock fusion holes",
+  "cad_conventions": {
+    "threaded_joints": "No helix. Nut clear bore equals nominal thread major. Free screw shaft diameter equals nominal major, <=3mm. Only the explicit tapped engagement uses the declared 2.4mm core inside a 2.5mm pilot; these exact13 pairs still require full M3 thread machining and fit acceptance. Do not suppress arbitrary fastener intersections.",
+    "button_heads": "Roundedbuttonhead representedbycircumscribedmaxOD/maxheightcylinderwithrealhexsocket: conservativematerialenvelope, notfactorycurvature.",
+    "nuts": "ConservativefullregularhexmaxAF/maxheightwithnominalmajorcircularbore, actualnutcornerchamfersnotrequiredforclearance.",
+    "regions": "Partboundingboxesprovidedforbroadphaseonly; actualnativeBRepownsintersection.",
+    "tolerance": "ScrewnominalL+/-0.2 andwasherthickness+/-0.05 are ownincominglimits. Ifsupplierstandardtolislarger, inspect/sortlot orbuytothisdrawing; notautomaticacceptance."
+  },
+  "references": {
+    "ISO10642": "https://eshop.boellhoff.de/out/media/pdf/ISO_10642_Stahl_10.9___en.pdf",
+    "M2cap": "https://www.accu.co.uk/api/product-datasheet?id=2775",
+    "M3cap16": "https://eshop.wuerth.de/Socket-Head-Cap-Screw-With-hexagon-socket-SCR-CYL-ISO4762-A4-70-HS25-M3X16/00973%20%2016.sku/en/US/EUR/",
+    "M3button": "https://3fparts.com/productTechnical/generate/pdf/2047",
+    "M3button22": "https://www.fusionfixings.co.uk/products/m3-x-22mm-socket-button-head-screw-a2-stainless-iso-7380",
+    "nut": "https://eshop.boellhoff.de/out/media/pdf/DIN_934_Edelstahl_A2___en.pdf",
+    "M3washer": "https://kitronik.co.uk/products/2340-m3-plain-washer-pack-of-100",
+    "M2washer": "https://eshop.wuerth.de/v/scheibe-m2",
+    "production_reference": "https://github.com/prusa3d/Original-Prusa-i3/tree/MK3S/Printed-Parts/STL"
+  },
+  "fabrication_release": "Machine/gauge/tap assembly process required; not prototype torquequalification.",
+  "scope_totals": {
+    "screws": 8,
+    "nuts": 0,
+    "washers": 0,
+    "unique_native_parts": 8
+  }
+}

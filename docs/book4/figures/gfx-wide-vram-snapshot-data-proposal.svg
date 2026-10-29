@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1010" role="img" aria-labelledby="title description">
+<title id="title">Proposed 64-bit video memory with a 32-bit snapshot bank</title>
+<desc id="description">The GFX chip has separate address generators for two display circuits and a GPU and readback path. All four exchange requests and data with one memory service. A proposed 64-bit main video bank has four 256K by 16 SRAM devices. A 32-bit snapshot bank retains two 512K by 16 devices. The two banks share the lower 32 data lines and are selected in separate service turns; the main video bank uses the upper 32 data lines too. Address lines A0 through A17 are shared, while A18 is used by the snapshot bank. This proposal is not the current PCB or a performance guarantee.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,Helvetica,sans-serif;fill:#183044;font-size:21px}.title{font-size:32px;font-weight:bold}.head{font-size:24px;font-weight:bold}.small{font-size:19px}.tiny{font-size:17px}.chip{fill:#f3f8fb;stroke:#52778d;stroke-width:2.5}.unit{fill:#e2eef5;stroke:#294b68;stroke-width:2.5}.memory{fill:#f9f4e7;stroke:#a08042;stroke-width:2.5}.wire{fill:none;stroke:#294b68;stroke-width:4;marker-end:url(#arrow)}.bus{fill:none;stroke:#294b68;stroke-width:5}
+ </style>
+</defs>
+<rect width="1600" height="1010" fill="white"/>
+<text x="50" y="52" class="title">Wide video memory and snapshot storage</text>
+<text x="50" y="88" class="small">Functional proposal · not the existing PCB, an implemented controller or a timing guarantee</text>
+
+<rect x="50" y="130" width="820" height="710" rx="12" class="chip"/>
+<text x="80" y="174" class="head">U2 · GFX</text>
+<rect x="85" y="208" width="325" height="104" rx="8" class="unit"/>
+<text x="247" y="248" text-anchor="middle" class="head">Display circuit 1</text>
+<text x="247" y="282" text-anchor="middle" class="small">Own address and display state</text>
+<rect x="460" y="208" width="325" height="104" rx="8" class="unit"/>
+<text x="622" y="248" text-anchor="middle" class="head">Display circuit 2</text>
+<text x="622" y="282" text-anchor="middle" class="small">Own address and display state</text>
+<rect x="85" y="400" width="325" height="104" rx="8" class="unit"/>
+<text x="247" y="440" text-anchor="middle" class="head">GPU renderer</text>
+<text x="247" y="474" text-anchor="middle" class="small">Drawing · copies · textures</text>
+<rect x="460" y="400" width="325" height="104" rx="8" class="unit"/>
+<text x="622" y="440" text-anchor="middle" class="head">Readback</text>
+<text x="622" y="474" text-anchor="middle" class="small">Capture · ordered result stream</text>
+<rect x="215" y="620" width="440" height="150" rx="8" class="unit"/>
+<text x="435" y="660" text-anchor="middle" class="head">One memory service</text>
+<text x="435" y="694" text-anchor="middle" class="small">Schedule requests and select one bank</text>
+<text x="435" y="728" text-anchor="middle" class="small">Address, byte lanes and width conversion</text>
+<path d="M247 312V350H70V680H215" class="wire" marker-start="url(#arrow)"/>
+<path d="M622 312V350H820V680H655" class="wire" marker-start="url(#arrow)"/>
+<path d="M247 504V620" class="wire" marker-start="url(#arrow)"/>
+<path d="M622 504V620" class="wire" marker-start="url(#arrow)"/>
+
+<rect x="1050" y="210" width="500" height="210" rx="10" class="memory"/>
+<text x="1300" y="252" text-anchor="middle" class="head">Proposed video SRAM</text>
+<text x="1300" y="289" text-anchor="middle" class="small">4 × 256K × 16 · 2 MiB total</text>
+<text x="1300" y="324" text-anchor="middle" class="small">64-bit word · 18-bit word address</text>
+<text x="1300" y="359" text-anchor="middle" class="small">Drawing and both display sources</text>
+<text x="1300" y="394" text-anchor="middle" class="tiny">New bank: pinout and placement not established</text>
+
+<rect x="1050" y="570" width="500" height="210" rx="10" class="memory"/>
+<text x="1300" y="612" text-anchor="middle" class="head">Proposed snapshot SRAM</text>
+<text x="1300" y="649" text-anchor="middle" class="small">U152 / U153 · 2 × 512K × 16 · 2 MiB</text>
+<text x="1300" y="684" text-anchor="middle" class="small">32-bit word · 19-bit word address</text>
+<text x="1300" y="719" text-anchor="middle" class="small">Cartridge 1 MiB · supervisor 1 MiB</text>
+<text x="1300" y="754" text-anchor="middle" class="tiny">Separate result contexts, not copies of VRAM</text>
+
+<!-- The common trunk indicates shared data and address conductors. -->
+<path d="M655 695H930" class="bus" marker-start="url(#arrow)"/>
+<path d="M930 695V314H1050" class="bus" marker-end="url(#arrow)"/>
+<path d="M930 695H1050" class="bus" marker-end="url(#arrow)"/>
+<circle cx="930" cy="695" r="7" fill="#294b68"/>
+<text x="808" y="668" text-anchor="middle" class="small">Shared D0–D31</text>
+<text x="957" y="520" class="small">VRAM adds D32–D63</text>
+<text x="957" y="550" class="small">Separate bank selects</text>
+<text x="50" y="900" class="small">A0–A17 are shared; A18 addresses the 32-bit snapshot bank. A full 64-bit value may require two snapshot writes.</text>
+<text x="50" y="935" class="small">The two display circuits have independent addresses, but do not have separate simultaneous memory ports.</text>
+<text x="50" y="970" class="small">SRAM scheduling, overlap visibility, physical pinout and all GPU/display timing remain to be established.</text>
+</svg>

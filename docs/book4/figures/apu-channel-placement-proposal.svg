@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 705" role="img" aria-labelledby="title desc">
+<title id="title">Proposed APU mono and stereo voice placement</title>
+<desc id="desc">A mono source supplies the same source sample to two channel paths; a stereo source supplies separate left and right samples. Each path retains its own filter state and has a separate level. A common gain and fade applies to the voice. Left and right voice contributions are summed separately into the stereo output.</desc>
+<defs><marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#294b68"/></marker><style>text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:28px;font-weight:bold}.head{font-size:22px;font-weight:bold}.small{font-size:17px}.src{fill:#e4eff6;stroke:#294b68;stroke-width:2}.unit{fill:#f5f7f9;stroke:#294b68;stroke-width:2}.proposed{fill:#fff9e7;stroke:#9b6d21;stroke-width:2}.wire{fill:none;stroke:#294b68;stroke-width:2.6;marker-end:url(#arrow)}.control{fill:none;stroke:#9b6d21;stroke-width:2.2;stroke-dasharray:7 5;marker-end:url(#arrow)}</style></defs>
+<rect width="1400" height="705" fill="white"/>
+<text x="48" y="50" class="title">APU voice placement — functional proposal</text>
+<text x="48" y="82" class="small">A voice occupies one slot. Mono is the proposed default; stereo sources remain available.</text>
+<rect x="48" y="154" width="272" height="174" rx="9" class="src"/>
+<text x="184" y="192" class="head" text-anchor="middle">Source in one slot</text>
+<text x="184" y="229" text-anchor="middle">Mono: same sample L / R</text>
+<text x="184" y="261" text-anchor="middle">Stereo: separate L and R</text>
+<text x="184" y="298" class="small" text-anchor="middle">Playback position and loop</text>
+<rect x="388" y="130" width="212" height="86" rx="8" class="unit"/>
+<text x="494" y="165" class="head" text-anchor="middle">Left filter</text><text x="494" y="192" class="small" text-anchor="middle">left history</text>
+<rect x="388" y="271" width="212" height="86" rx="8" class="unit"/>
+<text x="494" y="306" class="head" text-anchor="middle">Right filter</text><text x="494" y="333" class="small" text-anchor="middle">right history</text>
+<path d="M320 205H350V173H388" class="wire"/><path d="M320 278H350V314H388" class="wire"/>
+<rect x="682" y="130" width="225" height="86" rx="8" class="proposed"/>
+<text x="794" y="165" class="head" text-anchor="middle">Left level</text><text x="794" y="192" class="small" text-anchor="middle">voice contribution</text>
+<rect x="682" y="271" width="225" height="86" rx="8" class="proposed"/>
+<text x="794" y="306" class="head" text-anchor="middle">Right level</text><text x="794" y="333" class="small" text-anchor="middle">voice contribution</text>
+<path d="M600 173H682" class="wire"/><path d="M600 314H682" class="wire"/>
+<rect x="682" y="431" width="225" height="84" rx="8" class="unit"/>
+<text x="794" y="466" class="head" text-anchor="middle">Common gain</text><text x="794" y="494" class="small" text-anchor="middle">volume and fade</text>
+<path d="M710 431V400H645V235H710V216" class="control"/><path d="M850 431V400H800V357" class="control"/>
+<rect x="1017" y="130" width="262" height="86" rx="8" class="unit"/>
+<text x="1148" y="166" class="head" text-anchor="middle">Left output mix</text><text x="1148" y="193" class="small" text-anchor="middle">sum of active slots</text>
+<rect x="1017" y="271" width="262" height="86" rx="8" class="unit"/>
+<text x="1148" y="307" class="head" text-anchor="middle">Right output mix</text><text x="1148" y="334" class="small" text-anchor="middle">sum of active slots</text>
+<path d="M907 173H1017" class="wire"/><path d="M907 314H1017" class="wire"/>
+<text x="48" y="590" class="small">Example: with a mono source, left level 1 and right level 0 place this voice on the left.</text>
+<text x="48" y="621" class="small">A gain or fade change affects both sides; it does not replace the selected left/right levels.</text>
+<text x="48" y="652" class="small">The level interface and representation are proposals; existing public registers are unchanged.</text>
+</svg>

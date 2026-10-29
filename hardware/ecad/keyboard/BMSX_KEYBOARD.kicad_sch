@@ -1,0 +1,452 @@
+(kicad_sch
+	(version 20250114)
+	(generator eeschema)
+	(uuid b80d85ca-172e-54cb-9905-add2c6c82cc5)
+	(paper "A3")
+	(lib_symbols
+		(symbol "Panel:Terminals_J1"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 13.97 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "MD-60S"
+				(at 0 -13.97 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J1_1_1"
+				(rectangle
+					(start -5.08 10.16)
+					(end 5.08 -10.16)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 7.62 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 5.08 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 2.54 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 0.0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -2.54 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -5.079999999999999 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -7.62 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "SH"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J2"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 10.16 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "B4B-PH-K-S"
+				(at 0 -10.16 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J2_1_1"
+				(rectangle
+					(start -5.08 6.35)
+					(end 5.08 -6.35)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 3.81 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -3.81 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85))))))))
+	(title_block
+		(title "BMSX_KEYBOARD — passive panel/harness wiring")
+		(date "2026-10-23")
+		(rev "Physical interface proposal")
+		(company "BMSX"))
+	(wire
+		(pts
+			(xy 68.58 81.28)
+			(xy 60.96 81.28))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 56c7a2dc-5b09-5371-9d8e-34d0ddef2b10))
+	(global_label "PS2_KBD_DATA_5V"
+		(shape bidirectional)
+		(at 60.96 81.28 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 362e1391-2d17-56d2-a38b-20da8ab76498))
+	(no_connect
+		(at 68.58 83.82)
+		(uuid 0a883307-5e0b-5674-93f2-eab60a57e6f5))
+	(wire
+		(pts
+			(xy 68.58 86.36)
+			(xy 60.96 86.36))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 376a4e98-c955-5efe-ac51-e56a1776ce81))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 86.36 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 53cd3a85-a97d-517c-9142-6f6956c030ef))
+	(wire
+		(pts
+			(xy 68.58 88.9)
+			(xy 60.96 88.9))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f875144a-3873-52cd-ac28-b3b3c333cb54))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 60.96 88.9 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ffb3c747-1284-594b-8528-df45df37b02d))
+	(wire
+		(pts
+			(xy 68.58 91.44)
+			(xy 60.96 91.44))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid bcf08bec-1089-59f2-854a-d772160b1e20))
+	(global_label "PS2_KBD_CLK_5V"
+		(shape bidirectional)
+		(at 60.96 91.44 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 883645a2-7e9d-5dfd-b36b-a26c5157b27d))
+	(no_connect
+		(at 68.58 93.98)
+		(uuid 8129090c-d824-5158-9f75-db3bfb7ddcab))
+	(wire
+		(pts
+			(xy 68.58 96.52)
+			(xy 60.96 96.52))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid be4d40ec-d39e-50ca-b301-243bdd6077a2))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 96.52 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b8af2ff4-8850-571b-a0ad-dbf3b19435b4))
+	(symbol
+		(lib_id "Panel:Terminals_J1")
+		(at 76.2 88.9 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid bc4443fd-6aeb-56c7-80c8-8b1c1380c94d)
+		(property "Reference" "J1"
+			(at 76.2 74.93 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "MD-60S"
+			(at 76.2 102.87 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:SameSky_MD-60S_Post2022"
+			(at 76.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_KEYBOARD"
+				(path "/b80d85ca-172e-54cb-9905-add2c6c82cc5"
+					(reference "J1")
+					(unit 1))))
+		(property "Manufacturer" "Same Sky"
+			(at 76.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(property "MPN" "MD-60S"
+			(at 76.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(property "Datasheet" "https://www.sameskydevices.com/product/resource/md-s.pdf"
+			(at 76.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(pin "1"
+			(uuid 63bef3ad-b483-59d1-9928-6f846c7175ca))
+		(pin "2"
+			(uuid a8da7b6c-2428-5e93-b845-d367dc596712))
+		(pin "3"
+			(uuid fcd52ee9-57b9-5ea2-ac1a-914a9bbec01a))
+		(pin "4"
+			(uuid 3258a71b-3633-5ddb-9718-0f881234f72f))
+		(pin "5"
+			(uuid 5f1ab074-489f-5b6e-970b-9fe6656107af))
+		(pin "6"
+			(uuid 256b7b08-ff72-5692-80e6-aa247fc87afc))
+		(pin "SH"
+			(uuid d6195ef3-f873-5fd3-8f55-c378b52b0e68)))
+	(wire
+		(pts
+			(xy 195.58 85.09)
+			(xy 187.96 85.09))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0864fdb5-d27f-5db5-b3b8-a5380017b003))
+	(global_label "PS2_KBD_DATA_5V"
+		(shape bidirectional)
+		(at 187.96 85.09 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid df668126-ed6b-536d-b78d-bb6d852c06f1))
+	(wire
+		(pts
+			(xy 195.58 87.63)
+			(xy 187.96 87.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4f8f1db5-3008-5186-a7c5-0714a148f6b3))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 87.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f8ae3a3b-293c-5bb8-8c99-76abd1c2d731))
+	(wire
+		(pts
+			(xy 195.58 90.17)
+			(xy 187.96 90.17))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 24598f0a-2a2b-5720-9ad5-c5df7fff9758))
+	(global_label "V5"
+		(shape bidirectional)
+		(at 187.96 90.17 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 8dc1127e-80bf-51ea-9f8a-e6816c4fc3eb))
+	(wire
+		(pts
+			(xy 195.58 92.71)
+			(xy 187.96 92.71))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0f80055d-92b4-54f6-9d67-d43b5016cfe9))
+	(global_label "PS2_KBD_CLK_5V"
+		(shape bidirectional)
+		(at 187.96 92.71 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 287365f0-b810-57f4-8b50-ee3ec8a0a407))
+	(symbol
+		(lib_id "Panel:Terminals_J2")
+		(at 203.2 88.9 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 012c4fc1-9f49-5c25-987c-2cecec2d8f2a)
+		(property "Reference" "J2"
+			(at 203.2 78.74000000000001 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "B4B-PH-K-S"
+			(at 203.2 99.06 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:JST_PH_B4B-PH-K_1x04_P2.00mm_Vertical"
+			(at 203.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_KEYBOARD"
+				(path "/b80d85ca-172e-54cb-9905-add2c6c82cc5"
+					(reference "J2")
+					(unit 1))))
+		(property "Manufacturer" "JST"
+			(at 203.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(property "MPN" "B4B-PH-K-S"
+			(at 203.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(property "Datasheet" "https://www.jst-mfg.com/product/pdf/eng/ePH.pdf"
+			(at 203.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(pin "1"
+			(uuid c0cd1e83-c39a-5a7d-ac00-d9d4ceb1af49))
+		(pin "2"
+			(uuid e3985302-e889-5bda-a490-fa5330c06a08))
+		(pin "3"
+			(uuid c186cced-3c45-5edd-a644-13ab5e44fe3f))
+		(pin "4"
+			(uuid af8fcfab-c5cc-5a07-84e7-8f2be223da6c)))
+	(text "Passive wiring only. Mainboard owns buffers, level translation and supply switching.\nOwn gamepad contacts and AV cable terminations remain physical design proposals. No routing or fabrication release."
+		(at 200 12.7 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid d6ad3985-21c8-5bdd-89a0-8b82f8dc7456)))

@@ -1,0 +1,185 @@
+(footprint "Y1"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Seiko Epson SG-8002CA, Crystal Oscillator, 7.0x5.0mm package, SMD, generated with kicad-footprint-generator make_crystal.py, https://support.epson.biz/td/api/doc_check.php?mode=dl&lang=en&Parts=SG-8002DC")
+	(property "Reference" "Y1"
+		(at 0 -4.05 0)
+		(layer "F.SilkS")
+		(uuid "9ece1f0f-e7ba-4bc3-9f81-d7979e784b10")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Value" "SG-8018CA 33.8688M-TJHPA0"
+		(at 0 4.05 0)
+		(layer "F.Fab")
+		(uuid "e6797165-6ca1-4342-8de6-42e817d72823")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "4845f251-2af7-41d3-904d-2cc523fd15d4")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "49caa804-4a83-40c6-8a42-208a16558162")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15))))
+	(attr smd)
+	(fp_line
+		(start -3.76 -2.76)
+		(end -3.7 -2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "3040b17c-67a9-4bf7-a5da-d978ed65b428"))
+	(fp_line
+		(start -3.76 2.76)
+		(end -3.76 -2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "09359af5-9986-4874-977f-15fa606a36fd"))
+	(fp_line
+		(start -3.7 2.76)
+		(end -3.76 2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "0b3a55e3-6a0c-43a2-a9f6-b290748f2224"))
+	(fp_line
+		(start -3.7 3.36)
+		(end -3.7 2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "cf017bbc-5707-47ea-9a4b-fdaab70b5588"))
+	(fp_line
+		(start -1.38 -2.76)
+		(end 1.38 -2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "d8e900a8-057d-4d88-9805-e34e41975b6a"))
+	(fp_line
+		(start -1.38 2.76)
+		(end -1.38 3.36)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "4a0c3eb1-9fce-45bf-ba5b-9a5cd13623d4"))
+	(fp_line
+		(start 1.38 2.76)
+		(end -1.38 2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "827ece49-362a-4285-b481-b0970b31ccd7"))
+	(fp_line
+		(start 3.7 -2.76)
+		(end 3.76 -2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "22450300-db45-49e6-9f3f-87d925bb4dec"))
+	(fp_line
+		(start 3.76 -2.76)
+		(end 3.76 2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "8f29b415-d748-4f94-85a6-a9b696faa9cd"))
+	(fp_line
+		(start 3.76 2.76)
+		(end 3.7 2.76)
+		(stroke
+			(width 0.12)
+			(type solid))
+		(layer "F.SilkS")
+		(uuid "e13f78e7-950e-409a-8162-3948870cf180"))
+	(fp_circle
+		(center 0 0)
+		(end 1 0)
+		(stroke
+			(width 0.1)
+			(type solid))
+		(fill yes)
+		(layer "F.Adhes")
+		(uuid "96812726-2df0-431e-9b32-5698c219dfe0"))
+	(fp_rect
+		(start -4 -3.35)
+		(end 4 3.35)
+		(stroke
+			(width 0.05)
+			(type solid))
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "b7e06de4-497c-4002-a073-ae6433c3a695"))
+	(fp_poly
+		(pts
+			(xy 3.5 -2.5)
+			(xy 3.5 2.5)
+			(xy -2.5 2.5)
+			(xy -3.5 1.5)
+			(xy -3.5 -2.5))
+		(stroke
+			(width 0.1)
+			(type solid))
+		(fill no)
+		(layer "F.Fab")
+		(uuid "39208bb4-683e-4104-bab9-be403e4b9f51"))
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "04e5a841-e4cf-4248-a964-d5d2c80976ff")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15))))
+	(pad "1" smd roundrect
+		(at -2.54 2.1)
+		(size 1.8 2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.138889)
+		(uuid "0d49e390-d5cb-4243-acda-0fea394ea48c"))
+	(pad "2" smd roundrect
+		(at 2.54 2.1)
+		(size 1.8 2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.138889)
+		(uuid "420278c2-0e58-4350-992b-1c9d1928be3a"))
+	(pad "3" smd roundrect
+		(at 2.54 -2.1)
+		(size 1.8 2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.138889)
+		(uuid "12cc90a7-6de0-483b-94f4-ecf8ff6b6411"))
+	(pad "4" smd roundrect
+		(at -2.54 -2.1)
+		(size 1.8 2)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.138889)
+		(uuid "3ce24d3a-ef30-42b5-917d-c704b15c6c1b"))
+	(embedded_fonts no))

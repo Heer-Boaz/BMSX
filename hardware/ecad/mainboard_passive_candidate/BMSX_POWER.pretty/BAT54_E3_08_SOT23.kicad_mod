@@ -1,0 +1,107 @@
+(footprint "BAT54_E3_08_SOT23"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Explicit selected manufacturer package; see power_components.json primary-source dimensions/qualification.")
+	(tags "SOT TO_SOT_SMD")
+	(property "Reference" "D71"
+		(at 0 -2.4 0)
+		(layer "F.SilkS")
+		(uuid "de421f85-78db-4c1d-82dd-e8f257f607ce")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "BAT54"
+		(at 0 2.4 0)
+		(layer "F.Fab")
+		(uuid "1f46e345-9f54-4b4c-b879-c7d515e36859")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "d75a4d01-1619-4bf8-a8f9-dc78b738d8ce")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "f7529771-32a0-4b9c-9208-983440558152")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_rect
+		(start -1.7 -1.75)
+		(end 1.7 1.75)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "655ba70e-f23e-40b9-b2b7-669f9c298314")
+	)
+	(fp_rect
+		(start -0.65 -1.45)
+		(end 0.65 1.45)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "c599c52a-6f3c-404e-9c54-a9f02149aba5")
+	)
+	(fp_circle
+		(center -0.35 -1.15)
+		(end -0.25 -1.15)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "cdb94e91-0b5e-4340-8166-d0f930533e64")
+	)
+	(pad "1" smd rect
+		(at -1 -0.95)
+		(size 0.9 0.7)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "cd08887c-14ec-46fe-afc9-0c76b7ed1aa7")
+	)
+	(pad "2" smd rect
+		(at -1 0.95)
+		(size 0.9 0.7)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "43e0dd78-cdbe-4a80-8c5f-e6df3f4b5e97")
+	)
+	(pad "3" smd rect
+		(at 1 0)
+		(size 0.9 0.7)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "48bbb843-1301-4572-b1c3-0ac2a23c119f")
+	)
+	(embedded_fonts no)
+)

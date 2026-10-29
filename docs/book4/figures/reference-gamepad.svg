@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 950" role="img" aria-labelledby="title desc">
+<title id="title">Proposed wired BMSX reference gamepad</title>
+<desc id="desc">A concept drawing shows a wired gamepad with a directional pad, four face buttons, two pressable analogue sticks, Select, Start, Home and a clickable touchpad switch. A second view shows left and right bumpers and analogue triggers. The controller connects to a BMSX pad port; this is not a qualified mechanical design.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#31566f"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.title{font-size:30px;font-weight:bold}.head{font-size:23px;font-weight:bold}.small{font-size:18px}.body{fill:#e0ded6;stroke:#465861;stroke-width:4}.dark{fill:#313d45;stroke:#172b38;stroke-width:3}.control{fill:#657b88;stroke:#253e4e;stroke-width:3}.panel{fill:#f7f9fa;stroke:#a2b3bc;stroke-width:2}.line{fill:none;stroke:#31566f;stroke-width:2.5;marker-end:url(#arrow)}.light{fill:#f6f8f8;font-weight:bold;text-anchor:middle}.key{fill:#31566f;font-weight:bold;text-anchor:middle}</style>
+</defs>
+<rect width="1500" height="950" fill="white"/>
+<text x="48" y="52" class="title">Wired BMSX reference gamepad</text>
+<text x="48" y="84" class="small">Concept layout for the BMSX pad interface; not a qualified enclosure or connector drawing.</text>
+
+<rect x="40" y="110" width="1420" height="520" rx="12" class="panel"/>
+<text x="65" y="148" class="head">Front controls</text>
+<path d="M750 205V150H900" class="line"/>
+<text x="915" y="157" class="small">Cable to BMSX pad port</text>
+<path d="M420 235 Q500 195 610 205 H890 Q1000 195 1080 235 Q1130 270 1150 350 L1200 520 Q1206 568 1163 582 Q1125 593 1095 552 L1005 515 Q975 490 930 490 H570 Q525 490 495 515 L405 552 Q375 593 337 582 Q294 568 300 520 L350 350 Q370 270 420 235Z" class="body"/>
+
+<path d="M435 280H475V320H515V360H475V400H435V360H395V320H435Z" class="dark"/>
+<text x="455" y="435" class="small" text-anchor="middle">D-pad</text>
+
+<circle cx="565" cy="425" r="57" class="dark"/><circle cx="565" cy="425" r="34" class="control"/>
+<circle cx="935" cy="425" r="57" class="dark"/><circle cx="935" cy="425" r="34" class="control"/>
+<text x="565" y="535" class="small" text-anchor="middle">L stick · press</text>
+<text x="935" y="535" class="small" text-anchor="middle">R stick · press</text>
+
+<circle cx="1045" cy="322" r="28" class="dark"/><text x="1045" y="330" class="light">Y</text>
+<circle cx="1045" cy="414" r="28" class="dark"/><text x="1045" y="422" class="light">A</text>
+<circle cx="1001" cy="368" r="28" class="dark"/><text x="1001" y="376" class="light">X</text>
+<circle cx="1089" cy="368" r="28" class="dark"/><text x="1089" y="376" class="light">B</text>
+
+<rect x="650" y="235" width="200" height="78" rx="12" class="control"/>
+<text x="750" y="270" class="light">TOUCHPAD</text><text x="750" y="295" class="light small">click switch</text>
+<rect x="635" y="340" width="70" height="25" rx="12" class="dark"/>
+<rect x="795" y="340" width="70" height="25" rx="12" class="dark"/>
+<text x="670" y="392" class="small" text-anchor="middle">Select</text>
+<text x="830" y="392" class="small" text-anchor="middle">Start</text>
+<circle cx="750" cy="370" r="23" class="dark"/><text x="750" y="377" class="light" style="font-size:14px">HOME</text>
+
+<rect x="40" y="660" width="1420" height="190" rx="12" class="panel"/>
+<text x="65" y="700" class="head">Shoulder controls</text>
+<rect x="330" y="717" width="270" height="48" rx="15" class="dark"/>
+<rect x="900" y="717" width="270" height="48" rx="15" class="dark"/>
+<text x="465" y="748" class="light">L bumper</text><text x="1035" y="748" class="light">R bumper</text>
+<rect x="360" y="785" width="210" height="38" rx="12" class="control"/>
+<rect x="930" y="785" width="210" height="38" rx="12" class="control"/>
+<text x="465" y="811" class="light small">L analogue trigger</text><text x="1035" y="811" class="light small">R analogue trigger</text>
+<text x="48" y="892" class="small">Stick and trigger positions are separate from their button levels. The touchpad switch alone is not a pointer.</text>
+<text x="48" y="920" class="small">Optional vibration is advertised by the accessory; Home and touchpad remain ordinary game-visible buttons.</text>
+</svg>

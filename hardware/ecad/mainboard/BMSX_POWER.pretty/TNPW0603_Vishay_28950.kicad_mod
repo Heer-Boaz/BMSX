@@ -1,0 +1,101 @@
+(footprint "TNPW0603_Vishay_28950"
+	(version 20241229)
+	(generator "pcbnew")
+	(generator_version "9.0")
+	(layer "F.Cu")
+	(descr "Vishay TNPW0603 e3; IPC-7351 reflow land pattern, Vishay document 28950 page 1; package bounds document 28758 revision 10-Apr-2026 page 15; no qualified 3D model")
+	(tags "Vishay TNPW0603 thin film resistor IPC-7351 reflow")
+	(property "Reference" "REF**"
+		(at 0 -1.43 0)
+		(layer "F.SilkS")
+		(uuid "0a239a55-2d4e-4419-a8e2-cf418d3cdae1")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "TNPW0603_Vishay_28950"
+		(at 0 1.43 0)
+		(layer "F.Fab")
+		(uuid "2c1c5760-262a-4720-a540-0b5bc14f9bf3")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "5975a601-ccab-4807-8a58-0eb19aed4cf7")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "af888a3e-6471-45da-b63e-5319a66c4bcc")
+		(effects
+			(font
+				(size 1.27 1.27)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(fp_rect
+		(start -1.5 -0.75)
+		(end 1.5 0.75)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "81eaafa6-7cb7-4b6c-b05e-f04c369050d4")
+	)
+	(fp_rect
+		(start -0.775 -0.425)
+		(end 0.775 0.425)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "a0947011-b2dc-4eb8-bd24-5f31472c0bb5")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "2e2f5bf9-e2e5-4958-814c-c65f3885652d")
+		(effects
+			(font
+				(size 0.4 0.4)
+				(thickness 0.06)
+			)
+		)
+	)
+	(pad "1" smd rect
+		(at -0.8 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "7330f18e-f621-49a4-9f41-f21e107f590f")
+	)
+	(pad "2" smd rect
+		(at 0.8 0)
+		(size 0.9 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(uuid "a6bf1c87-8660-4d91-a812-ef1800f9d739")
+	)
+	(embedded_fonts no)
+)

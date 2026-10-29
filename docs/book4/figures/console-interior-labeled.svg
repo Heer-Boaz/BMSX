@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1800 1200" role="img" aria-labelledby="title desc">
+<title id="title">BMSX internal arrangement</title>
+<desc id="desc">Open console view identifying the mainboard, illustrative passive cooler, two-slot cartridge frame, front keyboard and pad sockets, and rear DC and RGB audio/video connectors. Upper body and cover are removed.</desc>
+<defs>
+<style>
+text{font-family:Arial,sans-serif;fill:#183044;font-size:24px;font-weight:600}
+.sub{font-size:18px;font-weight:400}
+.label{fill:#fff;fill-opacity:.94;stroke:#627e8c;stroke-width:1.5}
+.leader{fill:none;stroke:#183f5b;stroke-width:3}
+.target{fill:#fff;stroke:#183f5b;stroke-width:3}
+</style>
+</defs>
+<image x="0" y="0" width="1800" height="1200" xlink:href="console-interior-passive-candidate.png"/>
+<rect class="label" x="80" y="320" width="255" height="66" rx="9"/><text x="100" y="361">Mainboard</text>
+<path class="leader" d="M335 353 H510 L657 369"/><circle class="target" cx="657" cy="369" r="6"/>
+<rect class="label" x="65" y="460" width="285" height="80" rx="9"/><text x="85" y="493">Passive cooler</text><text class="sub" x="85" y="519">Illustrative profile</text>
+<path class="leader" d="M350 500 H455 L691 597"/><circle class="target" cx="691" cy="597" r="6"/>
+<rect class="label" x="50" y="758" width="307" height="66" rx="9"/><text x="70" y="799">Front keyboard socket</text>
+<path class="leader" d="M357 790 H405 L466 675"/><circle class="target" cx="466" cy="675" r="6"/>
+<rect class="label" x="575" y="70" width="260" height="66" rx="9"/><text x="595" y="111">Rear DC inlet</text>
+<path class="leader" d="M705 136 V175 L798 237"/><circle class="target" cx="798" cy="237" r="6"/>
+<rect class="label" x="1235" y="140" width="335" height="66" rx="9"/><text x="1255" y="181">Rear SCART (RGB/audio)</text>
+<path class="leader" d="M1305 206 V300 L1200 434"/><circle class="target" cx="1200" cy="434" r="6"/>
+<rect class="label" x="1440" y="492" width="300" height="80" rx="9"/><text x="1460" y="525">Cartridge frame</text><text class="sub" x="1460" y="551">Two slots</text>
+<path class="leader" d="M1440 530 H1370 L1240 632"/><circle class="target" cx="1240" cy="632" r="6"/>
+<rect class="label" x="1125" y="1035" width="282" height="66" rx="9"/><text x="1145" y="1076">Front pad sockets (4)</text>
+<path class="leader" d="M1125 1068 H1075 L969 917"/><circle class="target" cx="969" cy="917" r="6"/>
+</svg>

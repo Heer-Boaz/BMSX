@@ -45,6 +45,18 @@ program-image records and startup.
 
 :::
 
+::: {.content-visible when-profile="book-iv"}
+
+This volume describes the proposed BMSX console construction, its external
+connections, internal organisation and service access. Begin with the system
+organisation and construction, then use the connection and service chapters
+for the relevant interface or assembly.
+
+The reference construction is not an assembled or qualified product. Books
+I–III specify the current programming and cartridge interfaces.
+
+:::
+
 ::: {.content-visible when-profile="html"}
 
 The BMSX Developer Reference describes the console, its programming architecture

@@ -1,0 +1,124 @@
+{
+  "status": "Physical ASIC proposal with implemented local SRAM scheduler and directed pin-level tests; full beam/decoder/CDC/PLL and STA remain outside.",
+  "authority": {
+    "public_reference": "../docs/book1/pcrtc.md#sec-pcrtc-27-beam-timing",
+    "sample_reference": "../docs/book1/pcrtc.md#sec-pcrtc-local-memory-format-reference",
+    "typescript_owner": "../machine/ts/machine/devices/gx/gpu_pcrtc.ts",
+    "cpp_owner": "../machine/cpp/machine/devices/gx/gpu_pcrtc.cpp",
+    "deviation_scope": "Fixed-rate physical sampling and a proposed faster local-memory domain, not a replacement public register specification."
+  },
+  "clocks": {
+    "system_hz": 33868800,
+    "sampler_and_dac_hz": 13500000,
+    "gfx_local_memory_hz": 54000000,
+    "local_multiplier": 4,
+    "implementation": "Y2 is the 13.5-MHz reference. U2 forwards a constant 13.5-MHz VIDEO_PCLK and contains a proposed fixed x4 PLL for the local-memory datapath. No register field changes either physical clock.",
+    "pin_expansion": 0,
+    "remaining_gates": [
+      "ASIC PLL selection, jitter, lock/reset and clock-tree implementation",
+      "Generated-clock STA and source-synchronous DAC setup/hold",
+      "Asynchronous SYS-to-GFX command/configuration CDC",
+      "Update ASIC/SRAM switching-power, rail-current and thermal budgets for the 54-MHz local domain."
+    ]
+  },
+  "sampling": {
+    "raw_register_words": "Preserved verbatim in programmed/display registerfiles; fields feed the rational datapath without clamping.",
+    "halfline_modulus": "N = H * D",
+    "configuration_reduction": "2*LC = Q0*N + R0; 0 <= R0 < N. Configuration producer owns this division.",
+    "sample_recurrence": "S=P+R0; carry=(S>=N); P'=S-carry*N; crossed_half_lines=Q0+carry.",
+    "horizontal_numerator": "Xn=(global_half_line_index&1)*N+P; use the unwrapped physical half-line parity for source coordinates too.",
+    "logical_pixel_index": "K=quotient(Xn,2*D*StepX), when the existing StepX output gate is nonzero.",
+    "sampled_signal_coordinate": "StepX*K; apply the existing window/source equations at this coordinate.",
+    "sample_time": "One output sample every 1/13.5MHz, regardless of how many logical source pixels or half-lines were crossed.",
+    "overspeed_behavior": "Logical pixels not selected at a DAC sampling instant are not fetched/emitted. Physical levels and sync edges are sampled at the fixed clock; sub-sample pulses can alias away. This is explicit decimation/time quantization, not an invalid-mode rejection or a hidden clamp.",
+    "multiple_events": "Physical sampled phase may cross several half-lines or fields; reduce these counts arithmetically for the sampled display-coordinate bookkeeping. The periodic-crossing test demonstrates this arithmetic only; it does not implement pending CSR events, FIELD ordering, the display latch or reset/MMIO semantics. No GHz event loop or queued analog pulses.",
+    "horizontal_phase": "Carry global physical half-line parity across field wraps, including odd625-half-line interlaced fields. Only an explicitly coherent displayed-bank restart may establish a new physical phase origin. See design/analog_video_profile.json; CPU-live beam/event semantics remain unchanged.",
+    "pipeline": "Horizontal/source quotients may be pipelined; carry the same beam/configuration tag through RGB and sync front-end. Eight DAC samples is only the memory-model request-to-output budget. Pin-to-connector alignment additionally includes falling-edge launch, rising-edge capture, the ADV7125 one-clock pipeline, and the separate CSYNC analog path. Match complete path delays rather than blindly adding one CSYNC sample; see design/analog_video_profile.json. Epoch/CDC integration and loaded-connector measurement remain open.",
+    "live_and_displayed_timing": "Keep the existing CPU-visible live beam/event/CSR owner logically in the SYS domain, including its event deadlines, FIELD updates and display-latch boundary. Do not quantize that owner to DAC ticks. The physical sampler consumes coherent displayed state and a correctly timestamped FIELD/configuration epoch. This numerical model exercises one fixed bank only; timestamp transfer, epoch ordering and CDC still require RTL integration tests.",
+    "zero_fields": "Existing run-control/zero timing and StepX=0 gates remain datapath gates, not new fallback modes."
+  },
+  "widths": {
+    "H_max": 137211,
+    "D_max": 28,
+    "N_max": 3841908,
+    "N_bits": 22,
+    "phase_sum_max": 3842161,
+    "phase_sum_bits": 22,
+    "Q0_max": 254,
+    "crossed_half_lines_max": 254,
+    "crossed_half_lines_bits": 8,
+    "total_half_lines_max": 22516,
+    "half_line_index_plus_crossings_max": 22769,
+    "half_line_index_sum_bits": 15,
+    "horizontal_numerator_max": 7683815,
+    "horizontal_numerator_bits": 23,
+    "pixel_denominator_max": 840,
+    "pixel_denominator_bits": 10,
+    "logical_pixel_index_max": 137210,
+    "logical_pixel_index_bits": 18,
+    "note": "The recurrent phase path has one add and one conditional subtract, not an eight-stage feedback divider. Since R0 <= 254, P+R0 <= Nmax-1+254 fits 22 bits. The configuration producer can also reduce both possible crossed-half-line counts Q0 and Q0+1 modulo total-half-lines, leaving one add/conditional subtract for the field-index recurrence. Source divisions are feed-forward pipelined arithmetic. These widths prove finite representation, not timing closure."
+  },
+  "memory": {
+    "sram_refs": [
+      "U30",
+      "U31"
+    ],
+    "sram_mpn": "IS61WV51216BLL-10TLI",
+    "sram_width_bits": 32,
+    "sram_tAA_max_ns": 10,
+    "local_slot_ns": "1000/54",
+    "read_non_sram_budget_ns": "1000/54 - 10 = 8.518518... for ASIC tCO + PCB outward/return delay + setup + jitter/skew",
+    "format_reads_per_sample_max": {
+      "circuit_1": 2,
+      "circuit_2": 1,
+      "total": 3
+    },
+    "format_note": "CT32/CT24 use one aligned external 32-bit word; GPU24 can use two distinct words and is defined on circuit 1 only. Selector 18 on circuit 2 supplies the already-specified zero sample, not a newly added black fallback. See the independent TS/C++ owner probe.",
+    "decoded_fifo_entries_per_circuit": 128,
+    "scheduler_period_slots": 64,
+    "scheduler_scanout_slots": 48,
+    "scheduler_slots": "0..47 scanout-only reads with work-conserving circuit1,circuit1,circuit2 preference. 48 guard. 49..62 renderer reads(1 slot) or writes(2 slots), direction guards consume this same budget; no write starts after61. 63 guard.",
+    "scanout_reads_per_second": 40500000,
+    "render_writes_per_second_at_worst_scanout": 5906250,
+    "maximum_scanout_blackout_slots": 16,
+    "maximum_scanout_blackout_samples": 4,
+    "model_decode_latency_slots": 2,
+    "model_request_to_output_samples": 8,
+    "write_note": "Real async_sram RTL supplies two-slot writes and full direction guards. Generated-clock/pad/PCB STA and SRAM pin timing qualification remain required.",
+    "underrun_contract": "An empty per-circuit decoded FIFO does not clock that circuit's pixel latch or advance its FIFO read pointer. Its raw RGBA latch retains the previous sample while beam/sync continue; later valid data is consumed in FIFO order, potentially shifted. No automatic black substitution, timing slowdown, hidden recovery or public CSR addition. Queue/configuration epoch transitions remain an RTL integration obligation.",
+    "limits": "The mathematical sample model assumes at most three uncached words per physical sample and two decode slots. Actual scheduler RTL tests cover addressed 2+1 word jobs every4 clocks, all64 calendar phases, renderer writes and real SRAM models: maximum raw delivery22clocks, not a full decoded/DAC/CDC proof. Arbitrarily full raw queues can take258/514clocks to deposit circuit1/2 results; capacity is not a per-job8sample deadline.",
+    "raw_word_reservations_per_circuit": 128,
+    "raw_scheduler_storage_bytes_default_tag8": 2544,
+    "raw_scheduler_inflight_bits": 36,
+    "render_reads_per_second_at_worst_scanout": 11812500,
+    "decoded_fifo_scope": "128 decoded entries per circuit are a separate output-pipeline proposal, not the implemented raw-word rings. No decoded storage or beam/CDC implementation is inferred from those rings."
+  },
+  "analog": {
+    "dac_ref": "U35",
+    "dac_mpn": "ADV7125KSTZ50",
+    "dac_clock_chain": "U2.96 VIDEO_PCLK -> U40.2 -> U40.4 -> R515 33R -> U35.24",
+    "launch_capture_target": "Launch RGB/control at the falling 13.5-MHz edge; DAC captures on rising edge. Budget source tCO, U40 and PCB clock/data skew against DAC setup/hold; not yet STA-qualified.",
+    "minimum_50MHz_grade_high_low_ns": 8,
+    "nominal_13_5MHz_half_period_ns": "1000/27 = 37.037037...",
+    "no_TV_claim": "Reset 628 half-lines gives 49.761146Hz, not a claimed PAL-compliant profile. The digital HSINT/VSINT landmarks do not define the full SCART composite-sync/equalization waveform. Standard 625/525-line waveform selection, half-line phase, analog filters/levels and actual monitor qualification remain open."
+  },
+  "references": [
+    {
+      "url": "https://github.com/enjoy-digital/litex/blob/3c44a5f273f9a2411b988ae48f3f9c238e36042a/litex/soc/cores/video.py",
+      "use": "Production separation of timing generator, memory reader/decoded stream, clock-domain crossing, underflow signal and fixed-rate PHY. This proposal does not copy its host validation or zeroing behavior."
+    },
+    {
+      "url": "https://www.analog.com/media/en/technical-documentation/data-sheets/ADV7125.pdf",
+      "use": "RevD Tables3/4 and ordering guide: 50-MHz grade, clock8ns high/low, setup/hold, ST-48; no unbounded variable-clock claim."
+    },
+    {
+      "url": "https://www.issi.com/WW/pdf/61-64WV51216.pdf",
+      "use": "RevF -10BLL SRAM timing: read10ns; generated-clock and PCB remainder is an implementation gate.",
+      "manufacturer_document_mirror": "https://www.mouser.com/datasheet/3/3722/1/61_64WV51216.pdf"
+    },
+    {
+      "url": "https://www.ti.com/lit/ds/symlink/sn74lvc1g125.pdf",
+      "use": "Clock-buffer electrical delay/loading owner; output timing remains unqualified."
+    }
+  ]
+}

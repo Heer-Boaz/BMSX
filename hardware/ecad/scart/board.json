@@ -1,0 +1,31 @@
+{
+  "scope": "Native PCB owns outline, drills, pads, nets and placement. Horizontal local SCART termination; input joints on board underside. Socket load is carried by its flange mounting, not inferred PCB boardlocks.",
+  "thickness_mm": 1.6,
+  "assembly_pose": {
+    "native_xy_is_world_xy": true,
+    "pcb_origin_world_mm": [
+      151.0,
+      172.9,
+      33.0
+    ],
+    "native_top_normal_world": [
+      0,
+      0,
+      1
+    ],
+    "nominal_world_bounds_mm": [
+      151.0,
+      172.9,
+      31.4,
+      207.0,
+      186.8,
+      33.0
+    ]
+  },
+  "supplier_datum_owner": "models/scart/K-SCART-021.json",
+  "socket_reference": "J1",
+  "harness_reference": "J2",
+  "electrical_owner": "Native J1/J2 schematic and board contacts; no separate editable net map",
+  "tail_protrusion_below_board_nominal_mm": 2.4,
+  "fabrication_release": false
+}

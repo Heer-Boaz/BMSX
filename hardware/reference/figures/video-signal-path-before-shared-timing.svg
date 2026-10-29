@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 600" role="img" aria-labelledby="title desc">
+<title id="title">BMSX video source and output paths</title>
+<desc id="desc">Video SRAM supplies the two PCRTC display circuits. GFX composes their pixels and sends RGB and blanking to the video DAC. Composite sync follows a separate buffer and filter to SCART. A fixed 13.5 MHz clock drives the DAC.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#294b68"/></marker>
+ <style>text{font-family:Arial,sans-serif;fill:#183044;font-size:19px}.title{font-size:27px;font-weight:bold}.heading{font-size:21px;font-weight:bold}.small{font-size:17px}.chip{fill:#e1edf4;stroke:#294b68;stroke-width:2}.storage{fill:#f5f7f8;stroke:#294b68;stroke-width:2}.path{fill:none;stroke:#294b68;stroke-width:2.5;marker-end:url(#arrow)}.group{fill:#fbfcfd;stroke:#93a9b8;stroke-width:2}</style>
+</defs>
+<rect width="1320" height="600" fill="white"/>
+<text x="40" y="52" class="title">GFX — video memory, display and output</text>
+<rect x="35" y="182" width="230" height="104" rx="8" class="storage"/>
+<text x="150" y="216" text-anchor="middle" class="heading">Video RAM · 2 MiB</text>
+<text x="150" y="245" text-anchor="middle" class="small">U30 + U31 · 32-bit bus</text>
+<text x="150" y="269" text-anchor="middle" class="small">Shared with renderer</text>
+<rect x="350" y="90" width="530" height="385" rx="12" class="group"/>
+<text x="380" y="130" class="heading">U2 · GFX</text>
+<rect x="400" y="160" width="200" height="88" rx="8" class="chip"/>
+<text x="500" y="194" text-anchor="middle" class="heading">Display circuit 1</text>
+<text x="500" y="224" text-anchor="middle" class="small">Address and pixel format</text>
+<rect x="400" y="294" width="200" height="88" rx="8" class="chip"/>
+<text x="500" y="328" text-anchor="middle" class="heading">Display circuit 2</text>
+<text x="500" y="358" text-anchor="middle" class="small">Address and pixel format</text>
+<path d="M265 205 H330 V204 H400" class="path"/>
+<path d="M265 265 H330 V338 H400" class="path"/>
+<rect x="650" y="211" width="190" height="125" rx="8" class="chip"/>
+<text x="745" y="248" text-anchor="middle" class="heading">Composition</text>
+<text x="745" y="279" text-anchor="middle" class="small">Windows · background</text>
+<text x="745" y="306" text-anchor="middle" class="small">Timing · blank · sync</text>
+<path d="M600 204 H625 V245 H650" class="path"/>
+<path d="M600 338 H625 V302 H650" class="path"/>
+<rect x="970" y="138" width="285" height="95" rx="8" class="chip"/>
+<text x="1112" y="175" text-anchor="middle" class="heading">RGB DAC · U35</text>
+<text x="1112" y="205" text-anchor="middle" class="small">ADV7125 · 13.5 MHz</text>
+<path d="M840 244 H915 V185 H970" class="path"/>
+<text x="906" y="228" text-anchor="middle" class="small">RGB / blank</text>
+<rect x="970" y="303" width="285" height="95" rx="8" class="chip"/>
+<text x="1112" y="339" text-anchor="middle" class="heading">Composite sync</text>
+<text x="1112" y="369" text-anchor="middle" class="small">U42 buffer · U43 filter</text>
+<path d="M840 302 H915 V350 H970" class="path"/>
+<rect x="1010" y="471" width="205" height="69" rx="8" class="storage"/>
+<text x="1112" y="501" text-anchor="middle" class="heading">SCART output</text>
+<text x="1112" y="524" text-anchor="middle" class="small">RGB and composite sync</text>
+<path d="M1255 185 H1280 V505 H1215" class="path"/>
+<path d="M1112 398 V471" class="path"/>
+<text x="40" y="565" class="small">Functional paths; clock crossing, sample timing and output deadlines require qualification.</text>
+</svg>

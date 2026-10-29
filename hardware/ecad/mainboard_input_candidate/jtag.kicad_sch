@@ -1,0 +1,841 @@
+(kicad_sch
+	(version 20250114)
+	(generator eeschema)
+	(uuid 239c578c-a4f3-55b2-933d-ba7b24ec292b)
+	(paper "A2")
+	(lib_symbols
+		(symbol "R9_interfaces:J302"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 10.16 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "BMSX JTAG service 2x5 - 3V3 reference only"
+				(at 0 -10.16 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "J302_1_1"
+				(rectangle
+					(start -25.4 7.62)
+					(end 25.4 -7.62)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -27.94 5.08 0)
+					(length 2.54)
+					(name "V3V3"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 2.54 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 0.0 0)
+					(length 2.54)
+					(name "TCK"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -2.54 0)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -27.94 -5.08 0)
+					(length 2.54)
+					(name "TMS"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 5.08 180)
+					(length 2.54)
+					(name "TDI"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 2.54 180)
+					(length 2.54)
+					(name "TDO_RETURN"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 0.0 180)
+					(length 2.54)
+					(name "TRST_N"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 -2.54 180)
+					(length 2.54)
+					(name "RESET_N"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "9"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 27.94 -5.08 180)
+					(length 2.54)
+					(name "GND"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "10"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "R9_interfaces:R470"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R470_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R471"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R471_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R473"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "47k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R473_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none)))))
+		(symbol "R9_interfaces:R476"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "R"
+				(at 0 5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(property "Value" "10k"
+				(at 0 -5.08 0)
+				(effects
+					(font
+						(size 1 1))))
+			(symbol "R476_1_1"
+				(pin passive line
+					(at -5.08 0 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at 5.08 0 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(rectangle
+					(start -2.54 1.27)
+					(end 2.54 -1.27)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type none))))))
+	(title_block
+		(title "R9 JTAG daisy chain and service connector")
+		(date "2026-10-21")
+		(rev "4ASIC ECO")
+		(company "BMSX")
+		(comment 1 "PROPOSED ASIC INTERFACES - NOT FOR MANUFACTURE"))
+	(text "Four TAP chain: connector TDI -> CORE -> GFX -> APU -> IO -> TDO_RETURN.\n3V3 is voltage reference only, not an external power input. Real TAP/BSDL implementation and back-power qualification required."
+		(at 290 25.0 0)
+		(effects
+			(font
+				(size 1.27 1.27)))
+		(uuid 53b8130c-a6bc-5d8c-9556-08f1b03a97be))
+	(text "Four TAP chain: connector TDI -> CORE -> GFX -> APU -> IO -> TDO_RETURN.\n3V3 is voltage reference only, not an external power input. Real TAP/BSDL implementation and back-power qualification required."
+		(at 290 30.08 0)
+		(effects
+			(font
+				(size 1.27 1.27)))
+		(uuid 43c727f9-45ab-5d73-af5c-9eb2226bb079))
+	(wire
+		(pts
+			(xy 101.6 134.62)
+			(xy 93.98 134.62))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid ed7b8ee4-1c63-5865-acfa-8debba4c2fbd))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 93.98 134.62 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a03d48a6-ef47-5fdf-a7a6-02ceebd5215a))
+	(wire
+		(pts
+			(xy 101.6 137.16)
+			(xy 93.98 137.16))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid dc744a0e-2079-572f-b9b0-fcd18657db4d))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 93.98 137.16 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 0784f509-ba00-5cff-a2d7-c2a585b430c5))
+	(wire
+		(pts
+			(xy 101.6 139.7)
+			(xy 93.98 139.7))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid de00919d-4277-50b3-aa45-3a87d59ffbfc))
+	(global_label "TCK"
+		(shape bidirectional)
+		(at 93.98 139.7 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 435a904f-480f-5e51-aef8-878a6d0b5f03))
+	(wire
+		(pts
+			(xy 101.6 142.24)
+			(xy 93.98 142.24))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3bd63ad0-41d1-52c6-aed0-250725a3562f))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 93.98 142.24 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid fd1e0451-a8f1-5985-b490-d5200a623e43))
+	(wire
+		(pts
+			(xy 101.6 144.78)
+			(xy 93.98 144.78))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c1081e09-5e6c-58c1-a037-9f823fc271d1))
+	(global_label "TMS"
+		(shape bidirectional)
+		(at 93.98 144.78 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4ff4594a-f83f-547d-9a2c-2bbcb93619f1))
+	(wire
+		(pts
+			(xy 157.48 134.62)
+			(xy 165.1 134.62))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5c48f800-16db-5f96-9a28-5cae792580ea))
+	(global_label "TDI"
+		(shape bidirectional)
+		(at 165.1 134.62 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid abc84391-c159-5a48-9315-b640d4848ea4))
+	(wire
+		(pts
+			(xy 157.48 137.16)
+			(xy 165.1 137.16))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 32465a0e-7b0e-5ace-8219-f8273a933cf7))
+	(global_label "TDO_RETURN"
+		(shape bidirectional)
+		(at 165.1 137.16 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 52bdcdb5-a024-5af7-9ed8-bb3861fbbfd6))
+	(wire
+		(pts
+			(xy 157.48 139.7)
+			(xy 165.1 139.7))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d80bb72d-d6b0-5fed-ae15-70237c3d1172))
+	(global_label "TRST_N"
+		(shape bidirectional)
+		(at 165.1 139.7 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid e5ef64bf-440d-5022-8c1f-a2e6e2ea4313))
+	(wire
+		(pts
+			(xy 157.48 142.24)
+			(xy 165.1 142.24))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 16beefb5-8137-57cd-929f-827dbc9a08a2))
+	(global_label "RESET_N"
+		(shape bidirectional)
+		(at 165.1 142.24 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a81f3ee9-bb8b-53d9-aa84-952ce36242df))
+	(wire
+		(pts
+			(xy 157.48 144.78)
+			(xy 165.1 144.78))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5226a332-5ce5-5f43-a9ae-997db82df1bd))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 165.1 144.78 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f85ba0d9-3c71-5e8b-8671-e39ecc9a350f))
+	(symbol
+		(lib_id "R9_interfaces:J302")
+		(at 129.54 139.7 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 6630c3a3-19bb-50ec-853b-0ac2de62f4e1)
+		(property "Reference" "J302"
+			(at 129.54 128.27 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "BMSX JTAG service 2x5 - 3V3 reference only"
+			(at 129.54 151.13 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:J302"
+			(at 129.54 139.7 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 129.54 139.7 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5b6533ca-4848-5fa6-bc0f-34bffdb0267c"
+					(reference "J302")
+					(unit 1))))
+		(pin "1"
+			(uuid 85e70d6c-8808-55a4-ae10-351e29b81266))
+		(pin "2"
+			(uuid 5d3c64d6-d268-561c-a1f4-06bebfe977b6))
+		(pin "3"
+			(uuid 7e0b59de-dd8e-5f27-9a6e-b1ca70d4e6d2))
+		(pin "4"
+			(uuid fe741114-661d-5077-9261-7503ff50bd5c))
+		(pin "5"
+			(uuid 9c9def3c-bc0c-5dca-8026-09169952a127))
+		(pin "6"
+			(uuid c54fc8fe-4826-502a-bf87-fc6a2deadb63))
+		(pin "7"
+			(uuid 9e1e1143-1692-575f-9d4a-ad08940ebbc0))
+		(pin "8"
+			(uuid a248c35d-0379-5aab-8c3e-117c76b712df))
+		(pin "9"
+			(uuid 6598d982-5d80-560f-8886-3227badcd2eb))
+		(pin "10"
+			(uuid c0f2b15d-7a10-5e65-8d9e-bff88a206ecd)))
+	(wire
+		(pts
+			(xy 314.96 80.01)
+			(xy 307.34 80.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid a3a29573-dc4b-5999-9c6e-8d5bd80262ce))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 307.34 80.01 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d3c8a43c-4a56-5b1f-ac1f-5d1b9cdeb893))
+	(wire
+		(pts
+			(xy 325.12 80.01)
+			(xy 332.74 80.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3f700866-3c47-5683-86af-c30c3d607ab0))
+	(global_label "TDO"
+		(shape bidirectional)
+		(at 332.74 80.01 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 498fbd18-7eef-59c4-8d3a-7e93bc23762c))
+	(symbol
+		(lib_id "R9_interfaces:R470")
+		(at 320.04 80.01 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ef294c30-0c6c-5678-b9e5-a82d960cc13e)
+		(property "Reference" "R470"
+			(at 320.04 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47k"
+			(at 320.04 86.36 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R470"
+			(at 320.04 80.01 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 320.04 80.01 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5b6533ca-4848-5fa6-bc0f-34bffdb0267c"
+					(reference "R470")
+					(unit 1))))
+		(pin "1"
+			(uuid a846e604-07ab-573a-bfc4-b02c003a6489))
+		(pin "2"
+			(uuid 9313cc0a-2b31-5a99-96b2-158aabe584b1)))
+	(wire
+		(pts
+			(xy 474.98 80.01)
+			(xy 467.36 80.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 92722d64-fff1-522c-a134-411ec2c76128))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 467.36 80.01 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9843adb1-8504-5c0c-b69e-7644e0650381))
+	(wire
+		(pts
+			(xy 485.14 80.01)
+			(xy 492.76 80.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c09cb21f-83f9-5e2b-9e94-0df239441f47))
+	(global_label "JTAG_GFX_APU"
+		(shape bidirectional)
+		(at 492.76 80.01 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 2dbc2b77-e6d8-5f99-a02b-e0740c5b9186))
+	(symbol
+		(lib_id "R9_interfaces:R471")
+		(at 480.06 80.01 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 20c11e65-cdf3-5f48-a8ab-cf4c576d5ecd)
+		(property "Reference" "R471"
+			(at 480.06 73.66 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47k"
+			(at 480.06 86.36 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R471"
+			(at 480.06 80.01 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 480.06 80.01 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5b6533ca-4848-5fa6-bc0f-34bffdb0267c"
+					(reference "R471")
+					(unit 1))))
+		(pin "1"
+			(uuid dfe5a52e-90ba-57ee-b439-49ce2d8cc6ef))
+		(pin "2"
+			(uuid 5d98f4cd-c118-5329-a691-f58846604682)))
+	(wire
+		(pts
+			(xy 474.98 160.02)
+			(xy 467.36 160.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3322227e-7932-53d6-b453-978133dc23ae))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 467.36 160.02 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7117f686-96e6-510d-821c-d7a494fa60f6))
+	(wire
+		(pts
+			(xy 485.14 160.02)
+			(xy 492.76 160.02))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 2b6f335d-f9e7-5c39-99ea-80ce952c5864))
+	(global_label "JTAG_APU_IO"
+		(shape bidirectional)
+		(at 492.76 160.02 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 124f0a30-2bdd-559f-8fb5-13004da0b5bf))
+	(symbol
+		(lib_id "R9_interfaces:R473")
+		(at 480.06 160.02 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 2321c496-6e17-5b8f-8ae3-9015a78733b3)
+		(property "Reference" "R473"
+			(at 480.06 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "47k"
+			(at 480.06 166.37 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R473"
+			(at 480.06 160.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 480.06 160.02 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5b6533ca-4848-5fa6-bc0f-34bffdb0267c"
+					(reference "R473")
+					(unit 1))))
+		(pin "1"
+			(uuid 8dfd8c11-4514-5496-964b-d3b344ec8a2d))
+		(pin "2"
+			(uuid 2aeb2f6a-44ba-5dbd-ae88-2ba7418e6858)))
+	(wire
+		(pts
+			(xy 124.46 299.72)
+			(xy 116.84 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 4c89e442-152c-59ad-9fcf-ba522323b556))
+	(global_label "V3V3"
+		(shape bidirectional)
+		(at 116.84 299.72 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 65baf34c-5044-533f-bd60-69b3a8c4f900))
+	(wire
+		(pts
+			(xy 134.62 299.72)
+			(xy 142.24 299.72))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7f72986d-4001-5e11-9168-3e80965493ef))
+	(global_label "SUPERVISOR_N"
+		(shape bidirectional)
+		(at 142.24 299.72 180)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 02487d7a-19db-5f1e-bfdd-fb2efd3b6494))
+	(symbol
+		(lib_id "R9_interfaces:R476")
+		(at 129.54 299.72 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid c8a19858-0770-5267-8479-7b5932f3bdfd)
+		(property "Reference" "R476"
+			(at 129.54 293.37 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Value" "10k"
+			(at 129.54 306.07 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "R9_interfaces:R476"
+			(at 129.54 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(property "Datasheet" ""
+			(at 129.54 299.72 0)
+			(effects
+				(font
+					(size 1 1))
+				(hide yes)))
+		(instances
+			(project "BMSX_4ASIC"
+				(path "/379abf1a-5108-5f8a-806f-23ad707cedc2/5b6533ca-4848-5fa6-bc0f-34bffdb0267c"
+					(reference "R476")
+					(unit 1))))
+		(pin "1"
+			(uuid 41f63ea5-d5cd-5649-b72e-1c852f1f6fe5))
+		(pin "2"
+			(uuid 0bba708a-8069-5658-b01e-3f7b1328ce74))))

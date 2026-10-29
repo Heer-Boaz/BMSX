@@ -1,0 +1,2908 @@
+{
+  "scope": "Footprint-local component geometry; current KiCad placements own world pose. Representation qualifications are unchanged.",
+  "source_release_sha256": "43973d707d4d17c5d5fcacde0713da1489caaf7a35485cc00d84aeca306efa9a",
+  "parts": [
+    {
+      "name": "MAIN__U7",
+      "ref": "U7",
+      "brep": "models/mainboard/MAIN__U7.brep",
+      "sha256": "115d5f227c4389430cce15692853ddf5c2298079f843cc1756eb01acb9c4ea56",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "4d8f05a666dcb90a4954e1397a5b82444c4df3872bc4a76897c2083673421ff7"
+    },
+    {
+      "name": "MAIN__R476",
+      "ref": "R476",
+      "brep": "models/mainboard/MAIN__R476.brep",
+      "sha256": "a92094f934f6794b92da0f613326d48652a3f6bf0431c17dc39eda7f936cac96",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "689f6e6ad8bec03ff51b005c634875924a212eaeadc9a8fd97b3a5e170c26bff"
+    },
+    {
+      "name": "MAIN__R432",
+      "ref": "R432",
+      "brep": "models/mainboard/MAIN__R432.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ff6de0371a9530d401487be1037febd7985eca9e439258cf5e2b0b63c9478393"
+    },
+    {
+      "name": "MAIN__C76",
+      "ref": "C76",
+      "brep": "models/mainboard/MAIN__C76.brep",
+      "sha256": "dcf478dec6d0a50e590e4fd4b28f7d505d8dac6dd475e16f6fb53e1531ce79b9",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "9e96be196737dd4c3e26eec7a83e75e6d996be3876751f3f23fbdd98e23dbb7b"
+    },
+    {
+      "name": "MAIN__R438",
+      "ref": "R438",
+      "brep": "models/mainboard/MAIN__R438.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "33f54a1c956cdde11280e5e602683e78f905656b3f296dac1cf59d99eb7783d3"
+    },
+    {
+      "name": "MAIN__R514",
+      "ref": "R514",
+      "brep": "models/mainboard/MAIN__R514.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3e42e63a04b5074d8412458638e92e4f44a0485a1525bc76ac4a89f972337187"
+    },
+    {
+      "name": "MAIN__R528",
+      "ref": "R528",
+      "brep": "models/mainboard/MAIN__R528.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "9e29b05ae3b137642fd84698ad2daea0678cec9cf0f6275688164fb988103959"
+    },
+    {
+      "name": "MAIN__C524",
+      "ref": "C524",
+      "brep": "models/mainboard/MAIN__C524.brep",
+      "sha256": "8371f1158a6e769330c85bc5113fef87d6810c265da41888b9c6eb9d250d6ac6",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "62a239129ddbed3c26d4ab4eee6be0498509b3024f280c02959a2c9d4cfed7a2"
+    },
+    {
+      "name": "MAIN__R420",
+      "ref": "R420",
+      "brep": "models/mainboard/MAIN__R420.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "36fd7f42617b1325c309847b115d05289f86fa5dc095be28026a1477dcfb7d00"
+    },
+    {
+      "name": "MAIN__R401",
+      "ref": "R401",
+      "brep": "models/mainboard/MAIN__R401.brep",
+      "sha256": "5cb9fdce7813ccad4224b3e9ef09b7bdc0b6ca6602d0e7976b703b7f47e0e8f7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "05ed00f30e1be3eb214da6391db4ab27c22e8fe2766ecd0a24b719d365655dbb"
+    },
+    {
+      "name": "MAIN__R526",
+      "ref": "R526",
+      "brep": "models/mainboard/MAIN__R526.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "f85958bb41fb22cea9d045bdd54bdc0192cc72014a3234b9a5711341daee0ea3"
+    },
+    {
+      "name": "MAIN__U51",
+      "ref": "U51",
+      "brep": "models/mainboard/MAIN__U51.brep",
+      "sha256": "fa5fbb6683c18f305e9f5c4519c8b898f6692b4a4ffb93e53a40a29f21668ee8",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "1c79e4b5ba3e20c674418d42bdc12c3fba2f79b71aa5c7357e869ee8cc21418e"
+    },
+    {
+      "name": "MAIN__R507",
+      "ref": "R507",
+      "brep": "models/mainboard/MAIN__R507.brep",
+      "sha256": "77e1425aef7762a6ebcd694fcfc0d9fc0dc44f3871146b834979e08b5e715563",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "94d0fbec47c843512f2b32bd270a91852743f0464202947cd6ed140420313642"
+    },
+    {
+      "name": "MAIN__R406",
+      "ref": "R406",
+      "brep": "models/mainboard/MAIN__R406.brep",
+      "sha256": "5cb9fdce7813ccad4224b3e9ef09b7bdc0b6ca6602d0e7976b703b7f47e0e8f7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "bb65919394536e05bb86817af3ca6cbd113c4e217359308577c3c316d1ae2b99"
+    },
+    {
+      "name": "MAIN__R463",
+      "ref": "R463",
+      "brep": "models/mainboard/MAIN__R463.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "fb96719e836c45d67b2c59341ad16ef161d001ca495f57a995d0365626ae2e33"
+    },
+    {
+      "name": "MAIN__R451",
+      "ref": "R451",
+      "brep": "models/mainboard/MAIN__R451.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ef7f6c8af47cdfaf0d1a2af285b12f334cae5b07a43e19ba8083520963d2e292"
+    },
+    {
+      "name": "MAIN__R235",
+      "ref": "R235",
+      "brep": "models/mainboard/MAIN__R235.brep",
+      "sha256": "40172d1f4340d7eb48b3e1c45c47bf7c651bab284a39a53f54d99de29a86615c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "57c771920c160c5a373f3dbf4f3eee963261dfccad48c56ed595c45a562fd3c2"
+    },
+    {
+      "name": "MAIN__U2",
+      "ref": "U2",
+      "brep": "models/mainboard/MAIN__U2.brep",
+      "sha256": "1e5a9c70578f0ac8316007ab61b7c2d6c53f0336bb88003325ebc110b20c8d28",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "48e4b2ddf87d9c240206ff6298207e37a4053e95136744d1c7b102e033ff7674"
+    },
+    {
+      "name": "MAIN__R519",
+      "ref": "R519",
+      "brep": "models/mainboard/MAIN__R519.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "25bba856374f188e4a841a083310dd713ce4959c48c6237edfaf2130f2c33782"
+    },
+    {
+      "name": "MAIN__R76",
+      "ref": "R76",
+      "brep": "models/mainboard/MAIN__R76.brep",
+      "sha256": "97fdb42b793db6ade79e8474e5ac4cf35ff2beecacc446fc6972aed004ef322a",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a5c440caeee3a9efa56e4a5d58c3b2cd54d24d8082755c8521e6ad645035f844"
+    },
+    {
+      "name": "MAIN__R510",
+      "ref": "R510",
+      "brep": "models/mainboard/MAIN__R510.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "32cbf15bbb72413443aa78f77e4154461d141ffe1512d821d0536993dffc2956"
+    },
+    {
+      "name": "MAIN__R431",
+      "ref": "R431",
+      "brep": "models/mainboard/MAIN__R431.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "b61a5a9b87aa1d9399210be4c6dc3d3710bc6ea75fdcf65bc9130894ecb10797"
+    },
+    {
+      "name": "MAIN__R240",
+      "ref": "R240",
+      "brep": "models/mainboard/MAIN__R240.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c9f35eb3b5a61d9843b216f69d48f6e3716bc7c44dbdfc318709905ddb40f067"
+    },
+    {
+      "name": "MAIN__Q301",
+      "ref": "Q301",
+      "brep": "models/mainboard/MAIN__Q301.brep",
+      "sha256": "91dff2ce425585e700b2e4fc5e6f40ba4930a0b6c07faf24355e9c803ff98313",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8443782e2368d5c40db81ae43cc792fd45c6c8ec376c67f49ae323204d262199"
+    },
+    {
+      "name": "MAIN__R243",
+      "ref": "R243",
+      "brep": "models/mainboard/MAIN__R243.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "efb5f8f9b24072e8b2b9497c73bd46a98289a1482aa84da5a300cfae65651ce3"
+    },
+    {
+      "name": "MAIN__R529",
+      "ref": "R529",
+      "brep": "models/mainboard/MAIN__R529.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "245f0a0240b6dd9831e355c76888f4867ac448a1c694a473b65e5a99a84a3515"
+    },
+    {
+      "name": "MAIN__R502",
+      "ref": "R502",
+      "brep": "models/mainboard/MAIN__R502.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "638339adb87fac85abd9ee28b3ded51ebeda2cdfbbf864132a2485ecc2075c83"
+    },
+    {
+      "name": "MAIN__R83",
+      "ref": "R83",
+      "brep": "models/mainboard/MAIN__R83.brep",
+      "sha256": "cc1f2fe576cb1c9767085a4bbb50c50153206bd786a6064bc51fe14750524fad",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "70f0b5325f1abcb677fe6682c21593edc3dbde00f903b92e8702174e4b2f4cc1"
+    },
+    {
+      "name": "MAIN__R450",
+      "ref": "R450",
+      "brep": "models/mainboard/MAIN__R450.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "aa8d8290118b4c409af0cc04bcd5d061e1f287a4fd9d4da2fd02228115aa8e1f"
+    },
+    {
+      "name": "MAIN__R500",
+      "ref": "R500",
+      "brep": "models/mainboard/MAIN__R500.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "671c9d3bb4cc5bc939ab8dc41857efafefefcdd980a3723078421a672a0ea513"
+    },
+    {
+      "name": "MAIN__R531",
+      "ref": "R531",
+      "brep": "models/mainboard/MAIN__R531.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3f75f0398a3d86a4518ac9544c1c69000c5e9af81f5ffadba85d519c9ce55e0a"
+    },
+    {
+      "name": "MAIN__R461",
+      "ref": "R461",
+      "brep": "models/mainboard/MAIN__R461.brep",
+      "sha256": "a92094f934f6794b92da0f613326d48652a3f6bf0431c17dc39eda7f936cac96",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "75207bc586c01c492b6c922dff9d0ef3a0ce36cd5ab5395d70f9f44385c02be6"
+    },
+    {
+      "name": "MAIN__R501",
+      "ref": "R501",
+      "brep": "models/mainboard/MAIN__R501.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "45f5c377d32b5539b7e4ca762bd4c7aa819933b40c4d50d3c74a398a21ecc7ec"
+    },
+    {
+      "name": "MAIN__R237",
+      "ref": "R237",
+      "brep": "models/mainboard/MAIN__R237.brep",
+      "sha256": "a3fed78ed571aee0ad83e9fa6e624a777db16def9c75c0bc94006dbdf93dbcd5",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "485bda6dd24112eceb2dd3062ce8780ba02eb84ad4fae21d92b23f35c665fc85"
+    },
+    {
+      "name": "MAIN__R78",
+      "ref": "R78",
+      "brep": "models/mainboard/MAIN__R78.brep",
+      "sha256": "97fdb42b793db6ade79e8474e5ac4cf35ff2beecacc446fc6972aed004ef322a",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "0e7c22131360f6d08648899c741473657cdacfce664355ea1c056fdaf41cc665"
+    },
+    {
+      "name": "MAIN__R241",
+      "ref": "R241",
+      "brep": "models/mainboard/MAIN__R241.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e447d3fd974a136c155ece6c7d44d7a6e9ad82dcb8dc10d669fa111f73ffaf12"
+    },
+    {
+      "name": "MAIN__R516",
+      "ref": "R516",
+      "brep": "models/mainboard/MAIN__R516.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "2a28c998f20ae4a5ff4184c3119b17e6d37660d083e1c967bf58e8d32197cdfd"
+    },
+    {
+      "name": "MAIN__R421",
+      "ref": "R421",
+      "brep": "models/mainboard/MAIN__R421.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "de5969f099ecbb93f4cdda210b5502701b1d0321aac7d7a5a1297aa2c5c75c15"
+    },
+    {
+      "name": "MAIN__R440",
+      "ref": "R440",
+      "brep": "models/mainboard/MAIN__R440.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a51f71aa3f3fdcef60692c08a756070b0910f2892bc35ff2533bdaa1f23c5ae9"
+    },
+    {
+      "name": "MAIN__R470",
+      "ref": "R470",
+      "brep": "models/mainboard/MAIN__R470.brep",
+      "sha256": "5cb9fdce7813ccad4224b3e9ef09b7bdc0b6ca6602d0e7976b703b7f47e0e8f7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "25298257273d3e830ff6ce9a5ed4fc9baca1ba4c6d0b7562ecc905152b40120f"
+    },
+    {
+      "name": "MAIN__R246",
+      "ref": "R246",
+      "brep": "models/mainboard/MAIN__R246.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "aa1a68799e3b18cf58f7d9aaff7e5c37b8b7abbd19040bde5ddf7585aa8e3b2d"
+    },
+    {
+      "name": "MAIN__R523",
+      "ref": "R523",
+      "brep": "models/mainboard/MAIN__R523.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "aa8b6d9c644e8fefc0e5af3088231ce5d3fb771b26e09f54832f86dacded9808"
+    },
+    {
+      "name": "MAIN__R452",
+      "ref": "R452",
+      "brep": "models/mainboard/MAIN__R452.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8c7981d7ba0dfe1e39c7c56cc2f518f82fe7e87941e6e3277e6a1aa82bd096b0"
+    },
+    {
+      "name": "MAIN__R439",
+      "ref": "R439",
+      "brep": "models/mainboard/MAIN__R439.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "26f8baf3f9034f3b42b7f2138e0912c38b9cbbad3f700c6047ff52b349b646a8"
+    },
+    {
+      "name": "MAIN__R435",
+      "ref": "R435",
+      "brep": "models/mainboard/MAIN__R435.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ca8d447d6f81a0c09d45dd1b011b6b79163399e23955540fc607bbe07130283f"
+    },
+    {
+      "name": "MAIN__R473",
+      "ref": "R473",
+      "brep": "models/mainboard/MAIN__R473.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "9db0f3634519e3fa98b912ba8192461226b24349a7cfbbc4495ffa685e7ae4f5"
+    },
+    {
+      "name": "MAIN__U42",
+      "ref": "U42",
+      "brep": "models/mainboard/MAIN__U42.brep",
+      "sha256": "391ce21fc37b9fa385f852479bec12a76f67c4972ede2bc057156096ac2797f6",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "0c49c7c8ebb824f822ad7d1373eccc86eb6e8c0183c8b2263dec0a3775181b65"
+    },
+    {
+      "name": "MAIN__R410",
+      "ref": "R410",
+      "brep": "models/mainboard/MAIN__R410.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e8159522b7a2cfded6596fb51c35ffaabd42ed03d9f286f82082343ed007abbb"
+    },
+    {
+      "name": "MAIN__U35",
+      "ref": "U35",
+      "brep": "models/mainboard/MAIN__U35.brep",
+      "sha256": "a46631ec1f0dd49908e3e521e2f46835bb108fc1d7330627364245bb77bca34f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "7237f6bfaa112544b58940b1cdff848a269d973b6b66a469ea2a47be2a409780"
+    },
+    {
+      "name": "MAIN__C515",
+      "ref": "C515",
+      "brep": "models/mainboard/MAIN__C515.brep",
+      "sha256": "4311b0a8360035be6f758ddbcaba67580e54048821561054154830e7d2298185",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "9220009b30fcf0682cd09ecb35b1916fec7584e5839a4b8f5ebb5805f128c924"
+    },
+    {
+      "name": "MAIN__R509",
+      "ref": "R509",
+      "brep": "models/mainboard/MAIN__R509.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3adcfcfd39bc79eb1fdba607540e758de733648ddfc29c3fa038384d99286e5b"
+    },
+    {
+      "name": "MAIN__R460",
+      "ref": "R460",
+      "brep": "models/mainboard/MAIN__R460.brep",
+      "sha256": "77e1425aef7762a6ebcd694fcfc0d9fc0dc44f3871146b834979e08b5e715563",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "aea7a9fb4a393e3b1eff939fd973ceddadf0f0a8f32bff5f65499c3f80a45a69"
+    },
+    {
+      "name": "MAIN__R525",
+      "ref": "R525",
+      "brep": "models/mainboard/MAIN__R525.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "cfa86b3314ba3555fab24a6bef9722863ba509d399b1b157f5321a3460162552"
+    },
+    {
+      "name": "MAIN__R453",
+      "ref": "R453",
+      "brep": "models/mainboard/MAIN__R453.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "04a05c733b5cf425f6dfa69d50273117383ab6478d9f7062d6ef46dd0c28eafb"
+    },
+    {
+      "name": "MAIN__U31",
+      "ref": "U31",
+      "brep": "models/mainboard/MAIN__U31.brep",
+      "sha256": "aad17bac72acbe04966ce9e6692d17db66444391a3584d3d6fc238b36b9b251c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ca2017dc77b10a6c2cfeb3dd6a5f3b1af99deaea21e957a93610092e63616abf"
+    },
+    {
+      "name": "MAIN__R400",
+      "ref": "R400",
+      "brep": "models/mainboard/MAIN__R400.brep",
+      "sha256": "5cb9fdce7813ccad4224b3e9ef09b7bdc0b6ca6602d0e7976b703b7f47e0e8f7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "112cc52a4945d0535b9e190ed3b1466a9ff35aa0e21b482725ee40a9720526d7"
+    },
+    {
+      "name": "MAIN__R242",
+      "ref": "R242",
+      "brep": "models/mainboard/MAIN__R242.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "24871618f035101585be0ac3e522d38aac547f3181ae6f2d1776e0974d308179"
+    },
+    {
+      "name": "MAIN__U40",
+      "ref": "U40",
+      "brep": "models/mainboard/MAIN__U40.brep",
+      "sha256": "05f37f691a9f6057a113add802c870fa57883c0b204f9a1b69c67d79aea9aa26",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "d4bd0d2bc147947021d412eaf2f80bca02fc654f8b4099241409ca74efeabc29"
+    },
+    {
+      "name": "MAIN__R433",
+      "ref": "R433",
+      "brep": "models/mainboard/MAIN__R433.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "90eb5d324ff22aa4228b0beca6addd1d1e53dd414be90362e9583b20efcd56e5"
+    },
+    {
+      "name": "MAIN__R527",
+      "ref": "R527",
+      "brep": "models/mainboard/MAIN__R527.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "de271eb3865c0b779da615764ddb795d531dc3b5268e12753b82eb33214a93bb"
+    },
+    {
+      "name": "MAIN__R508",
+      "ref": "R508",
+      "brep": "models/mainboard/MAIN__R508.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "faea2876c60a53531be1ed171db6366cee8d4088caee3567dc9bec7a6ece1227"
+    },
+    {
+      "name": "MAIN__C532",
+      "ref": "C532",
+      "brep": "models/mainboard/MAIN__C532.brep",
+      "sha256": "ddd05c1333734ea5c1a13f628956280f02fc1bfd983ad93baa0e55f6b156aab6",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "09d78343577d4d06fc97907316a59d80af223ae92a951fe528686e9897b43f76"
+    },
+    {
+      "name": "MAIN__R230",
+      "ref": "R230",
+      "brep": "models/mainboard/MAIN__R230.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "7a6a8e6ba66cf237ad9980fc46003a138220c7ef5d1b20004bc817cbd2db9ceb"
+    },
+    {
+      "name": "MAIN__R530",
+      "ref": "R530",
+      "brep": "models/mainboard/MAIN__R530.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "d355ede4e8e7957e5f50d7a764cca35d633fce08e19f504195fd384d985ed2f9"
+    },
+    {
+      "name": "MAIN__R79",
+      "ref": "R79",
+      "brep": "models/mainboard/MAIN__R79.brep",
+      "sha256": "a92094f934f6794b92da0f613326d48652a3f6bf0431c17dc39eda7f936cac96",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "87d9f1f38ac464c374c9f8508063762e7449af68b042081d3b1c4045a819aa2d"
+    },
+    {
+      "name": "MAIN__C523",
+      "ref": "C523",
+      "brep": "models/mainboard/MAIN__C523.brep",
+      "sha256": "d1c8d6a2ac280b06aefd94b772825d412cddce31a76dc91e32f27fd8989fc822",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "60928ea5a28d12fd6e95a865669120350018162075cb1e9c2aab6ac2b143648e"
+    },
+    {
+      "name": "MAIN__U52",
+      "ref": "U52",
+      "brep": "models/mainboard/MAIN__U52.brep",
+      "sha256": "ee0a0973fcbab6c0b625e078e9f32e3254d1515a58e0fb1abaa072ec0ae688e6",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "19fc5f6852bebabcd5d1da509541ad8ebd8be2372424febfca68b3cabc0c3f35"
+    },
+    {
+      "name": "MAIN__R441",
+      "ref": "R441",
+      "brep": "models/mainboard/MAIN__R441.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "5f0bf67897feef6ac7a6bd415158dcdd5dbd8f92f68d17b890e05a18befa111a"
+    },
+    {
+      "name": "MAIN__U32",
+      "ref": "U32",
+      "brep": "models/mainboard/MAIN__U32.brep",
+      "sha256": "00ce775fe80e501397c4dcd9718042325ac2272d789b46a2a3ccf60deb34217e",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "77e3fc4cb07e371f1fdbab4d9124dfcd9aa756fdcdc36090018124b266d35a11"
+    },
+    {
+      "name": "MAIN__R504",
+      "ref": "R504",
+      "brep": "models/mainboard/MAIN__R504.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "32f894a01454ed3a82770fd8307a21949ed05b59e10c828ee5da74eb604c0fae"
+    },
+    {
+      "name": "MAIN__R524",
+      "ref": "R524",
+      "brep": "models/mainboard/MAIN__R524.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "93e52eee45a83564d580c06458dd5ea3bac360c48a66bd6c8b5712b4526b6263"
+    },
+    {
+      "name": "MAIN__R245",
+      "ref": "R245",
+      "brep": "models/mainboard/MAIN__R245.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "155d080c04d0cda9041ac641f503b9bc92476d3e5ead65b599a96495b05da62d"
+    },
+    {
+      "name": "MAIN__C511",
+      "ref": "C511",
+      "brep": "models/mainboard/MAIN__C511.brep",
+      "sha256": "f02ab5f4b7fe304b9544fb991dd2d088ae7c897106db491b3d243bd8caba0265",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "2f2aa135252b22d1ff6fe1e33a7894d6dfe551d1d8411fd3d5971e879032ea53"
+    },
+    {
+      "name": "MAIN__R505",
+      "ref": "R505",
+      "brep": "models/mainboard/MAIN__R505.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "233cc2c1d94179690fb68cc4cbfeeb7bc63544a1a61b1690ae7a367b5ce6de73"
+    },
+    {
+      "name": "MAIN__U53",
+      "ref": "U53",
+      "brep": "models/mainboard/MAIN__U53.brep",
+      "sha256": "ee0a0973fcbab6c0b625e078e9f32e3254d1515a58e0fb1abaa072ec0ae688e6",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a3bd2813ec987b16736225cf502d7304fdea2172361bcde9a91f910e6b273934"
+    },
+    {
+      "name": "MAIN__R430",
+      "ref": "R430",
+      "brep": "models/mainboard/MAIN__R430.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "89bb0d0d30a5f27196e84ddf9b601cb505fd23b1f5c1a1c5d4d28300847559cc"
+    },
+    {
+      "name": "MAIN__R503",
+      "ref": "R503",
+      "brep": "models/mainboard/MAIN__R503.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a7044d9066db25becbdc6446a9570903d837bd42f8b91b17c77c0860d960aa60"
+    },
+    {
+      "name": "MAIN__R231",
+      "ref": "R231",
+      "brep": "models/mainboard/MAIN__R231.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "eb9f1b276b3384d6a75642a409c75e8fa48c97c1bbce9284f11cf0c80ad5d449"
+    },
+    {
+      "name": "MAIN__J302",
+      "ref": "J302",
+      "brep": "models/mainboard/MAIN__J302.brep",
+      "sha256": "5221f0d85f501901e45b64a875aaaf7c15e788135c8cfccb8d34a5c34ea76e1c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "1001d72cd74dd7b426ae126d46dd0b38fc93bc4570f6d1ff334f492ebda7a41a"
+    },
+    {
+      "name": "MAIN__U41",
+      "ref": "U41",
+      "brep": "models/mainboard/MAIN__U41.brep",
+      "sha256": "8e0ba569abde6011dc93df4afe54bb91e103cedd4c750654a9d0ffe5fbd62284",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "4246a0b25149289886395fcde57768e28f731ba640a5f3f56ec3bb0e93c0701c"
+    },
+    {
+      "name": "MAIN__U4",
+      "ref": "U4",
+      "brep": "models/mainboard/MAIN__U4.brep",
+      "sha256": "71037280e266609e3a08c7919bad057ce6d2671e64830aa12a3519ab6730bc69",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "f8ef3dc2d8ec26cf26fca54cba7bade31387fe3dffb0a014c07f777643f8b6bf"
+    },
+    {
+      "name": "MAIN__C529",
+      "ref": "C529",
+      "brep": "models/mainboard/MAIN__C529.brep",
+      "sha256": "48ba988d8fed15cffe31010078237d11334c5f14bd549eaa39f223e25d45f588",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "13abee9922fedd9d3c9052a80c4c931043d68b490af393815566b22456f100f2"
+    },
+    {
+      "name": "MAIN__U33",
+      "ref": "U33",
+      "brep": "models/mainboard/MAIN__U33.brep",
+      "sha256": "aa7031c82bcc1c44e4f654eb1950b7ddf4a77d7b20c0423a85d2859d234bf43c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "91e8c439946550c564b7eba8b72d97074b8ab695111a680aecfcec18cd96a3cb"
+    },
+    {
+      "name": "MAIN__R436",
+      "ref": "R436",
+      "brep": "models/mainboard/MAIN__R436.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "51c3e6debd53ccb1cbf76c5e5967ebca7764f3f6aa38226ec8f1a9251aeb059b"
+    },
+    {
+      "name": "MAIN__R442",
+      "ref": "R442",
+      "brep": "models/mainboard/MAIN__R442.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3245c79cbcab2d32d3f31aa2f67c1639e1145e8f6704eef6f8746eec241dc4ed"
+    },
+    {
+      "name": "MAIN__R532",
+      "ref": "R532",
+      "brep": "models/mainboard/MAIN__R532.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "45091a43e7cbad2f8eec038ea4bcde4720fb72f4048850b53e902ad6444ec931"
+    },
+    {
+      "name": "MAIN__R247",
+      "ref": "R247",
+      "brep": "models/mainboard/MAIN__R247.brep",
+      "sha256": "a3fed78ed571aee0ad83e9fa6e624a777db16def9c75c0bc94006dbdf93dbcd5",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "726fad1531c8362862e48554b9842974736577f9f8554b1334daf1e0db8f0c6a"
+    },
+    {
+      "name": "MAIN__R462",
+      "ref": "R462",
+      "brep": "models/mainboard/MAIN__R462.brep",
+      "sha256": "6c1ad2b15dfa64fa3d49ba73dbdca8084fca9c5c037dda76e3129a69d8513de6",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "4cfb26226bdbbc9c4f58770866d66896f815012a80c47c5f62afdf87b554e43c"
+    },
+    {
+      "name": "MAIN__R515",
+      "ref": "R515",
+      "brep": "models/mainboard/MAIN__R515.brep",
+      "sha256": "6f1190453e07f2324791bfb5c0156f51aa2da6f39dca0dc872e7ea924d3f0cbb",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "1756f10cfebebc46667646562dc568c46cbf898e0f510d4fd141413a6bbf2c64"
+    },
+    {
+      "name": "MAIN__R77",
+      "ref": "R77",
+      "brep": "models/mainboard/MAIN__R77.brep",
+      "sha256": "84166ed7aeb9aa099551ddf61ccaf75e055bf655768885039b88e2db78f05ef5",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8d9c3cb31a9203630d87aa6374a21c810f848e94f62e2c161d3bb35b4108f168"
+    },
+    {
+      "name": "MAIN__R238",
+      "ref": "R238",
+      "brep": "models/mainboard/MAIN__R238.brep",
+      "sha256": "1a8896ad489b0e1f8258bd88c22c24ff4b6224b54c64be0d41dde49235285e9c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "fd9cf6e17b05b7d2cb95aea43edbc68e412fe8054ac330ceffaa6d6d0b3c55d6"
+    },
+    {
+      "name": "MAIN__R520",
+      "ref": "R520",
+      "brep": "models/mainboard/MAIN__R520.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e19e866ef7966add4bb54cec208f002740511483c9ca5d835b2ad927c5ece325"
+    },
+    {
+      "name": "MAIN__R434",
+      "ref": "R434",
+      "brep": "models/mainboard/MAIN__R434.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "d14d00c00feeddcf7405342086142eb2168023e2b089ff3d0b9d4f0d9bf5be78"
+    },
+    {
+      "name": "MAIN__R403",
+      "ref": "R403",
+      "brep": "models/mainboard/MAIN__R403.brep",
+      "sha256": "5cb9fdce7813ccad4224b3e9ef09b7bdc0b6ca6602d0e7976b703b7f47e0e8f7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "712f8bfd4fa32b6572162104190fc9c39d109ffc6a769bdd14070524382f811f"
+    },
+    {
+      "name": "MAIN__R232",
+      "ref": "R232",
+      "brep": "models/mainboard/MAIN__R232.brep",
+      "sha256": "5cb9fdce7813ccad4224b3e9ef09b7bdc0b6ca6602d0e7976b703b7f47e0e8f7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "de761462087feeff7c996a850efef8fd8e9351fb920d2790e6da31fccc1ab3c3"
+    },
+    {
+      "name": "MAIN__U50",
+      "ref": "U50",
+      "brep": "models/mainboard/MAIN__U50.brep",
+      "sha256": "05ca87a08dfad4cdf68056b22404fe6ede7c5a547cf37dccdef07a0a11a0ee66",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "4b3bf40177f2e1a78bf27bad63109be8abe0cb57131ea462ecad1f528da042bb"
+    },
+    {
+      "name": "MAIN__R511",
+      "ref": "R511",
+      "brep": "models/mainboard/MAIN__R511.brep",
+      "sha256": "c8cdd4bf630c2f1df0f8ae05d32030867f0fc475d85ca2e4028160e29b0095df",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "20e3b015795dbc19b47344d5c0b9bcae9e453804589df0dcc7d579b940d69761"
+    },
+    {
+      "name": "MAIN__R233",
+      "ref": "R233",
+      "brep": "models/mainboard/MAIN__R233.brep",
+      "sha256": "40172d1f4340d7eb48b3e1c45c47bf7c651bab284a39a53f54d99de29a86615c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "40c5ff17bf15f08a35263ee2a01ef0269fd6a59275e1289ff8bafb0286ff9ae5"
+    },
+    {
+      "name": "MAIN__R239",
+      "ref": "R239",
+      "brep": "models/mainboard/MAIN__R239.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "13682630caf42f6d3ec0521b1e99b70c5acba82ce618fec44526b2b1e264e0c1"
+    },
+    {
+      "name": "MAIN__R236",
+      "ref": "R236",
+      "brep": "models/mainboard/MAIN__R236.brep",
+      "sha256": "40172d1f4340d7eb48b3e1c45c47bf7c651bab284a39a53f54d99de29a86615c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "85a99f6d7c41dba46fac9c86e9a66fe8ddabf78b022584ad02059e6b39040d14"
+    },
+    {
+      "name": "MAIN__R437",
+      "ref": "R437",
+      "brep": "models/mainboard/MAIN__R437.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e77fbd21c1626333eb3ebfcd1f32fe40dae0070ee1cae7d1ee4a2c2289ed9b98"
+    },
+    {
+      "name": "MAIN__R471",
+      "ref": "R471",
+      "brep": "models/mainboard/MAIN__R471.brep",
+      "sha256": "5cb9fdce7813ccad4224b3e9ef09b7bdc0b6ca6602d0e7976b703b7f47e0e8f7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "91185c2b4c9904fbf20135b6a60d18f10a1f3ffc72d68f977e969822cc3087e9"
+    },
+    {
+      "name": "MAIN__U34",
+      "ref": "U34",
+      "brep": "models/mainboard/MAIN__U34.brep",
+      "sha256": "0e477f0f87597fc70ff434d4a706a5bc46a466fe318434f5f6ba74dd292d8e5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "357bc50837a8d365fd788a6e5a16783cb932671c7c7f2a4d82141f86a1acbaba"
+    },
+    {
+      "name": "MAIN__Q300",
+      "ref": "Q300",
+      "brep": "models/mainboard/MAIN__Q300.brep",
+      "sha256": "2363addb7396414f16258d3dfaa534fb6d75bb71d63c24a06be2514b503f0267",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3e95f6ac7eb366fef45bb4aa07605b76d5759f36d8e686b73c170519092d891f"
+    },
+    {
+      "name": "MAIN__R234",
+      "ref": "R234",
+      "brep": "models/mainboard/MAIN__R234.brep",
+      "sha256": "40172d1f4340d7eb48b3e1c45c47bf7c651bab284a39a53f54d99de29a86615c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "61ac8a26b18ecd5eced3fa027fb03c6fcac95dba8558ca92b6884512043286ac"
+    },
+    {
+      "name": "MAIN__R506",
+      "ref": "R506",
+      "brep": "models/mainboard/MAIN__R506.brep",
+      "sha256": "77e1425aef7762a6ebcd694fcfc0d9fc0dc44f3871146b834979e08b5e715563",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e53c7b94e3012055ad6842ac20fbff52d0fd1c07173f75bb69a0705ccf6b7609"
+    },
+    {
+      "name": "MAIN__U30",
+      "ref": "U30",
+      "brep": "models/mainboard/MAIN__U30.brep",
+      "sha256": "aad17bac72acbe04966ce9e6692d17db66444391a3584d3d6fc238b36b9b251c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8b9842ba69ef0467c17f9f631b47c2b3c8251916c94d3ec6b5cf1c18d80c4bc8"
+    },
+    {
+      "name": "MAIN__R244",
+      "ref": "R244",
+      "brep": "models/mainboard/MAIN__R244.brep",
+      "sha256": "a7dc3dde817c9e814bfc8291a6bd7ade0e007b76fed9b1411e0e5c2750a6ddbc",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "26a7085f2ea0cebf6a034f01d603c8224bea862e9e7f0ec0ea0246fc5eae8c07"
+    },
+    {
+      "name": "MAIN__C313",
+      "ref": "C313",
+      "brep": "models/mainboard/MAIN__C313.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a2dae51f8de7fccc5d1adbc4b08dfda0dfb5dbcf66424e33d1ad90c75a64ed0f"
+    },
+    {
+      "name": "MAIN__C343",
+      "ref": "C343",
+      "brep": "models/mainboard/MAIN__C343.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c87a9eda8f1ea5904bcc3153b3e070f63587b511395a83ba742f85b6e23707cc"
+    },
+    {
+      "name": "MAIN__C347",
+      "ref": "C347",
+      "brep": "models/mainboard/MAIN__C347.brep",
+      "sha256": "a81b371ce9ce8469da4c9ae9205ef2076347962928ed577bd863969930c2bcc2",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "4e4ad7bada83cbc6b247b4dc98859e9b99bc491e737d70598ce65d253791bf98"
+    },
+    {
+      "name": "MAIN__C520",
+      "ref": "C520",
+      "brep": "models/mainboard/MAIN__C520.brep",
+      "sha256": "9cd67555b1e9fbcb61b0bc9e15384d1c9480d5e0bf26d1ea6c072b88945ead95",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "bbc42a35f4b719aac0b0635b83b5b78de556af1dc38ca4530bdaed94cd8d99c8"
+    },
+    {
+      "name": "MAIN__C376",
+      "ref": "C376",
+      "brep": "models/mainboard/MAIN__C376.brep",
+      "sha256": "73075ae5e100438a94e1c97f5950a71edafd815c673a214380407e806aec5796",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "47b12ef97df29a947d2024b6caceaf4db0fadc9fb74f224fbc012a9f969af6aa"
+    },
+    {
+      "name": "MAIN__C407",
+      "ref": "C407",
+      "brep": "models/mainboard/MAIN__C407.brep",
+      "sha256": "5dacedea77cf93a2c67b82091578c03514ad3b5a81e28102eae707623abef951",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "5a5f1def6e97f7120a93ad546085afc5c9276b6663d25e4627fbbadda9ce62a8"
+    },
+    {
+      "name": "MAIN__C526",
+      "ref": "C526",
+      "brep": "models/mainboard/MAIN__C526.brep",
+      "sha256": "06306ee96846da2933bbdd72a40eb290b83d4f44736f0aba9e494727ab4ae205",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8c81eeb23f290ca343f30b582f2c27de3d1b1e3fb60528c6218e83c64449649d"
+    },
+    {
+      "name": "MAIN__C408",
+      "ref": "C408",
+      "brep": "models/mainboard/MAIN__C408.brep",
+      "sha256": "1dcd7bc25607375738fcb5cb7023dd0848425e92b27eeb1857f7beeaf61c514f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "11dc742c44dede1aa29bc8e7ecfbd747f294d93512c4bbd667d6e49481bb6a67"
+    },
+    {
+      "name": "MAIN__C230",
+      "ref": "C230",
+      "brep": "models/mainboard/MAIN__C230.brep",
+      "sha256": "01bff60f9e5d7a851dc669bec64b94d01d44f9995945131615029f87d6f01e81",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "33c87cf9e45bcd99a8885fa97dbfc330194922d41c6ae16af87474ff8b73eed8"
+    },
+    {
+      "name": "MAIN__C514",
+      "ref": "C514",
+      "brep": "models/mainboard/MAIN__C514.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "215181871703fb570689249f8343a4fa4d026b7f9683902ac99d4f5bcad3911e"
+    },
+    {
+      "name": "MAIN__C310",
+      "ref": "C310",
+      "brep": "models/mainboard/MAIN__C310.brep",
+      "sha256": "dd5744bd4e2b5cfc9714b2c89d7bbf94aff73b6deb94b5ef984081655fa3028d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "fa8d7c20ac02559a24d5a80dfa056b94aec528d6a5ee1b68e7da89a27b908530"
+    },
+    {
+      "name": "MAIN__R521",
+      "ref": "R521",
+      "brep": "models/mainboard/MAIN__R521.brep",
+      "sha256": "8c0f41c061fddd37c67a996e008c74915cdee06e8cb0bb87c25fc6037a0dfdcd",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "28f327bb03701c34bef6850dc43e35422f77d889c8eb6bef2e9147471588b664"
+    },
+    {
+      "name": "MAIN__R517",
+      "ref": "R517",
+      "brep": "models/mainboard/MAIN__R517.brep",
+      "sha256": "8c0f41c061fddd37c67a996e008c74915cdee06e8cb0bb87c25fc6037a0dfdcd",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "1dd8619fc6c0740b1426a49ffb0c48002baedd92ac9a9df404a7ad30b6ac46db"
+    },
+    {
+      "name": "MAIN__C320",
+      "ref": "C320",
+      "brep": "models/mainboard/MAIN__C320.brep",
+      "sha256": "83a0c098b518295e06c57e170f0f3d2e3cc26b1372ee112f6e5dcd9dad6c363c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "1eec66557e3f0555b71502cdc3e4a11943bec0b89b195f7053349ad4aaa552e3"
+    },
+    {
+      "name": "MAIN__C405",
+      "ref": "C405",
+      "brep": "models/mainboard/MAIN__C405.brep",
+      "sha256": "5dacedea77cf93a2c67b82091578c03514ad3b5a81e28102eae707623abef951",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8a15948a6001dc966e235059fc3bf41aa460a9bac70244c0c45bfdf725613b45"
+    },
+    {
+      "name": "MAIN__C531",
+      "ref": "C531",
+      "brep": "models/mainboard/MAIN__C531.brep",
+      "sha256": "251ad6fcbdb6e815a165f486cde15f8a1e3dc848cdd3efef26093297c0380ea7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e37b249fbcfd18325d73127369660c55650ba6ec350933ae84a42f943268bd47"
+    },
+    {
+      "name": "MAIN__C321",
+      "ref": "C321",
+      "brep": "models/mainboard/MAIN__C321.brep",
+      "sha256": "83a0c098b518295e06c57e170f0f3d2e3cc26b1372ee112f6e5dcd9dad6c363c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "4f6e3386c714cea5fed333537c69727ba7a707d7e537afb4eebd14d9bbd32e9a"
+    },
+    {
+      "name": "MAIN__C527",
+      "ref": "C527",
+      "brep": "models/mainboard/MAIN__C527.brep",
+      "sha256": "251ad6fcbdb6e815a165f486cde15f8a1e3dc848cdd3efef26093297c0380ea7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ccd327e64209b42bc55343abe03e613ee9a65923156a36f8239fc15ae56df69b"
+    },
+    {
+      "name": "MAIN__C317",
+      "ref": "C317",
+      "brep": "models/mainboard/MAIN__C317.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "67ff5de22c7e7c51265fb81229bbd33b7bb13d1ded891e4a700ae94df3bcd68e"
+    },
+    {
+      "name": "MAIN__C516",
+      "ref": "C516",
+      "brep": "models/mainboard/MAIN__C516.brep",
+      "sha256": "779799c67a27df0858c139d4980cc24fd6738b554130a8ce63340a918ad56c42",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "51f8e91c04a5bd8bff321c1b0e79cd225137721938f1a2d1244e453a7f552795"
+    },
+    {
+      "name": "MAIN__C406",
+      "ref": "C406",
+      "brep": "models/mainboard/MAIN__C406.brep",
+      "sha256": "1dcd7bc25607375738fcb5cb7023dd0848425e92b27eeb1857f7beeaf61c514f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c49b9646c46b3ddf9e192f5305d19ee34a961e5a80bebfbf83fb6a966c5e0a47"
+    },
+    {
+      "name": "MAIN__C344",
+      "ref": "C344",
+      "brep": "models/mainboard/MAIN__C344.brep",
+      "sha256": "e647d82cd9a4177150e914024f6f340e91a9f1ba59651f42e96371713d687cef",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "d5f298092788de5e0a75f4fe29a459933bbdc3575a37f283e69f5f02817957ed"
+    },
+    {
+      "name": "MAIN__C352",
+      "ref": "C352",
+      "brep": "models/mainboard/MAIN__C352.brep",
+      "sha256": "2530ab648ab570495e6208f8fc8cc186a65ecc6839afc8ee5589b7aa6943e15d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8136a6b60394a3255e925c392115dc8b4ada391b9a7b94fd4c13c79a3de771b5"
+    },
+    {
+      "name": "MAIN__C314",
+      "ref": "C314",
+      "brep": "models/mainboard/MAIN__C314.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8a2b53dcdbf37545d5fc9b5dfe14a9827780da430de1994a50a529309cf0b0c7"
+    },
+    {
+      "name": "MAIN__C306",
+      "ref": "C306",
+      "brep": "models/mainboard/MAIN__C306.brep",
+      "sha256": "2530ab648ab570495e6208f8fc8cc186a65ecc6839afc8ee5589b7aa6943e15d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "bde192897a68e8345ff7e99a84104137da9fb71c919fdfaf3beefd0987394676"
+    },
+    {
+      "name": "MAIN__C517",
+      "ref": "C517",
+      "brep": "models/mainboard/MAIN__C517.brep",
+      "sha256": "779799c67a27df0858c139d4980cc24fd6738b554130a8ce63340a918ad56c42",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "dc3829691eb5bb2a04a7998eef1dd40dc09f91ac1c4ceb09dabc7b1611fd492f"
+    },
+    {
+      "name": "MAIN__C311",
+      "ref": "C311",
+      "brep": "models/mainboard/MAIN__C311.brep",
+      "sha256": "2530ab648ab570495e6208f8fc8cc186a65ecc6839afc8ee5589b7aa6943e15d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "80c237e6e28bb73f80358bb0fed6c2d9052ca3810de783b0d7d89c205c70f0fe"
+    },
+    {
+      "name": "MAIN__C507",
+      "ref": "C507",
+      "brep": "models/mainboard/MAIN__C507.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3fcdfada5770c2701f7b1d2f40b850dcc73b604d5fa6a1048b6329117eb3720d"
+    },
+    {
+      "name": "MAIN__C322",
+      "ref": "C322",
+      "brep": "models/mainboard/MAIN__C322.brep",
+      "sha256": "dd5744bd4e2b5cfc9714b2c89d7bbf94aff73b6deb94b5ef984081655fa3028d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "69caec4ceaa7026a6abc249eff1496fa53a7f6c38c12031f9b438c4cdbc873f6"
+    },
+    {
+      "name": "MAIN__C304",
+      "ref": "C304",
+      "brep": "models/mainboard/MAIN__C304.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "d1abf0ff72dedd57606764af404d3c6d479d4329bd4a10d0623076efd5809b34"
+    },
+    {
+      "name": "MAIN__C378",
+      "ref": "C378",
+      "brep": "models/mainboard/MAIN__C378.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "6cb70e4f4ce69bb6d44a57c073d295eb7351bdf615706358c08ff9586271b3ef"
+    },
+    {
+      "name": "MAIN__C375",
+      "ref": "C375",
+      "brep": "models/mainboard/MAIN__C375.brep",
+      "sha256": "f44e3bc1be0f8f19c7f56d548857c39a6a23d6b958a5e1530a0028ee76749c43",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "f2ceb129174efa562c392293522dfe030d0d89d468434175a9bd67fde06fb8f4"
+    },
+    {
+      "name": "MAIN__C504",
+      "ref": "C504",
+      "brep": "models/mainboard/MAIN__C504.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "0b4fc2306421730df386680ebfaa949b631888e3acdcb4d827ead60eb233a5cc"
+    },
+    {
+      "name": "MAIN__C409",
+      "ref": "C409",
+      "brep": "models/mainboard/MAIN__C409.brep",
+      "sha256": "5dacedea77cf93a2c67b82091578c03514ad3b5a81e28102eae707623abef951",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "23ddb343fb8e15d2e788476c230bdebd6f5aae2b7d61976723fb60cc76ba23bf"
+    },
+    {
+      "name": "MAIN__C367",
+      "ref": "C367",
+      "brep": "models/mainboard/MAIN__C367.brep",
+      "sha256": "c0c892d374ee5b0ef587422ac0445a9648316c594942c9c67d4aee547546e6a9",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "edaa0da218615e2217fe05375c02d36a0a862491f6571b43b765e7b87ac37619"
+    },
+    {
+      "name": "MAIN__C329",
+      "ref": "C329",
+      "brep": "models/mainboard/MAIN__C329.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3cf84fd04ba0d968e37f05c97b7b206e8dcf34a1bdd1176f068fa59d953812e2"
+    },
+    {
+      "name": "MAIN__C324",
+      "ref": "C324",
+      "brep": "models/mainboard/MAIN__C324.brep",
+      "sha256": "c0c892d374ee5b0ef587422ac0445a9648316c594942c9c67d4aee547546e6a9",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "80a6b1ac0346e2907d4ea0daa2013a6b3f4898941fb2b3f188078b3cf61e0c2e"
+    },
+    {
+      "name": "MAIN__C323",
+      "ref": "C323",
+      "brep": "models/mainboard/MAIN__C323.brep",
+      "sha256": "2530ab648ab570495e6208f8fc8cc186a65ecc6839afc8ee5589b7aa6943e15d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "6110d629c39624c9dfed4a41e5e0f348e3ad3e7494f7d10f86793275f5c40e58"
+    },
+    {
+      "name": "MAIN__C402",
+      "ref": "C402",
+      "brep": "models/mainboard/MAIN__C402.brep",
+      "sha256": "01bff60f9e5d7a851dc669bec64b94d01d44f9995945131615029f87d6f01e81",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "9f364353c8fd1e18126da85ccae49197a61436db1e74caea3ed9450ab32bd74f"
+    },
+    {
+      "name": "MAIN__C312",
+      "ref": "C312",
+      "brep": "models/mainboard/MAIN__C312.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ee55b81613b96fe0aa16e1963ef0522fc9bac265c5f9a76cac88cb38a7beebcf"
+    },
+    {
+      "name": "MAIN__C505",
+      "ref": "C505",
+      "brep": "models/mainboard/MAIN__C505.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ce86a588afdb35cda7424cb990c067927e178e261690aad4f4ec415e3d4ef6e4"
+    },
+    {
+      "name": "MAIN__C349",
+      "ref": "C349",
+      "brep": "models/mainboard/MAIN__C349.brep",
+      "sha256": "e9a7f198fdce992f59ab10c6eb42441e4634c68ff603f864e1bc6c059554235f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "01bf985034ee3971093dd7e82ce858b7c0d5697d332e2dd699429ea5d75b0094"
+    },
+    {
+      "name": "MAIN__C337",
+      "ref": "C337",
+      "brep": "models/mainboard/MAIN__C337.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "27154f2f66ecd416d8d712ddb20398702a8cb86c2a32891f6128d2bce778bc05"
+    },
+    {
+      "name": "MAIN__C404",
+      "ref": "C404",
+      "brep": "models/mainboard/MAIN__C404.brep",
+      "sha256": "1dcd7bc25607375738fcb5cb7023dd0848425e92b27eeb1857f7beeaf61c514f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "2e991b9e777bcd64665430fa2135a8eecf3cd6410fce404b7b44931b61bc3a67"
+    },
+    {
+      "name": "MAIN__C519",
+      "ref": "C519",
+      "brep": "models/mainboard/MAIN__C519.brep",
+      "sha256": "9cd67555b1e9fbcb61b0bc9e15384d1c9480d5e0bf26d1ea6c072b88945ead95",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "541bb679e60ef52a6165e1e2fed90a6123c304b11b16a3837b3c1cb72891d188"
+    },
+    {
+      "name": "MAIN__C342",
+      "ref": "C342",
+      "brep": "models/mainboard/MAIN__C342.brep",
+      "sha256": "e672a330141e2cdeb65d55d636912b62b79d0b9688c3ae13c64c547b6be6c8ad",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "79e52b2fb803b418625acadf54bcac1191216995d9773cded8a9dc693868644b"
+    },
+    {
+      "name": "MAIN__C340",
+      "ref": "C340",
+      "brep": "models/mainboard/MAIN__C340.brep",
+      "sha256": "e672a330141e2cdeb65d55d636912b62b79d0b9688c3ae13c64c547b6be6c8ad",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "40b60c3f12b859194559eadd38b5bb7a867ccaa5e41035c00969c88077e8dbeb"
+    },
+    {
+      "name": "MAIN__C365",
+      "ref": "C365",
+      "brep": "models/mainboard/MAIN__C365.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ebb248f4eb88267b2316e2ff96e5be974d4b1f1bfe114fd501456ae54f16a68e"
+    },
+    {
+      "name": "MAIN__C331",
+      "ref": "C331",
+      "brep": "models/mainboard/MAIN__C331.brep",
+      "sha256": "da40965265a8f0754e82e5c146fdf4f7430319b7e34a451121c014ef866f26b3",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "cb0d561e3f284ac63bf679affcf7e0492d89aaa122785f8c14ba72403a57b9c9"
+    },
+    {
+      "name": "MAIN__C308",
+      "ref": "C308",
+      "brep": "models/mainboard/MAIN__C308.brep",
+      "sha256": "dd5744bd4e2b5cfc9714b2c89d7bbf94aff73b6deb94b5ef984081655fa3028d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a6e41f395bb6a46a677635a3f8ac103d0049cd32ba04518cab80bc2468b43c2d"
+    },
+    {
+      "name": "MAIN__C366",
+      "ref": "C366",
+      "brep": "models/mainboard/MAIN__C366.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "64d8de8d26dca8be600875915b0501e97f7ec232f21187317e3013905f7d3893"
+    },
+    {
+      "name": "MAIN__C341",
+      "ref": "C341",
+      "brep": "models/mainboard/MAIN__C341.brep",
+      "sha256": "e672a330141e2cdeb65d55d636912b62b79d0b9688c3ae13c64c547b6be6c8ad",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "f97a63b5a9af8bc5ff414f7bebbe4a8a75f0dbf320ab19ed96926b561f0010ab"
+    },
+    {
+      "name": "MAIN__C333",
+      "ref": "C333",
+      "brep": "models/mainboard/MAIN__C333.brep",
+      "sha256": "da40965265a8f0754e82e5c146fdf4f7430319b7e34a451121c014ef866f26b3",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ca66c4f143f1e51ff905deb94f5a363b334967075408626586d604354a672f3b"
+    },
+    {
+      "name": "MAIN__C345",
+      "ref": "C345",
+      "brep": "models/mainboard/MAIN__C345.brep",
+      "sha256": "e647d82cd9a4177150e914024f6f340e91a9f1ba59651f42e96371713d687cef",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a928f1d3e1c90b7f8fd47513b45676dee57bf8c2648aacc527b1dd2d6c14b238"
+    },
+    {
+      "name": "MAIN__C330",
+      "ref": "C330",
+      "brep": "models/mainboard/MAIN__C330.brep",
+      "sha256": "73075ae5e100438a94e1c97f5950a71edafd815c673a214380407e806aec5796",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "99309708e481fd1dcc2ad91d190adbe03961dd132b64d93b3caa95451b3a62f8"
+    },
+    {
+      "name": "MAIN__C350",
+      "ref": "C350",
+      "brep": "models/mainboard/MAIN__C350.brep",
+      "sha256": "e9a7f198fdce992f59ab10c6eb42441e4634c68ff603f864e1bc6c059554235f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "214ecb4a9657c35be5252788cfc94bc8033b63bef3ac67553aa437989295e3fd"
+    },
+    {
+      "name": "MAIN__C503",
+      "ref": "C503",
+      "brep": "models/mainboard/MAIN__C503.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "33ed401d406431eebdfe44976f803943e0dc6fd9eb008f9725759f0d14016225"
+    },
+    {
+      "name": "MAIN__R513",
+      "ref": "R513",
+      "brep": "models/mainboard/MAIN__R513.brep",
+      "sha256": "49146279e81c2feeeb0bd5f57768f9f2285ca605565c4c4bdd50dbfcc84f8830",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "6632107d46d155607f7f452c954c3452fcaa8eef72b0218bf8b8a93dc8e4fa2c"
+    },
+    {
+      "name": "MAIN__C309",
+      "ref": "C309",
+      "brep": "models/mainboard/MAIN__C309.brep",
+      "sha256": "dd5744bd4e2b5cfc9714b2c89d7bbf94aff73b6deb94b5ef984081655fa3028d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e7c9377500b4306b24098cbd54b0d709262944a14edd6f3f6a7d52af694eb81d"
+    },
+    {
+      "name": "MAIN__C530",
+      "ref": "C530",
+      "brep": "models/mainboard/MAIN__C530.brep",
+      "sha256": "251ad6fcbdb6e815a165f486cde15f8a1e3dc848cdd3efef26093297c0380ea7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c1562ea324adcd1f49edb8b065af023f0698b13ee0dc0d90f0c68f70ec75f6af"
+    },
+    {
+      "name": "MAIN__C348",
+      "ref": "C348",
+      "brep": "models/mainboard/MAIN__C348.brep",
+      "sha256": "e9a7f198fdce992f59ab10c6eb42441e4634c68ff603f864e1bc6c059554235f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "102be77239d5601e4a805799392b02da0cd709fd3ce4fc50ac2d0b31634d7f4a"
+    },
+    {
+      "name": "MAIN__C328",
+      "ref": "C328",
+      "brep": "models/mainboard/MAIN__C328.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "6850ec7a7f17ce6cda5291ad55906e78b34ed9970f383085e98aded72afe1130"
+    },
+    {
+      "name": "MAIN__C400",
+      "ref": "C400",
+      "brep": "models/mainboard/MAIN__C400.brep",
+      "sha256": "01bff60f9e5d7a851dc669bec64b94d01d44f9995945131615029f87d6f01e81",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "62c48a5de6c4519cc080e4f38e741f985a163ddd3b786ee3d33e9ab8370900f0"
+    },
+    {
+      "name": "MAIN__C379",
+      "ref": "C379",
+      "brep": "models/mainboard/MAIN__C379.brep",
+      "sha256": "d91399a48b2344b00468d12dc42780c25139481ece9288b581c619b7bbe26ef9",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e6db2f2cbf851799b18ae04d90dcdb20f9ccf9847a334cf7e1f9d68b7896546b"
+    },
+    {
+      "name": "MAIN__C500",
+      "ref": "C500",
+      "brep": "models/mainboard/MAIN__C500.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "b8aeb6afaf8d8a080d5be45d659d96efdc85bed0bc99d6e1a617d58b643a0304"
+    },
+    {
+      "name": "MAIN__C403",
+      "ref": "C403",
+      "brep": "models/mainboard/MAIN__C403.brep",
+      "sha256": "251ad6fcbdb6e815a165f486cde15f8a1e3dc848cdd3efef26093297c0380ea7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "457c117023fe3152685b99740c8636fc4186b520bb26c1936bc496509eb40346"
+    },
+    {
+      "name": "MAIN__C508",
+      "ref": "C508",
+      "brep": "models/mainboard/MAIN__C508.brep",
+      "sha256": "6ff07e8be1fddced3ac560e115627b8cb5801deee586b3f72c1f13dd46eef635",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "218cb052f1eadb7dae09d3ea0901e57bf543d691e8d115c63fafe9c0d4bace27"
+    },
+    {
+      "name": "MAIN__C315",
+      "ref": "C315",
+      "brep": "models/mainboard/MAIN__C315.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "b996ba959d11b0366617132c310668df7b1d516a2c55cb2d8b07356e61ef7b47"
+    },
+    {
+      "name": "MAIN__C502",
+      "ref": "C502",
+      "brep": "models/mainboard/MAIN__C502.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a9f7fd081bb7e29333b0e984bd37b539b9484ecf329a93e6457b2942811f4e33"
+    },
+    {
+      "name": "MAIN__C369",
+      "ref": "C369",
+      "brep": "models/mainboard/MAIN__C369.brep",
+      "sha256": "e9a7f198fdce992f59ab10c6eb42441e4634c68ff603f864e1bc6c059554235f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c627f10b7df747e15a2e2aef1a633c945ee33925cf974709a16016948e9b4108"
+    },
+    {
+      "name": "MAIN__C307",
+      "ref": "C307",
+      "brep": "models/mainboard/MAIN__C307.brep",
+      "sha256": "dd5744bd4e2b5cfc9714b2c89d7bbf94aff73b6deb94b5ef984081655fa3028d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "b365daca71649fd7179083b011b4a3effb41d9c98a49ed35d636c235a66da7a2"
+    },
+    {
+      "name": "MAIN__C326",
+      "ref": "C326",
+      "brep": "models/mainboard/MAIN__C326.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "9a21a8212b8b39beaed214eba3c7b27cfb1244c9945db226d462e5dc0a8bd9fd"
+    },
+    {
+      "name": "MAIN__C334",
+      "ref": "C334",
+      "brep": "models/mainboard/MAIN__C334.brep",
+      "sha256": "da40965265a8f0754e82e5c146fdf4f7430319b7e34a451121c014ef866f26b3",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "d0381ab842c300e88a13c4eef32cbeb28529fc2d43b981b416ef8d166baf1488"
+    },
+    {
+      "name": "MAIN__C351",
+      "ref": "C351",
+      "brep": "models/mainboard/MAIN__C351.brep",
+      "sha256": "e9a7f198fdce992f59ab10c6eb42441e4634c68ff603f864e1bc6c059554235f",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3c3961557dfb7c434513b47341315669131f59cb7c118eb28c21ddae80b75cc4"
+    },
+    {
+      "name": "MAIN__C525",
+      "ref": "C525",
+      "brep": "models/mainboard/MAIN__C525.brep",
+      "sha256": "06306ee96846da2933bbdd72a40eb290b83d4f44736f0aba9e494727ab4ae205",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3d2882f6579934adf944ce6e4cfc7c9005a29a4979e260b3f497e6d429f815c0"
+    },
+    {
+      "name": "MAIN__C346",
+      "ref": "C346",
+      "brep": "models/mainboard/MAIN__C346.brep",
+      "sha256": "e647d82cd9a4177150e914024f6f340e91a9f1ba59651f42e96371713d687cef",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ed5d07dc4924f7f0cec6deffaabf7d296492bccd205665777da2ddf53bc8abae"
+    },
+    {
+      "name": "MAIN__C301",
+      "ref": "C301",
+      "brep": "models/mainboard/MAIN__C301.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "165dd6214d9ec9e2f734cc3c8bb1b3972b1e35e1db56dfd0b73832a3856d7759"
+    },
+    {
+      "name": "MAIN__C371",
+      "ref": "C371",
+      "brep": "models/mainboard/MAIN__C371.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "d76054d49b78a0e44b82b901e37985a8e611aca616a290c978dfe4c68c180d31"
+    },
+    {
+      "name": "MAIN__C521",
+      "ref": "C521",
+      "brep": "models/mainboard/MAIN__C521.brep",
+      "sha256": "251ad6fcbdb6e815a165f486cde15f8a1e3dc848cdd3efef26093297c0380ea7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "7e6bca29ac02c92ab8eee4aafee25e2c48b38f6a092fce6cc11f05e6adba923f"
+    },
+    {
+      "name": "MAIN__C339",
+      "ref": "C339",
+      "brep": "models/mainboard/MAIN__C339.brep",
+      "sha256": "e672a330141e2cdeb65d55d636912b62b79d0b9688c3ae13c64c547b6be6c8ad",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "b2052964fc7d43f143fa9f97218caedd74bf01be088267772d0ad98626e89c18"
+    },
+    {
+      "name": "MAIN__C336",
+      "ref": "C336",
+      "brep": "models/mainboard/MAIN__C336.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "cf30998259c2f42b700a4b95d92e572d12284700ec055116d65f7866ea71d2c0"
+    },
+    {
+      "name": "MAIN__C506",
+      "ref": "C506",
+      "brep": "models/mainboard/MAIN__C506.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "67fa031f906bf8e3030a0b3c2fb37c1cdcfeb825d08ea1f2a880430d2f55b57f"
+    },
+    {
+      "name": "MAIN__C373",
+      "ref": "C373",
+      "brep": "models/mainboard/MAIN__C373.brep",
+      "sha256": "73075ae5e100438a94e1c97f5950a71edafd815c673a214380407e806aec5796",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "51fde93948d4e9e83f69f8d38c9c2f6c166dd46ca7230437aa6c8aba51394ae2"
+    },
+    {
+      "name": "MAIN__C509",
+      "ref": "C509",
+      "brep": "models/mainboard/MAIN__C509.brep",
+      "sha256": "d829a8fe3352791d2043ee82af5454d0965a62a7c7184073cf11dd876eb19699",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "494b07f904f1dd9aed2024109914195ce78b829f552339b5b9709570d08c93ca"
+    },
+    {
+      "name": "MAIN__C332",
+      "ref": "C332",
+      "brep": "models/mainboard/MAIN__C332.brep",
+      "sha256": "da40965265a8f0754e82e5c146fdf4f7430319b7e34a451121c014ef866f26b3",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "f9ea06d6b188bc7093b4029a3bb28097b6e92c0a330096b1d1a010af92090d10"
+    },
+    {
+      "name": "MAIN__C381",
+      "ref": "C381",
+      "brep": "models/mainboard/MAIN__C381.brep",
+      "sha256": "2f788f004c6a795ef4d00f88af1282b7f5bb1ab3ad3317c0a8b12df54cd90261",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "98dbb21920780754f86cdc99c2429233a79595abc6bab49622d41c1c1b1c3063"
+    },
+    {
+      "name": "MAIN__Q500",
+      "ref": "Q500",
+      "brep": "models/mainboard/MAIN__Q500.brep",
+      "sha256": "342ac86f1c819c880d2b28f5c6333212bb9c8ca7a07dd2bec2b938088d353f5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "e0d35d52393e5378535b53d75b8df4f87939eba3c1e7cd9747eece6ed5af6de3"
+    },
+    {
+      "name": "MAIN__C501",
+      "ref": "C501",
+      "brep": "models/mainboard/MAIN__C501.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "d26d672e764bc576a55243eafa69fb05ec90602a1da2b2917c170d3163619749"
+    },
+    {
+      "name": "MAIN__C522",
+      "ref": "C522",
+      "brep": "models/mainboard/MAIN__C522.brep",
+      "sha256": "251ad6fcbdb6e815a165f486cde15f8a1e3dc848cdd3efef26093297c0380ea7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3c3313b9d3117ec557f3f836138cb8b1d128d5d8b080ccba48d46f2c1fdbaf8b"
+    },
+    {
+      "name": "MAIN__C338",
+      "ref": "C338",
+      "brep": "models/mainboard/MAIN__C338.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c535de6434d5b85ac67f3345c91c670d1cd80e48c8dc5e2819e55b4333b2866c"
+    },
+    {
+      "name": "MAIN__C368",
+      "ref": "C368",
+      "brep": "models/mainboard/MAIN__C368.brep",
+      "sha256": "2530ab648ab570495e6208f8fc8cc186a65ecc6839afc8ee5589b7aa6943e15d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "b18063c2f760dac7ee849154179a65e4530261e666d162bf34d6ac53b680ee22"
+    },
+    {
+      "name": "MAIN__C302",
+      "ref": "C302",
+      "brep": "models/mainboard/MAIN__C302.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "1c962af2b2e8404fca566aa5917512eb1f3a0935dfb518c06b287a11f2addb18"
+    },
+    {
+      "name": "MAIN__C305",
+      "ref": "C305",
+      "brep": "models/mainboard/MAIN__C305.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "db8de6e8e64e8c7a543e3e25b303a541eb02da2045256c4b06afaa5e5f3bc854"
+    },
+    {
+      "name": "MAIN__C401",
+      "ref": "C401",
+      "brep": "models/mainboard/MAIN__C401.brep",
+      "sha256": "01bff60f9e5d7a851dc669bec64b94d01d44f9995945131615029f87d6f01e81",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "ef13797d781012a8976b4b0ae7d1ed4ec4dada8bb477104b9a69adbdc7435dbb"
+    },
+    {
+      "name": "MAIN__C518",
+      "ref": "C518",
+      "brep": "models/mainboard/MAIN__C518.brep",
+      "sha256": "251ad6fcbdb6e815a165f486cde15f8a1e3dc848cdd3efef26093297c0380ea7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8b4622964d64124f52f8f362c9bb744d55b37ba0b99d4d5ac80a43c4462a2239"
+    },
+    {
+      "name": "MAIN__C335",
+      "ref": "C335",
+      "brep": "models/mainboard/MAIN__C335.brep",
+      "sha256": "73075ae5e100438a94e1c97f5950a71edafd815c673a214380407e806aec5796",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "158f50c500b8e08a3bcec27d65d28ca1fb1c0209718b6fc2326f498a90a81ce0"
+    },
+    {
+      "name": "MAIN__C374",
+      "ref": "C374",
+      "brep": "models/mainboard/MAIN__C374.brep",
+      "sha256": "a953371858e05705d246e1a177515915108e6dd4c35e4884f8a409750042e5cd",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "b6eb8badb3ae40a68f19706952ef00f8acbeca61d10958b5b30087d5b3f0271d"
+    },
+    {
+      "name": "MAIN__C319",
+      "ref": "C319",
+      "brep": "models/mainboard/MAIN__C319.brep",
+      "sha256": "7822ff504b1f999f6b6e76c6e5ef9d5e5c94f3f6c139f9b09038ca69290e24ce",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "55a6a7ad6a7e165ba9847297a27050b9c4bbb8a7299971e0ea9528ea1bdd914e"
+    },
+    {
+      "name": "MAIN__C325",
+      "ref": "C325",
+      "brep": "models/mainboard/MAIN__C325.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "401b871f299ed96d8a7ff92e1b22fe1dd1f5bf7fdb4ed3923a5057d0e4e96d9b"
+    },
+    {
+      "name": "MAIN__C510",
+      "ref": "C510",
+      "brep": "models/mainboard/MAIN__C510.brep",
+      "sha256": "d829a8fe3352791d2043ee82af5454d0965a62a7c7184073cf11dd876eb19699",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "8a25bdc0b627f88490bc3e1d977fc0a586d86c5576ef52ecdc20633995980a07"
+    },
+    {
+      "name": "MAIN__C327",
+      "ref": "C327",
+      "brep": "models/mainboard/MAIN__C327.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c440599a8bbb5eda70e4763819ea848a95484e9f339c97be476964751286d24a"
+    },
+    {
+      "name": "MAIN__C377",
+      "ref": "C377",
+      "brep": "models/mainboard/MAIN__C377.brep",
+      "sha256": "73075ae5e100438a94e1c97f5950a71edafd815c673a214380407e806aec5796",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "a1c15538d4a4ab2b091841b29f501459292c437f4b1b31896a832fa311afcd9c"
+    },
+    {
+      "name": "MAIN__C380",
+      "ref": "C380",
+      "brep": "models/mainboard/MAIN__C380.brep",
+      "sha256": "63efabd3fb4b884ae2f3b527f44aa96db40ad61ab371ac58e9dd916f1657eda0",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "15ebb6db5403c856398f5d4ef1a9f945b131779392125ddc71e52ee2e1f71f31"
+    },
+    {
+      "name": "MAIN__C372",
+      "ref": "C372",
+      "brep": "models/mainboard/MAIN__C372.brep",
+      "sha256": "73075ae5e100438a94e1c97f5950a71edafd815c673a214380407e806aec5796",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c6b14e4d72598782eeb538893ab0715ccd22e7a942773dd506f2cdd3a1761d41"
+    },
+    {
+      "name": "MAIN__R512",
+      "ref": "R512",
+      "brep": "models/mainboard/MAIN__R512.brep",
+      "sha256": "49146279e81c2feeeb0bd5f57768f9f2285ca605565c4c4bdd50dbfcc84f8830",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "f7314aa987458727d53c9b449344f65484da861f5d4be09c7d1f7b9ec66a9b5a"
+    },
+    {
+      "name": "MAIN__C318",
+      "ref": "C318",
+      "brep": "models/mainboard/MAIN__C318.brep",
+      "sha256": "2530ab648ab570495e6208f8fc8cc186a65ecc6839afc8ee5589b7aa6943e15d",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "1441ff83a65625324710454d848e622d2f210d16f032fd7e00dc58c08403d723"
+    },
+    {
+      "name": "MAIN__C300",
+      "ref": "C300",
+      "brep": "models/mainboard/MAIN__C300.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "dff93d83c9f8f49e01e05ce0a14435ba95081cbb2d8f3e0e86596e9b6b9e4e86"
+    },
+    {
+      "name": "MAIN__C316",
+      "ref": "C316",
+      "brep": "models/mainboard/MAIN__C316.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "c2bf53bd63a2423dd934bc81e92605e702ca2dd42185239ed80b2b7a96003f9a"
+    },
+    {
+      "name": "MAIN__C528",
+      "ref": "C528",
+      "brep": "models/mainboard/MAIN__C528.brep",
+      "sha256": "251ad6fcbdb6e815a165f486cde15f8a1e3dc848cdd3efef26093297c0380ea7",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "21abb52f935398f590816ad6d17a8f394e05cf423065f00a2fd01ee170934d0a"
+    },
+    {
+      "name": "MAIN__R518",
+      "ref": "R518",
+      "brep": "models/mainboard/MAIN__R518.brep",
+      "sha256": "8c0f41c061fddd37c67a996e008c74915cdee06e8cb0bb87c25fc6037a0dfdcd",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "74b6ba5e7f7a9c216a1c05d12cc04fd011790158c481fc277653a6a20c599ebd"
+    },
+    {
+      "name": "MAIN__C303",
+      "ref": "C303",
+      "brep": "models/mainboard/MAIN__C303.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "3aef8b77ccc2496d3c53b4e24125c637de1b3d4e17cc57d8067116bd16eb0b59"
+    },
+    {
+      "name": "MAIN__R522",
+      "ref": "R522",
+      "brep": "models/mainboard/MAIN__R522.brep",
+      "sha256": "8c0f41c061fddd37c67a996e008c74915cdee06e8cb0bb87c25fc6037a0dfdcd",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "158563b75f1d4b66fe521960102fcb783b5a454aad947c7b3ef6dd07a86625af"
+    },
+    {
+      "name": "MAIN__C364",
+      "ref": "C364",
+      "brep": "models/mainboard/MAIN__C364.brep",
+      "sha256": "227885d0dfea9040651b4fc14a8d76d180906b7ac6ef12753d1de76cde29ba5c",
+      "representation": "native_nominal_library_model",
+      "solid_count": 1,
+      "source_sha256": "670692730e6e169805d039f1676d99b9f2925d046a59fe7ec668f52e34b4ebac"
+    },
+    {
+      "name": "MAIN__SUPPORT_38_C70",
+      "ref": "C70",
+      "brep": "models/mainboard/MAIN__SUPPORT_38_C70.brep",
+      "sha256": "72e58d3a99182f47a48f048418280e2118fe59f3815c692bdd4669468fbdbce5",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "a5795e1c01451dbe0d1171b544b2b47f7a5f70ebc995e8b19cf2cc4917297d15"
+    },
+    {
+      "name": "MAIN__SUPPORT_39_C71",
+      "ref": "C71",
+      "brep": "models/mainboard/MAIN__SUPPORT_39_C71.brep",
+      "sha256": "11e048571856954e800d1b39e2c5db8c307e5cab200cee87cc2070c0ba8132e5",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "46c19e59e9050566815affe99f4f6641f27377793fdea942a12552b25a8c8679"
+    },
+    {
+      "name": "MAIN__SUPPORT_40_C75",
+      "ref": "C75",
+      "brep": "models/mainboard/MAIN__SUPPORT_40_C75.brep",
+      "sha256": "6ae2d02acff5ecb92f642e8ad77e83aa6cfa8555bff5d531efa4f67f0cbe82bd",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "3cf787225f6400b2bee42edbd2d9f90b992256bb36754260d2e89e100382f0b9"
+    },
+    {
+      "name": "MAIN__SUPPORT_41_C76",
+      "ref": "C76",
+      "brep": "models/mainboard/MAIN__SUPPORT_41_C76.brep",
+      "sha256": "9b79809d806e626897c63bc5f84dd18fc23c40991b08872dbb5d3799eeae706a",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "d1251e45658acd5bc9c2b158dea9f38d1f2b212695318d9e837abc2cc2e931e3"
+    },
+    {
+      "name": "MAIN__SUPPORT_42_F60",
+      "ref": "F60",
+      "brep": "models/mainboard/MAIN__SUPPORT_42_F60.brep",
+      "sha256": "5dfd9f8c3a3e1bbd1d8b42cd5b2f1766e2a7b80fa910ad6919203b48b464602e",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "ed969b68392fc734e33ca402dfd5f41c886b51c88a95147df5fe65f5028ccd74"
+    },
+    {
+      "name": "MAIN__SUPPORT_43_R70",
+      "ref": "R70",
+      "brep": "models/mainboard/MAIN__SUPPORT_43_R70.brep",
+      "sha256": "c689b0711ac5c28ba44ea7688b0877ac973e42cc85bffe522838b45573f22978",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "3fc11e3e68882c1afd4200683877cb0719054200a05df4e0de80746d3fec8b3f"
+    },
+    {
+      "name": "MAIN__SUPPORT_44_R71",
+      "ref": "R71",
+      "brep": "models/mainboard/MAIN__SUPPORT_44_R71.brep",
+      "sha256": "9aac792bf4992a5ca14c439ba3f405424f0d1c08d99fd103959879790bc5c0c2",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "c85bc4604afe85d6d30ed059ae9d1298a6f396d81987991173e26d199ede2e5d"
+    },
+    {
+      "name": "MAIN__SUPPORT_45_R72",
+      "ref": "R72",
+      "brep": "models/mainboard/MAIN__SUPPORT_45_R72.brep",
+      "sha256": "34c23704efe3755353bd1eaac91c779e426298ee3be7f368fb1df2d798dbd387",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "567147d26b1a6b67b90f6d216f2a272ec55d71f5571bef4bc20ba6176e23a90e"
+    },
+    {
+      "name": "MAIN__SUPPORT_46_R73",
+      "ref": "R73",
+      "brep": "models/mainboard/MAIN__SUPPORT_46_R73.brep",
+      "sha256": "9e6eebb64d38f3b43a03af99fc51712700736a3240bce6dd82da8f15cbf61b0a",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "8b7e4dc255885b6e2a8d34147323499e5d9943c8b33fb5c1badba224f5d59ce9"
+    },
+    {
+      "name": "MAIN__SUPPORT_47_R74",
+      "ref": "R74",
+      "brep": "models/mainboard/MAIN__SUPPORT_47_R74.brep",
+      "sha256": "9b7d8384de04c0ff7c445c815cd9ca7d483f7a7c7643c2daf93c531aeeffe8bd",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "f8c3651e2a18df6bd74eb37101b537ebd12dea339bc50c97af91a21fe8ac480e"
+    },
+    {
+      "name": "MAIN__SUPPORT_48_R75",
+      "ref": "R75",
+      "brep": "models/mainboard/MAIN__SUPPORT_48_R75.brep",
+      "sha256": "56055a9cbb155bcc7669b8d1a79803653b2af0b98e23a7adb1ef37311ac4c37d",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "208f228640dc2da45f21183bec66a03695d5d16f858c61cb2bf00a82beb1d4ad"
+    },
+    {
+      "name": "MAIN__SUPPORT_49_R76",
+      "ref": "R76",
+      "brep": "models/mainboard/MAIN__SUPPORT_49_R76.brep",
+      "sha256": "7ec0ddf178d174923eae69528a5045d9ff7c269315796474df554b63b47d0930",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "b442d1df6fd68ebfaebb72a696c3dfb7f8018ac73e131ae5ce62fd801a9e5460"
+    },
+    {
+      "name": "MAIN__SUPPORT_50_R77",
+      "ref": "R77",
+      "brep": "models/mainboard/MAIN__SUPPORT_50_R77.brep",
+      "sha256": "08390da30c3897837fb94ed582bd6075d79541657b3d84629d4a66e6463dfa5f",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "42a99eaec1288f568ca369142368659980672647413e753700307f1b537edb16"
+    },
+    {
+      "name": "MAIN__SUPPORT_51_R78",
+      "ref": "R78",
+      "brep": "models/mainboard/MAIN__SUPPORT_51_R78.brep",
+      "sha256": "7ec0ddf178d174923eae69528a5045d9ff7c269315796474df554b63b47d0930",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "8c5e2a2506013ef7d1754ae82a04cbf78607bb500035642d362a0561b2220881"
+    },
+    {
+      "name": "MAIN__SUPPORT_52_R79",
+      "ref": "R79",
+      "brep": "models/mainboard/MAIN__SUPPORT_52_R79.brep",
+      "sha256": "7524df3e939ddff48bb489d4314a27f7716538358f3044ddb8faf3346f378599",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "35fa129a6a3b8fc5d7fa84ed1bb99639e0c3e30f03c7e0b82366d2589a573db8"
+    },
+    {
+      "name": "MAIN__SUPPORT_53_R83",
+      "ref": "R83",
+      "brep": "models/mainboard/MAIN__SUPPORT_53_R83.brep",
+      "sha256": "7ca138e54bf08fc13a9dbe9b1b34898b235c4a95fe3b652a3381c7ce14e78dfa",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "224a294e525dd5bc19904409d0a52ea56b54d4680163242242eb2323a1095969"
+    },
+    {
+      "name": "MAIN__SUPPORT_54_U62",
+      "ref": "U62",
+      "brep": "models/mainboard/MAIN__SUPPORT_54_U62.brep",
+      "sha256": "38e49b8716580f6c01d917b5d8eec2bcf58ef7b36006bc4690b9ebd364a1f699",
+      "representation": "topside_package_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "1a36b4cbc7d449cfad765220643ea105204169856959e2367a4dfa6a87c1aabc"
+    },
+    {
+      "name": "MAIN__SUPPORT_55_C70_1",
+      "ref": "C70",
+      "brep": "models/mainboard/MAIN__SUPPORT_55_C70_1.brep",
+      "sha256": "9d9143cfbf0d0a5e90977b586c8c6a20edb6fe2d5de541403a82565fd1a24594",
+      "representation": "native_PTH_lead_solder_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "74fb014212c9f59cd4b40451578457d3536c9de096842a64476ae3d4971e9a13"
+    },
+    {
+      "name": "MAIN__SUPPORT_56_C70_2",
+      "ref": "C70",
+      "brep": "models/mainboard/MAIN__SUPPORT_56_C70_2.brep",
+      "sha256": "7861b6fed8c24922cb54c113d23fb87117e430f7f639338ab9c1b645894d8aa1",
+      "representation": "native_PTH_lead_solder_design_envelope",
+      "solid_count": 1,
+      "source_sha256": "39430e2a8a8fdf5aeae1ceb1e1d558dbf77525c82e6a068ab073e8008684f4c3"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R60",
+      "ref": "R60",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R60.brep",
+      "sha256": "e2c71955c2047d7f1d30b017a91d098c8cf84d7c8f4dbb2ce5b2a79cdf1dd93d",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "76980a91a7acaaccbb985b0abc28b067b95b9a8b0b8f5048c96ff359a4bdf16f"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R61",
+      "ref": "R61",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R61.brep",
+      "sha256": "f0e82c4e194e1770c80a0f9f3b7c0a8749a80e8aba7860061829aace25e05aa4",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "2eee9d3d2bc258d655e650a6012c18ed5c35947c8c126f9928b04ade37f2f168"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_C72",
+      "ref": "C72",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_C72.brep",
+      "sha256": "50a5620d41ebf38925eb14d4a676b57675b491f6a979144f1825a2ab146b2dea",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "0755a0b9e1f747ab83afc9c23cdeec5be0a330dd6b1b1f946547cfb7c5b8b61f"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_C73",
+      "ref": "C73",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_C73.brep",
+      "sha256": "50a5620d41ebf38925eb14d4a676b57675b491f6a979144f1825a2ab146b2dea",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "71db35b34ec1c3dfe36b0901330d2e55634fe349df963ddcfd34437ea94cd7b7"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_C65",
+      "ref": "C65",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_C65.brep",
+      "sha256": "f0bdb605b3107f0fe399e185f228f52eff6ee73af7941c99789a5c6fe3dd6276",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "ea5d017b23153cf0c030f3a13a3a8748f608cbf8ee805973100650c24ad5e6ff"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_C74",
+      "ref": "C74",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_C74.brep",
+      "sha256": "1986cf9bda2bb5878b8d907bc0222a125adb32a2f8bf7e16b11936f97462ce22",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "da4c1f934de9659e47ff19b0a90ea5786fdb37b94be0a1973b39248e01205fbb"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_U63",
+      "ref": "U63",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_U63.brep",
+      "sha256": "1bdcb9788009e959a4c0723b199ef514b16284e30a97eacc88b14201bef1ff7f",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "6d1ac2a80855ce791988a215344e7832a52b79fc86d6e533875efc78bffd67be"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_D71",
+      "ref": "D71",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_D71.brep",
+      "sha256": "fb354bf199e768f8dc5b573c87619acdd2cd4026d24159370962513855d1c94b",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "b83114b03090cf67fc9da350c3622e8006e0475664c7154daaa17a04401401c5"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_C60",
+      "ref": "C60",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_C60.brep",
+      "sha256": "ec9e54f3134285aeac4c40328ab251a7f2e5eabe30b4ebf555068afe724e3a24",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "5f18d1dd570f612cf4ccbbd5b3c3158cc550741257b0aca2733eb86a702cd915"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_C61",
+      "ref": "C61",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_C61.brep",
+      "sha256": "ec9e54f3134285aeac4c40328ab251a7f2e5eabe30b4ebf555068afe724e3a24",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "eef18914380b94c7a03ecdc3e13ffdfb33c8ea5b076bd66c92b9c8a56ecd901b"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_C62",
+      "ref": "C62",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_C62.brep",
+      "sha256": "c2928817faf9e22e5abf9ca02d3dcf5fa1cce3914b344856ee8f6ef0438e65fa",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "6f4ab766f4c0476533ae2933e9570481107b61dd15eb79f6dc405631ff0f8fe6"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R62",
+      "ref": "R62",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R62.brep",
+      "sha256": "53411884eec63551d367711b9745d22c78e145a5d94d51d92e5e45e0061e1c66",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "4f6c6949b4386b2d8e9ea155862ad465c8ef47679210e516f27e20af31355eb7"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R65",
+      "ref": "R65",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R65.brep",
+      "sha256": "9dd30386dde858c5de24b9b71ab9d4c08ea74dd3ade89f10f2e7256ce2738b5b",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "078894b88a308e0c6f4868835f1079444fc80b341342a6b34b203ac94512f6b3"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R63",
+      "ref": "R63",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R63.brep",
+      "sha256": "53411884eec63551d367711b9745d22c78e145a5d94d51d92e5e45e0061e1c66",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "34ff3b3ba1e0c21664c5e451e21728485b95f2c69f3775d8a5bc88fd0637d1ef"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R64",
+      "ref": "R64",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R64.brep",
+      "sha256": "9dd30386dde858c5de24b9b71ab9d4c08ea74dd3ade89f10f2e7256ce2738b5b",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "430e48d2e2948863640d7e31d9688e5486c62bc68a6d4520794ffc04a6c4c9f2"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R80",
+      "ref": "R80",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R80.brep",
+      "sha256": "336f9e768f9ed9180b0846bbb6004c8ba292553790fff5f6621fef9f40ad781e",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "0aae0a874d2243167b134e960c918081b88f1370acf3639cc769858184ed93f4"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R81",
+      "ref": "R81",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R81.brep",
+      "sha256": "336f9e768f9ed9180b0846bbb6004c8ba292553790fff5f6621fef9f40ad781e",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "174a2b49c06652c1b3dc099ed425765aaee3d285919550092a67c85a3e994975"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_R82",
+      "ref": "R82",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_R82.brep",
+      "sha256": "336f9e768f9ed9180b0846bbb6004c8ba292553790fff5f6621fef9f40ad781e",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "1050459eb988987bf483112e2456632e59ca1385822acb7c734b9d91127dd2ff"
+    },
+    {
+      "name": "MAIN__CATALOG_PACKAGE_HEIGHT_U60",
+      "ref": "U60",
+      "brep": "models/mainboard/MAIN__CATALOG_PACKAGE_HEIGHT_U60.brep",
+      "sha256": "e1fa4d263fbcf7b10dacf9435071d988410fbd1079aab460b4246e3f618f60cd",
+      "representation": "native_courtyard_extruded_to_published_package_height_not_assembled_maximum",
+      "solid_count": 1,
+      "source_sha256": "fa68d0bf6425969e6b18417c6be401f0cd4f7fb4c773e7db28d5d3ee49e9a238"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C220",
+      "ref": "C220",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C220.brep",
+      "sha256": "b31a4aff1da99ce56d4b3725536dec2279cca894699d74c9a9a2a3f8512c162a",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "a6f4e4c37d1908ca5bd6df9bad67a863dc0ffdb62f84d4c1ca0b5e54d189ae74"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C221",
+      "ref": "C221",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C221.brep",
+      "sha256": "73d0c373adc3f06f7b3a993cd08de9fd0922e25af63a0cf1a8bc3bb60f342a3c",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "82857f6c6dbbc4039d5441c01638954f88ec757dfe03381f4db16522dc98c45f"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C222",
+      "ref": "C222",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C222.brep",
+      "sha256": "73d0c373adc3f06f7b3a993cd08de9fd0922e25af63a0cf1a8bc3bb60f342a3c",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "1a85612efe8eca3e2efa9725e93ebb1567c7f311404c6150201563b1d888d139"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C223",
+      "ref": "C223",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C223.brep",
+      "sha256": "73d0c373adc3f06f7b3a993cd08de9fd0922e25af63a0cf1a8bc3bb60f342a3c",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "01942783d1cf5e247a93d67fc4908edda9920b68ba52b4d38f00e12c9bb79782"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C224",
+      "ref": "C224",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C224.brep",
+      "sha256": "4285be6e819df10749fcfddab326c3f31279a64cf99ac1360174afee4b5af6a8",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "2ae0164dba52d4261df4ffcd345241db23d0506b7c2c80c2ed8117194df4599c"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C225",
+      "ref": "C225",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C225.brep",
+      "sha256": "d639515280ea1d92df85e08d23004a81ce41fe914947afedcf5418128786a141",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "3d12624987d8a39070f2e0dcd1fe9694ce8be76bc7b051374199c40883f552b2"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C226",
+      "ref": "C226",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C226.brep",
+      "sha256": "57190d30aa4cd77bf93a140ad4543dc92fdf5405e25f213bc7dbab37887b85ce",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "b9200c9d9268e54af089425442ad10e09b2519cf4d3a22b1b73f5b2e1f6d51e0"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C227",
+      "ref": "C227",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C227.brep",
+      "sha256": "995980b05520668d689457b6fd4e95f33e7c821eb86e1498777d5c460773c1fa",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "d20d5bfbf74da346aa54b826bba984637f4fb62aac37304ba266847758aba06c"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C210",
+      "ref": "C210",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C210.brep",
+      "sha256": "a9ad54947c592e7797ee0c73ac75d0dbc7749d633821d1ba37d6fa8271e6d51f",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "6632af027badc41a1e2b2962ff23e2509426dab97cf42f61d393a2be100658bc"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C211",
+      "ref": "C211",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C211.brep",
+      "sha256": "a9ad54947c592e7797ee0c73ac75d0dbc7749d633821d1ba37d6fa8271e6d51f",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "cd19b7b6ae7dfa116c7dfddb5ee971b371aad960538851a5280db1f410d04a94"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C212",
+      "ref": "C212",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C212.brep",
+      "sha256": "a9ad54947c592e7797ee0c73ac75d0dbc7749d633821d1ba37d6fa8271e6d51f",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "c46527f6173f9e990f302710d967c8d6cb4855f35bb143105a196e8bb457f46c"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C213",
+      "ref": "C213",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C213.brep",
+      "sha256": "a9ad54947c592e7797ee0c73ac75d0dbc7749d633821d1ba37d6fa8271e6d51f",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "f293dfa0dff5a3d8456f1323db35a7e72efe5a97677a3fd73e8c155c5e7937d8"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C214",
+      "ref": "C214",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C214.brep",
+      "sha256": "a9ad54947c592e7797ee0c73ac75d0dbc7749d633821d1ba37d6fa8271e6d51f",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "95a312735e352a355cba1ee2b07fd9e3619a339ecf94a4764d67347f308ce58f"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_C215",
+      "ref": "C215",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_C215.brep",
+      "sha256": "a9ad54947c592e7797ee0c73ac75d0dbc7749d633821d1ba37d6fa8271e6d51f",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation; native lands retained",
+      "solid_count": 1,
+      "source_sha256": "92173d28e2069f9ffae9c2013a82166b06d0252439f937a6c97b259aaa224469"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_U10",
+      "ref": "U10",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_U10.brep",
+      "sha256": "42cc2bb46821bac037948b754719c860455dc15c2ed9039e55de486994189f6f",
+      "representation": "manufacturer_seated_package_maximum_via_mirror_plus_explicit_assembly_design_allocation; moldflash caveat retained",
+      "solid_count": 1,
+      "source_sha256": "7c1b08975cc38a9efe3e51a7d7200275f550ce69c0e0234516693547711e8e3e"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_U11",
+      "ref": "U11",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_U11.brep",
+      "sha256": "acf0ce1c0e99411a27282a8e514ad91ca24574228f3932feb7552f950c886afb",
+      "representation": "manufacturer_seated_package_maximum_via_mirror_plus_explicit_assembly_design_allocation; moldflash caveat retained",
+      "solid_count": 1,
+      "source_sha256": "da9a86af7261681844bca3950b8737f79a3d4138bbfe08ae448179c3425d4aea"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_Y1",
+      "ref": "Y1",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_Y1.brep",
+      "sha256": "280a8e936f3f16e05e4ba4c8e2fe9177fbca19dc3d4a860721bfc561beb64f3e",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation",
+      "solid_count": 1,
+      "source_sha256": "7b8354684fa84b4839371ccde7c2e4651c8cae6d2d1d055a4cb4787d2aa0f321"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_Y2",
+      "ref": "Y2",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_Y2.brep",
+      "sha256": "280a8e936f3f16e05e4ba4c8e2fe9177fbca19dc3d4a860721bfc561beb64f3e",
+      "representation": "manufacturer_package_maximum_plus_explicit_assembly_design_allocation",
+      "solid_count": 1,
+      "source_sha256": "849ae31ed46304fc126a140ab44425e0c3a2743af907267b0eb69fff11649c4a"
+    },
+    {
+      "name": "MAIN__ASSEMBLY_ALLOCATION_J61",
+      "ref": "J61",
+      "brep": "models/mainboard/MAIN__ASSEMBLY_ALLOCATION_J61.brep",
+      "sha256": "3380697265a37f174bce907c97b516f4f3bf201f435f9a157c33bbda19a39910",
+      "representation": "explicit_MOUNTED_body_height_allocation_from_exact_manufacturer_nominal_geometry_and_documented_model_latch; not_manufacturer_maximum",
+      "solid_count": 1,
+      "source_sha256": "b8b3e9955dd49793ec2788b766d948723c5d0ac683235ef059552131adde7f8b"
+    },
+    {
+      "name": "MAIN__U1_PROPOSED_BODY",
+      "ref": "U1",
+      "brep": "models/mainboard/MAIN__U1_PROPOSED_BODY.brep",
+      "sha256": "3dd8a3015f654f9fcd86a796effa2e2164cb51bdecd2eff64cd48bf5e5faf1cd",
+      "representation": "own_ASIC_nominal_body_proposal_no_leads",
+      "solid_count": 1,
+      "source_sha256": "4076ebe2159318077cff74cd8394ee6d9804aaca87bf8ba52a43e3698bd6b2a6"
+    },
+    {
+      "name": "MAIN__U2_PROPOSED_BODY",
+      "ref": "U2",
+      "brep": "models/mainboard/MAIN__U2_PROPOSED_BODY.brep",
+      "sha256": "3dd8a3015f654f9fcd86a796effa2e2164cb51bdecd2eff64cd48bf5e5faf1cd",
+      "representation": "own_ASIC_nominal_body_proposal_no_leads",
+      "solid_count": 1,
+      "source_sha256": "f40381ebc761f1df5b07261d6b85d74852b80bda481f598f21bac1752b6f7dc3"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_U20",
+      "ref": "U20",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_U20.brep",
+      "sha256": "8ddaab1745804d91cf2197d2eee5d7271b7b284f0ad8224b13ed4f64516793fb",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "a094e75cfb21b4fd77f1c31ee752a14d3ce509628e23c3cb966b9c25cf3fd1b9"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_L1",
+      "ref": "L1",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_L1.brep",
+      "sha256": "9f23623e8f82ed201303767fee159da849ab67ba1ebd01be69f1510e664a357b",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "9dc68c779463b184c56b5bfb11fb2aceaf934c1aa36d5713ec5d238033646b93"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C100",
+      "ref": "C100",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C100.brep",
+      "sha256": "72f0e5626da872877114e10deb7aadded3e588c7d91613d4635e54ea6630f00d",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "6b429e1bc587ceb77a753af033c8aafd0202449c4c4c5a069bfd3ccef86b3469"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C107",
+      "ref": "C107",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C107.brep",
+      "sha256": "72f0e5626da872877114e10deb7aadded3e588c7d91613d4635e54ea6630f00d",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "40a9171d7f6e3cae7c564f5a7132ea49bb6aaf951b3bc248f8e0dffbeb5680a7"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C101",
+      "ref": "C101",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C101.brep",
+      "sha256": "72f0e5626da872877114e10deb7aadded3e588c7d91613d4635e54ea6630f00d",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "649026e37e293490a67faa09b088315b6193c9a91da752eb12f18fc2a4c31c00"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C102",
+      "ref": "C102",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C102.brep",
+      "sha256": "72f0e5626da872877114e10deb7aadded3e588c7d91613d4635e54ea6630f00d",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "b73eab5367e0909e7c709d2c8efe1d615f7461e2057b9ae17aa130ffb93caa4e"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C108",
+      "ref": "C108",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C108.brep",
+      "sha256": "33d794d158f338b28eb8ad8cfd4ca7b0131c24128fc872cb29ae8640dea7e094",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "a39e9374886ec420197db526ea0427b39efd6b45f4414ab16ebf8bbb7376abb5"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C103",
+      "ref": "C103",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C103.brep",
+      "sha256": "39af79f9cde19454523ea61008600ff5c7cdf89505aaa5625dd709dedd68a1c5",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "82d564a178ae2cd225a5ba4d3fb4ebffcaa028766ea0de2b0196b8ad197785b8"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R21",
+      "ref": "R21",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R21.brep",
+      "sha256": "3e24097a25616f509a3c898c5f6b3fc5c840ed87d9c90f52078891257ee1940f",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "9dfde5a079cb700e43ce12746c933cf9d979d1e847ec3e8538bf39909e7ff7d1"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R22",
+      "ref": "R22",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R22.brep",
+      "sha256": "3e24097a25616f509a3c898c5f6b3fc5c840ed87d9c90f52078891257ee1940f",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "58803ac61c383971361aecc1fbd4b25885389af1a4d527e8ed363ef61f9f8026"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R23",
+      "ref": "R23",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R23.brep",
+      "sha256": "50f20295f43fe7bfc915b73e92c1674af38774f9629c666ec76e80d70d429771",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "10ee3c00e4951b04e263e4c26ebc46135dc5d55b3919e8b1adec9bff574a91f4"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R24",
+      "ref": "R24",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R24.brep",
+      "sha256": "1f30c994ee009c8751a43462c1577bb4dc0b55dd5fcaad5535b1a1723763ad26",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "b94a94eac0b23cb730ee4faa49f8fccad4810c9a9b32167852e6dbd3d62a64c5"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_U21",
+      "ref": "U21",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_U21.brep",
+      "sha256": "8ddaab1745804d91cf2197d2eee5d7271b7b284f0ad8224b13ed4f64516793fb",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "1f1d57613d1b1a38407f52f487d11c908a11d3bc050560645f966a5692225fdf"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_L2",
+      "ref": "L2",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_L2.brep",
+      "sha256": "9f23623e8f82ed201303767fee159da849ab67ba1ebd01be69f1510e664a357b",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "2851ad0379f2d3fd7e7462c69f7f9a7b26449f1446b35ac86ab15c28ba8cb0c8"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C109",
+      "ref": "C109",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C109.brep",
+      "sha256": "72f0e5626da872877114e10deb7aadded3e588c7d91613d4635e54ea6630f00d",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "22137d3bd93c39a84231cbfc6b1d9822dd0432dc0ccf8f9809c6fc2d070f8475"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C116",
+      "ref": "C116",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C116.brep",
+      "sha256": "72f0e5626da872877114e10deb7aadded3e588c7d91613d4635e54ea6630f00d",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "cceb47b22646e6a1eb6c2336a4281740a1cf1e972218a1ac0ed001311128bbd9"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C110",
+      "ref": "C110",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C110.brep",
+      "sha256": "72f0e5626da872877114e10deb7aadded3e588c7d91613d4635e54ea6630f00d",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "6e9f5bc184570d8e43a383b017c6b61392b242b975b1b517484d4c2a21f51077"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C111",
+      "ref": "C111",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C111.brep",
+      "sha256": "72f0e5626da872877114e10deb7aadded3e588c7d91613d4635e54ea6630f00d",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "611e1d9a1916d353fabc7630fe1bbfaf727b9a1b1841f008b03be907ca42c35a"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C117",
+      "ref": "C117",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C117.brep",
+      "sha256": "33d794d158f338b28eb8ad8cfd4ca7b0131c24128fc872cb29ae8640dea7e094",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "91a762302e35c8be10f97774d0da1bc087a785b9036c9c875961490053a320e8"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_C112",
+      "ref": "C112",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_C112.brep",
+      "sha256": "39af79f9cde19454523ea61008600ff5c7cdf89505aaa5625dd709dedd68a1c5",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "0e473b03dd28b392a8f94e3ffe5eea7e1e62b5ac8a2efe65eb89a4822645da9b"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R26",
+      "ref": "R26",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R26.brep",
+      "sha256": "3e24097a25616f509a3c898c5f6b3fc5c840ed87d9c90f52078891257ee1940f",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "84584279e6b8bd5ece5a5ab60d66190dc79da0ed06e545c3c3568aaad640a51a"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R27",
+      "ref": "R27",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R27.brep",
+      "sha256": "3e24097a25616f509a3c898c5f6b3fc5c840ed87d9c90f52078891257ee1940f",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "64f6e2df91aead7913ab2c592f1758948c58ea9971e5c65126289c674f014ffc"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R28",
+      "ref": "R28",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R28.brep",
+      "sha256": "50f20295f43fe7bfc915b73e92c1674af38774f9629c666ec76e80d70d429771",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "e8ace83d4a0e4c2b26c5ae01a93934ad320084be9fd83e70990cc7f7912acc81"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R29",
+      "ref": "R29",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R29.brep",
+      "sha256": "1f30c994ee009c8751a43462c1577bb4dc0b55dd5fcaad5535b1a1723763ad26",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "8c9e7267b56fc752c8d9bb5344ca194d274b853ffcea9bb8610c3e7a202ff7b9"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_U64",
+      "ref": "U64",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_U64.brep",
+      "sha256": "10219433952ca5eaac8f6d1a6cdd3ba59aa425c8b4ec285b9b7e7b98a6ec6188",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "fefb1e58ce8c39e0a85e456823bfdcea94ed948e9f93b412b8f6115181a32f76"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R67",
+      "ref": "R67",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R67.brep",
+      "sha256": "1f30c994ee009c8751a43462c1577bb4dc0b55dd5fcaad5535b1a1723763ad26",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "99562d62193cdf8774884a6642b95786fca4ffdd6598af9b29250aa8c9d97a44"
+    },
+    {
+      "name": "MAIN__INTEGRATED_POWER_R68",
+      "ref": "R68",
+      "brep": "models/mainboard/MAIN__INTEGRATED_POWER_R68.brep",
+      "sha256": "1f30c994ee009c8751a43462c1577bb4dc0b55dd5fcaad5535b1a1723763ad26",
+      "representation": "Explicit package-height upper budget plus0.25mm assembly allocation; native courtyard ownsXY.",
+      "solid_count": 1,
+      "source_sha256": "e6640943474b461d238abc63e05d209b7fda284665cb09512c9f7ed879876965"
+    },
+    {
+      "name": "MAIN__COMPONENT_ECO_J60",
+      "ref": "J60",
+      "brep": "models/mainboard/MAIN__COMPONENT_ECO_J60.brep",
+      "sha256": "c21343b3bdfa8d55d7554ca558de452362787e2f7b29be9a6f89dbf553b235b8",
+      "representation": "manufacturer_dimension_bound_plus_explicitassemblyallocation_retainedgenericlands",
+      "solid_count": 1,
+      "source_sha256": "bff700fb7080911cab21d225f9c47536aba21a67f8fb75df161e46a0d7003674"
+    },
+    {
+      "name": "MAIN__COMPONENT_ECO_C512",
+      "ref": "C512",
+      "brep": "models/mainboard/MAIN__COMPONENT_ECO_C512.brep",
+      "sha256": "c29858ca3489c4af5eca37f23a534ebabb416c785a85d3a6f181af8fbca4322d",
+      "representation": "manufacturer_seated_height_maximum_plus_explicit0p5mmassembly_acceptance_same6mmmountedbudget",
+      "solid_count": 1,
+      "source_sha256": "4391cb37dfc4aec127d8c84f6d64ca8ea9a647cf337b6b8f78b8baa271dd250f"
+    },
+    {
+      "name": "MAIN__COMPONENT_ECO_C513",
+      "ref": "C513",
+      "brep": "models/mainboard/MAIN__COMPONENT_ECO_C513.brep",
+      "sha256": "71c5d916a3f5c47ac6a0368a855985edab77bcc60f39edd2acd10c2f8ddcf394",
+      "representation": "manufacturer_seated_height_maximum_plus_explicit0p5mmassembly_acceptance_same6mmmountedbudget",
+      "solid_count": 1,
+      "source_sha256": "d747665ae2f89f7acd8eaf835353a3bb86252267fa7755313e4ca9b8e6bf24bd"
+    },
+    {
+      "name": "MAIN__COMPONENT_JST_J300",
+      "ref": "J300",
+      "brep": "models/mainboard/MAIN__COMPONENT_JST_J300.brep",
+      "sha256": "8d34228302962b47317f893f742a280ef687a37b3f62f428095191910910fbe7",
+      "representation": "JST_PHD_B20B_nominal_21p9x5x6p5_header_body_envelope_no_contact_or_mate",
+      "solid_count": 1,
+      "source_sha256": "dde6e7bc7e67ac05dceac1f19fb1821d167295cfb1f0f35fbd793bfbd3fcece6"
+    },
+    {
+      "name": "MAIN__COMPONENT_ECO_J301",
+      "ref": "J301",
+      "brep": "models/mainboard/MAIN__COMPONENT_ECO_J301.brep",
+      "sha256": "9b6a63bde2dff674b376db2cc2970c6c14163597d220f7e39f5df8074bb3385a",
+      "representation": "JST_PH_nominal_header_body_bounding_box_excludes_tails_and_mated_housing",
+      "solid_count": 1,
+      "source_sha256": "0703774983dd0bf32b5175315a63ebb9c9439b35cb491768770aaa13ded27934"
+    },
+    {
+      "name": "MAIN__COMPONENT_ECO_J500",
+      "ref": "J500",
+      "brep": "models/mainboard/MAIN__COMPONENT_ECO_J500.brep",
+      "sha256": "5c185c0ed7847958534750294c7c0780bb7bacf16517cd8717eb5d61b91ba5ba",
+      "representation": "manufacturer_dimension_bound_plus_explicitassemblyallocation_notvendorSTEPormatedassembly",
+      "solid_count": 1,
+      "source_sha256": "31ee394413768fa58ab4c833ecf7bff100743fa6a14a8816efc3a7ae5286a997"
+    },
+    {
+      "name": "MAIN__J70_MANUFACTURER_FAMILY_BODY_ACCEPTANCE",
+      "ref": "J70",
+      "brep": "models/mainboard/MAIN__J70_MANUFACTURER_FAMILY_BODY_ACCEPTANCE.brep",
+      "sha256": "763a9bf0728edf51931895a191537674882e5c038a1fe2fcbe5063ce7896a8c4",
+      "representation": "Manufacturer-family body/assembly acceptance or native SMT-land tail space, not an exact factory model",
+      "solid_count": 1,
+      "source_sha256": "dabf87c86a755d1922b8f3aa88688f13ca654011ff5eb8e2c9bec721bd2b509e"
+    },
+    {
+      "name": "MAIN__J70_NATIVE_SMT_TAIL_SPACE_1",
+      "ref": "J70",
+      "brep": "models/mainboard/MAIN__J70_NATIVE_SMT_TAIL_SPACE_1.brep",
+      "sha256": "fa031b2fb4b08455cd5feb180c09a0f40e977faccf9dfde93897151507a324ec",
+      "representation": "Manufacturer-family body/assembly acceptance or native SMT-land tail space, not an exact factory model",
+      "solid_count": 1,
+      "source_sha256": "13379a74b940b0c5ff5cce3cabbff6efed615964386d452a7c2545422a420698"
+    },
+    {
+      "name": "MAIN__J70_NATIVE_SMT_TAIL_SPACE_2",
+      "ref": "J70",
+      "brep": "models/mainboard/MAIN__J70_NATIVE_SMT_TAIL_SPACE_2.brep",
+      "sha256": "e01fad01f69c028b634fd78290b6d4b509e8ca2dda619bc734fb7c307a575dea",
+      "representation": "Manufacturer-family body/assembly acceptance or native SMT-land tail space, not an exact factory model",
+      "solid_count": 1,
+      "source_sha256": "b85486948fef8e07ce2f9dc625461134791876b83f30795a074f10c41f17d905"
+    },
+    {
+      "name": "MAIN__R533",
+      "ref": "R533",
+      "brep": "models/mainboard/MAIN__R533.brep",
+      "sha256": "ee972ff76ba3415858e25fbbb081b2857df38a5a21ed7b2098808f39ec137411",
+      "representation": "Conservative native placed courtyard/land-space prism to selected package-height allocation plus0.2mm solder/seating allowance. Not factory STEP.",
+      "solid_count": 1,
+      "source_sha256": "533bf87f3d84b21e795192a82843dcd49e51efea2d5f00f396ce0517f162b54c"
+    },
+    {
+      "name": "MAIN__R534",
+      "ref": "R534",
+      "brep": "models/mainboard/MAIN__R534.brep",
+      "sha256": "ee972ff76ba3415858e25fbbb081b2857df38a5a21ed7b2098808f39ec137411",
+      "representation": "Conservative native placed courtyard/land-space prism to selected package-height allocation plus0.2mm solder/seating allowance. Not factory STEP.",
+      "solid_count": 1,
+      "source_sha256": "73cf32388082098e0fe92cc601fa292bab682469bb68c979a878c5ce859ab9bd"
+    },
+    {
+      "name": "MAIN__U43",
+      "ref": "U43",
+      "brep": "models/mainboard/MAIN__U43.brep",
+      "sha256": "a18cb64a48770aea912f5b507de7c6a3abb7d05922bcd3626d180e75d0767ba6",
+      "representation": "Conservative native placed courtyard/land-space prism to selected package-height allocation plus0.2mm solder/seating allowance. Not factory STEP.",
+      "solid_count": 1,
+      "source_sha256": "b55513db9321e225931f12714d2756b68e1dd5c05d118f3876e6974f6ef5037d"
+    },
+    {
+      "name": "MAIN__C533",
+      "ref": "C533",
+      "brep": "models/mainboard/MAIN__C533.brep",
+      "sha256": "5517cf2aa1c7d2a2e3e268454bd8f99ae93cd8377fc31cfd87b8c8a76318b7e7",
+      "representation": "Conservative native placed courtyard/land-space prism to selected package-height allocation plus0.2mm solder/seating allowance. Not factory STEP.",
+      "solid_count": 1,
+      "source_sha256": "b3e66184ffb0174f762f7d5bba60ba80d7835852848be12e0f65e3b8f949f343"
+    },
+    {
+      "name": "MAIN__C534",
+      "ref": "C534",
+      "brep": "models/mainboard/MAIN__C534.brep",
+      "sha256": "67754f3f5f3cb9b9fb3e7a53a4e97a058876aa03a9fc154f27b3a1984193b469",
+      "representation": "Conservative native placed courtyard/land-space prism to selected package-height allocation plus0.2mm solder/seating allowance. Not factory STEP.",
+      "solid_count": 1,
+      "source_sha256": "6e68e23b710536874f7875829154a0181413b25465c90985aecb150fb01bfac9"
+    },
+    {
+      "name": "MAIN__C535",
+      "ref": "C535",
+      "brep": "models/mainboard/MAIN__C535.brep",
+      "sha256": "41d12f92eb79843229e41ea871730054e63319ec6db8c2bfdf587233cff5a1d4",
+      "representation": "Conservative native placed courtyard/land-space prism to selected package-height allocation plus0.2mm solder/seating allowance. Not factory STEP.",
+      "solid_count": 1,
+      "source_sha256": "835f9de1362ef273c0533611ff18eb8068ae6c9d38a2524ba37384cfeba63f98"
+    }
+  ],
+  "external_refs": [
+    "J_CART0",
+    "J_CART1"
+  ]
+}

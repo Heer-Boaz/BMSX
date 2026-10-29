@@ -1,0 +1,387 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 970" role="img" aria-labelledby="title desc">
+<title id="title">Indicative memory placement on the existing mainboard</title>
+<desc id="desc">A conservative, unrouted four-device placement concept based on board footprints and assembly envelopes. This does not establish electrical or mechanical qualification.</desc>
+<style>text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:31px;font-weight:bold}.small{font-size:17px}.head{font-size:22px;font-weight:bold}.board{fill:#f9faf9;stroke:#294b68;stroke-width:3}.part{fill:#d9e0df;stroke:#849294;stroke-width:0.8}.asic{fill:#bed2df;stroke:#294b68;stroke-width:1.2}.socket{fill:#c7d0d0;stroke:#455e62;stroke-width:1.5}.sink{fill:#d7a54d;fill-opacity:.18;stroke:#a87828;stroke-width:2;stroke-dasharray:7 5}.dram{fill:#52b6c1;stroke:#125560;stroke-width:2}.sram{fill:#be91d3;stroke:#5d3d73;stroke-width:2}.label{font-weight:bold;font-size:17px;fill:#183044}.line{stroke:#5f6e70;stroke-width:1.2;stroke-dasharray:4 4}</style>
+<rect width="1600" height="970" fill="white"/><text x="45" y="47" class="title">Mainboard memory placement — preliminary space study</text>
+<text x="45" y="78" class="small">Existing board and case geometry; four added memories are candidates, not routed or installed components.</text>
+<rect x="44.88" y="109.88" width="1100.25" height="750.25" class="board"/>
+<rect x="196.48" y="566.48" width="87.05" height="117.05" class="asic"/>
+<rect x="523.38" y="136.88" width="23.25" height="16.25" class="part"/>
+<rect x="159.50" y="239.75" width="21.25" height="18.25" class="part"/>
+<rect x="286.50" y="710.00" width="17.05" height="9.75" class="part"/>
+<rect x="89.90" y="392.00" width="10.25" height="16.75" class="part"/>
+<rect x="361.48" y="600.12" width="17.05" height="9.75" class="part"/>
+<rect x="122.50" y="373.25" width="10.05" height="17.25" class="part"/>
+<rect x="749.25" y="770.15" width="27.75" height="34.25" class="part"/>
+<rect x="593.62" y="667.00" width="36.00" height="36.00" class="part"/>
+<rect x="361.48" y="640.12" width="17.05" height="9.75" class="part"/>
+<rect x="925.25" y="440.00" width="11.75" height="23.75" class="part"/>
+<rect x="990.00" y="810.00" width="17.05" height="9.75" class="part"/>
+<rect x="1076.00" y="136.00" width="18.00" height="18.00" class="part"/>
+<rect x="170.00" y="810.00" width="111.50" height="32.25" class="part"/>
+<rect x="771.85" y="715.00" width="17.05" height="9.75" class="part"/>
+<rect x="1056.00" y="746.25" width="10.05" height="17.25" class="part"/>
+<rect x="650.00" y="717.50" width="17.05" height="9.75" class="part"/>
+<rect x="646.47" y="255.12" width="17.05" height="9.75" class="part"/>
+<rect x="1065.00" y="805.00" width="17.05" height="9.75" class="part"/>
+<rect x="790.00" y="160.00" width="47.25" height="66.08" class="part"/>
+<rect x="144.15" y="411.25" width="38.75" height="20.25" class="part"/>
+<rect x="1063.40" y="435.00" width="40.25" height="33.98" class="part"/>
+<rect x="149.50" y="654.50" width="11.00" height="11.00" class="part"/>
+<rect x="498.38" y="136.88" width="23.25" height="16.25" class="part"/>
+<rect x="217.88" y="378.62" width="64.25" height="142.75" class="asic"/>
+<rect x="131.48" y="606.62" width="17.05" height="9.75" class="part"/>
+<rect x="1008.50" y="167.62" width="21.38" height="19.75" class="part"/>
+<rect x="495.88" y="246.88" width="23.25" height="16.25" class="part"/>
+<rect x="646.47" y="285.12" width="17.05" height="9.75" class="part"/>
+<rect x="173.75" y="523.50" width="17.05" height="9.75" class="part"/>
+<rect x="331.48" y="580.12" width="17.05" height="9.75" class="part"/>
+<rect x="308.98" y="800.12" width="17.05" height="9.75" class="part"/>
+<rect x="50.00" y="162.50" width="15.25" height="7.75" class="part"/>
+<rect x="105.15" y="360.50" width="11.75" height="23.75" class="part"/>
+<rect x="670.12" y="315.12" width="159.75" height="159.75" class="asic"/>
+<rect x="78.90" y="374.00" width="10.25" height="16.75" class="part"/>
+<rect x="836.47" y="785.12" width="17.05" height="9.75" class="part"/>
+<rect x="122.50" y="392.00" width="17.05" height="9.75" class="part"/>
+<rect x="536.48" y="717.62" width="17.05" height="9.75" class="part"/>
+<rect x="336.48" y="600.12" width="17.05" height="9.75" class="part"/>
+<rect x="811.47" y="642.62" width="17.05" height="9.75" class="part"/>
+<rect x="172.50" y="502.25" width="19.55" height="17.25" class="part"/>
+<rect x="866.00" y="126.00" width="18.00" height="18.00" class="part"/>
+<rect x="911.47" y="567.62" width="17.05" height="9.75" class="part"/>
+<rect x="805.00" y="802.50" width="146.25" height="55.67" class="part"/>
+<rect x="956.50" y="810.00" width="17.05" height="9.75" class="part"/>
+<rect x="481.12" y="172.38" width="7.75" height="15.25" class="part"/>
+<rect x="1029.97" y="181.22" width="15.05" height="7.55" class="part"/>
+<rect x="996.47" y="420.12" width="17.05" height="9.75" class="part"/>
+<rect x="120.15" y="402.35" width="9.75" height="17.05" class="part"/>
+<rect x="1020.88" y="246.88" width="23.25" height="16.25" class="part"/>
+<rect x="1060.38" y="667.00" width="36.00" height="36.00" class="part"/>
+<rect x="306.48" y="580.12" width="17.05" height="9.75" class="part"/>
+<rect x="946.47" y="420.12" width="17.05" height="9.75" class="part"/>
+<rect x="1077.50" y="757.50" width="17.05" height="9.75" class="part"/>
+<rect x="520.88" y="246.88" width="23.25" height="16.25" class="part"/>
+<rect x="148.75" y="523.50" width="17.05" height="9.75" class="part"/>
+<rect x="217.88" y="193.62" width="64.25" height="142.75" class="asic"/>
+<rect x="971.47" y="420.12" width="17.05" height="9.75" class="part"/>
+<rect x="538.62" y="163.88" width="7.75" height="15.25" class="part"/>
+<rect x="381.48" y="275.12" width="17.05" height="9.75" class="part"/>
+<rect x="102.50" y="444.50" width="17.05" height="9.75" class="part"/>
+<rect x="711.50" y="121.50" width="17.00" height="17.00" class="part"/>
+<rect x="860.00" y="479.35" width="17.25" height="10.05" class="part"/>
+<rect x="886.47" y="567.62" width="17.05" height="9.75" class="part"/>
+<rect x="1050.00" y="735.00" width="17.05" height="9.75" class="part"/>
+<rect x="445.12" y="794.62" width="34.75" height="30.75" class="part"/>
+<rect x="153.38" y="300.12" width="27.75" height="54.75" class="part"/>
+<rect x="112.50" y="145.00" width="15.25" height="7.75" class="part"/>
+<rect x="592.62" y="508.88" width="504.75" height="52.25" class="socket"/>
+<rect x="675.00" y="715.00" width="17.05" height="9.75" class="part"/>
+<rect x="164.10" y="209.00" width="17.05" height="9.75" class="part"/>
+<rect x="860.25" y="449.25" width="16.75" height="10.25" class="part"/>
+<rect x="1060.38" y="517.00" width="36.00" height="36.00" class="part"/>
+<rect x="1104.50" y="694.50" width="41.00" height="41.00" class="part"/>
+<rect x="114.62" y="125.88" width="11.00" height="11.00" class="part"/>
+<rect x="992.38" y="161.12" width="15.25" height="7.75" class="part"/>
+<rect x="336.48" y="660.12" width="17.05" height="9.75" class="part"/>
+<rect x="79.62" y="203.38" width="11.00" height="11.00" class="part"/>
+<rect x="496.48" y="275.12" width="17.05" height="9.75" class="part"/>
+<rect x="886.47" y="642.62" width="17.05" height="9.75" class="part"/>
+<rect x="916.47" y="785.12" width="17.05" height="9.75" class="part"/>
+<rect x="887.25" y="455.50" width="27.75" height="37.75" class="part"/>
+<rect x="125.40" y="734.88" width="116.98" height="30.25" class="part"/>
+<rect x="356.48" y="580.12" width="17.05" height="9.75" class="part"/>
+<rect x="159.10" y="264.00" width="17.05" height="9.75" class="part"/>
+<rect x="89.90" y="374.00" width="10.25" height="16.75" class="part"/>
+<rect x="311.48" y="660.12" width="17.05" height="9.75" class="part"/>
+<rect x="361.48" y="620.12" width="17.05" height="9.75" class="part"/>
+<rect x="87.50" y="162.50" width="15.25" height="7.75" class="part"/>
+<rect x="128.25" y="149.00" width="23.75" height="11.75" class="part"/>
+<rect x="486.48" y="705.12" width="17.05" height="9.75" class="part"/>
+<rect x="745.00" y="715.38" width="20.75" height="18.12" class="part"/>
+<rect x="499.83" y="189.48" width="44.03" height="51.05" class="part"/>
+<rect x="1050.00" y="477.00" width="17.05" height="9.75" class="part"/>
+<rect x="1002.65" y="749.00" width="51.75" height="51.75" class="part"/>
+<rect x="71.38" y="129.00" width="37.50" height="29.75" class="part"/>
+<rect x="1014.33" y="158.72" width="15.05" height="7.55" class="part"/>
+<rect x="1056.00" y="236.00" width="18.00" height="18.00" class="part"/>
+<rect x="761.75" y="734.85" width="17.25" height="10.05" class="part"/>
+<rect x="66.50" y="821.50" width="17.00" height="17.00" class="part"/>
+<rect x="492.38" y="161.12" width="15.25" height="7.75" class="part"/>
+<rect x="68.50" y="175.00" width="15.25" height="7.75" class="part"/>
+<rect x="511.48" y="717.62" width="17.05" height="9.75" class="part"/>
+<rect x="148.75" y="490.00" width="17.05" height="9.75" class="part"/>
+<rect x="1065.00" y="790.00" width="17.05" height="9.75" class="part"/>
+<rect x="381.48" y="580.12" width="17.05" height="9.75" class="part"/>
+<rect x="87.15" y="415.25" width="16.75" height="10.25" class="part"/>
+<rect x="1056.88" y="297.57" width="66.25" height="94.85" class="asic"/>
+<rect x="646.47" y="240.12" width="17.05" height="9.75" class="part"/>
+<rect x="360.00" y="215.00" width="40.00" height="40.00" class="part"/>
+<rect x="836.47" y="642.62" width="17.05" height="9.75" class="part"/>
+<rect x="66.50" y="641.50" width="17.00" height="17.00" class="part"/>
+<rect x="128.25" y="133.50" width="23.75" height="11.75" class="part"/>
+<rect x="810.00" y="725.00" width="20.75" height="18.12" class="part"/>
+<rect x="152.00" y="137.25" width="21.25" height="18.25" class="part"/>
+<rect x="311.48" y="620.12" width="17.05" height="9.75" class="part"/>
+<rect x="1065.00" y="820.00" width="17.05" height="9.75" class="part"/>
+<rect x="486.48" y="717.62" width="17.05" height="9.75" class="part"/>
+<rect x="71.25" y="186.25" width="7.75" height="15.25" class="part"/>
+<rect x="1106.50" y="121.50" width="17.00" height="17.00" class="part"/>
+<rect x="928.12" y="757.88" width="33.75" height="24.25" class="part"/>
+<rect x="836.47" y="567.62" width="17.05" height="9.75" class="part"/>
+<rect x="87.15" y="426.25" width="16.75" height="10.25" class="part"/>
+<rect x="1077.50" y="775.00" width="17.05" height="9.75" class="part"/>
+<rect x="1106.50" y="821.50" width="17.00" height="17.00" class="part"/>
+<rect x="534.50" y="499.50" width="41.00" height="41.00" class="part"/>
+<rect x="508.50" y="167.62" width="21.37" height="19.75" class="part"/>
+<rect x="77.50" y="355.00" width="17.05" height="9.75" class="part"/>
+<rect x="1056.00" y="764.25" width="10.05" height="17.25" class="part"/>
+<rect x="554.50" y="594.50" width="41.00" height="41.00" class="part"/>
+<rect x="865.75" y="178.95" width="20.75" height="18.12" class="part"/>
+<rect x="361.48" y="660.12" width="17.05" height="9.75" class="part"/>
+<rect x="501.88" y="747.57" width="66.25" height="94.85" class="part"/>
+<rect x="589.98" y="795.12" width="17.05" height="9.75" class="part"/>
+<rect x="995.88" y="246.88" width="23.25" height="16.25" class="part"/>
+<rect x="936.47" y="785.12" width="17.05" height="9.75" class="part"/>
+<rect x="169.50" y="179.00" width="16.25" height="9.75" class="part"/>
+<rect x="861.47" y="642.62" width="17.05" height="9.75" class="part"/>
+<rect x="643.60" y="761.15" width="10.05" height="17.25" class="part"/>
+<rect x="589.98" y="825.12" width="17.05" height="9.75" class="part"/>
+<rect x="850.00" y="215.00" width="40.00" height="40.00" class="part"/>
+<rect x="65.47" y="705.00" width="37.05" height="18.50" class="part"/>
+<rect x="664.75" y="810.15" width="27.75" height="34.25" class="part"/>
+<rect x="895.75" y="178.95" width="20.75" height="18.12" class="part"/>
+<rect x="308.62" y="548.62" width="12.75" height="12.75" class="part"/>
+<rect x="103.65" y="390.00" width="14.75" height="14.75" class="part"/>
+<rect x="1104.50" y="489.50" width="41.00" height="41.00" class="part"/>
+<rect x="311.48" y="600.12" width="17.05" height="9.75" class="part"/>
+<rect x="105.15" y="405.50" width="11.75" height="23.75" class="part"/>
+<rect x="109.62" y="160.88" width="11.00" height="11.00" class="part"/>
+<rect x="68.50" y="162.50" width="15.25" height="7.75" class="part"/>
+<rect x="176.50" y="150.00" width="17.25" height="17.75" class="part"/>
+<rect x="1038.62" y="163.88" width="7.75" height="15.25" class="part"/>
+<rect x="589.98" y="765.12" width="17.05" height="9.75" class="part"/>
+<rect x="786.47" y="642.62" width="17.05" height="9.75" class="part"/>
+<rect x="375.53" y="780.62" width="58.95" height="68.75" class="part"/>
+<rect x="895.00" y="725.00" width="37.25" height="27.93" class="part"/>
+<rect x="426.48" y="566.48" width="87.05" height="117.05" class="asic"/>
+<rect x="868.12" y="757.88" width="33.75" height="24.25" class="part"/>
+<rect x="66.50" y="306.50" width="17.00" height="17.00" class="part"/>
+<rect x="83.62" y="476.23" width="62.75" height="109.42" class="part"/>
+<rect x="529.98" y="181.22" width="15.05" height="7.55" class="part"/>
+<rect x="311.48" y="640.12" width="17.05" height="9.75" class="part"/>
+<rect x="52.50" y="120.00" width="15.25" height="7.75" class="part"/>
+<rect x="311.48" y="680.12" width="17.05" height="9.75" class="part"/>
+<rect x="1077.50" y="740.00" width="17.05" height="9.75" class="part"/>
+<rect x="96.25" y="186.25" width="7.75" height="15.25" class="part"/>
+<rect x="592.62" y="658.88" width="504.75" height="52.25" class="socket"/>
+<rect x="981.12" y="172.38" width="7.75" height="15.25" class="part"/>
+<rect x="406.48" y="275.12" width="17.05" height="9.75" class="part"/>
+<rect x="173.75" y="490.00" width="17.05" height="9.75" class="part"/>
+<rect x="834.35" y="737.12" width="17.05" height="9.75" class="part"/>
+<rect x="55.00" y="415.50" width="17.05" height="9.75" class="part"/>
+<rect x="514.33" y="158.72" width="15.05" height="7.55" class="part"/>
+<rect x="1023.38" y="136.88" width="23.25" height="16.25" class="part"/>
+<rect x="81.48" y="267.62" width="17.05" height="9.75" class="part"/>
+<rect x="856.47" y="785.12" width="17.05" height="9.75" class="part"/>
+<rect x="52.50" y="135.00" width="15.25" height="7.75" class="part"/>
+<rect x="481.12" y="192.38" width="7.75" height="15.25" class="part"/>
+<rect x="692.00" y="607.00" width="36.00" height="36.00" class="part"/>
+<rect x="492.38" y="181.12" width="15.25" height="7.75" class="part"/>
+<rect x="336.48" y="620.12" width="17.05" height="9.75" class="part"/>
+<rect x="646.47" y="270.12" width="17.05" height="9.75" class="part"/>
+<rect x="646.47" y="200.12" width="17.05" height="9.75" class="part"/>
+<rect x="608.52" y="243.12" width="27.95" height="40.62" class="part"/>
+<rect x="561.48" y="717.62" width="17.05" height="9.75" class="part"/>
+<rect x="308.98" y="760.12" width="17.05" height="9.75" class="part"/>
+<rect x="992.38" y="181.12" width="15.25" height="7.75" class="part"/>
+<rect x="998.38" y="136.88" width="23.25" height="16.25" class="part"/>
+<rect x="593.62" y="517.00" width="36.00" height="36.00" class="part"/>
+<rect x="861.47" y="567.62" width="17.05" height="9.75" class="part"/>
+<rect x="860.25" y="464.25" width="16.75" height="10.25" class="part"/>
+<rect x="351.48" y="820.12" width="17.05" height="9.75" class="part"/>
+<rect x="336.48" y="640.12" width="17.05" height="9.75" class="part"/>
+<rect x="416.00" y="126.00" width="18.00" height="18.00" class="part"/>
+<rect x="156.00" y="676.00" width="18.00" height="18.00" class="part"/>
+<rect x="999.84" y="189.48" width="44.03" height="51.05" class="part"/>
+<rect x="55.00" y="782.75" width="18.00" height="18.00" class="part"/>
+<rect x="165.50" y="221.50" width="16.25" height="9.75" class="part"/>
+<rect x="981.12" y="192.38" width="7.75" height="15.25" class="part"/>
+<rect x="731.47" y="280.12" width="17.05" height="9.75" class="part"/>
+<rect x="659.50" y="764.90" width="29.57" height="34.75" class="part"/>
+<rect x="147.50" y="502.25" width="19.55" height="17.25" class="part"/>
+<rect x="602.38" y="188.12" width="40.25" height="33.98" class="part"/>
+<rect x="308.98" y="780.12" width="17.05" height="9.75" class="part"/>
+<rect x="78.90" y="392.00" width="10.25" height="16.75" class="part"/>
+<rect x="885.48" y="113.38" width="79.05" height="23.25" class="part"/>
+<rect x="81.48" y="606.62" width="17.05" height="9.75" class="part"/>
+<rect x="969.38" y="297.57" width="66.25" height="94.85" class="asic"/>
+<rect x="387.38" y="312.38" width="165.25" height="165.25" class="asic"/>
+<rect x="159.10" y="276.50" width="17.05" height="9.75" class="part"/>
+<rect x="927.25" y="471.75" width="7.75" height="15.25" class="part"/>
+<rect x="936.47" y="567.62" width="17.05" height="9.75" class="part"/>
+<rect x="806.85" y="414.98" width="7.55" height="15.05" class="part"/>
+<rect x="461.38" y="619.98" width="17.25" height="10.05" class="part"/>
+<rect x="399.98" y="338.73" width="15.05" height="7.55" class="part"/>
+<rect x="1032.25" y="776.00" width="10.05" height="17.25" class="part"/>
+<rect x="254.35" y="655.85" width="7.55" height="15.05" class="part"/>
+<rect x="815.10" y="184.83" width="10.05" height="17.25" class="part"/>
+<rect x="816.38" y="764.98" width="17.25" height="10.05" class="part"/>
+<rect x="802.10" y="204.83" width="10.05" height="17.25" class="part"/>
+<rect x="613.88" y="199.97" width="17.25" height="10.05" class="part"/>
+<rect x="811.75" y="729.48" width="17.25" height="10.05" class="part"/>
+<rect x="769.98" y="440.72" width="15.05" height="7.55" class="part"/>
+<rect x="876.47" y="785.12" width="17.05" height="9.75" class="part"/>
+<rect x="796.47" y="785.12" width="17.05" height="9.75" class="part"/>
+<rect x="444.98" y="440.72" width="15.05" height="7.55" class="part"/>
+<rect x="815.10" y="164.83" width="10.05" height="17.25" class="part"/>
+<rect x="916.38" y="764.98" width="17.25" height="10.05" class="part"/>
+<rect x="467.48" y="440.72" width="15.05" height="7.55" class="part"/>
+<rect x="836.38" y="764.98" width="17.25" height="10.05" class="part"/>
+<rect x="794.85" y="324.98" width="7.55" height="15.05" class="part"/>
+<rect x="1014.75" y="756.50" width="10.05" height="17.25" class="part"/>
+<rect x="802.10" y="184.83" width="10.05" height="17.25" class="part"/>
+<rect x="467.48" y="341.73" width="15.05" height="7.55" class="part"/>
+<rect x="679.98" y="338.73" width="15.05" height="7.55" class="part"/>
+<rect x="404.38" y="392.62" width="7.75" height="14.75" class="part"/>
+<rect x="806.85" y="392.48" width="7.55" height="15.05" class="part"/>
+<rect x="679.98" y="443.73" width="15.05" height="7.55" class="part"/>
+<rect x="1032.25" y="756.50" width="10.05" height="17.25" class="part"/>
+<rect x="804.98" y="443.73" width="15.05" height="7.55" class="part"/>
+<rect x="404.38" y="347.62" width="7.75" height="14.75" class="part"/>
+<rect x="526.38" y="799.98" width="17.25" height="10.05" class="part"/>
+<rect x="241.12" y="259.38" width="17.75" height="11.25" class="part"/>
+<rect x="489.98" y="440.72" width="15.05" height="7.55" class="part"/>
+<rect x="685.60" y="414.98" width="7.55" height="15.05" class="part"/>
+<rect x="254.35" y="579.10" width="7.55" height="15.05" class="part"/>
+<rect x="241.12" y="504.38" width="17.75" height="11.25" class="part"/>
+<rect x="263.23" y="650.60" width="7.55" height="15.05" class="part"/>
+<rect x="1081.38" y="349.98" width="17.25" height="10.05" class="part"/>
+<rect x="815.10" y="204.83" width="10.05" height="17.25" class="part"/>
+<rect x="241.12" y="319.38" width="17.75" height="11.25" class="part"/>
+<rect x="515.97" y="324.98" width="7.55" height="15.05" class="part"/>
+<rect x="448.10" y="612.48" width="7.55" height="15.05" class="part"/>
+<rect x="515.97" y="449.98" width="7.55" height="15.05" class="part"/>
+<rect x="524.98" y="443.73" width="15.05" height="7.55" class="part"/>
+<rect x="583.88" y="279.98" width="17.25" height="10.05" class="part"/>
+<rect x="794.85" y="449.98" width="7.55" height="15.05" class="part"/>
+<rect x="1081.38" y="369.98" width="17.25" height="10.05" class="part"/>
+<rect x="747.48" y="341.73" width="15.05" height="7.55" class="part"/>
+<rect x="484.35" y="596.48" width="7.55" height="15.05" class="part"/>
+<rect x="241.12" y="384.38" width="17.75" height="11.25" class="part"/>
+<rect x="404.38" y="370.12" width="7.75" height="14.75" class="part"/>
+<rect x="802.10" y="164.83" width="10.05" height="17.25" class="part"/>
+<rect x="400.12" y="443.62" width="14.75" height="7.75" class="part"/>
+<rect x="404.38" y="415.12" width="7.75" height="14.75" class="part"/>
+<rect x="1014.75" y="776.00" width="10.05" height="17.25" class="part"/>
+<rect x="439.23" y="584.35" width="7.55" height="15.05" class="part"/>
+<rect x="476.23" y="584.35" width="7.55" height="15.05" class="part"/>
+<rect x="527.98" y="369.98" width="7.55" height="15.05" class="part"/>
+<rect x="439.23" y="650.60" width="7.55" height="15.05" class="part"/>
+<rect x="724.98" y="440.72" width="15.05" height="7.55" class="part"/>
+<rect x="527.98" y="347.48" width="7.55" height="15.05" class="part"/>
+<rect x="456.23" y="584.35" width="7.55" height="15.05" class="part"/>
+<rect x="476.23" y="650.60" width="7.55" height="15.05" class="part"/>
+<rect x="444.98" y="341.73" width="15.05" height="7.55" class="part"/>
+<rect x="448.10" y="655.85" width="7.55" height="15.05" class="part"/>
+<rect x="241.12" y="444.38" width="17.75" height="11.25" class="part"/>
+<rect x="724.98" y="341.73" width="15.05" height="7.55" class="part"/>
+<rect x="1081.38" y="329.98" width="17.25" height="10.05" class="part"/>
+<rect x="628.75" y="761.25" width="9.75" height="17.05" class="part"/>
+<rect x="747.48" y="440.72" width="15.05" height="7.55" class="part"/>
+<rect x="896.38" y="764.98" width="17.25" height="10.05" class="part"/>
+<rect x="769.98" y="341.73" width="15.05" height="7.55" class="part"/>
+<rect x="448.10" y="596.48" width="7.55" height="15.05" class="part"/>
+<rect x="591.38" y="249.97" width="17.25" height="10.05" class="part"/>
+<rect x="263.23" y="584.35" width="7.55" height="15.05" class="part"/>
+<rect x="993.88" y="329.98" width="17.25" height="10.05" class="part"/>
+<rect x="1074.90" y="446.85" width="17.25" height="10.05" class="part"/>
+<rect x="526.38" y="819.98" width="17.25" height="10.05" class="part"/>
+<rect x="806.85" y="369.98" width="7.55" height="15.05" class="part"/>
+<rect x="993.88" y="369.98" width="17.25" height="10.05" class="part"/>
+<rect x="489.98" y="341.73" width="15.05" height="7.55" class="part"/>
+<rect x="702.48" y="440.72" width="15.05" height="7.55" class="part"/>
+<rect x="461.38" y="389.98" width="17.25" height="10.05" class="part"/>
+<rect x="493.22" y="650.60" width="7.55" height="15.05" class="part"/>
+<rect x="702.48" y="341.73" width="15.05" height="7.55" class="part"/>
+<rect x="796.38" y="764.98" width="17.25" height="10.05" class="part"/>
+<rect x="422.48" y="341.73" width="15.05" height="7.55" class="part"/>
+<rect x="685.60" y="347.48" width="7.55" height="15.05" class="part"/>
+<rect x="218.10" y="579.10" width="7.55" height="15.05" class="part"/>
+<rect x="1044.90" y="809.85" width="17.25" height="10.05" class="part"/>
+<rect x="493.22" y="584.35" width="7.55" height="15.05" class="part"/>
+<rect x="484.35" y="612.48" width="7.55" height="15.05" class="part"/>
+<rect x="526.38" y="779.98" width="17.25" height="10.05" class="part"/>
+<rect x="241.12" y="199.38" width="17.75" height="11.25" class="part"/>
+<rect x="416.38" y="450.12" width="7.75" height="14.75" class="part"/>
+<rect x="218.10" y="655.85" width="7.55" height="15.05" class="part"/>
+<rect x="422.62" y="440.62" width="14.75" height="7.75" class="part"/>
+<rect x="106.38" y="504.98" width="17.25" height="10.05" class="part"/>
+<rect x="456.23" y="650.60" width="7.55" height="15.05" class="part"/>
+<rect x="231.38" y="619.98" width="17.25" height="10.05" class="part"/>
+<rect x="610.00" y="760.00" width="17.25" height="19.55" class="part"/>
+<rect x="993.88" y="349.98" width="17.25" height="10.05" class="part"/>
+<rect x="1017.40" y="834.85" width="17.25" height="10.05" class="part"/>
+<rect x="484.35" y="579.10" width="7.55" height="15.05" class="part"/>
+<rect x="524.98" y="338.73" width="15.05" height="7.55" class="part"/>
+<rect x="685.60" y="369.98" width="7.55" height="15.05" class="part"/>
+<rect x="697.60" y="449.98" width="7.55" height="15.05" class="part"/>
+<rect x="591.38" y="264.98" width="17.25" height="10.05" class="part"/>
+<rect x="1047.40" y="789.85" width="17.25" height="10.05" class="part"/>
+<rect x="484.35" y="655.85" width="7.55" height="15.05" class="part"/>
+<rect x="209.22" y="650.60" width="7.55" height="15.05" class="part"/>
+<rect x="416.38" y="325.12" width="7.75" height="14.75" class="part"/>
+<rect x="741.38" y="389.98" width="17.25" height="10.05" class="part"/>
+<rect x="527.98" y="414.98" width="7.55" height="15.05" class="part"/>
+<rect x="106.38" y="544.98" width="17.25" height="10.05" class="part"/>
+<rect x="448.10" y="579.10" width="7.55" height="15.05" class="part"/>
+<rect x="254.35" y="621.48" width="7.55" height="15.05" class="part"/>
+<rect x="209.22" y="584.35" width="7.55" height="15.05" class="part"/>
+<rect x="218.10" y="621.48" width="7.55" height="15.05" class="part"/>
+<rect x="643.75" y="761.25" width="9.75" height="17.05" class="part"/>
+<rect x="804.98" y="338.73" width="15.05" height="7.55" class="part"/>
+<rect x="697.60" y="324.98" width="7.55" height="15.05" class="part"/>
+<rect x="806.85" y="347.48" width="7.55" height="15.05" class="part"/>
+<rect x="856.38" y="764.98" width="17.25" height="10.05" class="part"/>
+<rect x="816.47" y="785.12" width="17.05" height="9.75" class="part"/>
+<rect x="685.60" y="392.48" width="7.55" height="15.05" class="part"/>
+<rect x="896.47" y="785.12" width="17.05" height="9.75" class="part"/>
+<rect x="527.98" y="392.48" width="7.55" height="15.05" class="part"/>
+<rect x="360.00" y="107.50" width="500.00" height="360.00" class="sink"/>
+<text x="470.00" y="401.00" text-anchor="middle" class="label">U1</text>
+<text x="750.00" y="401.00" text-anchor="middle" class="label">U2</text>
+<text x="250.00" y="271.00" text-anchor="middle" class="label">U10</text>
+<text x="250.00" y="456.00" text-anchor="middle" class="label">U11</text>
+<text x="1002.50" y="351.00" text-anchor="middle" class="label">U30</text>
+<text x="1090.00" y="351.00" text-anchor="middle" class="label">U31</text>
+<text x="845.00" y="541.00" text-anchor="middle" class="label">J_CART0</text>
+<text x="845.00" y="691.00" text-anchor="middle" class="label">J_CART1</text>
+<rect x="287.88" y="163.62" width="64.25" height="142.75" class="dram"/>
+<text x="320.00" y="241.00" text-anchor="middle" class="label">P1</text>
+<rect x="287.88" y="353.62" width="64.25" height="142.75" class="dram"/>
+<text x="320.00" y="431.00" text-anchor="middle" class="label">P2</text>
+<rect x="871.88" y="310.07" width="66.25" height="94.85" class="sram"/>
+<text x="905.00" y="363.50" text-anchor="middle" class="label">V1</text>
+<rect x="896.88" y="202.57" width="66.25" height="94.85" class="sram"/>
+<text x="930.00" y="256.00" text-anchor="middle" class="label">V2</text>
+<text x="1190" y="145" class="head">Candidates</text>
+<rect x="1190" y="169" width="23" height="23" class="dram"/><text x="1225" y="187" class="small">P1 / P2: private DRAM</text>
+<rect x="1190" y="206" width="23" height="23" class="sram"/><text x="1225" y="224" class="small">V1 / V2: snapshot SRAM</text>
+<rect x="1190" y="243" width="23" height="23" class="sink"/><text x="1225" y="261" class="small">Cooler XY envelope</text>
+<rect x="1190" y="280" width="23" height="23" class="part"/><text x="1225" y="298" class="small">Existing footprint envelope</text>
+<text x="1190" y="355" class="head">Reading this view</text>
+<text x="1190" y="389" class="small">U30 shifts +4.5 mm in X.</text>
+<text x="1190" y="416" class="small">C500 / C501 / C502 shift with U30</text>
+<text x="1190" y="443" class="small">on the underside; P1/P2 retained.</text>
+<text x="1190" y="493" class="small">Nominal footprint and represented</text>
+<text x="1190" y="520" class="small">assembly envelopes do not overlap;</text>
+<text x="1190" y="547" class="small">routing, fanout, power, tolerances</text>
+<text x="1190" y="574" class="small">and signal timing are not shown.</text>
+<text x="1190" y="627" class="small">Separate candidate PCB exists;</text>
+<text x="1190" y="654" class="small">full assembly fit is not shown.</text>
+<text x="1190" y="706" class="small">Candidate centres in board mm:</text>
+<text x="1190" y="733" class="small">P1 65,50 · P2 65,88</text>
+<text x="1190" y="760" class="small">V1 182,74.5 · V2 187,53</text>
+<text x="1190" y="787" class="small">U30 / C500–502: X +4.5 mm</text>
+<text x="45" y="900" class="small">Nominal board 220 × 150 mm. Study uses the existing layout, cooler and represented assembly regions.</text>
+<text x="45" y="929" class="small">One millimetre XY margin is used for the candidate-envelope comparison; this is not a design-rule or fit qualification.</text>
+</svg>

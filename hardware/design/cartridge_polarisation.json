@@ -1,0 +1,115 @@
+{
+  "revision": "SHELL_GUIDE_POLARISATION_2",
+  "scope": "Own two same-front shell channels and integral frame ribs per slot; no connector key, contact deletion, PCB change or vendor mating claim.",
+  "slot_centres_XY_mm": [
+    [
+      170,
+      110
+    ],
+    [
+      170,
+      140
+    ]
+  ],
+  "key_locations": "Mirror the listed left-side geometry in the socket's YZ plane. Both keys remain at the SAME front Y, not diagonally opposite corners;180degree reversal moves both card channels to the rear.",
+  "shell_channel_local_bounds_mm": [
+    -55.2,
+    -5.6,
+    34.3,
+    -51.5,
+    -2.4,
+    109.5
+  ],
+  "shell_return_stock_local_bounds_mm": [
+    -53.2,
+    -7.0,
+    34.4,
+    -50.0,
+    -1.4,
+    109.4
+  ],
+  "shell_return_wall_mm": 1.5,
+  "frame_root_local_bounds_mm": [
+    -57.5,
+    -4.8,
+    31.0,
+    -55.2,
+    -2.8,
+    37.0
+  ],
+  "frame_middle_root_local_bounds_mm": [-55.8,-4.8,37.0,-55.2,-2.8,46.5],
+  "frame_upper_root_local_bounds_mm": [
+    -56.2,
+    -4.8,
+    46.5,
+    -55.2,
+    -2.8,
+    54.0
+  ],
+  "frame_rib_local_bounds_mm": [
+    -55.2,
+    -5.2,
+    34.8,
+    -52.0,
+    -2.8,
+    54.0
+  ],
+  "leaf_relief_local_bounds_mm": [
+    -55.9,
+    -6.5,
+    54.2,
+    -51.0,
+    10.2,
+    55.2
+  ],
+  "leaf_relief_scope": "Closed-leaf coordinates relative to the socket centre; mirrored at the other end. Each relief opens a working edge but retains its hinge ear and the first3.4mm of leaf next to the axis.",
+  "tolerance_budget_mm": {
+    "leaf_surface": 0.10,
+    "hinge_axis_YZ": 0.10,
+    "leaf_axial_end_float_each_direction": 0.40,
+    "pin_to_journal_radial_clearance": 0.10,
+    "frame_rib_surface": 0.1,
+    "shell_channel_surface": 0.1,
+    "shell_external_surface": 0.1,
+    "roof_aperture_edge": 0.1,
+    "roof_to_frame_XY": 0.2,
+    "frame_key_top_Z": 0.1,
+    "shell_to_board_Z": 0.1,
+    "socket_top_Z": 0.1
+  },
+  "nominal_roof_aperture_mm": [
+    113.0,
+    21.0
+  ],
+  "nominal_socket_mouth_Z_mm": 26.84,
+  "nominal_lowest_card_edge_Z_mm": 21.2,
+  "nominal_shell_bottom_Z_mm": 34.4,
+  "requirements": {
+    "minimum_correct_running_clearance_mm": 0.2,
+    "minimum_reversed_lateral_overlap_mm": 0.5,
+    "minimum_reversed_board_to_mouth_clearance_mm": 10.0
+  },
+  "references": [
+    {
+      "url": "https://files.edac.net/edac/content/395/395-062-520-202%20-%20EDAC%20Card%20Edge%20Connector.PDF",
+      "use": "Exact selected part,2017 drawing. Socket mouth is earlier than the4.06mm-deep contact point; blocking above its mouth does not depend on a modeled spring."
+    },
+    {
+      "url": "https://files.edac.net/edac/content/Polarizing%20Keys%20Des/345-240-318%20-%20EDAC%20Card%20Edge%20Connector%20Polarizing%20Key.pdf",
+      "use": "Supplier between-contact key is a separate accessory with its own card-cutout interface. Not adopted or recreated here; all62 terminals remain."
+    },
+    {
+      "url": "https://github.com/BelfrySCAD/BOSL2/blob/450f7fa5fc5222279ca4c4e564e1a6c01ccdd57c/joiners.scad",
+      "use": "Explicit complementary stock/clearance geometry, rather than an intersecting or visually keyed assembly."
+    },
+    {
+      "url": "https://github.com/prusa3d/Original-Prusa-i3/blob/MK3/Printed-Parts/scad/extruder-body.scad",
+      "use": "Production open CAD: positive retained stock with explicit subtractive mating, tool and fastener clearances. No geometry copied."
+    }
+  ],
+  "not_proven": [
+    "The declared manufacturing and assembly tolerances are design requirements, not measured process capability.",
+    "Dimensional stacks are bounded analytically and tilted entry checked at declared native poses. Elastic bypass, fracture strength and repeated wear require physical qualification.",
+    "The shell return wall and relieved leaf require manufacturability review and a prototype. No fabrication or powered insertion approval."
+  ]
+}

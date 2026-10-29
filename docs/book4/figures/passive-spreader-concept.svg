@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 790" role="img" aria-labelledby="title desc">
+<title id="title">Low-profile passive spreader alternative</title>
+<desc id="desc">Schematic plan and section of a passive plate alternative spanning two existing processor package contacts. The diagram shows nominal layout and is not a thermal guarantee.</desc>
+<defs>
+<style>text{font-family:Arial,sans-serif;fill:#183044;font-size:22px}.title{font-size:31px;font-weight:bold}.head{font-size:23px;font-weight:bold}.small{font-size:18px}.plate{fill:#b9cbd4;stroke:#294b68;stroke-width:3}.contact{fill:#e4b260;stroke:#945e18;stroke-width:2}.board{fill:#80ae96;stroke:#345e4c;stroke-width:2}.chip{fill:#39454b;stroke:#26343b;stroke-width:2}.line{stroke:#294b68;stroke-width:2;fill:none}.dash{stroke:#607987;stroke-width:2;fill:none;stroke-dasharray:6 5}</style>
+</defs>
+<rect width="1400" height="790" fill="#fff"/>
+<text x="45" y="52" class="title">Low-profile passive spreader — alternative concept</text>
+<text x="45" y="87" class="small">Separate option within the retained cooler envelope; the original finned profile remains available.</text>
+<text x="65" y="143" class="head">PLAN · plate and package contact areas</text>
+<rect x="95" y="173" width="500" height="360" rx="2" class="plate"/>
+<rect x="140" y="395.5" width="130" height="130" class="contact"/>
+<rect x="420" y="395.5" width="130" height="130" class="contact"/>
+<text x="205" y="456" text-anchor="middle" class="head">U1</text><text x="205" y="482" text-anchor="middle" class="small">CORE pad</text>
+<text x="485" y="456" text-anchor="middle" class="head">U2</text><text x="485" y="482" text-anchor="middle" class="small">GFX pad</text>
+<circle cx="115" cy="300.5" r="7" fill="#fff" stroke="#294b68" stroke-width="2"/>
+<circle cx="575" cy="340.5" r="7" fill="#fff" stroke="#294b68" stroke-width="2"/>
+<text x="345" y="571" text-anchor="middle" class="small">100 × 72 mm · existing nominal pad and fixing locations</text>
+<text x="700" y="143" class="head">SECTION · through the two package contacts</text>
+<rect x="732" y="240" width="525" height="22" class="plate"/>
+<text x="995" y="226" text-anchor="middle" class="small">Illustrative 4.3 mm plate</text>
+<rect x="780" y="262" width="130" height="12" class="contact"/>
+<rect x="1080" y="262" width="130" height="12" class="contact"/>
+<rect x="780" y="274" width="130" height="55" class="chip"/>
+<rect x="1080" y="274" width="130" height="55" class="chip"/>
+<text x="845" y="307" text-anchor="middle" fill="#fff" class="small" style="fill:#fff">CORE</text>
+<text x="1145" y="307" text-anchor="middle" fill="#fff" class="small" style="fill:#fff">GFX</text>
+<rect x="732" y="329" width="525" height="14" class="board"/>
+<text x="995" y="374" text-anchor="middle" class="small">Separate insulating thermal pads · mainboard</text>
+<path d="M756 241V208H730" class="line"/><text x="724" y="201" text-anchor="end" class="small">support to</text><text x="724" y="225" text-anchor="end" class="small">aluminium deck</text>
+<text x="700" y="443" class="small">No fan; existing enclosure openings are unchanged.</text>
+<text x="700" y="473" class="small">Shape and contact area are design proposals, not a cooling rating.</text>
+<text x="45" y="706" class="small">Not a manufacturing drawing. Actual chip heat, interface materials, mounting and safe temperatures remain to be established.</text>
+</svg>

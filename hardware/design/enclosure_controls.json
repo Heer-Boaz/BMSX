@@ -1,0 +1,1323 @@
+{
+  "revision": "COMPACT_HIDDEN_CONTROL_MOUNT",
+  "scope": "Fixed POWER[30,15], LED[54,17], RESET[215,13] at roof56/inside53; maker controls and all harness receivers retained. Four carrier screws enter upward from inside into manufacturer heat-set inserts in integral blind roof bosses. No exterior mounting holes. Cable-free removable lid; not fabrication or thermal qualification.",
+  "references": [
+    "models/controls/top_controls_selection.json"
+  ],
+  "context_cuts": [],
+  "context_transforms": [],
+  "removed_context_parts": [],
+  "removed_reservations": [],
+  "added_reservations": [],
+  "centres_XY_mm": {
+    "POWER": [
+      30,
+      15
+    ],
+    "LED": [
+      54,
+      17
+    ],
+    "RESET": [
+      215,
+      13
+    ]
+  },
+  "panel_top_Z_mm": 56,
+  "panel_inside_Z_mm": 53,
+  "power": {
+    "manufacturer": "E-Switch",
+    "mpn": "500SSP1S1M1REB",
+    "body_mm": [
+      12.7,
+      6.6,
+      6.36
+    ],
+    "mount_pitch_mm": 17.53,
+    "mount_hole_mm": 2.39,
+    "actuator_square_mm": 3.86,
+    "actuator_height_mm": 5.08,
+    "travel_mm": 2.16,
+    "fixed_flange_top_Z_mm": 51,
+    "flange_thickness_receiving_max_mm": 0.55,
+    "complete_insulated_terminal_bottom_Z_mm": 39.8,
+    "wiring": {
+      "2": "J60.1 POWER_SW",
+      "3": "J60.2 GND",
+      "1": "No wire; separately insulated"
+    },
+    "state": "Exact maker side view places terminal1 toward-X and terminal3 toward+X after installation: actuator at+X/POS3 closes2-3 (ON); actuator at-X/POS1 closes2-1 only (OFF, terminal1 unwired). Common2 remains POWER_SW. Maintained ON-NONE-ON switch; no stable centre position. Never switches9V or load current.",
+    "rating": "R gold:0.4VA max at20VAC/DC max. Exact configured drawing T511011revD operating -30..85C at this component; not a new global console limit.",
+    "carrier_bounds_mm": [
+      13,
+      4,
+      51,
+      47,
+      26,
+      53
+    ],
+    "carrier_material": "MJF/SLS PA12 fixed insulating carrier, four lowered circular mounting ears and original two open-sided M2 tab-nut traps. Finish bores/slot/flat faces; no printed threads.",
+    "carrier_mount_XY_mm": [
+      [
+        12,
+        6
+      ],
+      [
+        48,
+        6
+      ],
+      [
+        12,
+        26
+      ],
+      [
+        48,
+        26
+      ]
+    ],
+    "tab_mount_XY_mm": [
+      [
+        21.235,
+        15
+      ],
+      [
+        38.764999999999986,
+        15
+      ]
+    ],
+    "carrier_actuator_slot_XY_mm": [
+      26.400000000000006,
+      12.7,
+      33.599999999999994,
+      17.3
+    ],
+    "own_cap": {
+      "scope": "Own PA12 blue20x9 mechanical slide atPOWER30,15, retained cap shape. Captured flange below fixed front roof prevents vertical removal. Blind4.36square socket accepts maker maximum4.11 with0.25 total clearance; ceiling56.6 clears maximum stem top56.33 by0.27mm.",
+      "visible_size_mm": [
+        20,
+        9
+      ],
+      "visible_Z_mm": [
+        54.2,
+        59
+      ],
+      "flange_size_mm": [
+        24,
+        13
+      ],
+      "flange_Z_mm": [
+        53.4,
+        54.2
+      ],
+      "socket_side_mm": 4.36,
+      "socket_top_Z_mm": 56.6,
+      "current_offset_X_mm": 1.08,
+      "cap_mouth_bounds_mm": [
+        18.5,
+        10.25,
+        54.4,
+        41.5,
+        19.75,
+        56.1
+      ],
+      "cap_cavity_bounds_mm": [
+        15.900000000000006,
+        8,
+        53,
+        44.099999999999994,
+        22,
+        54.4
+      ],
+      "receiving_acceptance": "Finish slide and carrier slot. Verify full nominal2.16mm travel and conservative2.41mm drawing-maximum sweep, both continuity states, no sticking/pullout and the retained0.2mm nominal cap upstop. Qualify PA12 and completed assembly temperatures separately; selected switch operating maximum85C is not a new whole-console rating."
+    },
+    "nut_trap_scope": "Maker tabs0.30mm nominal,0.05..0.55mm from general drawing tolerance. Trap stock endsZ50.45; open hexpocketsZ48.75..51.05 allow nut seating to actual tab underside50.45..50.95. Nuts clocked30deg;17.53mm axes retained relativePOWER30,15. No plastic thread or nut-driver beside body.",
+    "body_receiving_max_mm": [
+      12.95,
+      6.85,
+      6.61
+    ],
+    "flange_receiving_max_XY_mm": [
+      19.81,
+      6.35
+    ],
+    "actuator_square_receiving_max_mm": 4.11,
+    "actuator_height_receiving_max_mm": 5.33,
+    "travel_receiving_max_mm": 2.41,
+    "flange_thickness_nominal_mm": 0.3,
+    "flange_thickness_receiving_min_mm": 0.05,
+    "mount_slot_receiving_min_width_mm": 2.14,
+    "complete_insulated_terminal_XY_mm": [
+      11.8,
+      3.2
+    ],
+    "mount_feature": "Two end-open U-slots, nominal2.39mm diameter at17.53mm pitch; no closed-hole assumption.",
+    "drawing_tolerance": "Exact T511011revD: X.X +/-0.4mm; X.XX +/-0.25mm. Receiving geometry uses independent worst-case dimensional maxima, not a detailed factory model. Finish receiver lands/slots and centre actual switch during bench assembly; confirm both electrical positions.",
+    "terminal_receiving": "Nominal lug projection3.96mm, maximum4.21mm below maximum6.61mm body; lowest bare terminalZ40.18 from flange51. Insulated envelope39.8 leaves0.38mm receiving allowance. Lug pitch4.70, width2.03, slot1.19, thickness0.76 nominal; general drawing tolerance applies. Inspect solder/insulation within11.8x3.2 footprint.",
+    "operating_temperature_C": [
+      -30,
+      85
+    ],
+    "internal_mount": {
+      "description": "Four inside-up M2x6 cap screws and washers clamp lowered carrier ears to integral roof bosses. A SPIROL heat-set insert is installed flush at each Z51 boss face before the controls subassembly. Only the POWER slide, RESET maker bezel/cap and LED maker bezel/lens remain exposed.",
+      "boss_diameter_mm": 7.6,
+      "boss_Z_mm": [
+        51,
+        53.1
+      ],
+      "carrier_ear_diameter_mm": 10,
+      "carrier_ear_Z_mm": [
+        49,
+        53
+      ],
+      "carrier_boss_receiver_diameter_mm": 7.8,
+      "carrier_boss_receiver_Z_mm": [
+        51,
+        53.1
+      ],
+      "screw_clearance_diameter_mm": 2.2,
+      "blind_bore_Z_mm": [
+        51,
+        55.2
+      ],
+      "remaining_roof_skin_mm": 0.8,
+      "insert": {
+        "manufacturer": "SPIROL",
+        "item": "151051",
+        "designation": "INS 29/M2 / .125S EK",
+        "material": "Brass ASTM B16 / EN 12164 CW603N CuZn36Pb3",
+        "thread": "M2 x 0.4",
+        "thread_pitch_mm": 0.4,
+        "overknurl_diameter_ref_mm": 3.63,
+        "pilot_diameter_mm": 3.12,
+        "length_mm": 3.18,
+        "length_tolerance_mm": 0.13,
+        "axis_range_mm": [
+          51,
+          54.18
+        ],
+        "moulded_or_finished_preinstallation_bore_diameter_mm": 3.2,
+        "preinstallation_bore_diameter_tolerance_mm": [
+          0,
+          0.08
+        ],
+        "maker_minimum_bore_depth_L_plus_two_pitches_mm": 3.98,
+        "receiving_bore_depth_mm": 4.2,
+        "nominal_screw_tip_mm": 54.7,
+        "screw_tip_to_blind_end_mm": 0.5,
+        "source": "https://shop.spirol.com/en-gb/item/series-29-30-short-heat-ultrasonic-insert-metric/series-29-short-heat-ultrasonic-insert-metric/151051",
+        "installation_source": "https://my.spirol.com/resources/white-papers/how-to-design-the-proper-hole-for-heat-ultrasonic-inserts/",
+        "representation": "Nominal installed overknurl receiving envelope, not factory-detail knurl geometry. The blind assembly cutter includes the overknurl envelope displaced by heat installation; it is not the preinstallation drill size. Heat-set knurl/undercut retention belongs to the named manufacturer insert, not loose nuts or printed threads."
+      },
+      "carrier_front_clearance_Y_mm": 3.7,
+      "carrier_front_clearance_scope": "Trim only carrier stock forward of Y3.7. The current front inner wall ends Y3.5; mounting axes, boss seats and underside washer/screw stack stay unchanged."
+    }
+  },
+  "reset": {
+    "manufacturer": "C&K/Littelfuse",
+    "mpn": "PNP3S2D2Y03GE",
+    "ordering_fields": [
+      "3N",
+      "Standardactuator",
+      "2blackcap",
+      "Ddomebezel",
+      "2blackhousing",
+      "YSPSTNO",
+      "03solderlug",
+      "Ggoldover-silver",
+      "Eepoxy"
+    ],
+    "bezel_diameter_mm": 17.5,
+    "bezel_height_mm": 2.6,
+    "button_diameter_mm": 11.9,
+    "unpressed_top_Z_mm": 60.650000000000006,
+    "component_low_Z_mm": 39.65,
+    "body_thread_diameter_mm": 11.9,
+    "cutout_diameter_mm": 12.3,
+    "cutout_flat_width_mm": 11,
+    "mount_nut_AF_mm": 14.17,
+    "mount_nut_height_mm": 1.98,
+    "nut_Z_mm": [
+      50.49,
+      52.47
+    ],
+    "lockwasher_ID_mm": 12.12,
+    "lockwasher_OD_mm": 15.06,
+    "lockwasher_Z_mm": [
+      52.47,
+      53
+    ],
+    "wiring": {
+      "3": "J60.3 RESET_SW",
+      "4": "J60.2 GND"
+    },
+    "state": "Releasedopen; pressed momentarilycloses3-4. Pins1/2notfittedforYNO.",
+    "rating": "G10mA/5VDC; -40..85C. Nominal3N\u00b11.5N, totaltravel2mmmax.",
+    "representation": "NativecomponentMAXreceiving envelope followsselecteddome/bushing dimensions; terminationfanout isseparate. No inheritedIP68/ESDclaim forwholecase."
+  },
+  "led": {
+    "manufacturer": "APEM",
+    "mpn": "Q6F1BXXG02E",
+    "bezel_diameter_mm": 7,
+    "bezel_height_mm": 1,
+    "lens_diameter_mm": 3,
+    "rear_complete_radius_mm": 4.5,
+    "rear_low_Z_mm": 27.5,
+    "cutout_diameter_mm": 6.1,
+    "wiring": {
+      "anode": "J60.4 V3V3 through470ohm1%>=0.25W insulatedinlineresistor",
+      "cathode": "J60.5 GND"
+    },
+    "meaning": "3.3Vrailpresent, notsoftware ready. Retainsall receiving/electricalconditions inphysicalbasisreference."
+  },
+  "harness": {
+    "conductors": 5,
+    "native_connector": "J60 unmodified; pin1POWER_SW,pin2GND,pin3RESET_SW,pin4V3V3,pin5GND",
+    "wire": "Belden39128 AWG28; originalHarwinfemalehousingandcontacts unchanged",
+    "bundle_max_OD_mm": 4,
+    "bend_radius_mm": 6,
+    "service_slack_mm": 25,
+    "length_scope": "Cut lengths calculated from each new route plus its terminal dressing and retained service slack; final relaxed jig lengths remain acceptance.",
+    "retention": "Dressandlaceon fixedPA12carrier and J60fixedfanout; insulatedsolderedcommonswitchGNDsplit, individualheatshrinkonlugs and470R. No cableattachedtomovablelid.",
+    "lid_removal": "Controls and all wire retention stay on fixed frontband/carriers. No cable attaches to removable lid."
+  },
+  "assembly": [
+    "Preassemble POWER30,15 to PA12 carrier with twoM2x6 and captured nuts; heads flushZ53.",
+    "Insertbluecapfrominsidecase, flangeunderlip. Capcannotpullupthroughmouth.",
+    "With the case open on the bench, heat-install four SPIROL151051 inserts from below flush at boss Z51 into 3.20..3.28mm blind pilot bores. Insert POWER cap from inside, then seat carrier ears on bosses and tighten four M2x6 cap screws upward with M2 washers. All heads remain inside, Z46.7..48.7; roof Z56 remains closed.",
+    "Install RESET with supplied lockwasher/nut and anti-rotation flat; no whole-case IP rating implied.",
+    "InstallretainedAPEMLEDin6.1hole; suppliednut/washerand0.04Nmexistinglimit.",
+    "Wireandinsulateall5J60pins; continuitytestPOWER/OFF/RUN, RESETrelease/press andLEDpolarity beforepower."
+  ],
+  "finite_acceptance": [
+    "Selected POWER switch E-Switch500SSP1S1M1REB local operating temperature -30..85C, from exact configured maker drawing. Measure at the actual component; no global85C console rating is inferred.",
+    "ProcureactualconfiguredPNPordercode andverifyfactorydrawing/samples. Familyconfigurationisnotastockavailabilitypromise.",
+    "Verify3.3Vresetpullupcurrent<=10mAandgoldcontactlowlevelconditionsagainstnativepowerowner; no alteredrailpath.",
+    "Checkactualterminalinsulationwithinexplicitbodies/fanouts, fullCAPstrokeandcapturedflangefit.",
+    "MakerfasteningtorquelimitsarenotASA/PA12jointproof; no automaticwholecaseIP/ESD/thermalqualification."
+  ],
+  "fabrication_release": false,
+  "case_positive_material_regions_mm": [
+    [
+      8.2,
+      2.2,
+      51,
+      15.8,
+      9.8,
+      53.1
+    ],
+    [
+      44.2,
+      2.2,
+      51,
+      51.8,
+      9.8,
+      53.1
+    ],
+    [
+      8.2,
+      22.2,
+      51,
+      15.8,
+      29.8,
+      53.1
+    ],
+    [
+      44.2,
+      22.2,
+      51,
+      51.8,
+      29.8,
+      53.1
+    ]
+  ],
+  "case_clearance_cutboxes": [
+    {
+      "name": "cap_mouth_bounds_mm",
+      "bounds_mm": [
+        18.5,
+        10.25,
+        54.4,
+        41.5,
+        19.75,
+        56.1
+      ],
+      "target": "lower_shell",
+      "covered_by_native_case_cuts": true
+    },
+    {
+      "name": "cap_cavity_bounds_mm",
+      "bounds_mm": [
+        15.900000000000006,
+        8,
+        53,
+        44.099999999999994,
+        22,
+        54.4
+      ],
+      "target": "lower_shell",
+      "covered_by_native_case_cuts": true
+    }
+  ],
+  "case_attachment_holes": [
+    {
+      "name": "POWER_CARRIER_0",
+      "centre_mm": [
+        12,
+        6,
+        51
+      ],
+      "axis": "Z",
+      "entry": "inside upward",
+      "blind_end_Z_mm": 55.2,
+      "remaining_roof_skin_mm": 0.8,
+      "preinstallation_pilot_diameter_mm": 3.2,
+      "installed_insert_envelope_diameter_mm": 3.63,
+      "target": "lower_shell",
+      "covered_by_native_case_cuts": true
+    },
+    {
+      "name": "POWER_CARRIER_1",
+      "centre_mm": [
+        48,
+        6,
+        51
+      ],
+      "axis": "Z",
+      "entry": "inside upward",
+      "blind_end_Z_mm": 55.2,
+      "remaining_roof_skin_mm": 0.8,
+      "preinstallation_pilot_diameter_mm": 3.2,
+      "installed_insert_envelope_diameter_mm": 3.63,
+      "target": "lower_shell",
+      "covered_by_native_case_cuts": true
+    },
+    {
+      "name": "POWER_CARRIER_2",
+      "centre_mm": [
+        12,
+        26,
+        51
+      ],
+      "axis": "Z",
+      "entry": "inside upward",
+      "blind_end_Z_mm": 55.2,
+      "remaining_roof_skin_mm": 0.8,
+      "preinstallation_pilot_diameter_mm": 3.2,
+      "installed_insert_envelope_diameter_mm": 3.63,
+      "target": "lower_shell",
+      "covered_by_native_case_cuts": true
+    },
+    {
+      "name": "POWER_CARRIER_3",
+      "centre_mm": [
+        48,
+        26,
+        51
+      ],
+      "axis": "Z",
+      "entry": "inside upward",
+      "blind_end_Z_mm": 55.2,
+      "remaining_roof_skin_mm": 0.8,
+      "preinstallation_pilot_diameter_mm": 3.2,
+      "installed_insert_envelope_diameter_mm": 3.63,
+      "target": "lower_shell",
+      "covered_by_native_case_cuts": true
+    }
+  ],
+  "case_cuts": [
+    {
+      "name": "CONTROLS_CUT_0",
+      "target": "lower_shell",
+      "purpose": "Blind inside insert pilot plus installed heat-set envelope; not a through shaft/countersink"
+    },
+    {
+      "name": "CONTROLS_CUT_1",
+      "target": "lower_shell",
+      "purpose": "Blind inside insert pilot plus installed heat-set envelope; not a through shaft/countersink"
+    },
+    {
+      "name": "CONTROLS_CUT_2",
+      "target": "lower_shell",
+      "purpose": "Blind inside insert pilot plus installed heat-set envelope; not a through shaft/countersink"
+    },
+    {
+      "name": "CONTROLS_CUT_3",
+      "target": "lower_shell",
+      "purpose": "Blind inside insert pilot plus installed heat-set envelope; not a through shaft/countersink"
+    },
+    {
+      "name": "CONTROLS_CUT_4",
+      "target": "lower_shell",
+      "purpose": "POWER slide mouth"
+    },
+    {
+      "name": "CONTROLS_CUT_5",
+      "target": "lower_shell",
+      "purpose": "POWER captive flange cavity"
+    },
+    {
+      "name": "CONTROLS_CUT_6",
+      "target": "lower_shell",
+      "purpose": "RESET anti-rotation maker bushing"
+    },
+    {
+      "name": "CONTROLS_CUT_7",
+      "target": "lower_shell",
+      "purpose": "LED maker bushing"
+    }
+  ],
+  "electrical_maps": {
+    "J60": {
+      "1": "POWER_SW",
+      "2": "GND",
+      "3": "RESET_SW",
+      "4": "V3V3",
+      "5": "GND"
+    },
+    "J301_and_keyboard_J2": {
+      "1": "PS2_KBD_DATA_5V",
+      "2": "GND",
+      "3": "V5",
+      "4": "PS2_KBD_CLK_5V"
+    },
+    "J300_and_front_J5": {
+      "1": "CLK",
+      "2": "CMD0",
+      "3": "CMD1",
+      "4": "CMD2",
+      "5": "CMD3",
+      "6": "DATA0",
+      "7": "DATA1",
+      "8": "DATA2",
+      "9": "DATA3",
+      "10": "SEL0",
+      "11": "SEL1",
+      "12": "SEL2",
+      "13": "SEL3",
+      "14": "V3V3",
+      "15": "V5",
+      "16": "GND",
+      "17": "GND",
+      "18": "GND",
+      "19": "GND",
+      "20": "GND"
+    }
+  },
+  "fixed_receivers": {
+    "heatsink": [
+      73,
+      24.5,
+      16.7,
+      173,
+      96.5,
+      41.7
+    ],
+    "J60_mate": [
+      178,
+      25.5,
+      20,
+      194,
+      30.5,
+      28.94
+    ],
+    "J301_mate": [
+      29,
+      61,
+      13.8,
+      39,
+      79,
+      31
+    ],
+    "J301_fanout": [
+      29,
+      61,
+      29,
+      43,
+      75,
+      42
+    ],
+    "keyboard_J2_mate": [
+      18,
+      13.5,
+      17,
+      30,
+      28.5,
+      37
+    ],
+    "front_J5_mate": [
+      205,
+      14,
+      13.6,
+      237,
+      25,
+      35
+    ],
+    "main_J300_mate": [
+      24.5,
+      147,
+      13.8,
+      52,
+      157.5,
+      32.5
+    ]
+  },
+  "wire_source": {
+    "manufacturer": "Belden",
+    "mpn": "39128",
+    "official_datasheet": "https://catalog.belden.com/techdata/EN/39128_techdata.pdf",
+    "nominal_OD_mm": 0.9905999999999999,
+    "maker_minimum_bend_radius_mm": 4.064,
+    "incoming_measured_OD_acceptance_max_mm": 1.1,
+    "not_a_global_console_temperature_rating": true
+  },
+  "harnesses": {
+    "controls": {
+      "conductors_at_J60": 5,
+      "bundle_max_OD_mm": 4,
+      "service_slack_mm": 25,
+      "paths": [
+        {
+          "name": "CONTROLS_FRONT_TRUNK",
+          "radius_mm": 2,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                90,
+                16,
+                42
+              ],
+              "end": [
+                197,
+                16,
+                42
+              ]
+            }
+          ]
+        },
+        {
+          "name": "CONTROLS_J60_BRANCH",
+          "radius_mm": 2,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                186,
+                28,
+                28.94
+              ],
+              "end": [
+                186,
+                28,
+                36
+              ]
+            },
+            {
+              "kind": "arc",
+              "start": [
+                186,
+                28,
+                36
+              ],
+              "mid": [
+                186,
+                26.242640687119284,
+                40.242640687119284
+              ],
+              "end": [
+                186,
+                22,
+                42
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "arc",
+              "start": [
+                186,
+                22,
+                42
+              ],
+              "mid": [
+                187.7573593128807,
+                17.757359312880716,
+                42
+              ],
+              "end": [
+                192,
+                16,
+                42
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "line",
+              "start": [
+                192,
+                16,
+                42
+              ],
+              "end": [
+                197,
+                16,
+                42
+              ]
+            }
+          ]
+        },
+        {
+          "name": "CONTROLS_POWER_BRANCH",
+          "radius_mm": 1.5,
+          "segments": [
+            {
+              "kind": "arc",
+              "start": [
+                30,
+                23,
+                39.25
+              ],
+              "mid": [
+                31.757359312880716,
+                18.757359312880716,
+                39.25
+              ],
+              "end": [
+                36,
+                17,
+                39.25
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "bezier",
+              "start": [
+                36,
+                17,
+                39.25
+              ],
+              "control1": [
+                57.33333333333333,
+                17,
+                39.25
+              ],
+              "control2": [
+                78.66666666666667,
+                16,
+                42
+              ],
+              "end": [
+                100,
+                16,
+                42
+              ],
+              "curvature_radius_lower_bound_mm": 233.29659773385686
+            }
+          ]
+        },
+        {
+          "name": "CONTROLS_LED_BRANCH",
+          "radius_mm": 1.5,
+          "segments": [
+            {
+              "kind": "line",
+              "start": [
+                54,
+                17,
+                27
+              ],
+              "end": [
+                64,
+                17,
+                27
+              ]
+            },
+            {
+              "kind": "arc",
+              "start": [
+                64,
+                17,
+                27
+              ],
+              "mid": [
+                68.24264068711929,
+                17,
+                28.757359312880716
+              ],
+              "end": [
+                70,
+                17,
+                33
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "line",
+              "start": [
+                70,
+                17,
+                33
+              ],
+              "end": [
+                70,
+                17,
+                36
+              ]
+            },
+            {
+              "kind": "arc",
+              "start": [
+                70,
+                17,
+                36
+              ],
+              "mid": [
+                71.75735931288071,
+                17,
+                40.242640687119284
+              ],
+              "end": [
+                76,
+                17,
+                42
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "bezier",
+              "start": [
+                76,
+                17,
+                42
+              ],
+              "control1": [
+                84.0,
+                17,
+                42
+              ],
+              "control2": [
+                92.0,
+                16,
+                42
+              ],
+              "end": [
+                100,
+                16,
+                42
+              ],
+              "curvature_radius_lower_bound_mm": 96.0
+            }
+          ]
+        },
+        {
+          "name": "CONTROLS_RESET_BRANCH",
+          "radius_mm": 1.5,
+          "segments": [
+            {
+              "kind": "arc",
+              "start": [
+                215,
+                19,
+                39.15
+              ],
+              "mid": [
+                213.2426406871193,
+                23.242640687119284,
+                39.15
+              ],
+              "end": [
+                209,
+                25,
+                39.15
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "bezier",
+              "start": [
+                209,
+                25,
+                39.15
+              ],
+              "control1": [
+                202.66666666666666,
+                25,
+                39.15
+              ],
+              "control2": [
+                196.33333333333334,
+                16,
+                42
+              ],
+              "end": [
+                190,
+                16,
+                42
+              ],
+              "curvature_radius_lower_bound_mm": 6.373269321326267
+            }
+          ]
+        }
+      ],
+      "terminal_fanouts": [
+        {
+          "name": "POWER_INDIVIDUAL_TERMINAL_DRESSING",
+          "bounds_mm": [
+            24.1,
+            13.4,
+            38.7,
+            35.9,
+            24.5,
+            44.39
+          ],
+          "join_point_mm": [
+            30,
+            23,
+            39.25
+          ]
+        },
+        {
+          "name": "RESET_BACKWARD_INDIVIDUAL_TERMINAL_DRESSING",
+          "bounds_mm": [
+            210,
+            12.5,
+            38.6,
+            220,
+            20.5,
+            40.2
+          ],
+          "join_point_mm": [
+            215,
+            19,
+            39.15
+          ],
+          "purpose": "Individual leads leave backwards below terminals and above J5, not downward as a gathered bundle."
+        },
+        {
+          "name": "J60_REAL_HEADER_FANOUT",
+          "bounds_mm": [
+            178,
+            25.5,
+            28.94,
+            194,
+            30.5,
+            36.5
+          ],
+          "join_point_mm": [
+            186,
+            28,
+            28.94
+          ]
+        }
+      ],
+      "connections": [
+        {
+          "J60": 1,
+          "to": "POWER.2"
+        },
+        {
+          "J60": 2,
+          "to": [
+            "POWER.3",
+            "RESET.4"
+          ]
+        },
+        {
+          "J60": 3,
+          "to": "RESET.3"
+        },
+        {
+          "J60": 4,
+          "to": "LED.anode through470ohm1%>=0.25W"
+        },
+        {
+          "J60": 5,
+          "to": "LED.cathode"
+        }
+      ],
+      "connectivity": "All5J60contacts reach the common connected route; POWER/RESET share a fixed insulatedGNDsplice. Pin5LEDreturn stays separate until nativeGND. Individual terminal fanouts and service slack remain dressed-jig acceptance, not claimed finished wires."
+    },
+    "keyboard": {
+      "conductors": 4,
+      "bundle_max_OD_mm": 4,
+      "service_slack_mm": 20,
+      "paths": [
+        {
+          "name": "KEYBOARD_CONNECTED_LOOM",
+          "radius_mm": 2,
+          "segments": [
+            {
+              "kind": "arc",
+              "start": [
+                24,
+                21,
+                37
+              ],
+              "mid": [
+                22.242640687119284,
+                21,
+                41.242640687119284
+              ],
+              "end": [
+                18,
+                21,
+                43
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "arc",
+              "start": [
+                18,
+                21,
+                43
+              ],
+              "mid": [
+                13.757359312880714,
+                19.242640687119284,
+                43
+              ],
+              "end": [
+                12,
+                15,
+                43
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "arc",
+              "start": [
+                12,
+                15,
+                43
+              ],
+              "mid": [
+                13.757359312880714,
+                10.757359312880714,
+                43
+              ],
+              "end": [
+                18,
+                9,
+                43
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "line",
+              "start": [
+                18,
+                9,
+                43
+              ],
+              "end": [
+                39,
+                9,
+                43
+              ]
+            },
+            {
+              "kind": "arc",
+              "start": [
+                39,
+                9,
+                43
+              ],
+              "mid": [
+                43.242640687119284,
+                10.757359312880714,
+                43
+              ],
+              "end": [
+                45,
+                15,
+                43
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "line",
+              "start": [
+                45,
+                15,
+                43
+              ],
+              "end": [
+                45,
+                57,
+                43
+              ]
+            },
+            {
+              "kind": "arc",
+              "start": [
+                45,
+                57,
+                43
+              ],
+              "mid": [
+                43.242640687119284,
+                61.242640687119284,
+                43
+              ],
+              "end": [
+                39,
+                63,
+                43
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "arc",
+              "start": [
+                39,
+                63,
+                43
+              ],
+              "mid": [
+                34.757359312880716,
+                63,
+                41.242640687119284
+              ],
+              "end": [
+                33,
+                63,
+                37
+              ],
+              "centreline_radius_mm": 6
+            },
+            {
+              "kind": "line",
+              "start": [
+                33,
+                63,
+                37
+              ],
+              "end": [
+                33,
+                63,
+                31
+              ]
+            }
+          ]
+        }
+      ],
+      "fanouts": [
+        {
+          "name": "KEYBOARD_J2_EXIT",
+          "bounds_mm": [
+            18,
+            13.5,
+            34,
+            30,
+            28.5,
+            39
+          ]
+        },
+        {
+          "name": "J301_INDIVIDUAL_FANOUT_AND_SLACK",
+          "bounds_mm": [
+            29,
+            61,
+            29,
+            43,
+            75,
+            42
+          ]
+        }
+      ],
+      "endpoint_scope": "Ends at[33,63,31] inside real J301 fanout; no fabricated exact bundle-to-pin point."
+    },
+    "controller": {
+      "conductors": 20,
+      "selected_wire": "13 Belden 39128 AWG28 signal wires; 7 Belden 39122 AWG22 supply/return wires; JST PHDR-20VS with SPHD-002T and SPHD-001T contacts",
+      "wire_exit_datums_scope": "Nominal PHD pin positions and mated 8.8 mm height; actual wire-entry points, individual routing, crimp and formed-loom bending remain to be qualified.",
+      "packing": {
+        "grid_columns": 4,
+        "grid_rows": 5,
+        "pitch_mm": 1.6,
+        "wire_diameter_acceptance_max_mm": 1.5,
+        "max_wire_grid_width_mm": 6.3,
+        "max_wire_grid_height_mm": 7.9,
+        "trunk_receiving_section_mm": [
+          6.5,
+          9.5
+        ],
+        "jig_acceptance": "All 20 individual wires and all terminations must be assembled and checked; receiving volumes are not individually routed wire solids or tolerance qualification."
+      },
+      "service_slack_mm": 25,
+      "paths": [],
+      "bundle_path": {
+        "name": "CONTROLLER_GATHERED_RECEIVING_LOOM",
+        "section_mm": [
+          6.5,
+          9.5
+        ],
+        "segments": [
+          {
+            "kind": "line",
+            "start": [
+              232.75,
+              80,
+              41.5
+            ],
+            "end": [
+              232.75,
+              139,
+              41.5
+            ]
+          },
+          {
+            "kind": "arc",
+            "start": [
+              232.75,
+              139,
+              41.5
+            ],
+            "mid": [
+              228.06370849898477,
+              150.31370849898477,
+              41.5
+            ],
+            "end": [
+              216.75,
+              155,
+              41.5
+            ],
+            "centreline_radius_mm": 16
+          },
+          {
+            "kind": "line",
+            "start": [
+              216.75,
+              155,
+              41.5
+            ],
+            "end": [
+              90,
+              155,
+              41.5
+            ]
+          }
+        ]
+      },
+      "fanout_bounds_mm": [
+        [
+          210.75,
+          16.75,
+          22.4,
+          236,
+          80,
+          46.25
+        ],
+        [
+          27.5,
+          149,
+          20.4,
+          90,
+          158.25,
+          46.25
+        ]
+      ],
+      "all_twenty_pin_maps_preserved": true
+    }
+  },
+  "scope_limits": [
+    "Preserved maker-derived control receiving geometry, not factory-detail CAD.",
+    "Harness spaces are not occupied component solids. Terminal dressing, crimps, pin1 marking, 470R insulation, slack and final cut lengths require jig acceptance.",
+    "No power, thermal, global temperature or fabrication qualification."
+  ],
+  "case_additions": [
+    {
+      "name": "CONTROLS_ROOF_BOSS_0",
+      "target": "lower_shell",
+      "integral_case_material": true
+    },
+    {
+      "name": "CONTROLS_ROOF_BOSS_1",
+      "target": "lower_shell",
+      "integral_case_material": true
+    },
+    {
+      "name": "CONTROLS_ROOF_BOSS_2",
+      "target": "lower_shell",
+      "integral_case_material": true
+    },
+    {
+      "name": "CONTROLS_ROOF_BOSS_3",
+      "target": "lower_shell",
+      "integral_case_material": true
+    }
+  ],
+  "receiving_contained_parts": {
+    "RECEIVER__CONTROLS_FRONT_TRUNK": [],
+    "RECEIVER__CONTROLS_J60_BRANCH": [],
+    "RECEIVER__CONTROLS_POWER_BRANCH": [],
+    "RECEIVER__CONTROLS_LED_BRANCH": [],
+    "RECEIVER__CONTROLS_RESET_BRANCH": [],
+    "RECEIVER__KEYBOARD_CONNECTED_LOOM": [],
+    "RECEIVER__CONTROLLER_GATHERED_RECEIVING_LOOM": [],
+    "RECEIVER__CONTROLLER_J5_GATHER_FANOUT": [],
+    "RECEIVER__CONTROLLER_MAIN_J300_FANOUT": [],
+    "RECEIVER__POWER_INDIVIDUAL_TERMINAL_DRESSING": [],
+    "RECEIVER__RESET_BACKWARD_INDIVIDUAL_TERMINAL_DRESSING": [],
+    "RECEIVER__J60_REAL_HEADER_FANOUT": [],
+    "RECEIVER__KEYBOARD_J2_EXIT": [],
+    "RECEIVER__J301_INDIVIDUAL_FANOUT_AND_SLACK": [],
+    "RECEIVER__J60_MATE": [],
+    "RECEIVER__J301_MATE": [],
+    "RECEIVER__J301_FANOUT": [],
+    "RECEIVER__KEYBOARD_J2_MATE": [
+      "KEYBOARD__J2_JST_PH_BODY"
+    ],
+    "RECEIVER__FRONT_J5_MATE": [
+      "FRONT__J5_JST_PHD_BODY"
+    ],
+    "RECEIVER__MAIN_J300_MATE": [],
+    "RECEIVER__CONTROLLER_J5_R10_EXIT": [],
+    "RECEIVER__CONTROLLER_FRONT_BRIDGE": []
+  },
+  "receiving_mating_refs": {
+    "RECEIVER__CONTROLS_FRONT_TRUNK": [],
+    "RECEIVER__CONTROLS_J60_BRANCH": [
+      "MAIN__J60"
+    ],
+    "RECEIVER__CONTROLS_POWER_BRANCH": [],
+    "RECEIVER__CONTROLS_LED_BRANCH": [],
+    "RECEIVER__CONTROLS_RESET_BRANCH": [],
+    "RECEIVER__KEYBOARD_CONNECTED_LOOM": [
+      "MAIN__J301"
+    ],
+    "RECEIVER__CONTROLLER_GATHERED_RECEIVING_LOOM": [
+      "MAIN__J300"
+    ],
+    "RECEIVER__CONTROLLER_J5_GATHER_FANOUT": [],
+    "RECEIVER__CONTROLLER_MAIN_J300_FANOUT": [
+      "MAIN__J300"
+    ],
+    "RECEIVER__POWER_INDIVIDUAL_TERMINAL_DRESSING": [],
+    "RECEIVER__RESET_BACKWARD_INDIVIDUAL_TERMINAL_DRESSING": [],
+    "RECEIVER__J60_REAL_HEADER_FANOUT": [
+      "MAIN__J60"
+    ],
+    "RECEIVER__KEYBOARD_J2_EXIT": [],
+    "RECEIVER__J301_INDIVIDUAL_FANOUT_AND_SLACK": [
+      "MAIN__J301"
+    ],
+    "RECEIVER__J60_MATE": [
+      "MAIN__J60"
+    ],
+    "RECEIVER__J301_MATE": [
+      "MAIN__J301"
+    ],
+    "RECEIVER__J301_FANOUT": [
+      "MAIN__J301"
+    ],
+    "RECEIVER__KEYBOARD_J2_MATE": [],
+    "RECEIVER__FRONT_J5_MATE": [],
+    "RECEIVER__MAIN_J300_MATE": [
+      "MAIN__J300"
+    ],
+    "RECEIVER__CONTROLLER_J5_R10_EXIT": [],
+    "RECEIVER__CONTROLLER_FRONT_BRIDGE": []
+  }
+}

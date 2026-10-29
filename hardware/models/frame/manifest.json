@@ -1,0 +1,1774 @@
+{
+  "scope": "Imported geometry retained with its original component or receiving-model scope.",
+  "source_release_sha256": "43973d707d4d17c5d5fcacde0713da1489caaf7a35485cc00d84aeca306efa9a",
+  "parts": {
+    "FRAME_STOP_0_0_G10": {
+      "name": "FRAME_STOP_0_0_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        30.89999989999999,
+        139.4999999,
+        31.99999989999999,
+        33.10000010000001,
+        147.0000001,
+        34.40000010000001
+      ],
+      "volume_mm3": 22.0,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          31,
+          143,
+          33.4,
+          33,
+          147,
+          34.4
+        ],
+        [
+          30.9,
+          139.5,
+          32.0,
+          33.1,
+          146.5,
+          32.5
+        ],
+        [
+          31.5,
+          139.5,
+          32.5,
+          32.5,
+          146.5,
+          33.4
+        ]
+      ],
+      "sha256": "a79e6e82d716660dd97f8d73dd9df380cccc4379aeab05a1b9b7c334504317d6",
+      "brep": "models/frame/FRAME_STOP_0_0_G10.brep"
+    },
+    "FRAME_METAL_R2": {
+      "name": "FRAME_METAL_R2",
+      "material_owner": "aluminium",
+      "bounds_mm": [
+        2.9999998999999713,
+        122.99999989999993,
+        2.998837260863876,
+        294.0000001000001,
+        169.75017716239114,
+        41.00000010000001
+      ],
+      "volume_mm3": 38021.79297641284,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          30.2,
+          141.5,
+          30.1,
+          33.8,
+          147,
+          33.4
+        ],
+        [
+          136.2,
+          141.5,
+          30.1,
+          139.8,
+          147,
+          33.4
+        ],
+        [
+          30.2,
+          151,
+          30.1,
+          33.8,
+          156.5,
+          33.4
+        ],
+        [
+          136.2,
+          151,
+          30.1,
+          139.8,
+          156.5,
+          33.4
+        ],
+        [
+          31.3,
+          139.5,
+          27.4,
+          33.65,
+          152,
+          30
+        ],
+        [
+          136.35,
+          139.5,
+          27.4,
+          138.7,
+          152,
+          30
+        ],
+        [
+          160.2,
+          141.5,
+          30.1,
+          163.8,
+          147,
+          33.4
+        ],
+        [
+          266.2,
+          141.5,
+          30.1,
+          269.8,
+          147,
+          33.4
+        ],
+        [
+          160.2,
+          151,
+          30.1,
+          163.8,
+          156.5,
+          33.4
+        ],
+        [
+          266.2,
+          151,
+          30.1,
+          269.8,
+          156.5,
+          33.4
+        ],
+        [
+          161.3,
+          139.5,
+          27.4,
+          163.65,
+          152,
+          30
+        ],
+        [
+          266.35,
+          139.5,
+          27.4,
+          268.7,
+          152,
+          30
+        ],
+        [
+          4.0,
+          138.5,
+          18.4,
+          286.0,
+          144.5,
+          33.4
+        ],
+        [
+          4.0,
+          153.5,
+          18.4,
+          286.0,
+          159.5,
+          33.4
+        ],
+        [
+          4.0,
+          139.5,
+          3.0,
+          8.0,
+          143.5,
+          33.4
+        ],
+        [
+          4.0,
+          154.5,
+          3.0,
+          8.0,
+          158.5,
+          33.4
+        ],
+        [
+          3.0,
+          137.5,
+          3.0,
+          15.0,
+          145.5,
+          6.0
+        ],
+        [
+          3.0,
+          152.5,
+          3.0,
+          15.0,
+          160.5,
+          6.0
+        ],
+        [
+          147.0,
+          132.0,
+          27.4,
+          153.0,
+          143.5,
+          33.4
+        ],
+        [
+          147.0,
+          154.5,
+          27.4,
+          153.0,
+          166.0,
+          33.4
+        ],
+        [
+          282.0,
+          125.0,
+          3.0,
+          286.0,
+          129.0,
+          41.0
+        ],
+        [
+          282.0,
+          123.0,
+          3.0,
+          294.0,
+          131.0,
+          6.0
+        ],
+        [
+          282.0,
+          125.0,
+          27.0,
+          286.0,
+          159.0,
+          41.0
+        ],
+        [
+          146.25,
+          128.25,
+          3.0,
+          153.75,
+          135.75,
+          33.4
+        ],
+        [
+          146.25,
+          162.25,
+          3.0,
+          153.75,
+          169.75,
+          33.4
+        ],
+        [
+          31.0,
+          141.5,
+          29.4,
+          33.0,
+          147.0,
+          33.4
+        ],
+        [
+          137.0,
+          141.5,
+          29.4,
+          139.0,
+          147.0,
+          33.4
+        ],
+        [
+          31.0,
+          151.0,
+          29.4,
+          33.0,
+          156.5,
+          33.4
+        ],
+        [
+          137.0,
+          151.0,
+          29.4,
+          139.0,
+          156.5,
+          33.4
+        ],
+        [
+          161.0,
+          141.5,
+          29.4,
+          163.0,
+          147.0,
+          33.4
+        ],
+        [
+          267.0,
+          141.5,
+          29.4,
+          269.0,
+          147.0,
+          33.4
+        ],
+        [
+          161.0,
+          151.0,
+          29.4,
+          163.0,
+          156.5,
+          33.4
+        ],
+        [
+          267.0,
+          151.0,
+          29.4,
+          269.0,
+          156.5,
+          33.4
+        ]
+      ],
+      "sha256": "b993ec5db5bf6234a651008d4ef2142d91bc6400588ff3fbf70768abfd81e517",
+      "brep": "models/frame/FRAME_METAL_R2.brep"
+    },
+    "FRAME_STOP_0_1_G10": {
+      "name": "FRAME_STOP_0_1_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        136.89999989999998,
+        139.49999989999998,
+        31.99999989999999,
+        139.10000010000002,
+        147.0000001,
+        34.40000010000001
+      ],
+      "volume_mm3": 21.99999999999995,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          137,
+          143,
+          33.4,
+          139,
+          147,
+          34.4
+        ],
+        [
+          136.9,
+          139.5,
+          32.0,
+          139.1,
+          146.5,
+          32.5
+        ],
+        [
+          137.5,
+          139.5,
+          32.5,
+          138.5,
+          146.5,
+          33.4
+        ]
+      ],
+      "sha256": "2343c2a3796c95afe4c45b7963aae18caadadc8316d0f036bc624e456f0188a9",
+      "brep": "models/frame/FRAME_STOP_0_1_G10.brep"
+    },
+    "FRAME_STOP_0_2_G10": {
+      "name": "FRAME_STOP_0_2_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        30.89999989999999,
+        150.9999999,
+        31.99999989999999,
+        33.10000010000001,
+        158.5000001,
+        34.40000010000001
+      ],
+      "volume_mm3": 21.999999999999993,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          31,
+          151,
+          33.4,
+          33,
+          155,
+          34.4
+        ],
+        [
+          30.9,
+          151.5,
+          32.0,
+          33.1,
+          158.5,
+          32.5
+        ],
+        [
+          31.5,
+          151.5,
+          32.5,
+          32.5,
+          158.5,
+          33.4
+        ]
+      ],
+      "sha256": "4f2bdfbfc6744b48f3e24a441c506a704df5ba2b1bd0b87e21679279cb69dafe",
+      "brep": "models/frame/FRAME_STOP_0_2_G10.brep"
+    },
+    "FRAME_STOP_0_3_G10": {
+      "name": "FRAME_STOP_0_3_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        136.89999989999998,
+        150.9999999,
+        31.99999989999999,
+        139.10000010000002,
+        158.50000010000002,
+        34.40000010000001
+      ],
+      "volume_mm3": 21.99999999999995,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          137,
+          151,
+          33.4,
+          139,
+          155,
+          34.4
+        ],
+        [
+          136.9,
+          151.5,
+          32.0,
+          139.1,
+          158.5,
+          32.5
+        ],
+        [
+          137.5,
+          151.5,
+          32.5,
+          138.5,
+          158.5,
+          33.4
+        ]
+      ],
+      "sha256": "e389b93721e7a13e7ccf796c2d2314f8a22fca8509130f66259eff0256124f7f",
+      "brep": "models/frame/FRAME_STOP_0_3_G10.brep"
+    },
+    "FRAME_GUIDE_0_0_G10": {
+      "name": "FRAME_GUIDE_0_0_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        30.99999989999999,
+        139.4999999,
+        28.89999989999999,
+        33.95000010000001,
+        151.0000001,
+        33.50000010000001
+      ],
+      "volume_mm3": 58.43800000000009,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          31,
+          147,
+          30,
+          33.95,
+          151,
+          33.5
+        ],
+        [
+          31.61,
+          139.5,
+          28.9,
+          33.39,
+          150.5,
+          29.5
+        ],
+        [
+          32.01,
+          139.5,
+          29.5,
+          32.99,
+          150.5,
+          30
+        ]
+      ],
+      "sha256": "412cbfef65e6aa3d55121647eb49669c7f43d4405a96490ace3768c2e47a1b5e",
+      "brep": "models/frame/FRAME_GUIDE_0_0_G10.brep"
+    },
+    "FRAME_GUIDE_0_1_G10": {
+      "name": "FRAME_GUIDE_0_1_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        136.04999990000002,
+        139.4999999,
+        28.899999899999994,
+        139.0000001,
+        151.0000001,
+        33.5000001
+      ],
+      "volume_mm3": 58.43799999999978,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          136.05,
+          147,
+          30,
+          139,
+          151,
+          33.5
+        ],
+        [
+          136.61,
+          139.5,
+          28.9,
+          138.39,
+          150.5,
+          29.5
+        ],
+        [
+          137.01,
+          139.5,
+          29.5,
+          137.99,
+          150.5,
+          30
+        ]
+      ],
+      "sha256": "09a626d1591b772db06146d62114e62af71551678d612f2bd8e279b9e72a48da",
+      "brep": "models/frame/FRAME_GUIDE_0_1_G10.brep"
+    },
+    "FRAME_BOARD_BEARING_0_0_G10": {
+      "name": "FRAME_BOARD_BEARING_0_0_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        42.499999899999985,
+        141.49999989999998,
+        7.4999999,
+        127.50000010000001,
+        144.50000010000002,
+        10.000000100000014
+      ],
+      "volume_mm3": 510.9999999999999,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          42.5,
+          141.5,
+          8,
+          127.5,
+          144.5,
+          10
+        ],
+        [
+          43.5,
+          142.25,
+          7.5,
+          44.5,
+          143.25,
+          8
+        ],
+        [
+          125.5,
+          142.25,
+          7.5,
+          126.5,
+          143.25,
+          8
+        ]
+      ],
+      "sha256": "6a0f87f58fe9a8ac1f865b9bf5e1f70615a3405cb4dc1ed1d7c19fffb5bb9157",
+      "brep": "models/frame/FRAME_BOARD_BEARING_0_0_G10.brep"
+    },
+    "FRAME_BOARD_BEARING_0_1_G10": {
+      "name": "FRAME_BOARD_BEARING_0_1_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        42.499999899999985,
+        153.49999989999998,
+        7.4999999,
+        127.50000010000001,
+        156.50000010000002,
+        10.000000100000014
+      ],
+      "volume_mm3": 511.0,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          42.5,
+          153.5,
+          8,
+          127.5,
+          156.5,
+          10
+        ],
+        [
+          43.5,
+          154.75,
+          7.5,
+          44.5,
+          155.75,
+          8
+        ],
+        [
+          125.5,
+          154.75,
+          7.5,
+          126.5,
+          155.75,
+          8
+        ]
+      ],
+      "sha256": "4406e3baa158d090823102f3d7e476414fd761768c06359c511808ada1c76e6e",
+      "brep": "models/frame/FRAME_BOARD_BEARING_0_1_G10.brep"
+    },
+    "FRAME_STOP_1_0_G10": {
+      "name": "FRAME_STOP_1_0_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        160.89999989999998,
+        139.49999989999998,
+        31.99999989999999,
+        163.10000010000002,
+        147.0000001,
+        34.40000010000001
+      ],
+      "volume_mm3": 21.99999999999995,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          161,
+          143,
+          33.4,
+          163,
+          147,
+          34.4
+        ],
+        [
+          160.9,
+          139.5,
+          32.0,
+          163.1,
+          146.5,
+          32.5
+        ],
+        [
+          161.5,
+          139.5,
+          32.5,
+          162.5,
+          146.5,
+          33.4
+        ]
+      ],
+      "sha256": "c280fedd82331bad494f54fd6438238dbec671da16655bc21d970b0435c0e142",
+      "brep": "models/frame/FRAME_STOP_1_0_G10.brep"
+    },
+    "FRAME_STOP_1_1_G10": {
+      "name": "FRAME_STOP_1_1_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        266.89999989999995,
+        139.4999999,
+        31.99999989999999,
+        269.10000010000005,
+        147.0000001,
+        34.40000010000001
+      ],
+      "volume_mm3": 22.00000000000015,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          267,
+          143,
+          33.4,
+          269,
+          147,
+          34.4
+        ],
+        [
+          266.9,
+          139.5,
+          32.0,
+          269.1,
+          146.5,
+          32.5
+        ],
+        [
+          267.5,
+          139.5,
+          32.5,
+          268.5,
+          146.5,
+          33.4
+        ]
+      ],
+      "sha256": "bbf810d7d752e1827b53d0f8764ea0e2f209cfe4f05a491d819434498f11fa3a",
+      "brep": "models/frame/FRAME_STOP_1_1_G10.brep"
+    },
+    "FRAME_STOP_1_2_G10": {
+      "name": "FRAME_STOP_1_2_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        160.89999989999998,
+        150.9999999,
+        31.99999989999999,
+        163.10000010000002,
+        158.50000010000002,
+        34.40000010000001
+      ],
+      "volume_mm3": 21.99999999999995,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          161,
+          151,
+          33.4,
+          163,
+          155,
+          34.4
+        ],
+        [
+          160.9,
+          151.5,
+          32.0,
+          163.1,
+          158.5,
+          32.5
+        ],
+        [
+          161.5,
+          151.5,
+          32.5,
+          162.5,
+          158.5,
+          33.4
+        ]
+      ],
+      "sha256": "3ef4dd3ffa1d7617445c8efb5cf4e39e123b42c16a9df8704f9b133c41af66a6",
+      "brep": "models/frame/FRAME_STOP_1_2_G10.brep"
+    },
+    "FRAME_STOP_1_3_G10": {
+      "name": "FRAME_STOP_1_3_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        266.89999989999995,
+        150.9999999,
+        31.99999989999999,
+        269.10000010000005,
+        158.5000001,
+        34.40000010000001
+      ],
+      "volume_mm3": 22.000000000000146,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          267,
+          151,
+          33.4,
+          269,
+          155,
+          34.4
+        ],
+        [
+          266.9,
+          151.5,
+          32.0,
+          269.1,
+          158.5,
+          32.5
+        ],
+        [
+          267.5,
+          151.5,
+          32.5,
+          268.5,
+          158.5,
+          33.4
+        ]
+      ],
+      "sha256": "f9c5531fea0307d172fdb1ead5889c0b1e9f5f1ca45b718a6d395b7147915aae",
+      "brep": "models/frame/FRAME_STOP_1_3_G10.brep"
+    },
+    "FRAME_GUIDE_1_0_G10": {
+      "name": "FRAME_GUIDE_1_0_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        160.9999999,
+        139.4999999,
+        28.899999899999994,
+        163.95000009999998,
+        151.0000001,
+        33.5000001
+      ],
+      "volume_mm3": 58.43799999999978,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          161,
+          147,
+          30,
+          163.95,
+          151,
+          33.5
+        ],
+        [
+          161.61,
+          139.5,
+          28.9,
+          163.39,
+          150.5,
+          29.5
+        ],
+        [
+          162.01,
+          139.5,
+          29.5,
+          162.99,
+          150.5,
+          30
+        ]
+      ],
+      "sha256": "56017a79f846acde88363b7b6c47d120d3bcc88cec0e8dcc501e09ca078bdd7c",
+      "brep": "models/frame/FRAME_GUIDE_1_0_G10.brep"
+    },
+    "FRAME_GUIDE_1_1_G10": {
+      "name": "FRAME_GUIDE_1_1_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        266.04999989999993,
+        139.4999999,
+        28.899999899999994,
+        269.0000001000001,
+        151.00000010000005,
+        33.50000010000006
+      ],
+      "volume_mm3": 58.43799999999978,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          266.05,
+          147,
+          30,
+          269,
+          151,
+          33.5
+        ],
+        [
+          266.61,
+          139.5,
+          28.9,
+          268.39,
+          150.5,
+          29.5
+        ],
+        [
+          267.01,
+          139.5,
+          29.5,
+          267.99,
+          150.5,
+          30
+        ]
+      ],
+      "sha256": "41376ca5b81bf9b09857ca5308a56357519260b43f285dd76e7bd821f3efa29e",
+      "brep": "models/frame/FRAME_GUIDE_1_1_G10.brep"
+    },
+    "FRAME_BOARD_BEARING_1_0_G10": {
+      "name": "FRAME_BOARD_BEARING_1_0_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        172.4999999,
+        141.4999999,
+        7.4999999,
+        257.5000001,
+        144.5000001,
+        10.0000001
+      ],
+      "volume_mm3": 510.9999999999999,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          172.5,
+          141.5,
+          8,
+          257.5,
+          144.5,
+          10
+        ],
+        [
+          173.5,
+          142.25,
+          7.5,
+          174.5,
+          143.25,
+          8
+        ],
+        [
+          255.5,
+          142.25,
+          7.5,
+          256.5,
+          143.25,
+          8
+        ]
+      ],
+      "sha256": "07f41867be95d0c5537a8e38473b44f4544a28cc52a3edb94a72181acfef2bf7",
+      "brep": "models/frame/FRAME_BOARD_BEARING_1_0_G10.brep"
+    },
+    "FRAME_BOARD_BEARING_1_1_G10": {
+      "name": "FRAME_BOARD_BEARING_1_1_G10",
+      "material_owner": "g10_insulator",
+      "bounds_mm": [
+        172.4999999,
+        153.4999999,
+        7.4999999,
+        257.5000001,
+        156.5000001,
+        10.0000001
+      ],
+      "volume_mm3": 511.0,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          172.5,
+          153.5,
+          8,
+          257.5,
+          156.5,
+          10
+        ],
+        [
+          173.5,
+          154.75,
+          7.5,
+          174.5,
+          155.75,
+          8
+        ],
+        [
+          255.5,
+          154.75,
+          7.5,
+          256.5,
+          155.75,
+          8
+        ]
+      ],
+      "sha256": "1c12a3f75aaf863a712efdf8aae04ce89bd8c48ff2afe59658627088cd70a433",
+      "brep": "models/frame/FRAME_BOARD_BEARING_1_1_G10.brep"
+    },
+    "FRAME_KEY_RETAINER_FRONT": {
+      "name": "FRAME_KEY_RETAINER_FRONT",
+      "material_owner": "aluminium",
+      "bounds_mm": [
+        25.499999899999914,
+        137.99965800020084,
+        25.399999899999912,
+        270.0000001000001,
+        139.50034199979916,
+        33.400000100000085
+      ],
+      "volume_mm3": 1713.8920373349374,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          25.5,
+          138,
+          28.6,
+          270,
+          139.5,
+          33.4
+        ],
+        [
+          145.5,
+          138,
+          25.4,
+          154.5,
+          139.5,
+          27.4
+        ],
+        [
+          145.5,
+          138,
+          25.4,
+          146.8,
+          139.5,
+          28.7
+        ],
+        [
+          153.2,
+          138,
+          25.4,
+          154.5,
+          139.5,
+          28.7
+        ]
+      ],
+      "sha256": "8b1e257eeb75220de4ffe5ec9fa6684c5b9edf70fcfa6e53daef238fd983d983",
+      "brep": "models/frame/FRAME_KEY_RETAINER_FRONT.brep"
+    },
+    "FRAME_KEY_RETAINER_REAR": {
+      "name": "FRAME_KEY_RETAINER_REAR",
+      "material_owner": "aluminium",
+      "bounds_mm": [
+        29.999999899999914,
+        158.49965800020084,
+        25.399999899999912,
+        270.0000001000001,
+        160.00034199979916,
+        33.400000100000085
+      ],
+      "volume_mm3": 992.1920373349373,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          30,
+          158.5,
+          30.6,
+          270,
+          160,
+          33.4
+        ],
+        [
+          145.5,
+          158.5,
+          25.4,
+          154.5,
+          160,
+          27.4
+        ],
+        [
+          145.5,
+          158.5,
+          25.4,
+          146.8,
+          160,
+          30.7
+        ],
+        [
+          153.2,
+          158.5,
+          25.4,
+          154.5,
+          160,
+          30.7
+        ]
+      ],
+      "sha256": "18899849cdd4927c8903436ba32987c85b97ffd34813c24aab9944ce1e78fe5d",
+      "brep": "models/frame/FRAME_KEY_RETAINER_REAR.brep"
+    },
+    "FASTENER__LUG_0_SCREW": {
+      "name": "FASTENER__LUG_0_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        35.57414515050221,
+        146.24999989999998,
+        -0.0008548494977881195,
+        41.075854849497794,
+        151.75000010000002,
+        23.000466326998797
+      ],
+      "volume_mm3": 205.6100963341107,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          35.575,
+          146.25,
+          0.0,
+          41.075,
+          151.75,
+          23.0
+        ]
+      ],
+      "sha256": "d88bfef85a4908ac4238c87fd35e19855e396f6f00a681ff543ac4ef9a206dab",
+      "brep": "models/frame/FASTENER__LUG_0_SCREW.brep"
+    },
+    "FASTENER__LUG_0_NUT": {
+      "name": "FASTENER__LUG_0_NUT",
+      "material_owner": "steel",
+      "bounds_mm": [
+        35.149573419457035,
+        146.24999989999998,
+        18.449533673001202,
+        41.50042658054297,
+        151.75000010000002,
+        20.8504663269988
+      ],
+      "volume_mm3": 45.90884398536533,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          35.149573519457064,
+          146.25,
+          18.45,
+          41.50042648054294,
+          151.75,
+          20.85
+        ]
+      ],
+      "sha256": "ae0d102c77f9c3903a80ffe28f6907b393b71eccf44dfc0e2c4f3fb2270c510e",
+      "brep": "models/frame/FASTENER__LUG_0_NUT.brep"
+    },
+    "FASTENER__LUG_0_WASHER_0": {
+      "name": "FASTENER__LUG_0_WASHER_0",
+      "material_owner": "steel",
+      "bounds_mm": [
+        34.823912037002835,
+        145.49999989999998,
+        17.94891203700283,
+        41.82608796299717,
+        152.50000010000002,
+        18.451087962997168
+      ],
+      "volume_mm3": 15.221016406642558,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          34.825,
+          145.5,
+          17.95,
+          41.825,
+          152.5,
+          18.45
+        ]
+      ],
+      "sha256": "f91cc5a36d02c25b218ecd241ebb4220f3781c786d5b8f47facc4a50fe9f1301",
+      "brep": "models/frame/FASTENER__LUG_0_WASHER_0.brep"
+    },
+    "FASTENER__LUG_1_SCREW": {
+      "name": "FASTENER__LUG_1_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        128.92414515050223,
+        146.24999989999998,
+        -0.0008548494977910765,
+        134.4258548494978,
+        151.75000010000002,
+        23.000466326998815
+      ],
+      "volume_mm3": 205.61009633411058,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          128.925,
+          146.25,
+          0.0,
+          134.425,
+          151.75,
+          23.0
+        ]
+      ],
+      "sha256": "ccfdf792299c9a3bea63714735ae7b5481f66a231f13e1a29bbaa443d6b7ce6f",
+      "brep": "models/frame/FASTENER__LUG_1_SCREW.brep"
+    },
+    "FASTENER__LUG_1_NUT": {
+      "name": "FASTENER__LUG_1_NUT",
+      "material_owner": "steel",
+      "bounds_mm": [
+        128.49957341945702,
+        146.24999989999995,
+        18.449533673001184,
+        134.850426580543,
+        151.75000010000005,
+        20.850466326998816
+      ],
+      "volume_mm3": 45.90884398536535,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          128.49957351945704,
+          146.25,
+          18.45,
+          134.85042648054295,
+          151.75,
+          20.85
+        ]
+      ],
+      "sha256": "bd0911eee3890f806c6506edc29e1f5a90567a739af9eafad5246769ccc44ed6",
+      "brep": "models/frame/FASTENER__LUG_1_NUT.brep"
+    },
+    "FASTENER__LUG_1_WASHER_0": {
+      "name": "FASTENER__LUG_1_WASHER_0",
+      "material_owner": "steel",
+      "bounds_mm": [
+        128.17391203700282,
+        145.49999989999995,
+        17.948912037002817,
+        135.1760879629972,
+        152.50000010000005,
+        18.451087962997182
+      ],
+      "volume_mm3": 15.221016406642557,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          128.175,
+          145.5,
+          17.95,
+          135.175,
+          152.5,
+          18.45
+        ]
+      ],
+      "sha256": "7aad7768b2693df1ea17672ea84a33a7dfa3f16b82bfe3f8e954cfbcea111932",
+      "brep": "models/frame/FASTENER__LUG_1_WASHER_0.brep"
+    },
+    "FASTENER__LUG_2_SCREW": {
+      "name": "FASTENER__LUG_2_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        165.5741451505022,
+        146.24999989999998,
+        -0.0008548494977910765,
+        171.07585484949777,
+        151.75000010000002,
+        23.000466326998815
+      ],
+      "volume_mm3": 205.6100963341106,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          165.575,
+          146.25,
+          0.0,
+          171.075,
+          151.75,
+          23.0
+        ]
+      ],
+      "sha256": "eb87819a5566272167480524457aa212b0f4de483027cf05a7d0b9cacc6524c8",
+      "brep": "models/frame/FASTENER__LUG_2_SCREW.brep"
+    },
+    "FASTENER__LUG_2_NUT": {
+      "name": "FASTENER__LUG_2_NUT",
+      "material_owner": "steel",
+      "bounds_mm": [
+        165.149573419457,
+        146.24999989999995,
+        18.449533673001184,
+        171.50042658054298,
+        151.75000010000005,
+        20.850466326998816
+      ],
+      "volume_mm3": 45.908843985365344,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          165.14957351945702,
+          146.25,
+          18.45,
+          171.50042648054293,
+          151.75,
+          20.85
+        ]
+      ],
+      "sha256": "f2e95b3e2c1d821a61847bb7c579fe449053b7785bc32ac25e17f17aa5dbf8a9",
+      "brep": "models/frame/FASTENER__LUG_2_NUT.brep"
+    },
+    "FASTENER__LUG_2_WASHER_0": {
+      "name": "FASTENER__LUG_2_WASHER_0",
+      "material_owner": "steel",
+      "bounds_mm": [
+        164.8239120370028,
+        145.49999989999995,
+        17.948912037002817,
+        171.82608796299718,
+        152.50000010000005,
+        18.451087962997182
+      ],
+      "volume_mm3": 15.221016406642557,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          164.825,
+          145.5,
+          17.95,
+          171.825,
+          152.5,
+          18.45
+        ]
+      ],
+      "sha256": "288039401cfaae5d0a259b12f55bb3194b715b762f3155e69bb291df6a8cce08",
+      "brep": "models/frame/FASTENER__LUG_2_WASHER_0.brep"
+    },
+    "FASTENER__LUG_3_SCREW": {
+      "name": "FASTENER__LUG_3_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        258.9241451505022,
+        146.24999989999995,
+        -0.0008548494978101329,
+        264.4258548494978,
+        151.75000010000005,
+        23.00046632699883
+      ],
+      "volume_mm3": 205.61009633411118,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          258.925,
+          146.25,
+          0.0,
+          264.425,
+          151.75,
+          23.0
+        ]
+      ],
+      "sha256": "3d7ad1d9ec69c7221cf3424d4d7aa729dff35d7d19371bda0077067726a5f999",
+      "brep": "models/frame/FASTENER__LUG_3_SCREW.brep"
+    },
+    "FASTENER__LUG_3_NUT": {
+      "name": "FASTENER__LUG_3_NUT",
+      "material_owner": "steel",
+      "bounds_mm": [
+        258.49957341945696,
+        146.24999989999995,
+        18.44953367300117,
+        264.85042658054306,
+        151.75000010000005,
+        20.85046632699883
+      ],
+      "volume_mm3": 45.908843985365436,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          258.49957351945704,
+          146.25,
+          18.45,
+          264.850426480543,
+          151.75,
+          20.85
+        ]
+      ],
+      "sha256": "833939760cfb9a0bb1e977bdaaf88530c50b7e16bdea46a7377515587d6109ab",
+      "brep": "models/frame/FASTENER__LUG_3_NUT.brep"
+    },
+    "FASTENER__LUG_3_WASHER_0": {
+      "name": "FASTENER__LUG_3_WASHER_0",
+      "material_owner": "steel",
+      "bounds_mm": [
+        258.1739120370028,
+        145.49999989999992,
+        17.948912037002795,
+        265.1760879629972,
+        152.50000010000008,
+        18.451087962997203
+      ],
+      "volume_mm3": 15.221016406642569,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          258.175,
+          145.5,
+          17.95,
+          265.175,
+          152.5,
+          18.45
+        ]
+      ],
+      "sha256": "1cda0d468dd4ef8ab8135a5b4af28c0f8192f75afcf9a837a6aba54d7c2d58be",
+      "brep": "models/frame/FASTENER__LUG_3_WASHER_0.brep"
+    },
+    "FASTENER__FRAME_KEY_FRONT_0_SCREW": {
+      "name": "FASTENER__FRAME_KEY_FRONT_0_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        26.099999899999993,
+        135.99940934580155,
+        30.099409345801547,
+        29.900000100000007,
+        144.0003109179992,
+        33.90059065419845
+      ],
+      "volume_mm3": 34.28036629401142,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          26.1,
+          136.0,
+          30.1,
+          29.9,
+          144.0,
+          33.9
+        ]
+      ],
+      "sha256": "f9db987393f020f5a6813fe391ed4882d4777d813b2e6b6de3e4f4b539155af2",
+      "brep": "models/frame/FASTENER__FRAME_KEY_FRONT_0_SCREW.brep"
+    },
+    "FASTENER__FRAME_KEY_FRONT_1_SCREW": {
+      "name": "FASTENER__FRAME_KEY_FRONT_1_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        140.09999989999997,
+        135.99940934580152,
+        30.09940934580153,
+        143.90000010000003,
+        144.0003109179992,
+        33.900590654198474
+      ],
+      "volume_mm3": 34.280366294011415,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          140.1,
+          136.0,
+          30.1,
+          143.9,
+          144.0,
+          33.9
+        ]
+      ],
+      "sha256": "28e74300ae46e42dbfde57130dda3558f8b65993b549baa539de7980cfe56cad",
+      "brep": "models/frame/FASTENER__FRAME_KEY_FRONT_1_SCREW.brep"
+    },
+    "FASTENER__FRAME_KEY_FRONT_2_SCREW": {
+      "name": "FASTENER__FRAME_KEY_FRONT_2_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        164.09999989999997,
+        135.99940934580152,
+        30.09940934580153,
+        167.90000010000003,
+        144.0003109179992,
+        33.900590654198474
+      ],
+      "volume_mm3": 34.280366294011415,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          164.1,
+          136.0,
+          30.1,
+          167.9,
+          144.0,
+          33.9
+        ]
+      ],
+      "sha256": "df50ec68e88a61ae53c71e748464e87f1b2885c0895498bf47e3f078255f75a3",
+      "brep": "models/frame/FASTENER__FRAME_KEY_FRONT_2_SCREW.brep"
+    },
+    "FASTENER__FRAME_KEY_FRONT_3_SCREW": {
+      "name": "FASTENER__FRAME_KEY_FRONT_3_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        262.09999989999994,
+        135.9994093458015,
+        30.0994093458015,
+        265.90000010000006,
+        144.00031091799923,
+        33.900590654198496
+      ],
+      "volume_mm3": 34.28036629401147,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          262.1,
+          136.0,
+          30.1,
+          265.9,
+          144.0,
+          33.9
+        ]
+      ],
+      "sha256": "8f7d2857e33f14b9174a81d7f8376902beef996c29f05b327ba0483c0d9dd86b",
+      "brep": "models/frame/FASTENER__FRAME_KEY_FRONT_3_SCREW.brep"
+    },
+    "FASTENER__FRAME_KEY_REAR_0_SCREW": {
+      "name": "FASTENER__FRAME_KEY_REAR_0_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        34.09999989999999,
+        153.9996890820008,
+        30.099409345801547,
+        37.90000010000001,
+        162.00059065419845,
+        33.90059065419845
+      ],
+      "volume_mm3": 34.280366294011415,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          34.1,
+          154.0,
+          30.1,
+          37.9,
+          162.0,
+          33.9
+        ]
+      ],
+      "sha256": "53bcf88b363c1e71ea0893db266903d8700a35949a9f35bab220aadad6808c65",
+      "brep": "models/frame/FASTENER__FRAME_KEY_REAR_0_SCREW.brep"
+    },
+    "FASTENER__FRAME_KEY_REAR_1_SCREW": {
+      "name": "FASTENER__FRAME_KEY_REAR_1_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        140.09999989999997,
+        153.9996890820008,
+        30.09940934580153,
+        143.90000010000003,
+        162.00059065419848,
+        33.900590654198474
+      ],
+      "volume_mm3": 34.280366294011415,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          140.1,
+          154.0,
+          30.1,
+          143.9,
+          162.0,
+          33.9
+        ]
+      ],
+      "sha256": "6484bf79059c74c7eff3a2e80ec1ca984842670bf821469fa2d2394d79382a9e",
+      "brep": "models/frame/FASTENER__FRAME_KEY_REAR_1_SCREW.brep"
+    },
+    "FASTENER__FRAME_KEY_REAR_2_SCREW": {
+      "name": "FASTENER__FRAME_KEY_REAR_2_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        164.09999989999997,
+        153.9996890820008,
+        30.09940934580153,
+        167.90000010000003,
+        162.00059065419848,
+        33.900590654198474
+      ],
+      "volume_mm3": 34.280366294011415,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          164.1,
+          154.0,
+          30.1,
+          167.9,
+          162.0,
+          33.9
+        ]
+      ],
+      "sha256": "9e38d32b97082503eea1a68ee6ada598950c8407fb5da39670e892ff183c845c",
+      "brep": "models/frame/FASTENER__FRAME_KEY_REAR_2_SCREW.brep"
+    },
+    "FASTENER__FRAME_KEY_REAR_3_SCREW": {
+      "name": "FASTENER__FRAME_KEY_REAR_3_SCREW",
+      "material_owner": "steel",
+      "bounds_mm": [
+        262.09999989999994,
+        153.99968908200077,
+        30.0994093458015,
+        265.90000010000006,
+        162.0005906541985,
+        33.900590654198496
+      ],
+      "volume_mm3": 34.280366294011465,
+      "solid_count": 1,
+      "material_regions_mm": [
+        [
+          262.1,
+          154.0,
+          30.1,
+          265.9,
+          162.0,
+          33.9
+        ]
+      ],
+      "sha256": "8107657054eebf8418c925cd1d355b85cd167021277361033d090a22f29b7f3b",
+      "brep": "models/frame/FASTENER__FRAME_KEY_REAR_3_SCREW.brep"
+    },
+    "LOAD_SPREADER_CURRENT": {
+      "sha256": "1883939599f0b9b44e2946cc2d62c28b546c7edea5a95b9dd45477addd458703",
+      "bounds_mm": [
+        33.5,
+        124.0,
+        4.5,
+        268.0,
+        174.0,
+        8.0
+      ],
+      "group": "frame",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "added_volume_mm3": 0.0,
+      "removed_volume_mm3": 5.32400000000015,
+      "operations": [
+        {
+          "name": "FRAME__NEW_CASE_LOAD_SPREADER",
+          "holes": [],
+          "cutboxes": [
+            {
+              "id": "BEARING_KEY_44_142.75",
+              "bounds_mm": [
+                43.45,
+                142.2,
+                7.45,
+                44.55,
+                143.3,
+                8.05
+              ]
+            },
+            {
+              "id": "BEARING_KEY_126_142.75",
+              "bounds_mm": [
+                125.45,
+                142.2,
+                7.45,
+                126.55,
+                143.3,
+                8.05
+              ]
+            },
+            {
+              "id": "BEARING_KEY_44_155.25",
+              "bounds_mm": [
+                43.45,
+                154.7,
+                7.45,
+                44.55,
+                155.8,
+                8.05
+              ]
+            },
+            {
+              "id": "BEARING_KEY_126_155.25",
+              "bounds_mm": [
+                125.45,
+                154.7,
+                7.45,
+                126.55,
+                155.8,
+                8.05
+              ]
+            },
+            {
+              "id": "BEARING_KEY_174_142.75",
+              "bounds_mm": [
+                173.45,
+                142.2,
+                7.45,
+                174.55,
+                143.3,
+                8.05
+              ]
+            },
+            {
+              "id": "BEARING_KEY_256_142.75",
+              "bounds_mm": [
+                255.45,
+                142.2,
+                7.45,
+                256.55,
+                143.3,
+                8.05
+              ]
+            },
+            {
+              "id": "BEARING_KEY_174_155.25",
+              "bounds_mm": [
+                173.45,
+                154.7,
+                7.45,
+                174.55,
+                155.8,
+                8.05
+              ]
+            },
+            {
+              "id": "BEARING_KEY_256_155.25",
+              "bounds_mm": [
+                255.45,
+                154.7,
+                7.45,
+                256.55,
+                155.8,
+                8.05
+              ]
+            }
+          ],
+          "hex_pockets": []
+        }
+      ],
+      "brep": "models/frame/LOAD_SPREADER_CURRENT.brep"
+    },
+    "FRAME__LUG_0_BOARD_BYPASS_SLEEVE": {
+      "sha256": "d716ec8b28feb9a0806e4221c4d292deedaa90d9ea61ad065045d31c35326998",
+      "bounds_mm": [
+        35.125,
+        145.8,
+        8.0,
+        41.525000000000006,
+        152.2,
+        11.6
+      ],
+      "group": "frame",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/frame/FRAME__LUG_0_BOARD_BYPASS_SLEEVE.brep"
+    },
+    "FRAME__LUG_1_BOARD_BYPASS_SLEEVE": {
+      "sha256": "0dbb6ac7e5756dddb5bf0964680b6bc64dadd42a612b135bc26306317101ff7f",
+      "bounds_mm": [
+        128.47500000000002,
+        145.8,
+        8.0,
+        134.875,
+        152.2,
+        11.6
+      ],
+      "group": "frame",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/frame/FRAME__LUG_1_BOARD_BYPASS_SLEEVE.brep"
+    },
+    "FRAME__LUG_2_BOARD_BYPASS_SLEEVE": {
+      "sha256": "9a1390d15dc30e4f677457f5fb3dc788c24c920fb746e3aa9668ebb0ea5897ec",
+      "bounds_mm": [
+        165.125,
+        145.8,
+        8.0,
+        171.525,
+        152.2,
+        11.6
+      ],
+      "group": "frame",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/frame/FRAME__LUG_2_BOARD_BYPASS_SLEEVE.brep"
+    },
+    "FRAME__LUG_3_BOARD_BYPASS_SLEEVE": {
+      "sha256": "b2857b179b496b48b2e6ad47842033bbbfffd563b5867f2f16f7c5a90ee363c8",
+      "bounds_mm": [
+        258.475,
+        145.8,
+        8.0,
+        264.875,
+        152.2,
+        11.6
+      ],
+      "group": "frame",
+      "rgba": [
+        0.4500000038597685,
+        0.48000000468553666,
+        0.5000000034286967,
+        1.0
+      ],
+      "brep": "models/frame/FRAME__LUG_3_BOARD_BYPASS_SLEEVE.brep"
+    }
+  }
+}

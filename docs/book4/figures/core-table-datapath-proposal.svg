@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1650 990" role="img" aria-labelledby="title desc">
+<title id="title">Candidate CORE table and module execution paths</title>
+<desc id="desc">Static module exports resolve during compilation. A guest field or integer-index instruction operates on the current guest table and key through its table owner. An optional per-instruction slot hint is checked against the current key and value; other accesses follow normal table and metatable rules. Writes, aliases, allocation and collection remain owned by the runtime. The implementation is a candidate, not a measured timing guarantee.</desc>
+<defs>
+ <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#294b68"/></marker>
+ <style>
+ text{font-family:Arial,sans-serif;fill:#183044;font-size:21px}.title{font-size:30px;font-weight:bold}.head{font-size:23px;font-weight:bold}.minor{font-size:18px}.note{font-size:17px}.block{fill:#e3eef5;stroke:#294b68;stroke-width:2}.store{fill:#f8f2e8;stroke:#997031;stroke-width:2}.candidate{fill:#fff5e4;stroke:#9a7135;stroke-width:2;stroke-dasharray:8 5}.owner{fill:#edf5ec;stroke:#537659;stroke-width:2}.wire{fill:none;stroke:#294b68;stroke-width:3;marker-end:url(#arrow)}.both{marker-start:url(#arrow)}.guide{fill:none;stroke:#9a7135;stroke-width:3;stroke-dasharray:8 5;marker-end:url(#arrow)}
+ </style>
+</defs>
+<rect width="1650" height="990" fill="white"/>
+<text x="45" y="47" class="title">CORE — table and module execution candidate</text>
+<text x="45" y="80" class="minor">Efficient normal program data, without a module-origin tag or a fixed timing guarantee.</text>
+
+<rect x="45" y="145" width="310" height="155" rx="8" class="candidate"/>
+<text x="200" y="183" text-anchor="middle" class="head">Static module binding</text>
+<text x="200" y="219" text-anchor="middle" class="minor">module&lt;const&gt; export</text>
+<text x="200" y="251" text-anchor="middle" class="minor">Compile-time symbol resolution</text>
+<text x="200" y="280" text-anchor="middle" class="minor">No runtime module table</text>
+
+<rect x="455" y="145" width="405" height="155" rx="8" class="block"/>
+<text x="657" y="183" text-anchor="middle" class="head">Guest instruction execution</text>
+<text x="657" y="215" text-anchor="middle" class="minor">Integer keys: GETI / SETI</text>
+<text x="657" y="245" text-anchor="middle" class="minor">String fields: GETFIELD / SETFIELD / SELF</text>
+<text x="657" y="275" text-anchor="middle" class="minor">General keys: GETT / SETT</text>
+<path d="M355 223H455" class="wire"/>
+
+<rect x="1000" y="145" width="595" height="155" rx="8" class="store"/>
+<text x="1297" y="183" text-anchor="middle" class="head">Guest runtime state · private pool candidate</text>
+<text x="1297" y="219" text-anchor="middle" class="minor">Frames, values, tables, strings and metatables</text>
+<text x="1297" y="251" text-anchor="middle" class="minor">One table value may have multiple aliases</text>
+<text x="1297" y="280" text-anchor="middle" class="minor">Allocation, mutation and collection retain ownership</text>
+<path d="M860 223H1000" class="wire both"/>
+
+<rect x="45" y="420" width="310" height="180" rx="8" class="candidate"/>
+<text x="200" y="458" text-anchor="middle" class="head">Private slot hint</text>
+<text x="200" y="494" text-anchor="middle" class="minor">Optional instruction-site hint</text>
+<text x="200" y="526" text-anchor="middle" class="minor">Not a module or object identity</text>
+<text x="200" y="558" text-anchor="middle" class="minor">No guest-visible ABI</text>
+<path d="M455 260H395V510H355" class="guide"/>
+
+<rect x="455" y="390" width="630" height="320" rx="8" class="owner"/>
+<text x="770" y="430" text-anchor="middle" class="head">Guest indexing and table owner</text>
+<text x="770" y="468" text-anchor="middle" class="minor">Integer array and keyed entries · current guest values</text>
+<text x="770" y="505" text-anchor="middle" class="minor">Hinted field read: compare the key and check value presence</text>
+<text x="770" y="542" text-anchor="middle" class="minor">Otherwise perform the ordinary lookup and metatable operation</text>
+<text x="770" y="579" text-anchor="middle" class="minor">Writes use the same owner: aliases observe changes</text>
+<text x="770" y="616" text-anchor="middle" class="minor">Deletion, rehash and collection cannot freeze an old result</text>
+<text x="770" y="653" text-anchor="middle" class="minor">Metatable effects, errors and ordering remain guest-visible</text>
+<text x="770" y="686" text-anchor="middle" class="minor">Other guest values retain their specified indexing rules</text>
+<path d="M355 510H455" class="guide"/>
+<path d="M657 300V390" class="wire"/>
+<path d="M1085 515H1145V300" class="wire both"/>
+
+<rect x="1210" y="420" width="385" height="180" rx="8" class="block"/>
+<text x="1402" y="458" text-anchor="middle" class="head">Result and execution state</text>
+<text x="1402" y="494" text-anchor="middle" class="minor">Current value or specified error</text>
+<text x="1402" y="526" text-anchor="middle" class="minor">Guest registers, PC and frames</text>
+<text x="1402" y="558" text-anchor="middle" class="minor">Device and interrupt boundaries</text>
+<path d="M1085 570H1210" class="wire"/>
+
+<rect x="45" y="750" width="1550" height="145" rx="8" class="store"/>
+<text x="70" y="788" class="head">Design intent and scope</text>
+<text x="70" y="825" class="minor">Common table operations are a normal, efficient workload; C++ / assembly comparison is a design target, not a measured result.</text>
+<text x="70" y="857" class="minor">Fast and ordinary paths preserve dynamic guest semantics; hardware allocation, every access latency and all workload costs remain unproven.</text>
+<text x="70" y="925" class="note">Functional proposal only: no new public module representation, mandatory native code format or fabricated silicon is implied.</text>
+</svg>

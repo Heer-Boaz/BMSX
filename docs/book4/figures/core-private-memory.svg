@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 620" role="img" aria-labelledby="title desc">
+<title id="title">CORE private-memory bank candidate</title>
+<desc id="desc">A shared 32-bit DRAM datapath connects the CPU and public memory clients to one fitted 4 MiB bank and one proposed 4 MiB private language-runtime bank. Separate RAS and OE select a bank during an access; both can refresh together. The private bank is not on the existing board.</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0L8 4L0 8Z" fill="#294b68"/></marker>
+<style>text{font-family:Arial,sans-serif;fill:#183044;font-size:20px}.title{font-size:27px;font-weight:bold}.subtitle{font-size:22px;font-weight:bold}.small{font-size:16px}.frame{fill:#fbfcfd;stroke:#294b68;stroke-width:3}.logic{fill:#e1edf4;stroke:#294b68;stroke-width:2}.public{fill:#e9f2e8;stroke:#416e45;stroke-width:2}.private{fill:#fff9e7;stroke:#9b6d21;stroke-width:2;stroke-dasharray:8 5}.bus{fill:none;stroke:#294b68;stroke-width:3;marker-start:url(#arrow);marker-end:url(#arrow)}</style></defs>
+<rect width="1320" height="620" fill="white"/>
+<text x="38" y="44" class="title">Separate physical backing for language values — candidate</text>
+<text x="38" y="74" class="small">A private bank shares the CORE datapath; its capacity and allocator remain to be qualified.</text>
+<rect x="35" y="106" width="525" height="429" rx="12" class="frame"/>
+<text x="60" y="141" class="subtitle">U1 CORE</text>
+<rect x="66" y="169" width="207" height="111" rx="8" class="logic"/>
+<text x="169" y="203" text-anchor="middle" class="subtitle">CPU / runtime</text>
+<text x="169" y="233" text-anchor="middle" class="small">Values · objects · frames</text>
+<text x="169" y="257" text-anchor="middle" class="small">Allocation and collector</text>
+<rect x="66" y="327" width="207" height="105" rx="8" class="logic"/>
+<text x="169" y="361" text-anchor="middle" class="subtitle">Public clients</text>
+<text x="169" y="391" text-anchor="middle" class="small">CPU · GEO · DMA</text>
+<rect x="323" y="215" width="201" height="167" rx="8" class="logic"/>
+<text x="424" y="251" text-anchor="middle" class="subtitle">Memory owner</text>
+<text x="424" y="282" text-anchor="middle" class="small">Arbitrate · retain bank</text>
+<text x="424" y="307" text-anchor="middle" class="small">Access · refresh</text>
+<text x="424" y="332" text-anchor="middle" class="small">Private/public isolation</text>
+<path d="M273 225H323M273 380H323" class="bus"/>
+<path d="M524 278H665" class="bus"/>
+<text x="594" y="254" text-anchor="middle" class="small">MA, MD, CAS,</text>
+<text x="594" y="275" text-anchor="middle" class="small">WE</text>
+<path d="M665 206V403" stroke="#294b68" stroke-width="3" fill="none"/>
+<path d="M665 206H734M665 403H734" class="bus"/>
+<rect x="735" y="145" width="535" height="122" rx="8" class="public"/>
+<text x="1003" y="180" text-anchor="middle" class="subtitle">Public bank — 4 MiB, fitted</text>
+<text x="1003" y="212" text-anchor="middle">U10 + U11 · 1M × 32</text>
+<text x="1003" y="241" text-anchor="middle" class="small">Cartridge-visible map remains unchanged</text>
+<rect x="735" y="342" width="535" height="122" rx="8" class="private"/>
+<text x="1003" y="377" text-anchor="middle" class="subtitle">Private bank — 4 MiB candidate</text>
+<text x="1003" y="409" text-anchor="middle">Two additional 1M × 16 DRAMs</text>
+<text x="1003" y="438" text-anchor="middle" class="small">Not yet on the board; complete capacity not proven</text>
+<text x="38" y="581" class="small">Separate RAS and OE per bank; shared CBR refresh. Timing, loading, power, allocation and placement require qualification.</text>
+</svg>

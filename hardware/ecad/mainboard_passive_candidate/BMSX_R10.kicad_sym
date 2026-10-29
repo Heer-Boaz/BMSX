@@ -1,0 +1,3826 @@
+(kicad_symbol_lib
+	(version 20241209)
+	(generator kicad_symbol_editor)
+	(symbol "U62"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 10.16 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "U62"
+			(at 0 -10.16 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "U62_1_1"
+			(rectangle
+				(start -17.78 7.62)
+				(end 17.78 -7.62)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background)))
+			(pin input line
+				(at -20.32 5.08 0)
+				(length 2.54)
+				(name "EN/UVLO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -20.32 2.54 0)
+				(length 2.54)
+				(name "OVLO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin open_collector line
+				(at -20.32 0.0 0)
+				(length 2.54)
+				(name "PG"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin input line
+				(at -20.32 -2.54 0)
+				(length 2.54)
+				(name "PGTH"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -20.32 -5.08 0)
+				(length 2.54)
+				(name "IN"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_out line
+				(at 20.32 5.08 180)
+				(length 2.54)
+				(name "OUT"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 2.54 180)
+				(length 2.54)
+				(name "dVdt"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 20.32 0.0 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -2.54 180)
+				(length 2.54)
+				(name "ILM"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -5.08 180)
+				(length 2.54)
+				(name "ITIMER"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "10"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "U63"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "U63"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "U63_1_1"
+			(rectangle
+				(start -17.78 5.08)
+				(end 17.78 -5.08)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background)))
+			(pin power_in line
+				(at -20.32 2.54 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -20.32 0.0 0)
+				(length 2.54)
+				(name "IN"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_out line
+				(at -20.32 -2.54 0)
+				(length 2.54)
+				(name "OUT"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 20.32 2.54 180)
+				(length 2.54)
+				(name "NC"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at 20.32 0.0 180)
+				(length 2.54)
+				(name "NC"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "5"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "R70"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R70"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R70_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R71"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R71"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R71_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R72"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R72"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R72_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R73"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R73"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R73_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R74"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R74"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R74_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R75"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R75"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R75_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R76"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R76"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R76_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R77"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R77"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R77_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R78"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R78"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R78_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R79"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R79"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R79_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "C70"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "C70"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "C70_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(polyline
+				(pts
+					(xy -0.762 -2.54)
+					(xy -0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))
+			(polyline
+				(pts
+					(xy 0.762 -2.54)
+					(xy 0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "C71"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "C71"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "C71_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(polyline
+				(pts
+					(xy -0.762 -2.54)
+					(xy -0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))
+			(polyline
+				(pts
+					(xy 0.762 -2.54)
+					(xy 0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "C72"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "C72"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "C72_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(polyline
+				(pts
+					(xy -0.762 -2.54)
+					(xy -0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))
+			(polyline
+				(pts
+					(xy 0.762 -2.54)
+					(xy 0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "C73"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "C73"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "C73_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(polyline
+				(pts
+					(xy -0.762 -2.54)
+					(xy -0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))
+			(polyline
+				(pts
+					(xy 0.762 -2.54)
+					(xy 0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "D71"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "D71"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "D71_1_1"
+			(rectangle
+				(start -17.78 5.08)
+				(end 17.78 -5.08)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -20.32 1.27 0)
+				(length 2.54)
+				(name "A"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin no_connect line
+				(at -20.32 -1.27 0)
+				(length 2.54)
+				(name "NC"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 1.27 180)
+				(length 2.54)
+				(name "K"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "J61"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "J61"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "J61_1_1"
+			(rectangle
+				(start -17.78 5.08)
+				(end 17.78 -5.08)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -20.32 0.0 0)
+				(length 2.54)
+				(name "+9V"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 0.0 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "R80"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R80"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R80_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R81"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R81"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R81_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R82"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R82"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R82_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "C74"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "C74"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "C74_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(polyline
+				(pts
+					(xy -0.762 -2.54)
+					(xy -0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))
+			(polyline
+				(pts
+					(xy 0.762 -2.54)
+					(xy 0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R83"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R83"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R83_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "J_CART0"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 43.18 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "J_CART0"
+			(at 0 -43.18 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "J_CART0_1_1"
+			(rectangle
+				(start -17.78 40.64)
+				(end 17.78 -40.64)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -20.32 38.1 0)
+				(length 2.54)
+				(name "CAD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 35.56 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 33.02 0)
+				(length 2.54)
+				(name "CAD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 30.48 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 27.94 0)
+				(length 2.54)
+				(name "CAD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 25.4 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 22.86 0)
+				(length 2.54)
+				(name "CAD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 20.32 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 17.78 0)
+				(length 2.54)
+				(name "CAD4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 15.24 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 12.7 0)
+				(length 2.54)
+				(name "CAD5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 10.16 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 7.62 0)
+				(length 2.54)
+				(name "CAD6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 5.08 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 2.54 0)
+				(length 2.54)
+				(name "CAD7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 0.0 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -2.54 0)
+				(length 2.54)
+				(name "CAD8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -5.08 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -7.62 0)
+				(length 2.54)
+				(name "CAD9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -10.16 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -12.7 0)
+				(length 2.54)
+				(name "CAD10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -15.24 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -17.78 0)
+				(length 2.54)
+				(name "CAD11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -20.32 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -22.86 0)
+				(length 2.54)
+				(name "CAD12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -25.4 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -27.94 0)
+				(length 2.54)
+				(name "CAD13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -30.48 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -33.02 0)
+				(length 2.54)
+				(name "CAD14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -35.56 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -38.1 0)
+				(length 2.54)
+				(name "CAD15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 38.1 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 35.56 180)
+				(length 2.54)
+				(name "CAL_LO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 33.02 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 30.48 180)
+				(length 2.54)
+				(name "CAL_HI"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 27.94 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 25.4 180)
+				(length 2.54)
+				(name "CART_CLK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 22.86 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 20.32 180)
+				(length 2.54)
+				(name "CRD_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A20"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 17.78 180)
+				(length 2.54)
+				(name "CWR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B20"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 15.24 180)
+				(length 2.54)
+				(name "CBE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A21"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 12.7 180)
+				(length 2.54)
+				(name "CBE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B21"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 10.16 180)
+				(length 2.54)
+				(name "CART_RESET_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A22"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 7.62 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B22"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 5.08 180)
+				(length 2.54)
+				(name "CS_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A23"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 2.54 180)
+				(length 2.54)
+				(name "READY_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B23"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 0.0 180)
+				(length 2.54)
+				(name "IRQ_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A24"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -2.54 180)
+				(length 2.54)
+				(name "DREQ_W"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B24"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -5.08 180)
+				(length 2.54)
+				(name "DREQ_R"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A25"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -7.62 180)
+				(length 2.54)
+				(name "PRESENT_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B25"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -10.16 180)
+				(length 2.54)
+				(name "V3V3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A26"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -12.7 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B26"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -15.24 180)
+				(length 2.54)
+				(name "V3V3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A27"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -17.78 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B27"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -20.32 180)
+				(length 2.54)
+				(name "V3V3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A28"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -22.86 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B28"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -25.4 180)
+				(length 2.54)
+				(name "V5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A29"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -27.94 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B29"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -30.48 180)
+				(length 2.54)
+				(name "V5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A30"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -33.02 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B30"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -35.56 180)
+				(length 2.54)
+				(name "V3V3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A31"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -38.1 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B31"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "J_CART1"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 43.18 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "J_CART1"
+			(at 0 -43.18 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "J_CART1_1_1"
+			(rectangle
+				(start -17.78 40.64)
+				(end 17.78 -40.64)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -20.32 38.1 0)
+				(length 2.54)
+				(name "CAD0"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 35.56 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 33.02 0)
+				(length 2.54)
+				(name "CAD1"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 30.48 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 27.94 0)
+				(length 2.54)
+				(name "CAD2"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 25.4 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 22.86 0)
+				(length 2.54)
+				(name "CAD3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 20.32 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B4"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 17.78 0)
+				(length 2.54)
+				(name "CAD4"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 15.24 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B5"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 12.7 0)
+				(length 2.54)
+				(name "CAD5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 10.16 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B6"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 7.62 0)
+				(length 2.54)
+				(name "CAD6"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 5.08 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B7"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 2.54 0)
+				(length 2.54)
+				(name "CAD7"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 0.0 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B8"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -2.54 0)
+				(length 2.54)
+				(name "CAD8"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -5.08 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B9"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -7.62 0)
+				(length 2.54)
+				(name "CAD9"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -10.16 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B10"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -12.7 0)
+				(length 2.54)
+				(name "CAD10"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -15.24 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B11"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -17.78 0)
+				(length 2.54)
+				(name "CAD11"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -20.32 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B12"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -22.86 0)
+				(length 2.54)
+				(name "CAD12"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -25.4 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B13"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -27.94 0)
+				(length 2.54)
+				(name "CAD13"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -30.48 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B14"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -33.02 0)
+				(length 2.54)
+				(name "CAD14"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -35.56 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B15"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at -20.32 -38.1 0)
+				(length 2.54)
+				(name "CAD15"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 38.1 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B16"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 35.56 180)
+				(length 2.54)
+				(name "CAL_LO"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 33.02 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B17"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 30.48 180)
+				(length 2.54)
+				(name "CAL_HI"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 27.94 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B18"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 25.4 180)
+				(length 2.54)
+				(name "CART_CLK"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 22.86 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B19"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 20.32 180)
+				(length 2.54)
+				(name "CRD_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A20"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 17.78 180)
+				(length 2.54)
+				(name "CWR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B20"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 15.24 180)
+				(length 2.54)
+				(name "CBE0_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A21"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 12.7 180)
+				(length 2.54)
+				(name "CBE1_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B21"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 10.16 180)
+				(length 2.54)
+				(name "CART_RESET_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A22"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 7.62 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B22"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 5.08 180)
+				(length 2.54)
+				(name "CS_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A23"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 2.54 180)
+				(length 2.54)
+				(name "READY_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B23"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 0.0 180)
+				(length 2.54)
+				(name "IRQ_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A24"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -2.54 180)
+				(length 2.54)
+				(name "DREQ_W"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B24"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -5.08 180)
+				(length 2.54)
+				(name "DREQ_R"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A25"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -7.62 180)
+				(length 2.54)
+				(name "PRESENT_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B25"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -10.16 180)
+				(length 2.54)
+				(name "V3V3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A26"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -12.7 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B26"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -15.24 180)
+				(length 2.54)
+				(name "V3V3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A27"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -17.78 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B27"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -20.32 180)
+				(length 2.54)
+				(name "V3V3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A28"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -22.86 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B28"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -25.4 180)
+				(length 2.54)
+				(name "V5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A29"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -27.94 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B29"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -30.48 180)
+				(length 2.54)
+				(name "V5"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A30"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -33.02 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B30"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -35.56 180)
+				(length 2.54)
+				(name "V3V3"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "A31"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 20.32 -38.1 180)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "B31"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "Y1"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "Y1"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "Y1_1_1"
+			(rectangle
+				(start -17.78 5.08)
+				(end 17.78 -5.08)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background)))
+			(pin input line
+				(at -20.32 1.27 0)
+				(length 2.54)
+				(name "OE"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at -20.32 -1.27 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin output line
+				(at 20.32 1.27 180)
+				(length 2.54)
+				(name "OUT"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "3"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin power_in line
+				(at 20.32 -1.27 180)
+				(length 2.54)
+				(name "VCC"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "4"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "C230"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "C230"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "C230_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(polyline
+				(pts
+					(xy -0.762 -2.54)
+					(xy -0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))
+			(polyline
+				(pts
+					(xy 0.762 -2.54)
+					(xy 0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R232"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R232"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R232_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R230"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R230"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R230_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R231"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R231"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R231_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R233"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R233"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R233_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R234"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R234"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R234_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R235"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R235"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R235_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R236"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R236"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R236_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R237"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R237"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R237_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R238"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R238"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R238_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R239"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R239"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R239_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R240"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R240"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R240_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R241"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R241"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R241_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R242"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R242"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R242_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R243"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R243"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R243_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R244"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R244"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R244_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R245"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R245"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R245_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "R246"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R246"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R246_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "TP230"
+		(pin_names
+			(offset .6))
+		(in_bom no)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "TP230"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "TP230_1_1"
+			(rectangle
+				(start -17.78 5.08)
+				(end 17.78 -5.08)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type background)))
+			(pin passive line
+				(at -20.32 0.0 0)
+				(length 2.54)
+				(name "SUPERVISOR_N"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))))
+	(symbol "R247"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "R247"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "R247_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(rectangle
+				(start -2.54 1.27)
+				(end 2.54 -1.27)
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "PWR_FLAG"
+		(power)
+		(pin_numbers
+			(hide yes))
+		(pin_names
+			(offset 0)
+			(hide yes))
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "#FLG"
+			(at 0 1.905 0)
+			(effects
+				(font
+					(size 1.27 1.27))
+				(hide yes)))
+		(property "Value" "PWR_FLAG"
+			(at 0 3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27))))
+		(property "Footprint" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27))
+				(hide yes)))
+		(property "Datasheet" "~"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27))
+				(hide yes)))
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27))
+				(hide yes)))
+		(property "ki_keywords" "flag power"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27))
+				(hide yes)))
+		(symbol "PWR_FLAG_0_0"
+			(pin power_out line
+				(at 0 0 90)
+				(length 0)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27))))
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27))))))
+		(symbol "PWR_FLAG_0_1"
+			(polyline
+				(pts
+					(xy 0 0)
+					(xy 0 1.27)
+					(xy -1.016 1.905)
+					(xy 0 2.54)
+					(xy 1.016 1.905)
+					(xy 0 1.27))
+				(stroke
+					(width 0)
+					(type default))
+				(fill
+					(type none))))
+		(embedded_fonts no))
+	(symbol "C75"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "4.7uF 50V X7R; effective >=1uF at 9.45V"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "C75_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(polyline
+				(pts
+					(xy -0.762 -2.54)
+					(xy -0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))
+			(polyline
+				(pts
+					(xy 0.762 -2.54)
+					(xy 0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))))
+	(symbol "C76"
+		(pin_names
+			(offset .6))
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "U"
+			(at 0 7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(property "Value" "10nF 5% C0G 25V"
+			(at 0 -7.62 0)
+			(effects
+				(font
+					(size 1 1))))
+		(symbol "C76_1_1"
+			(pin passive line
+				(at -5.08 0 0)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "1"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(pin passive line
+				(at 5.08 0 180)
+				(length 4.318)
+				(name "~"
+					(effects
+						(font
+							(size 0.85 0.85))))
+				(number "2"
+					(effects
+						(font
+							(size 0.85 0.85)))))
+			(polyline
+				(pts
+					(xy -0.762 -2.54)
+					(xy -0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none)))
+			(polyline
+				(pts
+					(xy 0.762 -2.54)
+					(xy 0.762 2.54))
+				(stroke
+					(width .254)
+					(type default))
+				(fill
+					(type none))))))

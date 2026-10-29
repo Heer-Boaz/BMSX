@@ -1,0 +1,1263 @@
+(kicad_sch
+	(version 20250114)
+	(generator eeschema)
+	(uuid ba28d49f-4c3c-587c-a067-c6d0f38fa435)
+	(paper "A3")
+	(lib_symbols
+		(symbol "Panel:Terminals_J1"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 25.4 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "16-wire IDC stub termination"
+				(at 0 -25.4 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J1_1_1"
+				(rectangle
+					(start -5.08 21.59)
+					(end 5.08 -21.59)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 19.05 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 16.51 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 13.97 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 11.43 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 8.89 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 6.350000000000001 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 3.8100000000000005 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 1.2699999999999996 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -1.2699999999999996 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "9"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -3.8099999999999987 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "10"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -6.349999999999998 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "11"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -8.89 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "12"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -11.43 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "13"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -13.970000000000002 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "14"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -16.51 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "15"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -19.05 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "16"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J2"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "SCART_CSYNC coax launch proposal"
+				(at 0 -7.62 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J2_1_1"
+				(rectangle
+					(start -5.08 3.81)
+					(end 5.08 -3.81)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J3"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "SCART_R coax launch proposal"
+				(at 0 -7.62 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J3_1_1"
+				(rectangle
+					(start -5.08 3.81)
+					(end 5.08 -3.81)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J4"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "SCART_G coax launch proposal"
+				(at 0 -7.62 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J4_1_1"
+				(rectangle
+					(start -5.08 3.81)
+					(end 5.08 -3.81)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J5"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 7.62 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "SCART_B coax launch proposal"
+				(at 0 -7.62 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J5_1_1"
+				(rectangle
+					(start -5.08 3.81)
+					(end 5.08 -3.81)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -1.27 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))))
+		(symbol "Panel:Terminals_J6"
+			(pin_names
+				(offset 0.6))
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J"
+				(at 0 15.24 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(property "Value" "Audio/select/shield wires"
+				(at 0 -15.24 0)
+				(effects
+					(font
+						(size 0.85 0.85))))
+			(symbol "Terminals_J6_1_1"
+				(rectangle
+					(start -5.08 11.43)
+					(end 5.08 -11.43)
+					(stroke
+						(width 0.254)
+						(type default))
+					(fill
+						(type background)))
+				(pin passive line
+					(at -7.62 8.89 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "1"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 6.3500000000000005 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "2"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 3.8100000000000005 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "3"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 1.2700000000000005 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "4"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -1.2699999999999996 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "5"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -3.8099999999999987 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "6"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -6.35 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "7"
+						(effects
+							(font
+								(size 0.85 0.85)))))
+				(pin passive line
+					(at -7.62 -8.89 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 0.85 0.85))))
+					(number "8"
+						(effects
+							(font
+								(size 0.85 0.85))))))))
+	(title_block
+		(title "BMSX_AV_BREAKOUT — passive panel/harness wiring")
+		(date "2026-10-23")
+		(rev "Physical interface proposal")
+		(company "BMSX"))
+	(wire
+		(pts
+			(xy 68.58 69.85)
+			(xy 60.96 69.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d82424a2-fdac-5f78-929d-4643b233fd21))
+	(global_label "SCART_R"
+		(shape bidirectional)
+		(at 60.96 69.85 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 343b44fd-4349-5cfd-b278-f7d4a28f9768))
+	(wire
+		(pts
+			(xy 68.58 72.39)
+			(xy 60.96 72.39))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0dfed98c-c883-5771-8278-ea2a73b974d9))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 72.39 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 282dd7dd-c9de-5f89-a7c3-cf9aaca32566))
+	(wire
+		(pts
+			(xy 68.58 74.93)
+			(xy 60.96 74.93))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid f344c725-5ba3-5e15-9fff-df3d6c30052f))
+	(global_label "SCART_G"
+		(shape bidirectional)
+		(at 60.96 74.93 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 3303217a-5187-5e7f-94d1-d580b9a603b6))
+	(wire
+		(pts
+			(xy 68.58 77.47)
+			(xy 60.96 77.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fa98aefc-ff87-5923-b68e-83268985c835))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 77.47 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c9a46d26-5787-5fbe-941b-f734d2464664))
+	(wire
+		(pts
+			(xy 68.58 80.01)
+			(xy 60.96 80.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 1dd09a88-fb10-5365-95c2-609794a2db34))
+	(global_label "SCART_B"
+		(shape bidirectional)
+		(at 60.96 80.01 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b9f54e72-faa3-5059-9466-35d5f4056b35))
+	(wire
+		(pts
+			(xy 68.58 82.55)
+			(xy 60.96 82.55))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0935aafa-8aa0-5070-a92f-ae8143b61174))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 82.55 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 4b6ed2e3-5143-55a4-a7dd-84d528166645))
+	(wire
+		(pts
+			(xy 68.58 85.09)
+			(xy 60.96 85.09))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 350dd62d-93c6-5bcb-89be-a673f2817d3b))
+	(global_label "SCART_CSYNC"
+		(shape bidirectional)
+		(at 60.96 85.09 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c90a37ed-d516-57c5-8de5-15480ddb1da8))
+	(wire
+		(pts
+			(xy 68.58 87.63)
+			(xy 60.96 87.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d45e6b3f-e5f8-50c6-a680-d214bdf1b39d))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 87.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid b764625a-124c-53b2-89b6-222892c9fbf3))
+	(wire
+		(pts
+			(xy 68.58 90.17)
+			(xy 60.96 90.17))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid c1200329-77ab-551c-b06c-f30427a1eb81))
+	(global_label "SCART_AUD_L"
+		(shape bidirectional)
+		(at 60.96 90.17 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 93b4e449-b4cc-556d-a1a4-cf75da51fab1))
+	(wire
+		(pts
+			(xy 68.58 92.71)
+			(xy 60.96 92.71))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 21420f0f-a21d-5cec-84a1-30c7fec1fc06))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 92.71 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid d72c9436-44ef-556a-b48e-2ac1a57ca8ad))
+	(wire
+		(pts
+			(xy 68.58 95.25)
+			(xy 60.96 95.25))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 22462be8-7976-53d0-b677-b9b4062dd572))
+	(global_label "SCART_AUD_R"
+		(shape bidirectional)
+		(at 60.96 95.25 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f196d5b4-c9c9-5d46-a16b-3d497f0dea9e))
+	(wire
+		(pts
+			(xy 68.58 97.79)
+			(xy 60.96 97.79))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 386f6a42-52c2-5582-8add-9b6c93ded297))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 97.79 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid fc76b60e-265f-502d-a50f-55ef95009ef7))
+	(wire
+		(pts
+			(xy 68.58 100.33)
+			(xy 60.96 100.33))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 0ff64b76-0ce0-5b92-bff8-aba55d287cf5))
+	(global_label "SCART_RGB_SELECT"
+		(shape bidirectional)
+		(at 60.96 100.33 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 9a8e77c0-2280-5943-b07c-f257c633a632))
+	(wire
+		(pts
+			(xy 68.58 102.87)
+			(xy 60.96 102.87))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 239d2a57-11aa-5db2-b775-013f101bebad))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 102.87 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 032095dc-f2a0-50c0-9678-8cdac5c8a923))
+	(wire
+		(pts
+			(xy 68.58 105.41)
+			(xy 60.96 105.41))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 93dfd4f1-10ea-5ef0-b8b3-2d7bf09af270))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 105.41 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 30b13cb4-3237-55e5-9747-2a69f82e73b5))
+	(wire
+		(pts
+			(xy 68.58 107.95)
+			(xy 60.96 107.95))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 51eeb475-0c52-5b52-9dff-a755612071d0))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 107.95 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 98881ba0-e91f-5254-8576-62daad75716b))
+	(symbol
+		(lib_id "Panel:Terminals_J1")
+		(at 76.2 88.9 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 97743c5e-79a4-5864-917f-367386986451)
+		(property "Reference" "J1"
+			(at 76.2 63.5 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "16-wire IDC stub termination"
+			(at 76.2 114.30000000000001 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:Ribbon16_HandSolder_P1.27mm"
+			(at 76.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_AV_BREAKOUT"
+				(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435"
+					(reference "J1")
+					(unit 1))))
+		(pin "1"
+			(uuid df57ac90-9799-55ff-903a-48bc29d4f243))
+		(pin "2"
+			(uuid 36df0178-5190-53e0-8f7a-23908a9a9bd6))
+		(pin "3"
+			(uuid feb5920c-facc-5bcd-ad1b-a083fc714585))
+		(pin "4"
+			(uuid 239ea3c4-292a-5d11-8b61-c759c2ea9dd7))
+		(pin "5"
+			(uuid ef810bab-346b-5f1c-9365-bec1072ee2b1))
+		(pin "6"
+			(uuid 52f4bf9e-2e79-5227-9542-8d3baf8d3935))
+		(pin "7"
+			(uuid 9716b14a-a0ca-5f87-92aa-c9dbbc2bce3e))
+		(pin "8"
+			(uuid 9cfbcd62-27eb-5021-9ec9-a9ed77a43419))
+		(pin "9"
+			(uuid b0be368a-6fd4-5fe2-b98e-427df0694a99))
+		(pin "10"
+			(uuid bee0dc70-e56d-5919-86cf-dbe327f35b2c))
+		(pin "11"
+			(uuid 10a85caf-1529-58b9-8f63-c3746d398e3a))
+		(pin "12"
+			(uuid 78e79fd9-feef-5d91-8f2b-27d80233295f))
+		(pin "13"
+			(uuid 6cf88f08-9dc9-5144-b190-b874b0c4310f))
+		(pin "14"
+			(uuid 8b41016e-18bc-54d9-9674-7f0a49b7b2b9))
+		(pin "15"
+			(uuid 7edabfac-503d-58ac-a357-16676bc07dcd))
+		(pin "16"
+			(uuid ca93aaee-4529-59d5-9dcd-761ec99de9e9)))
+	(wire
+		(pts
+			(xy 195.58 87.63)
+			(xy 187.96 87.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b92e5e73-e474-5a5b-8c8e-45b0d053ac62))
+	(global_label "SCART_CSYNC"
+		(shape bidirectional)
+		(at 187.96 87.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 11c04cd3-e670-5885-b056-27f900df0fa9))
+	(wire
+		(pts
+			(xy 195.58 90.17)
+			(xy 187.96 90.17))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 07e04038-1fd8-5d4f-a4a0-ee5923789ccb))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 90.17 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid ec98e633-37d1-572c-8acc-27f0e5c12a6b))
+	(symbol
+		(lib_id "Panel:Terminals_J2")
+		(at 203.2 88.9 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid ae3171aa-c405-585a-a7c2-3b3351845980)
+		(property "Reference" "J2"
+			(at 203.2 81.28 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "SCART_CSYNC coax launch proposal"
+			(at 203.2 96.52000000000001 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:Coax179_HandSolder_Launch"
+			(at 203.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_AV_BREAKOUT"
+				(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435"
+					(reference "J2")
+					(unit 1))))
+		(pin "1"
+			(uuid f3bfe282-ae44-592c-8b05-de05af78b40e))
+		(pin "2"
+			(uuid 1ab50755-1208-5c58-b963-fa83015a3eb0)))
+	(wire
+		(pts
+			(xy 322.58 87.63)
+			(xy 314.96 87.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 20892c08-8b39-5c6a-92c2-51ac37504376))
+	(global_label "SCART_R"
+		(shape bidirectional)
+		(at 314.96 87.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid a56b608b-b14c-5c58-8fac-fa508aad8d35))
+	(wire
+		(pts
+			(xy 322.58 90.17)
+			(xy 314.96 90.17))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 9e4b4f20-145a-5147-9521-2c0b2b262b26))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 314.96 90.17 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 30850946-470e-5d3a-a72a-01a543351940))
+	(symbol
+		(lib_id "Panel:Terminals_J3")
+		(at 330.2 88.9 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 2dff46c1-f3ce-5f78-b81b-4118afc1a170)
+		(property "Reference" "J3"
+			(at 330.2 81.28 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "SCART_R coax launch proposal"
+			(at 330.2 96.52000000000001 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:Coax179_HandSolder_Launch"
+			(at 330.2 88.9 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_AV_BREAKOUT"
+				(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435"
+					(reference "J3")
+					(unit 1))))
+		(pin "1"
+			(uuid 5c15a2c0-5a7f-50e7-8a5a-e902dab84c55))
+		(pin "2"
+			(uuid 9d20bb2d-ae08-5992-afd6-a105b7ac1d1b)))
+	(wire
+		(pts
+			(xy 68.58 204.47)
+			(xy 60.96 204.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 3b5c0b11-d61c-50d3-9354-5da74c6caf5b))
+	(global_label "SCART_G"
+		(shape bidirectional)
+		(at 60.96 204.47 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1dea8238-cb7e-50e1-878b-65f6ba43295d))
+	(wire
+		(pts
+			(xy 68.58 207.01)
+			(xy 60.96 207.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 7da351ad-d551-5bce-ae30-077a5ef3a9fb))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 60.96 207.01 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid c4934935-7782-52be-9bef-b0b6aef9c87a))
+	(symbol
+		(lib_id "Panel:Terminals_J4")
+		(at 76.2 205.74 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 22c8f4a2-748b-520e-8e19-4edfeab351c7)
+		(property "Reference" "J4"
+			(at 76.2 198.12 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "SCART_G coax launch proposal"
+			(at 76.2 213.36 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:Coax179_HandSolder_Launch"
+			(at 76.2 205.74 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_AV_BREAKOUT"
+				(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435"
+					(reference "J4")
+					(unit 1))))
+		(pin "1"
+			(uuid df80dcfd-c79a-58aa-b17c-ea8844961322))
+		(pin "2"
+			(uuid b39f0c91-c372-5186-a797-0890fbacda90)))
+	(wire
+		(pts
+			(xy 195.58 204.47)
+			(xy 187.96 204.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid b2cb2b3d-9c42-5932-aa95-28f8b582bfb7))
+	(global_label "SCART_B"
+		(shape bidirectional)
+		(at 187.96 204.47 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 111ae73a-2a94-5f91-9022-e367fd226117))
+	(wire
+		(pts
+			(xy 195.58 207.01)
+			(xy 187.96 207.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 5a5761c4-4b83-5f62-b414-af27699b857d))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 187.96 207.01 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 155e9ca2-a6a0-5e7e-81c7-5309b77cc1c8))
+	(symbol
+		(lib_id "Panel:Terminals_J5")
+		(at 203.2 205.74 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 844af826-e4a3-53c4-b19b-bb3ccfc6cdc8)
+		(property "Reference" "J5"
+			(at 203.2 198.12 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "SCART_B coax launch proposal"
+			(at 203.2 213.36 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:Coax179_HandSolder_Launch"
+			(at 203.2 205.74 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_AV_BREAKOUT"
+				(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435"
+					(reference "J5")
+					(unit 1))))
+		(pin "1"
+			(uuid 6bc86aa4-d31b-554d-9961-0041f30679f8))
+		(pin "2"
+			(uuid cc617be4-ea0f-5f9a-946e-e9aa86e187af)))
+	(wire
+		(pts
+			(xy 322.58 196.85)
+			(xy 314.96 196.85))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid fc0f2f49-bd60-56cb-a2bc-5065b3348b83))
+	(global_label "SCART_AUD_L"
+		(shape bidirectional)
+		(at 314.96 196.85 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 1d7b7f59-1ffe-520e-b3cf-cea7355cc61e))
+	(wire
+		(pts
+			(xy 322.58 199.39)
+			(xy 314.96 199.39))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 78ac7bde-d733-5c6f-9c38-60c6629125ab))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 314.96 199.39 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 203deff9-8325-534c-a5af-d7f2c3753b59))
+	(wire
+		(pts
+			(xy 322.58 201.93)
+			(xy 314.96 201.93))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 875c4e6c-aafe-56ca-b27b-497acd8a9287))
+	(global_label "SCART_AUD_R"
+		(shape bidirectional)
+		(at 314.96 201.93 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 7cc1205a-5083-54fe-9045-08362d9d2a62))
+	(wire
+		(pts
+			(xy 322.58 204.47)
+			(xy 314.96 204.47))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid eef89737-26d1-5c1b-a961-b7abf5e4c3a4))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 314.96 204.47 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 0c6cbfce-7699-5fcf-b2ee-b8c9f6538f6b))
+	(wire
+		(pts
+			(xy 322.58 207.01)
+			(xy 314.96 207.01))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 79c8fd31-5c48-5ef4-87d7-497dc90e956f))
+	(global_label "SCART_RGB_SELECT"
+		(shape bidirectional)
+		(at 314.96 207.01 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 700cd7f0-90a6-52ff-aa54-305ba70b9037))
+	(wire
+		(pts
+			(xy 322.58 209.55)
+			(xy 314.96 209.55))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid d4b2fda0-d3d8-5a8c-b816-2b582ba0cede))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 314.96 209.55 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid f465fc4f-67b2-5ee6-a780-6f1e08c931cd))
+	(wire
+		(pts
+			(xy 322.58 212.09)
+			(xy 314.96 212.09))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 71839061-f782-5e0c-ad08-31fda3a71117))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 314.96 212.09 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid 6f232c7d-aa61-574c-b4b4-b3a466acb477))
+	(wire
+		(pts
+			(xy 322.58 214.63)
+			(xy 314.96 214.63))
+		(stroke
+			(width 0)
+			(type default))
+		(uuid 13a7045b-92cd-5f08-b165-73cfdba6254a))
+	(global_label "GND"
+		(shape bidirectional)
+		(at 314.96 214.63 0)
+		(effects
+			(font
+				(size 0.85 0.85))
+			(justify left))
+		(uuid cc9bc6e2-4dde-5f1e-9899-fb5fb0409627))
+	(symbol
+		(lib_id "Panel:Terminals_J6")
+		(at 330.2 205.74 0)
+		(unit 1)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid 322226c9-5d5c-5fb1-a7a8-0e02e1703b33)
+		(property "Reference" "J6"
+			(at 330.2 190.5 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Value" "Audio/select/shield wires"
+			(at 330.2 220.98000000000002 0)
+			(effects
+				(font
+					(size 0.85 0.85))))
+		(property "Footprint" "Panel:Aux8_HandSolder_P1.00mm"
+			(at 330.2 205.74 0)
+			(effects
+				(font
+					(size 0.85 0.85))
+				(hide yes)))
+		(instances
+			(project "BMSX_AV_BREAKOUT"
+				(path "/ba28d49f-4c3c-587c-a067-c6d0f38fa435"
+					(reference "J6")
+					(unit 1))))
+		(pin "1"
+			(uuid b86975b9-c370-5158-b1c6-92e8b85f58b6))
+		(pin "2"
+			(uuid 47fc71ba-f5de-54ed-bd40-9fec40e8a44a))
+		(pin "3"
+			(uuid 0a6c39e8-4bed-562c-b899-15a9b9c0d052))
+		(pin "4"
+			(uuid 31895103-8e35-5c19-8d8a-ab4b22340d6c))
+		(pin "5"
+			(uuid 592280f8-d1a6-5643-9628-e58555ad1b0a))
+		(pin "6"
+			(uuid 08cfbed1-da12-5f3f-be8f-e097f4566f5c))
+		(pin "7"
+			(uuid 2ecaaf36-24b3-5e2c-954a-8984dea05768))
+		(pin "8"
+			(uuid 4d39367d-d634-5783-9e7d-eaf37f81e313)))
+	(text "Passive wiring only. Mainboard owns buffers, level translation and supply switching.\nOwn gamepad contacts and AV cable terminations remain physical design proposals. No routing or fabrication release."
+		(at 200 12.7 0)
+		(effects
+			(font
+				(size 0.85 0.85)))
+		(uuid 699bd177-dc03-52e3-85fd-0cf5542b0d3c)))
