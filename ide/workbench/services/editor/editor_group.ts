@@ -431,9 +431,7 @@ export class EditorGroupView {
 
 	/** Only the actual attached view may publish its focused control's draft. */
 	public commitPendingEdit(): boolean {
-		const focused = inputFocus.target;
-		if (this.panes.activePane === null || focused?.edit?.pending !== true || findEditorGroup(focused) !== this) return true;
-		return focused.edit.commit();
+		return this.panes.activePane === null || inputFocus.commitEdit(this.focusScope);
 	}
 
 	/** Retire the departing attachment, never the input that is about to acquire another owner. */

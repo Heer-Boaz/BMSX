@@ -16,7 +16,8 @@ import type { QuickInputController } from '../../services/quick_input/controller
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { luaSourceLocation } from '../../../language/lua/source_location';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
-import { AnimationEditorInput, type AnimationSourceSelection } from './editor_input';
+import { AnimationEditorInput } from './editor_input';
+import type { AnimationSourceSelection } from './source_selection';
 import { buildAnimationSourceDocument } from './source';
 import { projectAnimationDetails } from './details';
 import { animationDefinitionAtPosition, animationDefinitionAtRange, animationDefinitionFamily, collectAnimationDefinitions, type AnimationDefinitionSource } from './definitions';

@@ -15,6 +15,7 @@ import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 
 const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('same', { objects = { { member_id = 'other', definition_id = 'actor', options = { pos = { x = 7, y = 8, z = 9 } } } } })\n`;
 
@@ -204,6 +205,69 @@ test('Main Ctrl+S accepts its concrete pending field and saves its own canonical
 	assert.equal(f.ide.textFileSaves.latestOperation(f.firstInput.workingCopy), undefined);
 	assert.equal(f.ide.textFileSaves.latestOperation(f.secondInput.workingCopy), undefined);
 	assert.ok([...files.records.values()].some(record => record.contents === operation.snapshot.source));
+});
+
+for (const route of ['application', 'native'] as const) for (const valid of [false, true])
+	for (const command of ['sceneEditor.removeMember', 'sceneEditor.moveMemberDown'] as const)
+		test(`Main ${route} ${command} accepts only its captured member's ${valid ? 'valid' : 'invalid'} draft`, async t => {
+			const f = fixture(t); assert.equal(await f.open(0), true); f.update();
+			const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+			selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
+			const field = client.details.control.controls[0], model = f.model, version = model.version;
+			field.field.focusTarget.focus(); setFieldText(field.field, valid ? '123' : '+', true);
+			if (route === 'application') f.editor.commands.execute(command, client.commandTarget, undefined, f.second.commandTarget);
+			else inputFocus.executeCommand(command, client.commandTarget);
+			assert.equal(field.pending, !valid);
+			if (!valid) {
+				assert.equal(model.buffer.getText(), SOURCE); assert.equal(model.version, version); assert.equal(model.canUndo, false);
+				assert.equal(inputFocus.target, field.field.focusTarget);
+				return;
+			}
+			const selected = client.consumer.selection;
+			if (command === 'sceneEditor.removeMember') {
+				assert.equal(client.consumer.subject!.objects.length, 1);
+				const entry = client.consumer.subject!.objects[0]; assert.ok(entry.kind === 'object');
+				const id = entry.memberId;
+				assert.ok(id.kind === LuaSyntaxKind.StringLiteralExpression); assert.equal(id.value, 'source only');
+			} else {
+				assert.ok(selected?.kind === 'member'); assert.equal(selected.index, 1);
+				assert.ok(selected.entry.kind === 'object');
+				const id = selected.entry.memberId;
+				assert.ok(id.kind === LuaSyntaxKind.StringLiteralExpression); assert.equal(id.value, 'subject');
+			}
+			assert.equal(model.version, version + 2);
+			// Exact canonical source is the edit/history integrity contract, not UI wording.
+			assert.ok(model.history.undo(model) !== null);
+			assert.equal(model.buffer.getText(), SOURCE.replace('x = 11,', 'x = 123,'));
+			assert.ok(model.history.undo(model) !== null);
+			assert.equal(model.buffer.getText(), SOURCE); assert.equal(model.canUndo, false);
+			assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
+		});
+
+for (const route of ['application', 'native'] as const)
+	test(`Main ${route} mutation cannot acquire the selection published by its accepted draft`, async t => {
+		const f = fixture(t); assert.equal(await f.open(0), true); f.update();
+		const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+		selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
+		const field = client.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+		const release = f.model.onDidChangeContent(() => { release(); client.view.refresh(); selectSceneOutlineRow(client.view.hierarchy, 2); });
+		t.after(release);
+		if (route === 'application') f.editor.commands.execute('sceneEditor.removeMember', client.commandTarget);
+		else inputFocus.executeCommand('sceneEditor.removeMember', client.commandTarget);
+		assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 11,', 'x = 123,'));
+		assert.equal(field.pending, false); assert.equal(client.consumer.subject!.objects.length, 2);
+		assert.equal(client.view.hierarchy.outline.selectionIndex, 2);
+	});
+
+test('Main native Save vetoes its invalid draft without borrowing a receiving document working copy', async t => {
+	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
+	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
+	const field = client.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '+', true);
+	inputFocus.executeCommand('save', client.commandTarget);
+	assert.equal(field.pending, true); assert.equal(inputFocus.target, field.field.focusTarget);
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.ide.textFileSaves.latestOperation(f.model), undefined);
+	assert.equal(f.ide.textFileSaves.latestOperation(f.secondInput.workingCopy), undefined);
 });
 
 test('Files primary admission cannot outlive its captured origin generation during canonical-model admission', async t => {

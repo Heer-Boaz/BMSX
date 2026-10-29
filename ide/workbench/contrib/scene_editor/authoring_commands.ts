@@ -17,7 +17,10 @@ export class SceneAuthoringCommands {
 				const revision = this.revision, generation = target.scope.contextGeneration, selection = context.selectionRevision;
 				const current = () => this.context === context && this.revision === revision
 					&& target.scope.contextGeneration === generation && context.selectionRevision === selection;
-				return { isEnabled: () => current() && context.canRemoveSelectedMember(),
+				return { editScope: target.scope, isEnabled: () => {
+					const enabled = current() && context.canRemoveSelectedMember();
+					return current() && enabled;
+				},
 					run: () => { if (current()) context.removeSelectedMember(); } };
 			},
 		});
@@ -35,7 +38,10 @@ export class SceneAuthoringCommands {
 					const revision = this.revision, generation = target.scope.contextGeneration, selection = context.selectionRevision;
 					const current = () => this.context === context && this.revision === revision
 						&& target.scope.contextGeneration === generation && context.selectionRevision === selection;
-					return { isEnabled: () => current() && context.canMoveSelectedMember(direction),
+					return { editScope: target.scope, isEnabled: () => {
+						const enabled = current() && context.canMoveSelectedMember(direction);
+						return current() && enabled;
+					},
 						run: () => { if (current() && context.moveSelectedMember(direction)) didMove(context); } };
 				},
 			});

@@ -53,28 +53,19 @@ import { WORKBENCH_VIEW_RESIZE_COMMANDS, canResizeWorkbenchView, resizeWorkbench
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'tabs.next', 'tabs.previous', 'window.copyEditor', 'window.moveEditor', 'group.move', 'group.focusTabs', 'group.splitRight', 'group.splitDown',
+	'window.copyEditor', 'window.moveEditor', 'group.move',
 	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
 	'scenarioLab.play', 'play.reset', 'play.source',
 	'scenarioLab.runWithCompanion', 'scenarioLab.debugWithCompanion', 'scenarioLab.playWithCompanion',
-	'sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
-	'progression.createProgram', 'input.createBindings', 'behaviorLens.createEffect',
-	'animation', 'animation.create', 'animation.createSprite', 'animation.addTrack', 'animation.addKey',
-	'animation.addClip', 'animation.addFrame', 'animation.addProperty', 'animation.openClip',
-	'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.fit', 'animation.snap',
-	'editor.source', 'editor.sourceToSide', 'animation.producerSourceToSide',
-	'animation.edit', 'animation.remove', 'animation.producerSource',
-	'animation.tracks', 'animation.keys', 'animation.details',
-	'aem', 'aem.create', 'aem.edit', 'aem.add', 'aem.remove', 'aem.apply', 'aem.testEvent',
-	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove', 'progression', 'inputBindings',
-	'luaProgram.live', 'luaProgram.authoring', 'luaProgram.testInput', 'input.testActionString',
+	'animation',
+	'animation.producerSource', 'animation.producerSourceToSide',
+	'aem.edit', 'aem.add', 'aem.remove', 'aem.apply', 'aem.testEvent',
+	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove',
+	'luaProgram.testInput', 'input.testActionString',
 	'behaviorLens.addProperty', 'behaviorLens.removeProperty',
-	'cartMap',
-	'sceneEditor', 'behaviorLens', 'behaviorLens.details',
-	'behaviorLens.preview',
-	'behaviorLens.actionEffects', 'behaviorLens.stateMachines', 'behaviorLens.behaviorTrees',
+	'sceneEditor',
 ]);
 
 export class IdeCommandController {
@@ -113,17 +104,14 @@ export class IdeCommandController {
 		if (implementation !== undefined) {
 			const invocation = implementation.capture === undefined ? implementation : implementation.capture();
 			if (invocation === undefined) return;
+			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
+				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
 			// A concrete widget owns its draft even when it is not an editor-group
 			// child. Resolving the later active group must not choose this authority.
-			const scope = originGroup?.focusScope ?? invocationTarget?.commandContext.scope;
-			const attachment = originGroup?.panes.openGeneration;
-			if (SOURCE_COMMANDS.has(command)) {
-				const focused = inputFocus.target;
-				const edit = focused !== null && scope?.contains(focused.scope) ? focused.edit : undefined;
-				if (edit !== undefined) {
-					if (!edit.commit() || attachment !== originGroup?.panes.openGeneration) return;
-					if (inputFocus.target !== null && !scope!.contains(inputFocus.target.scope)) return;
-				}
+			const scope = invocation.editScope ?? (SOURCE_COMMANDS.has(command) ? target?.commandContext.scope : undefined);
+			if (scope !== undefined) {
+				const subjectGroup = findEditorGroup(target), attachment = subjectGroup?.panes.openGeneration;
+				if (!inputFocus.commitEdit(scope) || attachment !== subjectGroup?.panes.openGeneration) return;
 			}
 			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
 				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;

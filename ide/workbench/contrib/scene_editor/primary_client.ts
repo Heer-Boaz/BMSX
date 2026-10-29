@@ -81,7 +81,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 			run: () => options.save(consumer.workingCopy),
 			capture: () => {
 				const generation = this.scope.contextGeneration;
-				return { isEnabled: () => !this.disposed && this.scope.contextGeneration === generation && !consumer.workingCopy.readOnly,
+				return { editScope: this.scope, isEnabled: () => !this.disposed && this.scope.contextGeneration === generation && !consumer.workingCopy.readOnly,
 					run: () => { if (!this.disposed && this.scope.contextGeneration === generation) options.save(consumer.workingCopy); } };
 			},
 		});

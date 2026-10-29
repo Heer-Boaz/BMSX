@@ -441,8 +441,12 @@ its explicit client context without borrowing the active document group. Command
 descriptors declare native-control addressing for physical view actions; Palette
 enablement and execution retain that same invoker independently of the captured
 semantic editor target. Contribution-owned command capture retains invocation
-subject and control lifetime before draft publication;
-UI enablement does not construct those invocations.
+subject and control lifetime before draft publication. Captured source invocations
+declare their native edit scope; the focus owner accepts only its actual focused
+pending edit before execution enablement. Native execution and application
+routing share that acceptance boundary, independently of the receiving editor
+arrangement. Pure presentation commands use ordinary focus/blur behavior.
+UI enablement does not construct invocations or publish drafts.
 
 ## Workbench Quick Input
 

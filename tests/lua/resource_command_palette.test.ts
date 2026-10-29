@@ -169,7 +169,8 @@ test('an explicit absent editor context cannot borrow the active editor for a lo
 test('Source draft acceptance retires the captured editor context independently of its live Files command target', t => {
 	const f = fixture(t), generation = f.firstGroup.panes.openGeneration, filesContext = f.panel.focusTarget.scope.contextGeneration;
 	let accepted = false, executed = false;
-	f.panel.focusTarget.registerCommand('save', { isEnabled: () => true, run: () => { executed = true; } });
+	f.panel.focusTarget.registerCommand('save', { editScope: f.firstGroup.focusScope,
+		isEnabled: () => true, run: () => { executed = true; } });
 	t.after(() => f.panel.focusTarget.unregisterCommand('save'));
 	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, () => {
 		accepted = true; f.firstPart.suspend(); inputFocus.setTarget(null);

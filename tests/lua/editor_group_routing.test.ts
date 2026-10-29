@@ -141,8 +141,8 @@ test('a split tab chooser opens its own retained inputs from the actual pointer 
 });
 
 
-for (const destination of ['samePart', 'otherPart'] as const)
-	test(`source command admission preserves newer ${destination} group focus without creating a split`, t => {
+for (const route of ['command', 'owner'] as const) for (const destination of ['samePart', 'otherPart'] as const)
+	test(`${route} split admission preserves newer ${destination} group focus without creating a split`, t => {
 		const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 		const newer = destination === 'otherPart' ? f.secondGroup : parts.splitGroup(f.firstGroup, 'right');
 		assert.ok(newer);
@@ -155,7 +155,8 @@ for (const destination of ['samePart', 'otherPart'] as const)
 		assert.equal(draft.pending, true);
 		const groups = [...parts.groups], generation = f.firstGroup.panes.openGeneration;
 		const cycles = f.host.runtime.machine.scheduler.nowCycles;
-		f.editor.commands.execute('group.splitRight', f.first.commandTarget);
+		if (route === 'command') f.editor.commands.execute('group.splitRight', f.first.commandTarget);
+		else assert.equal(parts.splitGroup(f.firstGroup, 'right'), undefined);
 		assert.equal(accepted, 2); assert.equal(draft.pending, false);
 		assert.equal(f.firstGroup.panes.openGeneration, generation, 'newer focus alone does not change source attachment');
 		assert.ok(parts.activeGroup === newer && inputFocus.target === newer.panes.activePane!.commandTarget);

@@ -1725,20 +1725,156 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} Assistant clien
 	input.draft.undo(); assert.equal(input.draft.text, '', 'reflow adds no draft edits or history entries');
 });
 
-for (const command of ['animation.remove', 'animation.tracks', 'animation.keys', 'animation.details'] as const)
-test(`${command} publishes the actual focused draft before resolving the explicit action owner`, t => {
+test('animation.remove publishes the actual focused draft before resolving the explicit action owner', t => {
 	const { editor } = fixture(t), parent = inputFocus.createTarget(null, editor.editorParts.main.activeGroup.focusScope);
 	let value = 1, calls = 0;
 	const field = new ValueInput(parent, INTEGER_INPUT_FORMAT, accepted => { value = accepted; });
 	t.after(() => field.dispose()); field.setValue(value);
 	field.field.focusTarget.commandContext = parent;
-	parent.registerCommand(command, { isEnabled: () => true, run: () => { assert.equal(value, 2); calls++; } });
+	parent.registerCommand('animation.remove', { editScope: parent.scope, isEnabled: () => true, run: () => { assert.equal(value, 2); calls++; } });
 	field.field.focusTarget.focus(); selectAll(field.field); insertValue(field.field, '2');
-	editor.commands.execute(command, parent);
+	editor.commands.execute('animation.remove', parent);
 	assert.equal(calls, 1); assert.equal(field.pending, false);
 	selectAll(field.field); insertValue(field.field, 'invalid');
-	editor.commands.execute(command, parent);
+	editor.commands.execute('animation.remove', parent);
 	assert.equal(calls, 1); assert.equal(value, 2); assert.equal(field.pending, true);
+});
+
+for (const variant of ['tiny', 'msx'] as const)
+	for (const command of ['animation.tracks', 'animation.keys', 'animation.details', 'animation.fit', 'animation.snap'] as const)
+		for (const draft of ['2', 'invalid +'])
+test(`${variant} Animation ${command} owns presentation without precommitting ${draft === '2' ? 'a valid' : 'an invalid'} property draft`, t => {
+	const { editor, sources } = fixture(t), path = 'animation-property-presentation.lua';
+	const source = "return {duration_ms=100,tracks={{kind='value',keys={{time_ms=0,value=1},{time_ms=100,value=2}}}}}";
+	registerLuaSourceRecord(sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, createScenarioTestSourceRecord(path, 1, source, path));
+	sources.catalog.rebuildResources(); editor.setFontVariant(variant);
+	const group = editor.editorParts.main.activeGroup;
+	const input = editor.animations.openResource(group, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path })!)!;
+	editor.animations.selectTrack(input, 1); editor.animations.selectKey(input, 0); editor.update(0);
+	editor.animations.selectProperty(input, input.details.rows.findIndex(row => row.element.field === input.document!.tracks[0].keys[0].value!.field));
+	editor.commands.execute('animation.details'); editor.commands.execute('animation.edit');
+	const field = inputFocus.admittedTarget!, edit = field.edit!, native = field.textInput!, model = input.workingCopy;
+	assert.ok(edit); assert.equal(native.replaceText(0, native.readText().text.length, draft), true);
+	const pending = native.readText(), version = model.version, snap = input.keys.snap;
+	let changes = 0; t.after(model.onDidChangeContent(() => changes++));
+	input.keys.setView(20, 80);
+	editor.commands.execute(command, field); editor.update(0);
+	if (command === 'animation.fit' || command === 'animation.snap') {
+		assert.ok(inputFocus.admittedTarget === field && field.edit === edit && edit.pending && field.canFocus!());
+		assert.deepEqual(native.readText(), pending, 'presentation retains the actual draft and its selection');
+		assert.equal(changes, 0); assert.equal(model.version, version); assert.equal(model.buffer.getText(), source);
+		assert.equal(model.undo(), null, 'presentation adds no canonical edit or history entry');
+		if (command === 'animation.fit') assert.deepEqual([input.keys.range.minimum, input.keys.range.maximum], [0, 100]);
+		else assert.equal(input.keys.snap, !snap);
+	} else {
+		assert.equal(input.activeClient, command.slice('animation.'.length));
+		assert.ok(inputFocus.admittedTarget === group.panes.activePane!.commandTarget && inputFocus.admittedTarget !== field);
+		assert.equal(field.canFocus!(), false); assert.equal(edit.pending, false);
+		assert.equal(changes, draft === '2' ? 1 : 0); assert.equal(model.version, version + changes);
+		assert.equal(model.buffer.getText(), draft === '2' ? source.replace('value=1', 'value=2') : source);
+		if (draft === '2') {
+			assert.ok(model.undo() !== null); assert.equal(model.buffer.getText(), source);
+		}
+		assert.equal(model.undo(), null, 'ordinary departure publishes at most one accepted field edit');
+	}
+});
+
+function animationFramePropertyFixture(t: TestContext, selected = 0) {
+	const f = fixture(t), path = 'animation-frame-command.lua', source = "-- canonical frames\nreturn {frames={'first','second','third'}}\n";
+	registerLuaSourceRecord(f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources, createScenarioTestSourceRecord(path, 1, source, path));
+	f.sources.catalog.rebuildResources();
+	const group = f.editor.editorParts.main.activeGroup;
+	const input = f.editor.animations.openResource(group, f.sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path })!)!;
+	f.editor.animations.selectTrack(input, input.tracks.rows.findIndex(row => row.frames));
+	f.editor.animations.selectProperty(input, selected); f.editor.update(0);
+	f.editor.commands.execute('animation.details'); f.editor.commands.execute('animation.edit');
+	const field = inputFocus.admittedTarget!, native = field.textInput!;
+	assert.ok(field.edit);
+	return { ...f, group, input, field, native, source, model: input.workingCopy };
+}
+
+for (const command of ['animation.duplicate', 'animation.remove', 'animation.earlier', 'animation.later', 'animation.addFrame'] as const)
+test(`native ${command} consumes the accepted array-frame occurrence after a longer property draft`, async t => {
+	const selected = command === 'animation.earlier' ? 1 : 0, f = animationFramePropertyFixture(t, selected);
+	const old = selected === 0 ? "'first'" : "'second'", draft = "'a longer accepted frame'", detail = f.input.detailSelection;
+	assert.equal(f.native.replaceText(0, f.native.readText().text.length, draft), true);
+	assert.equal(f.field.getCommand(command)!.capture!()!.editScope, f.group.panes.activePane!.inputScope);
+	inputFocus.executeCommand(command, f.field);
+	const accepted = f.source.replace(old, draft);
+	if (command === 'animation.addFrame') {
+		const picker = f.editor.editorParts.main.quickInput;
+		assert.equal(picker.inputBox, true); assert.equal(f.input.detailSelection, detail);
+		assert.equal(picker.field.replaceText(0, picker.field.text.length, "'inserted'"), true);
+		await picker.accept();
+	}
+	f.editor.update(0);
+	const values = f.input.document!.frames.map(frame => frame.image);
+	const expected = command === 'animation.duplicate' ? ['a longer accepted frame', 'a longer accepted frame', 'second', 'third']
+		: command === 'animation.remove' ? ['second', 'third']
+			: command === 'animation.earlier' ? ['a longer accepted frame', 'first', 'third']
+				: command === 'animation.later' ? ['second', 'a longer accepted frame', 'third'] : ['a longer accepted frame', 'inserted', 'second', 'third'];
+	assert.deepEqual(values, expected);
+	const changed = f.model.buffer.getText();
+	assert.ok(changed.startsWith('-- canonical frames\n'));
+	f.editor.commands.execute('undo', f.group.panes.activePane!.commandTarget); f.editor.update(0);
+	assert.equal(f.model.buffer.getText(), accepted);
+	f.editor.commands.execute('undo', f.group.panes.activePane!.commandTarget); f.editor.update(0);
+	assert.equal(f.model.buffer.getText(), f.source);
+	assert.equal(f.input.details.selectionIndex, selected);
+	assert.equal(f.model.undo(), null);
+	f.editor.commands.execute('redo', f.group.panes.activePane!.commandTarget); f.editor.update(0);
+	assert.equal(f.model.buffer.getText(), accepted); assert.equal(f.input.details.selectionIndex, selected);
+	f.editor.commands.execute('redo', f.group.panes.activePane!.commandTarget); f.editor.update(0);
+	assert.equal(f.model.buffer.getText(), changed); assert.equal(f.model.redo(), null);
+});
+
+for (const command of ['animation.duplicate', 'animation.remove', 'animation.later', 'animation.addFrame', 'animation.edit'] as const)
+test(`native ${command} leaves an invalid array-frame draft at its actual field owner`, t => {
+	const f = animationFramePropertyFixture(t), version = f.model.version;
+	assert.equal(f.native.replaceText(0, f.native.readText().text.length, 'invalid +'), true);
+	const pending = f.native.readText();
+	inputFocus.executeCommand(command, f.field);
+	assert.ok(inputFocus.admittedTarget === f.field && f.field.edit!.pending);
+	assert.deepEqual(f.native.readText(), pending);
+	assert.equal(f.editor.editorParts.main.quickInput.visible, false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.version, version); assert.equal(f.model.undo(), null);
+});
+
+test('native Animation structural capture aborts when accepted property publication selects another real frame', t => {
+	const f = animationFramePropertyFixture(t), draft = "'a longer accepted frame'", detail = f.input.detailSelection;
+	assert.equal(f.native.replaceText(0, f.native.readText().text.length, draft), true);
+	const unbind = f.model.onDidChangeContent(() => {
+		unbind(); f.editor.animations.refresh(f.input); f.editor.animations.selectProperty(f.input, 1);
+	}); t.after(unbind);
+	inputFocus.executeCommand('animation.remove', f.field); f.editor.update(0);
+	assert.equal(f.model.buffer.getText(), f.source.replace("'first'", draft));
+	assert.notEqual(f.input.detailSelection, detail); assert.equal(f.input.details.selectionIndex, 1);
+	assert.deepEqual(f.input.document!.frames.map(frame => frame.image), ['a longer accepted frame', 'second', 'third']);
+	assert.ok(f.model.undo() !== null); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.undo(), null);
+});
+
+test('native Animation structural capture follows accepted field correspondence through a reentrant second source write', t => {
+	const f = animationFramePropertyFixture(t), draft = "'a longer accepted frame'", detail = f.input.detailSelection, prefix = '-- another source edit\n';
+	assert.equal(f.native.replaceText(0, f.native.readText().text.length, draft), true);
+	const unbind = f.model.onDidChangeContent(() => {
+		unbind(); f.editor.animations.refresh(f.input);
+		assert.equal(f.input.detailSelection, detail); assert.equal(f.input.details.selectionIndex, 0);
+		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }]);
+	}); t.after(unbind);
+	inputFocus.executeCommand('animation.duplicate', f.field); f.editor.update(0);
+	const accepted = f.source.replace("'first'", draft), changed = f.model.buffer.getText();
+	assert.ok(changed.startsWith(prefix + '-- canonical frames\n'));
+	assert.deepEqual(f.input.document!.frames.map(frame => frame.image), ['a longer accepted frame', 'a longer accepted frame', 'second', 'third']);
+	for (const expected of [prefix + accepted, accepted, f.source]) {
+		f.editor.commands.execute('undo', f.group.panes.activePane!.commandTarget); f.editor.update(0);
+		assert.equal(f.model.buffer.getText(), expected);
+	}
+	assert.equal(f.model.undo(), null);
+	for (const expected of [accepted, prefix + accepted, changed]) {
+		f.editor.commands.execute('redo', f.group.panes.activePane!.commandTarget); f.editor.update(0);
+		assert.equal(f.model.buffer.getText(), expected);
+	}
+	assert.equal(f.model.redo(), null);
 });
 
 test('Animation body clients and its actual property draft publish exact client-navigation handlers to the real command controller and Palette', t => {
@@ -1807,10 +1943,6 @@ test('Animation body clients and its actual property draft publish exact client-
 	assert.ok(field.edit); assert.notEqual(undo, tracks.getCommand('undo'));
 	const fieldPicks = buildCommandQuickPickItems(editor.commands, field);
 	for (const command of commands) assert.ok(fieldPicks.some(item => item.command === command));
-	assert.equal(native.replaceText(0, native.readText().text.length, 'invalid +'), true);
-	editor.commands.execute('animation.tracks', field);
-	assert.equal(inputFocus.target, field); assert.equal(input.activeClient, 'details'); assert.equal(field.edit!.pending, true);
-	assert.equal(input.workingCopy.buffer.getText(), source);
 	for (let index = 0; index < commands.length; index++) assert.equal(field.getCommand(commands[index]), handlers[index]);
 	assert.equal(field.getCommand('undo'), undo, 'navigation does not borrow or replace the actual field-local history');
 	assert.equal(native.replaceText(0, native.readText().text.length, '2'), true);

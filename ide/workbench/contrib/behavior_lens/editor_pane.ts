@@ -383,16 +383,23 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 	}
 
 	private openDetails(): void {
-		const input = this.input;
-		this.controller.updateView(input);
+		const input = this.input, target = this.commandTarget, generation = target.scope.contextGeneration;
 		if (!this.focusInput(input)) return;
-		const selected = input.view.source.nodesByRowKey.get(input.view.selection!.rowKey)!;
+		const focusRevision = inputFocus.revision;
+		this.controller.updateView(input);
+		if (target.scope.contextGeneration !== generation || inputFocus.revision !== focusRevision || inputFocus.admittedTarget !== target) return;
+		prepareBehaviorLensLayout(input.view, this.contentBounds);
+		input.updatePresentation(editorViewState.font.renderFont());
+		if (target.scope.contextGeneration !== generation || inputFocus.revision !== focusRevision || inputFocus.admittedTarget !== target
+			|| input.view.selection === null) return;
+		const source = input.view.source, selected = source.nodesByRowKey.get(input.view.selection.rowKey)!;
 		const lifetime = this.inspector.show({ title: selected.label,
 			items: buildBehaviorInspection(input.view),
 			canOpenSource: item => item.source !== undefined,
 			openSource: item => this.controller.openInspectionSource(this.group, input, item),
-		});
-		lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.inspector.hide()) });
+		}, false);
+		lifetime.add({ dispose: source.onDidInvalidate(() => this.inspector.hide()) });
+		this.inspector.focusTarget.focus();
 	}
 
 	private editProperty(): void {

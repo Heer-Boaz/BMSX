@@ -7,7 +7,7 @@ import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
-import { inputFocus, type InputFocusTarget, type InputFocusScope } from '../../../input/focus';
+import { inputFocus, type FocusCommand, type InputFocusTarget, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -46,6 +46,7 @@ const DETAILS_NAVIGATION = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['Home', '
 const ANIMATION_AUTHORING_COMMANDS = ['animation.addTrack', 'animation.addKey', 'animation.addClip', 'animation.addFrame',
 	'animation.addProperty', 'animation.duplicate', 'animation.earlier', 'animation.later', 'animation.openClip',
 	'animation.fit', 'animation.snap', 'animation.remove', 'animation.producerSource', 'animation.producerSourceToSide', 'animation.edit', 'animation.more'] as const;
+type AnimationCommandSubject = 'definition' | 'keyInsertion' | 'frameInsertion' | 'selectedSource' | 'selectedEntry' | 'property' | 'clip';
 
 export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditorInput> {
 	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
@@ -115,18 +116,18 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		};
 		this.detailsFocus.commandContext = this.focusTarget;
 		this.unbindDetailsKeyboard = this.detailsFocus.bindKeyboard(player => this.handleDetailsKeyboard(player));
-		this.focusTarget.registerCommand('animation.addTrack', { isEnabled: () => this.hasInput && this.controller.authoring.canAddTrack(this.input), run: () => this.controller.authoring.addTrack(this.input, this.quickInput) });
-		this.focusTarget.registerCommand('animation.addKey', { isEnabled: () => this.hasInput && this.controller.authoring.canAddKey(this.input), run: () => this.controller.authoring.addKey(this.input, this.quickInput) });
-		this.focusTarget.registerCommand('animation.addClip', { isEnabled: () => this.hasInput && this.controller.authoring.canAddClip(this.input), run: () => this.controller.authoring.addClip(this.input, this.quickInput) });
-		this.focusTarget.registerCommand('animation.addFrame', { isEnabled: () => this.hasInput && this.controller.authoring.canAddFrame(this.input), run: () => this.controller.authoring.addFrame(this.input, this.quickInput) });
-		this.focusTarget.registerCommand('animation.addProperty', { isEnabled: () => this.hasInput && this.controller.authoring.canAddProperty(this.input), run: () => this.controller.authoring.addProperty(this.input, this.quickInput) });
-		this.focusTarget.registerCommand('animation.duplicate', { isEnabled: () => this.hasInput && this.controller.authoring.canDuplicate(this.input), run: () => this.controller.authoring.duplicate(this.input) });
-		this.focusTarget.registerCommand('animation.earlier', { isEnabled: () => this.hasInput && this.controller.authoring.canReorder(this.input, -1), run: () => this.controller.authoring.reorder(this.input, -1) });
-		this.focusTarget.registerCommand('animation.later', { isEnabled: () => this.hasInput && this.controller.authoring.canReorder(this.input, 1), run: () => this.controller.authoring.reorder(this.input, 1) });
-		this.focusTarget.registerCommand('animation.openClip', { isEnabled: () => this.hasInput && this.input.document?.clips[this.input.clipIndex]?.sequence !== undefined, run: () => this.controller.openClip(this.group, this.input) });
+		this.focusTarget.registerCommand('animation.addTrack', this.authoringCommand('definition', input => this.controller.authoring.canAddTrack(input), input => this.controller.authoring.addTrack(input, this.quickInput)));
+		this.focusTarget.registerCommand('animation.addKey', this.authoringCommand('keyInsertion', input => this.controller.authoring.canAddKey(input), input => this.controller.authoring.addKey(input, this.quickInput)));
+		this.focusTarget.registerCommand('animation.addClip', this.authoringCommand('definition', input => this.controller.authoring.canAddClip(input), input => this.controller.authoring.addClip(input, this.quickInput)));
+		this.focusTarget.registerCommand('animation.addFrame', this.authoringCommand('frameInsertion', input => this.controller.authoring.canAddFrame(input), input => this.controller.authoring.addFrame(input, this.quickInput)));
+		this.focusTarget.registerCommand('animation.addProperty', this.authoringCommand('selectedSource', input => this.controller.authoring.canAddProperty(input), input => this.controller.authoring.addProperty(input, this.quickInput)));
+		this.focusTarget.registerCommand('animation.duplicate', this.authoringCommand('selectedEntry', input => this.controller.authoring.canDuplicate(input), input => this.controller.authoring.duplicate(input)));
+		this.focusTarget.registerCommand('animation.earlier', this.authoringCommand('selectedEntry', input => this.controller.authoring.canReorder(input, -1), input => this.controller.authoring.reorder(input, -1)));
+		this.focusTarget.registerCommand('animation.later', this.authoringCommand('selectedEntry', input => this.controller.authoring.canReorder(input, 1), input => this.controller.authoring.reorder(input, 1)));
+		this.focusTarget.registerCommand('animation.openClip', this.authoringCommand('clip', input => input.document?.clips[input.clipIndex]?.sequence !== undefined, input => this.controller.openClip(this.group, input)));
 		this.focusTarget.registerCommand('animation.fit', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.fit(); this.input.keys.curve.bind(this.input.keys); } });
 		this.focusTarget.registerCommand('animation.snap', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.snap = !this.input.keys.snap; this.input.status = this.input.keys.snap ? 'Snap on' : 'Snap off'; } });
-		this.focusTarget.registerCommand('animation.remove', { isEnabled: () => this.hasInput && this.controller.authoring.canRemove(this.input), run: () => this.controller.authoring.remove(this.input) });
+		this.focusTarget.registerCommand('animation.remove', this.authoringCommand('selectedEntry', input => this.controller.authoring.canRemove(input), input => this.controller.authoring.remove(input)));
 		for (const [command, placement] of [['animation.producerSource', 'default'], ['animation.producerSourceToSide', 'side']] as const) this.focusTarget.registerCommand(command, {
 			isEnabled: () => this.hasInput && this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
 			run: () => {
@@ -134,13 +135,12 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 				void this.navigation.openSource(this.group, { readLocation: () => this.controller.getProducerSourceLocation(input), placement });
 			},
 		});
-		this.focusTarget.registerCommand('animation.edit', { isEnabled: () => {
-			if (!this.hasInput) return false;
-			const property = this.input.details.rows[this.input.details.selectionIndex]?.element;
-			if (property === undefined || !property.source.structural || !this.input.document!.syntaxComplete) return false;
+		this.focusTarget.registerCommand('animation.edit', this.authoringCommand('property', input => {
+			const property = input.details.rows[input.details.selectionIndex]?.element;
+			if (property === undefined || !property.source.structural || !input.document!.syntaxComplete) return false;
 			const range = property.source.file.chunk.locations.range(property.field.value.span);
-			return range.start.line === range.end.line && !this.controller.modelFor(this.input, property.source.file).readOnly;
-		}, run: () => this.editProperty() });
+			return range.start.line === range.end.line && !this.controller.modelFor(input, property.source.file).readOnly;
+		}, () => this.editProperty()));
 		this.focusTarget.registerCommand('animation.more', { isEnabled: () => this.hasInput && this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
 		for (const target of [this.keys.focusTarget, this.detailsFocus, this.image.focusTarget, this.edit.control.field.focusTarget,
 			this.actions.focusTarget, this.clients.focusTarget, this.columnSash.focusTarget, this.rowSash.focusTarget]) {
@@ -174,7 +174,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		for (const direction of ['undo', 'redo'] as const) {
 			const historyCommand = {
 				isEnabled: () => { const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction); return model !== undefined && !model.readOnly; },
-				run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction),
+				run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction, this.input.editSource),
 			};
 			this.focusTarget.registerCommand(direction, historyCommand);
 			this.detailsFocus.registerCommand(direction, historyCommand);
@@ -183,6 +183,32 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		}
 		this.focusOrder = [this.focusTarget, this.keys.focusTarget, this.image.focusTarget, this.detailsFocus,
 			this.columnSash.focusTarget, this.rowSash.focusTarget, this.actions.focusTarget, this.clients.focusTarget];
+	}
+	/** Source selections retain their identity while reparsing maps their authored ranges. */
+	private authoringCommand(subject: AnimationCommandSubject, canRun: (input: AnimationEditorInput) => boolean,
+		run: (input: AnimationEditorInput) => void): FocusCommand {
+		return { isEnabled: () => this.hasInput && canRun(this.input), run: () => run(this.input), capture: () => {
+			if (!this.hasInput) return;
+			const input = this.input, scope = this.focusTarget.scope, generation = scope.contextGeneration;
+			const trackSelection = input.trackSelection, keySelection = input.keySelection, detailSelection = input.detailSelection;
+			const frames = input.framesSelected, track = input.trackIndex >= 0, key = input.keyIndex >= 0, clip = input.clipIndex >= 0, cursor = input.keys.cursor;
+			const current = (): boolean => {
+				if (!this.hasInput || this.input !== input || scope.contextGeneration !== generation) return false;
+				if (subject === 'definition') return true;
+				if (subject === 'keyInsertion') return input.trackSelection === trackSelection && input.trackIndex >= 0 && input.keys.cursor === cursor;
+				if (subject === 'frameInsertion') return input.framesSelected === frames
+					&& (!frames || input.trackSelection === trackSelection && input.detailSelection === detailSelection);
+				if (subject === 'clip') return input.clipIndex >= 0 && input.trackSelection === trackSelection;
+				if (input.trackSelection !== trackSelection || input.keySelection !== keySelection || input.framesSelected !== frames
+					|| (input.trackIndex >= 0) !== track || (input.keyIndex >= 0) !== key || (input.clipIndex >= 0) !== clip) return false;
+				return subject === 'selectedSource' || subject === 'selectedEntry' && !frames || input.detailSelection === detailSelection;
+			};
+			return { editScope: scope, isEnabled: () => {
+				if (!current()) return false;
+				this.controller.refresh(input);
+				return current() && canRun(input) && current();
+			}, run: () => run(input) };
+		} };
 	}
 	protected override activate(): void {
 		this.actions.setInput(this.input.actionBar, this.focusTarget); this.keys.setInput(this.input); this.lanes.setInput(this.input);
@@ -228,7 +254,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		const model = this.controller.modelFor(input, property.source.file), locations = property.source.file.chunk.locations;
 		const valueRange = locations.range(property.field.value.span), range = luaSourceRangeToTextRange(model.buffer, valueRange);
 		this.edit.open({ model, tree: input.details, row, parse: text => parseLuaFieldValueEdit(model.buffer, locations, property.field, text),
-			apply: value => { model.pushEditOperations([value.edit]); this.controller.refresh(input); } }, { edit: { offset: range.start, deleteLength: range.end - range.start, text: readLuaSourceRange(model.buffer, valueRange) },
+			apply: value => this.controller.authoring.editProperty(input, property, value) }, { edit: { offset: range.start, deleteLength: range.end - range.start, text: readLuaSourceRange(model.buffer, valueRange) },
 			fieldRange: locations.range(property.field.span), expressionRange: valueRange });
 	}
 	public override update(): void {

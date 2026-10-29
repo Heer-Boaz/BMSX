@@ -4,7 +4,8 @@ import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { EditorInputSerializer } from '../../services/editor/editor_serialization';
 import { captureTextFileModel, resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { AnimationEditorController } from './controller';
-import { AnimationEditorInput, type AnimationClient, type AnimationSourceSelection } from './editor_input';
+import { AnimationEditorInput, type AnimationClient } from './editor_input';
+import type { AnimationSourceSelection } from './source_selection';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 
 type AnimationSnapshot = {

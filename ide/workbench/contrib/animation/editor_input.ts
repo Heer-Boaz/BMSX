@@ -18,8 +18,8 @@ import { AnimationFramePreview } from './frame_preview';
 import { WorkbenchSplitView } from '../../ui/split_view';
 import type { AnimationEditorLayout } from './layout';
 import { create_rect_bounds } from '../../../../machine/ts/common/rect';
+import { animationPropertyEditState, type AnimationSourceSelection } from './source_selection';
 
-export type AnimationSourceSelection = { readonly path: string; readonly range: TrackedTextRange };
 export type AnimationTrackRow = { readonly track: AnimationTrackSource | undefined; readonly clip: AnimationClipSource | undefined; readonly frames: boolean; readonly preserveCase: boolean; label: string; text: string };
 export type AnimationClient = 'tracks' | 'keys' | 'details';
 
@@ -37,6 +37,7 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 			&& range.start === candidate.start && range.end === candidate.end;
 	}
 	public readonly definitionRange: TrackedTextRange | undefined;
+	public readonly editSource = Symbol('animation source selection');
 	public readonly sourceModels = new Map<string, EditorTextModel>();
 	public sourceRevision: symbol | undefined;
 	public version = 0;
@@ -78,11 +79,23 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
 			const address = resourceIdentityKey(model.resource);
 			if (this.sourceModels.get(address) !== model) return;
-			this.invalidateProjection();
+			const state = event.editState !== null && event.editState.is(animationPropertyEditState) && event.editSource === this.editSource
+				? event.editState.value : undefined;
+			const detail = this.detailSelection;
+			const continuing = state !== undefined && detail !== undefined && detail.path === state.previous.path
+				&& detail.range.start === state.previous.range.start && detail.range.end === state.previous.range.end;
 			if (this.workingCopy === model && this.definitionRange !== undefined) mapTrackedTextRange(this.definitionRange, event.changes);
 			if (this.trackSelection?.path === address) mapTrackedTextRange(this.trackSelection.range, event.changes);
 			if (this.keySelection?.path === address) mapTrackedTextRange(this.keySelection.range, event.changes);
 			if (this.detailSelection?.path === address) mapTrackedTextRange(this.detailSelection.range, event.changes);
+			if (state !== undefined) {
+				if (event.kind === 'edit' && continuing) {
+					detail!.range.start = state.selected.range.start; detail!.range.end = state.selected.range.end;
+				} else if (event.kind === 'undo' || event.kind === 'redo') {
+					this.detailSelection = { path: state.selected.path, range: { ...state.selected.range } };
+				}
+			}
+			this.invalidateProjection();
 		}) });
 	}
 	public publishModels(): void { this.setWorkingCopies(new Set(this.sourceModels.values())); }

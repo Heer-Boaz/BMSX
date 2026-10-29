@@ -58,6 +58,47 @@ test('explicit editor context chooses the receiving arrangement without replacin
 	assert.equal(receiver, f.secondGroup.focusTarget);
 });
 
+test('a captured source invocation accepts subject A input when explicit receiver B has another command context', t => {
+	const f = commandFixture(t);
+	const scope = new InputFocusScope(f.context.scope.surfaceScope, f.context.scope);
+	const field = inputFocus.createTarget(f.context, scope);
+	field.commandContext = f.context;
+	let pending = true, commits = 0, accepted = 0, receiver: object | undefined;
+	field.edit = { get pending() { return pending; }, commit() { pending = false; commits++; accepted = 31; return true; }, cancel() { pending = false; } };
+	f.context.registerCommand('sceneEditor.removeMember', { contextual: true, isEnabled: () => true,
+		run: () => assert.fail('execution must retain subject A capture'),
+		capture: () => ({ editScope: f.context.scope, isEnabled: () => accepted === 31,
+			run: target => { receiver = target; } }),
+	});
+	f.second.commandTarget.registerCommand('sceneEditor.removeMember', { contextual: true, isEnabled: () => true,
+		run: () => assert.fail('receiver B cannot replace subject A') });
+	assert.equal(field.focus(), true);
+	f.editor.commands.execute('sceneEditor.removeMember', field, undefined, f.second.commandTarget);
+	assert.equal(commits, 1); assert.equal(pending, false);
+	assert.equal(receiver, f.secondGroup.focusTarget);
+});
+
+test('a captured subject A invocation leaves the focused explicit receiver B draft unpublished', t => {
+	const f = commandFixture(t);
+	const scope = new InputFocusScope(f.secondGroup.focusScope.surfaceScope, f.secondGroup.focusScope);
+	const receiverField = inputFocus.createTarget(f.second.commandTarget, scope);
+	receiverField.commandContext = f.second.commandTarget;
+	let pending = true, commits = 0, executed = 0, receiver: object | undefined;
+	receiverField.edit = { get pending() { return pending; }, commit() { pending = false; commits++; return true; }, cancel() { pending = false; } };
+	f.context.registerCommand('sceneEditor.removeMember', { contextual: true, isEnabled: () => true,
+		run: () => assert.fail('execution must retain subject A capture'),
+		capture: () => ({ editScope: f.context.scope, isEnabled: () => true,
+			run: target => { executed++; receiver = target; } }),
+	});
+	f.second.commandTarget.registerCommand('sceneEditor.removeMember', { contextual: true, isEnabled: () => true,
+		run: () => assert.fail('receiver B cannot replace subject A') });
+	assert.equal(receiverField.focus(), true);
+	f.editor.commands.execute('sceneEditor.removeMember', f.child, undefined, f.second.commandTarget);
+	assert.equal(commits, 0); assert.equal(pending, true); assert.equal(executed, 1);
+	assert.equal(inputFocus.target, receiverField);
+	assert.equal(receiver, f.secondGroup.focusTarget);
+});
+
 for (const lifetime of ['invoking control', 'semantic context', 'explicit editor'] as const)
 	test(`application capture retirement of the ${lifetime} revokes the captured command`, t => {
 		const f = commandFixture(t);
@@ -75,6 +116,26 @@ for (const lifetime of ['invoking control', 'semantic context', 'explicit editor
 		f.editor.commands.execute('sceneEditor.removeMember', f.child, undefined,
 			lifetime === 'explicit editor' ? f.second.commandTarget : undefined);
 	});
+
+test('application capture retirement prevents publication of the revoked invoking field draft', t => {
+	const f = commandFixture(t);
+	const scope = new InputFocusScope(f.context.scope.surfaceScope, f.context.scope);
+	const field = inputFocus.createTarget(f.context, scope);
+	field.commandContext = f.context;
+	let pending = true;
+	field.edit = { get pending() { return pending; }, commit: () => assert.fail('retired invocation cannot publish input'), cancel() { pending = false; } };
+	f.context.registerCommand('sceneEditor.removeMember', { contextual: true, isEnabled: () => true,
+		run: () => assert.fail('retired invocation cannot execute'),
+		capture() {
+			field.scope.retireContext();
+			return { editScope: f.context.scope, isEnabled: () => assert.fail('retired invocation cannot grant enablement'),
+				run: () => assert.fail('retired capture cannot execute') };
+		},
+	});
+	assert.equal(field.focus(), true);
+	f.editor.commands.execute('sceneEditor.removeMember', field);
+	assert.equal(pending, true);
+});
 
 const SCENE_SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {

@@ -27,6 +27,8 @@ export type InputRuntimeContext = {
 };
 
 export type FocusCommandInvocation = {
+	/** Source-consuming invocations accept only the concrete draft in this owning scope. */
+	readonly editScope?: InputFocusScope;
 	isEnabled(): boolean;
 	run(editorContext?: InputFocusTarget): void;
 };
@@ -357,11 +359,28 @@ export class InputFocusService {
 		return target?.getCommand(command);
 	}
 
+	/** Accept one owning scope's focused draft, never a replacement edit selected by its callbacks. */
+	public commitEdit(scope: InputFocusScope): boolean {
+		const focused = this.targetValue;
+		if (focused === null || !scope.contains(focused.scope) || focused.edit?.pending !== true) return true;
+		const generation = scope.contextGeneration;
+		if (!focused.edit.commit() || scope.contextGeneration !== generation) return false;
+		return this.targetValue === null || scope.contains(this.targetValue.scope);
+	}
+
 	public executeCommand(command: EditorCommandId, target: InputFocusTarget | null = this.targetValue): void {
-		const implementation = this.getCommand(command, target);
+		if (target === null) return;
+		const implementation = target.getCommand(command);
 		if (implementation === undefined) return;
+		const targetScope = target.scope, targetGeneration = targetScope.contextGeneration;
+		const commandScope = target.commandContext.scope, commandGeneration = commandScope.contextGeneration;
 		const invocation = implementation.capture === undefined ? implementation : implementation.capture();
-		if (invocation !== undefined && invocation.isEnabled()) invocation.run();
+		if (invocation === undefined || targetScope.contextGeneration !== targetGeneration || commandScope.contextGeneration !== commandGeneration) return;
+		if (invocation.editScope !== undefined && !this.commitEdit(invocation.editScope)) return;
+		if (targetScope.contextGeneration !== targetGeneration || commandScope.contextGeneration !== commandGeneration) return;
+		if (!invocation.isEnabled()) return;
+		if (targetScope.contextGeneration !== targetGeneration || commandScope.contextGeneration !== commandGeneration) return;
+		invocation.run();
 	}
 
 	public handleKeyboard(input: KeyInputEvent): void {

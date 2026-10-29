@@ -7,16 +7,14 @@ import { consumeIdeKey } from './key_input';
 import { KeyModifier, type KeyInputEvent } from '../../../hosts/common/input/text';
 
 /** One application command route owns draft settlement and the captured local subject. */
-function runKeybinding(binding: EditorCommandKeybinding, event: KeyInputEvent, commands: EditorCommandRunner | undefined, target: InputFocusTarget | null): void {
+function runKeybinding(focus: InputFocusService, binding: EditorCommandKeybinding, event: KeyInputEvent, commands: EditorCommandRunner | undefined, target: InputFocusTarget | null): void {
 	consumeIdeKey(event.code, event);
 	if (commands !== undefined) {
 		commands.execute(binding.command, target);
 		return;
 	}
 	// Without an application owner, resolution has admitted the actual local capability.
-	const command = target!.getCommand(binding.command)!;
-	const invocation = command.capture === undefined ? command : command.capture();
-	if (invocation !== undefined && invocation.isEnabled()) invocation.run();
+	focus.executeCommand(binding.command, target);
 }
 
 const CHORD_TIMEOUT_MS = 5000;
@@ -45,7 +43,7 @@ export class EditorCommandKeybindingController {
 		if (this.prefix === undefined) {
 			const binding = resolveEditorCommandKeybinding(event.code, event.modifiers, commands, target);
 			if (binding === null || event.repeat && !binding.repeat) return false;
-			if (binding.chord === undefined) { runKeybinding(binding, event, commands, target); return true; }
+			if (binding.chord === undefined) { runKeybinding(this.focus, binding, event, commands, target); return true; }
 			if (event.repeat) return false;
 			consumeIdeKey(event.code, event);
 			this.prefix = event;
@@ -70,7 +68,7 @@ export class EditorCommandKeybindingController {
 			showEditorMessage('Key chord is not bound.', 'info', 2);
 			return true;
 		}
-		runKeybinding(binding, event, commands, target);
+		runKeybinding(this.focus, binding, event, commands, target);
 		return true;
 	}
 

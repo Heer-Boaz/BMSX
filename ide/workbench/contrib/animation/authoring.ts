@@ -1,6 +1,6 @@
 import { parseLuaExpressionSource } from '../../../../toolchain/ts/lua/analysis/parse';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
-import { readLuaNumberLiteral, readLuaSourceRange, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
+import { readLuaNumberLiteral, readLuaSourceRange, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits, validateLuaTableFieldExpression, formatLuaTableFieldSource } from '../../../language/lua/table_field_insertion';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { QuickInputController } from '../../services/quick_input/controller';
@@ -14,11 +14,21 @@ import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
+import type { LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
+import type { AnimationProperty } from './details';
+import { animationPropertyEditState } from './source_selection';
 
 /** Authored mutations and prompts. Admission/navigation belong to the controller. */
 export class AnimationAuthoring {
 	public constructor(private readonly controller: Pick<AnimationEditorController, 'modelFor' | 'refresh' | 'selectTrack' | 'selectKey' | 'selectProperty'>,
 		private readonly catalog: WorkspaceSourceCatalog) {}
+	public editProperty(input: AnimationEditorInput, property: AnimationProperty, value: LuaFieldValueEdit): void {
+		const model = this.controller.modelFor(input, property.source.file), path = property.source.file.file;
+		const previous = { path, range: luaSourceRangeToTextRange(model.buffer, property.source.file.chunk.locations.range(property.field.span)) };
+		model.pushEditOperations([value.edit], animationPropertyEditState.of({ previous, selected: previous }, input.editSource), () =>
+			animationPropertyEditState.of({ previous, selected: { path, range: luaSourceRangeToTextRange(model.buffer, value.fieldRange) } }, input.editSource));
+		this.controller.refresh(input);
+	}
 	public moveKey(input: AnimationEditorInput, key: AnimationKeySource, value: number): void {
 		const source = key.source!;
 		const model = this.controller.modelFor(input, source.file);

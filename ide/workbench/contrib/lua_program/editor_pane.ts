@@ -95,12 +95,13 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 			return property?.field !== undefined && property.container!.structural && !this.input.sourceModels.get(property.file.file)!.readOnly;
 		}, run: () => this.controller.remove(this.input) });
 		this.focusTarget.registerCommand('luaProgram.live', { isEnabled: () => !this.input.liveVisible, run: () => {
-			this.input.interaction.running = false;
-			if (this.input.instance === undefined) this.controller.chooseInstance(this.input, this.quickInput);
-			else this.input.inspectRuntime(this.commands.transport);
+			const input = this.input;
+			if (!this.focusInput(input)) return;
+			if (input.instance === undefined) this.controller.chooseInstance(input, this.quickInput);
+			else input.inspectRuntime(this.commands.transport);
 		} });
 		this.focusTarget.registerCommand('luaProgram.authoring', { isEnabled: () => this.input.liveVisible,
-			run: () => this.input.showAuthoring() });
+			run: () => { const input = this.input; if (this.focusInput(input)) input.showAuthoring(); } });
 		this.focusTarget.registerCommand('luaProgram.more', { isEnabled: () => this.input.actionBar.overflow!.button.visible, run: () => this.actions.openOverflow() });
 		this.focusTarget.registerCommand('luaProgram.selectInstance', { isEnabled: () => this.input.liveVisible,
 			run: () => this.controller.chooseInstance(this.input, this.quickInput) });
