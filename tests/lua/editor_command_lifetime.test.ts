@@ -9,9 +9,9 @@ for (const retirement of ['suspend', 'detach', 'reattach'] as const)
 		const f = createActualSourcePanes(t), group = f.firstGroup, model = f.firstInput.workingCopy;
 		f.first.focus(); model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained unsaved source\n' }]);
 		const origin = f.first.commandTarget, generation = group.panes.openGeneration, source = model.buffer.getText();
-		let committed = false;
-		origin.edit = { pending: true, commit: () => {
-			committed = true;
+		let committed = false, pending = true;
+		origin.edit = { get pending() { return pending; }, cancel() { pending = false; }, commit: () => {
+			committed = true; pending = false;
 			if (retirement === 'suspend') f.firstPart.suspend();
 			else {
 				f.firstPart.window!.detach();

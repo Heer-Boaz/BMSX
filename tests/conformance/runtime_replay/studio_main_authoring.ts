@@ -11,6 +11,7 @@ import { WorkspaceSearchPane } from '../../../ide/workbench/contrib/workspace_se
 import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
 import { inputFocus } from '../../../ide/input/focus';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
+import { testProjectBrowserSession } from './studio_browser_session';
 
 /** Standalone renderer workflow over a dedicated test cartridge and independent source fixtures. */
 export async function runStudioMainAuthoring(test: StudioFixture) {
@@ -18,7 +19,8 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 	await test.press('ControlRight', 'ShiftRight');
 	await test.runMenuCommand('pause');
 	await testMainSceneAuthoring(test);
-	return { hostFrames: test.observations.hostFrames, cycles: test.cycles(), mainAuthoring: 'pass' };
+	await testProjectBrowserSession(test);
+	return { hostFrames: test.observations.hostFrames, cycles: test.cycles(), mainAuthoring: 'pass', filesBrowserRecovery: 'hybrid-pass' };
 }
 
 /** Explicit source fixture setup, then ordinary Files/menu/keyboard/pointer authoring in the real Workbench. */

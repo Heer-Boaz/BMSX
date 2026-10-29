@@ -783,7 +783,11 @@ export class RuntimeCartEditor implements CartEditor {
 			if (activeTab !== null) group.activate(activeTab.id, { preserveFocus: true });
 		}
 		this.mainWorkspace.resume();
-		this.editorParts.activePart.focus();
+		const focused = inputFocus.admittedTarget;
+		if (focused === null || focused.guestInput !== undefined) {
+			if (this.editorParts.activePart === this.editorParts.main) this.mainWorkspace.focusTarget.focus();
+			else this.editorParts.activePart.focus();
+		}
 		editorRuntimeState.active = true;
 		this.interaction.setActive(true);
 		if (!wasActive) this.enterRenderTargets();

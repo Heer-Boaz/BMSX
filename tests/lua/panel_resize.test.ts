@@ -109,7 +109,8 @@ test('Files pointer resizing preserves the active control and its unsubmitted dr
 	const { panel, parts } = fixture(t);
 	const field = inputFocus.createTarget(parts.main.focusTarget, parts.main.scope);
 	let commits = 0, blurs = 0;
-	field.edit = { pending: true, commit: () => { commits++; return false; } };
+	const draft = { pending: true, commit: () => { commits++; return false; }, cancel() { this.pending = false; } };
+	field.edit = draft;
 	t.after(field.onDidBlur(() => { blurs++; }));
 	field.focus();
 	const original = panel.split.ratio, strip = panel.resizeBounds;

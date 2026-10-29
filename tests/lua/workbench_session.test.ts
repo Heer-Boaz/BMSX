@@ -51,6 +51,11 @@ import { BT_TRANSFER_SOURCE } from '../helpers/behavior_transfer_fixture';
 import { ScenarioLabInputSerializer } from '../../ide/workbench/contrib/scenario_lab/editor_serializer';
 import { ScenarioLabController } from '../../ide/workbench/contrib/scenario_lab/controller';
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
+import type { CartEditor } from '../../ide/cart_editor';
+import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
+import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { captureScenarioLabTestView } from '../../ide/workbench/contrib/scenario_lab/view_snapshot';
 import { updateSelectedScenarioNode } from '../../ide/workbench/contrib/scenario_lab/projection';
 
@@ -92,10 +97,15 @@ function fixture(t: TestContext) {
 		resource_view: new ResourceViewerInputSerializer(sources.catalog),
 		scenario_lab: new ScenarioLabInputSerializer(scenario),
 	};
-	t.after(() => { scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
+	const resourcePanel = new ResourcePanelController({ editorParts, isActive: true } as CartEditor, sources.catalog,
+		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3,
+		new ProjectContentIndex(editorTextModelService, sources.catalog,
+			new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), scene.documents));
+	resourcePanel.setFontMetrics(editorViewState.font);
+	t.after(() => { resourcePanel.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
-	return { sources, group, editorParts, mainWorkspace, behavior, scene, scenario, serializers, model, runtime };
+	return { sources, group, editorParts, mainWorkspace, resourcePanel, behavior, scene, scenario, serializers, model, runtime };
 }
 
 test('group round-trip restores ordered clean/dirty views, preview and distinct definitions sharing one hydrated model', async t => {
@@ -125,8 +135,9 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	const dirtySource = f.model.buffer.getText();
 	workspaceDirtyRecords.set(buildWorkspaceDirtyEntryPath('game', TEST_CARTRIDGE_CONTEXT_IDS[0], 'definitions.lua'), { contents: dirtySource, updatedAt: 50 });
 	const generation = JSON.parse(JSON.stringify({ dirtyFiles: [{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua', updatedAt: 50 }],
-		editorParts: f.editorParts.serialize(f.serializers), mainWorkspace: f.mainWorkspace.serialize(), fontVariant: 'tiny', breakpoints: [] }));
-	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, mainWorkspace: f.mainWorkspace,
+		editorParts: f.editorParts.serialize(f.serializers), mainWorkspace: f.mainWorkspace.serialize(),
+		filesBrowser: f.resourcePanel.serialize(), fontVariant: 'tiny', breakpoints: [] }));
+	await applyWorkspaceAutosavePayload({ editorParts: f.editorParts, mainWorkspace: f.mainWorkspace, resourcePanel: f.resourcePanel,
 		async restorePrimaryClient() { return assert.fail('document fixture has no primary contribution'); },
 		editorInputSerializers: f.serializers, setFontVariant() {} },
 		f.sources.catalog, { breakpoints: new RuntimeBreakpoints(f.sources, () => {}) }, generation);

@@ -80,7 +80,8 @@ test('Save from an inactive Source tab publishes only its canonical working copy
 	const source = input.workingCopy.buffer.getText(), other = active.workingCopy.buffer.getText(), pane = group.panes.activePane;
 	let unrelatedCommits = 0;
 	const focused = pane!.commandTarget;
-	focused.edit = { pending: true, commit: () => { unrelatedCommits++; return false; } };
+	const draft = { pending: true, commit: () => { unrelatedCommits++; return false; }, cancel() { this.pending = false; } };
+	focused.edit = draft;
 	t.after(() => { focused.edit = undefined; });
 	secondary(f, group, input); accept(f, 'save');
 	const operation = f.ide.textFileSaves.latestOperation(input.workingCopy);

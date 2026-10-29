@@ -329,3 +329,106 @@ test('publishing Lua at an existing data identity publishes its new catalog clas
 	assert.equal(file(f.model, identity.contextId, identity.path), leaf);
 	assert.equal(resource.source, source);
 });
+
+test('browser mementos retain filtered disclosure, exact folder selection and independent reading without expanding new nodes', t => {
+	const f = fixture(), models = new EditorTextModelService();
+	const content = new ProjectContentIndex(models, f.sources.catalog, new BehaviorRegistrationIndex(models, f.sources.catalog), new SceneSourceDocuments(models, f.sources.catalog));
+	t.after(() => { content.dispose(); models.clear(); f.sources.catalog.dispose(); });
+	f.sources.catalog.registerTextSources(TEST_CARTRIDGE_CONTEXT_IDS[0], [{ type: 'data', resid: 'settings', source_path: 'config/nested/settings.yaml' }]);
+	f.model.sync(f.sources.catalog, 'all', EMPTY_CONTENT, 0);
+	const excluded = file(f.model, TEST_CARTRIDGE_CONTEXT_IDS[0], 'config/nested/settings.yaml'), excludedParent = excluded.parent!;
+	f.model.navigate('left'); f.model.navigate('left');
+	assert.equal(excludedParent.collapsed, true);
+	f.model.sync(f.sources.catalog, 'lua_only', EMPTY_CONTENT, 0);
+	const selected = file(f.model, TEST_CARTRIDGE_CONTEXT_IDS[0], 'deep/inner/main.lua').parent!;
+	f.model.navigate('left'); f.model.navigate('left');
+	f.model.tree.scroll = 1.25; f.model.horizontalScroll = 71;
+	const captured = f.model.captureView(content);
+	assert.equal(f.model.captureView(content, captured), captured, 'unchanged retained browser state reuses its memento');
+	const snapshot = JSON.parse(JSON.stringify(captured));
+	const added = createScenarioTestSourceRecord('new/child.lua', 2, undefined, 'carts/first/new/child.lua');
+	registerLuaSourceRecord(f.cart, added); f.sources.catalog.registerLuaResource(TEST_CARTRIDGE_CONTEXT_IDS[0], added);
+	const restored = new ResourceFilesModel(); restored.tree.layout.visibleRowCount = 4;
+	restored.sync(f.sources.catalog, 'lua_only', EMPTY_CONTENT, 0); restored.restoreView(snapshot, content);
+	assert.equal(restored.selectedNode!.element.kind, 'directory');
+	assert.equal(restored.selectedNode!.element.contextId, selected.element.contextId); assert.equal(restored.selectedNode!.element.path, selected.element.path);
+	assert.equal(restored.selectedNode!.collapsed, true);
+	assert.equal(restored.tree.scroll, 1.25); assert.equal(restored.horizontalScroll, 71);
+	const root = restored.tree.roots.find(node => node.element.contextId === TEST_CARTRIDGE_CONTEXT_IDS[0])!;
+	assert.equal(root.children.find(node => node.element.path === 'new')!.collapsed, true, 'unrecorded topology keeps producer defaults');
+	restored.sync(f.sources.catalog, 'all', EMPTY_CONTENT, 0);
+	const config = root.children.find(node => node.element.path === 'config')!;
+	assert.equal(config.collapsed, false, 'hidden retained ancestors are captured, not just currently projected roots');
+	assert.equal(config.children[0].collapsed, true);
+	assert.deepEqual([...models.models], []);
+});
+
+test('browser recovery never transfers missing declaration selection to its file or a namesake', t => {
+	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('same', {}); fsm.register('same', {})";
+	const sources = createScenarioTestSourceState([
+		createScenarioTestSourceRecord('cartlib/fsm/library.lua', 1, 'return {}'), createScenarioTestSourceRecord('main.lua', 1, source),
+	]);
+	const models = new EditorTextModelService(), content = new ProjectContentIndex(models, sources.catalog,
+		new BehaviorRegistrationIndex(models, sources.catalog), new SceneSourceDocuments(models, sources.catalog));
+	t.after(() => { content.dispose(); models.clear(); sources.catalog.dispose(); });
+	content.sync();
+	const original = new ResourceFilesModel(); original.sync(sources.catalog, 'lua_only', content.entriesByResource, content.revision);
+	const leaf = file(original, TEST_CARTRIDGE_CONTEXT_IDS[0], 'main.lua'); original.toggle(original.tree.rows.indexOf(leaf));
+	const entry = content.entriesFor(leaf.element)[1];
+	original.tree.selectionIndex = original.tree.rows.findIndex(node => node.element.kind === 'definition' && node.element.content === entry);
+	const snapshot = JSON.parse(JSON.stringify(original.captureView(content)));
+	const restored = new ResourceFilesModel(); restored.sync(sources.catalog, 'lua_only', content.entriesByResource, content.revision);
+	restored.restoreView(snapshot, content);
+	assert.ok(restored.selectedNode!.element.kind === 'definition');
+	assert.equal(restored.selectedNode!.element.content, entry);
+	const model = resolveLuaTextFileModel(models, sources.catalog, sources.catalog.resolveResource(leaf.element)!);
+	model.pushEditOperations([{ offset: entry.range.start, deleteLength: entry.range.end - entry.range.start, text: '' }]);
+	content.sync(); restored.sync(sources.catalog, 'lua_only', content.entriesByResource, content.revision);
+	restored.restoreView(snapshot, content);
+	assert.equal(restored.selectedNode, null);
+	assert.equal(content.entriesFor(leaf.element).length, 1, 'a same-labelled declaration still exists but is not the saved occurrence');
+});
+
+test('browser capture observes newer navigation delivered during source publication before reading selection', t => {
+	const source = "-- aa\nlocal fsm=require('cartlib/fsm/library'); fsm.register('same', {})";
+	const sources = createScenarioTestSourceState([
+		createScenarioTestSourceRecord('cartlib/fsm/library.lua', 1, 'return {}'), createScenarioTestSourceRecord('main.lua', 1, source),
+	]);
+	const models = new EditorTextModelService(), content = new ProjectContentIndex(models, sources.catalog,
+		new BehaviorRegistrationIndex(models, sources.catalog), new SceneSourceDocuments(models, sources.catalog));
+	t.after(() => { content.dispose(); models.clear(); sources.catalog.dispose(); });
+	content.sync();
+	const browser = new ResourceFilesModel(); browser.sync(sources.catalog, 'lua_only', content.entriesByResource, content.revision);
+	const leaf = file(browser, TEST_CARTRIDGE_CONTEXT_IDS[0], 'main.lua'); browser.toggle(browser.tree.rows.indexOf(leaf));
+	browser.tree.selectionIndex = browser.tree.rows.findIndex(node => node.element.kind === 'definition');
+	const model = resolveLuaTextFileModel(models, sources.catalog, sources.catalog.resolveResource(leaf.element)!);
+	const releases = [content.onDidChange(() => browser.navigate('home'))];
+	t.after(() => { for (const release of releases) release(); });
+	model.pushEditOperations([{ offset: 3, deleteLength: 2, text: 'bb' }]);
+	const snapshot = browser.captureView(content);
+	assert.equal(browser.selectedNode!.element.kind, 'root'); assert.equal(snapshot.selected!.kind, 'root');
+	const replay = new ResourceFilesModel(); replay.sync(sources.catalog, 'lua_only', content.entriesByResource, content.revision);
+	replay.restoreView(snapshot, content);
+	assert.equal(replay.selectedNode!.element.kind, 'root');
+});
+
+test('browser recovery publishes disclosure changes once without invalidating metrics for reading or selection alone', t => {
+	const f = fixture(), models = new EditorTextModelService();
+	const content = new ProjectContentIndex(models, f.sources.catalog, new BehaviorRegistrationIndex(models, f.sources.catalog), new SceneSourceDocuments(models, f.sources.catalog));
+	t.after(() => { content.dispose(); models.clear(); f.sources.catalog.dispose(); });
+	const leaf = file(f.model, TEST_CARTRIDGE_CONTEXT_IDS[0], 'deep/inner/main.lua');
+	const expanded = f.model.captureView(content), expandedRows = f.model.tree.rows.length;
+	f.model.navigate('left'); f.model.navigate('left');
+	assert.equal(leaf.parent!.collapsed, true); assert.ok(f.model.tree.rows.length < expandedRows);
+	let publications = 0;
+	const release = f.model.onDidChange(() => { publications++; }); t.after(release);
+	const collapsedRevision = f.model.revision;
+	f.model.restoreView(expanded, content);
+	assert.equal(leaf.parent!.collapsed, false); assert.equal(f.model.tree.rows.length, expandedRows);
+	assert.equal(f.model.selectedNode, leaf); assert.equal(f.model.revision, collapsedRevision + 1); assert.equal(publications, 1);
+	const reading = { ...expanded, selected: undefined, scroll: 1.25, hscroll: 42 };
+	f.model.restoreView(reading, content);
+	assert.equal(f.model.selectedNode, null); assert.equal(f.model.tree.scroll, reading.scroll); assert.equal(f.model.horizontalScroll, reading.hscroll);
+	assert.equal(f.model.revision, collapsedRevision + 1, 'the width cache follows topology, not browser reading intent');
+	assert.equal(publications, 1);
+});

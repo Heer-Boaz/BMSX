@@ -33,6 +33,7 @@ import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../../
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
 import type { ProjectContentIndex } from './content_index';
+import type { SerializedResourcePanel } from './session';
 import { findProjectContentEditor, openProjectContent, prepareProjectContent, resolveProjectContentDestination } from './open_actions';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation, type WorkbenchTreeNode } from '../../../ui/tree_view';
@@ -59,6 +60,12 @@ export type ResourcePanelItemMetrics = {
 };
 
 const RESOURCE_SCROLLBARS = ['resourceVertical', 'resourceHorizontal'] as const;
+
+export type ResourcePanelRestoreRequest = {
+	restore(state: SerializedResourcePanel): boolean;
+	focus(): void;
+	dispose(): void;
+};
 
 export type ResourcePanelScrollbars = {
 	resourceVertical: Scrollbar;
@@ -120,6 +127,12 @@ export class ResourcePanelController implements PointerHoverTarget {
 	public readonly resourceHorizontal: Scrollbar;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindResize: () => void;
+	private readonly unbindNativeResize: () => void;
+	private readonly unbindFocus: () => void;
+	private readonly unbindBlur: () => void;
+	private readonly changeListeners = new Set<() => void>();
+	private restoreRevision = 0;
+	private disposed = false;
 	private readonly contextMenu: ResourcePanelContextMenu;
 	private drag: ResourcePanelDrag | undefined;
 	private readonly unbindModelClear: () => void;
@@ -136,12 +149,15 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
 			new InputFocusScope(Symbol('Files resize'), this.focusTarget.scope));
 		this.unbindResize = this.split.onDidChangeRatio(() => this.prepareLayout());
+		this.unbindNativeResize = this.split.onDidResize(() => { this.restoreRevision++; this.changed(); });
+		this.unbindFocus = this.focusTarget.onDidFocus(() => { this.restoreRevision++; this.changed(); });
+		this.unbindBlur = this.focusTarget.onDidBlur(() => this.changed());
 		this.resourceVertical = scrollbars.resourceVertical;
 		this.resourceHorizontal = scrollbars.resourceHorizontal;
 		this.scrollbarController = new ScrollbarController(scrollbars, (kind, scroll) => {
 			if (kind === 'resourceVertical') this.setScroll(scroll); else this.setHScroll(scroll);
 		}, pointerCapture);
-		this.focusTarget.canFocus = () => this.isVisible();
+		this.focusTarget.canFocus = () => this.visible && !this.disposed;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
 		this.contextMenu = new ResourcePanelContextMenu(editor, catalog, content, this);
 		this.unbindModelClear = editorTextModelService.onWillClear(() => {
@@ -164,7 +180,54 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	public dispose(): void {
+		this.disposed = true; this.restoreRevision++;
+		this.unbindFocus(); this.unbindBlur(); this.unbindNativeResize();
 		this.hide(); this.sash.dispose(); this.unbindResize(); this.focusTarget.release(); this.unbindKeyboard(); this.unbindModelClear(); this.content.dispose();
+		this.changeListeners.clear();
+	}
+
+	public onDidChange(listener: () => void): () => void {
+		this.changeListeners.add(listener);
+		return () => { this.changeListeners.delete(listener); };
+	}
+	private changed(): void { for (const listener of this.changeListeners) listener(); }
+	/** New browser interaction retires recovery and an older explicit file-reveal request. */
+	private acceptBrowserIntent(): void { this.restoreRevision++; this.pendingSelectionIdentity = null; }
+
+	public serialize(previous?: SerializedResourcePanel): SerializedResourcePanel {
+		const view = this.files.captureView(this.content, previous?.view), focused = this.isFocused();
+		if (previous !== undefined && previous.visible === this.visible && previous.filter === this.filterMode
+			&& previous.widthRatio === this.split.ratio && previous.focused === focused && previous.view === view) return previous;
+		return { visible: this.visible, filter: this.filterMode, widthRatio: this.split.ratio, focused, view };
+	}
+
+	/** Recovery applies inert browser state once; native focus remains a separate admitted operation. */
+	public beginRestore(): ResourcePanelRestoreRequest {
+		const revision = ++this.restoreRevision, context = this.focusTarget.scope.contextGeneration;
+		const interaction = inputFocus.interactionRevision;
+		let active = true, applied = false, focused = false;
+		const isCurrent = () => active && !this.disposed && this.restoreRevision === revision
+			&& this.focusTarget.scope.contextGeneration === context;
+		return {
+			restore: state => {
+				if (!isCurrent() || applied) return false;
+				applied = true; focused = state.focused;
+				this.pendingSelectionIdentity = null;
+				this.visible = state.visible; this.filterMode = state.filter; this.split.ratio = state.widthRatio;
+				this.content.sync();
+				if (!isCurrent()) return false;
+				this.files.sync(this.catalog, this.filterMode, this.content.entriesByResource, this.content.revision);
+				if (!isCurrent()) return false;
+				this.files.restoreView(state.view, this.content);
+				if (!isCurrent()) return false;
+				this.updateFilesMetrics(); this.prepareLayout();
+				return isCurrent();
+			},
+			focus: () => {
+				if (applied && focused && isCurrent() && inputFocus.interactionRevision === interaction && this.visible) this.focusTarget.focus();
+			},
+			dispose: () => { active = false; },
+		};
 	}
 
 	public update(now: number): void { this.drag?.advance(now); }
@@ -201,6 +264,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 	togglePanel(): void { this.visible ? this.hide() : this.show(); }
 
 	show(): void {
+		this.restoreRevision++;
+		const changed = !this.visible;
 		this.drag?.cancel();
 		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		pointerHover.release(this);
@@ -208,22 +273,29 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.visible = true;
 		this.refresh();
 		this.focusTarget.focus();
+		if (changed) this.changed();
 	}
 
 	hide(): void {
+		this.acceptBrowserIntent();
+		const changed = this.visible;
 		this.drag?.cancel();
 		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		this.scrollbarController.cancel();
 		pointerHover.release(this);
 		this.visible = false;
+		this.setFocused(false);
 		this.prepareLayout();
+		if (changed) this.changed();
 	}
 
 	toggleFilterMode(): void {
+		this.restoreRevision++;
 		this.drag?.cancel();
 		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		this.filterMode = this.filterMode === 'lua_only' ? 'all' : 'lua_only';
 		if (this.visible) this.refresh();
+		this.changed();
 		const modeLabel = this.filterMode === 'lua_only' ? 'Lua resources' : 'all resources';
 		showEditorMessage(`Files panel: showing ${modeLabel}`, 'info', 2.5);
 	}
@@ -245,11 +317,13 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	setSelectionIndex(index: number): void {
+		this.acceptBrowserIntent();
 		const next = clampResourcePanelSelectionIndex(index, this.itemCount);
 		if (next === this.selectionIndex) return;
 		this.selectionIndex = next;
 		this.hoverIndex = -1;
 		this.ensureSelectionVisible();
+		this.changed();
 	}
 
 	/** Press retains a real tree subject; neither hover nor a pending click produces an editor. */
@@ -298,19 +372,28 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	setScroll(scroll: number): void {
+		this.acceptBrowserIntent();
+		const previous = this.scroll;
 		const layout = this.prepareLayout();
 		if (layout !== null) this.scroll = clamp(scroll, 0, layout.maxVerticalScroll);
+		if (previous !== this.scroll) this.changed();
 	}
 
 	setHScroll(scroll: number): void {
+		this.acceptBrowserIntent();
+		const previous = this.hscroll;
 		const layout = this.prepareLayout();
 		if (layout !== null) this.hscroll = clamp(scroll, 0, layout.maxHorizontalScroll);
+		if (previous !== this.hscroll) this.changed();
 	}
 
 	scrollBy(amount: number): void {
+		this.acceptBrowserIntent();
+		const previous = this.scroll, horizontal = this.hscroll;
 		const layout = this.prepareLayout();
 		if (layout !== null) this.scroll = clamp(this.scroll + amount, 0, layout.maxVerticalScroll);
 		this.clampHScroll();
+		if (previous !== this.scroll || horizontal !== this.hscroll) this.changed();
 	}
 
 	openSelected(placement: 'default' | 'side' = 'default', editorContext?: InputFocusTarget): void {
@@ -358,7 +441,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	public toggleFileDisclosure(node: WorkbenchTreeNode<FileElement>): void {
-		if (this.files.toggle(this.files.tree.rows.indexOf(node))) { this.updateFilesMetrics(); this.ensureSelectionVisible(); }
+		this.acceptBrowserIntent();
+		if (this.files.toggle(this.files.tree.rows.indexOf(node))) { this.updateFilesMetrics(); this.ensureSelectionVisible(); this.changed(); }
 	}
 
 	public showContextMenu(index: number, x: number, y: number, keyboard: boolean): void {
@@ -394,14 +478,17 @@ export class ResourcePanelController implements PointerHoverTarget {
 			if (changed || reveal) pointerHover.release(this);
 		}
 		if (this.prepareLayout() !== null && reveal) this.ensureSelectionVisible();
+		if (reveal) this.changed();
 		return editorViewState.editorAreaLeft !== previousInset;
 	}
 
 	public navigateFiles(command: WorkbenchTreeNavigation): void {
+		this.acceptBrowserIntent();
 		this.prepareLayout();
 		const result = this.files.navigate(command);
 		if (result === WorkbenchTreeNavigationResult.Collapse) this.updateFilesMetrics();
 		if (result !== WorkbenchTreeNavigationResult.None) this.ensureSelectionVisible();
+		if (result !== WorkbenchTreeNavigationResult.None) this.changed();
 	}
 
 	private updateFilesMetrics(): void {
@@ -417,6 +504,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 
 	queuePendingSelection(identity: ResourceIdentity): void {
+		this.restoreRevision++;
 		this.pendingSelectionIdentity = identity;
 		this.selectionRevealRevision = -1;
 	}
@@ -427,6 +515,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		if (!this.files.reveal(this.pendingSelectionIdentity)) return;
 		this.pendingSelectionIdentity = null;
 		this.updateFilesMetrics(); this.ensureSelectionVisible();
+		this.changed();
 	}
 
 	public ensureSelectionVisible(): void {
@@ -454,7 +543,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		} else {
 			pointerHover.release(this);
 			this.retireResize();
-			this.setFocused(false);
+			if (!this.visible) this.focusTarget.release();
 		}
 		const tree = this.files.tree.layout;
 		tree.contentLeft = layout.contentLeft; tree.contentTop = layout.contentTop;

@@ -72,7 +72,8 @@ test('viewport projection, minimal reveal and range stay at the retained axis ow
 test('thumb capture travels outside its track without focusing or accepting a draft', t => {
 	const f = fixture(t);
 	let commits = 0;
-	f.parent.edit = { pending: true, commit: () => { commits += 1; return true; } };
+	const draft = { pending: true, commit() { commits += 1; this.pending = false; return true; }, cancel() { this.pending = false; } };
+	f.parent.edit = draft;
 	f.parent.onDidBlur(() => f.parent.edit!.commit());
 	f.pointer(121, 35, PRIMARY, PRIMARY);
 	assert.equal(f.capture.active, true); assert.equal(f.focus.target, f.parent);

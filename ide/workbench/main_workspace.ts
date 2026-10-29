@@ -335,7 +335,7 @@ export class MainWorkspace {
 		let disposed = false, restored = false;
 		let state: SerializedMainWorkspace;
 		let activityRevision: number;
-		const current = () => !disposed && !this.surface.retired && this.presented && !this.resetting && this.requestRevision === generation;
+		const current = () => !disposed && !this.surface.retired && !this.resetting && this.requestRevision === generation;
 		return {
 			isCurrent: current,
 			restore: async (snapshot, factory) => {
@@ -376,7 +376,7 @@ export class MainWorkspace {
 				}
 			},
 			focusClient: () => {
-				if (!restored || !current() || inputFocus.interactionRevision !== interaction) return;
+				if (!restored || !current() || !this.presented || inputFocus.interactionRevision !== interaction) return;
 				if (state.activeClient === 'primary') this.focusPrimary();
 				else if (state.activeClient === 'activity' && this.activityDisplayed && state.activityId !== undefined
 					&& this.activities.revision === activityRevision && this.activities.selectedId === state.activityId) this.openActivity(state.activityId);
@@ -792,6 +792,11 @@ export class MainWorkspace {
 
 	public suspend(): void {
 		this.presented = false;
+		const focused = inputFocus.target;
+		if (focused !== null && this.scope.contains(focused.scope)) {
+			focused.edit?.cancel();
+			if (inputFocus.target === focused) inputFocus.setTarget(null);
+		}
 		this.activityWindow.setPresented(false);
 		this.cancelRequest();
 		this.primaryScope.retireContext();

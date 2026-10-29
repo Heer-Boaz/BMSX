@@ -41,6 +41,7 @@ function fixture(t: TestContext) {
 		workspaceDirtyRecords.clear();
 		for (const [path, record] of dirty.dirtyRecords) workspaceDirtyRecords.set(path, record);
 		return JSON.parse(JSON.stringify({ mainWorkspace, dirtyFiles: dirty.dirtyFiles,
+			filesBrowser: f.editor.resourcePanel.serialize(),
 			editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
 			fontVariant: f.editor.fontVariant, breakpoints: f.ide.debugger.breakpoints.serialize() }));
 	};

@@ -137,7 +137,8 @@ test('release rechecks a stationary target when a modal now blocks its presentat
 test('body-edge drop creates a real receiver split only after source draft admission', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, source = f.firstGroup, receiver = f.secondGroup;
 	const snapshot = bodyPoint(receiver, 'right'), target = f.first.commandTarget;
-	f.first.focus(); target.edit = { pending: true, commit: () => false };
+	const draft = { pending: true, commit: () => false, cancel() { this.pending = false; } };
+	f.first.focus(); target.edit = draft;
 	parts.dropTarget.update({ kind: 'editor', model: source.model, input: f.firstInput }, snapshot, 0, false);
 	assert.equal(f.secondPart.groups.length, 1);
 	parts.dropTarget.drop({ kind: 'editor', model: source.model, input: f.firstInput }, snapshot, 1);

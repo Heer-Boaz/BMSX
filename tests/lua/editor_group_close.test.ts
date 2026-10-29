@@ -38,7 +38,8 @@ test('a rejected source draft prevents Close Group without removing its editors 
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, group = parts.main.activeGroup;
 	group.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
 	const target = group.panes.activePane!.commandTarget;
-	target.edit = { pending: true, commit: () => false };
+	const draft = { pending: true, commit: () => false, cancel() { this.pending = false; } };
+	target.edit = draft;
 	t.after(() => { target.edit = undefined; });
 	const input = group.model.activeTab;
 	assert.equal(await parts.closeGroup(group, target), false);

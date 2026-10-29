@@ -60,7 +60,8 @@ test('concrete draft refusal prevents any activity host publication or focus ret
 	const f = fixture(t), { main, panel } = f, target = panel.focusTarget;
 	const generation = panel.scope.contextGeneration;
 	// The concrete focus owner supplies draft admission; Main must not substitute a pane-wide success stub.
-	target.edit = { pending: true, commit: () => false };
+	const draft = { pending: true, commit: () => false, cancel() { this.pending = false; } };
+	target.edit = draft;
 	assert.equal(main.setActivityPlacement('floatingWindow'), false);
 	assert.equal(main.activityPlacement, 'dockedMain'); assert.equal(main.activityWindow.surface, undefined);
 	assert.ok(inputFocus.admittedTarget === target); assert.equal(panel.scope.contextGeneration, generation);

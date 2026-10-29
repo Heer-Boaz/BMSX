@@ -103,6 +103,13 @@ import { WORKBENCH_RESOURCE_VIEWER_ID } from '../../ide/workbench/contrib/resour
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
 import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { createTestEditorGroup, createTestEditorWorkspace } from '../helpers/editor_panes';
+import type { CartEditor } from '../../ide/cart_editor';
+import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
+import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
+import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
+import { editorViewState } from '../../ide/editor/ui/view/state';
 
 class MockStorage implements KeyValueStorage {
 	private readonly store = new Map<string, string>();
@@ -404,6 +411,8 @@ function payload(
 			activityPlacement: 'dockedMain', activityWindow: { requestedBounds: { left: 0, top: 0, right: 640, bottom: 240 },
 				placement: 'normal', minimized: false },
 			scrollX: 0, scrollY: 0, activeClient: 'documents', activeRegion: 'hierarchy' },
+		filesBrowser: { visible: false, filter: 'lua_only', widthRatio: 0.3, focused: false,
+			view: { selected: undefined, disclosure: [], scroll: 0, hscroll: 0 } },
 		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
 	};
@@ -455,9 +464,10 @@ function editorStub(
 		game_view: unused, event_viewer: unused, terminal: unused, behavior_lens: unused, scene_editor: unused, scenario_lab: unused,
 		code_editor: new CodeEditorInputSerializer(sources.catalog), resource_view: new ResourceViewerInputSerializer(sources.catalog),
 	};
-	return {
+	const editor: Pick<CartEditor, 'fontVariant' | 'isActive' | 'editorInputSerializers' | 'editorParts' | 'mainWorkspace'
+		| 'restorePrimaryClient' | 'setFontVariant' | 'updateViewport'> = {
 		fontVariant: DEFAULT_FONT_VARIANT,
-		resourcePanel: null,
+		isActive: true,
 		editorInputSerializers,
 		editorParts,
 		mainWorkspace,
@@ -465,6 +475,13 @@ function editorStub(
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};
+	const resourcePanel = new ResourcePanelController(editor as CartEditor, sources.catalog,
+		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3,
+		new ProjectContentIndex(editorTextModelService, sources.catalog,
+			new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
+	resourcePanel.setFontMetrics(editorViewState.font);
+	t.after(() => resourcePanel.dispose());
+	return Object.assign(editor, { resourcePanel });
 }
 
 async function startAutosaveSession(t: TestContext, storage: MockStorage, context: StudioSourceContext = TEST_SOURCE_CONTEXT, files: WorkspaceRecordProvider = workspaceFiles, recoverySessionId = TEST_RECOVERY_SESSION) {
@@ -1092,6 +1109,49 @@ test('idle workspace has no periodic autosave callback or materialization work',
 	assert.equal(server.requests.length, requestCount);
 	assert.equal(clock.activeCount, 0);
 });
+
+for (const checkpoint of ['autosave tick', 'local checkpoint'] as const) {
+	for (const publication of ['serialization', 'local state write'] as const) {
+		test(`${checkpoint} retains same-kind browser work published during ${publication}`, async t => {
+			const storage = new MockStorage();
+			installBrowserWorkspace(t, storage);
+			const { editor } = await startAutosaveSession(t, storage);
+			requestWorkspaceAutosave(WorkspaceAutosaveChange.All);
+			await flushRequestedAutosave();
+			const panel = editor.resourcePanel;
+			const stateKey = buildWorkspaceStorageKey(TEST_SOURCE_CONTEXT.projectRoot, workspaceStatePath(TEST_SOURCE_CONTEXT));
+			let published = false;
+			if (publication === 'serialization') {
+				const serialize = panel.serialize.bind(panel);
+				t.mock.method(panel, 'serialize', (...args: Parameters<typeof serialize>) => {
+					const state = serialize(...args);
+					if (!published) { published = true; panel.toggleFilterMode(); }
+					return state;
+				});
+			} else {
+				const write = storage.setItem.bind(storage);
+				t.mock.method(storage, 'setItem', (key: string, value: string) => {
+					write(key, value);
+					if (key === stateKey && !published) { published = true; panel.toggleFilterMode(); }
+				});
+			}
+			panel.toggleFilterMode();
+			if (checkpoint === 'autosave tick') await flushRequestedAutosave();
+			else persistWorkspaceSessionLocally();
+			assert.equal(published, true);
+			assert.equal(workspaceState.localGeneration!.payload.filesBrowser.filter, 'all');
+			assert.ok(workspaceState.requestedRevision > workspaceState.localRevision);
+			assert.ok(workspaceState.pendingChanges & WorkspaceAutosaveChange.FilesBrowser);
+			await flushRequestedAutosave();
+			assert.equal(workspaceState.localGeneration!.payload.filesBrowser.filter, 'lua_only');
+			assert.equal(workspaceState.localRevision, workspaceState.requestedRevision);
+			assert.equal(workspaceState.remoteRevision, workspaceState.localRevision);
+			assert.equal(workspaceState.pendingChanges, WorkspaceAutosaveChange.None);
+			const saved: WorkspaceAutosavePayload = JSON.parse(readLocalWorkspaceRecord(storage, TEST_SOURCE_CONTEXT.projectRoot, workspaceStatePath(TEST_SOURCE_CONTEXT))!.contents);
+			assert.equal(saved.filesBrowser.filter, 'lua_only');
+		});
+	}
+}
 
 test('workspace part recovery preserves independent views and requested placement over one hydrated dirty model', async t => {
 	const storage = new MockStorage();

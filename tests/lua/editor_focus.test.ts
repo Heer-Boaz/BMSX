@@ -177,7 +177,8 @@ test('input cancellation revokes pending clipboard edits without semantic blur o
 	let blurs = 0, commits = 0, keyboardCancellations = 0;
 	field.focusTarget.onDidBlur(() => blurs++);
 	field.focusTarget.bindKeyboard(() => {}, () => keyboardCancellations++);
-	field.focusTarget.edit = { pending: true, commit() { commits++; return true; } };
+	const draft = { pending: true, commit() { commits++; this.pending = false; return true; }, cancel() { this.pending = false; } };
+	field.focusTarget.edit = draft;
 	field.focusTarget.focus();
 	const pending = executeClipboardAction(clipboard, 'paste', field.focusTarget);
 	inputFocus.cancelInput();

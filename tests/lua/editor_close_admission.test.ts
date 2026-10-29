@@ -153,7 +153,7 @@ test('closing a clean background view does not try to commit the focused sibling
 	target.focus();
 	const priorEdit = target.edit;
 	let attempts = 0;
-	const draft = { pending: true, commit() { attempts++; return false; } };
+	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
 	t.after(() => { target.edit = priorEdit; });
 	const closing = f.firstGroup.close(f.firstInput.id);
@@ -189,7 +189,7 @@ test('closing a non-last dirty view leaves the focused shared-model sibling draf
 	target.focus();
 	const source = model.buffer.getText(), priorEdit = target.edit;
 	let attempts = 0;
-	const draft = { pending: true, commit() { attempts++; return false; } };
+	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
 	t.after(() => { target.edit = priorEdit; });
 	const closing = f.firstGroup.close(f.firstInput.id);
@@ -391,7 +391,7 @@ test('an invalid draft in the closing Source control vetoes close without losing
 	target.textInput!.replaceText(6, 11, 'retained');
 	const source = model.buffer.getText(), priorEdit = target.edit;
 	let attempts = 0;
-	const draft = { pending: true, commit() { attempts++; return false; } };
+	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
 	t.after(() => { target.edit = priorEdit; });
 	assert.equal(await f.firstGroup.close(f.firstInput.id), false);
@@ -411,7 +411,7 @@ test('an invalid focused sibling draft vetoes root-modal close admission without
 	target.focus();
 	const priorEdit = target.edit;
 	let attempts = 0;
-	const draft = { pending: true, commit() { attempts++; return false; } };
+	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
 	t.after(() => { target.edit = priorEdit; });
 	assert.equal(await f.editor.editorParts.closeController.close([{ group: f.firstGroup, input: f.firstInput }]), false);
@@ -436,7 +436,7 @@ test('retiring a saved view does not commit a sibling draft entered while its Sa
 	target.focus();
 	const priorEdit = target.edit;
 	let attempts = 0;
-	const draft = { pending: true, commit() { attempts++; return false; } };
+	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
 	target.edit = draft;
 	t.after(() => { target.edit = priorEdit; });
 	f.files.writes[0].complete();
@@ -454,7 +454,7 @@ test('a close reentered by the focused draft commit joins its original operation
 	target.focus();
 	const priorEdit = target.edit, version = model.version;
 	let pending = true, attempts = 0, reentered: Promise<boolean> | undefined;
-	target.edit = { get pending() { return pending; }, commit() {
+	target.edit = { get pending() { return pending; }, cancel() { pending = false; }, commit() {
 		attempts++; pending = false;
 		target.textInput!.replaceText(6, 11, 'published');
 		reentered = f.firstGroup.close(f.firstInput.id);

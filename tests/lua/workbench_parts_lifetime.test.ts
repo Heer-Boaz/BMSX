@@ -720,9 +720,9 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 	f.editor.deactivate();
 	assert.equal(panel.visible, true, 'suspending Studio revokes presentation, not explicit open intent');
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
-	assert.equal(panel.isFocused(), false); assert.equal(panel.getBounds(), null);
+	assert.equal(panel.isFocused(), true); assert.equal(panel.getBounds(), null);
 	assert.equal(panel.selectionIndex, selected); assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll);
-	panel.setFocused(true); assert.equal(panel.isFocused(), false, 'an unavailable part cannot regain focus');
+	assert.equal(f.editor.acceptsInput, false, 'retained native focus does not admit input while Studio is suspended');
 	f.editor.activate(); f.editor.update(0);
 	assert.equal(panel.visible, true); assert.equal(panel.selectionIndex, selected);
 	assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll); assert.ok(panel.files.selectedNode === filesNode);

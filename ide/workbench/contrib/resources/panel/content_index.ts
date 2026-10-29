@@ -1,11 +1,11 @@
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../../toolchain/ts/lua/semantic/model';
 import type { LuaSourceRange, LuaTableConstructorExpression } from '../../../../../toolchain/ts/lua/syntax/ast';
 import { stringLiteralValue } from '../../../../../toolchain/ts/lua/syntax/literals';
-import { resourceIdentityKey, type ResourceIdentity, type RuntimeResource } from '../../../../common/resource';
+import { resourceIdentityEquals, resourceIdentityKey, type ResourceIdentity, type RuntimeResource } from '../../../../common/resource';
 import type { EditorTextModelService } from '../../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../../editor/text/text_change';
-import { getTextSnapshot } from '../../../../editor/text/source_text';
+import { computeTextSnapshotFingerprint, getTextSnapshot, type TextSnapshotFingerprint } from '../../../../editor/text/source_text';
 import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { EditorLuaSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/project';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
@@ -15,6 +15,7 @@ import type { BehaviorRegistrationIndex } from '../../behavior_lens/registration
 import { collectLuaPrograms, type LuaProgramKind, type LuaProgramOccurrence } from '../../lua_program/source';
 import type { SceneSourceDefinition, SceneSourceDocument } from '../../scene_editor/model';
 import type { SceneSourceDocuments } from '../../scene_editor/source_documents';
+import type { TextFileModelSnapshot } from '../../../services/working_copy/text_file_model';
 
 type ProjectContentSource = {
 	readonly projectContextId: string;
@@ -32,6 +33,15 @@ export type ProjectContentEntry = ProjectContentSource & (
 	| { readonly kind: 'animation'; readonly definition: AnimationDefinitionSource }
 	| { readonly kind: 'scene'; readonly document: SceneSourceDocument; readonly definition: SceneSourceDefinition }
 );
+
+/** Persisted declaration correspondence, never a name, semantic pointer or command capability. */
+export type ProjectContentReference = {
+	readonly projectContextId: string;
+	readonly kind: ProjectContentEntry['kind'];
+	readonly owner: TextFileModelSnapshot;
+	readonly browser: TextFileModelSnapshot;
+	readonly range: Readonly<TrackedTextRange>;
+};
 
 type EntryRecord = {
 	readonly entry: ProjectContentEntry;
@@ -60,6 +70,7 @@ export class ProjectContentIndex {
 	private readonly records = new Map<ProjectContentEntry, EntryRecord>();
 	private readonly recordsByOwner = new Map<string, Set<EntryRecord>>();
 	private readonly tracking = new Map<EditorTextModel, ModelTracking>();
+	private readonly fingerprints = new WeakMap<FileSemanticData, TextSnapshotFingerprint>();
 	public entriesByResource: ReadonlyMap<string, readonly ProjectContentEntry[]> = new Map();
 	private readonly subscriptions: readonly (() => void)[];
 	private catalogRevision = -1;
@@ -145,6 +156,45 @@ export class ProjectContentIndex {
 	public isCurrent(entry: ProjectContentEntry): boolean {
 		this.sync();
 		return this.records.has(entry);
+	}
+
+	/** Read the synchronized producer generation without publishing callbacks or admitting working copies. */
+	public captureReference(entry: ProjectContentEntry, previous?: ProjectContentReference): ProjectContentReference | undefined {
+		const record = this.records.get(entry);
+		if (record === undefined) return undefined;
+		if (previous !== undefined && this.matchesReference(record, previous)) return previous;
+		const browser = entry.kind === 'animation' && entry.definition.consumer !== undefined ? entry.definition.consumer : record.analysis;
+		return { projectContextId: entry.projectContextId, kind: entry.kind,
+			owner: { resource: { contextId: entry.ownerResource.contextId, path: entry.ownerResource.path }, fingerprint: this.fingerprint(record.analysis) },
+			browser: { resource: { contextId: entry.browserResource.contextId, path: entry.browserResource.path }, fingerprint: this.fingerprint(browser) },
+			range: { ...entry.range } };
+	}
+
+	/** Query the synchronized generation; recovery performs source publication before any view writes. */
+	public resolveReference(reference: ProjectContentReference): ProjectContentEntry | undefined {
+		for (const entry of this.entriesFor(reference.browser.resource)) if (this.matchesReference(this.records.get(entry)!, reference)) return entry;
+		return undefined;
+	}
+
+	private matchesReference(record: EntryRecord, reference: ProjectContentReference): boolean {
+		const entry = record.entry;
+		if (entry.projectContextId !== reference.projectContextId || entry.kind !== reference.kind
+			|| !resourceIdentityEquals(entry.ownerResource, reference.owner.resource)
+			|| !resourceIdentityEquals(entry.browserResource, reference.browser.resource)
+			|| entry.range.start !== reference.range.start || entry.range.end !== reference.range.end) return false;
+		const browser = entry.kind === 'animation' && entry.definition.consumer !== undefined ? entry.definition.consumer : record.analysis;
+		const ownerFingerprint = this.fingerprint(record.analysis), browserFingerprint = this.fingerprint(browser);
+		return ownerFingerprint.length === reference.owner.fingerprint.length && ownerFingerprint.hash === reference.owner.fingerprint.hash
+			&& browserFingerprint.length === reference.browser.fingerprint.length && browserFingerprint.hash === reference.browser.fingerprint.hash;
+	}
+
+	private fingerprint(file: FileSemanticData): TextSnapshotFingerprint {
+		let fingerprint = this.fingerprints.get(file);
+		if (fingerprint === undefined) {
+			fingerprint = computeTextSnapshotFingerprint(file.source);
+			this.fingerprints.set(file, fingerprint);
+		}
+		return fingerprint;
 	}
 
 	public dispose(): void {

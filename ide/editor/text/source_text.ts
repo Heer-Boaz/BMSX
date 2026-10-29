@@ -4,6 +4,11 @@ import { hashText } from '../../../machine/ts/common/byte_hex_string';
 /** Non-cryptographic content fingerprint for source-dependent view mementos. */
 export type TextSnapshotFingerprint = { readonly length: number; readonly hash: number };
 
+/** Immutable source generations and editable buffers use the same provenance representation. */
+export function computeTextSnapshotFingerprint(text: string): TextSnapshotFingerprint {
+	return { length: text.length, hash: hashText(text) };
+}
+
 type TextSnapshotCacheEntry = {
 	v: number;
 	s: string | null;
@@ -37,7 +42,7 @@ export function getTextSnapshotFingerprint(buffer: TextBuffer): TextSnapshotFing
 	const entry = getSnapshotCacheEntry(buffer);
 	if (entry.fingerprint === undefined) {
 		const text = getTextSnapshot(buffer);
-		entry.fingerprint = { length: text.length, hash: hashText(text) };
+		entry.fingerprint = computeTextSnapshotFingerprint(text);
 	}
 	return entry.fingerprint;
 }

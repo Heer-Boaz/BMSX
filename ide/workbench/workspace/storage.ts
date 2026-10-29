@@ -51,14 +51,17 @@ let clock: HostClock = null;
 let logOutput: LogOutput = null;
 let unsubscribeEditorParts: (() => void) | undefined;
 let unsubscribeMainWorkspace: (() => void) | undefined;
+let unsubscribeFilesBrowser: (() => void) | undefined;
 let unsubscribeModelSaved: (() => void) | undefined;
 
 export async function shutdownWorkspaceStorage(): Promise<void> {
 	unsubscribeEditorParts?.();
 	unsubscribeMainWorkspace?.();
+	unsubscribeFilesBrowser?.();
 	unsubscribeModelSaved?.();
 	unsubscribeEditorParts = undefined;
 	unsubscribeMainWorkspace = undefined;
+	unsubscribeFilesBrowser = undefined;
 	unsubscribeModelSaved = undefined;
 	cancelWorkspaceAutosave();
 	try {
@@ -258,6 +261,7 @@ export async function restoreWorkspaceStorageSession(
 	debuggerState = runtimeDebuggerState;
 	unsubscribeEditorParts = editor.editorParts.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
 	unsubscribeMainWorkspace = editor.mainWorkspace.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
+	unsubscribeFilesBrowser = editor.resourcePanel.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.FilesBrowser));
 	unsubscribeModelSaved = editorTextModelService.onDidSaveModel(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles));
 	if (restorePayload !== payload) {
 		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
@@ -316,7 +320,7 @@ export function runWorkspaceAutosaveTick(): Promise<void> | void {
 		);
 		workspaceState.localGeneration = generation;
 		workspaceState.localRevision = targetRevision;
-		workspaceState.pendingChanges &= ~changes;
+		if (workspaceState.requestedRevision === targetRevision) workspaceState.pendingChanges &= ~changes;
 		if (generation === previousGeneration
 			&& workspaceState.remoteRevision === previousLocalRevision) {
 			workspaceState.remoteRevision = targetRevision;
@@ -365,14 +369,16 @@ export function persistWorkspaceSessionLocally(): void {
 }
 
 function commitRequestedWorkspaceSessionLocally(): void {
+	const targetRevision = workspaceState.requestedRevision;
+	const changes = workspaceState.pendingChanges;
 	workspaceState.localGeneration = commitWorkspaceSessionLocally(
 		storage,
 		clock,
 		editor,
 		catalog,
 		debuggerState,
-		workspaceState.pendingChanges,
+		changes,
 	);
-	workspaceState.localRevision = workspaceState.requestedRevision;
-	workspaceState.pendingChanges = WorkspaceAutosaveChange.None;
+	workspaceState.localRevision = targetRevision;
+	if (workspaceState.requestedRevision === targetRevision) workspaceState.pendingChanges &= ~changes;
 }

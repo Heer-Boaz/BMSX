@@ -61,6 +61,9 @@ export function commitWorkspaceSessionLocally(
 	const editorParts = !previousGeneration || rebuildDirtyFiles || (changes & WorkspaceAutosaveChange.EditorSession)
 		? editor.editorParts.serialize(editor.editorInputSerializers, previousGeneration?.payload.editorParts)
 		: previousGeneration.payload.editorParts;
+	const filesBrowser = !previousGeneration || rebuildDirtyFiles || (changes & WorkspaceAutosaveChange.FilesBrowser)
+		? editor.resourcePanel.serialize(previousGeneration?.payload.filesBrowser)
+		: previousGeneration.payload.filesBrowser;
 
 	const breakpoints = !previousGeneration || (changes & WorkspaceAutosaveChange.Breakpoints)
 		? debuggerState.breakpoints.serialize()
@@ -72,6 +75,7 @@ export function commitWorkspaceSessionLocally(
 		&& dirtyFiles === previousGeneration.payload.dirtyFiles
 		&& editorParts === previousGeneration.payload.editorParts
 		&& mainWorkspace === previousGeneration.payload.mainWorkspace
+		&& filesBrowser === previousGeneration.payload.filesBrowser
 		&& breakpoints === previousGeneration.payload.breakpoints
 		&& fontVariant === previousGeneration.payload.fontVariant) {
 		return previousGeneration;
@@ -80,6 +84,7 @@ export function commitWorkspaceSessionLocally(
 		dirtyFiles,
 		editorParts,
 		mainWorkspace,
+		filesBrowser,
 		breakpoints,
 		fontVariant,
 	};

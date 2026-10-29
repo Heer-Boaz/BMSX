@@ -11,7 +11,7 @@ import {
 } from './models';
 
 export async function applyWorkspaceAutosavePayload(
-	editor: Pick<CartEditor, 'editorParts' | 'editorInputSerializers' | 'mainWorkspace' | 'restorePrimaryClient' | 'setFontVariant'>,
+	editor: Pick<CartEditor, 'editorParts' | 'editorInputSerializers' | 'mainWorkspace' | 'resourcePanel' | 'restorePrimaryClient' | 'setFontVariant'>,
 	catalog: WorkspaceSourceCatalog,
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
@@ -20,18 +20,21 @@ export async function applyWorkspaceAutosavePayload(
 	editorTextModelService.clear();
 	const primary = editor.mainWorkspace.beginRestore();
 	const documents = editor.editorParts.beginRestore();
+	const files = editor.resourcePanel.beginRestore();
 	try {
 		editor.setFontVariant(payload.fontVariant);
 		await restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords);
+		const restoredFiles = files.restore(payload.filesBrowser);
 		const primaryRestored = primary.restore(payload.mainWorkspace, (record, regions, scope, isCurrent) =>
 			editor.restorePrimaryClient(record, regions, scope, isCurrent));
 		const documentsRestored = documents.restore(payload.editorParts, editor.editorInputSerializers,
-			{ preserveFocus: payload.editorParts.active === 0 && payload.mainWorkspace.activeClient !== 'documents' });
+			{ preserveFocus: payload.filesBrowser.focused || payload.editorParts.active === 0 && payload.mainWorkspace.activeClient !== 'documents' });
 		const [restoredPrimary, restoredDocuments] = await Promise.all([primaryRestored, documentsRestored]);
+		if (restoredFiles && payload.filesBrowser.focused) files.focus();
 		if (!restoredDocuments) return;
-		if (restoredPrimary && payload.editorParts.active === 0) primary.focusClient();
+		if (!payload.filesBrowser.focused && restoredPrimary && payload.editorParts.active === 0) primary.focusClient();
 		debuggerState.breakpoints.restore(payload.breakpoints);
-	} finally { primary.dispose(); documents.dispose(); }
+	} finally { primary.dispose(); documents.dispose(); files.dispose(); }
 }
 
 export function hydrateDirtyFiles(

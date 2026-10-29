@@ -511,6 +511,11 @@ export class EditorPart {
 		this.quickInput.update(); this.actionPrompt.update();
 	}
 	public suspend(): void {
+		const focused = inputFocus.target;
+		if (focused !== null && this.scope.contains(focused.scope)) {
+			focused.edit?.cancel();
+			if (inputFocus.target === focused) inputFocus.setTarget(null);
+		}
 		this.scrollbarControl.cancel();
 		this.quickInput.hide(false); this.actionPrompt.close('cancel', false);
 		for (const group of this.groups) { pointerCapture.cancelScope(group.captureScope); pointerCapture.cancelScope(group.tabScope); }

@@ -135,6 +135,49 @@ test('hiding Studio detaches Main control authority while retaining its exact su
 	assert.equal(invocation.isEnabled(), false, 'the old attachment is never revived by showing Studio again');
 });
 
+test('Main suspension cancels its actual pending field before blur and preserves unrelated Source focus published by cancellation', async t => {
+	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
+	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
+	const field = client.details.control.controls[0], selected = client.consumer.selection, version = f.model.version;
+	field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+	assert.equal(field.pending, true);
+	const cancel = field.cancel.bind(field);
+	const cancellation = t.mock.method(field, 'cancel', () => { cancel(); f.second.focus(); });
+	main.suspend();
+	assert.ok(cancellation.mock.callCount() > 0); assert.equal(field.pending, false);
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.version, version); assert.equal(f.model.dirty, false);
+	assert.ok(inputFocus.target === f.second.commandTarget && inputFocus.admittedTarget === f.second.commandTarget);
+	assert.ok(main.primary === client && client.consumer.selection === selected);
+	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false);
+	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
+});
+
+test('floating editor-part suspension cancels its native draft before blur without clearing cancellation-published sibling Source focus', t => {
+	const f = createActualSourcePanes(t), target = f.first.commandTarget, model = f.firstInput.workingCopy;
+	const previous = target.edit, version = model.version;
+	let pending = true, cancellations = 0, commits = 0;
+	const edit = {
+		get pending() { return pending; },
+		commit(): boolean {
+			commits++;
+			if (pending) { pending = false; model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- accepted native draft\n' }]); }
+			return true;
+		},
+		cancel(): void { cancellations++; pending = false; f.second.focus(); },
+	};
+	target.edit = edit;
+	const unbindBlur = target.onDidBlur(() => { edit.commit(); });
+	t.after(() => { unbindBlur(); target.edit = previous; });
+	f.first.focus(); assert.ok(inputFocus.admittedTarget === target);
+	f.firstPart.suspend();
+	assert.equal(cancellations, 1); assert.equal(pending, false); assert.equal(commits, 1);
+	assert.equal(model.buffer.getText(), f.source); assert.equal(model.version, version); assert.equal(model.dirty, false);
+	assert.ok(inputFocus.target === f.second.commandTarget && inputFocus.admittedTarget === f.second.commandTarget);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
+	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
+});
+
 test('canonical workspace retirement clears Main rather than retaining disposed model authority', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);

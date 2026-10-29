@@ -224,6 +224,22 @@ nor restoration grants authority to a namesake, an old AST or a former focus sco
 Project navigation owns its file/declaration identity, disclosure and reading
 state. `ResourcePanelController` presents that content only; generic editor
 opening and result navigation do not select a different browser subject.
+Its session memento is independent of Main and document topology. The file model
+owns typed selection/disclosure references, including filtered topology; the
+content index proves declaration correspondence against authored owner and
+consumer sources. Recovery synchronizes those producers before capturing or
+restoring native reading state. Browser mutations publish through the controller,
+not rendering or layout, and use a separate autosave change category. Recovery
+does not reveal a selected row or admit working copies for passive browsing.
+Frontend inactivity gates host input without discarding admitted native browser
+focus; reactivation preserves an admitted non-guest target rather than choosing
+the active document merely because it exists.
+Main's hidden presentation does not prevent source/session recovery. Attachment
+and focus remain presentation-admitted; reactivation enters Main through its own
+client/region focus policy rather than bypassing it through the document part.
+Whole-owner suspension cancels its concrete pending edit before withdrawing
+native focus; ordinary focus navigation retains the field's blur/commit policy.
+Cancellation cannot clear a newer unrelated focus established by its callbacks.
 Call Hierarchy keeps semantic computation in `editor/contrib/call_hierarchy/`
 and its retained query/result view in `workbench/contrib/call_hierarchy/`. Its
 nonpersistent readonly input owns direction, lazy topology and selection; pane

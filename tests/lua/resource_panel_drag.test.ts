@@ -185,7 +185,8 @@ test('deleting and equally recreating an authored declaration during a hold cann
 
 test('a receiving focused draft acquired during the hold vetoes production and empty split publication', async t => {
 	const f = fixture(t), { node } = reveal(f), produce = t.mock.method(f.editor.resourceEditors, 'resolveEditorInput');
-	f.second.commandTarget.edit = { pending: true, commit: () => false };
+	const draft = { pending: true, commit: () => false, cancel() { this.pending = false; } };
+	f.second.commandTarget.edit = draft;
 	const target = body(f.secondGroup, true); pointer(f, rowPoint(f, node), 'press'); pointer(f, target, 'move');
 	f.second.focus(); pointer(f, target, 'release'); assert.equal(f.open.mock.callCount(), 1);
 	const input = await f.open.mock.calls[0].result; assert.ok(input === undefined && f.secondGroup.model.activeTab === f.secondInput);

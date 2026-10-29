@@ -440,7 +440,8 @@ for (const direction of ['back', 'forward'] as const) test(`invalid focused draf
 	const current = group.model.activeTab, focus = inputFocus.target!;
 	const back = [...navigationState.back], forward = [...navigationState.forward];
 	let attempts = 0;
-	focus.edit = { pending: true, commit() { attempts++; return false; } };
+	const draft = { pending: true, commit() { attempts++; return false; }, cancel() { this.pending = false; } };
+	focus.edit = draft;
 	t.after(() => { focus.edit = undefined; });
 	if (direction === 'back') await navigation.goBackward(); else await navigation.goForward();
 	assert.equal(attempts, 1);

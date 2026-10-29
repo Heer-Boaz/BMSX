@@ -191,6 +191,66 @@ test('source replacement without canonical change mapping retires unprovable occ
 	assert.equal(f.index.entriesFor(f.resource('main.lua'))[0].label, 'FSM two');
 });
 
+test('plain declaration references recover the exact duplicate occurrence without admitting working copies', t => {
+	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('same', {}); fsm.register('same', {})";
+	const first = fixture({ 'main.lua': source }), reopened = fixture({ 'main.lua': source });
+	t.after(first.dispose); t.after(reopened.dispose);
+	first.index.sync();
+	const original = first.index.entriesFor(first.resource('main.lua'))[1];
+	const captured = first.index.captureReference(original)!;
+	assert.equal(first.index.captureReference(original, captured), captured, 'unchanged source reuses its inert reference');
+	const reference = JSON.parse(JSON.stringify(captured));
+	reopened.index.sync();
+	const restored = reopened.index.resolveReference(reference);
+	assert.equal(restored, reopened.index.entriesFor(reopened.resource('main.lua'))[1]);
+	assert.notEqual(restored, reopened.index.entriesFor(reopened.resource('main.lua'))[0]);
+	assert.deepEqual([...first.models.models], []); assert.deepEqual([...reopened.models.models], []);
+	assert.equal(first.index.captureReference(restored!), undefined, 'another index generation is not capture authority');
+});
+
+test('declaration recovery requires source provenance even when a namesake occupies the exact saved range', t => {
+	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('same', {n=1})";
+	const f = fixture({ 'main.lua': source });
+	t.after(f.dispose); f.index.sync();
+	const entry = f.index.entriesFor(f.resource('main.lua'))[0], reference = f.index.captureReference(entry)!;
+	const model = f.model('main.lua');
+	model.pushEditOperations([{ offset: source.indexOf('n=1') + 2, deleteLength: 1, text: '2' }]);
+	assert.equal(f.index.isCurrent(entry), true, 'canonical edits retain the live authored occurrence');
+	assert.equal(f.index.resolveReference(reference), undefined, 'old bytes do not prove a recovered source position');
+	const updated = f.index.captureReference(entry)!;
+	assert.deepEqual(updated.range, reference.range); assert.notDeepEqual(updated.owner.fingerprint, reference.owner.fingerprint);
+	assert.equal(f.index.resolveReference(updated), entry);
+	assert.equal(f.index.resolveReference({ ...updated, projectContextId: TEST_CARTRIDGE_CONTEXT_IDS[1] }), undefined);
+});
+
+test('imported animation recovery proves both table owner and consuming browser source', t => {
+	const f = fixture({
+		'frames.lua': "return { frames = {'idle.1'}, frame_run = 2 }",
+		'caller.lua': "-- aa\nlocal sprite=require('cartlib/component/sprite_animation_component'); sprite.factory(require('frames'))",
+	});
+	t.after(f.dispose); f.index.sync();
+	const entry = f.index.entriesFor(f.resource('caller.lua'))[0], reference = f.index.captureReference(entry)!;
+	const raw = f.index.entriesFor(f.resource('frames.lua'))[0], rawReference = f.index.captureReference(raw)!;
+	assert.equal(reference.owner.resource.path, 'frames.lua'); assert.equal(reference.browser.resource.path, 'caller.lua');
+	f.model('caller.lua').pushEditOperations([{ offset: 3, deleteLength: 2, text: 'bb' }]);
+	assert.equal(f.index.isCurrent(entry), true);
+	assert.equal(f.index.resolveReference(reference), undefined, 'unchanged table bytes cannot stand in for changed consumer provenance');
+	assert.equal(f.index.resolveReference(rawReference), raw, 'the independently browsed table occurrence is unchanged');
+	assert.equal(f.index.resolveReference(f.index.captureReference(entry)!), entry);
+});
+
+test('published nonsemantic source edits change provenance before reference queries consider a prior memento', t => {
+	const f = fixture({ 'main.lua': "-- aa\nlocal fsm=require('cartlib/fsm/library'); fsm.register('same', {})" });
+	t.after(f.dispose); f.index.sync();
+	const entry = f.index.entriesFor(f.resource('main.lua'))[0], previous = f.index.captureReference(entry)!;
+	f.model('main.lua').pushEditOperations([{ offset: 3, deleteLength: 2, text: 'bb' }]);
+	f.index.sync();
+	const current = f.index.captureReference(entry, previous)!;
+	assert.notEqual(current, previous); assert.deepEqual(current.range, previous.range);
+	assert.notDeepEqual(current.owner.fingerprint, previous.owner.fingerprint);
+	assert.equal(f.index.resolveReference(current), entry); assert.equal(f.index.resolveReference(previous), undefined);
+});
+
 test('a catalog topology publication removes declarations even without a source edit event', t => {
 	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
 	t.after(f.dispose);

@@ -8,8 +8,9 @@ import {
 	appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed,
 	WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation, type WorkbenchTreeNode, type WorkbenchTreeState,
 } from '../../../ui/tree_view';
-import type { ProjectContentEntry } from './content_index';
+import type { ProjectContentEntry, ProjectContentIndex } from './content_index';
 import type { WorkbenchIcon } from '../../../ui/icon';
+import type { ResourceFilesContainerReference, ResourceFilesNodeReference, ResourceFilesRootReference, ResourceFilesSnapshot } from './session';
 
 export type ResourcePanelFilterMode = 'lua_only' | 'all';
 
@@ -27,7 +28,8 @@ export type FileElement = FileElementPresentation & (
 type FileNode<Element extends FileElement = FileElement> = WorkbenchTreeNode<FileElement> & {
 	readonly element: Element; seen: number; included: number; visible: boolean;
 };
-type FileRoot = { node: FileNode<Extract<FileElement, { kind: 'root' }>>; directories: Map<string, FileNode> };
+type FileContainerNode = WorkbenchTreeNode<FileElement> & { readonly element: Exclude<FileElement, { kind: 'definition' }> };
+type FileRoot = { node: FileNode<Extract<FileElement, { kind: 'root' }>>; directories: Map<string, FileNode<Extract<FileElement, { kind: 'directory' }>>> };
 const FILE_LOCATION_KINDS = ['project', 'workspace', 'generated'] as const;
 const CONTENT_ICONS: Readonly<Record<ProjectContentEntry['kind'], WorkbenchIcon>> = {
 	scene: 'scene', behavior_tree: 'behaviorTree', state_machine: 'stateMachine', action_effect: 'actionEffect',
@@ -63,6 +65,97 @@ export class ResourceFilesModel {
 
 	public get selectedNode(): WorkbenchTreeNode<FileElement> | null {
 		return this.tree.selectionIndex < 0 ? null : this.tree.rows[this.tree.selectionIndex];
+	}
+
+	/** Visit retained topology, including folders and files excluded by the current filter. */
+	public captureView(content: ProjectContentIndex, previous?: ResourceFilesSnapshot): ResourceFilesSnapshot {
+		// Source and topology publication can deliver a newer browser intent. Finish both
+		// before observing selection; reference queries below consume that generation only.
+		if (this.selectedNode?.element.kind === 'definition') {
+			content.sync();
+			this.sync(this.catalog!, this.filter!, content.entriesByResource, content.revision);
+		}
+		const node = this.selectedNode;
+		let selected: ResourceFilesNodeReference | undefined;
+		if (node !== null) {
+			if (node.element.kind === 'definition') {
+				const prior = previous?.selected?.kind === 'definition' ? previous.selected : undefined;
+				const reference = content.captureReference(node.element.content, prior?.content);
+				if (reference !== undefined) selected = prior?.content === reference ? prior : { kind: 'definition', content: reference };
+			} else {
+				const prior = previous?.selected;
+				selected = prior !== undefined && prior.kind !== 'definition' && this.resolveContainer(prior) === node
+					? prior : this.captureContainer(node as FileContainerNode);
+			}
+		}
+		if (previous !== undefined && previous.selected === selected && previous.scroll === this.tree.scroll
+			&& previous.hscroll === this.horizontalScroll && this.matchesDisclosure(previous)) return previous;
+		const disclosure: { node: ResourceFilesContainerReference; collapsed: boolean }[] = [];
+		for (const context of this.contexts.values()) for (const root of context.values()) {
+			disclosure.push({ node: this.captureContainer(root.node), collapsed: root.node.collapsed });
+			for (const node of root.directories.values()) disclosure.push({ node: this.captureContainer(node), collapsed: node.collapsed });
+		}
+		for (const node of this.files.values()) disclosure.push({ node: this.captureContainer(node), collapsed: node.collapsed });
+		return { selected, disclosure, scroll: this.tree.scroll, hscroll: this.horizontalScroll };
+	}
+
+	private matchesDisclosure(view: ResourceFilesSnapshot): boolean {
+		let index = 0;
+		for (const context of this.contexts.values()) for (const root of context.values()) {
+			const savedRoot = view.disclosure[index++];
+			if (savedRoot === undefined || savedRoot.collapsed !== root.node.collapsed || this.resolveContainer(savedRoot.node) !== root.node) return false;
+			for (const node of root.directories.values()) {
+				const saved = view.disclosure[index++];
+				if (saved === undefined || saved.collapsed !== node.collapsed || this.resolveContainer(saved.node) !== node) return false;
+			}
+		}
+		for (const node of this.files.values()) {
+			const saved = view.disclosure[index++];
+			if (saved === undefined || saved.collapsed !== node.collapsed || this.resolveContainer(saved.node) !== node) return false;
+		}
+		return index === view.disclosure.length;
+	}
+
+	/** Initial recovery runs after authoritative synchronization and never reveals or opens a subject. */
+	public restoreView(view: ResourceFilesSnapshot, content: ProjectContentIndex): void {
+		let disclosureChanged = false;
+		for (const state of view.disclosure) {
+			const node = this.resolveContainer(state.node);
+			if (node !== undefined && node.collapsed !== state.collapsed) {
+				node.collapsed = state.collapsed; disclosureChanged = true;
+			}
+		}
+		let selected: WorkbenchTreeNode<FileElement> | null = null;
+		if (view.selected !== undefined) {
+			if (view.selected.kind === 'definition') {
+				const entry = content.resolveReference(view.selected.content);
+				if (entry !== undefined) selected = this.definitions.get(entry) ?? null;
+			} else selected = this.resolveContainer(view.selected) ?? null;
+		}
+		if (disclosureChanged) rebuildWorkbenchTreeRows(this.tree, selected);
+		else {
+			this.tree.selectionIndex = selected === null ? -1 : this.tree.rows.indexOf(selected);
+			this.tree.hoverIndex = -1;
+		}
+		this.tree.scroll = view.scroll; this.horizontalScroll = view.hscroll;
+		if (disclosureChanged) this.publish();
+	}
+
+	private captureContainer(node: FileContainerNode): ResourceFilesContainerReference {
+		const element = node.element;
+		if (element.kind === 'file') return { kind: 'file', resource: { contextId: element.contextId, path: element.path } };
+		let root = node;
+		while (root.parent !== null) root = root.parent as FileContainerNode;
+		const source = root.element as Extract<FileElement, { kind: 'root' }>;
+		const reference: ResourceFilesRootReference = { contextId: source.contextId, locationKind: source.locationKind, path: source.path };
+		return element.kind === 'root' ? { kind: 'root', root: reference } : { kind: 'directory', root: reference, path: element.path };
+	}
+
+	private resolveContainer(reference: ResourceFilesContainerReference): WorkbenchTreeNode<FileElement> | undefined {
+		if (reference.kind === 'file') return this.files.get(resourceIdentityKey(reference.resource));
+		const root = this.contexts.get(reference.root.contextId)?.get(reference.root.locationKind);
+		if (root === undefined || root.node.element.path !== reference.root.path) return undefined;
+		return reference.kind === 'root' ? root.node : root.directories.get(reference.path);
 	}
 
 	public sync(catalog: WorkspaceSourceCatalog, filter: ResourcePanelFilterMode,

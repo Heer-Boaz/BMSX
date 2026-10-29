@@ -43,6 +43,7 @@ export type FocusCommand = FocusCommandInvocation & {
 export interface InputEdit {
 	readonly pending: boolean;
 	commit(): boolean;
+	cancel(): void;
 }
 
 /** Shared membership and reactivation state; focus return and command origin stay independent. */

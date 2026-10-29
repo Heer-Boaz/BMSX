@@ -733,7 +733,8 @@ test('background group drag cannot bypass the actual focused source draft decisi
 	const input = group.model.activeTab!, target = group.panes.activePane!.commandTarget;
 	const last = group.tabStrip.layoutState.items.peek(group.model.tabs.length - 1).bounds;
 	const x = (last.right + group.tabStrip.layoutState.viewportBounds.right) / 2, y = last.top + 1;
-	target.edit = { pending: true, commit: () => false };
+	const draft = { pending: true, commit: () => false, cancel() { this.pending = false; } };
+	target.edit = draft;
 	try {
 		const down = pointer(x, y, primary, primary);
 		pointerCapture.beginRoute(group.tabScope, down); group.tabStrip.handlePointer(down, f.host.clock.now());
