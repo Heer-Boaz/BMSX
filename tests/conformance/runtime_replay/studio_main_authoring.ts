@@ -22,6 +22,7 @@ import { SCENE_AUTHORING_SOURCE } from '../../fixtures/studio/scene_authoring';
 import { createTestSourceOnlyLuaRecord } from '../../helpers/runtime_sources';
 import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
 import { testStudioWindowKeyboard } from './studio_window_keyboard';
+import { testStudioSashSizing, testStudioSashResetBlur } from './studio_sash_sizing';
 
 const SOURCE_READING_FIXTURE = `local function read_authoring_source()
     local readable_value = alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_kappa_lambda_mu_nu_xi_omicron_pi_rho_sigma_tau_upsilon_phi_chi_psi_omega
@@ -151,6 +152,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 			if (!(restored instanceof ScenePrimaryClient) || input?.kind !== 'code_editor') throw new Error('main: actual primary and Source required');
 			await testPrimaryRegionNavigation(test, restored, input, theme);
 			await testPrimaryViewResizing(test, restored, input, theme);
+			await testStudioSashSizing(test, restored, input, theme);
 			await testPrimaryRegionVisibility(test, restored, input, theme);
 			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-source`);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
@@ -160,6 +162,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	if (!(restored instanceof ScenePrimaryClient) || input?.kind !== 'code_editor') throw new Error('main: retained primary and canonical Source required');
 	await testMainSourceReadability(test, restored, input);
 	await testPrimarySourceDestinations(test, input);
+	await testStudioSashResetBlur(test, restored, input);
 	await testCallHierarchyResult(test, resource.contextId);
 	await testWorkspaceSearchResult(test, resource.contextId);
 	await press('ControlLeft', 'KeyW');

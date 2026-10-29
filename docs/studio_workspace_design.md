@@ -979,8 +979,9 @@ This follows the separation in VS Code's [part-focus actions](https://github.com
 and Qt's [MDI window activation](https://github.com/qt/qtbase/blob/dev/src/widgets/widgets/qmdiarea.cpp),
 not the assumption that canvas windows are separate native DOM windows.
 
-Palette commands increase or decrease the invoking view's width or height
-without changing focus, committing an active draft, selecting another subject
+The sizing actions exposed by Palette increase or decrease the invoking view's
+width or height without themselves changing focus, committing a draft, selecting
+another subject
 or changing document topology. Files, Hierarchy and Details expose their width;
 docked Activity exposes its height. Document groups resize their nearest owning
 split on the requested axis, including in floating editor parts. Orthogonal
@@ -1004,9 +1005,37 @@ and [grid-owned sizing](https://github.com/microsoft/vscode/blob/818341a41f15dd7
 as references, not an identical command contract: VS Code's axis-specific actions
 target editors and its increment is in CSS pixels. Studio's commands explicitly
 name the focused view and bitmap font units. They have no default global
-keybindings and add no toolbar buttons. Resize-handle entry/reset and floating
-window keyboard resizing remain distinct missing operations; VS Code's shared
-sash is not a precedent for adding handles to F6 or local Tab order.
+keybindings and add no toolbar buttons.
+
+Reset Focused View Width/Height restores that exact boundary's sizing rule
+without changing focus or accepting a field draft. A proportional split restores
+its raw default ratio; a fixed-edge region withdraws the requested size and
+returns to automatic/preferred sizing. Reset remains available when the current
+feasible interval cannot move: current constraints project the preference, not
+replace it. A saturated nearest group boundary still owns reset; neither the
+command nor the container chooses a farther ancestor.
+
+Resize Focused View Width/Height enters the same attached native sash used by
+the pointer. Arrows resize live in five-percent interval steps; Ctrl+Arrow uses
+one canvas pixel, and Home invokes that owner's reset. Enter or Escape returns
+to the exact live invoking control without reverting accepted layout changes.
+The handle supplies active status guidance through its dedicated native scope.
+Focus/admission loss, input replacement and either attachment's retirement end
+the keyboard session; restoring admission cannot resume it or reclaim an obsolete
+return control. Focus callbacks that admit another input/session win over an
+outgoing cleanup or entry continuation. Other modified arrows retain their own
+owners. Entry uses normal focus/blur admission, not a bypass for pending drafts.
+Opening Palette also retains ordinary field blur handling; the sizing action
+does not add a second commit/cancel path. Explicit-only workspace handles are
+focusable only during their admitted keyboard session, so popup focus return
+cannot revive an ended session. Existing tool-local Tab-linked handles keep
+their owning traversal contract.
+
+VS Code's [shared sash reset](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/sash/sash.ts#L276-L289)
+and [SplitView forwarding](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/splitview/splitview.ts)
+keep reset input separate from owner sizing. They do not supply a keyboard
+handler or justify adding handles to F6 or local Tab order. Floating-window
+keyboard placement is a separate container operation, not a split gesture.
 
 The tab list is one composite keyboard control with a retained, exact focused
 input separate from the group's selected input. `Focus Editor Tabs` enters at

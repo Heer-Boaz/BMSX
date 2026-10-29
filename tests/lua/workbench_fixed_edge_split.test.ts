@@ -50,6 +50,20 @@ for (const edge of ['start', 'end'] as const) test(`the ${edge}-edge sash leaves
 	assert.equal(view.requestedSize, 10000); assert.equal(changes, 0, 'overshooting the already admitted boundary is not a new size request');
 });
 
+for (const edge of ['start', 'end'] as const) test(`${edge}-edge reset admission follows explicit intent even in a filled or unarranged interval`, () => {
+	const view = new WorkbenchFixedEdgeSplitView(edge);
+	let changes = 0; view.onDidResize(() => changes++);
+	assert.equal(view.canReset, false); view.reset(); assert.equal(changes, 0);
+	view.requestedSize = 300;
+	assert.equal(view.resizable, false); assert.equal(view.canReset, true);
+	view.reset(); assert.equal(view.requestedSize, undefined); assert.equal(view.canReset, false); assert.equal(changes, 1);
+	view.minimumFirstSize = 84; view.minimumSecondSize = 204; view.layout(37, 19, 325, 219);
+	view.requestedSize = 300;
+	assert.equal(view.resizable, false); assert.equal(view.canReset, true);
+	view.reset(); assert.equal(view.requestedSize, undefined); assert.equal(view.canReset, false); assert.equal(changes, 2);
+	view.reset(); assert.equal(changes, 2);
+});
+
 for (const edge of ['start', 'end'] as const) test(`the ${edge}-edge sash projects and admits native requests using the same nearest raster position`, () => {
 	const view = new WorkbenchFixedEdgeSplitView(edge);
 	view.preferredSize = 60.4; view.layout(37, 20, 248, 140);

@@ -134,7 +134,8 @@ test('Files resize attachment drains its retired hold and rebinds on the next vi
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.equal(panel.sash.focusTarget.canFocus(), false);
 	panel.prepareLayout();
-	assert.equal(panel.sash.focusTarget.canFocus(), true);
+	// Reattachment restores the pointer model, not a retired keyboard session's focus lease.
+	assert.ok(panel.sash.input === panel.split);
 	pointerCapture.dispatch({ ...press, viewportX: press.viewportX + 32, justPressedButtons: 0 }, false, 1, scope);
 	assert.equal(panel.split.ratio, ratio);
 	pointerCapture.dispatch({ ...press, pressedButtons: 0, justPressedButtons: 0,

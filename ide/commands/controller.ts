@@ -44,7 +44,7 @@ import { showOpenWindows } from '../workbench/ui/window/picker';
 import { findWorkbenchWindowSurface, minimizedWorkbenchWindowCount, workbenchWindowForSurface } from '../workbench/ui/window/control';
 import { showGroupOpenEditors } from '../workbench/services/editor/open_editors';
 import { workspaceState } from '../workbench/workspace/state';
-import { WORKBENCH_VIEW_RESIZE_COMMANDS, canResizeWorkbenchView, resizeWorkbenchView } from './layout';
+import { WORKBENCH_VIEW_SIZING_COMMANDS, isWorkbenchViewSizingEnabled, executeWorkbenchViewSizing } from './layout';
 import type { ActionPromptRequest } from '../workbench/contrib/modal/action_prompt_view';
 
 const ACTION_PROMPTS: Readonly<Record<Exclude<EditorActionRequest['action'], 'theme-toggle'>, ActionPromptRequest>> = {
@@ -131,9 +131,9 @@ export class IdeCommandController {
 			else main.openActivity(activityId, { focus: true });
 			return;
 		}
-		const resize = WORKBENCH_VIEW_RESIZE_COMMANDS[command];
+		const resize = WORKBENCH_VIEW_SIZING_COMMANDS[command];
 		if (resize !== undefined) {
-			resizeWorkbenchView(this.editor, invocationTarget, resize.axis, resize.direction);
+			executeWorkbenchViewSizing(this.editor, invocationTarget, resize);
 			return;
 		}
 		switch (command) {
@@ -402,8 +402,8 @@ export class IdeCommandController {
 		if (this.editor.mainWorkspace.activities.idForCommand(command) !== undefined) return this.editor.isActive;
 		const implementation = input === undefined ? focus?.resolveCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isEnabled();
-		const resize = WORKBENCH_VIEW_RESIZE_COMMANDS[command];
-		if (resize !== undefined) return canResizeWorkbenchView(this.editor, focus, resize.axis, resize.direction);
+		const resize = WORKBENCH_VIEW_SIZING_COMMANDS[command];
+		if (resize !== undefined) return isWorkbenchViewSizingEnabled(this.editor, focus, resize);
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		const part = this.editor.editorParts.partForGroup(group);
 		const selected = this.runTargets.selected;

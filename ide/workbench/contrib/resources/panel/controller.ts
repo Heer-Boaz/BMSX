@@ -148,6 +148,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.split = new WorkbenchSplitView(clampResourcePanelRatio(initialWidthRatio));
 		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
 			new InputFocusScope(Symbol('Files resize'), this.focusTarget.scope));
+		this.sash.focusTarget.scope.statusSource = this.sash;
+		this.sash.focusTarget.canFocus = () => this.sash.interactionActive && this.sash.input?.resizable === true;
 		this.unbindResize = this.split.onDidChangeRatio(() => this.prepareLayout());
 		this.unbindNativeResize = this.split.onDidResize(() => { this.restoreRevision++; this.changed(); });
 		this.unbindFocus = this.focusTarget.onDidFocus(() => { this.restoreRevision++; this.changed(); });

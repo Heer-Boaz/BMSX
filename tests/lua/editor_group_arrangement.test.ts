@@ -65,6 +65,11 @@ test('group resizing skips orthogonal parents while the nearest matching split o
 	arrangement.layout({ left: 0, top: 0, right: 600, bottom: 400 });
 	const root = arrangement.root; assert.ok(root.kind === 'split' && root.second.kind === 'split');
 	const vertical = root.second, originalHorizontal = root.split.position, originalVertical = vertical.split.position;
+	assert.equal(arrangement.resizeBoundary(third, 'width'), root);
+	assert.equal(arrangement.resizeBoundary(second, 'width'), root);
+	assert.equal(arrangement.resizeBoundary(third, 'height'), vertical);
+	assert.equal(arrangement.resizeBoundary(second, 'height'), vertical);
+	assert.equal(arrangement.resizeBoundary(first, 'height'), undefined);
 	const [a, b, c] = arrangement.leaves, width = c.bounds.right - c.bounds.left, height = c.bounds.bottom - c.bounds.top;
 	assert.equal(arrangement.resizeGroup(third, 'width', 30), true);
 	assert.equal(root.split.position, originalHorizontal - 30); assert.equal(vertical.split.position, originalVertical);
@@ -105,6 +110,9 @@ test('a saturated local group boundary does not resize a farther same-axis branc
 	for (const group of [first, second, third]) arrangement.setMinimum(group, 60, 30);
 	arrangement.layout({ left: 0, top: 0, right: 600, bottom: 100 });
 	const root = arrangement.root; assert.ok(root.kind === 'split' && root.first.kind === 'split');
+	assert.equal(arrangement.resizeBoundary(first, 'width'), root.first);
+	assert.equal(arrangement.resizeBoundary(third, 'width'), root.first);
+	assert.equal(arrangement.resizeBoundary(second, 'width'), root);
 	const rootRatio = root.split.ratio;
 	assert.equal(arrangement.resizeGroup(first, 'width', 1000), true);
 	const localRatio = root.first.split.ratio, revision = arrangement.revision;
@@ -112,12 +120,15 @@ test('a saturated local group boundary does not resize a farther same-axis branc
 	assert.equal(arrangement.resizeGroup(first, 'width', 30), false);
 	assert.equal(root.split.ratio, rootRatio); assert.equal(root.first.split.ratio, localRatio);
 	assert.equal(arrangement.revision, revision);
+	assert.equal(arrangement.resizeBoundary(first, 'width'), root.first, 'a saturated nearest owner is not replaced by a farther movable split');
 	assert.ok(arrangement.leaves[2].bounds.right - arrangement.leaves[2].bounds.left > 60, 'unrelated outer sibling still has spare extent');
 });
 
-test('single, maximized and minimum-overflow arrangements cannot acquire a resize boundary', () => {
+test('single, maximized and minimum-overflow arrangements do not admit directional resizing', () => {
 	const first = {}, second = {}, arrangement = new EditorGroupArrangement(first);
 	arrangement.layout({ left: 0, top: 0, right: 400, bottom: 200 });
+	assert.equal(arrangement.resizeBoundary(first, 'width'), undefined);
+	assert.equal(arrangement.resizeBoundary(first, 'height'), undefined);
 	assert.equal(arrangement.canResizeGroup(first, 'width', 30), false);
 	assert.equal(arrangement.resizeGroup(first, 'height', 30), false);
 	arrangement.split(first, second, 'right'); arrangement.setMinimum(first, 60, 40); arrangement.setMinimum(second, 60, 40);
@@ -125,13 +136,33 @@ test('single, maximized and minimum-overflow arrangements cannot acquire a resiz
 	const root = arrangement.root; assert.ok(root.kind === 'split');
 	const ratio = root.split.ratio;
 	arrangement.toggleMaximize(first); arrangement.layout(arrangement.bounds);
+	assert.equal(arrangement.resizeBoundary(first, 'width'), undefined);
+	assert.equal(arrangement.resizeBoundary(second, 'width'), undefined);
 	assert.equal(arrangement.canResizeGroup(first, 'width', -30), false);
 	assert.equal(arrangement.resizeGroup(second, 'width', 30), false);
 	assert.equal(arrangement.maximized, first); assert.equal(root.split.ratio, ratio);
 	arrangement.toggleMaximize(first); arrangement.layout({ left: 0, top: 0, right: 100, bottom: 100 });
+	assert.equal(arrangement.resizeBoundary(first, 'width'), root, 'minimum-filled geometry retains its real reset owner');
 	assert.equal(arrangement.canResizeGroup(first, 'width', 30), false);
 	assert.equal(arrangement.resizeGroup(second, 'width', -30), false);
 	assert.equal(root.split.ratio, ratio);
+});
+
+test('resetting a constrained group boundary restores requested default and publishes native sizing once without replacing topology', () => {
+	const first = {}, second = {}, arrangement = new EditorGroupArrangement(first);
+	arrangement.split(first, second, 'right'); arrangement.setMinimum(first, 300, 40); arrangement.setMinimum(second, 100, 40);
+	const root = arrangement.root; assert.ok(root.kind === 'split');
+	root.split.ratio = 0.8; arrangement.layout({ left: 0, top: 0, right: 500, bottom: 100 });
+	const topology = arrangement.topologyRevision, leaves = [...arrangement.leaves];
+	const boundary = arrangement.resizeBoundary(second, 'width')!;
+	let publications = 0; boundary.split.onDidResize(() => publications++);
+	assert.equal(boundary.split.canReset, true); boundary.split.reset(); arrangement.layout(arrangement.bounds);
+	assert.equal(boundary.split.ratio, 0.5); assert.equal(publications, 1); assert.equal(boundary.split.canReset, false);
+	assert.equal(boundary.split.position, 304, 'current child minima still constrain the restored default presentation');
+	boundary.split.reset(); assert.equal(publications, 1);
+	arrangement.layout({ left: 0, top: 0, right: 1000, bottom: 100 });
+	assert.equal(boundary.split.position, 500, 'future layout consumes default ratio intent rather than the earlier minimum clamp');
+	assert.equal(arrangement.root, root); assert.equal(arrangement.topologyRevision, topology); assert.deepEqual(arrangement.leaves, leaves);
 });
 
 test('nested hard minima aggregate along each split axis and overflow the viewport without invalid sash intervals', () => {

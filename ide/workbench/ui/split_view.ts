@@ -9,6 +9,7 @@ export interface WorkbenchSashView {
 	readonly bounds: Readonly<RectBounds>;
 	readonly orientation: 'horizontal' | 'vertical';
 	readonly resizable: boolean;
+	readonly canReset: boolean;
 	readonly position: number;
 	canMoveTo(position: number): boolean;
 	moveTo(position: number): void;
@@ -45,6 +46,7 @@ export class WorkbenchSplitView implements WorkbenchSashView {
 	public get start(): number { return this.orientation === 'horizontal' ? this.bounds.left : this.bounds.top; }
 	public get end(): number { return this.orientation === 'horizontal' ? this.bounds.right : this.bounds.bottom; }
 	public get resizable(): boolean { return this.end - this.start > this.minimumFirstSize + this.minimumSecondSize; }
+	public get canReset(): boolean { return this.ratioValue !== this.defaultRatio; }
 	public get position(): number {
 		return this.positionFor(this.start, this.end, this.minimumFirstSize, this.minimumSecondSize);
 	}
@@ -67,7 +69,11 @@ export class WorkbenchSplitView implements WorkbenchSashView {
 		return this.resizable && clamp(Math.round(position), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize) !== this.position;
 	}
 	public moveTo(position: number): void { this.resize((Math.round(position) - this.start) / (this.end - this.start)); }
-	public reset(): void { this.resize(this.defaultRatio); }
+	public reset(): void {
+		if (!this.canReset) return;
+		this.ratio = this.defaultRatio;
+		if (this.resizeListeners !== undefined) for (const listener of this.resizeListeners) listener();
+	}
 }
 
 /** A side region retains its requested content width while its adjacent client absorbs free space. */
@@ -88,6 +94,7 @@ export class WorkbenchFixedEdgeSplitView implements WorkbenchSashView {
 	public get start(): number { return this.orientation === 'horizontal' ? this.bounds.left : this.bounds.top; }
 	public get end(): number { return this.orientation === 'horizontal' ? this.bounds.right : this.bounds.bottom; }
 	public get resizable(): boolean { return this.end - this.start > this.minimumFirstSize + this.minimumSecondSize; }
+	public get canReset(): boolean { return this.requestedSize !== undefined; }
 	public get position(): number {
 		const size = (this.requestedSize ?? this.preferredSize) + WORKBENCH_SPLIT_SIZE / 2;
 		const requested = this.edge === 'start' ? this.start + size : this.end - size;
@@ -107,7 +114,7 @@ export class WorkbenchFixedEdgeSplitView implements WorkbenchSashView {
 		for (const listener of this.resizeListeners) listener();
 	}
 	public reset(): void {
-		if (this.requestedSize === undefined) return;
+		if (!this.canReset) return;
 		this.requestedSize = undefined;
 		for (const listener of this.resizeListeners) listener();
 	}

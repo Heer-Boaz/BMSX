@@ -10,7 +10,6 @@ import type { EditorCloseController, WorkingCopyConsumer } from './services/edit
 import type { WorkbenchSurface } from './services/windows/model';
 import type { WorkbenchSurfaceService } from './services/windows/service';
 import { WorkbenchSplitControl } from './ui/split_control';
-import type { WorkbenchFixedEdgeSplitView } from './ui/split_view';
 import { drawWorkbenchSplit } from './render/split_view';
 import { Scrollbar } from './ui/scrollbar';
 import { ScrollbarController } from './ui/scrollbar_controller';
@@ -138,6 +137,10 @@ export class MainWorkspace {
 		};
 		this.activitySash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
 			new InputFocusScope(Symbol('main activity sash'), this.scope));
+		for (const control of [this.sashes.hierarchy, this.sashes.details, this.activitySash]) {
+			control.focusTarget.scope.statusSource = control;
+			control.focusTarget.canFocus = () => control.interactionActive && control.input?.resizable === true;
+		}
 		this.scrollControl = new ScrollbarController(this.scrollbars, (kind, scroll) => {
 			this.scrollbars[kind].setScroll(scroll); this.requestLayout(); this.surfaces.changed();
 		}, pointerCapture);
@@ -264,13 +267,14 @@ export class MainWorkspace {
 		for (const region of REGIONS) if (client[region].attached && client[region].scope.contains(target.scope)) return region;
 	}
 	/** Only the attached view's own axis is resizable; floating activity keeps its window placement. */
-	public resizeSashForTarget(target: InputFocusTarget, axis: 'width' | 'height'): WorkbenchFixedEdgeSplitView | undefined {
+	public resizeControlForTarget(target: InputFocusTarget, axis: 'width' | 'height'): WorkbenchSplitControl | undefined {
 		if (!this.presented || this.resetting) return;
 		if (axis === 'width') {
+			for (const region of REGIONS) if (this.sashAttached[region] && target === this.sashes[region].focusTarget) return this.sashes[region];
 			const region = this.regionForTarget(target);
-			if (region !== undefined) return region === 'hierarchy' ? this.regionLayout.hierarchySash : this.regionLayout.detailsSash;
+			if (region !== undefined && this.sashAttached[region]) return this.sashes[region];
 		} else if (this.activityPlacementValue === 'dockedMain' && this.activityDisplayed && this.activity?.attached
-			&& this.activity.scope.contains(target.scope)) return this.regionLayout.activitySash;
+			&& (this.activity.scope.contains(target.scope) || target === this.activitySash.focusTarget)) return this.activitySash;
 	}
 	/** Route the semantic source producer without borrowing the active document's subject. */
 	private sourceClient(target: InputFocusTarget): MainWorkspaceClient | MainWorkspaceActivityClient | undefined {

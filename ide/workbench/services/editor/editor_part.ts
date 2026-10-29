@@ -381,6 +381,16 @@ export class EditorPart {
 		this.operationValue = operation; for (const group of this.groups) group.setOpenAdmission(operation === 'none' && !this.surface.retired);
 		if (previous === 'move' && operation === 'none') this.relayout();
 	}
+	/** Native sizing addresses this part's real boundary, not another active group or parent window. */
+	public resizeControlForTarget(target: InputFocusTarget, axis: 'width' | 'height'): WorkbenchSplitControl | undefined {
+		if (this.retired || this.operation !== 'none') return;
+		const orientation = axis === 'width' ? 'horizontal' : 'vertical';
+		for (const [branch, sash] of this.sashes) if (target === sash.control.focusTarget && branch.split.orientation === orientation) return sash.control;
+	}
+	public resizeControlForGroup(group: EditorGroupView, axis: 'width' | 'height'): WorkbenchSplitControl | undefined {
+		const branch = this.arrangement.resizeBoundary(group, axis);
+		return branch === undefined ? undefined : this.sashes.get(branch)?.control;
+	}
 	private syncSashes(): void {
 		for (const [branch, sash] of this.sashes) if (!this.arrangement.splits.includes(branch)) {
 			sash.releaseResize(); sash.surface.dispose(); sash.control.dispose(); this.sashes.delete(branch);
@@ -388,6 +398,8 @@ export class EditorPart {
 		for (const branch of this.arrangement.splits) if (!this.sashes.has(branch)) {
 			const control = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
 				new InputFocusScope(Symbol('editor group sash'), this.clientScope)); control.setInput(branch.split);
+			control.focusTarget.scope.statusSource = control;
+			control.focusTarget.canFocus = () => control.interactionActive && control.input?.resizable === true;
 			const surface = this.options.surfaces.attach({ role: 'content', lifetimeOwner: this.clientSurface, presentationParent: this.clientSurface,
 				captureScope: control.focusTarget.scope.surfaceScope, isVisible: () => branch.visible && branch.resizable,
 				getBounds: () => branch.sashBounds, getClip: () => branch.clip,

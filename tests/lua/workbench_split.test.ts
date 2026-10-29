@@ -46,6 +46,31 @@ test('coordinated ratio publication remains distinct from actual native sash res
 	assert.deepEqual(ratios, [0.6, 0.7, 0.4]); assert.deepEqual(sizes, [0.7, 0.4]);
 });
 
+for (const orientation of ['horizontal', 'vertical'] as const)
+	for (const allocation of ['constrained', 'filled', 'unarranged'] as const)
+		test(`${orientation} ${allocation} reset restores default ratio intent before future layout without clamping or duplicate publication`, () => {
+			const view = new WorkbenchSplitView(0.4, orientation);
+			view.minimumFirstSize = allocation === 'filled' ? 500 : 300; view.minimumSecondSize = 100;
+			if (allocation !== 'unarranged') {
+				if (orientation === 'horizontal') view.layout(37, 19, 637, 419);
+				else view.layout(19, 37, 419, 637);
+			}
+			view.ratio = 0.8;
+			const ratios: number[] = [], sizes: number[] = [];
+			view.onDidChangeRatio(() => ratios.push(view.ratio)); view.onDidResize(() => sizes.push(view.ratio));
+			assert.equal(view.canReset, true);
+			view.reset();
+			assert.equal(view.ratio, view.defaultRatio); assert.equal(view.canReset, false);
+			assert.deepEqual(ratios, [0.4]); assert.deepEqual(sizes, [0.4]);
+			const revision = view.revision;
+			view.reset(); assert.equal(view.revision, revision);
+			assert.deepEqual(ratios, [0.4]); assert.deepEqual(sizes, [0.4]);
+			if (orientation === 'horizontal') view.layout(37, 19, 2037, 419);
+			else view.layout(19, 37, 419, 2037);
+			assert.equal(view.position, 837, 'growth projects the restored default, never the earlier constrained ratio');
+			assert.equal(view.ratio, 0.4); assert.equal(view.revision, revision);
+		});
+
 test('shared pane sash captures drag, releases on blur/replacement and consumes only its focused keyboard input', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();

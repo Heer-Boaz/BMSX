@@ -150,6 +150,7 @@ export type EditorCommandId =
 	| 'status.focus' | 'status.details'
 	| 'workspace.focusNextRegion' | 'workspace.focusPreviousRegion'
 	| 'workspace.increaseViewWidth' | 'workspace.decreaseViewWidth' | 'workspace.increaseViewHeight' | 'workspace.decreaseViewHeight'
+	| 'workspace.resizeViewWidth' | 'workspace.resizeViewHeight' | 'workspace.resetViewWidth' | 'workspace.resetViewHeight'
 	| 'group.focusTabs' | 'group.move' | 'group.close' | 'group.openEditors' | 'group.splitRight' | 'group.splitDown' | 'group.focusNext' | 'group.focusPrevious' | 'group.maximize'
 	| 'window.minimize' | 'window.maximize' | 'window.hide' | 'window.snapLeft' | 'window.snapRight' | 'window.restore'
 	| 'window.systemMenu' | 'window.move' | 'window.resize'
