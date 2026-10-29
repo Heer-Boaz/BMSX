@@ -42,7 +42,8 @@ function fixture(t: TestContext) {
 	const sections = { outline: { isEnabled: () => true, run: () => { focusReturn.focus(); } }, details: { isEnabled: () => true, run: () => {} } };
 	const panel = new WorkbenchViewPanel({ title: 'Details', description: f.resource.path, view, actions: createWorkbenchActionBar(actions, true),
 		contextActions: actions, commands, contextMenu: menu, surfaces, surface, workArea: bounds, scope, commandTarget: semantic, focusReturn,
-		measureContent: measureSceneDetails, createControl: region => new SceneDetailsControl(commands, menu, region, semantic, sections) });
+		isPresented: () => true, measureContent: measureSceneDetails,
+		createControl: region => new SceneDetailsControl(commands, menu, region, semantic, sections) });
 	panel.attach(bounds);
 	t.after(() => { panel.dispose(); view.dispose(); context.dispose(); menu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, context, view, panel, bounds, focusReturn, menu, saved };

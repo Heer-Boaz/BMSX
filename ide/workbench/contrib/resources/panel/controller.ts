@@ -47,7 +47,6 @@ import type { FileElement } from './files_model';
 import { ResourcePanelContextMenu } from './context_menu';
 import { findEditorGroup } from '../../../services/editor/editor_group';
 import { ResourcePanelDrag } from './drag';
-import { editorTextModelService } from '../../../../editor/model/model_service';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { isAltDown } from '../../../../input/keyboard/key_input';
 import type { ProspectiveEditorOpenSource } from '../../../services/editor/editor_opening';
@@ -68,6 +67,7 @@ export type ResourcePanelItemMetrics = {
 const RESOURCE_SCROLLBARS = ['resourceVertical', 'resourceHorizontal'] as const;
 
 export type ResourcePanelRestoreRequest = {
+	prepare(): boolean;
 	restore(state: SerializedResourcePanel): boolean;
 	focus(): void;
 	dispose(): void;
@@ -142,7 +142,6 @@ export class ResourcePanelController implements PointerHoverTarget {
 	private disposed = false;
 	private readonly contextMenu: ResourcePanelContextMenu;
 	private drag: ResourcePanelDrag | undefined;
-	private readonly unbindModelClear: () => void;
 
 	constructor(
 		private readonly editor: CartEditor,
@@ -176,9 +175,6 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.focusTarget.canFocus = () => this.visible && !this.disposed;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => handleResourcePanelKeyboardInput(input, this));
 		this.contextMenu = new ResourcePanelContextMenu(editor, catalog, content, this);
-		this.unbindModelClear = editorTextModelService.onWillClear(() => {
-			this.drag?.cancel(); this.focusTarget.scope.retireContext();
-		});
 		this.focusTarget.registerCommand('resources.openToSide', {
 			isEnabled: () => {
 				const kind = this.files.selectedNode?.element.kind;
@@ -215,7 +211,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.disposed = true; this.restoreRevision++;
 		this.unbindDirectories?.();
 		this.unbindFocus(); this.unbindBlur(); this.unbindNativeResize();
-		this.hide(); this.sash.dispose(); this.unbindResize(); this.focusTarget.release(); this.unbindKeyboard(); this.unbindModelClear();
+		this.hide(); this.sash.dispose(); this.unbindResize(); this.focusTarget.release(); this.unbindKeyboard();
 		this.changeListeners.clear();
 	}
 
@@ -236,12 +232,21 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	/** Recovery applies inert browser state once; native focus remains a separate admitted operation. */
 	public beginRestore(): ResourcePanelRestoreRequest {
-		const revision = ++this.restoreRevision, context = this.focusTarget.scope.contextGeneration;
+		const revision = ++this.restoreRevision;
+		let context = this.focusTarget.scope.contextGeneration;
 		const interaction = inputFocus.interactionRevision;
-		let active = true, applied = false, focused = false;
+		let active = true, applied = false, focused = false, prepared = false;
 		const isCurrent = () => active && !this.disposed && this.restoreRevision === revision
 			&& this.focusTarget.scope.contextGeneration === context;
 		return {
+			prepare: () => {
+				if (prepared || !isCurrent()) return isCurrent();
+				prepared = true;
+				this.drag?.cancel();
+				if (!isCurrent()) return false;
+				context = this.focusTarget.scope.retireContext();
+				return isCurrent();
+			},
 			restore: state => {
 				if (!isCurrent() || applied) return false;
 				applied = true; focused = state.focused;

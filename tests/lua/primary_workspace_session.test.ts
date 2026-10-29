@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { resourceIdentityKey } from '../../ide/common/resource';
+import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 import { navigationState } from '../../ide/navigation/navigation_history';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
+import { TextEditorInput } from '../../ide/workbench/common/editor_input';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import type { ScenePrimarySnapshot } from '../../ide/workbench/contrib/scene_editor/primary_snapshot';
@@ -267,4 +272,173 @@ test('final shutdown persists primary state and its canonical dirty source befor
 		assert.equal(payload.dirtyFiles.length, 1);
 		assert.ok([...values.values()].some(value => JSON.parse(value).contents === source));
 	});
+});
+
+test('a newer Main clear during initial model retirement supersedes older primary recovery', async t => {
+	const f = fixture(t); assert.equal(await f.open(1), true);
+	const payload = f.checkpoint();
+	let clearing: Promise<boolean> | undefined;
+	const unbind = editorTextModelService.onDidRemoveModel(model => {
+		if (model.identity.path !== 'scene.lua') return;
+		unbind();
+		clearing = f.editor.mainWorkspace.clearPrimary(f.editor.editorParts.closeController, null);
+	});
+	t.after(unbind);
+	await f.restore(payload);
+	assert.ok(clearing !== undefined);
+	assert.equal(await clearing, true);
+	assert.ok(f.editor.mainWorkspace.primary === undefined);
+	assert.equal(f.editor.editorParts.documents.length, payload.editorParts.documents.length);
+});
+
+test('a newer Home document during initial model retirement survives independently of primary recovery', async t => {
+	const f = fixture(t); assert.equal(await f.open(1), true);
+	const payload = f.checkpoint();
+	let incoming: HomeInput | undefined;
+	const unbind = editorTextModelService.onDidRemoveModel(model => {
+		if (model.identity.path !== 'scene.lua') return;
+		unbind();
+		incoming = new HomeInput(null);
+		f.editor.editorParts.main.activeGroup.openEditor(incoming);
+	});
+	t.after(unbind);
+	await f.restore(payload);
+	assert.ok(incoming !== undefined && f.editor.editorParts.main.activeGroup.model.activeTab === incoming);
+	assert.equal(f.editor.editorParts.documents.length, 0);
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	assert.ok(primary.consumer.subject === primary.consumer.document!.scenes[1]);
+});
+
+test('a newer Home document during initial group retirement is not overwritten by older recovery', async t => {
+	const f = fixture(t); assert.equal(await f.open(1), true);
+	const parts = f.editor.editorParts;
+	parts.main.activeGroup.openEditor(new CodeEditorInput(f.model()));
+	const payload = f.checkpoint();
+	let incoming: HomeInput | undefined;
+	const unbind = parts.onDidChange(() => {
+		if (parts.documents.length !== 0 || parts.main.activeGroup.model.activeTab !== null) return;
+		unbind();
+		incoming = new HomeInput(null);
+		parts.main.activeGroup.openEditor(incoming);
+	});
+	t.after(unbind);
+	await f.restore(payload);
+	assert.ok(incoming !== undefined && parts.main.activeGroup.model.activeTab === incoming);
+	assert.equal(parts.documents.length, 0);
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	assert.ok(primary.consumer.subject === primary.consumer.document!.scenes[1]);
+});
+
+for (const action of ['visibility', 'filter', 'disclosure'] as const) test(`new browser ${action} during initial model retirement supersedes only older browser recovery`, async t => {
+	const f = fixture(t); assert.equal(await f.open(1), true);
+	const panel = f.editor.resourcePanel;
+	panel.show();
+	panel.queuePendingSelection(f.identity); panel.applyPendingSelection();
+	const file = panel.files.selectedNode; assert.ok(file?.element.kind === 'file');
+	if (action === 'visibility') panel.hide();
+	const payload = f.checkpoint(), collapsed = file.collapsed, filter = panel.getFilterMode();
+	let changed = false;
+	const unbind = editorTextModelService.onDidRemoveModel(model => {
+		if (model.identity.path !== 'scene.lua') return;
+		unbind(); changed = true;
+		if (action === 'visibility') panel.show();
+		else if (action === 'filter') panel.toggleFilterMode();
+		else panel.toggleFileDisclosure(file);
+	});
+	t.after(unbind);
+	await f.restore(payload);
+	assert.equal(changed, true);
+	if (action === 'visibility') assert.equal(panel.visible, true);
+	else if (action === 'filter') assert.notEqual(panel.getFilterMode(), filter);
+	else {
+		const current = panel.files.tree.rows.find(node => node.element.kind === 'file' && node.element.path === f.identity.path);
+		assert.ok(current !== undefined); assert.equal(current.collapsed, !collapsed);
+	}
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	assert.ok(primary.consumer.subject === primary.consumer.document!.scenes[1]);
+	assert.equal(f.editor.editorParts.documents.length, payload.editorParts.documents.length);
+});
+
+test('outgoing model observers resolve and edit the complete recovered canonical generation before document hydration', async t => {
+	const f = fixture(t); assert.equal(await f.open(1), true);
+	const departing = f.model();
+	departing.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- recovered dirty source\n' }]);
+	const payload = f.checkpoint(), recoveredSource = departing.buffer.getText(), newerEdit = '-- newer Source edit\n';
+	let admitted: ReturnType<typeof f.model> | undefined, incoming: CodeEditorInput | undefined, observedSource: string | undefined;
+	const unbind = editorTextModelService.onDidRemoveModel(model => {
+		if (model !== departing) return;
+		unbind();
+		admitted = f.model(); observedSource = admitted.buffer.getText();
+		admitted.pushEditOperations([{ offset: 0, deleteLength: 0, text: newerEdit }]);
+		incoming = new CodeEditorInput(admitted);
+		f.editor.editorParts.main.activeGroup.openEditor(incoming);
+	});
+	t.after(unbind);
+	await f.restore(payload);
+	assert.equal(observedSource, recoveredSource);
+	assert.ok(admitted !== undefined && admitted !== departing && f.model() === admitted);
+	assert.ok(incoming !== undefined && f.editor.editorParts.main.activeGroup.model.activeTab === incoming);
+	assert.ok(incoming.workingCopy === admitted);
+	assert.equal(admitted.buffer.getText(), newerEdit + recoveredSource); assert.equal(admitted.dirty, true);
+	assert.ok(admitted.undo() !== null);
+	assert.equal(admitted.buffer.getText(), recoveredSource); assert.equal(admitted.dirty, true);
+	assert.ok(admitted.redo() !== null);
+	assert.equal(admitted.buffer.getText(), newerEdit + recoveredSource);
+	assert.equal(f.editor.editorParts.documents.length, 0);
+	// New source bytes invalidate the persisted exact Scene proof, not the newer Source view.
+	assert.ok(f.editor.mainWorkspace.primary instanceof UnavailableScenePrimaryClient);
+});
+
+test('recovery layout retires a primary gesture only after canonical sources and semantic owners agree', async t => {
+	const f = fixture(t); assert.equal(await f.open(1), true);
+	const departing = f.model(), recoveredSource = `-- recovered canonical source\n${SOURCE}`;
+	departing.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- recovered canonical source\n' }]);
+	const payload = f.checkpoint();
+	assert.ok(departing.undo() !== null); f.update();
+	const project = getOrCreateSemanticProject(editorTextModelService, f.identity.contextId);
+	project.synchronizeSources(f.sources.catalog);
+	assert.equal(project.getSnapshot().getFileData(resourceIdentityKey(f.identity))!.source, SOURCE);
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	let observed: { readonly model: ReturnType<typeof f.model>; readonly source: string; readonly analysis: string } | undefined;
+	pointerCapture.beginRoute(primary.hierarchy.scope.surfaceScope, { valid: true, insideViewport: true, viewportX: 10, viewportY: 100,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
+	pointerCapture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() {
+		const model = f.model(), current = getOrCreateSemanticProject(editorTextModelService, f.identity.contextId);
+		current.synchronizeSources(f.sources.catalog);
+		observed = { model, source: model.buffer.getText(), analysis: current.getSnapshot().getFileData(resourceIdentityKey(f.identity))!.source };
+	} });
+	await f.restore(payload);
+	assert.ok(observed !== undefined && observed.model !== departing && observed.model === f.model());
+	assert.equal(observed.source, recoveredSource);
+	assert.equal(observed.analysis, recoveredSource, 'layout callbacks cannot consume the departing semantic generation with recovered working-copy bytes');
+});
+
+for (const boundary of ['model-will-clear', 'primary-scope-retirement'] as const) test(`new Home and canonical Source admitted by ${boundary} do not retain departing document consumers`, async t => {
+	const f = fixture(t); assert.equal(await f.open(1), true);
+	const previous = f.editor.mainWorkspace.primary; assert.ok(previous instanceof ScenePrimaryClient);
+	const parts = f.editor.editorParts, oldInputs = [f.firstInput, f.secondInput];
+	const oldModels = new Set(editorTextModelService.models), payload = f.checkpoint();
+	let incoming: HomeInput | undefined, source: CodeEditorInput | undefined;
+	const admit = () => {
+		unbind();
+		const group = parts.main.activeGroup;
+		source = new CodeEditorInput(f.model()); group.openEditor(source, { preserveFocus: true });
+		incoming = new HomeInput(null); group.openEditor(incoming);
+	};
+	const unbind = boundary === 'model-will-clear' ? editorTextModelService.onWillClear(admit) : previous.scope.onDidRetireContext(admit);
+	t.after(unbind);
+	await f.restore(payload);
+	assert.ok(incoming !== undefined && parts.main.activeGroup.model.activeTab === incoming);
+	assert.ok(source !== undefined && parts.main.activeGroup.model.findById(source.id) === source);
+	assert.ok(source.workingCopy === f.model() && !oldModels.has(source.workingCopy));
+	assert.equal(source.workingCopy.buffer.getText(), SOURCE);
+	for (const group of parts.groups) for (const input of group.model.tabs) {
+		if (input instanceof TextEditorInput) for (const model of input.getWorkingCopies()) assert.ok(!oldModels.has(model));
+		assert.ok(!oldInputs.some(old => old === input));
+	}
+	for (const consumer of f.editor.mainWorkspace.workingCopyConsumers())
+		for (const model of consumer.getWorkingCopies()) assert.ok(!oldModels.has(model));
+	assert.equal(parts.documents.length, 0);
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	assert.ok(primary.consumer.workingCopy === source.workingCopy);
 });

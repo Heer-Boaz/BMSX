@@ -56,7 +56,7 @@ export class EditorCloseController {
 	public constructor(private readonly getConsumers: () => Iterable<WorkingCopyConsumer>,
 		private readonly saves: TextFileSaveService, private readonly prompt: ActionPrompt, models: EditorTextModelService) {
 		this.unbindWorkspace = models.onWillClear(() => {
-			for (const operation of this.operations) this.cancel(operation);
+			for (const operation of [...this.operations]) this.cancel(operation);
 		});
 	}
 
@@ -131,10 +131,10 @@ export class EditorCloseController {
 	}
 
 	/** A newer composition request revokes the old decision without waiting for its prompt or Save. */
-	public cancelRelease(consumer: WorkingCopyConsumer): void {
-		const operation = this.pending.get(consumer);
-		if (operation === undefined || operation === TRANSFER || operation.release === undefined) return;
-		this.pending.delete(consumer);
+	public cancelRelease(target: WorkingCopyReleaseTarget): void {
+		const operation = this.pending.get(target.consumer);
+		if (operation === undefined || operation === TRANSFER || operation.release !== target) return;
+		this.pending.delete(target.consumer);
 		this.cancel(operation);
 	}
 

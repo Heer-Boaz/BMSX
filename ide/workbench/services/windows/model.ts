@@ -51,6 +51,8 @@ export interface WorkbenchSurface extends IDisposable, WorkbenchSurfaceCallbacks
 	/** The native service may move this subtree without changing its lifetime owner. */
 	readonly presentationParent: WorkbenchSurface | null | undefined;
 	readonly visible: boolean;
+	/** Native connectivity, independent of visibility and minimization. */
+	readonly published: boolean;
 	readonly retired: boolean;
 	/** Observers retain this exact attachment, independently of its reusable controller. */
 	onDidRetire(listener: () => void): () => void;

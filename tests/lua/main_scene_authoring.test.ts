@@ -16,6 +16,8 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+import { applyWorkspaceAutosavePayload } from '../../ide/workbench/workspace/restore';
+import type { ScenePrimarySnapshot } from '../../ide/workbench/contrib/scene_editor/primary_snapshot';
 
 const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('same', { objects = { { member_id = 'other', definition_id = 'actor', options = { pos = { x = 7, y = 8, z = 9 } } } } })\n`;
 
@@ -179,14 +181,37 @@ test('floating editor-part suspension cancels its native draft before blur witho
 	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
 });
 
-test('canonical workspace retirement clears Main rather than retaining disposed model authority', async t => {
+test('frontend workspace replacement retires the old Main and controls before restoring document authority', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	editorTextModelService.clear();
-	assert.equal(f.editor.mainWorkspace.primary, undefined);
+	const payload = {
+		mainWorkspace: { ...f.editor.mainWorkspace.serialize(), primary: null, activeClient: 'documents' as const },
+		editorParts: f.editor.editorParts.serialize(f.editor.editorInputSerializers),
+		filesBrowser: f.editor.resourcePanel.serialize(), fontVariant: f.editor.fontVariant,
+		breakpoints: f.ide.debugger.breakpoints.serialize(), dirtyFiles: [],
+	};
+	await applyWorkspaceAutosavePayload(f.editor, f.sources.catalog, f.ide.debugger, payload);
+	assert.ok(f.editor.mainWorkspace.primary === undefined);
 	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false);
 	assert.equal(client.consumer.isCurrent, false);
+	assert.ok(editorTextModelService.get(f.model.resource) !== f.model);
 	assert.deepEqual([...f.editor.mainWorkspace.workingCopyConsumers()], []);
+});
+
+test('source model retirement invalidates Main authority without choosing another authored subject', async t => {
+	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
+	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
+	assert.equal(selectSceneOutlineRow(client.view.hierarchy, 1), true);
+	const mutation = client.commandTarget.getCommand('sceneEditor.removeMember')!.capture!()!;
+	assert.equal(mutation.isEnabled(), true);
+	editorTextModelService.clear();
+	assert.ok(main.primary === client);
+	assert.equal(client.consumer.isCurrent, false); assert.equal(client.consumer.availability, 'unavailable');
+	assert.equal(mutation.isEnabled(), false);
+	assert.equal(client.commandTarget.getCommand('sceneEditor.removeMember')!.isEnabled(), false);
+	const reference: ScenePrimarySnapshot = JSON.parse(main.serialize().primary!.value);
+	assert.deepEqual(reference.source.resource, f.model.identity);
+	assert.equal(reference.subject.availability, 'unavailable');
 });
 
 test('Main Ctrl+S accepts its concrete pending field and saves its own canonical model, not a document MRU model', async t => {

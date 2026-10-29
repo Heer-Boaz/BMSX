@@ -351,7 +351,11 @@ function testResource(
 
 function installDirtyModel(path: string, source: string, contextId: string = TEST_CONTEXT_ID): EditorTextModel {
 	const model = new EditorTextModel(testResource(path, contextId), 'lua', source, editorTextModelService.history, '', '', true);
-	editorTextModelService.restore([model]);
+	const previous = editorTextModelService.get(model.identity), models = [...editorTextModelService.models];
+	if (previous === undefined) models.push(model);
+	else models[models.indexOf(previous)] = model;
+	const replacement = editorTextModelService.replace(models);
+	replacement.publish(); replacement.dispose();
 	return model;
 }
 

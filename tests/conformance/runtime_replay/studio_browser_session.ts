@@ -65,6 +65,33 @@ export async function testProjectBrowserSession(test: StudioFixture): Promise<vo
 			check(editorTextModelService.get(browserResource) === undefined,
 				'browser recovery: recovering browser correspondence does not open or retain a Source working copy');
 			await test.capture?.(`browser-recovery-${editor.fontVariant}-theme-${theme}-after`);
+			await test.runPaletteCommand('Workspace: Focus Hierarchy');
+			await test.press('Home'); await test.press('ArrowRight'); await test.press('ArrowDown');
+			const primary = editor.mainWorkspace.primary;
+			if (!(primary instanceof ScenePrimaryClient)) throw new Error('primary recovery: an actual Scene client is required');
+			check(primary.consumer.selection?.kind === 'member', 'primary recovery: native hierarchy input chooses an authored member');
+			const copy = primary.consumer.workingCopy, source = copy.buffer.getText();
+			persistWorkspaceSessionLocally();
+			const mainPayload: WorkspaceAutosavePayload = JSON.parse(JSON.stringify(workspaceState.localGeneration!.payload));
+			check(mainPayload.mainWorkspace.activeClient === 'primary' && !mainPayload.filesBrowser.focused,
+				'primary recovery: the session captures Main foreground independently of document activation');
+			await test.capture?.(`primary-recovery-${editor.fontVariant}-theme-${theme}-before`);
+			// Exercise the same hybrid recovery boundary while the departing Main still owns native focus.
+			await applyWorkspaceAutosavePayload(editor, test.ide.sources.catalog, test.ide.debugger, mainPayload);
+			const recovered = editor.mainWorkspace.primary, focused = inputFocus.admittedTarget;
+			if (!(recovered instanceof ScenePrimaryClient)) throw new Error('primary recovery: the restored Scene client is required');
+			check(recovered !== primary && focused !== null && recovered.hierarchy.scope.contains(focused.scope),
+				'primary recovery: retiring Main controls cannot activate a document instead of the restored hierarchy');
+			const code = editor.editorParts.main.activeGroup.model.activeTab;
+			check(code?.kind === 'code_editor' && code.workingCopy === recovered.consumer.workingCopy
+				&& code.workingCopy !== copy && editorTextModelService.get(resource) === code.workingCopy
+				&& code.workingCopy.buffer.getText() === source,
+				'primary recovery: restored Main and Source share the new canonical model without changing authored bytes');
+			check(JSON.stringify(editor.mainWorkspace.serialize().primary) === JSON.stringify(mainPayload.mainWorkspace.primary)
+				&& JSON.stringify(editor.editorParts.serialize(editor.editorInputSerializers)) === JSON.stringify(mainPayload.editorParts),
+				'primary recovery: exact subject, member selection, document topology and MRU survive native control retirement');
+			await test.frame();
+			await test.capture?.(`primary-recovery-${editor.fontVariant}-theme-${theme}-after`);
 			await test.press('ControlLeft', 'AltLeft', 'KeyT');
 		}
 		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');

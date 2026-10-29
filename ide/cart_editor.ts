@@ -367,7 +367,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unsubscribeDiagnosticsChanged: () => void;
 	private readonly unbindHostInput: () => void;
 	private readonly unbindNavigation: () => void;
-	private readonly unbindWorkspaceModels: () => void;
 	private readonly unbindBreakpoints: () => void;
 	private readonly unbindSourceStop: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
@@ -555,7 +554,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.statusBar = new WorkbenchStatusBar(this.surfaces, chromeSurface, this.commands, this.quickInput, this.clipboard, workArea);
 		this.regionNavigation = new WorkbenchRegionNavigation(this.resourcePanel, this.mainWorkspace, this.editorParts.main, this.statusBar, this.surfaces);
 		this.resourcePanel.focusTarget.scope.statusSource = this.resourcePanel;
-		this.unbindWorkspaceModels = editorTextModelService.onWillClear(() => this.mainWorkspace.reset());
 
 		this.surfaces.attach({
 			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourcePanel.sash.focusTarget.scope.surfaceScope,
@@ -980,7 +978,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorParts.closeController.dispose();
 		inputFocus.workbenchScope.commands = undefined;
 		this.unbindHostInput();
-		this.unbindWorkspaceModels();
 		this.statusBar.dispose();
 		this.windowStatus.dispose();
 		this.builds = undefined;

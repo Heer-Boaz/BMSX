@@ -17,6 +17,8 @@ class Surface implements WorkbenchSurface {
 	public readonly handleWheel: WorkbenchSurface['handleWheel'];
 	public readonly onRetire: WorkbenchSurface['onRetire'];
 	public retired = false;
+	public publicationRequested = false;
+	public published = false;
 	public activeModal: Surface | null = null;
 	private retirementListeners: Set<() => void> | undefined;
 
@@ -42,7 +44,7 @@ class Surface implements WorkbenchSurface {
 	}
 
 	public get visible(): boolean {
-		return !this.retired && this.options.isVisible()
+		return this.published && !this.retired && this.options.isVisible()
 			&& (this.lifetimeOwner === undefined || this.lifetimeOwner.visible)
 			&& (this.presentationParent == null || this.presentationParent === this.lifetimeOwner || this.presentationParent.visible);
 	}
@@ -79,12 +81,25 @@ export class WorkbenchSurfaceService implements IDisposable {
 	public constructor(private readonly onDidChange: () => void = () => {}) {}
 
 	public attach(options: WorkbenchSurfaceOptions): WorkbenchSurface {
+		const surface = this.prepare(options);
+		this.publish(surface);
+		return surface;
+	}
+
+	/** Construct a real detached native subtree; its owner publishes after membership and controls are complete. */
+	public prepare(options: WorkbenchSurfaceOptions): WorkbenchSurface {
 		const surface = new Surface(options, this);
 		this.insert(surface);
 		this.scopes.set(surface.captureScope, surface);
 		surface.lifetimeOwner?.owned.push(surface);
-		this.changed();
 		return surface;
+	}
+
+	/** Publication is monotonic; attached descendants connect only when all native owners are published. */
+	public publish(surface: WorkbenchSurface): void {
+		const node = surface as Surface;
+		node.publicationRequested = true;
+		if (this.updatePublication(node)) this.changed();
 	}
 
 	public findByScope(scope: WorkbenchSurface['captureScope']): WorkbenchSurface | undefined {
@@ -104,7 +119,8 @@ export class WorkbenchSurfaceService implements IDisposable {
 		if (node.role !== 'modal' && !(node.role === 'transient' && node.lifetimeOwner !== undefined))
 			node.admissionParent = node.presentationParent;
 		this.insert(node);
-		this.changed();
+		const published = node.published;
+		if (this.updatePublication(node) || published) this.changed();
 	}
 
 	/** Canonical input membership resolves against the actual presentation ancestry. */
@@ -152,7 +168,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 				// Popup teardown can change another session's visibility or membership.
 				// Settle those owner changes before publishing input admission.
 				for (const node of this.scopes.values()) {
-					if (node.role === 'transient' && node.lifetimeOwner !== undefined && !this.isAdmitted(node)) this.retireNode(node);
+					if (node.published && node.role === 'transient' && node.lifetimeOwner !== undefined && !this.isAdmitted(node)) this.retireNode(node);
 				}
 				if (!this.changePending) { this.revision++; this.onDidChange(); }
 			} while (this.changePending);
@@ -169,7 +185,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 		if (next === undefined || this.band(next) > this.band(node)) return;
 		siblings.splice(index, 1);
 		this.insert(node);
-		this.changed();
+		if (node.published) this.changed();
 	}
 
 	public draw(painter: WorkbenchSurfacePainter): void {
@@ -216,19 +232,22 @@ export class WorkbenchSurfaceService implements IDisposable {
 	public retire(surface: WorkbenchSurface): void {
 		const node = surface as Surface;
 		if (node.retired) return;
+		const published = node.published;
 		this.retireNode(node);
-		this.changed();
+		if (published) this.changed();
 	}
 
 	private retireNode(node: Surface): void {
+		const published = node.published;
 		node.retired = true;
+		this.updatePublication(node);
 		this.scopes.delete(node.captureScope);
 		const siblings = node.presentationParent == null ? this.roots : node.presentationParent.children;
 		siblings.splice(siblings.indexOf(node), 1);
 		if (node.lifetimeOwner !== undefined) node.lifetimeOwner.owned.splice(node.lifetimeOwner.owned.indexOf(node), 1);
 		// Retirement callbacks observe the remaining modal owner, not the
 		// detached modal's last published admission.
-		if (node.role === 'modal') this.indexModals();
+		if (published) this.indexModals();
 		node.onRetire?.();
 		node.publishRetirement();
 		while (node.owned.length !== 0) this.retireNode(node.owned[node.owned.length - 1]);
@@ -245,6 +264,18 @@ export class WorkbenchSurfaceService implements IDisposable {
 		let index = siblings.length;
 		while (index !== 0 && this.band(siblings[index - 1]) > band) index -= 1;
 		siblings.splice(index, 0, node);
+	}
+
+	/** Native connectivity follows retained parent/owner edges, independently of visibility and minimization. */
+	private updatePublication(node: Surface): boolean {
+		const published = !node.retired && node.publicationRequested
+			&& (node.lifetimeOwner === undefined || node.lifetimeOwner.published)
+			&& (node.presentationParent == null || node.presentationParent.published);
+		if (node.published === published) return false;
+		node.published = published;
+		for (const child of node.children) this.updatePublication(child);
+		for (const owned of node.owned) this.updatePublication(owned);
+		return true;
 	}
 
 	private band(node: Surface): number {
@@ -297,6 +328,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 
 	private indexContextModals(siblings: readonly Surface[]): void {
 		for (const node of siblings) {
+			if (!node.published) continue;
 			if (node.role === 'window') this.windowList[this.windowCount++] = node;
 			if (node.options.role === 'modal' && node.visible) {
 				if (node.options.blockedScope === null) this.rootModal = node;

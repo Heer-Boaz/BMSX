@@ -6,7 +6,7 @@ import { pointerCapture } from '../input/pointer/capture';
 import { pointerHover } from '../input/pointer/hover';
 import { api } from '../runtime/overlay_api';
 import { ActionPrompt } from './contrib/modal/action_prompt';
-import type { EditorCloseController, WorkingCopyConsumer } from './services/editor/editor_close';
+import type { EditorCloseController, WorkingCopyConsumer, WorkingCopyReleaseTarget } from './services/editor/editor_close';
 import type { WorkbenchSurface } from './services/windows/model';
 import type { WorkbenchSurfaceService } from './services/windows/service';
 import { WorkbenchSplitControl } from './ui/split_control';
@@ -36,6 +36,8 @@ export type MainWorkspaceRestoreFactory = (record: SerializedPrimaryClient, surf
 	isCurrent: () => boolean) => Promise<MainWorkspaceClient | undefined>;
 export type MainWorkspaceRestoreRequest = {
 	isCurrent(): boolean;
+	prepare(): boolean;
+	retire(): void;
 	restore(state: SerializedMainWorkspace, factory: MainWorkspaceRestoreFactory): Promise<boolean>;
 	focusClient(): void;
 	dispose(): void;
@@ -48,6 +50,7 @@ type PrimaryRequest = {
 	readonly originContext: number | undefined;
 	readonly interactionRevision: number;
 	readonly options: MainWorkspaceOpenOptions | undefined;
+	release: WorkingCopyReleaseTarget | undefined;
 	departure: NavigationHistoryEntry | null;
 	candidate: MainWorkspaceClient | undefined;
 	preserveFocus: boolean;
@@ -158,15 +161,13 @@ export class MainWorkspace {
 		const hierarchySurface = surfaces.attach({ role: 'content', lifetimeOwner: this.primarySurface, presentationParent: this.primarySurface,
 			captureScope: Symbol('main hierarchy'), isVisible: () => this.primaryValue?.hierarchy.attached === true,
 			getBounds: () => this.regionLayout.hierarchyBounds, getClip: () => this.regionLayout.viewport,
-			draw: () => this.primaryValue!.hierarchy.draw(), handlePointer: snapshot => this.primaryValue!.hierarchy.handlePointer(snapshot),
-			handleWheel: event => { this.primaryValue!.hierarchy.handleWheel(event); return true; },
+			draw() {},
 			onRetire: () => pointerCapture.cancelScope(hierarchySurface.captureScope),
 		});
 		const detailsSurface = surfaces.attach({ role: 'content', lifetimeOwner: this.primarySurface, presentationParent: this.primarySurface,
 			captureScope: Symbol('main details'), isVisible: () => this.primaryValue?.details.attached === true,
 			getBounds: () => this.regionLayout.detailsBounds, getClip: () => this.regionLayout.viewport,
-			draw: () => this.primaryValue!.details.draw(), handlePointer: snapshot => this.primaryValue!.details.handlePointer(snapshot),
-			handleWheel: event => { this.primaryValue!.details.handleWheel(event); return true; },
+			draw() {},
 			onRetire: () => pointerCapture.cancelScope(detailsSurface.captureScope),
 		});
 		this.regionSurfaces = { hierarchy: hierarchySurface, details: detailsSurface };
@@ -333,18 +334,48 @@ export class MainWorkspace {
 			activeClient: this.activeClient, activeRegion: this.activeRegion };
 	}
 
-	/** Initial recovery publishes placement before source admission; later user placement wins. */
+	/** Reserve primary recovery before departing controls can publish callbacks. */
 	public beginRestore(): MainWorkspaceRestoreRequest {
-		this.cancelRequest();
-		const generation = this.requestRevision, interaction = inputFocus.interactionRevision;
+		const interaction = inputFocus.interactionRevision;
 		const visibility = this.visibilityRevision, placement = this.activityPlacementRevision;
-		let disposed = false, restored = false;
+		let pending = this.request;
+		this.request = undefined;
+		const generation = ++this.requestRevision;
+		let disposed = false, restored = false, prepared = false;
+		let departing: MainWorkspaceClient | undefined;
 		let state: SerializedMainWorkspace;
 		let activityRevision: number;
 		const current = () => !disposed && !this.surface.retired && !this.resetting && this.requestRevision === generation;
+		const retirePending = () => {
+			const request = pending;
+			pending = undefined;
+			if (request !== undefined) this.retireRequest(request);
+		};
+		const retire = () => {
+			const client = departing;
+			departing = undefined;
+			retirePending();
+			if (client === undefined) return;
+			this.retireClient(client);
+			if (this.primaryValue === undefined && navigationState.activeOwner === this) this.onDocumentsActivate(false);
+			if (!this.surface.retired) { this.requestLayout(); this.surfaces.changed(); }
+			this.changed();
+		};
 		return {
 			isCurrent: current,
+			prepare: () => {
+				if (prepared || !current()) return current();
+				prepared = true;
+				departing = this.primaryValue;
+				this.releasePrimaryChanges?.(); this.releasePrimaryChanges = undefined;
+				this.primaryValue = undefined;
+				if (this.activeClient === 'primary') this.activeClient = 'documents';
+				if (departing !== undefined) departing.scope.statusSource = undefined;
+				return current();
+			},
+			retire,
 			restore: async (snapshot, factory) => {
+				retire();
 				if (!current()) return false;
 				state = snapshot;
 				this.restoredScroll = snapshot.scrollX; this.restoredScrollY = snapshot.scrollY;
@@ -377,7 +408,7 @@ export class MainWorkspace {
 					restored = this.primaryValue === client && current();
 					return restored;
 				} finally {
-					if (candidate !== undefined) { candidate.scope.retireContext(); candidate.dispose(); }
+					if (candidate !== undefined) this.retireClient(candidate);
 					if (!transferred) scope.retireContext();
 				}
 			},
@@ -387,7 +418,7 @@ export class MainWorkspace {
 				else if (state.activeClient === 'activity' && this.activityDisplayed && state.activityId !== undefined
 					&& this.activities.revision === activityRevision && this.activities.selectedId === state.activityId) this.openActivity(state.activityId);
 			},
-			dispose: () => { disposed = true; },
+			dispose: () => { disposed = true; retire(); },
 		};
 	}
 
@@ -432,12 +463,10 @@ export class MainWorkspace {
 		const previous = this.request;
 		const request: PrimaryRequest = { closes, previous: this.primaryValue, origin, originContext: origin?.commandContext.scope.contextGeneration,
 			interactionRevision: inputFocus.interactionRevision,
-			options, departure: null, candidate: undefined, preserveFocus: options?.preserveFocus === true };
+			options, release: undefined, departure: null, candidate: undefined, preserveFocus: options?.preserveFocus === true };
 		this.request = request; this.requestRevision++;
 		if (previous !== undefined) {
-			if (previous.previous !== undefined) previous.closes.cancelRelease(previous.previous.consumer);
-			this.disposeCandidate(previous);
-			previous.departure?.dispose(); previous.departure = null;
+			this.retireRequest(previous);
 		}
 		if (this.request === request && options?.recordNavigation !== false) request.departure = beginNavigationCapture();
 		return request;
@@ -464,8 +493,11 @@ export class MainWorkspace {
 			if (previous === undefined) {
 				if (!this.current(request)) return false;
 				this.publish(request, unbind);
-			} else if (!await request.closes.release({ consumer: previous.consumer, replacement: candidate?.consumer, scope: previous.scope,
-				isCurrent: () => this.current(request), retire: () => this.publish(request, unbind) }, request.origin, this.prompt)) return false;
+			} else {
+				request.release = { consumer: previous.consumer, replacement: candidate?.consumer, scope: previous.scope,
+					isCurrent: () => this.current(request), retire: () => this.publish(request, unbind) };
+				if (!await request.closes.release(request.release, request.origin, this.prompt)) return false;
+			}
 			const admitted = this.primaryValue === candidate && !this.surface.retired;
 			if (admitted && !request.preserveFocus && request.options?.recordNavigation !== false) {
 				const departure = request.departure; request.departure = null;
@@ -497,13 +529,7 @@ export class MainWorkspace {
 		if (candidate === undefined && this.activeClient === 'primary') this.activeClient = 'documents';
 		this.releasePrimaryChanges = candidate?.onDidChange(() => this.changed());
 		if (candidate !== undefined) this.prompt.focusTarget.commandContext = candidate.commandTarget;
-		if (previous !== undefined) {
-			previous.scope.statusSource = undefined;
-			const focused = inputFocus.target;
-			// Admitted replacement owns the handoff; retiring a widget must not activate its return destination.
-			if (focused !== null && previous.scope.contains(focused.scope)) inputFocus.setTarget(null);
-			previous.scope.retireContext(); previous.dispose();
-		}
+		if (previous !== undefined) this.retireClient(previous);
 		if (this.surface.retired || !this.presented || this.primaryValue !== candidate) return;
 		if (candidate === undefined && navigationState.activeOwner === this) {
 			this.onDocumentsActivate(false);
@@ -515,10 +541,18 @@ export class MainWorkspace {
 		this.changed();
 	}
 
+	/** The owning handoff clears departing focus before controls can activate their return route. */
+	private retireClient(client: MainWorkspaceClient): void {
+		client.scope.statusSource = undefined;
+		const focused = inputFocus.target;
+		if (focused !== null && client.scope.contains(focused.scope)) inputFocus.setTarget(null);
+		client.scope.retireContext(); client.dispose();
+	}
+
 	private disposeCandidate(request: PrimaryRequest): void {
 		const candidate = request.candidate;
 		request.candidate = undefined;
-		if (candidate !== undefined) { candidate.scope.retireContext(); candidate.dispose(); }
+		if (candidate !== undefined) this.retireClient(candidate);
 	}
 
 	public isActivityTarget(target: InputFocusTarget | null): boolean {
@@ -824,14 +858,16 @@ export class MainWorkspace {
 		this.update(); this.surfaces.changed();
 	}
 
+	private retireRequest(request: PrimaryRequest): void {
+		if (request.release !== undefined) request.closes.cancelRelease(request.release);
+		this.disposeCandidate(request);
+		request.departure?.dispose(); request.departure = null;
+	}
+
 	private cancelRequest(): void {
 		const request = this.request;
 		this.request = undefined; this.requestRevision++;
-		if (request !== undefined) {
-			if (request.previous !== undefined) request.closes.cancelRelease(request.previous.consumer);
-			this.disposeCandidate(request);
-			request.departure?.dispose(); request.departure = null;
-		}
+		if (request !== undefined) this.retireRequest(request);
 	}
 
 	/** Workspace replacement forcibly retires contexts, unlike a user-requested clear. */
@@ -843,7 +879,7 @@ export class MainWorkspace {
 		this.releasePrimaryChanges?.(); this.releasePrimaryChanges = undefined;
 		this.primaryValue = undefined;
 		this.activeClient = 'documents';
-		if (client !== undefined) { client.scope.statusSource = undefined; client.scope.retireContext(); client.dispose(); }
+		if (client !== undefined) this.retireClient(client);
 		this.primaryScope.retireContext(); this.prompt.close('cancel', false);
 		this.activities.detach(); this.activitySashAttached = false; this.activitySash.clearInput();
 		if (this.activities.surface.presentationParent !== this.surface) this.surfaces.reparent(this.activities.surface, this.surface);

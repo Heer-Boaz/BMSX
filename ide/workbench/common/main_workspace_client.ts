@@ -1,7 +1,6 @@
 import type { RectBounds } from '../../../machine/ts/common/rect';
 import type { EditorSourceLocationRequest } from '../../editor/navigation/source_location';
 import type { EditorFont } from '../../editor/ui/view/font';
-import type { PointerInputSnapshot, WheelInputSnapshot } from '../../common/models';
 import type { InputFocusScope, InputFocusTarget } from '../../input/focus';
 import type { PrimaryNavigationLocation } from '../../navigation/navigation_history';
 import type { WorkingCopyConsumer } from '../services/editor/editor_close';
@@ -23,10 +22,7 @@ export interface MainWorkspaceRegionClient {
 	detach(): void;
 	layout(bounds: Readonly<RectBounds>): void;
 	update(): void;
-	draw(): void;
 	focus(): void;
-	handlePointer(snapshot: PointerInputSnapshot): void;
-	handleWheel(event: WheelInputSnapshot): void;
 }
 
 /** One semantic subject and working-copy consumer, with independently attached named presentations. */

@@ -51,7 +51,8 @@ export type WorkbenchViewPanelOptions<View, Content extends WorkbenchViewPanelCo
 	readonly scope: InputFocusScope;
 	readonly commandTarget: InputFocusTarget;
 	readonly focusReturn: InputFocusTarget;
-	createControl(scope: InputFocusScope, panelTarget: InputFocusTarget): Content;
+	isPresented(): boolean;
+	createControl(scope: InputFocusScope, panelTarget: InputFocusTarget, surface: WorkbenchSurface): Content;
 	measureContent(font: EditorFont, target: WorkbenchViewSizeConstraints): void;
 	onDidOpenActions?(lifetime: DisposableStore): void;
 };
@@ -59,6 +60,7 @@ export type WorkbenchViewPanelOptions<View, Content extends WorkbenchViewPanelCo
 /** A real titled region: chrome, client allocation, focus boundary and attachment lifetime. */
 export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<View>> {
 	public readonly scope: InputFocusScope;
+	public readonly surface: WorkbenchSurface;
 	public readonly commandTarget: InputFocusTarget;
 	public readonly control: Content;
 	public readonly layoutState = createWorkbenchViewPanelLayout();
@@ -72,7 +74,14 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 	public get attached(): boolean { return this.attachedValue; }
 
 	public constructor(private readonly options: WorkbenchViewPanelOptions<View, Content>) {
-		this.scope = new InputFocusScope(options.surface.captureScope, options.scope);
+		this.scope = new InputFocusScope(Symbol('view panel'), options.scope);
+		this.surface = options.surfaces.prepare({ role: 'content', lifetimeOwner: options.surface, presentationParent: options.surface,
+			captureScope: this.scope.surfaceScope, isVisible: () => this.attached && options.isPresented(),
+			getBounds: () => this.layoutState, getClip: options.surface.getClip,
+			draw: () => this.draw(), handlePointer: snapshot => this.handlePointer(snapshot),
+			handleWheel: event => { this.handleWheel(event); return true; },
+			onRetire: () => this.detach(),
+		});
 		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
 		this.commandTarget.commandContext = options.commandTarget;
 		this.commandTarget.canFocus = () => this.attached && this.layoutState.left < this.layoutState.right && this.layoutState.top < this.layoutState.bottom;
@@ -92,8 +101,8 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 			this.tooltip.hide(); this.titleHovered = false;
 			options.onDidOpenActions?.(lifetime);
 		};
-		this.control = options.createControl(this.scope, this.commandTarget);
-		this.tooltip.attach(options.surfaces, options.surface, options.workArea);
+		this.control = options.createControl(this.scope, this.commandTarget, this.surface);
+		this.tooltip.attach(options.surfaces, this.surface, options.workArea);
 	}
 	public measure(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
 		this.options.measureContent(font, target);
@@ -115,6 +124,7 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 		this.control.setView(this.options.view, this.layoutState.client);
 		if (revision !== this.revision) return;
 		this.bindFocusOrder();
+		this.options.surfaces.publish(this.surface);
 	}
 	public layout(bounds: Readonly<RectBounds>): void {
 		if (!this.attached) return;
@@ -211,5 +221,7 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 		this.control.clearView();
 		if (revision === this.revision) this.commandTarget.release();
 	}
-	public dispose(): void { this.detach(); this.control.dispose(); this.actionBar.dispose(); this.tooltip.detach(); this.unbindKeyboard(); }
+	public dispose(): void {
+		this.surface.dispose(); this.control.dispose(); this.actionBar.dispose(); this.tooltip.detach(); this.unbindKeyboard();
+	}
 }

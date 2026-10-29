@@ -51,7 +51,7 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 		});
 		const common = { commands: options.commands, contextMenu: options.contextMenu, surfaces: options.surfaces,
 			workArea: options.workArea, scope: this.scope, commandTarget: this.commandTarget, focusReturn: options.focusReturn,
-			description: snapshot.source.resource.path,
+			description: snapshot.source.resource.path, isPresented: () => options.main.primary === this,
 			createControl: (_scope: typeof this.scope, target: typeof this.commandTarget) => new WorkbenchViewMessageControl(target) };
 		const hierarchyActions = new WorkbenchMenu(HIERARCHY_CONTEXT, model);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', surface: options.regions.hierarchy,

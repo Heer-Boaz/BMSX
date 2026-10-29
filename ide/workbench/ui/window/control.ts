@@ -191,7 +191,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	public get visible(): boolean { return this.surface !== undefined && this.surface.visible; }
 	/** Published windows remain discoverable while minimized, unlike provisional construction. */
-	public get isOpen(): boolean { return this.presented && this.model.open && this.surface !== undefined && !this.surface.retired; }
+	public get isOpen(): boolean { return this.presented && this.model.open && this.surface?.published === true; }
 	/** Chrome, client and promoted owned popups form one active window family. */
 	public get hasFocus(): boolean { return this.containsScope(this.surface, this.focus.target?.scope.surfaceScope); }
 	public get model(): WorkbenchWindowModel { return this.options.model; }
@@ -215,15 +215,15 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		if (this.presented === presented) return;
 		if (!presented) this.cancelPointer();
 		this.presented = presented;
-		if (this.surface !== undefined) this.surfaces.changed();
+		if (this.surface?.published) this.surfaces.changed();
 	}
 
-	/** Reattaching a pane preserves its input-owned open/minimized/placement model. */
-	public attach(): void {
+	/** Construct the complete native window tree without admitting presentation or client input. */
+	public prepare(): void {
 		if (this.surface !== undefined || !this.model.open) return;
 		const options = this.options;
 		windowsByScope.set(this.scope.surfaceScope, this);
-		this.surface = this.surfaces.attach({
+		this.surface = this.surfaces.prepare({
 			role: 'window', lifetimeOwner: options.lifetimeOwner, presentationParent: options.presentationParent,
 			captureScope: this.scope.surfaceScope,
 			getBounds: () => options.model.bounds, getClip: () => options.workArea,
@@ -257,7 +257,15 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			isVisible: () => this.pendingPlacement !== undefined,
 			draw: () => drawWorkbenchWindowPlacement(this.placementBounds),
 		});
-		this.restoreClientInput();
+	}
+
+	/** The composition owner publishes only after its complete client membership and allocation exist. */
+	public attach(): void {
+		this.prepare();
+		const surface = this.surface;
+		if (surface === undefined) return;
+		if (!surface.published) this.surfaces.publish(surface);
+		if (this.surface === surface && surface.published && !this.clientInputAttached) this.restoreClientInput();
 	}
 
 	public detach(): void {
@@ -315,7 +323,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	/** Font, producer revisions and work-area changes are the only chrome layout triggers. */
 	public layout(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number): boolean {
-		if (!this.visible) return false;
+		if (!this.presented || !this.model.open || this.model.minimized) return false;
 		const model = this.model;
 		const fontChanged = this.measuredFont !== font;
 		const headerHeight = font.lineHeight + WINDOW_HEADER_VERTICAL_PADDING;
@@ -341,7 +349,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		const contentChanged = arranged || fontChanged;
 		if (contentChanged) this.options.layoutContent(model.client);
 		this.updateTooltip();
-		this.surfaces.changed();
+		if (this.surface?.published) this.surfaces.changed();
 		return contentChanged;
 	}
 

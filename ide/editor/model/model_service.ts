@@ -1,4 +1,5 @@
 import { resourceIdentityKey, type ResourceIdentity, type RuntimeResource } from '../../common/resource';
+import type { IDisposable } from '../../common/lifecycle';
 import {
 	EditorTextModel,
 	type EditorDocumentMode,
@@ -17,18 +18,19 @@ type ModelContentChangeListener = (
 type ModelListener = (model: EditorTextModel) => void;
 
 export type ResolvedTextModelSource = { readonly source: string; readonly persistedBaseline: string | null };
+export type EditorTextModelReplacement = IDisposable & { isCurrent(): boolean; publish(): boolean };
 
 /** Resource-keyed lifetime owner for editable text models. */
 export class EditorTextModelService {
 	public readonly history = new EditorUndoRedoService();
-	private readonly modelsByResource = new Map<string, EditorTextModel>();
+	private modelsByResource = new Map<string, EditorTextModel>();
 	private readonly appliedChangesListeners = new Set<ModelAppliedChangesListener>();
 	private readonly contentChangeListeners = new Set<ModelContentChangeListener>();
 	private readonly modelAddedListeners = new Set<ModelListener>();
 	private readonly modelRemovedListeners = new Set<ModelListener>();
 	private readonly modelSavedListeners = new Set<ModelListener>();
 	private readonly clearListeners = new Set<() => void>();
-	private readonly pendingResolutions = new Map<string, Promise<EditorTextModel>>();
+	private pendingResolutions = new Map<string, Promise<EditorTextModel>>();
 	private generation = 0;
 
 	public get models(): IterableIterator<EditorTextModel> {
@@ -55,23 +57,12 @@ export class EditorTextModelService {
 		let model = this.modelsByResource.get(key);
 		if (model === undefined) {
 			model = new EditorTextModel(resource, mode, source, this.history, savedSource, persistedBaseline);
-			this.register(model);
+			this.register(key, model);
 			for (const listener of this.modelAddedListeners) listener(model);
 		} else {
 			model.refreshResource(resource);
 		}
 		return model;
-	}
-
-	/** Admit the complete recovered generation before observers can resolve another recovered resource. */
-	public restore(models: readonly EditorTextModel[]): boolean {
-		const generation = this.generation;
-		for (const model of models) this.register(model);
-		for (const model of models) for (const listener of this.modelAddedListeners) {
-			if (this.generation !== generation) return false;
-			listener(model);
-		}
-		return this.generation === generation;
 	}
 
 	/** Coalesce asynchronous source reads without creating an editor input or tab. */
@@ -82,22 +73,23 @@ export class EditorTextModelService {
 			return Promise.resolve(model);
 		}
 		const key = resourceIdentityKey(resource);
-		let pending = this.pendingResolutions.get(key);
+		// A reader can retire this admission before returning its source promise.
+		const resolutions = this.pendingResolutions;
+		let pending = resolutions.get(key);
 		if (pending === undefined) {
 			const generation = this.generation;
 			pending = readSource().then(source => {
 				if (generation !== this.generation) throw new Error(`Model resolution for '${resource.path}' was cancelled by workspace teardown.`);
 				return this.retain(resource, mode, source.source, source.source, source.persistedBaseline);
 			}).finally(() => {
-				if (this.pendingResolutions.get(key) === pending) this.pendingResolutions.delete(key);
+				if (resolutions.get(key) === pending) resolutions.delete(key);
 			});
-			this.pendingResolutions.set(key, pending);
+			resolutions.set(key, pending);
 		}
 		return pending;
 	}
 
-	private register(model: EditorTextModel): void {
-		const key = resourceIdentityKey(model.resource);
+	private register(key: string, model: EditorTextModel): void {
 		this.modelsByResource.set(key, model);
 		model.onDidSave(() => {
 			for (const listener of this.modelSavedListeners) listener(model);
@@ -144,15 +136,56 @@ export class EditorTextModelService {
 		return () => this.contentChangeListeners.delete(listener);
 	}
 
-	public clear(): void {
-		for (const listener of this.clearListeners) listener();
-		this.generation += 1;
-		this.pendingResolutions.clear();
-		for (const [key, model] of this.modelsByResource) {
-			this.modelsByResource.delete(key);
-			model.dispose();
-			for (const listener of this.modelRemovedListeners) listener(model);
+	/** Install complete membership without callbacks; publication and departing-model retirement remain separate phases. */
+	public replace(models: readonly EditorTextModel[]): EditorTextModelReplacement {
+		const departing = this.modelsByResource, listeners = [...this.clearListeners];
+		const current = this.modelsByResource = new Map();
+		this.pendingResolutions = new Map();
+		this.generation++;
+		const added: EditorTextModel[] = [];
+		for (const model of models) {
+			const key = resourceIdentityKey(model.identity);
+			if (departing.get(key) === model) {
+				departing.delete(key);
+				current.set(key, model);
+			} else {
+				this.register(key, model);
+				added.push(model);
+			}
 		}
+		let publication: readonly EditorTextModel[] | undefined = added;
+		const replacement: EditorTextModelReplacement = {
+			isCurrent: () => this.modelsByResource === current,
+			publish: () => {
+				const pending = publication;
+				publication = undefined;
+				if (pending !== undefined) {
+					for (const listener of listeners) {
+						if (!replacement.isCurrent()) return false;
+						if (this.clearListeners.has(listener)) listener();
+					}
+					for (const model of pending) for (const listener of this.modelAddedListeners) {
+						if (!replacement.isCurrent()) return false;
+						listener(model);
+					}
+				}
+				return replacement.isCurrent();
+			},
+			dispose: () => {
+				for (const [key, model] of departing) {
+					departing.delete(key);
+					model.dispose();
+					for (const listener of this.modelRemovedListeners) listener(model);
+				}
+			},
+		};
+		return replacement;
+	}
+
+	public clear(): void {
+		const replacement = this.replace([]);
+		try { replacement.publish(); }
+		finally { replacement.dispose(); }
 	}
 }
 

@@ -14,6 +14,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { getWorkbenchEditorBounds, refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { editorViewState } from '../../ide/editor/ui/view/state';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { createTestEditorGroup, createTestGroupPresentation } from '../helpers/editor_panes';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { TerminalInput } from '../../ide/workbench/contrib/terminal/editor_input';
@@ -69,6 +70,7 @@ test('remote wheel preserves ordering, fractions and source-time context before 
 
 test('public wheel router delivers each occurrence to its current pane using supplied geometry and modifiers', t => {
 	inputFocus.setTarget(null);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 400;
 	editorViewState.viewportHeight = 300;
 	editorChromeState.menuBarHeight = 20;
@@ -77,7 +79,8 @@ test('public wheel router delivers each occurrence to its current pane using sup
 	const surfaces = new WorkbenchSurfaceService();
 	const presentation = createTestGroupPresentation(surfaces);
 	const group = createTestEditorGroup(undefined, undefined, undefined, presentation);
-	group.panes.layout(getWorkbenchEditorBounds());
+	const bounds = getWorkbenchEditorBounds();
+	group.layout(bounds, bounds);
 	group.openEditor(new HostErrorInput('first view'));
 	t.mock.method(group.panes.activePane!, 'handleWheel', (event: WheelInputSnapshot) => firstPane.push(event));
 	t.after(() => { group.dispose(); surfaces.dispose(); inputFocus.setTarget(null); });
@@ -104,6 +107,7 @@ test('public wheel router delivers each occurrence to its current pane using sup
 test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not keyboard focus', t => {
 	const clock = new VirtualHeadlessClock();
 	const input = new Input(clock, new HeadlessInputHub(), -1);
+	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 400; editorViewState.viewportHeight = 300;
 	refreshWorkbenchLayout();
 	input.setPointerAdmissionMode('routed');
@@ -111,7 +115,8 @@ test('wheel ownership follows exclusive UI surfaces and spatial guest hits, not 
 	const extent = { left: 0, top: 0, right: 400, bottom: 300 };
 	const presentation = createTestGroupPresentation(surfaces, extent);
 	const group = createTestEditorGroup(undefined, undefined, undefined, presentation);
-	group.panes.layout(getWorkbenchEditorBounds());
+	const bounds = getWorkbenchEditorBounds();
+	group.layout(bounds, bounds);
 	group.openEditor(new HostErrorInput('wheel view'));
 	let sourceScroll = 0;
 	t.mock.method(group.panes.activePane!, 'handleWheel', (event: WheelInputSnapshot) => { sourceScroll += event.deltaY; });

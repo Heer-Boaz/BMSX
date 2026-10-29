@@ -220,7 +220,9 @@ subjects, queries or inspection sessions and their meaningful selections and
 source/session correspondence.
 Retained view state owns a particular presentation's reading intent. Attached
 controls own focus, drafts, gestures and transient UI; containers own placement
-and membership. Sharing a model does not implicitly share selection or view state.
+and membership. Native trees are constructed detached; their owner registers and
+allocates the complete subtree before publishing it to paint, input and window
+discovery. Sharing a model does not implicitly share selection or view state.
 Dependencies and explicit consumers determine retention, not whether a tab is
 visible. These are distinct lifetimes, not a universal state registry or a
 requirement to retain every control after it is hidden.
@@ -233,6 +235,10 @@ Query progress extends observations; replacing a query retires its old locations
 independently of the input that remains open. Session storage records
 plain source-correspondence and view mementos separately from document topology;
 restoration establishes new contexts and controls over recovered canonical models.
+Source replacement installs complete canonical membership before publishing
+source-reset or model events. Frontend restoration publishes replacement Main and
+document routing before retiring outgoing controls and models. Each departure
+owns its captured membership, independently of newer work admitted by callbacks.
 An unresolved primary reference remains explicitly Unavailable. Neither history
 nor restoration grants authority to a namesake, an old AST or a former focus scope.
 
@@ -319,8 +325,10 @@ focus admission when the composition overflows. Main is unbound until an explici
 contribution action supplies a primary subject. Ordinary document navigation does
 not replace it. `common/main_workspace_client.ts` separates the contribution's
 single semantic consumer from its independently attached region presentations.
-`ui/view_panel/` owns shared region chrome, client bounds and native focus order;
-contributions supply the content controls and measurements. Hiding a region
+`ui/view_panel/` owns shared region chrome, client bounds, native focus order and
+the exact panel's surface/capture lifetime; Main's region surfaces own allocation
+and clipping, not the contribution's input attachment. Contributions supply the
+content controls, measurements and admitted presentation membership. Hiding a region
 retires that attachment, not its sibling or retained work context. The logical
 primary surface groups modality without covering the document region.
 `main_activity.ts` owns the selected activity and a distinct native family for

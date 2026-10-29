@@ -316,7 +316,8 @@ for (const replacement of ['model', 'context'] as const) {
 		const target = editorTextModelService.get({ contextId: f.contextId, path: 'second.lua' })!;
 		if (replacement === 'model') {
 			const next = new EditorTextModel(target.resource, 'lua', target.buffer.getText(), editorTextModelService.history);
-			assert.equal(editorTextModelService.restore([next]), true); t.after(() => target.dispose());
+			const admission = editorTextModelService.replace([...editorTextModelService.models].map(model => model === target ? next : model));
+			admission.publish(); admission.dispose(); assert.equal(admission.isCurrent(), true);
 			assert.ok(editorTextModelService.get(target.identity) === next);
 		} else {
 			const context = f.sources.catalog.getContext(f.contextId), registry = createLuaSourceRegistry(context.projectRootPath, '');

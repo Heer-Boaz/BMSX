@@ -3,6 +3,7 @@ import test from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { inputFocus } from '../../ide/input/focus';
+import { pointerCapture } from '../../ide/input/pointer/capture';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { createTestEditorParts } from '../helpers/editor_panes';
@@ -17,6 +18,8 @@ import type { EditorFont } from '../../ide/editor/ui/view/font';
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { editorGroupChromeMinimumWidth } from '../../ide/workbench/services/editor/editor_group';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 /** Concrete independently attached controls; composition and lifecycle are the subjects under test. */
 class FixtureMainRegion implements MainWorkspaceRegionClient {
@@ -238,6 +241,103 @@ test('Main preserves all region minima below the combined width and reveals actu
 	assert.ok(client.hierarchy.bounds.left >= f.main.bounds.left);
 	assert.equal(client.hierarchy.attachCount, 1); assert.equal(f.main.primary, client);
 	assert.equal(f.primary.buffer.getText(), source); assert.equal(f.primary.dirty, false);
+});
+
+test('recovery reservation leaves departing primary controls intact until owned preparation', async t => {
+	const f = primaryFixture(t); assert.equal(await f.open(f.primary), true);
+	const primary = f.clients[0];
+	f.primary.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained dirty primary\n' }]);
+	const opening = f.open(f.incoming), candidate = f.clients[1];
+	const request = f.main.beginRestore(); t.after(() => request.dispose());
+	assert.ok(f.main.primary === primary); assert.equal(primary.disposed, 0); assert.equal(candidate.disposed, 0);
+	assert.equal(request.isCurrent(), true);
+	assert.equal(request.prepare(), true);
+	assert.equal(primary.disposed, 0); assert.equal(candidate.disposed, 0);
+	request.retire();
+	assert.equal(await opening, false);
+	assert.ok(f.main.primary === undefined); assert.equal(primary.disposed, 1); assert.equal(candidate.disposed, 1);
+});
+
+for (const redirected of [false, true]) test(`primary recovery retirement ${redirected ? 'preserves a new blur focus request' : 'does not activate the departing control return route'}`, async t => {
+	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
+	const main = f.editor.mainWorkspace, primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	main.focusPrimary('hierarchy');
+	assert.ok(inputFocus.target === primary.hierarchy.control.focusTarget);
+	if (redirected) t.after(primary.hierarchy.control.focusTarget.onDidBlur(() => f.second.focus()));
+	const interaction = inputFocus.interactionRevision, request = main.beginRestore(); t.after(() => request.dispose());
+	assert.equal(request.prepare(), true);
+	request.retire();
+	assert.ok(main.primary === undefined);
+	if (redirected) {
+		assert.ok(inputFocus.target === f.second.commandTarget);
+		assert.ok(inputFocus.interactionRevision > interaction);
+	} else {
+		assert.ok(inputFocus.target === null);
+		assert.equal(inputFocus.interactionRevision, interaction);
+	}
+});
+
+for (const captured of [false, true]) test(`departing primary retirement preserves a successor region gesture admitted by its context callback (captured: ${captured})`, async t => {
+	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
+	f.update();
+	const main = f.editor.mainWorkspace, previous = main.primary; assert.ok(previous instanceof ScenePrimaryClient);
+	let opening: Promise<boolean> | undefined, successor: ScenePrimaryClient | undefined, cancellations = 0;
+	const unbind = previous.scope.onDidRetireContext(() => {
+		unbind();
+		opening = f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target);
+		const current = main.primary; assert.ok(current instanceof ScenePrimaryClient && current !== previous); successor = current;
+		pointerCapture.beginRoute(current.hierarchy.scope.surfaceScope, { valid: true, insideViewport: true, viewportX: 10, viewportY: 100,
+			pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
+		if (captured) pointerCapture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancellations++; } });
+	});
+	t.after(unbind);
+	const request = main.beginRestore(); t.after(() => request.dispose());
+	assert.equal(request.prepare(), true); request.retire();
+	assert.equal(await opening, true);
+	assert.ok(successor !== undefined && main.primary === successor);
+	assert.equal(cancellations, 0, 'retiring the old region cannot cancel the successor attachment gesture');
+	assert.equal(pointerCapture.active, captured);
+	assert.equal(pointerCapture.routeScope, successor.hierarchy.scope.surfaceScope);
+});
+
+test('retiring a primary drains its uncaptured physical region hold before another presentation can receive its release', async t => {
+	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
+	f.update();
+	const main = f.editor.mainWorkspace, primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	pointerCapture.beginRoute(primary.hierarchy.scope.surfaceScope, { valid: true, insideViewport: true, viewportX: 10, viewportY: 100,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 });
+	assert.equal(pointerCapture.active, false);
+	assert.equal(pointerCapture.routeScope, primary.hierarchy.scope.surfaceScope);
+	const request = main.beginRestore(); t.after(() => request.dispose());
+	assert.equal(request.prepare(), true); request.retire();
+	assert.equal(pointerCapture.routeScope, undefined);
+	assert.equal(pointerCapture.draining, true);
+});
+
+test('departing candidate cleanup cannot overwrite a newer primary admitted during recovery retirement', async t => {
+	const f = primaryFixture(t); assert.equal(await f.open(f.primary), true);
+	const primary = f.clients[0];
+	f.primary.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained dirty primary\n' }]);
+	const opening = f.open(f.incoming), candidate = f.clients[1];
+	let newer: Promise<boolean> | undefined;
+	candidate.onDispose = () => { newer = f.open(f.incoming); };
+	const request = f.main.beginRestore(); t.after(() => request.dispose());
+	assert.equal(request.prepare(), true);
+	request.retire(); assert.equal(request.isCurrent(), false);
+	assert.equal(await opening, false);
+	assert.ok(newer !== undefined); assert.equal(await newer, true);
+	assert.ok(f.main.primary === f.clients[2]); assert.equal(f.clients[2].disposed, 0);
+	assert.equal(primary.disposed, 1); assert.equal(candidate.disposed, 1);
+	assert.equal(f.primary.dirty, true);
 });
 
 test('restore transfers an admitted client lifetime even when its retirement callbacks start a newer pending request', async t => {

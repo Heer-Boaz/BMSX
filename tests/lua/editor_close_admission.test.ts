@@ -7,6 +7,7 @@ import { EditorCloseController } from '../../ide/workbench/services/editor/edito
 import { TextEditorInput } from '../../ide/workbench/common/editor_input';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { inputFocus } from '../../ide/input/focus';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import type { WorkspaceRecord } from '../../ide/workspace/record_provider';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
@@ -602,39 +603,71 @@ test('a document opened while context Save is pending retains later edits and pr
 	assert.equal(f.files.records.get('first.lua')!.contents, saved);
 });
 
-test('a newer context release cancels its older prompt without allowing old completion to erase the new reservation', async t => {
+test('late cancellation of an old release target preserves the newer same-consumer prompt and reservation', async t => {
 	const f = await fixture(t), c = retainedContext(t, f), model = f.firstInput.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- still retained\n' }]);
 	const source = model.buffer.getText(); assert.equal(await c.closeSource(), true);
-	const old = c.release();
+	const oldTarget = c.target(), old = c.close.release(oldTarget, null, f.firstPart.actionPrompt);
 	assert.equal(f.firstPart.actionPrompt.visible, true);
-	c.close.cancelRelease(c.context);
+	c.close.cancelRelease(oldTarget);
 	const target = c.target(), newer = c.close.release(target, null, f.firstPart.actionPrompt);
+	c.close.cancelRelease(oldTarget);
 	assert.equal(await old, false);
 	assert.equal(f.firstPart.actionPrompt.visible, true);
-	assert.equal(c.close.release(target, null, f.firstPart.actionPrompt), newer, 'the newer request still owns its reservation');
+	assert.ok(c.close.release(target, null, f.firstPart.actionPrompt) === newer);
 	f.firstPart.actionPrompt.close('cancel'); assert.equal(await newer, false);
 	assert.equal(c.retained, true); assert.equal(c.retirements, 0); assert.equal(model.buffer.getText(), source);
 });
 
-test('a superseded release never retires its context after its already accepted Save completes', async t => {
+test('source replacement cancels departing close operations without sweeping a new close from their prompt blur', async t => {
+	const f = await fixture(t), close = f.editor.editorParts.closeController;
+	for (const model of [f.firstInput.workingCopy, f.secondInput.workingCopy])
+		model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained source\n' }]);
+	f.first.focus();
+	const old = f.firstGroup.close(f.firstInput.id);
+	assert.equal(f.firstPart.actionPrompt.visible, true);
+	let newer: Promise<boolean> | undefined;
+	const unbind = f.firstPart.actionPrompt.focusTarget.onDidBlur(() => {
+		unbind();
+		newer = f.secondGroup.close(f.secondInput.id);
+	});
+	t.after(unbind);
+	const replacement = editorTextModelService.replace([...editorTextModelService.models]);
+	try { assert.equal(replacement.publish(), true); }
+	finally { replacement.dispose(); }
+	assert.equal(await old, false);
+	assert.ok(newer !== undefined);
+	assert.equal(close.isPending(f.secondInput), true);
+	assert.equal(f.secondPart.actionPrompt.visible, true);
+	f.secondPart.actionPrompt.close('cancel');
+	assert.equal(await newer, false);
+	assert.equal(close.isPending(f.secondInput), false);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
+});
+
+test('late cancellation of an old release target cannot revoke a newer same-consumer accepted Save', async t => {
 	const f = await fixture(t), c = retainedContext(t, f), model = f.firstInput.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- Save is not rolled back\n' }]);
 	const saved = model.buffer.getText(); assert.equal(await c.closeSource(), true);
 	f.files.delayed = true;
-	const old = c.release();
+	const oldTarget = c.target(), old = c.close.release(oldTarget, null, f.firstPart.actionPrompt);
 	f.firstPart.actionPrompt.close('primary'); await setImmediate();
-	c.close.cancelRelease(c.context);
+	c.close.cancelRelease(oldTarget);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer source\n' }]);
 	const source = model.buffer.getText(), target = c.target();
 	const newer = c.close.release(target, null, f.firstPart.actionPrompt);
+	f.firstPart.actionPrompt.close('primary'); await setImmediate();
+	c.close.cancelRelease(oldTarget);
 	f.files.writes[0].complete();
-	assert.equal(await old, false);
+	assert.equal(await old, false); await setImmediate();
 	assert.equal(c.retained, true); assert.equal(c.retirements, 0);
-	assert.equal(c.close.release(target, null, f.firstPart.actionPrompt), newer);
+	assert.ok(c.close.release(target, null, f.firstPart.actionPrompt) === newer);
 	assert.equal(model.buffer.getText(), source); assert.equal(model.dirty, true);
 	assert.equal(f.files.records.get('first.lua')!.contents, saved);
-	f.firstPart.actionPrompt.close('cancel'); assert.equal(await newer, false);
+	assert.equal(f.files.writes.length, 2); f.files.writes[1].complete();
+	assert.equal(await newer, true);
+	assert.equal(c.retained, false); assert.equal(c.retirements, 1);
+	assert.equal(f.files.records.get('first.lua')!.contents, source); assert.equal(model.dirty, false);
 });
 
 test('a failed final-context Save preserves its consumer and canonical source for a later release', async t => {

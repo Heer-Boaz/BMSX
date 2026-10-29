@@ -68,6 +68,8 @@ export type EditorCloseScope =
 
 export type EditorPartsRestoreRequest = {
 	isCurrent(): boolean;
+	prepare(): boolean;
+	retire(): void;
 	restore(state: SerializedEditorParts, serializers: EditorInputSerializers, options?: { readonly preserveFocus?: boolean }): Promise<boolean>;
 	dispose(): void;
 };
@@ -783,11 +785,13 @@ export class EditorParts {
 		return { main, documents, active, mru };
 	}
 
-	/** Admit recovery before source hydration yields to newer foreground work. */
+	/** Reserve recovery without retiring the current document membership or its controls. */
 	public beginRestore(): EditorPartsRestoreRequest {
 		const generation = ++this.restoreGeneration;
 		const interaction = inputFocus.interactionRevision;
-		let disposed = false;
+		const departingParts = this.documentParts.map(part => ({ part, groups: [...part.groups] }));
+		let disposed = false, prepared = false;
+		let departure: { readonly groups: readonly EditorGroupView[]; readonly parts: typeof departingParts } | undefined;
 		const isCurrent = () => !disposed && !this.main.retired && generation === this.restoreGeneration;
 		const invalidate = () => { if (isCurrent()) this.restoreGeneration++; };
 		const tracked = new Map<EditorPart, { readonly pending: (() => void)[]; readonly openings: (() => void)[] }>();
@@ -798,7 +802,10 @@ export class EditorParts {
 			tracked.delete(part);
 		};
 		const track = (part: EditorPart) => {
-			const pending = [part.onDidChangeGroups(invalidate)], openings: (() => void)[] = [];
+			const topology = part.arrangement.topologyRevision;
+			const pending = [part.onDidChangeGroups(() => {
+				if (part.arrangement.topologyRevision !== topology) invalidate();
+			})], openings: (() => void)[] = [];
 			for (const group of part.groups) {
 				pending.push(group.model.onDidChange(change => { if (change !== 'label' && change !== 'dirty') invalidate(); }));
 				openings.push(group.panes.onDidBeginOpen(() => { if (group.openingAdmitted) invalidate(); }));
@@ -816,10 +823,52 @@ export class EditorParts {
 			untrack(part); track(part);
 			return true;
 		};
+		const retire = () => {
+			const previous = departure;
+			departure = undefined;
+			if (previous === undefined) return;
+			try {
+				for (const group of previous.groups) group.revokePresentation();
+				for (const { groups } of previous.parts) for (const group of groups) group.revokePresentation();
+				this.main.publishGroups();
+			} finally {
+				for (const group of previous.groups) group.dispose();
+				for (const { part } of previous.parts) part.dispose();
+			}
+			this.changed();
+		};
 		return {
 			isCurrent,
+			prepare: () => {
+				if (prepared || !isCurrent()) return false;
+				prepared = true;
+				const departingGroups = this.main.prepareRestore(isCurrent);
+				if (departingGroups === undefined) return false;
+				disposeSubscriptions();
+				this.documentParts.length = 0;
+				for (const { part, groups } of departingParts) {
+					this.partsByScope.set(part.scope, null);
+					for (const group of groups) {
+						this.owners.delete(group); this.groupsBySurface.delete(group.surface); this.groupsByModel.delete(group.model);
+						this.groupList.splice(this.groupList.indexOf(group), 1);
+					}
+				}
+				departure = { groups: departingGroups, parts: departingParts };
+				this.activePart = this.main; this.mru.length = 0; this.mru.push(this.main);
+				if (departingGroups.some(group => group === navigationState.activeOwner)
+					|| departingParts.some(({ groups }) => groups.some(group => group === navigationState.activeOwner))) {
+					navigationState.activeOwner = this.main.activeGroup;
+				}
+				track(this.main);
+				for (const group of departingGroups) group.retireRouting();
+				for (const { groups } of departingParts) for (const group of groups) group.retireRouting();
+				return isCurrent();
+			},
+			retire,
 			restore: async (state, serializers, options) => {
+				retire();
 				if (!isCurrent()) return false;
+				prepared = true;
 				if (!await restorePart(this.main, state.main, serializers)) return false;
 				for (const document of state.documents) {
 					const part = this.constructDocument(document, 'none'); this.publishDocument(part); track(part);
@@ -845,7 +894,7 @@ export class EditorParts {
 				this.changed();
 				return isCurrent();
 			},
-			dispose: () => { disposed = true; disposeSubscriptions(); },
+			dispose: () => { disposed = true; disposeSubscriptions(); retire(); },
 		};
 	}
 

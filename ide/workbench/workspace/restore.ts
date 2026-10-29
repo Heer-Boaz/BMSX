@@ -2,8 +2,9 @@ import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import type { WorkspaceSourceCatalog } from '../../workspace/source_catalog';
 import type { CartEditor } from '../../cart_editor';
 import { editorTextModelService } from '../../editor/model/model_service';
+import { DisposableStore } from '../../common/lifecycle';
 import { workspaceDirtyRecords } from './state';
-import { restoreWorkspaceDirtyModels } from '../services/working_copy/source_recovery';
+import { beginWorkspaceDirtyModelRestore } from '../services/working_copy/source_recovery';
 import type { WorkspaceAutosavePayload } from './models';
 
 export async function applyWorkspaceAutosavePayload(
@@ -12,14 +13,18 @@ export async function applyWorkspaceAutosavePayload(
 	debuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload,
 ): Promise<void> {
-	editor.editorParts.clear();
-	editorTextModelService.clear();
-	const primary = editor.mainWorkspace.beginRestore();
-	const documents = editor.editorParts.beginRestore();
-	const files = editor.resourcePanel.beginRestore();
+	const lifetime = new DisposableStore();
 	try {
+		const files = lifetime.add(editor.resourcePanel.beginRestore());
+		const documents = lifetime.add(editor.editorParts.beginRestore());
+		const primary = lifetime.add(editor.mainWorkspace.beginRestore());
+		const sources = lifetime.add(beginWorkspaceDirtyModelRestore(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords));
+		primary.prepare(); documents.prepare();
+		sources.publish();
 		editor.setFontVariant(payload.fontVariant);
-		if (!restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords)) return;
+		primary.retire(); files.prepare(); documents.retire();
+		sources.dispose();
+		if (!sources.isCurrent()) return;
 		const restoredFiles = files.restore(payload.filesBrowser);
 		const primaryRestored = primary.restore(payload.mainWorkspace, (record, regions, scope, isCurrent) =>
 			editor.restorePrimaryClient(record, regions, scope, isCurrent));
@@ -30,5 +35,5 @@ export async function applyWorkspaceAutosavePayload(
 		if (!restoredDocuments) return;
 		if (!payload.filesBrowser.focused && restoredPrimary && payload.editorParts.active === 0) primary.focusClient();
 		debuggerState.breakpoints.restore(payload.breakpoints);
-	} finally { primary.dispose(); documents.dispose(); files.dispose(); }
+	} finally { lifetime.dispose(); }
 }

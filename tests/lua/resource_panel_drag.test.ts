@@ -125,13 +125,38 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} tab-strip insertion o
 	assert.ok(f.secondGroup.model.tabs[0] === input && f.secondGroup.model.tabs[1] === f.secondInput && input.resource === resource);
 });
 
-for (const cancel of ['escape', 'hide', 'filter', 'models'] as const) test(`${cancel} retires a held resource gesture without a click, drop or later release reopening`, t => {
+for (const cancel of ['escape', 'hide', 'filter', 'recovery'] as const) test(`${cancel} retires a held resource gesture without a click, drop or later release reopening`, t => {
 	const f = fixture(t), { node } = reveal(f), target = body(f.secondGroup), ordinary = t.mock.method(f.editor.navigation, 'openResource');
 	pointer(f, rowPoint(f, node), 'press'); pointer(f, target, 'move');
-	if (cancel === 'escape') f.key('Escape'); else if (cancel === 'hide') f.panel.hide(); else if (cancel === 'filter') f.panel.toggleFilterMode(); else editorTextModelService.clear();
+	if (cancel === 'escape') f.key('Escape');
+	else if (cancel === 'hide') f.panel.hide();
+	else if (cancel === 'filter') f.panel.toggleFilterMode();
+	else {
+		const recovery = f.panel.beginRestore();
+		try { assert.equal(recovery.prepare(), true); }
+		finally { recovery.dispose(); }
+	}
 	pointer(f, target, 'release');
 	assert.equal(f.open.mock.callCount(), 0); assert.equal(ordinary.mock.callCount(), 0); assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
 	assert.equal(f.editor.editorParts.documents.length, 2); assert.equal(f.secondPart.groups.length, 1);
+});
+
+test('model cache retirement preserves an unopened resource gesture and its independent Files context', async t => {
+	const f = fixture(t), { node, resource } = reveal(f), target = body(f.secondGroup);
+	const scope = f.panel.focusTarget.scope, generation = scope.contextGeneration;
+	assert.equal(editorTextModelService.get(resource), undefined);
+	pointer(f, rowPoint(f, node), 'press'); pointer(f, target, 'move');
+	editorTextModelService.clear();
+	assert.ok(f.panel.focusTarget.scope === scope && scope.contextGeneration === generation);
+	assert.ok(f.panel.files.selectedNode === node);
+	assert.equal(pointerCapture.active, true); assert.equal(f.open.mock.callCount(), 0);
+	assert.equal(editorTextModelService.get(resource), undefined);
+	pointer(f, target, 'release');
+	assert.equal(f.open.mock.callCount(), 1);
+	const input = await f.open.mock.calls[0].result;
+	assert.ok(input instanceof CodeEditorInput && input.resource === resource && f.secondGroup.model.activeTab === input);
+	assert.ok(input.workingCopy === editorTextModelService.get(resource));
+	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
 });
 
 test('an admitted body press cannot become a click on a later selected Files subject', t => {

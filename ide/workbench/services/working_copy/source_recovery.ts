@@ -1,6 +1,6 @@
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import { LogLevel, type LogOutput } from '../../../../hosts/common/log';
-import type { EditorTextModelService } from '../../../editor/model/model_service';
+import type { EditorTextModelReplacement, EditorTextModelService } from '../../../editor/model/model_service';
 import { EditorTextModel } from '../../../editor/model/text_model';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
@@ -34,8 +34,8 @@ export function captureWorkspaceDirtySources(models: EditorTextModelService, cat
 	return { dirtyFiles, dirtyRecords };
 }
 
-export function restoreWorkspaceDirtyModels(models: EditorTextModelService, catalog: WorkspaceSourceCatalog,
-	entries: readonly WorkingCopyRecoveryEntry[], records: ReadonlyMap<string, WorkspaceRecord>): boolean {
+export function beginWorkspaceDirtyModelRestore(models: EditorTextModelService, catalog: WorkspaceSourceCatalog,
+	entries: readonly WorkingCopyRecoveryEntry[], records: ReadonlyMap<string, WorkspaceRecord>): EditorTextModelReplacement {
 	const recovered: EditorTextModel[] = [];
 	for (const entry of entries) {
 		const resource = catalog.resolveResource(entry);
@@ -46,7 +46,15 @@ export function restoreWorkspaceDirtyModels(models: EditorTextModelService, cata
 		recovered.push(new EditorTextModel(resource, mode, records.get(path)!.contents, models.history,
 			entry.savedSource, entry.persistedBaseline, true));
 	}
-	return models.restore(recovered);
+	return models.replace(recovered);
+}
+
+export function restoreWorkspaceDirtyModels(models: EditorTextModelService, catalog: WorkspaceSourceCatalog,
+	entries: readonly WorkingCopyRecoveryEntry[], records: ReadonlyMap<string, WorkspaceRecord>): boolean {
+	const replacement = beginWorkspaceDirtyModelRestore(models, catalog, entries, records);
+	try { replacement.publish(); }
+	finally { replacement.dispose(); }
+	return replacement.isCurrent();
 }
 
 type RecoveryOptions = {

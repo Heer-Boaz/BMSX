@@ -3,7 +3,7 @@ import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { EditorTextModelService } from '../../ide/editor/model/model_service';
+import { EditorTextModelService, type ResolvedTextModelSource } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject, resetSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { LuaParser } from '../../toolchain/ts/lua/syntax/parser';
 
@@ -81,4 +81,57 @@ test('semantic project retirement publishes its lifetime without scheduling sour
 	assert.equal(project.generation, generation);
 	resetSemanticProjects(models);
 	assert.equal(retired, 1, 'the released project no longer participates in collection retirement');
+});
+
+test('semantic collection retirement detaches its projects before callbacks admit matching successors', t => {
+	const models = new EditorTextModelService();
+	t.after(() => models.clear());
+	const old = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	let current: typeof old | undefined, currentDisposals = 0;
+	old.onWillDispose(() => {
+		current = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+		current.onWillDispose(() => { currentDisposals++; });
+	});
+	resetSemanticProjects(models);
+	assert.notEqual(current, old);
+	assert.ok(getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]) === current);
+	assert.equal(currentDisposals, 0);
+});
+
+test('single-context semantic retirement preserves a successor admitted by the old project disposal', t => {
+	const models = new EditorTextModelService();
+	t.after(() => models.clear());
+	const old = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	let current: typeof old | undefined;
+	old.onWillDispose(() => { current = getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]); });
+	const reset = resetSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]);
+	assert.notEqual(current, old);
+	assert.ok(reset === current && getOrCreateSemanticProject(models, TEST_CARTRIDGE_CONTEXT_IDS[0]) === current);
+});
+
+test('model departure gives old project disposal a fresh pending source and semantic owner', async t => {
+	const models = new EditorTextModelService();
+	t.after(() => models.clear());
+	const resource = { contextLabel: 'Fixture project', sourceFilePath: 'same.lua', location: { kind: 'workspace' as const, path: 'same.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'same.lua', source: { type: 'lua' as const, resid: 'same' } };
+	const oldSource = Promise.withResolvers<ResolvedTextModelSource>(), currentSource = Promise.withResolvers<ResolvedTextModelSource>();
+	const pending = models.resolve(resource, 'lua', () => oldSource.promise);
+	const old = getOrCreateSemanticProject(models, resource.contextId);
+	let current: typeof old | undefined, currentPending: typeof pending | undefined;
+	old.onWillDispose(() => {
+		currentPending = models.resolve(resource, 'lua', () => currentSource.promise);
+		current = getOrCreateSemanticProject(models, resource.contextId);
+	});
+	models.clear();
+	oldSource.resolve({ source: 'return "old"', persistedBaseline: 'return "old"' });
+	currentSource.resolve({ source: 'return "new"', persistedBaseline: 'return "new"' });
+	const [oldResult, currentResult] = await Promise.allSettled([pending, currentPending!]);
+	assert.equal(oldResult.status, 'rejected');
+	assert.equal(currentResult.status, 'fulfilled');
+	assert.notEqual(currentPending, pending);
+	assert.notEqual(current, old);
+	assert.ok(getOrCreateSemanticProject(models, resource.contextId) === current);
+	if (currentResult.status === 'fulfilled') {
+		assert.ok(models.get(resource) === currentResult.value);
+		assert.equal(current!.getSnapshot().getFileData(resourceIdentityKey(resource))!.source, 'return "new"');
+	}
 });

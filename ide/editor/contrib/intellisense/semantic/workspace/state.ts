@@ -22,14 +22,18 @@ export function getOrCreateSemanticProject(models: EditorTextModelService, conte
 
 export function resetSemanticProject(models: EditorTextModelService, contextId: string): EditorLuaSemanticProject {
 	const projects = projectsByModels.get(models);
-	projects?.get(contextId)?.dispose();
+	const departing = projects?.get(contextId);
 	projects?.delete(contextId);
+	departing?.dispose();
 	return getOrCreateSemanticProject(models, contextId);
 }
 
 export function resetSemanticProjects(models: EditorTextModelService): void {
 	const projects = projectsByModels.get(models);
 	if (projects === undefined) return;
-	for (const project of projects.values()) project.dispose();
-	projects.clear();
+	projectsByModels.set(models, new Map());
+	for (const [contextId, project] of projects) {
+		projects.delete(contextId);
+		project.dispose();
+	}
 }

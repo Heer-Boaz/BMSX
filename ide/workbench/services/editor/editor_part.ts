@@ -128,7 +128,7 @@ export class EditorPart {
 				requestClose: () => options.requestClose(this), requestMinimize: () => options.requestMinimize(this),
 			});
 			this.window.setPresented(options.presented);
-			this.window.attach(); this.scope = this.window.scope; this.clientScope = this.window.clientScope;
+			this.window.prepare(); this.scope = this.window.scope; this.clientScope = this.window.clientScope;
 			this.focusTarget = this.window.clientFocusTarget; this.surface = this.window.surface!; this.clientSurface = this.window.clientSurface!;
 			this.subscriptions.push(model.onDidChangePlacement(options.onDidChange));
 		} else {
@@ -301,6 +301,7 @@ export class EditorPart {
 		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
 		if (this.retired) return;
 		this.relayout();
+		if (!this.retired) this.window?.attach();
 	}
 	/** Close/move admission has already settled every input before its empty group retires. */
 	public removeGroup(group: EditorGroupView): boolean {
@@ -511,7 +512,7 @@ export class EditorPart {
 			const presented = this.arrangement.maximized === undefined || this.arrangement.maximized === leaf.group;
 			if (changed || leaf.group.tabStrip.needsLayout || leaf.group.presented !== presented) leaf.group.layout(leaf.bounds, leaf.clip, presented);
 		}
-		if (changed && notify) this.options.surfaces.changed();
+		if (changed && notify && this.surface.published) this.options.surfaces.changed();
 		return changed;
 	}
 	private drawClient(): void { api.fill_rect(this.clientBounds.left, this.clientBounds.top, this.clientBounds.right, this.clientBounds.bottom, 0, colors.COLOR_FRAME); }
@@ -547,6 +548,20 @@ export class EditorPart {
 		this.options.onDidChangeGroupMembership(this);
 		for (const listener of this.groupListeners) listener();
 		this.syncSashes(); this.relayout(); this.options.onDidChange();
+	}
+	/** Install the initial recovery route before the frontend retires captured document membership. */
+	public prepareRestore(isCurrent: () => boolean): readonly EditorGroupView[] | undefined {
+		const departing = [...this.groups], group = this.makeGroup(false);
+		if (!isCurrent()) { this.discardGroup(group); return; }
+		this.restoreLifetime?.abort();
+		for (const previous of departing) {
+			for (const unbind of this.groupSubscriptions.get(previous)!) unbind();
+			this.groupSubscriptions.delete(previous);
+		}
+		this.arrangement.setRoot({ kind: 'group', group });
+		this.groupMru.length = 0; this.groupMru.push(group); this.activeGroup = group;
+		this.options.onDidChangeGroupMembership(this);
+		return departing;
 	}
 	public async restore(state: SerializedEditorPart, serializers: EditorInputSerializers, isCurrent?: () => boolean): Promise<boolean> {
 		if (this.retired || this.surface.retired || this.operationValue !== 'none') return false;

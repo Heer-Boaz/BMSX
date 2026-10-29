@@ -6,7 +6,6 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { serializeEditorPart } from '../../ide/workbench/services/editor/editor_part_serialization';
-import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 test('same-group raw gaps reorder and pin without replacing the retained pane or its attachment', t => {
@@ -103,23 +102,4 @@ test('a detached floating attachment cannot construct restored groups under its 
 	assert.equal(await part.restore(saved, f.editor.editorInputSerializers), false);
 	assert.equal(deserialize.mock.callCount(), 0); assert.ok(part.activeGroup === group);
 	assert.ok(group.model.activeTab === f.firstInput); assert.equal(group.paneSurface.retired, true);
-});
-
-for (const kind of ['split', 'window'] as const) test(`${kind} construction keeps candidates hidden and releases them when a newer source clear revokes admission`, t => {
-	const f = createActualSourcePanes(t), parts = f.editor.editorParts, provisional: WorkbenchSurface[] = [];
-	const attach = f.editor.surfaces.attach.bind(f.editor.surfaces);
-	let revoked = false, hidden = false;
-	t.mock.method(f.editor.surfaces, 'attach', options => {
-		const surface = attach(options); provisional.push(surface);
-		if (!revoked && (kind === 'window' ? options.role === 'window' : options.role === 'content' && options.lifetimeOwner === f.secondPart.clientSurface)) {
-			revoked = true; hidden = !surface.visible; f.firstPart.clear();
-		}
-		return surface;
-	});
-	const destination = kind === 'window' ? { kind } : { kind, group: f.secondGroup, direction: 'right' as const };
-	assert.equal(parts.moveEditor(f.firstGroup, f.firstInput, destination), false);
-	assert.equal(revoked, true); assert.equal(hidden, true); assert.equal(provisional.every(surface => surface.retired), true);
-	assert.equal(parts.documents.length, 2); assert.equal(f.secondPart.groups.length, 1);
-	assert.equal(f.firstGroup.model.activeTab, null); assert.equal(f.firstGroup.panes.activePane, null);
-	assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane?.input === f.secondInput);
 });

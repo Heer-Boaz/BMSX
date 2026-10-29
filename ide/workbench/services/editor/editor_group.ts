@@ -151,9 +151,10 @@ export class EditorGroupView {
 	private openingAdmittedValue = true;
 	private closing = false;
 	private closeSelection: { readonly inputs: readonly EditorInput[]; readonly generation: number } | undefined;
-	public get openingAdmitted(): boolean { return this.openingAdmittedValue && !this.closing; }
+	public get openingAdmitted(): boolean { return this.openingAdmittedValue && !this.closing && !this.presentationRevoked; }
 	private readonly disposeListeners = new Set<() => void>();
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
+	private presentationRevoked = false;
 
 	public constructor(contributions: EditorPaneContributions, private readonly commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
 		presentation: EditorGroupPresentation, presented = true) {
@@ -187,7 +188,7 @@ export class EditorGroupView {
 			if (findEditorGroup(inputFocus.target) === this && navigationState.activeOwner !== this) navigationState.activeOwner = this;
 		});
 		this.tabFocusTarget.canFocus = () => false;
-		this.surface = presentation.surfaces.attach({ role: 'content', lifetimeOwner: presentation.owner, presentationParent: presentation.owner,
+		this.surface = presentation.surfaces.prepare({ role: 'content', lifetimeOwner: presentation.owner, presentationParent: presentation.owner,
 			captureScope: this.containerScope.surfaceScope, isVisible: () => this.presented,
 			getBounds: () => this.bounds, getClip: () => this.clip, draw() {},
 			handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
@@ -304,6 +305,7 @@ export class EditorGroupView {
 		if (!this.presented || !rects_intersect(this.bodyBounds, this.clip)) pointerCapture.cancelScope(this.captureScope);
 		if (!this.presented || !rects_intersect(this.tabStrip.layoutState.bounds, this.clip)) pointerCapture.cancelScope(this.tabScope);
 		if (!this.presented || !rects_intersect(this.timelineBounds, this.clip)) pointerCapture.cancelScope(this.timeline.focusScope.surfaceScope);
+		this.surfaceService.publish(this.surface);
 		const focused = inputFocus.target;
 		// Retire the unavailable control; its declared containing control may still be eligible.
 		if (focused !== null && this.surfaceService.isInContext(focused.scope.surfaceScope, this.surface.captureScope) && inputFocus.admittedTarget === null) focused.release();
@@ -537,10 +539,17 @@ export class EditorGroupView {
 		this.model.clear();
 	}
 
+	/** Withdraw routing before source publication or retirement can invoke another document operation. */
+	public retireRouting(): void {
+		this.presentationRevoked = true; this.presented = false;
+		groupsByScope.set(this.containerScope, null); groupsByScope.set(this.focusScope, null); groupsByScope.set(this.tabFocusTarget.scope, null);
+	}
 	/** Transfer retires command/input presentation before history releases the old group lifetime. */
 	public revokePresentation(): void {
-		this.setOpenAdmission(false); this.presented = false;
-		groupsByScope.set(this.containerScope, null); groupsByScope.set(this.focusScope, null); groupsByScope.set(this.tabFocusTarget.scope, null);
+		const opening = this.openingAdmittedValue && !this.closing;
+		this.retireRouting();
+		this.openingAdmittedValue = false;
+		if (opening) this.panes.beginOpen();
 		pointerCapture.cancelScope(this.captureScope); pointerCapture.cancelScope(this.tabScope); pointerCapture.cancelScope(this.timeline.focusScope.surfaceScope);
 	}
 	public dispose(): void {
