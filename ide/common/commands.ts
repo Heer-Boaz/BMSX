@@ -60,6 +60,7 @@ export type EditorWorkspaceCommandId =
 	| 'runCurrentFile'
 	| 'runProject'
 	| 'save'
+	| 'saveAll'
 	| 'theme-toggle';
 
 export type EditorDebugCommandId =

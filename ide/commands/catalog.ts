@@ -306,6 +306,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	runProject: { category: 'Run', title: 'Run Project' },
 	reboot: { category: 'Run', title: 'Reboot' },
 	save: { category: 'File', title: 'Save' },
+	saveAll: { category: 'File', title: 'Save All' },
 	'theme-toggle': { category: 'Preferences', title: 'Toggle Theme' },
 	debugContinue: { category: 'Debug', title: 'Continue' },
 	debugEvaluation: { category: 'Debug', title: 'Pause Lua Call', activeTitle: 'Continue Lua Call' },

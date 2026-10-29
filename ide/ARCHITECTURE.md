@@ -385,7 +385,12 @@ not suppress an unrelated document's final-consumer decision before admission.
 The close owner rechecks canonical state and consumers after awaited decisions or
 writes; final view/context retirement belongs to the admitted composition owner.
 `TextFileSaveService` owns accepted writes and their captured source snapshots;
-it does not build or install assets. Explicit execution operations own those
+individual and workspace Save share per-model queues. Workspace Save enumerates
+canonical working copies independently of tabs, composites and Main clients;
+its invoking control owns draft acceptance before that admission. Accepted
+snapshots and queue membership precede provider IO and drain through shutdown.
+Command presentation aggregates outcomes without owning persistence or opening
+failed sources. Save does not build or install assets. Explicit execution operations own those
 changes and retain their selected target/image through asynchronous work.
 Groups own final view retirement. Forced owner teardown is separate from user
 close admission. Opening and activation settle the attached focused control's

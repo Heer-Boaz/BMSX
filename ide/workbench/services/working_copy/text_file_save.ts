@@ -19,6 +19,11 @@ export type TextFileSaveOperation = {
 	readonly result: TextFileSaveResult | undefined;
 };
 
+export type TextFileSaveEntry = {
+	readonly model: EditorTextModel;
+	readonly operation: TextFileSaveOperation;
+};
+
 /** Owns canonical source writes; installing a saved revision is a separate target operation. */
 export class TextFileSaveService {
 	private readonly pending = new Map<EditorTextModel, TextFileSaveOperation>();
@@ -37,6 +42,11 @@ export class TextFileSaveService {
 	public canSave(model: EditorTextModel): boolean {
 		return this.acceptingSaves && this.models.get(model.identity) === model && !model.readOnly;
 	}
+	public get canSaveAll(): boolean {
+		if (this.closing) return false;
+		for (const model of this.models.models) if (model.dirty && !model.readOnly) return true;
+		return false;
+	}
 	/** Historical acknowledgement of this model's latest Save, never inferred from connectivity. */
 	public latestOperation(model: EditorTextModel): TextFileSaveOperation | undefined { return this.latest.get(model); }
 
@@ -44,13 +54,26 @@ export class TextFileSaveService {
 		if (this.closing) throw new Error('Cannot save after workbench shutdown has started.');
 		if (this.models.get(model.identity) !== model) throw new Error(`Source '${model.resource.path}' no longer belongs to this workspace.`);
 		if (model.readOnly) throw new Error(`Source '${model.resource.path}' is read-only.`);
+		return this.enqueueSave(model);
+	}
+
+	/** Canonical membership includes Main, composite inputs and retained sources without any tab. */
+	public saveAll(): readonly TextFileSaveEntry[] {
+		if (this.closing) throw new Error('Cannot save after workbench shutdown has started.');
+		const entries: TextFileSaveEntry[] = [];
+		for (const model of this.models.models) {
+			if (model.dirty && !model.readOnly) entries.push({ model, operation: this.enqueueSave(model) });
+		}
+		return entries;
+	}
+
+	private enqueueSave(model: EditorTextModel): TextFileSaveOperation {
 		const previous = this.pending.get(model);
 		if (previous?.snapshot.version === model.version) return previous;
 		const snapshot = model.createSnapshot();
 		const sourceFilePath = model.resource.sourceFilePath;
-		// Admission captures the text now, not after the preceding write finishes.
-		const completion = (previous === undefined ? this.performSave(model, snapshot, sourceFilePath)
-			: previous.completion.then(() => this.performSave(model, snapshot, sourceFilePath))).then(result => {
+		// Publish all accepted snapshots and queue entries before provider code can run.
+		const completion = Promise.resolve(previous?.completion).then(() => this.performSave(model, snapshot, sourceFilePath)).then(result => {
 			operation.result = result;
 			return result;
 		}).finally(() => {
@@ -69,12 +92,11 @@ export class TextFileSaveService {
 	}
 
 	private async performSave(model: EditorTextModel, snapshot: EditorTextModelSnapshot, sourceFilePath: string | undefined): Promise<TextFileSaveResult> {
-		const resource = model.resource;
 		let persistence: WorkspaceRecordPersistence;
 		try {
 			switch (model.mode) {
 				case 'lua':
-					({ persistence } = await saveLuaResourceSource(this.clock, this.catalog, resource, snapshot.source, model.persistedBaseline));
+					({ persistence } = await saveLuaResourceSource(this.clock, this.catalog, model.identity, snapshot.source, model.persistedBaseline));
 					break;
 				case 'yaml':
 				case 'aem': {

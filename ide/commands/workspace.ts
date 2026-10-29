@@ -5,7 +5,7 @@ import type { HostExecutionControl } from '../../hosts/common/execution_control'
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { TextEditorInput } from '../workbench/common/editor_input';
 import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
-import { saveTextFileFromCommand } from './source_save';
+import { saveAllTextFilesFromCommand, saveTextFileFromCommand } from './source_save';
 import { captureEditorActionPresentation } from './actions';
 import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
@@ -34,6 +34,7 @@ export function isEditorWorkspaceCommand(command: EditorCommandId): command is E
 		case 'runCurrentFile':
 		case 'runProject':
 		case 'save':
+		case 'saveAll':
 		case 'theme-toggle':
 			return true;
 		default:
@@ -43,8 +44,13 @@ export function isEditorWorkspaceCommand(command: EditorCommandId): command is E
 
 export function isEditorWorkspaceCommandEnabled(command: EditorWorkspaceCommandId, group: EditorGroupView | undefined,
 	input: EditorInput | null | undefined, sources: RuntimeSourceState, saves: TextFileSaveService, hotResumes: HotResumeService,
-	boots: BootService, execution: HostExecutionControl, tasks: RuntimeTaskQueue): boolean {
+	boots: BootService, execution: HostExecutionControl, tasks: RuntimeTaskQueue, target: InputFocusTarget | null): boolean {
 	switch (command) {
+		case 'saveAll': {
+			const focused = inputFocus.target;
+			return saves.canSaveAll || saves.acceptingSaves && focused?.edit?.pending === true
+				&& target?.commandContext.scope.contains(focused.scope) === true;
+		}
 		case 'save': {
 			if (group === undefined || !(input instanceof TextEditorInput) || !saves.acceptingSaves) return false;
 			const pane = group.panes.activePane, focused = inputFocus.target;
@@ -86,8 +92,12 @@ export function captureEditorWorkspaceCommand(
 	target: InputFocusTarget | null,
 ): FocusCommandInvocation | undefined {
 	const enabled = () => isEditorWorkspaceCommandEnabled(command, document?.group, document?.input,
-		sources, textFileSaves, hotResumes, boots, execution, tasks);
+		sources, textFileSaves, hotResumes, boots, execution, tasks, target);
 	switch (command) {
+		case 'saveAll':
+			if (!enabled()) return;
+			return { editScope: target?.commandContext.scope, isEnabled: enabled,
+				run: () => { void saveAllTextFilesFromCommand(textFileSaves); } };
 		case 'save':
 			if (!enabled()) return;
 			break;
@@ -117,7 +127,7 @@ export function captureEditorWorkspaceCommand(
 	const editScope = command === 'save' ? attached ? pane.inputScope : undefined
 		: target?.commandContext.scope;
 	return { editScope, isEnabled: () => current()
-		&& isEditorWorkspaceCommandEnabled(command, group, subject, sources, textFileSaves, hotResumes, boots, execution, tasks) && current(),
+		&& isEditorWorkspaceCommandEnabled(command, group, subject, sources, textFileSaves, hotResumes, boots, execution, tasks, target) && current(),
 		run: () => {
 			if (!current()) return;
 			switch (command) {

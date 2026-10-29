@@ -423,7 +423,7 @@ export class IdeCommandController {
 			const documentGroup = resolveEditorCommandGroup(this.editor, focus, input);
 			if (documentGroup === null || input !== undefined && documentGroup === undefined) return false;
 			return isEditorWorkspaceCommandEnabled(command, documentGroup, input === undefined ? documentGroup?.model.activeTab : input,
-				this.sources, this.textFileSaves, this.hotResumes, this.boots, this.execution, this.runtimeTasks);
+				this.sources, this.textFileSaves, this.hotResumes, this.boots, this.execution, this.runtimeTasks, focus);
 		}
 		if (command === 'editor.source' || command === 'editor.sourceToSide') {
 			const owner = resolveEditorCommandGroup(this.editor, focus, input);

@@ -409,6 +409,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'resources.import' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'save' },
+		{ type: 'command', command: 'saveAll' },
 		{ type: 'command', command: 'keepEditor' },
 		{ type: 'command', command: 'tabs.close' },
 		{ type: 'command', command: 'editors.closeAll' },

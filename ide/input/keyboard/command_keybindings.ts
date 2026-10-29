@@ -65,6 +65,7 @@ const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 ];
 
 const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
+	{ code: 'KeyK', command: 'saveAll', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'KeyS', modifiers: NO_MODIFIERS } },
 	{ code: 'F6', command: 'workspace.focusNextRegion', modifiers: NO_MODIFIERS },
 	{ code: 'F6', command: 'workspace.focusPreviousRegion', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS } },
 	{ code: 'KeyF', command: 'findGlobal', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },

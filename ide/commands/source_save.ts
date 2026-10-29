@@ -38,3 +38,24 @@ export async function saveTextFileFromCommand(
 	}
 	return result;
 }
+
+/** One workspace outcome, without per-file navigation or competing success messages. */
+export async function saveAllTextFilesFromCommand(saves: TextFileSaveService): Promise<readonly TextFileSaveResult[]> {
+	const entries = saves.saveAll();
+	const results = await Promise.all(entries.map(entry => entry.operation.completion));
+	if (entries.length === 0 || !saves.acceptingSaves) return results;
+	let saved = 0, browser = 0;
+	const failures: string[] = [];
+	for (let index = 0; index < results.length; index++) {
+		const result = results[index], model = entries[index].model;
+		if (result.status === 'failed') failures.push(`${model.resource.contextLabel}: ${model.identity.path}: ${extractErrorMessage(result.error)}`);
+		else {
+			saved++;
+			if (result.persistence.status === 'browser') browser++;
+		}
+	}
+	const summary = `Saved files: ${saved}/${entries.length}${browser === 0 ? '' : ` (${browser} in browser)`}`;
+	if (failures.length !== 0) showEditorMessage(`${summary}. Failed: ${failures.join('; ')}`, 'error', 6.0);
+	else showEditorMessage(`${summary}; runtime unchanged`, 'success', 2.5);
+	return results;
+}
