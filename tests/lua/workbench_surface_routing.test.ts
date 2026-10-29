@@ -1825,14 +1825,18 @@ test('Animation body clients and its actual property draft publish exact client-
 	assert.ok(palette.rows.some(row => (row.item as CommandQuickPickItem).command === 'animation.tracks'));
 	editor.quickInput.hide();
 	const edited = input.workingCopy.buffer.getText();
-	editor.commands.execute('animation.tracks', field); assert.equal(input.activeClient, 'tracks');
+	editor.commands.execute('animation.tracks', field); assert.equal(input.activeClient, 'details');
+	for (const command of commands) assert.equal(editor.commands.isEnabled(command, field), false,
+		'a retired native field cannot borrow its surviving semantic parent to regain command authority');
+	editor.commands.execute('animation.tracks', details); assert.equal(input.activeClient, 'tracks');
 	assert.equal(input.workingCopy.buffer.getText(), edited);
 	editor.editorParts.main.activeGroup.panes.clearEditor();
 	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), false);
 	const detachedPicks = buildCommandQuickPickItems(editor.commands, field);
 	for (const command of commands) assert.equal(detachedPicks.some(item => item.command === command), false);
 	editor.editorParts.main.activeGroup.openEditor(input); editor.update(0);
-	for (const client of [...clients, field]) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), true);
+	for (const client of clients) for (const command of commands) assert.equal(editor.commands.isEnabled(command, client), true);
+	for (const command of commands) assert.equal(editor.commands.isEnabled(command, field), false);
 	assert.equal(input.workingCopy.buffer.getText(), edited);
 	const timeline = editor.animations.openResource(editor.editorParts.main.activeGroup, sources.catalog.luaResources.find(resource => resource.path === timelinePath)!);
 	assert.ok(timeline !== undefined);

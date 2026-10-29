@@ -81,7 +81,7 @@ test('Problems intrinsic constraints consume the supplied font and available wid
 	const f = fixture(t), panel = f.controller;
 	panel.setDiagnostics([f.diagnostics[0]], { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 	const tiny = new EditorFont('tiny'), msx = new EditorFont('msx');
-	const wide = { minimumHeight: 0, preferredHeight: 0 }, narrow = { ...wide }, alternateFont = { ...wide };
+	const wide = { minimumWidth: 0, minimumHeight: 0, preferredHeight: 0 }, narrow = { ...wide }, alternateFont = { ...wide };
 	panel.measure(tiny, 800, wide); panel.measure(tiny, 70, narrow); panel.measure(msx, 800, alternateFont);
 	// This is the intrinsic sizing algorithm's contract, not incidental UI geometry.
 	assert.ok(narrow.preferredHeight > wide.preferredHeight);
@@ -89,7 +89,7 @@ test('Problems intrinsic constraints consume the supplied font and available wid
 	assert.ok(alternateFont.minimumHeight > wide.minimumHeight);
 	const previous = editorViewState.viewportHeight; t.after(() => { editorViewState.viewportHeight = previous; });
 	editorViewState.viewportHeight = 1;
-	const constrainedHost = { minimumHeight: 0, preferredHeight: 0 }; panel.measure(tiny, 800, constrainedHost);
+	const constrainedHost = { minimumWidth: 0, minimumHeight: 0, preferredHeight: 0 }; panel.measure(tiny, 800, constrainedHost);
 	assert.deepEqual(constrainedHost, wide);
 	const rows = t.mock.method(panel, 'getItemLayout');
 	for (let frame = 0; frame < 100; frame++) panel.measure(tiny, 800, constrainedHost);

@@ -48,9 +48,12 @@ export interface WorkbenchSurface extends IDisposable, WorkbenchSurfaceCallbacks
 	readonly role: WorkbenchSurfaceOptions['role'];
 	readonly captureScope: PointerCaptureScope;
 	readonly lifetimeOwner: WorkbenchSurface | undefined;
+	/** The native service may move this subtree without changing its lifetime owner. */
 	readonly presentationParent: WorkbenchSurface | null | undefined;
 	readonly visible: boolean;
 	readonly retired: boolean;
+	/** Observers retain this exact attachment, independently of its reusable controller. */
+	onDidRetire(listener: () => void): () => void;
 	getBounds(): Readonly<RectBounds>;
 	getClip(): Readonly<RectBounds>;
 }

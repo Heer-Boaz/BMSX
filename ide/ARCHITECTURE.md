@@ -126,6 +126,11 @@ and independently minimized visibility. Window gesture drafts are presentation,
 not persisted placement; only a completed drop publishes new intent.
 Document minimization retains frontend sessions; part membership owns restore
 and activation. Owned utility inspectors expose their own chrome capabilities.
+Physical window discovery and minimized counts project the surface owner's
+ordered window attachments, including non-editor windows. Window commands
+resolve the invoking control's native presentation family, independently of
+its semantic command ancestry. Open Editors remains a separate projection of
+actual document membership.
 
 Shared execution composition owns the primary `RuntimeTransport` and
 `RunTargetSelection`. Global run/debug controls and audio monitoring consume
@@ -283,7 +288,13 @@ each retained contribution. Its descriptor-driven selector and the selected
 client's controls share one allocated header row. Switching admits departure
 through native focus before changing presentation; hiding retires native input,
 not the contribution's reading or observation state. Main owns visibility,
-requested height, sash and two-axis overflow. Selection storage records the
+docked allocation and an optional shared floating window for the whole activity
+area. Moving the area reparents its retained native subtree, not its semantic
+scopes, contribution controllers or readers. The floating shell remains in
+Main's window family; dock return reparents content before shell retirement.
+Minimization retains the shell and native subtree, while Close hides the area
+without disposing its contributions. Docked height and floating requested
+placement are independent retained intent. Selection storage records the
 activity identity, not captured request data or former native authority.
 `contrib/builds/control.ts` supplies the same actual reader to document panes
 and the independent Build Output activity; their view models remain separate.

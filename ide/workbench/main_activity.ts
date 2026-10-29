@@ -2,6 +2,7 @@ import { copy_rect_bounds, create_rect_bounds, write_rect_bounds, type RectBound
 import type { EditorCommandId, EditorCommandRunner } from '../common/commands';
 import { COLOR_FRAME, COLOR_HEADER_BUTTON_TEXT, COLOR_HEADER_BUTTON_TEXT_DISABLED } from '../common/constants';
 import type { PointerInputSnapshot } from '../common/models';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { editorViewState } from '../editor/ui/view/state';
 import { measureText } from '../editor/common/text/layout';
 import type { EditorFont } from '../editor/ui/view/font';
@@ -15,12 +16,16 @@ import { renderWorkbenchActionBar } from './render/action_bar';
 import type { ContextMenuController } from './services/context_menu/controller';
 import type { WorkbenchSurface } from './services/windows/model';
 import type { WorkbenchSurfaceService } from './services/windows/service';
-import { createWorkbenchActionBar, layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ITEM_SPACING,
+import { createWorkbenchActionBar, layoutWorkbenchActionBar, measureWorkbenchActionBarMinimumWidth, WORKBENCH_ACTION_BAR_ITEM_SPACING,
 	type WorkbenchActionBarState } from './ui/action_bar';
 import { WorkbenchActionBarControl } from './ui/action_bar_control';
 import { WorkbenchMenu } from './ui/menu/model';
+import { WORKBENCH_MENUS, type WorkbenchMenuItem } from './ui/menu/registry';
 
 type ActivityEntry = MainWorkspaceActivityDescriptor & { readonly client: MainWorkspaceActivityClient };
+const HEADER_PADDING_X = 2;
+const HEADER_PADDING_Y = 1;
+const HEADER_CLIENT_GAP = 4;
 
 /** Retained activities, their native presentation lifetimes and the shared selector/header. */
 export class MainWorkspaceActivityPart implements EditorCommandRunner {
@@ -29,6 +34,8 @@ export class MainWorkspaceActivityPart implements EditorCommandRunner {
 	public readonly bounds = create_rect_bounds();
 	public readonly headerBounds = create_rect_bounds();
 	public readonly clientHeaderBounds = create_rect_bounds();
+	public readonly clip = create_rect_bounds();
+	public contextMenu: readonly WorkbenchMenuItem[] = WORKBENCH_MENUS['activity.context'];
 	public readonly commandTarget: InputFocusTarget;
 	private readonly entries: ActivityEntry[] = [];
 	private readonly selector: WorkbenchActionBarControl;
@@ -41,21 +48,27 @@ export class MainWorkspaceActivityPart implements EditorCommandRunner {
 	private selected: ActivityEntry | undefined;
 	private attachedValue = false;
 	private font: EditorFont | undefined;
+	private minimumWidthFont: EditorFont | undefined;
+	private minimumWidth = 0;
 	private selectionRevision = 0;
 	private attachmentRevision = 0;
 
 	public constructor(private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, parent: InputFocusScope,
-		focusReturn: InputFocusTarget, private readonly clip: Readonly<RectBounds>, contextMenu: ContextMenuController,
+		focusReturn: InputFocusTarget, private readonly contextMenuController: ContextMenuController, private readonly commands: EditorCommandRunner,
 		private readonly open: (id: string) => boolean, private readonly hideActivity: () => boolean,
 		private readonly enabled: () => boolean, private readonly onDidSelect: () => void) {
 		this.scope = new InputFocusScope(Symbol('main activities'), parent);
 		this.boundary = inputFocus.createTarget(focusReturn, this.scope);
 		this.boundary.canFocus = () => this.attached;
 		this.selector = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.boundary,
-			() => { this.selected?.client.focus(); }, contextMenu);
+			() => { this.selected?.client.focus(); }, contextMenuController);
 		this.hide = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, this, this.boundary,
 			() => { this.selected?.client.focus(); });
 		this.commandTarget = this.selector.focusTarget;
+		for (const target of [this.commandTarget, this.hide.focusTarget]) target.registerCommand('contextMenu', {
+			isEnabled: () => this.attached,
+			run: () => this.showContextMenu(this.headerBounds.left, this.headerBounds.bottom, true, target),
+		});
 		this.selector.focusTarget.next = this.hide.focusTarget;
 		this.selector.focusTarget.previous = () => { this.selected?.client.focus(); };
 		this.hide.focusTarget.previous = this.selector.focusTarget;
@@ -157,18 +170,27 @@ export class MainWorkspaceActivityPart implements EditorCommandRunner {
 		if (client.attached) client.layout(this.bounds, this.clientHeaderBounds); else client.attach(this.bounds, this.clientHeaderBounds);
 	}
 
+	public measureMinimumWidth(font: EditorFont): number {
+		if (this.minimumWidthFont === font) return this.minimumWidth;
+		this.minimumWidthFont = font;
+		const height = mainWorkspaceActivityHeaderHeight(font) - HEADER_PADDING_Y * 2;
+		const hide = measureWorkbenchActionBarMinimumWidth(this.hideActions, height, measureText, font.renderFont());
+		const selector = measureWorkbenchActionBarMinimumWidth(this.selectorActions!, height, measureText, font.renderFont());
+		return this.minimumWidth = HEADER_PADDING_X * 2 + hide + height + HEADER_CLIENT_GAP + selector;
+	}
+
 	private layoutHeader(): void {
 		const font = this.font!, height = mainWorkspaceActivityHeaderHeight(font), bounds = this.bounds;
 		write_rect_bounds(this.headerBounds, bounds.left, bounds.top, bounds.right, Math.min(bounds.bottom, bounds.top + height));
-		const padding = Math.min(2, (bounds.right - bounds.left) / 2), left = bounds.left + padding, right = bounds.right - padding;
-		const verticalPadding = Math.min(1, (this.headerBounds.bottom - this.headerBounds.top) / 2);
+		const padding = Math.min(HEADER_PADDING_X, (bounds.right - bounds.left) / 2), left = bounds.left + padding, right = bounds.right - padding;
+		const verticalPadding = Math.min(HEADER_PADDING_Y, (this.headerBounds.bottom - this.headerBounds.top) / 2);
 		const top = bounds.top + verticalPadding, bottom = this.headerBounds.bottom - verticalPadding;
 		const buttonWidth = Math.min(bottom - top, right - left);
 		layoutWorkbenchActionBar(this.hideActions, right, top, bottom, measureText, font.renderFont(), Math.max(left, right - buttonWidth));
-		const selector = this.selectorActions!, selectorRight = Math.max(left, this.hideActions.bounds.left - buttonWidth - 4);
+		const selector = this.selectorActions!, selectorRight = Math.max(left, this.hideActions.bounds.left - buttonWidth - HEADER_CLIENT_GAP);
 		layoutWorkbenchActionBar(selector, selectorRight, top, bottom, measureText, font.renderFont(), left, 'start');
 		const headerRight = Math.max(left, this.hideActions.bounds.left - WORKBENCH_ACTION_BAR_ITEM_SPACING);
-		write_rect_bounds(this.clientHeaderBounds, Math.min(headerRight, selector.bounds.right + 4), this.headerBounds.top,
+		write_rect_bounds(this.clientHeaderBounds, Math.min(headerRight, selector.bounds.right + HEADER_CLIENT_GAP), this.headerBounds.top,
 			headerRight, this.headerBounds.bottom);
 	}
 
@@ -196,7 +218,15 @@ export class MainWorkspaceActivityPart implements EditorCommandRunner {
 		this.client!.update();
 	}
 	private handleHeaderPointer(snapshot: PointerInputSnapshot): void {
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+			this.showContextMenu(snapshot.viewportX, snapshot.viewportY, false, this.commandTarget);
+			return;
+		}
 		if (!this.selector.handlePointer(snapshot) && !this.hide.handlePointer(snapshot)) this.client!.handlePointer(snapshot);
+	}
+	private showContextMenu(x: number, y: number, keyboard: boolean, origin: InputFocusTarget): void {
+		this.contextMenuController.show(x, y, this.contextMenu, this.commands,
+			{ selectFirst: keyboard, invocationOrigin: origin, commandTarget: this.commandTarget, returnFocus: origin });
 	}
 	public isEnabled(command: EditorCommandId): boolean {
 		return this.attached && this.enabled() && (command === 'workspace.activity.hide' || this.idForCommand(command) !== undefined);

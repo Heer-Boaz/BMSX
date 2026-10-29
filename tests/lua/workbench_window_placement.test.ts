@@ -3,6 +3,37 @@ import test from 'node:test';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import { WorkbenchWindowModel, WindowResizeEdge, type WindowPlacement } from '../../ide/workbench/ui/window/model';
 
+test('restored placement publishes all window state together without replacing retained geometry', () => {
+	const model = new WorkbenchWindowModel({ left: 0, top: 0, right: 200, bottom: 120 }, 100, 70);
+	const requested = model.requestedBounds;
+	const state = { requestedBounds: { left: 50, top: 60, right: 330, bottom: 240 }, placement: 'right' as const, minimized: true };
+	let published = 0;
+	model.onDidChangePlacement(() => {
+		published++;
+		assert.equal(model.requestedBounds, requested); assert.deepEqual(model.requestedBounds, state.requestedBounds);
+		assert.equal(model.placement, state.placement); assert.equal(model.minimized, state.minimized);
+	});
+	model.setState(state); assert.equal(published, 1);
+	const revision = model.revision;
+	model.setState(state); assert.equal(published, 1); assert.equal(model.revision, revision);
+});
+
+test('chrome and content minima remain independent inputs to placement, resize and snap admission', () => {
+	const model = new WorkbenchWindowModel({ left: 0, top: 0, right: 20, bottom: 100 }, 0, 70);
+	const area = { left: 0, top: 0, right: 300, bottom: 200 };
+	model.arrange(area, 16, undefined, 160);
+	assert.equal(model.minimumWidth, 160); assert.equal(model.bounds.right - model.bounds.left, 160);
+	assert.equal(model.canPlace('left', area), false);
+	model.setMinimumSize(200, 70); model.arrange(area, 16);
+	assert.equal(model.minimumWidth, 200); assert.equal(model.bounds.right - model.bounds.left, 200);
+	model.setMinimumSize(0, 70); model.arrange(area, 16);
+	assert.equal(model.minimumWidth, 160, 'content changes preserve the current shared chrome minimum');
+	assert.equal(model.arrange(area, 16, undefined, 100), true);
+	assert.equal(model.minimumWidth, 100); assert.equal(model.bounds.right - model.bounds.left, 100);
+	assert.equal(model.canPlace('left', area), true);
+	assert.equal(model.arrange(area, 16, undefined, 100), false);
+});
+
 // Exact rectangles here specify the placement algorithm, not incidental UI geometry.
 test('half placements partition an odd live work area without gaps, overlap or changing normal intent', () => {
 	const requested = { left: 70, top: 90, right: 370, bottom: 330 };

@@ -20,6 +20,7 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchMenu, type WorkbenchMenuCommandDefinition } from '../../ui/menu/model';
+import { measureWorkbenchTextViewMinimumWidth } from '../../ui/text_view/layout';
 import { BuildLogControl } from './control';
 import type { BuildOutput } from './output';
 import { BuildLogViewModel } from './view_model';
@@ -80,6 +81,7 @@ export class BuildOutputActivity implements MainWorkspaceActivityClient {
 	}
 	public measure(font: EditorFont, _width: number, target: MainWorkspaceActivitySizeConstraints): void {
 		const header = mainWorkspaceActivityHeaderHeight(font);
+		target.minimumWidth = measureWorkbenchTextViewMinimumWidth(font);
 		target.minimumHeight = header + font.lineHeight * 2 + 8;
 		target.preferredHeight = header + font.lineHeight * 8 + 8;
 	}

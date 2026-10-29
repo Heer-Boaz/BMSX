@@ -13,7 +13,7 @@ import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
 // Positions and dimensions are the pure allocation/sash contract, not incidental UI assertions.
 const HIERARCHY = { minimumWidth: 80, preferredWidth: 120, minimumHeight: 0 };
 const DETAILS = { minimumWidth: 90, preferredWidth: 140, minimumHeight: 0 };
-const ACTIVITY = { minimumHeight: 60, preferredHeight: 120 };
+const ACTIVITY = { minimumWidth: 0, minimumHeight: 60, preferredHeight: 120 };
 
 test('Main retains its full family while allocating the complete named row above a bottom activity', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 519 };
@@ -136,7 +136,7 @@ for (const cause of ['horizontal-admits-vertical', 'vertical-admits-horizontal']
 
 test('activity default measurement changes reflow once while explicit requests survive font-derived minima', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 800, bottom: 500 };
-	const activity = { minimumHeight: 60, preferredHeight: 120 }, vertical = { rowMinimumHeight: 100, activity, scrollY: 0 };
+	const activity = { minimumWidth: 0, minimumHeight: 60, preferredHeight: 120 }, vertical = { rowMinimumHeight: 100, activity, scrollY: 0 };
 	layout.activityVisible = true;
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	activity.preferredHeight = 160;

@@ -9,7 +9,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.tools'
 	| 'menubar.window';
 
-export type WorkbenchContextMenuId = 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
 export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.target' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -262,9 +262,12 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
 	'problems.title': [{ type: 'command', command: 'problems.coverage', icon: 'info' }],
-	'window.status': [{ type: 'command', command: 'openEditors', icon: 'restore', showLabel: true }],
+	'window.status': [{ type: 'command', command: 'window.showAll', icon: 'restore', showLabel: true }],
 	'window.context': WINDOW_CONTEXT_ACTIONS,
 	'window.minimizable.context': [{ type: 'command', command: 'window.minimize' }, ...WINDOW_CONTEXT_ACTIONS],
+	'activity.context': [{ type: 'command', command: 'workspace.activity.float' }, { type: 'command', command: 'workspace.activity.hide' }],
+	'activity.window.context': [{ type: 'command', command: 'workspace.activity.dock' }, { type: 'separator' },
+		{ type: 'command', command: 'window.minimize' }, ...WINDOW_CONTEXT_ACTIONS],
 	'window.title': [{ type: 'command', command: 'window.minimize', icon: 'minimize' },
 		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
 		{ type: 'command', command: 'window.hide', icon: 'close' }],

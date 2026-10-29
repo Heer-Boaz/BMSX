@@ -269,6 +269,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'builds.output': { category: 'View', title: 'Build Output', shortTitle: 'Output' },
 	'builds.output.choose': { category: 'Build Output', title: 'Select Build', shortTitle: 'Select Build' },
 	'workspace.activity.hide': { category: 'Workspace', title: 'Hide Activity Area', shortTitle: 'Hide' },
+	'workspace.activity.float': { category: 'Workspace', title: 'Move Activity Area to New Window' },
+	'workspace.activity.dock': { category: 'Workspace', title: 'Move Activity Area to Main' },
 	'buildLog.refresh': { category: 'Build Output', title: 'Refresh Snapshot', shortTitle: 'Refresh' },
 	'buildLog.copyAll': { category: 'Build Output', title: 'Copy Entire Document', shortTitle: 'Copy' },
 	'buildLog.output': { category: 'Build Output', title: 'Show Captured Output', shortTitle: 'Log' },

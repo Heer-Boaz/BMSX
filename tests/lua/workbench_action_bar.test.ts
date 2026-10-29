@@ -11,7 +11,7 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { InputFocusService, type InputFocusTarget } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
-import { createWorkbenchActionBar, layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ITEM_PADDING_X, WORKBENCH_ACTION_BAR_ITEM_SPACING } from '../../ide/workbench/ui/action_bar';
+import { createWorkbenchActionBar, layoutWorkbenchActionBar, measureWorkbenchActionBarMinimumWidth, WORKBENCH_ACTION_BAR_ITEM_PADDING_X, WORKBENCH_ACTION_BAR_ITEM_SPACING } from '../../ide/workbench/ui/action_bar';
 import type { WorkbenchActionMenuId } from '../../ide/workbench/ui/menu/registry';
 import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
@@ -22,6 +22,7 @@ import { renderWorkbenchActionBar } from '../../ide/workbench/render/action_bar'
 import * as colors from '../../ide/common/constants';
 import { WORKBENCH_ICON_SIZE, type WorkbenchIcon } from '../../ide/workbench/ui/icon';
 import { drawWorkbenchIcon } from '../../ide/workbench/render/icon';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 
 function fixture(t: TestContext, orientation: 'horizontal' | 'vertical' = 'horizontal', menu: WorkbenchActionMenuId = 'workspaceEditReview.evidence.title') {
 	const focus = new InputFocusService();
@@ -82,6 +83,45 @@ test('compact window actions reserve icon cells instead of measuring hidden text
 			if (index > 0) assert.equal(item.bounds.left - state.items[index - 1].bounds.right, 2);
 		}
 	}
+});
+
+for (const variant of ['tiny', 'msx'] as const) for (const responsive of [false, true])
+	test(`intrinsic ${responsive ? 'overflow' : 'direct'} action width keeps every action reachable with cached ${variant} measurements`, () => {
+		const font = new Font({ variant }), state = createWorkbenchActionBar('scenarioLab.target', responsive);
+		let measurements = 0;
+		const measure = (text: string) => { measurements++; return font.measure(text); };
+		const height = font.lineHeight + 4, width = measureWorkbenchActionBarMinimumWidth(state, height, measure, font);
+		layoutWorkbenchActionBar(state, width, 0, height, measure, font, 0);
+		const direct = state.items.filter(item => item.visible && !item.overflowed);
+		const overflow = state.overflow?.items.filter(item => item.type === 'command').map(item => item.command) ?? [];
+		assert.deepEqual([...direct.map(item => item.command), ...overflow], state.items.map(item => item.command));
+		// This focused layout contract checks the measured free interval, not a workflow's incidental coordinates.
+		for (const item of direct) assert.ok(item.bounds.left >= 0 && item.bounds.right <= width);
+		if (state.overflow?.button.visible) assert.ok(state.overflow.button.bounds.left >= 0 && state.overflow.button.bounds.right <= width);
+		const measured = measurements, revision = state.layoutRevision;
+		for (let frame = 0; frame < 1000; frame++) {
+			assert.equal(measureWorkbenchActionBarMinimumWidth(state, height, measure, font), width);
+			layoutWorkbenchActionBar(state, width, 0, height, measure, font, 0);
+		}
+		assert.equal(measurements, measured); assert.equal(state.layoutRevision, revision);
+	});
+
+test('intrinsic measurement retains command membership invalidation until equal-extent layout publication', () => {
+	const context = { first: true }, font = new Font({ variant: 'tiny' }), measure = (text: string) => font.measure(text);
+	const menu = new WorkbenchMenu([
+		{ type: 'command', command: 'window.maximize', icon: 'maximize', when: (value: typeof context) => value.first },
+		{ type: 'command', command: 'window.hide', icon: 'close', when: (value: typeof context) => !value.first },
+	], context);
+	menu.refresh();
+	const state = createWorkbenchActionBar(menu), height = font.lineHeight + 4;
+	const arrange = () => {
+		const width = measureWorkbenchActionBarMinimumWidth(state, height, measure, font);
+		layoutWorkbenchActionBar(state, width, 0, height, measure, font, 0);
+	};
+	arrange(); context.first = false; arrange();
+	const revision = state.layoutRevision;
+	context.first = true; arrange();
+	assert.ok(state.layoutRevision > revision, 'changing real command membership invalidates armed input even when occupied geometry is identical');
 });
 
 test('shared UI icons are retained pixel geometry, not font glyph substitutions', t => {

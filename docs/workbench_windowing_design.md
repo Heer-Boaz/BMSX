@@ -308,10 +308,11 @@ sibling's capture survives. Visibility changes do not retire attachment context
 or suspend the retained client. Explicit later reveal wins over an earlier
 minimize, including a reveal issued by a focus-change callback.
 
-The permanent workspace Open Editors/host navigator includes all retained
-owners, not only minimized parts. A minimized badge/count can be projected into
-that affordance, but must not control whether it exists. The Window menu and
-complete window picker also restore actual minimized owners. This navigation
+The permanent window navigator projects actual native window attachments,
+including non-editor windows, not only minimized document parts. Its minimized
+badge/count does not control whether the affordance exists. Open Editors remains
+the separate navigator for actual document inputs/groups. The Window menu and
+complete window picker restore actual minimized owners. This navigation
 uses permanent shell space outside overlapping editor bounds, rather than an
 extra taskbar row or a geometric test for occluded windows. Explicit restore
 arranges and raises the family, then focuses its retained local dialog or
@@ -324,6 +325,21 @@ placement and independently minimized visibility. It does not persist arranged p
 live capture. Owned utility close retains input-owned placement/subject intent;
 accepted document close disposes the actual document part through close
 admission. Neither operation is window collapse.
+
+Main's activity area uses the same minimization contract for its retained
+selector and contribution clients, without constructing document inputs.
+Its owner admits hide/minimize and physical focus return. Close hides that
+area in its recorded placement; dock return reparents its native content
+before the temporary shell retires. Window choices retain their exact native
+attachment lifetime; retirement invalidates the picker rather than targeting
+a replacement controller or whichever document is now active.
+
+Physical window commands resolve the invoking attachment's actual window
+ancestor. A real unframed Main window is not a global invocation and cannot
+borrow a different active document's chrome. Semantic command ancestry and
+native presentation ancestry remain independent when retained content moves.
+The shared chrome measures its font-dependent caption/action minimum separately
+from contribution constraints; resize and snap consume their effective maximum.
 
 ### Snapped placement contract
 

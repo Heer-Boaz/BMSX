@@ -83,7 +83,6 @@ export class EditorParts {
 	private readonly closing = new Map<EditorPart, Promise<boolean>>();
 	private readonly closingGroups = new Map<EditorGroupView, Promise<boolean>>();
 	private restoreGeneration = 0;
-	private minimizedDocumentCount = 0;
 	private readonly newDocumentRequest = create_rect_bounds();
 	private readonly newDocumentPlacement = new WorkbenchWindowModel(this.newDocumentRequest, 0, 0);
 	public activePart: EditorPart;
@@ -92,7 +91,6 @@ export class EditorParts {
 	public get groups(): readonly EditorGroupView[] { return this.groupList; }
 	public get activeGroup(): EditorGroupView { return this.activePart.activeGroup; }
 	public get mostRecentlyActive(): readonly EditorPart[] { return this.mru; }
-	public get minimizedCount(): number { return this.minimizedDocumentCount; }
 	private get defaultDocumentWidth(): number { return Math.round((this.options.workArea.right - this.options.workArea.left) * 0.86); }
 	private get defaultDocumentHeight(): number { return Math.round((this.options.workArea.bottom - this.options.workArea.top) * 0.86); }
 
@@ -113,9 +111,6 @@ export class EditorParts {
 
 	public onDidChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 	private changed(): void {
-		let minimized = 0;
-		for (const part of this.documentParts) if (part.window!.model.minimized) minimized++;
-		this.minimizedDocumentCount = minimized;
 		for (const listener of this.listeners) listener();
 	}
 
@@ -801,7 +796,6 @@ export class EditorParts {
 		this.partsByScope.set(this.main.scope, null);
 		this.main.dispose();
 		this.documentParts.length = 0; this.groupList.length = 0;
-		this.minimizedDocumentCount = 0;
 		this.owners.clear(); this.groupsBySurface.clear(); this.groupsByModel.clear(); this.mru.length = 0; this.listeners.clear();
 	}
 }

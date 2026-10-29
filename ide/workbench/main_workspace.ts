@@ -1,4 +1,4 @@
-import { create_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
+import { copy_rect_bounds, create_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { COLOR_FRAME, SCROLLBAR_WIDTH, SCROLLBAR_THUMB_COLOR } from '../common/constants';
 import type { EditorCommandRunner } from '../common/commands';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../input/focus';
@@ -20,10 +20,15 @@ import type { EditorGroupView } from './services/editor/editor_group';
 import { editorViewState } from '../editor/ui/view/state';
 import type { WorkbenchViewSizeConstraints } from './common/layout';
 import { WorkbenchMainWorkspaceLayout } from './common/main_workspace_layout';
-import type { MainWorkspaceActivityClient, MainWorkspaceActivitySizeConstraints } from './common/main_workspace_activity';
+import type { MainWorkspaceActivityClient, MainWorkspaceActivityPlacement, MainWorkspaceActivitySizeConstraints } from './common/main_workspace_activity';
 import type { MainWorkspaceClient, MainWorkspaceClientFactory, MainWorkspaceRegionId, MainWorkspaceRegionSurfaces } from './common/main_workspace_client';
 import { MainWorkspaceActivityPart } from './main_activity';
 import type { ContextMenuController } from './services/context_menu/controller';
+import { WorkbenchFloatingWindow } from './ui/window/control';
+import { WorkbenchWindowModel, WINDOW_HEADER_VERTICAL_PADDING, WINDOW_RESIZE_MARGIN } from './ui/window/model';
+import { createWorkbenchActionBar } from './ui/action_bar';
+import { WORKBENCH_MENUS } from './ui/menu/registry';
+import { measureText, measureTextRange } from '../editor/common/text/layout';
 
 export type MainWorkspaceOpenOptions = { readonly recordNavigation?: boolean; readonly preserveFocus?: boolean; readonly isCurrent?: () => boolean };
 export type MainWorkspaceActivityOpenOptions = { readonly focus?: boolean };
@@ -61,7 +66,8 @@ export class MainWorkspace {
 	public readonly surface: WorkbenchSurface;
 	public readonly focusTarget: InputFocusTarget;
 	public readonly activities: MainWorkspaceActivityPart;
-	private readonly activityConstraints: MainWorkspaceActivitySizeConstraints = { minimumHeight: 0, preferredHeight: 0 };
+	public readonly activityWindow: WorkbenchFloatingWindow;
+	private readonly activityConstraints: MainWorkspaceActivitySizeConstraints = { minimumWidth: 0, minimumHeight: 0, preferredHeight: 0 };
 	private readonly verticalConstraints = { rowMinimumHeight: 0, activity: undefined as MainWorkspaceActivitySizeConstraints | undefined, scrollY: 0 };
 	private readonly activitySash: WorkbenchSplitControl;
 	private activitySashAttached = false;
@@ -98,14 +104,21 @@ export class MainWorkspace {
 	private presented = true;
 	private resetting = false;
 	private sourceOpeningRevision = 0;
+	private activityPlacementValue: MainWorkspaceActivityPlacement = 'dockedMain';
+	private activityPlacementRevision = 0;
 	public get primary(): MainWorkspaceClient | undefined { return this.primaryValue; }
 	public get activity(): MainWorkspaceActivityClient | undefined { return this.activities.client; }
+	public get activityPlacement(): MainWorkspaceActivityPlacement { return this.activityPlacementValue; }
+	public get activityDisplayed(): boolean {
+		return this.presented && this.regionLayout.activityVisible
+			&& (this.activityPlacementValue === 'dockedMain' || this.activityWindow.visible);
+	}
 
 	public constructor(private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, parent: InputFocusScope,
 		commands: EditorCommandRunner,
 		private readonly requestLayout: () => void, private readonly onPrimaryActivate: () => void,
 		private readonly onDocumentsActivate: (focus: boolean) => void, private readonly documentAnchor: () => EditorGroupView,
-		contextMenu: ContextMenuController) {
+		contextMenu: ContextMenuController, workArea: Readonly<RectBounds>) {
 		this.scope = new InputFocusScope(Symbol('main workspace'), parent);
 		this.scope.commands = commands;
 		this.primaryScope = new InputFocusScope(Symbol('main authored context'), this.scope);
@@ -113,7 +126,7 @@ export class MainWorkspace {
 		this.focusTarget.canFocus = () => this.presented && !this.surface.retired;
 		this.unbindFocus = this.focusTarget.onDidFocus(() => {
 			if (this.activeClient === 'primary') this.focusPrimary();
-			else if (this.activeClient === 'activity') this.focusActivity();
+			else if (this.activeClient === 'activity' && this.activityPlacementValue === 'dockedMain') this.focusActivity();
 			else this.onDocumentsActivate(true);
 		});
 		this.sashes = {
@@ -173,8 +186,26 @@ export class MainWorkspace {
 			onRetire: () => this.scrollControl.cancel(),
 		});
 		this.activities = new MainWorkspaceActivityPart(surfaces, this.surface, this.scope, this.focusTarget,
-			this.regionLayout.verticalViewport, contextMenu, id => this.openActivity(id), () => this.setActivityVisible(false),
+			contextMenu, commands, id => this.openActivity(id), () => this.setActivityVisible(false),
 			() => this.presented && !this.surface.retired && !this.resetting, () => this.changed());
+		const windowBounds = { left: workArea.left + 8, top: workArea.top + 8,
+			right: workArea.right - 8, bottom: workArea.top + Math.round((workArea.bottom - workArea.top) / 2) };
+		const activityWindow = new WorkbenchWindowModel(windowBounds, 0, 0);
+		activityWindow.title = 'Main Activity';
+		this.activityWindow = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, contextMenu, {
+			model: activityWindow, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: this.surface,
+			presentationParent: this.surface, focusScope: this.scope, focusReturn: this.focusTarget, workArea: this.bounds,
+			contextMenu: WORKBENCH_MENUS['activity.window.context'], content: { draw() {} },
+			layoutContent: bounds => {
+				if (this.activityPlacementValue !== 'floatingWindow' || !this.regionLayout.activityVisible) return;
+				copy_rect_bounds(this.activities.clip, bounds);
+				this.activities.layout(bounds);
+			},
+			retireContentInput: () => {
+				if (this.activityPlacementValue === 'floatingWindow' && !this.regionLayout.activityVisible) this.activities.detach();
+			}, restoreContentInput() {}, focusContent: () => this.focusActivity(),
+			requestClose: () => { this.setActivityVisible(false); }, requestMinimize: () => { this.minimizeActivity(); },
+		});
 		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
 			captureScope: this.activitySash.focusTarget.scope.surfaceScope, isVisible: () => this.regionLayout.activityPresented,
 			getBounds: () => this.regionLayout.activitySashBounds, getClip: () => this.regionLayout.verticalViewport,
@@ -207,14 +238,19 @@ export class MainWorkspace {
 					this.activeClient = 'primary'; this.activeRegion = region; this.changed();
 				}
 			} else if (this.activities.attached && this.activities.scope.contains(target.scope)) {
-				this.reveal(this.regionLayout.activityBounds); this.onDocumentsActivate(false);
+				if (this.activityPlacementValue === 'dockedMain') this.reveal(this.regionLayout.activityBounds);
+				this.onDocumentsActivate(false);
+				if (this.activityPlacementValue === 'floatingWindow' && this.activityWindow.surface !== undefined) this.surfaces.raise(this.activityWindow.surface);
 				if (this.activeClient !== 'activity') { this.activeClient = 'activity'; this.changed(); }
 			} else if (this.scope.contains(target.scope) && !this.primaryScope.contains(target.scope)
 				&& target !== this.sashes.hierarchy.focusTarget && target !== this.sashes.details.focusTarget && target !== this.activitySash.focusTarget) {
 				if (this.activeClient !== 'documents') { this.activeClient = 'documents'; this.changed(); }
 			}
 		});
-		this.releaseLayoutChanges = [this.scrollbar.onDidScroll(() => this.changed()), this.verticalScrollbar.onDidScroll(() => this.changed()), this.regionLayout.onDidChange(() => this.changed())];
+		this.releaseLayoutChanges = [this.scrollbar.onDidScroll(() => this.changed()), this.verticalScrollbar.onDidScroll(() => this.changed()),
+			this.regionLayout.onDidChange(() => { this.activityPlacementRevision++; this.changed(); }), activityWindow.onDidChangePlacement(() => {
+				this.activityPlacementRevision++; this.changed();
+			})];
 	}
 
 	public onDidChange(listener: () => void): () => void { this.changeListeners.add(listener); return () => this.changeListeners.delete(listener); }
@@ -234,7 +270,7 @@ export class MainWorkspace {
 	public canOpenSource(target: InputFocusTarget): boolean {
 		const client = this.sourceClient(target);
 		if (!this.presented || this.surface.retired || this.resetting || client === undefined || client.canOpenSource !== true) return false;
-		if (client === this.activity) return this.activities.attached && client.attached;
+		if (client === this.activity) return this.activityDisplayed && this.activities.attached && client.attached;
 		return target === client.commandTarget || this.regionForTarget(target) !== undefined;
 	}
 	public captureSourceNavigation(options: SourceNavigationCaptureOptions = {}): SourceNavigationOrigin | undefined {
@@ -262,13 +298,20 @@ export class MainWorkspace {
 
 	public serialize(previous?: SerializedMainWorkspace): SerializedMainWorkspace {
 		const primary = this.primaryValue?.serialize() ?? null, layout = this.regionLayout;
+		const model = this.activityWindow.model, bounds = model.requestedBounds, priorWindow = previous?.activityWindow;
+		const activityWindow = priorWindow !== undefined && priorWindow.placement === model.placement && priorWindow.minimized === model.minimized
+			&& priorWindow.requestedBounds.left === bounds.left && priorWindow.requestedBounds.top === bounds.top
+			&& priorWindow.requestedBounds.right === bounds.right && priorWindow.requestedBounds.bottom === bounds.bottom
+			? priorWindow : { requestedBounds: { ...bounds }, placement: model.placement, minimized: model.minimized };
 		if (previous !== undefined && previous.hierarchyVisible === layout.hierarchyVisible && previous.detailsVisible === layout.detailsVisible
 			&& previous.hierarchyWidth === layout.hierarchyWidth && previous.detailsWidth === layout.detailsWidth
 			&& previous.activityId === this.activities.selectedId && previous.activityVisible === layout.activityVisible
+			&& previous.activityPlacement === this.activityPlacementValue && previous.activityWindow === activityWindow
 			&& previous.activityHeight === layout.activityHeight && previous.scrollY === this.verticalScrollbar.getScroll()
 			&& previous.scrollX === this.scrollbar.getScroll() && previous.activeClient === this.activeClient && previous.activeRegion === this.activeRegion
 			&& (primary === null ? previous.primary === null : previous.primary?.kind === primary.kind && previous.primary.value === primary.value)) return previous;
 		return { primary, activityId: this.activities.selectedId, hierarchyVisible: layout.hierarchyVisible, detailsVisible: layout.detailsVisible,
+			activityPlacement: this.activityPlacementValue, activityWindow,
 			hierarchyWidth: layout.hierarchyWidth, detailsWidth: layout.detailsWidth, activityVisible: layout.activityVisible, activityHeight: layout.activityHeight,
 			scrollY: this.verticalScrollbar.getScroll(), scrollX: this.scrollbar.getScroll(),
 			activeClient: this.activeClient, activeRegion: this.activeRegion };
@@ -278,6 +321,7 @@ export class MainWorkspace {
 	public beginRestore(): MainWorkspaceRestoreRequest {
 		this.cancelRequest();
 		const generation = this.requestRevision, interaction = inputFocus.interactionRevision;
+		const visibility = this.visibilityRevision, placement = this.activityPlacementRevision;
 		let disposed = false, restored = false;
 		let state: SerializedMainWorkspace;
 		let activityRevision: number;
@@ -288,12 +332,20 @@ export class MainWorkspace {
 				if (!current()) return false;
 				state = snapshot;
 				this.restoredScroll = snapshot.scrollX; this.restoredScrollY = snapshot.scrollY;
-				if (inputFocus.interactionRevision === interaction) {
+				const restoreActivity = visibility === this.visibilityRevision && placement === this.activityPlacementRevision;
+				if (inputFocus.interactionRevision === interaction && restoreActivity) {
 					this.activeClient = snapshot.activeClient; this.activeRegion = snapshot.activeRegion;
 					if (snapshot.activityId !== undefined) this.activities.select(snapshot.activityId);
 				}
 				activityRevision = this.activities.revision;
-				this.regionLayout.setState(snapshot);
+				if (restoreActivity && visibility === this.visibilityRevision && placement === this.activityPlacementRevision) {
+					this.activityPlacementValue = snapshot.activityPlacement;
+					this.activities.contextMenu = WORKBENCH_MENUS[snapshot.activityPlacement === 'dockedMain' ? 'activity.context' : 'activity.window.context'];
+					this.activityWindow.model.setState(snapshot.activityWindow);
+					if (visibility === this.visibilityRevision) this.regionLayout.setState(snapshot);
+				} else {
+					this.regionLayout.setState({ ...snapshot, activityVisible: this.regionLayout.activityVisible, activityHeight: this.regionLayout.activityHeight });
+				}
 				if (!current()) return false;
 				this.requestLayout();
 				if (!current()) return false;
@@ -316,7 +368,7 @@ export class MainWorkspace {
 			focusClient: () => {
 				if (!restored || !current() || inputFocus.interactionRevision !== interaction) return;
 				if (state.activeClient === 'primary') this.focusPrimary();
-				else if (state.activeClient === 'activity' && this.regionLayout.activityVisible && state.activityId !== undefined
+				else if (state.activeClient === 'activity' && this.activityDisplayed && state.activityId !== undefined
 					&& this.activities.revision === activityRevision && this.activities.selectedId === state.activityId) this.openActivity(state.activityId);
 			},
 			dispose: () => { disposed = true; },
@@ -460,6 +512,7 @@ export class MainWorkspace {
 	/** Measure contributions and arrange the named geometry; clients attach after the final document pass. */
 	public layout(bounds: Readonly<RectBounds>, documentMinimumWidth: number, documentMinimumHeight: number): boolean {
 		const client = this.primaryValue, activity = this.activity, layout = this.regionLayout;
+		const dockedActivity = activity !== undefined && this.activityPlacementValue === 'dockedMain' && layout.activityVisible;
 		if (client !== undefined) for (const region of REGIONS) client[region].measure(editorViewState.font, this.regionConstraints[region]);
 		const vertical = this.verticalConstraints;
 		vertical.rowMinimumHeight = Math.max(documentMinimumHeight,
@@ -467,14 +520,14 @@ export class MainWorkspace {
 			client !== undefined && layout.detailsVisible ? this.regionConstraints.details.minimumHeight : 0);
 		const width = bounds.right - bounds.left;
 		const measuredWidth = layout.bounds.right - layout.bounds.left === width ? layout.verticalViewport.right - layout.verticalViewport.left : width;
-		if (activity !== undefined) activity.measure(editorViewState.font, measuredWidth, this.activityConstraints);
-		vertical.activity = activity === undefined ? undefined : this.activityConstraints;
+		if (dockedActivity) activity.measure(editorViewState.font, measuredWidth, this.activityConstraints);
+		vertical.activity = dockedActivity ? this.activityConstraints : undefined;
 		vertical.scrollY = this.restoredScrollY ?? this.verticalScrollbar.getScroll();
 		const scrollX = this.restoredScroll ?? this.scrollbar.getScroll();
 		let changed = layout.layout(bounds, documentMinimumWidth, client === undefined ? undefined : this.regionConstraints.hierarchy,
 			client === undefined ? undefined : this.regionConstraints.details, SCROLLBAR_WIDTH, scrollX, vertical);
 		const finalWidth = layout.verticalViewport.right - layout.verticalViewport.left;
-		if (activity !== undefined && measuredWidth !== finalWidth) {
+		if (dockedActivity && measuredWidth !== finalWidth) {
 			activity.measure(editorViewState.font, finalWidth, this.activityConstraints);
 			changed = layout.layout(bounds, documentMinimumWidth, client === undefined ? undefined : this.regionConstraints.hierarchy,
 				client === undefined ? undefined : this.regionConstraints.details, SCROLLBAR_WIDTH, scrollX, vertical) || changed;
@@ -510,7 +563,36 @@ export class MainWorkspace {
 			if (presented) this.activitySash.setInput(this.regionLayout.activitySash); else this.activitySash.clearInput();
 		}
 		if (activity === undefined || this.activity !== activity || !this.presented || this.surface.retired) return;
-		if (presented) this.activities.layout(this.regionLayout.activityBounds); else this.activities.detach();
+		if (this.activityPlacementValue === 'dockedMain') {
+			copy_rect_bounds(this.activities.clip, this.regionLayout.verticalViewport);
+			if (this.activities.surface.presentationParent !== this.surface) this.surfaces.reparent(this.activities.surface, this.surface);
+			if (this.activityPlacementValue !== 'dockedMain' || this.activity !== activity || !this.presented || this.surface.retired) return;
+			this.activityWindow.hide();
+			if (this.activityPlacementValue !== 'dockedMain' || this.activity !== activity || !this.presented || this.surface.retired) return;
+			if (presented) this.activities.layout(this.regionLayout.activityBounds); else this.activities.detach();
+		} else if (this.regionLayout.activityVisible) {
+			const window = this.activityWindow;
+			window.model.open = true;
+			window.attach();
+			if (this.activityPlacementValue !== 'floatingWindow' || this.activity !== activity || !this.presented || this.surface.retired) return;
+			let arranged = window.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
+			if (this.activityPlacementValue !== 'floatingWindow' || this.activity !== activity || !this.regionLayout.activityVisible) return;
+			copy_rect_bounds(this.activities.clip, window.model.client);
+			if (this.activities.surface.presentationParent !== window.clientSurface) this.surfaces.reparent(this.activities.surface, window.clientSurface!);
+			if (!window.visible || this.activityPlacementValue !== 'floatingWindow' || this.activity !== activity) return;
+			activity.measure(editorViewState.font, window.model.client.right - window.model.client.left, this.activityConstraints);
+			const revision = window.model.revision;
+			window.model.setMinimumSize(Math.max(this.activityConstraints.minimumWidth, this.activities.measureMinimumWidth(editorViewState.font))
+				+ WINDOW_RESIZE_MARGIN * 2, this.activityConstraints.minimumHeight + editorViewState.font.lineHeight
+				+ WINDOW_HEADER_VERTICAL_PADDING + WINDOW_RESIZE_MARGIN);
+			if (window.model.revision !== revision) arranged = window.layout(editorViewState.font.renderFont(), measureTextRange, measureText) || arranged;
+			if (this.activity === activity && this.activityPlacementValue === 'floatingWindow' && !arranged) this.activities.layout(window.model.client);
+		} else {
+			this.activities.detach();
+			if (this.regionLayout.activityVisible || this.activityPlacementValue !== 'floatingWindow' || this.activity !== activity) return;
+			if (this.activities.surface.presentationParent !== this.surface) this.surfaces.reparent(this.activities.surface, this.surface);
+			if (!this.regionLayout.activityVisible && this.activityPlacementValue === 'floatingWindow') this.activityWindow.hide();
+		}
 	}
 
 	public update(): void {
@@ -524,24 +606,74 @@ export class MainWorkspace {
 				if (client[region].attached) client[region].update();
 			}
 		}
-		if (this.activity === activity && this.presented && !this.surface.retired) this.activities.update();
+		if (this.activity === activity && this.presented && !this.surface.retired) {
+			this.activityWindow.update();
+			if (this.activityDisplayed) this.activities.update();
+		}
 	}
 
 	public setActivityVisible(visible: boolean): boolean {
 		const revision = ++this.visibilityRevision, activity = this.activity;
-		if (this.regionLayout.activityVisible === visible) return true;
+		if (this.regionLayout.activityVisible === visible && (!visible || this.activityPlacementValue === 'dockedMain' || !this.activityWindow.model.minimized)) return true;
 		if (!this.presented || this.surface.retired || this.resetting || activity === undefined) return false;
 		const focused = inputFocus.target, focusRevision = inputFocus.revision;
-		if (!visible && focused !== null && (this.activities.scope.contains(focused.scope) || focused === this.activitySash.focusTarget)) {
+		if (!visible && focused !== null && (this.activities.scope.contains(focused.scope) || focused === this.activitySash.focusTarget || this.activityWindow.hasFocus)) {
 			if (focused.edit?.commit() === false) return false;
 			if (this.activity !== activity || this.visibilityRevision !== revision || inputFocus.revision !== focusRevision) return false;
 			this.onDocumentsActivate(true);
 			if (this.activity !== activity || this.visibilityRevision !== revision || this.surface.retired || !this.presented) return false;
 		}
 		this.regionLayout.activityVisible = visible;
+		if (this.visibilityRevision !== revision) return false;
+		if (visible && this.activityPlacementValue === 'floatingWindow') this.activityWindow.model.setMinimized(false);
+		if (this.visibilityRevision !== revision) return false;
 		this.requestLayout();
 		if (this.activity !== activity || this.visibilityRevision !== revision || this.surface.retired || !this.presented) return false;
 		this.surfaces.changed(); return true;
+	}
+
+	/** Move the retained presentation only after its concrete draft admits departure. */
+	public setActivityPlacement(placement: MainWorkspaceActivityPlacement): boolean {
+		if (!this.presented || this.surface.retired || this.resetting || this.activity === undefined) return false;
+		if (this.activityPlacementValue === placement) return true;
+		const revision = ++this.visibilityRevision, activity = this.activity, selection = this.activities.revision;
+		const focused = inputFocus.target, focusRevision = inputFocus.revision, generation = focused?.scope.contextGeneration;
+		const ownsFocus = focused !== null && (this.activities.scope.contains(focused.scope) || this.activityWindow.hasFocus);
+		if (ownsFocus && focused.edit?.commit() === false) return false;
+		if (this.visibilityRevision !== revision || this.activity !== activity || this.activities.revision !== selection
+			|| inputFocus.revision !== focusRevision || focused?.scope.contextGeneration !== generation) return false;
+		const present = () => {
+			if (this.visibilityRevision !== revision || this.activity !== activity || !this.presented || this.surface.retired) return;
+			this.activityPlacementValue = placement; this.activityPlacementRevision++;
+			this.activities.contextMenu = WORKBENCH_MENUS[placement === 'dockedMain' ? 'activity.context' : 'activity.window.context'];
+			this.requestLayout();
+			if (this.visibilityRevision !== revision || this.activityPlacementValue !== placement || this.activity !== activity) return;
+			if (this.activityDisplayed) {
+				this.surfaces.raise(this.surface);
+				if (placement === 'floatingWindow') this.surfaces.raise(this.activityWindow.surface!);
+			}
+			this.changed();
+		};
+		if (ownsFocus) {
+			const destination = this.activities.scope.contains(focused.scope) ? focused : activity.commandTarget;
+			if (!inputFocus.setTarget(destination, present)) return false;
+		} else present();
+		return this.visibilityRevision === revision && this.activityPlacementValue === placement && this.activity === activity;
+	}
+
+	/** Minimize the actual floating family, retaining its reading and placement state. */
+	public minimizeActivity(): boolean {
+		if (this.activityPlacementValue !== 'floatingWindow' || !this.activityDisplayed || this.resetting) return false;
+		const revision = ++this.visibilityRevision, activity = this.activity;
+		const focused = inputFocus.target, focusRevision = inputFocus.revision;
+		if (this.activityWindow.hasFocus && focused !== null) {
+			if (focused.edit?.commit() === false) return false;
+			if (this.visibilityRevision !== revision || this.activity !== activity || inputFocus.revision !== focusRevision) return false;
+			this.onDocumentsActivate(true);
+			if (this.visibilityRevision !== revision || this.activity !== activity || this.activityPlacementValue !== 'floatingWindow') return false;
+		}
+		this.activityWindow.minimize();
+		return this.visibilityRevision === revision && this.activityWindow.model.minimized;
 	}
 	/** The native focus owner publishes selection after departing blur and before new focus admission. */
 	public openActivity(id: string, options: MainWorkspaceActivityOpenOptions = {}): boolean {
@@ -558,11 +690,14 @@ export class MainWorkspace {
 			if (!current() || !this.activities.select(id) || !current()) return;
 			this.regionLayout.activityVisible = true;
 			if (!current()) return;
+			if (this.activityPlacementValue === 'floatingWindow') this.activityWindow.model.setMinimized(false);
+			if (!current()) return;
 			this.requestLayout();
 			if (!current() || this.activity !== activity) return;
-			this.reveal(this.regionLayout.activityBounds);
+			if (this.activityPlacementValue === 'dockedMain') this.reveal(this.regionLayout.activityBounds);
 			if (!current() || this.activity !== activity) return;
 			this.surfaces.raise(this.surface);
+			if (this.activityPlacementValue === 'floatingWindow' && this.activityWindow.surface !== undefined) this.surfaces.raise(this.activityWindow.surface);
 		};
 		if (focus) {
 			if (!inputFocus.setTarget(activity.commandTarget, present)) return false;
@@ -629,6 +764,7 @@ export class MainWorkspace {
 
 	public suspend(): void {
 		this.presented = false;
+		this.activityWindow.setPresented(false);
 		this.cancelRequest();
 		this.primaryScope.retireContext();
 		const client = this.primaryValue;
@@ -644,6 +780,7 @@ export class MainWorkspace {
 	public resume(): void {
 		if (this.presented || this.surface.retired || this.resetting) return;
 		this.presented = true;
+		this.activityWindow.setPresented(true);
 		this.requestLayout();
 		this.update(); this.surfaces.changed();
 	}
@@ -670,6 +807,8 @@ export class MainWorkspace {
 		if (client !== undefined) { client.scope.statusSource = undefined; client.scope.retireContext(); client.dispose(); }
 		this.primaryScope.retireContext(); this.prompt.close('cancel', false);
 		this.activities.detach(); this.activitySashAttached = false; this.activitySash.clearInput();
+		if (this.activities.surface.presentationParent !== this.surface) this.surfaces.reparent(this.activities.surface, this.surface);
+		this.activityWindow.hide();
 		for (const region of REGIONS) { this.sashAttached[region] = false; this.sashes[region].clearInput(); }
 		this.resetting = false;
 		if (!this.surface.retired) { this.requestLayout(); this.surfaces.changed(); }
@@ -679,6 +818,7 @@ export class MainWorkspace {
 	private retire(): void {
 		for (const listener of this.disposalListeners) listener(); this.disposalListeners.clear();
 		this.reset();
+		this.activityWindow.dispose();
 		this.unbindInteraction(); this.unbindFocus();
 		for (const release of this.releaseLayoutChanges) release();
 		this.changeListeners.clear(); this.prompt.dispose();

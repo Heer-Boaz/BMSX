@@ -5,13 +5,14 @@ import { inputFocus } from '../../ide/input/focus';
 import type { EditorInput } from '../../ide/workbench/common/editor_inputs';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { showGroupOpenEditors, showOpenEditors } from '../../ide/workbench/services/editor/open_editors';
-import { showMoveDestination, showOpenWindows } from '../../ide/workbench/services/editor/open_windows';
-import type { EditorPart } from '../../ide/workbench/services/editor/editor_part';
+import { showMoveDestination } from '../../ide/workbench/services/editor/open_windows';
+import { showOpenWindows } from '../../ide/workbench/ui/window/picker';
+import type { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import type { EditorMoveDestination } from '../../ide/workbench/services/editor/editor_parts';
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-type NavigationItem = QuickPickItem & { input?: EditorInput; part?: EditorPart; destination?: EditorMoveDestination };
+type NavigationItem = QuickPickItem & { input?: EditorInput; window?: WorkbenchFloatingWindow; destination?: EditorMoveDestination };
 
 /** Selection is delivered through the real picker; predicates identify retained data, not labels. */
 function choose(f: ReturnType<typeof createActualSourcePanes>, wanted: (item: NavigationItem) => boolean): void {
@@ -41,7 +42,8 @@ for (const route of ['editors', 'group', 'windows', 'minimized', 'moveEditor', '
 			case 'group':
 				showGroupOpenEditors(f.firstGroup, picker); wanted = item => item.input === f.firstInput; break;
 			case 'windows': case 'minimized':
-				showOpenWindows(parts, picker, route === 'minimized'); wanted = item => item.part === f.secondPart; break;
+				showOpenWindows(f.editor.mainWorkspace, parts, f.editor.surfaces, picker, route === 'minimized');
+				wanted = item => item.window === f.secondPart.window; break;
 			case 'moveEditor': case 'moveGroup':
 				showMoveDestination(parts, picker, route === 'moveEditor'
 					? { kind: 'editor', model: f.firstGroup.model, input: f.firstInput }

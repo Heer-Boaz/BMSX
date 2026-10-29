@@ -13,9 +13,10 @@ import type { PointerHoverService, PointerHoverTarget } from '../../../input/poi
 import type { WorkbenchSurface, WorkbenchSurfaceCallbacks } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { ContextMenuController } from '../../services/context_menu/controller';
-import { WORKBENCH_MENUS } from '../menu/registry';
+import { WORKBENCH_MENUS, type WorkbenchMenuItem } from '../menu/registry';
+import type { WorkbenchMenuPresentation } from '../menu/model';
 import { drawWorkbenchWindowPlacement, drawWorkbenchWindow } from '../../render/window';
-import { layoutWorkbenchActionBar, type WorkbenchActionBarState } from '../action_bar';
+import { layoutWorkbenchActionBar, measureWorkbenchActionBarMinimumWidth, type WorkbenchActionBarState } from '../action_bar';
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchTooltip } from '../tooltip';
 import { WindowResizeEdge, WINDOW_HEADER_VERTICAL_PADDING, type WindowPlacement, type WorkbenchWindowModel } from './model';
@@ -23,20 +24,40 @@ import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from 
 
 const WINDOW_SNAP_MARGIN = 8;
 
-const windowsByScope = new WeakMap<InputFocusScope, WorkbenchFloatingWindow | null>();
+const windowsByScope = new Map<PointerCaptureScope, WorkbenchFloatingWindow>();
 
-/** Resolve the nearest real window, distinguishing root chrome from a retired owner. */
-export function findWorkbenchWindow(target: InputFocusTarget | null): WorkbenchFloatingWindow | null | undefined {
-	for (let scope = target?.commandContext.scope; scope != null; scope = scope.commandParent) {
-		const window = windowsByScope.get(scope);
-		if (window !== undefined) return window;
+/** The chrome owner for this exact attached native window surface. */
+export function workbenchWindowForSurface(surface: WorkbenchSurface): WorkbenchFloatingWindow | undefined {
+	return surface.retired ? undefined : windowsByScope.get(surface.captureScope);
+}
+
+/** Discover minimized chrome from the same native topology used by drawing and targeting. */
+export function minimizedWorkbenchWindowCount(surfaces: WorkbenchSurfaceService): number {
+	let count = 0;
+	for (const surface of surfaces.windowSurfaces) {
+		const window = workbenchWindowForSurface(surface);
+		if (window !== undefined && window.isOpen && window.model.minimized) count++;
 	}
-	return undefined;
+	return count;
+}
+
+/** Resolve the actual native window, including unframed Main, without borrowing a semantic parent. */
+export function findWorkbenchWindowSurface(target: InputFocusTarget | null, surfaces: WorkbenchSurfaceService): WorkbenchSurface | null | undefined {
+	if (target === null) return undefined;
+	const surface = surfaces.findByScope(target.commandContext.scope.surfaceScope);
+	if (surface === undefined) return null;
+	let window: WorkbenchSurface | undefined;
+	for (let current: WorkbenchSurface | null | undefined = surface; current != null; current = current.presentationParent) {
+		if (current.retired) return null;
+		if (window === undefined && current.role === 'window') window = current;
+	}
+	return window;
 }
 
 export type WorkbenchWindowOptions = {
 	readonly model: WorkbenchWindowModel;
 	readonly actionBar: WorkbenchActionBarState;
+	readonly contextMenu?: WorkbenchMenuPresentation | readonly WorkbenchMenuItem[];
 	readonly lifetimeOwner: WorkbenchSurface;
 	readonly presentationParent: WorkbenchSurface | null;
 	/** Logical command and interaction ancestry, independent of current focus return. */
@@ -92,6 +113,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private lastTitleClickY = 0;
 	private measuredRevision = -1;
 	private measuredFont: BFont | undefined;
+	private ellipsisWidth = 0;
 	private measure: TextRangeMeasure | undefined;
 	private measureText: ((text: string) => number) | undefined;
 	private readonly tooltip = new WorkbenchTooltip();
@@ -141,10 +163,11 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		for (const command of ['contextMenu', 'window.minimize', 'window.maximize', 'window.snapLeft', 'window.snapRight', 'window.restore', 'window.hide'] as const)
 			this.clientFocusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.updateChromeState();
-		windowsByScope.set(this.scope, this);
 	}
 
 	public get visible(): boolean { return this.surface !== undefined && this.surface.visible; }
+	/** Published windows remain discoverable while minimized, unlike provisional construction. */
+	public get isOpen(): boolean { return this.presented && this.model.open && this.surface !== undefined && !this.surface.retired; }
 	/** Chrome, client and promoted owned popups form one active window family. */
 	public get hasFocus(): boolean { return this.containsScope(this.surface, this.focus.target?.scope.surfaceScope); }
 	public get model(): WorkbenchWindowModel { return this.options.model; }
@@ -160,6 +183,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public attach(): void {
 		if (this.surface !== undefined || !this.model.open) return;
 		const options = this.options;
+		windowsByScope.set(this.scope.surfaceScope, this);
 		this.surface = this.surfaces.attach({
 			role: 'window', lifetimeOwner: options.lifetimeOwner, presentationParent: options.presentationParent,
 			captureScope: this.scope.surfaceScope,
@@ -168,6 +192,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			draw: () => drawWorkbenchWindow(this.model, options.actionBar, this.hasFocus),
 			handlePointer: (snapshot, now) => this.handlePointer(snapshot, now), handleWheel: () => true,
 			onRetire: () => {
+				windowsByScope.delete(this.scope.surfaceScope);
 				const surface = this.surface;
 				const ownedFocus = this.focus.target?.scope === this.scope || this.containsScope(surface, this.focus.target?.scope.surfaceScope);
 				this.surface = undefined;
@@ -218,7 +243,6 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	}
 
 	public dispose(): void {
-		windowsByScope.set(this.scope, null);
 		this.detach();
 		this.actions.dispose();
 		this.unbindKeyboard();
@@ -253,9 +277,16 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	public layout(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number): boolean {
 		if (!this.visible) return false;
 		const model = this.model;
-		const arranged = model.arrange(this.options.workArea, font.lineHeight + WINDOW_HEADER_VERTICAL_PADDING, this.geometryPending ? this.nextRequested : undefined);
-		const previewChanged = this.updatePlacementPreview();
 		const fontChanged = this.measuredFont !== font;
+		const headerHeight = font.lineHeight + WINDOW_HEADER_VERTICAL_PADDING;
+		let chromeMinimumWidth: number | undefined;
+		if (fontChanged || this.measuredRevision !== model.revision || this.measureText !== measureText) {
+			if (fontChanged || this.measureText !== measureText) this.ellipsisWidth = measureText(ELLIPSIS);
+			const actionWidth = measureWorkbenchActionBarMinimumWidth(this.options.actionBar, headerHeight - 4, measureText, font);
+			chromeMinimumWidth = this.ellipsisWidth + 8 + (actionWidth === 0 ? 0 : actionWidth + 3);
+		}
+		const arranged = model.arrange(this.options.workArea, headerHeight, this.geometryPending ? this.nextRequested : undefined, chromeMinimumWidth);
+		const previewChanged = this.updatePlacementPreview();
 		const dirty = arranged || this.measuredRevision !== model.revision || fontChanged
 			|| this.measure !== measure || this.measureText !== measureText;
 		if (!dirty && !previewChanged) return false;
@@ -310,7 +341,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.focusTarget.focus();
 		if (this.surface !== surface || !this.focusTarget.hasFocus) return;
 		this.tooltip.hide();
-		this.contextMenu.show(x, y, WORKBENCH_MENUS[this.options.requestMinimize === undefined ? 'window.context' : 'window.minimizable.context'], this.commands,
+		this.contextMenu.show(x, y, this.options.contextMenu ?? WORKBENCH_MENUS[this.options.requestMinimize === undefined ? 'window.context' : 'window.minimizable.context'], this.commands,
 			{ selectFirst: keyboard, invocationOrigin: this.focusTarget, commandTarget: this.focusTarget, returnFocus: this.focusTarget });
 	}
 
@@ -512,9 +543,6 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	private containsScope(surface: WorkbenchSurface | undefined, scope: PointerCaptureScope | undefined): boolean {
 		if (surface === undefined || scope === undefined) return false;
-		for (let current = this.surfaces.findByScope(scope); current !== undefined; current = current.lifetimeOwner) {
-			if (current === surface) return true;
-		}
-		return false;
+		return this.surfaces.isInWindowFamily(scope, surface.captureScope);
 	}
 }

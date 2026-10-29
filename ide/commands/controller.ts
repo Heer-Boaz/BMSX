@@ -43,8 +43,9 @@ import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain
 import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
 import type { Blua32SourceImage } from '../runtime/sources';
 import { getTextFileRuntimeSourceInstallations } from '../workbench/services/working_copy/runtime_source_status';
-import { showMoveDestination, showOpenWindows } from '../workbench/services/editor/open_windows';
-import { findWorkbenchWindow } from '../workbench/ui/window/control';
+import { showMoveDestination } from '../workbench/services/editor/open_windows';
+import { showOpenWindows } from '../workbench/ui/window/picker';
+import { findWorkbenchWindowSurface, minimizedWorkbenchWindowCount, workbenchWindowForSurface } from '../workbench/ui/window/control';
 import { showGroupOpenEditors } from '../workbench/services/editor/open_editors';
 import { workspaceState } from '../workbench/workspace/state';
 
@@ -101,8 +102,8 @@ export class IdeCommandController {
 		const editorScope = editorContext?.commandContext.scope, editorGeneration = editorScope?.contextGeneration;
 		const invocationScope = editorContext?.scope, invocationGeneration = invocationScope?.contextGeneration;
 		const invocationTarget = editorContext === undefined ? target : editorContext;
-		const originWindow = findWorkbenchWindow(target);
-		if (originWindow === null) return;
+		const originWindowSurface = findWorkbenchWindowSurface(target, this.editor.surfaces);
+		if (originWindowSurface === null) return;
 		const originGroup = findEditorGroup(invocationTarget);
 		if (originGroup === null) return;
 		const originPart = this.editor.editorParts.partForTarget(invocationTarget);
@@ -135,7 +136,7 @@ export class IdeCommandController {
 		const activityId = this.editor.mainWorkspace.activities.idForCommand(command);
 		if (activityId !== undefined) {
 			const main = this.editor.mainWorkspace;
-			if (main.activities.selectedId === activityId && main.regionLayout.activityVisible) main.setActivityVisible(false);
+			if (main.activities.selectedId === activityId && main.activityDisplayed) main.setActivityVisible(false);
 			else main.openActivity(activityId, { focus: true });
 			return;
 		}
@@ -143,6 +144,8 @@ export class IdeCommandController {
 			case 'status.focus': this.editor.statusBar.focus(); return;
 			case 'status.details': this.editor.statusBar.showDetails(); return;
 			case 'workspace.activity.hide': this.editor.mainWorkspace.setActivityVisible(false); return;
+			case 'workspace.activity.float': this.editor.mainWorkspace.setActivityPlacement('floatingWindow'); return;
+			case 'workspace.activity.dock': this.editor.mainWorkspace.setActivityPlacement('dockedMain'); return;
 			case 'workspace.hierarchy.focus': this.editor.mainWorkspace.focusPrimary('hierarchy'); return;
 			case 'workspace.details.focus': this.editor.mainWorkspace.focusPrimary('details'); return;
 			case 'workspace.hierarchy.toggle': this.editor.mainWorkspace.toggleRegion('hierarchy'); return;
@@ -184,8 +187,8 @@ export class IdeCommandController {
 			|| invocationScope?.contextGeneration !== invocationGeneration || input !== undefined && !group.model.contains(input)) return;
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
-			case 'window.restoreMinimized': showOpenWindows(this.editor.editorParts, this.editor.quickInput, true); return;
-			case 'window.showAll': showOpenWindows(this.editor.editorParts, this.editor.quickInput); return;
+			case 'window.restoreMinimized': showOpenWindows(this.editor.mainWorkspace, this.editor.editorParts, this.editor.surfaces, this.editor.quickInput, true); return;
+			case 'window.showAll': showOpenWindows(this.editor.mainWorkspace, this.editor.editorParts, this.editor.surfaces, this.editor.quickInput); return;
 			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
 			case 'workspace.focusPrimary': this.editor.mainWorkspace.focusPrimary(); return;
 			case 'workspace.clearPrimary': void this.editor.mainWorkspace.clearPrimary(this.editor.editorParts.closeController, target); return;
@@ -220,7 +223,7 @@ export class IdeCommandController {
 			}
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
-				const window = originWindow === undefined ? part.window : originWindow;
+				const window = originWindowSurface === undefined ? part.window : workbenchWindowForSurface(originWindowSurface);
 				const implementation = window?.focusTarget.getCommand(command);
 				if (implementation?.isEnabled()) implementation.run();
 				return;
@@ -469,8 +472,8 @@ export class IdeCommandController {
 	}
 
 	public isEnabled(command: EditorCommandId, focus: InputFocusTarget | null = inputFocus.target, input?: EditorInput): boolean {
-		const originWindow = findWorkbenchWindow(focus);
-		if (originWindow === null) return false;
+		const originWindowSurface = findWorkbenchWindowSurface(focus, this.editor.surfaces);
+		if (originWindowSurface === null) return false;
 		const originGroup = findEditorGroup(focus);
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(focus);
@@ -496,11 +499,15 @@ export class IdeCommandController {
 			case 'status.focus': return this.editor.isActive && this.editor.statusBar.canFocus;
 			case 'status.details': return this.editor.isActive && this.editor.statusBar.hasDetails;
 			case 'workspace.activity.hide': return this.editor.isActive && this.editor.mainWorkspace.regionLayout.activityVisible;
+			case 'workspace.activity.float': return this.editor.isActive && this.editor.mainWorkspace.activityDisplayed
+				&& this.editor.mainWorkspace.activityPlacement === 'dockedMain';
+			case 'workspace.activity.dock': return this.editor.isActive && this.editor.mainWorkspace.regionLayout.activityVisible
+				&& this.editor.mainWorkspace.activityPlacement === 'floatingWindow';
 			case 'findGlobal': return workspaceState.context !== null;
 			case 'workspace.focusPrimary': case 'workspace.clearPrimary':
 			case 'workspace.hierarchy.focus': case 'workspace.details.focus':
 			case 'workspace.hierarchy.toggle': case 'workspace.details.toggle': return this.editor.mainWorkspace.primary !== undefined;
-			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
+			case 'window.restoreMinimized': return minimizedWorkbenchWindowCount(this.editor.surfaces) > 0;
 			case 'group.close': return this.editor.editorParts.canCloseGroup(group);
 			case 'group.move': return this.editor.editorParts.canMoveGroup(group, { kind: 'window' })
 				|| part.groups.some(other => this.editor.editorParts.canMoveGroup(group, { kind: 'split', group: other, direction: 'right' }));
@@ -514,7 +521,7 @@ export class IdeCommandController {
 			case 'window.copyEditor': return !part.closing && editor?.createView !== undefined;
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
-				const window = originWindow === undefined ? part.window : originWindow;
+				const window = originWindowSurface === undefined ? part.window : workbenchWindowForSurface(originWindowSurface);
 				return window?.focusTarget.getCommand(command)?.isEnabled() === true;
 			}
 			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
@@ -664,14 +671,14 @@ export class IdeCommandController {
 	}
 
 	public isActive(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target, input?: EditorInput): boolean {
-		const originWindow = findWorkbenchWindow(target);
-		if (originWindow === null) return false;
+		const originWindowSurface = findWorkbenchWindowSurface(target, this.editor.surfaces);
+		if (originWindowSurface === null) return false;
 		const originGroup = findEditorGroup(target);
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(target);
 		if (originPart === null) return false;
 		const activityId = this.editor.mainWorkspace.activities.idForCommand(command);
-		if (activityId !== undefined) return this.editor.mainWorkspace.regionLayout.activityVisible
+		if (activityId !== undefined) return this.editor.mainWorkspace.activityDisplayed
 			&& this.editor.mainWorkspace.activities.selectedId === activityId;
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return false;
@@ -680,7 +687,7 @@ export class IdeCommandController {
 		const part = this.editor.editorParts.partForGroup(group);
 		switch (command) {
 			case 'window.snapLeft': case 'window.snapRight': case 'window.maximize': {
-				const window = originWindow === undefined ? part.window : originWindow;
+				const window = originWindowSurface === undefined ? part.window : workbenchWindowForSurface(originWindowSurface);
 				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
 			}
 			case 'group.maximize': return part.arrangement.maximized === group;

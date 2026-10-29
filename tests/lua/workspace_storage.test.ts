@@ -401,6 +401,8 @@ function payload(
 		dirtyFiles,
 		editorParts: { main: { layout: { kind: 'group', group: editorGroup }, active: 0, mru: [0], scrollX: 0, scrollY: 0 }, documents: [], active: 0, mru: [0] },
 		mainWorkspace: { primary: null, activityId: undefined, hierarchyVisible: true, detailsVisible: true, activityVisible: false,
+			activityPlacement: 'dockedMain', activityWindow: { requestedBounds: { left: 0, top: 0, right: 640, bottom: 240 },
+				placement: 'normal', minimized: false },
 			scrollX: 0, scrollY: 0, activeClient: 'documents', activeRegion: 'hierarchy' },
 		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
@@ -1146,7 +1148,7 @@ test('workspace part recovery preserves independent views and requested placemen
 	assert.equal(parts.documents[0].window!.model.placement, 'left');
 	assert.equal(parts.documents[1].window!.model.minimized, true);
 	assert.equal(parts.documents[1].window!.model.placement, 'right');
-	assert.equal(parts.minimizedCount, 1);
+	assert.equal(parts.documents[0].window!.model.minimized, false);
 	assert.ok(parts.activePart === parts.documents[0]);
 	assert.deepEqual(parts.serialize(editor.editorInputSerializers), saved.payload.editorParts);
 });
@@ -1171,7 +1173,7 @@ test('workspace recovery keeps every placement mode independent from minimized v
 		assert.deepEqual(part.window!.model.requestedBounds, requested,
 			'recovered mode pixels must not replace the retained normal request');
 	}
-	assert.equal(parts.minimizedCount, 2); assert.strictEqual(parts.activePart, parts.main);
+	assert.strictEqual(parts.activePart, parts.main);
 	assert.deepEqual(parts.serialize(editor.editorInputSerializers), saved.editorParts);
 });
 
@@ -1223,7 +1225,6 @@ test('part membership, model and requested-placement changes schedule topology a
 	assert.equal(initial.payload.editorParts.documents[0].placement, 'normal',
 		'a mode change does not mutate the previous checkpoint');
 	part.window!.model.setMinimized(true);
-	assert.equal(editor.editorParts.minimizedCount, 1);
 	assert.equal(clock.activeCount, 1);
 	await flushRequestedAutosave();
 	const minimized = workspaceState.localGeneration!;
@@ -1251,7 +1252,7 @@ test('part membership, model and requested-placement changes schedule topology a
 	assert.equal(clock.activeCount, 1);
 	await flushRequestedAutosave();
 	assert.equal(workspaceState.localGeneration!.payload.editorParts.documents.length, 0);
-	assert.equal(editor.editorParts.minimizedCount, 0);
+	assert.equal(part.retired, true);
 });
 
 test('a dirty working copy can acquire its first code view after the content backup', async (t) => {

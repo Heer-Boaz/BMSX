@@ -19,6 +19,7 @@ import type { EditorParts } from '../../../services/editor/editor_parts';
 import type { WorkbenchSurface } from '../../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../../services/windows/service';
 import { WorkbenchTooltip } from '../../../ui/tooltip';
+import { measureWorkbenchTextViewMinimumWidth } from '../../../ui/text_view/layout';
 import { clampProblemsPanelScrollIndex, createProblemsPanelItemLayout, createProblemsPanelLayout,
 	findProblemsPanelPreferredSelection, writeProblemsPanelItemLayout, writeProblemsPanelLayout,
 	type PanelLayout, type ProblemsPanelItemLayout } from './layout';
@@ -110,6 +111,7 @@ export class ProblemsPanelController implements MainWorkspaceActivityClient, Poi
 	}
 
 	public measure(font: EditorFont, width: number, target: MainWorkspaceActivitySizeConstraints): void {
+		target.minimumWidth = measureWorkbenchTextViewMinimumWidth(font);
 		if (!this.measuredContent || this.measuredFont !== font || this.measuredWidth !== width) {
 			this.measuredFont = font; this.measuredWidth = width; this.measuredContent = true;
 			const headerHeight = mainWorkspaceActivityHeaderHeight(font) + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;

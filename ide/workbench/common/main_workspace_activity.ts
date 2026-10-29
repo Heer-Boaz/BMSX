@@ -8,7 +8,8 @@ import { WORKBENCH_ICON_SIZE } from '../ui/icon';
 import type { EditorCommandId } from '../../common/commands';
 import type { WorkbenchSurface } from '../services/windows/model';
 
-export type MainWorkspaceActivitySizeConstraints = { minimumHeight: number; preferredHeight: number };
+export type MainWorkspaceActivityPlacement = 'dockedMain' | 'floatingWindow';
+export type MainWorkspaceActivitySizeConstraints = { minimumWidth: number; minimumHeight: number; preferredHeight: number };
 export type MainWorkspaceActivityDescriptor = { readonly id: string; readonly command: EditorCommandId };
 export type MainWorkspaceActivityContext = {
 	readonly surface: WorkbenchSurface;

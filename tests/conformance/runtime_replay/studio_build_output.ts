@@ -4,6 +4,7 @@ import { BuildOutputActivity } from '../../../ide/workbench/contrib/builds/activ
 import { BuildLogInput } from '../../../ide/workbench/contrib/builds/editor_input';
 import type { EditorCommandId } from '../../../ide/common/commands';
 import { inputFocus } from '../../../ide/input/focus';
+import { WINDOW_RESIZE_MARGIN } from '../../../ide/workbench/ui/window/model';
 import { check, type StudioFixture } from './studio_fixture';
 
 const OUTPUT = '\u001b[32mcompile\u001b[0m\r\n\tstdout + stderr: naïve Ω 😀\r\n'
@@ -216,14 +217,19 @@ async function find(test: StudioFixture, query: string): Promise<void> {
 	await test.clipboard.writeText(query); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
 }
 
-/** Window selection can reveal a fully occluded reader without fabricating an unobscured pointer target. */
+/** Editor navigation selects the exact reader; a physical Main window also contains non-document clients. */
 async function focusReader(test: StudioFixture, input: BuildLogInput): Promise<void> {
-	const parts = test.ide.editor.editorParts, group = parts.findGroup(input)!, part = parts.partForGroup(group);
-	await test.runPaletteCommand('Window: Show Open Windows');
-	await chooseQuickPick(test, part.kind === 'main' ? 'Main Workspace' : group.model.getLabel(input));
+	const editor = test.ide.editor, parts = editor.editorParts, group = parts.findGroup(input)!;
+	await test.runPaletteCommand('View: Open Editors');
+	const rows = editor.quickInput.model.list.rows;
+	const index = rows.findIndex(row => 'input' in row.item && row.item.input === input);
+	check(index >= 0, 'build output: the real editor navigator includes the exact retained reader');
+	await test.press('Home');
+	for (let step = 0; step < index; step++) await test.press('ArrowDown');
+	await test.press('Enter');
 	check(parts.activeGroup === group && group.model.activeTab === input && inputFocus.admittedTarget !== null
 		&& group.focusScope.contains(inputFocus.admittedTarget.scope),
-		'build output: the native window picker reveals and focuses the actual retained reader');
+		'build output: the native editor navigator reveals and focuses the actual retained reader');
 }
 
 
@@ -270,6 +276,82 @@ async function runMainActivityPhase(test: StudioFixture, first: BuildLogInput, p
 	await test.press('ControlLeft', 'KeyF');
 	check(inputFocus.admittedTarget === field && field.textInput!.readText().text === 'output needle',
 		'build output: hide and peer selection preserve this reader query without rebinding a document query');
+	const activitySurface = main.activities.surface, readerSurface = editor.surfaces.findByScope(body.scope.surfaceScope)!;
+	const problems = editor.problems, problemsSurface = editor.surfaces.findByScope(problems.scope.surfaceScope)!;
+	const problemsSelection = problems.selectedDiagnostic, problemsScroll = problems.getScrollIndex();
+	await test.runPaletteCommand('Workspace: Move Activity Area to New Window');
+	check(main.activityPlacement === 'floatingWindow' && main.activityWindow.visible && main.activity === activity
+		&& main.activities.surface === activitySurface && activitySurface.presentationParent === main.activityWindow.clientSurface
+		&& editor.surfaces.findByScope(body.scope.surfaceScope) === readerSurface && !readerSurface.retired,
+		'build output: Float moves the entire retained activity subtree into the existing native window client');
+	check(inputFocus.admittedTarget === field && field.textInput!.readText().text === 'output needle'
+		&& activity.commandTarget === body && body.clipboard!.copy!() === selected,
+		'build output: Float preserves the exact native Find field, query, reader and selected occurrence');
+	await test.capture?.(`build-output-${editor.fontVariant}-theme-${theme}-activity-floating`);
+	const compactSnap = editor.commands.isEnabled('window.snapLeft', field);
+	if (!compactSnap) {
+		check(!main.activityWindow.model.canPlace('left', main.bounds) && main.activityWindow.model.placement === 'normal',
+			'build output: compact work-area snap admission honors the actual measured activity minimum');
+		test.presenter.setFixedRenderTargetSize(1280, 720);
+		test.ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport');
+		editor.updateViewport(test.ide.overlayRenderer.viewportSize); await test.frame();
+	}
+	await test.runPaletteCommand('Window: Snap Window Left');
+	check(main.activityWindow.model.placement === 'left' && inputFocus.admittedTarget === field
+		&& editor.surfaces.findByScope(body.scope.surfaceScope) === readerSurface,
+		'build output: the focused activity invokes shared window snap without choosing its semantic document host');
+	await test.runPaletteCommand('Window: Restore Window');
+	if (!compactSnap) {
+		test.presenter.setFixedRenderTargetSize(640, 360);
+		test.ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport');
+		editor.updateViewport(test.ide.overlayRenderer.viewportSize); await test.frame();
+	}
+	const header = main.activityWindow.model.header;
+	// The actual caption remains the pointer target as shared maximize/restore moves its header.
+	const caption = {
+		get left() { return header.left + WINDOW_RESIZE_MARGIN + 1; },
+		get right() { return header.left + WINDOW_RESIZE_MARGIN + 1; },
+		get top() { return (header.top + header.bottom) / 2; },
+		get bottom() { return (header.top + header.bottom) / 2; },
+	};
+	check(editor.surfaces.hitTest(caption.left, caption.top) === main.activityWindow.surface,
+		'build output: the visible native activity caption owns the double-click target');
+	await test.click(caption); await test.click(caption);
+	check(main.activityWindow.model.placement === 'maximized' && main.activities.surface === activitySurface,
+		'build output: ordinary title double-click maximizes the same retained activity family');
+	await test.click(caption); await test.click(caption);
+	check(main.activityWindow.model.placement === 'normal' && editor.surfaces.findByScope(body.scope.surfaceScope) === readerSurface,
+		'build output: the next title double-click restores that family without replacing the reader');
+	await test.runPaletteCommand('View: Problems Panel');
+	check(main.activity === problems && problems.attached && !activity.attached && editor.problems === problems
+		&& editor.surfaces.findByScope(problems.scope.surfaceScope) === problemsSurface
+		&& problems.selectedDiagnostic === problemsSelection && problems.getScrollIndex() === problemsScroll,
+		'build output: the floated selector retains the exact Problems controller, selection and reading owner');
+	await test.runPaletteCommand('View: Build Output');
+	await test.press('ControlLeft', 'KeyF');
+	check(main.activity === activity && activity.commandTarget === body && inputFocus.admittedTarget === field
+		&& field.textInput!.readText().text === 'output needle' && body.clipboard!.copy!() === selected,
+		'build output: switching the floating area back admits its own original Find field and selected output');
+	await test.runPaletteCommand('Window: Minimize Window');
+	check(main.activityWindow.model.minimized && !main.activityWindow.visible && activity.attached
+		&& main.activities.surface === activitySurface && editor.surfaces.findByScope(body.scope.surfaceScope) === readerSurface,
+		'build output: Minimize revokes the actual floating presentation without retiring retained activity input');
+	await test.runPaletteCommand('Window: Show Open Windows');
+	await chooseQuickPick(test, main.activityWindow.model.title);
+	check(!main.activityWindow.model.minimized && main.activityWindow.visible && inputFocus.admittedTarget === body,
+		'build output: the global physical-window picker restores the minimized activity instead of inventing an editor');
+	await test.press('ControlLeft', 'KeyF');
+	check(inputFocus.admittedTarget === field && field.textInput!.readText().text === 'output needle'
+		&& body.clipboard!.copy!() === selected,
+		'build output: picker restoration retains the same local Find control, query and output selection');
+	await test.runPaletteCommand('Workspace: Move Activity Area to Main');
+	check(main.activityPlacement === 'dockedMain' && main.activities.surface === activitySurface
+		&& activitySurface.presentationParent === main.surface && main.activityWindow.surface === undefined
+		&& editor.surfaces.findByScope(body.scope.surfaceScope) === readerSurface && !readerSurface.retired
+		&& inputFocus.admittedTarget === field && field.textInput!.readText().text === 'output needle'
+		&& body.clipboard!.copy!() === selected && editor.problems === problems,
+		'build output: Dock moves the whole native area back before shell retirement, preserving both retained clients');
+	await test.capture?.(`build-output-${editor.fontVariant}-theme-${theme}-activity-docked`);
 	await test.press('Escape');
 	test.movePointer(main.regionLayout.activityBounds); await test.frame();
 	test.remote.apply([{ type: 'wheel', deltaY: 5 }]); await test.frame();

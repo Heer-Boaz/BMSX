@@ -8,8 +8,8 @@ class Surface implements WorkbenchSurface {
 	public readonly role: WorkbenchSurfaceOptions['role'];
 	public readonly captureScope: WorkbenchSurface['captureScope'];
 	public readonly lifetimeOwner: Surface | undefined;
-	public readonly presentationParent: Surface | null | undefined;
-	public readonly admissionParent: Surface | null | undefined;
+	public presentationParent: Surface | null | undefined;
+	public admissionParent: Surface | null | undefined;
 	public readonly getBounds: WorkbenchSurface['getBounds'];
 	public readonly getClip: WorkbenchSurface['getClip'];
 	public readonly draw: WorkbenchSurface['draw'];
@@ -18,6 +18,7 @@ class Surface implements WorkbenchSurface {
 	public readonly onRetire: WorkbenchSurface['onRetire'];
 	public retired = false;
 	public activeModal: Surface | null = null;
+	private retirementListeners: Set<() => void> | undefined;
 
 	public constructor(
 		public readonly options: WorkbenchSurfaceOptions,
@@ -47,6 +48,18 @@ class Surface implements WorkbenchSurface {
 	}
 
 	public dispose(): void { this.service.retire(this); }
+
+	public onDidRetire(listener: () => void): () => void {
+		const listeners = this.retirementListeners ??= new Set();
+		listeners.add(listener);
+		return () => listeners.delete(listener);
+	}
+
+	public publishRetirement(): void {
+		if (this.retirementListeners === undefined) return;
+		for (const listener of this.retirementListeners) listener();
+		this.retirementListeners.clear();
+	}
 }
 
 /**
@@ -56,6 +69,8 @@ class Surface implements WorkbenchSurface {
 export class WorkbenchSurfaceService implements IDisposable {
 	private readonly roots: Surface[] = [];
 	private readonly scopes = new Map<WorkbenchSurface['captureScope'], Surface>();
+	private readonly windowList: Surface[] = [];
+	private windowCount = 0;
 	private rootModal: Surface | null = null;
 	private changing = false;
 	private changePending = false;
@@ -76,9 +91,34 @@ export class WorkbenchSurfaceService implements IDisposable {
 		return this.scopes.get(scope);
 	}
 
+	/** Attached real-window surfaces in native paint order, including minimized windows. */
+	public get windowSurfaces(): readonly WorkbenchSurface[] { return this.windowList; }
+
+	/** Move the native subtree without changing its lifetime or semantic input owners. */
+	public reparent(surface: WorkbenchSurface, parent: WorkbenchSurface | null | undefined): void {
+		const node = surface as Surface;
+		if (node.presentationParent === parent) return;
+		const siblings = node.presentationParent == null ? this.roots : node.presentationParent.children;
+		siblings.splice(siblings.indexOf(node), 1);
+		node.presentationParent = parent as Surface | null | undefined;
+		if (node.role !== 'modal' && !(node.role === 'transient' && node.lifetimeOwner !== undefined))
+			node.admissionParent = node.presentationParent;
+		this.insert(node);
+		this.changed();
+	}
+
 	/** Canonical input membership resolves against the actual presentation ancestry. */
 	public isInContext(scope: WorkbenchSurface['captureScope'], context: WorkbenchSurface['captureScope']): boolean {
 		for (let current: Surface | null | undefined = this.scopes.get(scope); current != null; current = current.presentationParent) {
+			if (current.captureScope === context) return true;
+		}
+		return false;
+	}
+
+	/** Promoted popups stay with their invoker; ordinary controls follow native placement. */
+	public isInWindowFamily(scope: WorkbenchSurface['captureScope'], context: WorkbenchSurface['captureScope']): boolean {
+		for (let current: Surface | null | undefined = this.scopes.get(scope); current != null;
+			current = current.role === 'transient' && current.lifetimeOwner !== undefined ? current.lifetimeOwner : current.presentationParent) {
 			if (current.captureScope === context) return true;
 		}
 		return false;
@@ -190,6 +230,7 @@ export class WorkbenchSurfaceService implements IDisposable {
 		// detached modal's last published admission.
 		if (node.role === 'modal') this.indexModals();
 		node.onRetire?.();
+		node.publishRetirement();
 		while (node.owned.length !== 0) this.retireNode(node.owned[node.owned.length - 1]);
 		while (node.children.length !== 0) this.retireNode(node.children[node.children.length - 1]);
 	}
@@ -248,14 +289,16 @@ export class WorkbenchSurfaceService implements IDisposable {
 	/** Admission indexes are a projection of paint order, rebuilt only on publication. */
 	private indexModals(): void {
 		this.rootModal = null;
+		this.windowCount = 0;
 		for (const node of this.scopes.values()) node.activeModal = null;
 		this.indexContextModals(this.roots);
+		this.windowList.length = this.windowCount;
 	}
 
 	private indexContextModals(siblings: readonly Surface[]): void {
 		for (const node of siblings) {
-			if (!node.visible) continue;
-			if (node.options.role === 'modal') {
+			if (node.role === 'window') this.windowList[this.windowCount++] = node;
+			if (node.options.role === 'modal' && node.visible) {
 				if (node.options.blockedScope === null) this.rootModal = node;
 				else (node.options.blockedScope as Surface).activeModal = node;
 			}

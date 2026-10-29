@@ -9,6 +9,12 @@ export const enum WindowResizeEdge { None = 0, Left = 1, Top = 2, Right = 4, Bot
 
 export type WindowPlacement = 'normal' | 'maximized' | 'left' | 'right';
 
+export type WorkbenchWindowPlacementState = {
+	readonly requestedBounds: Readonly<RectBounds>;
+	readonly placement: WindowPlacement;
+	readonly minimized: boolean;
+};
+
 /** Normal requested placement survives work-area constraints, snapping, maximize and minimize. */
 export class WorkbenchWindowModel {
 	public readonly requestedBounds = create_rect_bounds();
@@ -27,12 +33,15 @@ export class WorkbenchWindowModel {
 	private placementListeners: Set<() => void> | undefined;
 	private arrangedRevision = -1;
 	private headerHeight = 0;
+	private chromeMinimumWidth = 0;
 	private readonly workArea = create_rect_bounds();
 	private readonly arrangedRequest = create_rect_bounds();
 
-	public constructor(requestedBounds: Readonly<RectBounds>, public minimumWidth: number, public minimumHeight: number) {
+	public constructor(requestedBounds: Readonly<RectBounds>, private contributionMinimumWidth: number, public minimumHeight: number) {
 		copy_rect_bounds(this.requestedBounds, requestedBounds);
 	}
+
+	public get minimumWidth(): number { return Math.max(this.contributionMinimumWidth, this.chromeMinimumWidth); }
 
 	public get title(): string { return this.titleValue; }
 	public set title(value: string) {
@@ -61,6 +70,20 @@ export class WorkbenchWindowModel {
 	public setMinimized(minimized: boolean): void {
 		if (this.minimized === minimized) return;
 		this.minimized = minimized;
+		this.revision += 1;
+		this.placementRevision += 1;
+		this.publishPlacement();
+	}
+
+	/** Restore one persisted placement before observers arrange or publish its presentation. */
+	public setState(state: WorkbenchWindowPlacementState): void {
+		const requested = this.requestedBounds, bounds = state.requestedBounds;
+		if (this.placement === state.placement && this.minimized === state.minimized
+			&& requested.left === bounds.left && requested.top === bounds.top
+			&& requested.right === bounds.right && requested.bottom === bounds.bottom) return;
+		copy_rect_bounds(requested, bounds);
+		this.placement = state.placement;
+		this.minimized = state.minimized;
 		this.revision += 1;
 		this.placementRevision += 1;
 		this.publishPlacement();
@@ -104,8 +127,8 @@ export class WorkbenchWindowModel {
 	}
 
 	public setMinimumSize(width: number, height: number): void {
-		if (this.minimumWidth === width && this.minimumHeight === height) return;
-		this.minimumWidth = width; this.minimumHeight = height;
+		if (this.contributionMinimumWidth === width && this.minimumHeight === height) return;
+		this.contributionMinimumWidth = width; this.minimumHeight = height;
 		this.revision += 1;
 		this.placementRevision += 1;
 	}
@@ -113,10 +136,12 @@ export class WorkbenchWindowModel {
 	/** Source-owned action changes explicitly invalidate retained chrome. */
 	public invalidate(): void { this.revision += 1; }
 
-	public arrange(workArea: Readonly<RectBounds>, headerHeight: number, normalPreview?: Readonly<RectBounds>): boolean {
+	public arrange(workArea: Readonly<RectBounds>, headerHeight: number, normalPreview?: Readonly<RectBounds>,
+		chromeMinimumWidth = this.chromeMinimumWidth): boolean {
 		const placement = normalPreview === undefined ? this.placement : 'normal';
 		const requested = normalPreview === undefined ? this.requestedBounds : normalPreview;
 		if (this.arrangedRevision === this.placementRevision && this.arrangedPlacement === placement && this.headerHeight === headerHeight
+			&& this.chromeMinimumWidth === chromeMinimumWidth
 			&& this.arrangedRequest.left === requested.left && this.arrangedRequest.top === requested.top
 			&& this.arrangedRequest.right === requested.right && this.arrangedRequest.bottom === requested.bottom
 			&& this.workArea.left === workArea.left && this.workArea.top === workArea.top
@@ -126,6 +151,7 @@ export class WorkbenchWindowModel {
 		this.arrangedPlacement = placement;
 		this.arrangedRevision = this.placementRevision;
 		this.headerHeight = headerHeight;
+		this.chromeMinimumWidth = chromeMinimumWidth;
 		this.writePlacementBounds(placement, workArea, this.bounds, requested);
 		const { left, top, right, bottom } = this.bounds;
 		write_rect_bounds(this.header, left, top, right, Math.min(top + headerHeight, bottom));

@@ -6,7 +6,7 @@ import { pointerHover } from '../../ide/input/pointer/hover';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
-import { WorkbenchFloatingWindow, findWorkbenchWindow } from '../../ide/workbench/ui/window/control';
+import { WorkbenchFloatingWindow, findWorkbenchWindowSurface } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
@@ -44,8 +44,8 @@ test('retired inner-window command origins cannot open, select or copy their sur
 	});
 	window.attach(); window.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
 	const origin = window.clientFocusTarget;
-	origin.focus(); assert.ok(findWorkbenchWindow(origin) === window);
-	window.dispose(); assert.equal(findWorkbenchWindow(origin), null);
+	origin.focus(); assert.ok(findWorkbenchWindowSurface(origin, f.editor.surfaces) === window.surface);
+	window.dispose(); assert.equal(findWorkbenchWindowSurface(origin, f.editor.surfaces), null);
 	assert.ok(parts.activePart === f.secondPart && f.secondGroup.model.activeTab === f.secondInput);
 	const documents = [...parts.documents], mru = [...parts.mostRecentlyActive], focus = inputFocus.target;
 	const copy = t.mock.method(f.secondInput, 'createView');

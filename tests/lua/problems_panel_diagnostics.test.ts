@@ -47,7 +47,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} row disclosure 
 	const f = fixture(t, variant, 384), parsed = parseLuaChunkWithRecovery('9return 1', 'scenes/intro.lua').syntaxError!;
 	f.controller.setDiagnostics(f.models.map(model => ({ ...diagnostic(model), message: parsed.message })),
 		{ ready: 2, pending: 0, unsupported: 0, failed: 0 });
-	const size = { minimumHeight: 0, preferredHeight: 0 }; f.controller.measure(editorViewState.font, f.bounds.right - f.bounds.left, size);
+	const size = { minimumWidth: 0, minimumHeight: 0, preferredHeight: 0 }; f.controller.measure(editorViewState.font, f.bounds.right - f.bounds.left, size);
 	f.bounds.top = f.bounds.bottom - size.preferredHeight;
 	f.paint(); f.controller.focus(); f.press('End'); f.paint();
 	assert.equal(f.controller.getSelectionIndex(), 1); assert.equal(f.feedback.visible, true);
@@ -129,7 +129,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} intrinsic activ
 	const f = fixture(t, variant, 384), parsed = parseLuaChunkWithRecovery('9return 1', 'scenes/intro.lua').syntaxError!;
 	f.controller.setDiagnostics(f.models.map(model => ({ ...diagnostic(model), message: parsed.message })),
 		{ ready: 2, pending: 0, unsupported: 0, failed: 0 });
-	const size = { minimumHeight: 0, preferredHeight: 0 }, width = f.bounds.right - f.bounds.left;
+	const size = { minimumWidth: 0, minimumHeight: 0, preferredHeight: 0 }, width = f.bounds.right - f.bounds.left;
 	f.controller.measure(editorViewState.font, width, size); const height = size.preferredHeight;
 	const content = f.models.reduce((sum, _model, index) => sum + f.controller.getItemLayout(index, width - colors.PROBLEMS_PANEL_CONTENT_PADDING_X * 2).height, 0);
 	f.bounds.top = f.bounds.bottom - height; f.arrange(); const layout = f.controller.layoutState;
@@ -143,7 +143,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} intrinsic activ
 test('intrinsic activity height stops materializing additional diagnostics at its visual-line budget', t => {
 	const f = fixture(t), records = Array.from({ length: 100 }, (_, row) => diagnostic(f.models[row & 1], row, 0));
 	f.controller.setDiagnostics(records, { ready: 2, pending: 0, unsupported: 0, failed: 0 });
-	const layout = t.mock.method(f.controller, 'getItemLayout'), size = { minimumHeight: 0, preferredHeight: 0 };
+	const layout = t.mock.method(f.controller, 'getItemLayout'), size = { minimumWidth: 0, minimumHeight: 0, preferredHeight: 0 };
 	f.controller.measure(editorViewState.font, f.bounds.right - f.bounds.left, size);
 	assert.ok(size.preferredHeight > 0); assert.ok(layout.mock.callCount() <= 4, 'location plus message needs at most four cards to fill eight visual lines');
 });

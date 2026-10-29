@@ -25,6 +25,90 @@ function controller(name: string, painted: string[], bounds = extent) {
 
 const painter: WorkbenchSurfacePainter = { pushClipRect() {}, popClipRect() {} };
 
+test('native attachment observers survive presentation moves and release on that exact attachment retirement', () => {
+	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
+	const main = surfaces.attach({ ...controller('main', painted), role: 'window' });
+	const shell = surfaces.attach({ ...controller('shell', painted), role: 'window', lifetimeOwner: main, presentationParent: main });
+	const content = surfaces.attach({ ...controller('retained', painted), role: 'content', lifetimeOwner: main, presentationParent: main });
+	let retired = 0, released = 0;
+	const unbind = content.onDidRetire(() => { released++; });
+	content.onDidRetire(() => {
+		assert.equal(content.retired, true);
+		assert.equal(surfaces.findByScope(content.captureScope), undefined);
+		retired++;
+	});
+	surfaces.reparent(content, shell); surfaces.reparent(content, main); shell.dispose();
+	assert.equal(retired, 0); assert.equal(content.retired, false);
+	unbind(); content.dispose(); content.dispose();
+	assert.equal(retired, 1); assert.equal(released, 0);
+	surfaces.dispose();
+});
+
+test('native reparent preserves subtree, semantic scope and active gesture while changing window admission', () => {
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), painted: string[] = [];
+	const surfaces = new WorkbenchSurfaceService(() => {
+		const route = capture.routeScope;
+		if (route === undefined) return;
+		const surface = surfaces.findByScope(route);
+		if (surface === undefined || !surfaces.isAdmitted(surface)) capture.cancelScope(route);
+	});
+	const main = surfaces.attach({ ...controller('main', painted), role: 'window' });
+	const floating = surfaces.attach({ ...controller('floating', painted), role: 'window', presentationParent: main, lifetimeOwner: main });
+	let retired = 0;
+	const activity = surfaces.attach({ ...controller('activity', painted), role: 'content', presentationParent: main,
+		lifetimeOwner: main, onRetire: () => { retired++; } });
+	const child = surfaces.attach({ ...controller('reader', painted), role: 'content', presentationParent: activity, lifetimeOwner: activity });
+	const popup = surfaces.attach({ ...controller('popup', painted), role: 'transient', outsidePress: 'consume', lifetimeOwner: child });
+	const semanticMain = new InputFocusScope(main.captureScope, focus.workbenchScope);
+	const scope = new InputFocusScope(child.captureScope, semanticMain), target = focus.createTarget(null, scope);
+	let blurred = 0, cancelled = 0;
+	target.bindKeyboard(() => {}); target.onDidBlur(() => { blurred++; });
+	focus.bindScopeAdmission(scope => {
+		const surface = surfaces.findByScope(scope.surfaceScope);
+		return surface !== undefined && surfaces.isFocusAdmitted(surface);
+	});
+	assert.equal(target.focus(), true);
+	const generation = scope.contextGeneration, focusRevision = focus.revision;
+	const held: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
+		viewportX: 50, viewportY: 50, pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	capture.beginRoute(child.captureScope, held);
+	capture.capture({ handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancelled++; } });
+	assert.equal(surfaces.isInWindowFamily(popup.captureScope, floating.captureScope), false);
+	surfaces.reparent(activity, floating);
+	assert.equal(activity.lifetimeOwner, main); assert.equal(child.presentationParent, activity);
+	assert.equal(surfaces.findByScope(child.captureScope), child); assert.equal(retired, 0);
+	assert.equal(scope.commandParent, semanticMain); assert.equal(scope.contextGeneration, generation);
+	assert.equal(focus.target, target); assert.equal(focus.admittedTarget, target); assert.equal(focus.revision, focusRevision); assert.equal(blurred, 0);
+	assert.equal(capture.routeScope, child.captureScope); assert.equal(capture.active, true); assert.equal(cancelled, 0);
+	assert.equal(surfaces.isInWindowFamily(child.captureScope, floating.captureScope), true);
+	assert.equal(surfaces.isInWindowFamily(popup.captureScope, floating.captureScope), true);
+	assert.equal(surfaces.isInContext(popup.captureScope, floating.captureScope), false, 'popup promotion is not native containment');
+	surfaces.attach({ ...controller('floating decision', painted), role: 'modal', blockedScope: floating,
+		presentationParent: floating, lifetimeOwner: floating });
+	assert.equal(surfaces.isFocusAdmitted(child), false, 'normal admission follows the new native parent');
+	assert.equal(popup.retired, true, 'promoted popup admission follows its moved invoker'); assert.equal(cancelled, 1);
+	surfaces.reparent(activity, main);
+	assert.equal(surfaces.isFocusAdmitted(child), true); assert.equal(retired, 0);
+	floating.dispose(); assert.equal(activity.retired, false); assert.equal(child.retired, false);
+	focus.setTarget(null); surfaces.dispose();
+	assert.equal(retired, 1);
+});
+
+test('attached window projection reuses native subtree order and retains minimized families', () => {
+	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
+	const projected = surfaces.windowSurfaces;
+	const main = surfaces.attach({ ...controller('main', painted), role: 'window' });
+	const child = surfaces.attach({ ...controller('child', painted), role: 'window', presentationParent: main, lifetimeOwner: main,
+		isVisible: () => false });
+	const nested = surfaces.attach({ ...controller('nested', painted), role: 'window', presentationParent: child, lifetimeOwner: child });
+	const other = surfaces.attach({ ...controller('other', painted), role: 'window' });
+	assert.equal(surfaces.windowSurfaces, projected); assert.deepEqual(projected, [main, child, nested, other]);
+	surfaces.raise(main); assert.deepEqual(projected, [other, main, child, nested]);
+	surfaces.reparent(child, other); assert.deepEqual(projected, [other, child, nested, main]);
+	child.dispose(); assert.deepEqual(projected, [other, main]);
+	surfaces.dispose(); assert.equal(projected.length, 0);
+});
+
 test('one retained surface order drives painting and targeting; raising keeps child groups together', () => {
 	const painted: string[] = [];
 	let changes = 0;

@@ -155,7 +155,7 @@ export type EditorCommandId =
 	| 'animation.tracks' | 'animation.keys' | 'animation.details'
 	| 'input.testActionString' | 'behaviorLens.testEffect'
 	| 'builds.start' | 'builds.jobs' | 'builds.output' | 'builds.output.choose'
-	| 'workspace.activity.hide'
+	| 'workspace.activity.hide' | 'workspace.activity.float' | 'workspace.activity.dock'
 	| 'buildLog.refresh' | 'buildLog.copyAll' | 'buildLog.output' | 'buildLog.error'
 	| 'text.find' | 'text.findNext' | 'text.findPrevious'
 	| 'server.connection'

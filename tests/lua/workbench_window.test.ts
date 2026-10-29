@@ -10,15 +10,16 @@ import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
-import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
+import { createWorkbenchActionBar, WORKBENCH_ACTION_BAR_ITEM_SPACING } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchWindowModel, type WindowPlacement } from '../../ide/workbench/ui/window/model';
-import { WorkbenchFloatingWindow, type WorkbenchWindowOptions } from '../../ide/workbench/ui/window/control';
+import { findWorkbenchWindowSurface, minimizedWorkbenchWindowCount, workbenchWindowForSurface, WorkbenchFloatingWindow, type WorkbenchWindowOptions } from '../../ide/workbench/ui/window/control';
 import { api } from '../../ide/runtime/overlay_api';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { ELLIPSIS } from '../../ide/common/text';
 import { drawWorkbenchWindow } from '../../ide/workbench/render/window';
 import * as colors from '../../ide/common/constants';
 import { WorkbenchTooltip } from '../../ide/workbench/ui/tooltip';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 
 const pointer = (x: number, y: number, buttons = 0, pressed = 0, released = 0): PointerInputSnapshot => ({
 	viewportX: x, viewportY: y, valid: true, insideViewport: true,
@@ -43,7 +44,7 @@ function fixture() {
 	};
 	function window(name: string, left = 40, top = 40, onRetireContent?: () => void, getTitleTooltip?: () => string,
 		windowOptions: Pick<WorkbenchWindowOptions, 'focusScope' | 'requestClose' | 'requestMinimize'>
-			& Partial<Pick<WorkbenchWindowOptions, 'lifetimeOwner' | 'presentationParent'>> = { focusScope: parent.scope },
+			& Partial<Pick<WorkbenchWindowOptions, 'lifetimeOwner' | 'presentationParent' | 'contextMenu'>> = { focusScope: parent.scope },
 		actions = createWorkbenchActionBar('window.title')) {
 		const model = new WorkbenchWindowModel({ left, top, right: left + 240, bottom: top + 180 }, 120, 80);
 		model.title = name;
@@ -91,6 +92,130 @@ function fixture() {
 function titlePoint(model: WorkbenchWindowModel) {
 	return { x: model.header.left + 16, y: (model.header.top + model.header.bottom) / 2 };
 }
+
+test('window identity follows moved native controls without borrowing their semantic Main ancestry', t => {
+	const f = fixture(), a = f.window('ACTIVITY'); a.show();
+	const semanticScope = new InputFocusScope(Symbol('retained activity'), f.parent.scope);
+	const retained = f.surfaces.attach({ role: 'content', captureScope: semanticScope.surfaceScope, lifetimeOwner: f.owner,
+		presentationParent: f.owner, isVisible: () => true, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
+	const target = f.focus.createTarget(f.parent, semanticScope); target.bindKeyboard(() => {});
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	assert.equal(findWorkbenchWindowSurface(f.parent, f.surfaces), undefined);
+	assert.equal(findWorkbenchWindowSurface(null, f.surfaces), undefined);
+	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), undefined);
+	assert.equal(workbenchWindowForSurface(a.control.surface!), a.control);
+	target.focus(); const revision = f.focus.revision;
+	f.surfaces.reparent(retained, a.control.clientSurface!);
+	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), a.control.surface); assert.equal(a.control.hasFocus, true);
+	assert.equal(f.focus.target, target); assert.equal(f.focus.revision, revision);
+	assert.equal(semanticScope.commandParent, f.parent.scope);
+	const popup = f.surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: Symbol('promoted activity popup'),
+		lifetimeOwner: retained, isVisible: () => true, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
+	const popupTarget = f.focus.createTarget(target, new InputFocusScope(popup.captureScope)); popupTarget.commandContext = target;
+	popupTarget.focus(); assert.equal(a.control.hasFocus, true); assert.equal(findWorkbenchWindowSurface(popupTarget, f.surfaces), a.control.surface);
+	f.surfaces.reparent(retained, f.owner);
+	assert.equal(a.control.hasFocus, false); assert.equal(findWorkbenchWindowSurface(popupTarget, f.surfaces), undefined);
+	a.control.hide(); assert.equal(retained.retired, false); assert.equal(popup.retired, false);
+	retained.dispose(); assert.equal(findWorkbenchWindowSurface(target, f.surfaces), null); assert.equal(findWorkbenchWindowSurface(popupTarget, f.surfaces), null);
+});
+
+test('retiring presentation ancestry cannot lend its still-registered child a surviving window', t => {
+	const f = fixture(); let checked = 0;
+	const a = f.window('RETIRING', 40, 40, () => {
+		assert.equal(retained.retired, false);
+		assert.equal(f.surfaces.findByScope(scope.surfaceScope), retained);
+		assert.equal(findWorkbenchWindowSurface(target, f.surfaces), null);
+		checked++;
+	});
+	a.show();
+	const scope = new InputFocusScope(Symbol('retiring child'), f.parent.scope);
+	const retained = f.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, lifetimeOwner: f.owner,
+		presentationParent: a.control.clientSurface!, isVisible: () => true, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
+	const target = f.focus.createTarget(f.parent, scope); target.bindKeyboard(() => {});
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), a.control.surface);
+	a.control.detach(); assert.equal(checked, 1); assert.equal(retained.retired, true);
+	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), null);
+});
+
+test('physical window discovery separates provisional construction, minimized presentation and native detachment', t => {
+	const f = fixture(), a = f.window('PROVISIONAL');
+	a.model.open = true; a.control.setPresented(false); a.control.attach();
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const surface = a.control.surface!;
+	assert.equal(a.control.isOpen, false); assert.equal(workbenchWindowForSurface(surface), a.control);
+	assert.ok(f.surfaces.windowSurfaces.includes(surface));
+	a.model.setMinimized(true); assert.equal(minimizedWorkbenchWindowCount(f.surfaces), 0);
+	a.control.setPresented(true); assert.equal(a.control.isOpen, true);
+	a.control.minimize(); assert.equal(a.control.visible, false); assert.equal(a.control.isOpen, true);
+	assert.equal(minimizedWorkbenchWindowCount(f.surfaces), 1);
+	assert.equal(a.control.surface, surface); assert.ok(f.surfaces.windowSurfaces.includes(surface));
+	a.control.detach(); assert.equal(a.control.isOpen, false); assert.equal(workbenchWindowForSurface(surface), undefined);
+	assert.equal(minimizedWorkbenchWindowCount(f.surfaces), 0);
+	assert.equal(f.surfaces.windowSurfaces.includes(surface), false);
+	a.control.attach(); assert.equal(a.control.isOpen, true); assert.notEqual(a.control.surface, surface);
+	assert.equal(workbenchWindowForSurface(surface), undefined, 'a retired attachment cannot borrow its replacement');
+	assert.equal(findWorkbenchWindowSurface(a.control.clientFocusTarget, f.surfaces), a.control.surface);
+});
+
+test('native window lookup distinguishes retained unframed Main controls from neutral root chrome', t => {
+	const f = fixture(), mainScope = new InputFocusScope(Symbol('main'), f.parent.scope);
+	const main = f.surfaces.attach({ role: 'window', lifetimeOwner: f.owner, presentationParent: null,
+		captureScope: mainScope.surfaceScope, isVisible: () => true, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
+	const scope = new InputFocusScope(Symbol('hidden retained activity'), mainScope);
+	const content = f.surfaces.attach({ role: 'content', lifetimeOwner: main, presentationParent: main,
+		captureScope: scope.surfaceScope, isVisible: () => false, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
+	const target = f.focus.createTarget(f.parent, scope);
+	t.after(() => f.surfaces.dispose());
+	assert.equal(findWorkbenchWindowSurface(target, f.surfaces), main);
+	assert.equal(workbenchWindowForSurface(main), undefined, 'unframed Main has no floating chrome controller');
+	assert.equal(findWorkbenchWindowSurface(f.parent, f.surfaces), undefined, 'neutral root chrome has no native window');
+	content.dispose(); assert.equal(findWorkbenchWindowSurface(target, f.surfaces), null);
+});
+
+test('shared window chrome contributes a cached font-aware minimum to zero-width document and tool content', t => {
+	const f = fixture(), menu = new WorkbenchMenu([
+		{ type: 'command', command: 'window.maximize', icon: 'maximize', showLabel: true },
+		{ type: 'command', command: 'window.hide', icon: 'close' },
+	], undefined);
+	menu.refresh();
+	const a = f.window('CHROME CAPTION', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, createWorkbenchActionBar(menu));
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.model.setMinimumSize(0, 0);
+	a.model.setRequestedBounds({ left: 40, top: 40, right: 41, bottom: 100 });
+	a.show();
+	const tinyMinimum = a.model.minimumWidth;
+	assert.ok(tinyMinimum > 0);
+	// Exact widths specify intrinsic chrome allocation, not incidental screen placement.
+	assert.equal(a.model.bounds.right - a.model.bounds.left, tinyMinimum);
+	const actions = a.actions.items.filter(item => item.visible);
+	assert.equal(tinyMinimum, actions.reduce((width, item) => width + item.width, 0)
+		+ (actions.length - 1) * WORKBENCH_ACTION_BAR_ITEM_SPACING + f.font.measure(ELLIPSIS) + 11);
+	const measurements = f.measurements(); a.layout(); a.layout();
+	assert.equal(f.measurements(), measurements, 'unchanged frames do not measure the caption cell or labels again');
+	const halfArea = { ...f.workArea, right: f.workArea.left + tinyMinimum * 2 };
+	assert.equal(a.model.canPlace('left', halfArea), true);
+	const msx = new Font({ variant: 'msx' });
+	a.control.layout(msx, (text, from, to) => msx.measure(text.slice(from, to)), text => msx.measure(text));
+	assert.ok(a.model.minimumWidth > tinyMinimum);
+	assert.equal(a.model.canPlace('left', halfArea), false, 'snap admission uses the actual new-font shell minimum');
+	assert.equal(a.model.bounds.right - a.model.bounds.left, a.model.minimumWidth);
+	a.model.setMinimumSize(0, 0);
+	assert.ok(a.model.minimumWidth > tinyMinimum, 'a content minimum cannot overwrite its native chrome contribution');
+});
+
+test('window title uses its contributed menu with the actual native window command subject', t => {
+	const f = fixture();
+	const a = f.window('CONTRIBUTED', 40, 40, undefined, undefined, { focusScope: f.parent.scope,
+		contextMenu: [{ type: 'command', command: 'window.hide' }] });
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.show();
+	const point = titlePoint(a.model); f.click(point.x, point.y, 0, PointerButton.Secondary);
+	assert.equal(f.contextMenu.visible, true); assert.equal(f.contextMenu.invocationOrigin, a.control.focusTarget);
+	assert.deepEqual(f.contextMenu.model.rows.map(row => row.command), ['window.hide']);
+	f.contextMenu.model.selectedIndex = 0; f.contextMenu.accept();
+	assert.equal(a.model.open, false); assert.equal(a.control.isOpen, false);
+});
 
 test('window client and focused chrome publish their actual window commands without parent lookup', t => {
 	const f = fixture(), a = f.window('Owned window');

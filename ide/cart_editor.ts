@@ -456,9 +456,10 @@ export class RuntimeCartEditor implements CartEditor {
 		);
 		this.keybindings = new EditorCommandKeybindingController(inputFocus, clock);
 		inputFocus.workbenchScope.commands = this.commands;
-		const workArea = getWorkbenchWorkArea();
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant,
 			new ProjectContentIndex(editorTextModelService, sources.catalog, behaviorSources.registrations, workbench.sceneSources));
+		refreshWorkbenchLayout();
+		const workArea = getWorkbenchWorkArea();
 		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
 		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.rootSurfaceBounds, this.attachContextMenuSession);
 		this.menubar = new MenubarController(this.contextMenu, this.commands, this.chromeRenderContext);
@@ -480,7 +481,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.mainWorkspace = new MainWorkspace(this.surfaces, chromeSurface, inputFocus.workbenchScope, this.commands,
 			() => this.layoutMainEditor(), () => this.editorParts.activate(this.editorParts.main, this.mainWorkspace),
 			focus => { if (focus) this.editorParts.main.focus(); else this.editorParts.activate(this.editorParts.main); },
-			() => this.editorParts.main.activeGroup, this.contextMenu);
+			() => this.editorParts.main.activeGroup, this.contextMenu, workArea);
 		this.editorParts = new EditorParts({
 			surfaces: this.surfaces, owner: chromeSurface, scope: inputFocus.workbenchScope, workArea,
 			mainPresentation: this.mainWorkspace,

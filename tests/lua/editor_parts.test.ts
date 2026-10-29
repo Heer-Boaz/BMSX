@@ -90,7 +90,7 @@ test('document placement transitions retain its exact Source view, local picker 
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
-test('the workspace window picker activates actual MRU parts and restores their retained local input', async t => {
+test('the workspace window picker restores actual attachment owners and their retained local input', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
 	parts.main.activeGroup.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
 	const mainPane = parts.main.activeGroup.panes.activePane!, model = f.firstInput.workingCopy;
@@ -101,14 +101,16 @@ test('the workspace window picker activates actual MRU parts and restores their 
 	f.editor.commands.execute('window.showAll', f.second.commandTarget);
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true); assert.ok(inputFocus.target === picker.field.focusTarget);
-	assert.equal(picker.model.list.rows.length, parts.mostRecentlyActive.length);
-	picker.model.list.selectionIndex = parts.mostRecentlyActive.indexOf(f.firstPart);
+	const surfaces = [f.editor.mainWorkspace.surface, f.firstPart.surface, f.secondPart.surface];
+	assert.equal(picker.model.list.rows.length, surfaces.length);
+	assert.ok(surfaces.every(surface => picker.model.list.rows.some(row => 'surface' in row.item && row.item.surface === surface)));
+	picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => 'surface' in row.item && row.item.surface === f.firstPart.surface);
 	f.key('Enter');
 	assert.equal(picker.visible, false); assert.ok(parts.activePart === f.firstPart);
 	assert.ok(inputFocus.target === f.firstPart.quickInput.field.focusTarget);
 	assert.equal(f.firstPart.quickInput.field.text, 'retained first draft');
 	f.editor.commands.execute('window.showAll', f.firstPart.quickInput.field.focusTarget);
-	picker.model.list.selectionIndex = parts.mostRecentlyActive.indexOf(parts.main);
+	picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => 'surface' in row.item && row.item.surface === f.editor.mainWorkspace.surface);
 	f.key('Enter');
 	assert.equal(picker.visible, false); assert.ok(parts.activePart === parts.main);
 	assert.ok(inputFocus.target === mainPane.commandTarget);
@@ -132,8 +134,8 @@ test('the window picker can foreground a closing document and its actual local d
 	assert.equal(f.firstPart.closing, true); assert.equal(f.firstPart.actionPrompt.visible, true);
 	f.editor.commands.execute('window.showAll', f.second.commandTarget);
 	const picker = f.editor.quickInput;
-	assert.equal(picker.model.list.rows.length, parts.mostRecentlyActive.length);
-	picker.model.list.selectionIndex = parts.mostRecentlyActive.indexOf(f.firstPart);
+	picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => 'surface' in row.item && row.item.surface === f.firstPart.surface);
+	assert.ok(picker.model.list.selectionIndex >= 0);
 	f.key('Enter');
 	assert.equal(picker.visible, false); assert.ok(parts.activePart === f.firstPart);
 	assert.ok(inputFocus.target === f.firstPart.actionPrompt.focusTarget);

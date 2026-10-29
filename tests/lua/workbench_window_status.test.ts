@@ -9,6 +9,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { api } from '../../ide/runtime/overlay_api';
 import { getWorkbenchConnectionBounds, getWorkbenchStatusLayout } from '../../ide/workbench/common/layout';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
+import { minimizedWorkbenchWindowCount } from '../../ide/workbench/ui/window/control';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
@@ -24,7 +25,7 @@ function createStatusFixture(t: TestContext): Fixture {
 /** The visible numeric count is the status producer's content contract and locates
  * its real pointer target without exposing a private control or freezing pixels. */
 function statusButton(t: TestContext, f: Fixture) {
-	const row = getWorkbenchConnectionBounds(), count = String(f.editor.editorParts.minimizedCount);
+	const row = getWorkbenchConnectionBounds(), count = String(minimizedWorkbenchWindowCount(f.editor.surfaces));
 	const painted: { x: number; y: number }[] = [];
 	const paint = api.blit_text_inline_span_with_font.bind(api);
 	const observe = t.mock.method(api, 'blit_text_inline_span_with_font', (...args: Parameters<typeof paint>) => {
@@ -46,7 +47,7 @@ function pointer(f: Fixture, point: { x: number; y: number }, down: boolean, tim
 	f.update();
 }
 
-test('permanent editor navigator opens only on release, includes visible and minimized inputs and Cancel returns to its actual invoker', t => {
+test('permanent window navigator opens only on release, includes visible and minimized windows and Cancel returns to its actual invoker', t => {
 	const f = createStatusFixture(t), parts = f.editor.editorParts, picker = f.editor.quickInput;
 	f.first.focus(); parts.minimize(f.secondPart); f.update();
 	const active = parts.activePart, text = f.firstInput.workingCopy.buffer.getText(), version = f.firstInput.workingCopy.version;
@@ -56,9 +57,9 @@ test('permanent editor navigator opens only on release, includes visible and min
 	assert.equal(picker.visible, false); assert.equal(f.secondPart.window!.model.minimized, true);
 	assert.ok(parts.activePart === active && active === f.firstPart);
 	pointer(f, button, false, 1);
-	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, 2);
-	assert.ok(picker.model.list.rows.some(row => 'input' in row.item && row.item.input === f.firstInput));
-	assert.ok(picker.model.list.rows.some(row => 'input' in row.item && row.item.input === f.secondInput));
+	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, 3);
+	assert.ok(picker.model.list.rows.some(row => 'window' in row.item && row.item.window === f.firstPart.window));
+	assert.ok(picker.model.list.rows.some(row => 'window' in row.item && row.item.window === f.secondPart.window));
 	assert.ok(parts.activePart === active);
 	f.key('Escape');
 	assert.equal(picker.visible, false); assert.equal(f.secondPart.window!.model.minimized, true);
@@ -79,8 +80,8 @@ test('choosing a minimized closing document restores its actual retained input a
 	const button = statusButton(t, f);
 	pointer(f, button, true, 0); pointer(f, button, false, 1);
 	const picker = f.editor.quickInput;
-	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, 2);
-	const index = picker.model.list.rows.findIndex(row => 'input' in row.item && row.item.input === f.firstInput);
+	assert.equal(picker.visible, true); assert.equal(picker.model.list.rows.length, 3);
+	const index = picker.model.list.rows.findIndex(row => 'window' in row.item && row.item.window === f.firstPart.window);
 	assert.ok(index >= 0); picker.model.list.selectionIndex = index;
 	f.key('Enter');
 	assert.equal(picker.visible, false); assert.equal(f.firstPart.window!.model.minimized, false);
@@ -93,22 +94,42 @@ test('choosing a minimized closing document restores its actual retained input a
 	assert.equal(await closing, false); assert.equal(f.firstPart.retired, false); assert.equal(model.dirty, true);
 });
 
+test('the global status count includes a minimized activity and its navigator restores the retained native client', t => {
+	const f = createStatusFixture(t), main = f.editor.mainWorkspace, problems = f.editor.problems;
+	main.openActivity('problems'); main.setActivityPlacement('floatingWindow'); f.update();
+	const window = main.activityWindow, documents = [...f.editor.editorParts.documents];
+	f.editor.commands.execute('window.minimize', problems.focusTarget); f.update();
+	assert.ok(documents.every(part => !part.window!.model.minimized));
+	assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 1);
+	const button = statusButton(t, f);
+	pointer(f, button, true, 0); pointer(f, button, false, 1);
+	const picker = f.editor.quickInput;
+	assert.equal(picker.visible, true);
+	const index = picker.model.list.rows.findIndex(row => 'window' in row.item && row.item.window === window);
+	assert.ok(index >= 0); picker.model.list.selectionIndex = index; f.key('Enter');
+	assert.equal(picker.visible, false); assert.equal(window.model.minimized, false);
+	assert.equal(main.activityDisplayed, true); assert.ok(inputFocus.admittedTarget === problems.focusTarget);
+	assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 0);
+	assert.deepEqual(f.editor.editorParts.documents, documents);
+});
+
 test('closing the last minimized host keeps workspace navigation admitted with no open inputs', async t => {
 	const f = createStatusFixture(t), parts = f.editor.editorParts;
 	parts.minimize(f.firstPart); parts.minimize(f.secondPart); f.update();
-	assert.equal(parts.minimizedCount, 2);
+	assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 2);
 	const button = statusButton(t, f);
 	assert.equal(await parts.close(f.firstPart), true); f.update();
-	assert.equal(parts.minimizedCount, 1);
+	assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 1);
 	assert.ok(statusButton(t, f).surface === button.surface, 'count changes retain the existing global control');
 	assert.equal(await parts.close(f.secondPart), true); f.update();
-	assert.equal(parts.minimizedCount, 0); assert.equal(button.surface.visible, true);
+	assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 0); assert.equal(button.surface.visible, true);
 	assert.equal(f.editor.surfaces.isAdmitted(button.surface), true);
 	assert.equal(f.editor.commands.isEnabled('window.restoreMinimized'), false);
-	assert.equal(f.editor.commands.isEnabled('openEditors'), true);
+	assert.equal(f.editor.commands.isEnabled('window.showAll'), true);
 	const bounds = button.surface.getClip(), point = { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
 	pointer(f, point, true, 10); pointer(f, point, false, 11);
-	assert.equal(f.editor.quickInput.visible, true); assert.equal(f.editor.quickInput.model.list.rows.length, 0);
+	assert.equal(f.editor.quickInput.visible, true); assert.equal(f.editor.quickInput.model.list.rows.length, 1);
+	assert.ok(f.editor.quickInput.model.list.rows.some(row => 'surface' in row.item && row.item.surface === f.editor.mainWorkspace.surface));
 });
 
 test('foreground status discovery does not replace the live guest attachment or execute a frame', t => {
@@ -121,11 +142,11 @@ test('foreground status discovery does not replace the live guest attachment or 
 	const active = parts.activePart, cycles = f.host.runtime.machine.scheduler.nowCycles, button = statusButton(t, f);
 	pointer(f, button, true, 20); pointer(f, button, false, 21);
 	assert.equal(f.editor.quickInput.visible, true); assert.equal(f.editor.quickInput.model.list.rows.length, 3);
-	assert.ok(f.editor.quickInput.model.list.rows.some(row => 'input' in row.item && row.item.input === game));
+	assert.ok(f.editor.quickInput.model.list.rows.some(row => 'surface' in row.item && row.item.surface === f.editor.mainWorkspace.surface));
 	assert.ok(guest.scope === scope && guest.guestInput === binding);
 	assert.ok(parts.activePart === active); assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 	f.key('Escape');
-	assert.equal(f.editor.quickInput.visible, false); assert.equal(parts.minimizedCount, 2);
+	assert.equal(f.editor.quickInput.visible, false); assert.equal(minimizedWorkbenchWindowCount(f.editor.surfaces), 2);
 	assert.ok(guest.scope === scope && guest.guestInput === binding); assert.ok(parts.activePart === active);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });

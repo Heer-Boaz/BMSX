@@ -52,6 +52,7 @@ export type WorkbenchActionBarState = {
 	hasFocus: boolean;
 	measuredFont: BFont | null;
 	measuredBy: ((text: string) => number) | undefined;
+	measurementDirty: boolean;
 };
 
 /** Materializes static or context-bound placements once into retained action state. */
@@ -96,7 +97,7 @@ export function createWorkbenchActionBar(source: WorkbenchActionMenuId | Workben
 	const presentation = new WorkbenchActionBarPresentation(items, menu, secondaryItems, secondaryMenu, button);
 	return { items, menu, presentation, bounds: create_rect_bounds(), overflow: button === undefined ? undefined : {
 		button, items: presentation.visibleItems, secondary: secondaryItems, secondaryMenu,
-	}, layoutRevision: 0, alignment: 'end', hoveredCommand: null, pressedCommand: null, focusedIndex: -1, hasFocus: false, measuredFont: null, measuredBy: undefined };
+	}, layoutRevision: 0, alignment: 'end', hoveredCommand: null, pressedCommand: null, focusedIndex: -1, hasFocus: false, measuredFont: null, measuredBy: undefined, measurementDirty: false };
 }
 
 export function layoutWorkbenchActionBar(
@@ -109,22 +110,10 @@ export function layoutWorkbenchActionBar(
 	left: number,
 	alignment: 'start' | 'end' = 'end',
 ): void {
-	state.presentation.refresh();
-	let changed = state.alignment !== alignment;
+	measureWorkbenchActionBar(state, bottom - top, measure, font);
+	let changed = state.measurementDirty || state.alignment !== alignment;
+	state.measurementDirty = false;
 	state.alignment = alignment;
-	const remeasure = state.measuredFont !== font || state.measuredBy !== measure;
-	for (const item of state.items) {
-		if (item.menuEntry !== undefined && item.visible !== item.menuEntry.visible) { item.visible = item.menuEntry.visible; changed = true; }
-		if (item.icon !== undefined && !item.showLabel) {
-			item.width = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, bottom - top);
-		} else if (remeasure || item.measuredLabel !== item.label) {
-			item.width = measure(item.label) + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2
-				+ (item.icon === undefined ? 0 : WORKBENCH_ICON_SIZE + WORKBENCH_ACTION_BAR_ITEM_SPACING);
-			item.measuredLabel = item.label;
-		}
-	}
-	state.measuredFont = font;
-	state.measuredBy = measure;
 	const overflow = state.overflow;
 	let firstOverflow = state.items.length;
 	if (overflow !== undefined) {
@@ -181,4 +170,36 @@ export function layoutWorkbenchActionBar(
 	if (state.bounds.left !== paintedLeft || state.bounds.top !== top || state.bounds.right !== paintedRight || state.bounds.bottom !== bottom) changed = true;
 	write_rect_bounds(state.bounds, paintedLeft, top, paintedRight, bottom);
 	if (changed) state.layoutRevision++;
+}
+
+/** Intrinsic width keeps every action directly reachable or in its real overflow menu. */
+export function measureWorkbenchActionBarMinimumWidth(state: WorkbenchActionBarState, height: number,
+	measure: (text: string) => number, font: BFont | null): number {
+	measureWorkbenchActionBar(state, height, measure, font);
+	let width = 0, count = 0;
+	for (const item of state.items) if (item.visible) { width += item.width; count++; }
+	width += Math.max(0, count - 1) * WORKBENCH_ACTION_BAR_ITEM_SPACING;
+	if (state.overflow === undefined) return width;
+	const overflowWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, height);
+	return state.presentation.hasSecondaryActions() ? overflowWidth : Math.min(width, overflowWidth);
+}
+
+function measureWorkbenchActionBar(state: WorkbenchActionBarState, height: number, measure: (text: string) => number,
+	font: BFont | null): void {
+	state.presentation.refresh();
+	let changed = false;
+	const remeasure = state.measuredFont !== font || state.measuredBy !== measure;
+	for (const item of state.items) {
+		if (item.menuEntry !== undefined && item.visible !== item.menuEntry.visible) { item.visible = item.menuEntry.visible; changed = true; }
+		if (item.icon !== undefined && !item.showLabel) {
+			item.width = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, height);
+		} else if (remeasure || item.measuredLabel !== item.label) {
+			item.width = measure(item.label) + WORKBENCH_ACTION_BAR_ITEM_PADDING_X * 2
+				+ (item.icon === undefined ? 0 : WORKBENCH_ICON_SIZE + WORKBENCH_ACTION_BAR_ITEM_SPACING);
+			item.measuredLabel = item.label;
+		}
+	}
+	state.measuredFont = font;
+	state.measuredBy = measure;
+	state.measurementDirty ||= changed;
 }

@@ -14,8 +14,9 @@ import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../action_bar';
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchTooltip } from '../tooltip';
+import { minimizedWorkbenchWindowCount } from './control';
 
-/** Open editors remain discoverable outside the overlapping editor area. */
+/** Real windows remain discoverable outside the overlapping work area. */
 export class WorkbenchWindowStatus {
 	private readonly state = createWorkbenchActionBar('window.status');
 	private readonly actions: WorkbenchActionBarControl;
@@ -25,10 +26,10 @@ export class WorkbenchWindowStatus {
 	private count = -1;
 	public get width(): number { return this.state.items[0].width; }
 
-	public constructor(private readonly parts: EditorParts, commands: EditorCommandRunner,
+	public constructor(parts: EditorParts, commands: EditorCommandRunner,
 		private readonly surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, private readonly viewport: Readonly<RectBounds>) {
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, null, () => parts.activePart.focus());
-		this.actions.focusTarget.scope.surfaceScope = Symbol('open editors');
+		this.actions.focusTarget.scope.surfaceScope = Symbol('open windows');
 		this.surface = surfaces.attach({ role: 'content', lifetimeOwner: owner, presentationParent: owner,
 			captureScope: this.actions.focusTarget.scope.surfaceScope, isVisible: () => true,
 			getBounds: () => this.state.bounds, getClip: () => this.clip,
@@ -40,7 +41,7 @@ export class WorkbenchWindowStatus {
 	}
 
 	public update(guestInput: boolean, hostFailed: boolean): void {
-		const count = this.parts.minimizedCount;
+		const count = minimizedWorkbenchWindowCount(this.surfaces);
 		const font = editorViewState.font.renderFont(), row = getWorkbenchConnectionBounds();
 		const item = this.state.items[0];
 		if (this.count !== count || this.state.measuredFont !== font || this.state.bounds.bottom - this.state.bounds.top !== row.bottom - row.top) {
