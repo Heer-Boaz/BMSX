@@ -231,16 +231,21 @@ test('AltRight, modifier chords, repeats and cancelled AltLeft candidates never 
 });
 
 test('physical menu gestures remain guest input while a real scanout client has focus', t => {
-	const { editor, host, origin, key } = menuFixture(t);
+	const { editor, host, origin, key, model, source } = menuFixture(t), version = model.version;
 	const game = new GameInputControl(origin, host.input, { kind: 'direct', presenter: host.presenter }, editor.commands.transport);
 	game.setInput({ left: 80, top: 32, right: 320, bottom: 240 }); game.focusTarget.focus();
 	t.after(() => game.dispose());
 	const binding = game.focusTarget.guestInput!;
 	for (const event of [key('F10'), key('AltLeft', KeyModifier.alt), key('AltLeft', KeyModifier.none, false),
-		key('AltRight', KeyModifier.alt), key('AltRight', KeyModifier.none, false)]) {
+		key('AltRight', KeyModifier.alt), key('AltRight', KeyModifier.none, false),
+		key('AltLeft', KeyModifier.alt), key('Space', KeyModifier.alt), key('Space', KeyModifier.alt, false),
+		key('AltLeft', KeyModifier.none, false), key('Space'), key('Space', KeyModifier.none, false),
+		key('ArrowLeft'), key('ArrowLeft', KeyModifier.none, false), key('ArrowDown'), key('ArrowDown', KeyModifier.none, false)]) {
 		assert.equal(event.consumed, false); assert.equal(editor.contextMenu.visible, false);
 		assert.ok(inputFocus.target === game.focusTarget); assert.ok(game.focusTarget.guestInput === binding);
+		assert.ok(editor.guestInputRecipient === host.input && binding.recipient === host.input);
 	}
+	assert.equal(model.buffer.getText(), source); assert.equal(model.version, version); assert.equal(model.canUndo, false);
 	game.clearInput(); key('AltLeft', KeyModifier.none, false);
 	assert.equal(editor.contextMenu.visible, false, 'a guest Alt down never arms a later Studio release');
 	key('AltLeft', KeyModifier.alt); game.setInput(binding.bounds); game.focusTarget.focus();

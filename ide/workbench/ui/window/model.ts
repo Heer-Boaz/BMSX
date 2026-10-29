@@ -126,6 +126,24 @@ export class WorkbenchWindowModel {
 		if (this.placementListeners !== undefined) for (const listener of this.placementListeners) listener();
 	}
 
+	/** Both pointer edges and keyboard sizing consume the same displayed anchor and live constraints. */
+	public writeResizeBounds(start: Readonly<RectBounds>, requested: Readonly<RectBounds>, workArea: Readonly<RectBounds>,
+		edge: WindowResizeEdge, dx: number, dy: number, target: RectBounds): void {
+		copy_rect_bounds(target, requested);
+		const minWidth = Math.min(this.minimumWidth, workArea.right - workArea.left);
+		const minHeight = Math.min(this.minimumHeight, workArea.bottom - workArea.top);
+		if ((edge & WindowResizeEdge.Left) !== 0) {
+			target.left = clamp(start.left + dx, workArea.left, start.right - minWidth); target.right = start.right;
+		} else if ((edge & WindowResizeEdge.Right) !== 0) {
+			target.left = start.left; target.right = clamp(start.right + dx, start.left + minWidth, workArea.right);
+		}
+		if ((edge & WindowResizeEdge.Top) !== 0) {
+			target.top = clamp(start.top + dy, workArea.top, start.bottom - minHeight); target.bottom = start.bottom;
+		} else if ((edge & WindowResizeEdge.Bottom) !== 0) {
+			target.top = start.top; target.bottom = clamp(start.bottom + dy, start.top + minHeight, workArea.bottom);
+		}
+	}
+
 	public setMinimumSize(width: number, height: number): void {
 		if (this.contributionMinimumWidth === width && this.minimumHeight === height) return;
 		this.contributionMinimumWidth = width; this.minimumHeight = height;

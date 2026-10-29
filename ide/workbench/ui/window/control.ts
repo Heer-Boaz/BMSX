@@ -7,7 +7,7 @@ import type { EditorCommandRunner } from '../../../common/commands';
 import type { PointerInputSnapshot, PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { ELLIPSIS, truncateMeasuredText, type TextRangeMeasure } from '../../../common/text';
 import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '../../../input/focus';
-import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
+import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import type { PointerCaptureScope, PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../../input/pointer/hover';
 import type { WorkbenchSurface, WorkbenchSurfaceCallbacks } from '../../services/windows/model';
@@ -21,8 +21,23 @@ import { WorkbenchActionBarControl } from '../action_bar_control';
 import { WorkbenchTooltip } from '../tooltip';
 import { WindowResizeEdge, WINDOW_HEADER_VERTICAL_PADDING, type WindowPlacement, type WorkbenchWindowModel } from './model';
 import { DOUBLE_CLICK_MAX_INTERVAL_MS, POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../../common/constants';
+import { type WorkbenchStatusItem, EMPTY_STATUS_ITEMS, STATUS_PRIORITY_HINT } from '../../common/status_bar';
 
 const WINDOW_SNAP_MARGIN = 8;
+const KEYBOARD_GEOMETRY_STEP = 8;
+type KeyboardGeometryKind = 'move' | 'resize';
+type KeyboardGeometry = {
+	readonly kind: KeyboardGeometryKind;
+	readonly unbindFocus: () => void;
+	readonly unbindPlacement: () => void;
+	readonly unbindContext: () => void;
+};
+const KEYBOARD_GEOMETRY_STATUS: Readonly<Record<KeyboardGeometryKind, readonly WorkbenchStatusItem[]>> = {
+	move: [{ text: 'MOVE: ARROWS CTRL:FINE ENTER:APPLY ESC:CANCEL', alignment: 'left',
+		priority: STATUS_PRIORITY_HINT, overflow: 'ellipsis', tone: 'info' }],
+	resize: [{ text: 'RESIZE: ARROWS CTRL:FINE ENTER:APPLY ESC:CANCEL', alignment: 'left',
+		priority: STATUS_PRIORITY_HINT, overflow: 'ellipsis', tone: 'info' }],
+};
 
 const windowsByScope = new Map<PointerCaptureScope, WorkbenchFloatingWindow>();
 
@@ -95,6 +110,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	private readonly nextRequested = create_rect_bounds();
 	private moving = false;
 	private geometryPending = false;
+	private keyboardGeometry: KeyboardGeometry | undefined;
 	private titleAnchorX = 0;
 	private titleAnchorY = 0;
 	private pointerX = 0;
@@ -125,10 +141,11 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		private readonly hover: PointerHoverService, private readonly surfaces: WorkbenchSurfaceService, private readonly commands: EditorCommandRunner,
 		private readonly contextMenu: ContextMenuController, private readonly options: WorkbenchWindowOptions) {
 		this.scope = new InputFocusScope(Symbol('window'), options.focusScope);
+		this.scope.statusSource = this;
 		this.clientScope = new InputFocusScope(Symbol('window client'), this.scope);
 		this.focusTarget = focus.createTarget(options.focusReturn, this.scope);
 		this.focusTarget.canFocus = () => this.visible;
-		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input));
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.finishKeyboardGeometry(false));
 		this.unbindTitleBlur = this.focusTarget.onDidBlur(() => {
 			this.titleClick = false; this.lastTitleClickTime = undefined;
 		});
@@ -157,10 +174,17 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			run: () => this.setPlacement('normal') });
 		this.focusTarget.registerCommand('window.hide', { isEnabled: () => this.visible,
 			run: () => { if (options.requestClose !== undefined) options.requestClose(); else this.hide(); } });
-		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.visible,
-			run: () => this.openContextMenu(this.model.header.left, this.model.header.bottom, true) });
+		this.focusTarget.registerCommand('window.move', { isEnabled: () => this.keyboardInteractionAdmitted,
+			run: () => this.beginKeyboardGeometry('move') });
+		this.focusTarget.registerCommand('window.resize', { isEnabled: () => this.keyboardInteractionAdmitted && this.model.placement !== 'maximized',
+			run: () => this.beginKeyboardGeometry('resize') });
+		const systemMenu = { isEnabled: () => this.keyboardInteractionAdmitted,
+			run: () => this.openContextMenu(this.model.header.left, this.model.header.bottom, true) };
+		this.focusTarget.registerCommand('contextMenu', systemMenu);
+		this.focusTarget.registerCommand('window.systemMenu', systemMenu);
 		this.actionFocusTarget.registerCommand('contextMenu', this.focusTarget.getCommand('contextMenu')!);
-		for (const command of ['contextMenu', 'window.minimize', 'window.maximize', 'window.snapLeft', 'window.snapRight', 'window.restore', 'window.hide'] as const)
+		for (const command of ['contextMenu', 'window.systemMenu', 'window.move', 'window.resize', 'window.minimize',
+			'window.maximize', 'window.snapLeft', 'window.snapRight', 'window.restore', 'window.hide'] as const)
 			this.clientFocusTarget.registerCommand(command, this.focusTarget.getCommand(command)!);
 		this.updateChromeState();
 	}
@@ -171,10 +195,25 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	/** Chrome, client and promoted owned popups form one active window family. */
 	public get hasFocus(): boolean { return this.containsScope(this.surface, this.focus.target?.scope.surfaceScope); }
 	public get model(): WorkbenchWindowModel { return this.options.model; }
+	private get inputAdmitted(): boolean { return this.visible && this.surfaces.isFocusAdmitted(this.surface!); }
+	private get keyboardInteractionAdmitted(): boolean {
+		if (!this.inputAdmitted) return false;
+		// Palette preparation runs during focus handoff; its pending native field
+		// already carries the exact invoking scope, not an active-document fallback.
+		const target = this.focus.admittedTarget ?? this.focus.pendingTarget;
+		const origin = target?.scope.interactionOrigin ?? target?.scope;
+		return this.containsScope(this.surface, origin?.surfaceScope);
+	}
+	public get statusItems(): readonly WorkbenchStatusItem[] {
+		return this.keyboardGeometry === undefined ? EMPTY_STATUS_ITEMS : KEYBOARD_GEOMETRY_STATUS[this.keyboardGeometry.kind];
+	}
+	public get interactionActive(): boolean { return this.keyboardGeometry !== undefined; }
+	public updateStatus(): void {}
 
 	/** Construction can retain a window tree before its owner admits presentation. */
 	public setPresented(presented: boolean): void {
 		if (this.presented === presented) return;
+		if (!presented) this.cancelPointer();
 		this.presented = presented;
 		if (this.surface !== undefined) this.surfaces.changed();
 	}
@@ -268,6 +307,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		if (!this.model.canPlace(placement, this.options.workArea)) return;
 		this.lastTitleClickTime = undefined;
 		this.capture.cancelTarget(this);
+		this.cancelPointer();
 		this.model.setPlacement(placement);
 		this.updateChromeState();
 		if (this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
@@ -317,7 +357,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	}
 
 	private updateTooltip(): void {
-		if (this.titleClick || this.moving || this.resizing !== WindowResizeEdge.None) { this.tooltip.hide(); return; }
+		if (this.titleClick || this.moving || this.resizing !== WindowResizeEdge.None || this.keyboardGeometry !== undefined) { this.tooltip.hide(); return; }
 		const item = this.actions.tooltipItem;
 		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, this.measuredFont!, this.measure!, this.measureText!, this.options.workArea);
 		else if (this.headerHovered && (this.options.getTitleTooltip !== undefined || this.model.displayTitle !== this.model.title)) {
@@ -333,17 +373,43 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	}
 
 	private openContextMenu(x: number, y: number, keyboard: boolean): void {
-		const surface = this.surface!;
+		const surface = this.surface!, focusRevision = this.focus.revision;
 		this.surfaces.raise(surface);
-		if (this.surface !== surface || !this.visible) return;
-		this.focusTarget.focus();
-		if (this.surface !== surface || !this.focusTarget.hasFocus) return;
+		if (this.surface !== surface || !this.visible || this.focus.revision !== focusRevision) return;
+		if (!this.focusTarget.focus() || this.surface !== surface) return;
 		this.tooltip.hide();
 		this.contextMenu.show(x, y, this.options.contextMenu ?? WORKBENCH_MENUS[this.options.requestMinimize === undefined ? 'window.context' : 'window.minimizable.context'], this.commands,
 			{ selectFirst: keyboard, invocationOrigin: this.focusTarget, commandTarget: this.focusTarget, returnFocus: this.focusTarget });
 	}
 
 	private handleKeyboard(input: KeyInputEvent): void {
+		if (this.keyboardGeometry !== undefined) {
+			if (input.modifiers === KeyModifier.none && (isKeyJustPressed('Enter', input) || isKeyJustPressed('Escape', input))) {
+				consumeIdeKey(input.code, input);
+				this.finishKeyboardGeometry(input.code === 'Enter');
+				return;
+			}
+			if ((input.modifiers & ~KeyModifier.ctrl) !== 0) return;
+			let dx = 0, dy = 0;
+			const step = (input.modifiers & KeyModifier.ctrl) !== 0 ? 1 : KEYBOARD_GEOMETRY_STEP;
+			if (isKeyDown('ArrowLeft', input)) dx = -step;
+			else if (isKeyDown('ArrowRight', input)) dx = step;
+			else if (isKeyDown('ArrowUp', input)) dy = -step;
+			else if (isKeyDown('ArrowDown', input)) dy = step;
+			else return;
+			consumeIdeKey(input.code, input);
+			const area = this.options.workArea, next = this.nextRequested, start = this.startBounds;
+			this.model.writePlacementBounds('normal', area, start, next);
+			if (this.keyboardGeometry.kind === 'move') {
+				const width = next.right - next.left, height = next.bottom - next.top;
+				const left = clamp(start.left + dx, area.left, area.right - (start.right - start.left));
+				const top = clamp(start.top + dy, area.top, area.bottom - (start.bottom - start.top));
+				write_rect_bounds(next, left, top, left + width, top + height);
+			} else this.model.writeResizeBounds(start, next, area, WindowResizeEdge.Right | WindowResizeEdge.Bottom, dx, dy, next);
+			this.geometryPending = true;
+			this.layout(this.measuredFont!, this.measure!, this.measureText!);
+			return;
+		}
 		if (input.modifiers !== KeyModifier.none) return;
 		if (isKeyJustPressed('Escape', input)) {
 			consumeIdeKey('Escape', input);
@@ -355,7 +421,53 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		}
 	}
 
+	private beginKeyboardGeometry(operation: KeyboardGeometryKind): void {
+		// Acceptance may dismiss a menu whose retirement callbacks selected another window.
+		const origin = this.focus.admittedTarget;
+		if (!this.inputAdmitted || !this.containsScope(this.surface, origin?.scope.surfaceScope)) return;
+		this.capture.cancelTarget(this);
+		this.cancelPointer();
+		if (this.focus.admittedTarget !== origin || !this.inputAdmitted || this.keyboardGeometry !== undefined) return;
+		copy_rect_bounds(this.nextRequested, operation === 'resize' && this.model.placement !== 'normal' ? this.model.bounds : this.model.requestedBounds);
+		const geometry: KeyboardGeometry = {
+			kind: operation,
+			unbindFocus: this.focus.onDidChangeTarget(() => {
+				if (this.keyboardGeometry === geometry && this.focus.admittedTarget !== this.focusTarget) this.finishKeyboardGeometry(false);
+			}),
+			unbindPlacement: this.model.onDidChangePlacement(() => {
+				if (this.keyboardGeometry === geometry) this.finishKeyboardGeometry(false);
+			}),
+			unbindContext: this.scope.onDidRetireContext(() => {
+				if (this.keyboardGeometry === geometry) this.finishKeyboardGeometry(false);
+			}),
+		};
+		this.keyboardGeometry = geometry;
+		// The complete interaction is published before focus/stack callbacks can revoke it.
+		if (!this.focusTarget.focus()) {
+			if (this.keyboardGeometry === geometry) this.finishKeyboardGeometry(false);
+			return;
+		}
+		if (this.keyboardGeometry !== geometry) return;
+		this.surfaces.raise(this.surface!);
+		this.tooltip.hide();
+		this.focus.notifyTargetChanged();
+	}
+
+	private finishKeyboardGeometry(accept: boolean): void {
+		const geometry = this.keyboardGeometry;
+		if (geometry === undefined) return;
+		const pending = this.geometryPending;
+		this.keyboardGeometry = undefined; this.geometryPending = false;
+		geometry.unbindFocus(); geometry.unbindPlacement(); geometry.unbindContext();
+		if (accept && pending) this.model.setRequestedBounds(this.nextRequested, 'normal');
+		this.updateChromeState();
+		if (pending && this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
+		this.focus.notifyTargetChanged();
+	}
+
 	private handlePointer(snapshot: PointerInputSnapshot, now: number): void {
+		if (snapshot.justPressedButtons !== 0) this.finishKeyboardGeometry(false);
+		if (this.keyboardGeometry !== undefined) return;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.bounds)) return;
 		const edge = this.model.resizeEdgeAt(snapshot.viewportX, snapshot.viewportY);
 		const header = point_in_rect(snapshot.viewportX, snapshot.viewportY, this.model.header);
@@ -406,6 +518,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 
 	public cancelPointer(): void {
 		this.capture.release(this);
+		if (this.keyboardGeometry !== undefined) { this.finishKeyboardGeometry(false); return; }
 		const pending = this.geometryPending;
 		this.moving = false; this.geometryPending = false;
 		this.resizing = WindowResizeEdge.None;
@@ -435,19 +548,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			const top = clamp(snapshot.viewportY - this.titleAnchorY, workArea.top, workArea.bottom - height);
 			write_rect_bounds(next, left, top, left + requested.right - requested.left, top + requested.bottom - requested.top);
 		} else {
-			copy_rect_bounds(next, this.model.placement === 'normal' ? requested : start);
-			const minWidth = Math.min(this.model.minimumWidth, workArea.right - workArea.left);
-			const minHeight = Math.min(this.model.minimumHeight, workArea.bottom - workArea.top);
-			if ((this.resizing & WindowResizeEdge.Left) !== 0) {
-				next.left = clamp(start.left + dx, workArea.left, start.right - minWidth); next.right = start.right;
-			} else if ((this.resizing & WindowResizeEdge.Right) !== 0) {
-				next.left = start.left; next.right = clamp(start.right + dx, start.left + minWidth, workArea.right);
-			}
-			if ((this.resizing & WindowResizeEdge.Top) !== 0) {
-				next.top = clamp(start.top + dy, workArea.top, start.bottom - minHeight); next.bottom = start.bottom;
-			} else if ((this.resizing & WindowResizeEdge.Bottom) !== 0) {
-				next.top = start.top; next.bottom = clamp(start.bottom + dy, start.top + minHeight, workArea.bottom);
-			}
+			this.model.writeResizeBounds(start, this.model.placement === 'normal' ? requested : start, workArea, this.resizing, dx, dy, next);
 		}
 		this.layout(this.measuredFont!, this.measure!, this.measureText!);
 	}

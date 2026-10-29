@@ -2,6 +2,7 @@
 export type WorkbenchStatusItem = {
 	text: string;
 	readonly alignment: 'left' | 'right';
+	/** Overflow admission within this source, not precedence over other status sources. */
 	priority: number;
 	readonly overflow: 'ellipsis' | 'hide';
 	tone: 'normal' | 'warning' | 'error' | 'info' | 'success';
@@ -17,5 +18,7 @@ export const EMPTY_STATUS_ITEMS: readonly WorkbenchStatusItem[] = [];
 /** The attached view publishes full facts before the shared status presentation is arranged. */
 export interface WorkbenchStatusSource {
 	readonly statusItems: readonly WorkbenchStatusItem[];
+	/** Guidance for an ongoing user interaction takes precedence over ordinary feedback. */
+	readonly interactionActive?: boolean;
 	updateStatus(): void;
 }

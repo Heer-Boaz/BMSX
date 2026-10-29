@@ -175,7 +175,8 @@ export class WorkbenchStatusBar implements PointerHoverTarget {
 		const item = this.overrideItems[0], message = editorFeedbackState.message;
 		if (this.keyChordLabel !== undefined) { item.text = this.keyChordLabel; item.tone = 'normal'; }
 		else if (this.evaluation?.active !== undefined) { item.text = this.evaluation.paused ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING'; item.tone = 'normal'; }
-		else if (message.visible) { item.text = message.text; item.tone = message.kind; }
+		else if (message.visible && (message.kind === 'warning' || message.kind === 'error'
+			|| this.context?.source.interactionActive !== true)) { item.text = message.text; item.tone = message.kind; }
 		else return undefined;
 		return this.overrideItems;
 	}

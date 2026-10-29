@@ -10,7 +10,17 @@ export function handleEditorInput(
 	editor: CartEditor,
 ): void {
 	const focused = inputFocus.admittedTarget;
-	if (playerInput.down && !playerInput.consumed) focused?.activate();
+	if (playerInput.down && !playerInput.consumed) {
+		const revision = inputFocus.revision;
+		focused?.activate();
+		// Activation callbacks may select another native control or revoke admission.
+		// This key belongs to the original attachment, not either successor.
+		if (inputFocus.revision !== revision || inputFocus.admittedTarget !== focused) {
+			editor.keybindings.cancel(); editor.menubar.cancelAlt();
+			playerInput.consumed = true;
+			return;
+		}
+	}
 	if (focused === null && (editor.surfaces.topBlockingSurface !== null || inputFocus.target !== null)) {
 		editor.keybindings.cancel();
 		editor.menubar.cancelAlt();

@@ -78,6 +78,8 @@ const WINDOW_TITLE_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 
 const WINDOW_CONTEXT_ACTIONS: readonly WorkbenchMenuItem[] = [
 	{ type: 'command', command: 'window.restore' },
+	{ type: 'command', command: 'window.move' },
+	{ type: 'command', command: 'window.resize' },
 	{ type: 'command', command: 'window.maximize' },
 	{ type: 'command', command: 'window.snapLeft' },
 	{ type: 'command', command: 'window.snapRight' },
@@ -489,6 +491,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'group.move' },
 		{ type: 'command', command: 'group.close' },
 		{ type: 'separator' },
+		{ type: 'command', command: 'window.move' },
+		{ type: 'command', command: 'window.resize' },
 		{ type: 'command', command: 'window.snapLeft' },
 		{ type: 'command', command: 'window.snapRight' },
 		{ type: 'command', command: 'window.maximize' },

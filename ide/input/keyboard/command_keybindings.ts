@@ -80,6 +80,7 @@ const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
 	{ code: 'Tab', command: 'tabs.next', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'Tab', command: 'tabs.previous', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
 	{ code: 'F10', command: 'menubar.focus', modifiers: NO_MODIFIERS },
+	{ code: 'Space', command: 'window.systemMenu', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift } },
 	{ code: 'KeyN', command: 'createResource', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'ContextMenu', command: 'contextMenu', modifiers: NO_MODIFIERS, when: target => target?.getCommand('contextMenu') !== undefined },
 	{ code: 'F10', command: 'contextMenu', modifiers: { required: KeyModifier.shift, forbidden: PRIMARY_ALT_MODIFIERS }, when: target => target?.getCommand('contextMenu') !== undefined },

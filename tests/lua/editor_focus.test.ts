@@ -408,14 +408,16 @@ test('empty and disabled focused history cannot fall through to document command
 	assert.equal(documentUndos, 1);
 });
 
-test('Space is not a graph or gameplay command binding', t => {
+test('Space stays unbound unless Alt+Space has an admitted window-menu command', t => {
 	t.after(() => inputFocus.setTarget(null));
 	const graph = inputFocus.createTarget();
 	const field = new TextField(graph);
 	for (const target of [graph, field.focusTarget, null]) {
 		inputFocus.setTarget(target);
 		for (const modifier of [KeyModifier.none, KeyModifier.ctrl, KeyModifier.meta, KeyModifier.shift, KeyModifier.alt]) {
-			assert.equal(resolveEditorCommandKeybinding('Space', modifier, { isEnabled: () => true }), null);
+			assert.equal(resolveEditorCommandKeybinding('Space', modifier, { isEnabled: () => false }), null);
+			const binding = resolveEditorCommandKeybinding('Space', modifier, { isEnabled: command => command === 'window.systemMenu' });
+			assert.equal(binding?.command ?? null, modifier === KeyModifier.alt ? 'window.systemMenu' : null);
 		}
 	}
 });

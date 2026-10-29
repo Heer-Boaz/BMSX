@@ -391,6 +391,37 @@ five-second host-clock deadline ends the pending chord. A completed chord is
 resolved against the retained live target and current command admission.
 Unrelated modified arrow navigation and guest input retain their own owners.
 
+The window system menu is distinct from a content control's context menu.
+Alt+Space opens the invoking physical window's existing title menu; ContextMenu
+and Shift+F10 keep their local control meaning. Move and Resize are shared
+container commands, available through that menu, the Window menu and the
+command palette. Unframed Main has no floating placement to edit, and a modal
+cannot address blocked chrome behind itself.
+
+Keyboard Move and Resize arrange the same prospective normal bounds as a
+pointer gesture without changing persisted placement. Arrows step eight canvas
+pixels; Ctrl+Arrow steps one. Resize anchors the top-left and adjusts the
+right/bottom edges against the live work area and font/contribution minima.
+It is unavailable while maximized. Moving a snapped/maximized window restores
+its normal request on the first arrow; resizing a snapped window starts from
+its displayed half. Enter accepts once; Escape or acceptance without an arrow
+publishes no placement change. Both keep focus on chrome, not guest content.
+The system-menu operation and lower-right resize anchor follow
+[KWin's window operations](https://github.com/KDE/kwin/blob/v6.5.0/src/useractions.cpp)
+and [interactive keyboard handling](https://github.com/KDE/kwin/blob/v6.5.0/src/window.cpp).
+
+The keyboard interaction owns its focus/admission, context and placement
+subscriptions only while active. Focus or modal-admission loss, input/context
+retirement, hiding, minimizing, pointer takeover or another placement decision
+discards the proposal immediately. Restoring admission cannot resume it. Menu
+disposal and focus/stack callbacks cannot reactivate an old window over a newer
+focus decision. Chrome supplies the interaction hint through the existing
+status owner. Active interaction guidance takes precedence over ordinary
+info/success feedback, while warning/error feedback, evaluation and key-chord
+guidance retain their own admission. Item overflow priority is independent of
+this source-level precedence. No pending geometry or keyboard authority is
+serialized.
+
 Persist the placement mode and normal request at the document part's storage
 boundary; never persist a pending gesture or proposal. Workspace layout,
 editor-view mementos and source-recovery manifests use the current unversioned
@@ -573,6 +604,9 @@ its last eligible control or scope target, rather than leaving game focus active
 behind it. Layout content uses its existing content focus scope, without an
 artificial window wrapper. Chrome belongs to its window's focus/command scope.
 Header movement does not select another subject.
+A keyboard occurrence retains its admitted control through activation. If an
+activation callback changes focus or withdraws admission, that occurrence ends
+without dispatching to the old control or its successor.
 Menus and Quick Input preserve the invoking command origin separately from
 their own temporary keyboard focus. Closing one restores focus only if its
 family still owns focus; it cannot steal focus back from a different window.

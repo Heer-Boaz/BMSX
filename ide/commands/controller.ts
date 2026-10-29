@@ -210,6 +210,7 @@ export class IdeCommandController {
 				if (editor !== null) void this.editor.editorParts.copyEditor(group, editor);
 				return;
 			}
+			case 'window.systemMenu': case 'window.move': case 'window.resize':
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
 				const window = originWindowSurface === undefined ? part.window : workbenchWindowForSurface(originWindowSurface);
@@ -450,6 +451,7 @@ export class IdeCommandController {
 				return editor !== null && this.editor.editorParts.canMoveEditor(group, editor, { kind: 'window' });
 			}
 			case 'window.copyEditor': return editor !== null && this.editor.editorParts.canCopyEditor(group, editor);
+			case 'window.systemMenu': case 'window.move': case 'window.resize':
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
 				const window = originWindowSurface === undefined ? part.window : workbenchWindowForSurface(originWindowSurface);

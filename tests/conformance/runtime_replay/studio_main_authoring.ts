@@ -21,6 +21,7 @@ import type { QuickPickItem } from '../../../ide/workbench/services/quick_input/
 import { SCENE_AUTHORING_SOURCE } from '../../fixtures/studio/scene_authoring';
 import { createTestSourceOnlyLuaRecord } from '../../helpers/runtime_sources';
 import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
+import { testStudioWindowKeyboard } from './studio_window_keyboard';
 
 const SOURCE_READING_FIXTURE = `local function read_authoring_source()
     local readable_value = alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_kappa_lambda_mu_nu_xi_omicron_pi_rho_sigma_tau_upsilon_phi_chi_psi_omega
@@ -567,6 +568,7 @@ async function testPrimarySourceDestinations(test: StudioFixture, source: CodeEd
 				&& inputFocus.target !== null && floating.focusScope.contains(inputFocus.target.scope),
 				'main-source: font and theme changes preserve the attached, visible and focused Source owner');
 			await test.capture?.(`main-source-affinity-${editor.fontVariant}-theme-${theme}`);
+			await testStudioWindowKeyboard(test, source, floatingPart, theme);
 			await test.press('ControlLeft', 'AltLeft', 'KeyT');
 		}
 		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
