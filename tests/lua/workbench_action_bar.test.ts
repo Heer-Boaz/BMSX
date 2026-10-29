@@ -87,7 +87,7 @@ test('compact window actions reserve icon cells instead of measuring hidden text
 
 for (const variant of ['tiny', 'msx'] as const) for (const responsive of [false, true])
 	test(`intrinsic ${responsive ? 'overflow' : 'direct'} action width keeps every action reachable with cached ${variant} measurements`, () => {
-		const font = new Font({ variant }), state = createWorkbenchActionBar('scenarioLab.target', responsive);
+		const font = new Font({ variant }), state = createWorkbenchActionBar('play.title', responsive);
 		let measurements = 0;
 		const measure = (text: string) => { measurements++; return font.measure(text); };
 		const height = font.lineHeight + 4, width = measureWorkbenchActionBarMinimumWidth(state, height, measure, font);

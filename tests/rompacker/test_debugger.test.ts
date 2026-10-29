@@ -19,6 +19,14 @@ import { ALL_EXECUTION_DOMAINS_MASK } from '../../machine/ts/spec/blua32/executi
 import { buildFixtureProgram } from '../../ide/testing/fixture_media';
 import { blua32SourceRangeAtPc } from '../../toolchain/ts/rompack/blua32_symbols';
 import { buildScenarioMediaFixture, SCENARIO_FIXTURE_TEST_SOURCE_PATH as PATH } from '../helpers/scenario_media';
+import { TestTargetInspectionModel } from '../../ide/workbench/contrib/scenario_lab/target_inspection_model';
+import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
+import { layoutWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
+import { InputFocusService } from '../../ide/input/focus';
+import { PointerCaptureService } from '../../ide/input/pointer/capture';
+import { PointerHoverService } from '../../ide/input/pointer/hover';
+import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 
 async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSource = "module<entry>\nerror('game entry must not run in a unit target')") {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-test-debugger-'));
@@ -49,6 +57,71 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSour
 	};
 	return { media, program, target, result, execution, debug, advance, line };
 }
+
+test('inspection action membership follows the native entry, source stop and retained target rather than parent enablement', async t => {
+	const source = `return { kind = 'unit', tests = { probe = function()
+ test_value = 42
+ error('authored failure')
+end } }`;
+	const f = await fixture(t, source, 0), { debug } = f;
+	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
+	const parent = focus.createTarget(), calls: EditorCommandId[] = [];
+	let admitted = true;
+	const commands: EditorCommandRunner = {
+		isEnabled: command => {
+			if (command === 'scenarioLab.details' || command === 'scenarioLab.closeTarget') return true;
+			if (!admitted) return false;
+			return command !== 'scenarioLab.stepOut' || debug.canResume(Mode.StepOut);
+		},
+		execute: command => { calls.push(command); },
+	};
+	const control = new WorkbenchActionBarControl(focus, capture, hover, commands, parent, () => parent.focus());
+	t.after(() => { control.dispose(); focus.setTarget(null); });
+	const show = (model: TestTargetInspectionModel) => {
+		layoutWorkbenchActionBar(model.actionBar, 1200, 0, 20, text => text.length * 5, null, 0);
+		control.setInput(model.actionBar, parent);
+		return model.actionBar.items.filter(item => item.visible).map(item => item.command);
+	};
+
+	f.advance();
+	const entry = debug.inspect(), entryModel = new TestTargetInspectionModel(entry);
+	assert.equal(entry.state.stop, undefined); assert.equal(entry.state.canStep, false);
+	assert.deepEqual(show(entryModel), ['scenarioLab.continue', 'scenarioLab.breakpoints', 'scenarioLab.cancel',
+		'scenarioLab.details', 'scenarioLab.closeTarget']);
+	const compiled = debug.sources.catalog.find(entry => entry.path === PATH)!;
+	assert.equal(debug.sources.setBreakpoints(compiled.source, [2])[0].status, 'bound');
+	debug.resume(Mode.Continue); f.advance(); assert.equal(debug.reason, 'breakpoint');
+	assert.equal(entry.available, false);
+	t.mock.getter(debug.source, 'canStepOut', () => false);
+	const stopped = debug.inspect(), stoppedModel = new TestTargetInspectionModel(stopped);
+	assert.ok(stopped.state.stop !== undefined); assert.equal(stopped.state.canStep, true); assert.equal(stopped.state.canStepOut, false);
+	const cycles = f.target.runtime.machine.scheduler.nowCycles;
+	assert.deepEqual(show(stoppedModel), ['scenarioLab.continue', 'scenarioLab.stepInto', 'scenarioLab.stepOver', 'scenarioLab.stepOut',
+		'scenarioLab.breakpoints', 'scenarioLab.cancel', 'scenarioLab.details', 'scenarioLab.closeTarget']);
+	const stepOut = stoppedModel.actionBar.items.find(item => item.command === 'scenarioLab.stepOut')!;
+	assert.equal(stepOut.visible, true); assert.equal(stepOut.enabled, false, 'an unavailable Step Out stays present for a source stop');
+	control.focusTarget.focus();
+	focus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	assert.equal(stoppedModel.actionBar.pressedCommand, 'scenarioLab.continue');
+	admitted = false; control.update();
+	focus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none, false, false));
+	assert.deepEqual(calls, [], 'ordinary command admission revokes an armed action without changing its membership');
+	assert.ok(stoppedModel.actionBar.items.filter(item => item.visible && item.command !== 'scenarioLab.details'
+		&& item.command !== 'scenarioLab.closeTarget').every(item => !item.enabled));
+	assert.deepEqual(stoppedModel.actionBar.menu!.visibleItems.map(item => item.type === 'command' ? item.command : undefined),
+		['scenarioLab.continue', 'scenarioLab.stepInto', 'scenarioLab.stepOver', 'scenarioLab.stepOut',
+			'scenarioLab.breakpoints', 'scenarioLab.cancel', 'scenarioLab.details', 'scenarioLab.closeTarget']);
+	assert.equal(f.target.runtime.machine.scheduler.nowCycles, cycles, 'menu and command presentation never grant the inspected target time');
+
+	debug.sources.setBreakpoints(compiled.source, []);
+	debug.resume(Mode.Continue); f.advance(); assert.equal(f.result.state, 'failed');
+	assert.equal(stopped.available, false);
+	const retained = f.execution.inspect(), retainedModel = new TestTargetInspectionModel(retained);
+	t.after(() => retained.dispose());
+	admitted = true;
+	assert.deepEqual(show(retainedModel), ['scenarioLab.details', 'scenarioLab.closeTarget']);
+	assert.ok(retainedModel.actionBar.items.every(item => !item.visible || item.enabled));
+});
 
 for (const optLevel of [0, 3] as const) {
 	test(`O${optLevel}: isolated test debugging admits before bind, steps actual phase coroutines and leaves authoring untouched`, async t => {

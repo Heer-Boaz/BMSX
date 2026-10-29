@@ -312,8 +312,6 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 	}
 
 	private updateChromeState(): void {
-		const minimize = this.options.actionBar.items.find(item => item.command === 'window.minimize');
-		if (minimize !== undefined) minimize.visible = this.options.requestMinimize !== undefined;
 		const maximize = this.options.actionBar.items.find(item => item.command === 'window.maximize');
 		if (maximize !== undefined) maximize.checked = this.model.placement === 'maximized';
 	}

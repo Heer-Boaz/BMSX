@@ -2,6 +2,9 @@ import type { TestStopInspection } from '../../../testing/stop_inspection';
 import type { TestTargetInspection } from '../../../testing/retained_inspection';
 import { createWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../../ui/property_tree';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
+import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
+import { WorkbenchMenu } from '../../ui/menu/model';
+import { SCENARIO_TARGET_ACTIONS } from './target_inspection_menu';
 
 type Load = { kind: 'stack' | 'values'; reference: string; start: number } | { kind: 'frame'; reference: string };
 export type TestInspectionElement = WorkbenchPropertyElement & { load?: Load; frame?: string };
@@ -11,7 +14,9 @@ const PAGE_SIZE = 64;
 /** Lazy projection of the same target attachment used by conversation tools. No guest reads during paint. */
 export class TestTargetInspectionModel {
 	public readonly tree = createWorkbenchPropertyTree<TestInspectionElement>();
+	public readonly actionBar: WorkbenchActionBarState;
 	public constructor(public readonly inspection: TestTargetInspection | TestStopInspection) {
+		this.actionBar = createWorkbenchActionBar(new WorkbenchMenu(SCENARIO_TARGET_ACTIONS, this), true);
 		const state = inspection.state;
 		if (state.role === 'retained-test') for (const failure of state.failures) this.append(null, `${failure.phase}: ${failure.message}`, failure.status,
 			failure.status === 'available' ? `${failure.origin}; failure cycles ${failure.cycles}. Retained at case end; cleanup may have changed shared values.` : 'No retained guest activation for this failure.',

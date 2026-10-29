@@ -24,7 +24,7 @@ import { drawWorkbenchPropertyTree } from '../../render/property_tree';
 import { WorkbenchPropertyTreePointer, WorkbenchPropertyPointerResult } from '../../ui/property_tree_pointer';
 import { navigateWorkbenchTree, setWorkbenchTreeCollapsed } from '../../ui/tree_view';
 import { scrollWorkbenchList, workbenchListContainsPosition } from '../../ui/list_view';
-import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ui/action_bar';
+import { layoutWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { renderWorkbenchActionBar } from '../../render/action_bar';
 import { handleScenarioLabKeyboardInput } from './keyboard';
@@ -40,7 +40,6 @@ export class ScenarioTargetInspection {
 	private readonly focus: InputFocusTarget;
 	private readonly pointer: WorkbenchPropertyTreePointer;
 	private readonly details: WorkbenchPropertyInspector<InspectedProperty>;
-	private readonly bar = createWorkbenchActionBar('scenarioLab.target', true);
 	private readonly actionTooltip = new WorkbenchTooltip();
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly unbindKeyboard: () => void;
@@ -71,10 +70,8 @@ export class ScenarioTargetInspection {
 		this.model = new TestTargetInspectionModel(inspection);
 		this.pointer.setInput(this.model.tree);
 		this.headerFont = undefined;
-		for (const item of this.bar.items) item.visible = item.command === 'scenarioLab.details' || item.command === 'scenarioLab.closeTarget'
-			|| inspection.state.role === 'live-test' && this.commands.isEnabled(item.command, this.parent);
 		this.unbindInspection = inspection.onDidDispose(() => this.hide());
-		this.actions.setInput(this.bar, this.focus);
+		this.actions.setInput(this.model.actionBar, this.focus);
 		this.focus.focus();
 	}
 	public hide(): void {
@@ -98,9 +95,9 @@ export class ScenarioTargetInspection {
 		if (this.headerFont !== renderFont || this.header.left !== bounds.left || this.header.top !== bounds.top || this.header.right !== bounds.right) {
 			this.headerFont = renderFont;
 			write_rect_bounds(this.header, bounds.left, bounds.top, bounds.right, top);
-			layoutWorkbenchActionBar(this.bar, bounds.right - 4, bounds.top + 2, top - 2, measureText, renderFont, bounds.left + measureText('TEST') + 12);
+			layoutWorkbenchActionBar(this.model.actionBar, bounds.right - 4, bounds.top + 2, top - 2, measureText, renderFont, bounds.left + measureText('TEST') + 12);
 			const state = this.model.inspection.state;
-			this.title = truncateMeasuredText(state.role === 'retained-test' ? 'TEST / POST-MORTEM / CASE-END HEAP' : `TEST / STOPPED / ${state.reason}`, this.bar.bounds.left - bounds.left - 8, measureTextRange);
+			this.title = truncateMeasuredText(state.role === 'retained-test' ? 'TEST / POST-MORTEM / CASE-END HEAP' : `TEST / STOPPED / ${state.reason}`, this.model.actionBar.bounds.left - bounds.left - 8, measureTextRange);
 		}
 		this.actions.update();
 		const hint = this.actions.tooltipItem;
@@ -144,7 +141,7 @@ export class ScenarioTargetInspection {
 		const header = this.header;
 		api.fill_rect(header.left, header.top, header.right, header.bottom, 0, COLOR_RESOURCE_VIEWER_BACKGROUND);
 		drawEditorText(editorViewState.font, this.title, header.left + 4, header.top + 4, 0, COLOR_RESOURCE_VIEWER_TEXT);
-		renderWorkbenchActionBar(this.bar, this.headerFont!, COLOR_RESOURCE_VIEWER_TEXT, COLOR_DESCRIPTION_TEXT);
+		renderWorkbenchActionBar(this.model!.actionBar, this.headerFont!, COLOR_RESOURCE_VIEWER_TEXT, COLOR_DESCRIPTION_TEXT);
 		drawWorkbenchPropertyTree(this.model!.tree);
 	}
 

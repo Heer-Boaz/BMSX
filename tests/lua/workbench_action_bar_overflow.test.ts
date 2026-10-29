@@ -30,7 +30,7 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import { applyViewportSize, configureFontVariant } from '../../ide/editor/ui/view/configuration';
 
 const PRIMARY = PointerButton.Primary;
-const ACTION_MENUS = ['aem.title', 'scenarioLab.target'] as const;
+const ACTION_MENUS = ['aem.title', 'play.title'] as const;
 
 for (const variant of ['tiny', 'msx'] as const) for (const domain of ['gpu', 'gte'] as const) {
 	test(`${domain} history actions stay bounded and every inspector action is reachable once in ${variant}`, () => {

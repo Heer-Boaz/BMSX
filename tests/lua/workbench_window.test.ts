@@ -45,7 +45,7 @@ function fixture() {
 	function window(name: string, left = 40, top = 40, onRetireContent?: () => void, getTitleTooltip?: () => string,
 		windowOptions: Pick<WorkbenchWindowOptions, 'focusScope' | 'requestClose' | 'requestMinimize'>
 			& Partial<Pick<WorkbenchWindowOptions, 'lifetimeOwner' | 'presentationParent' | 'contextMenu'>> = { focusScope: parent.scope },
-		actions = createWorkbenchActionBar('window.title')) {
+		actions = createWorkbenchActionBar(windowOptions.requestMinimize === undefined ? 'window.title' : 'window.minimizable.title')) {
 		const model = new WorkbenchWindowModel({ left, top, right: left + 240, bottom: top + 180 }, 120, 80);
 		model.title = name;
 		let input = false, layouts = 0, restores = 0, retires = 0, painted = 0, clicked = 0, hidden = 0;
@@ -237,6 +237,7 @@ test('minimize is admitted only by the concrete window owner and its title actio
 	const tool = f.window('TOOL', 260, 80);
 	t.after(() => { document.control.dispose(); tool.control.dispose(); f.surfaces.dispose(); });
 	document.show(true); tool.show();
+	assert.equal(tool.actions.items.some(item => item.command === 'window.minimize'), false, 'a utility title does not produce an unsupported action');
 	assert.equal(f.focus.getCommand('window.minimize', tool.control.clientFocusTarget)?.isEnabled() === true, false);
 	f.focus.executeCommand('window.minimize', tool.control.clientFocusTarget);
 	assert.equal(tool.model.minimized, false); assert.equal(requests, 0);

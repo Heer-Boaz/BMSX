@@ -194,7 +194,7 @@ export class MainWorkspace {
 		const activityWindow = new WorkbenchWindowModel(windowBounds, 0, 0);
 		activityWindow.title = 'Main Activity';
 		this.activityWindow = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, contextMenu, {
-			model: activityWindow, actionBar: createWorkbenchActionBar('window.title'), lifetimeOwner: this.surface,
+			model: activityWindow, actionBar: createWorkbenchActionBar('window.minimizable.title'), lifetimeOwner: this.surface,
 			presentationParent: this.surface, focusScope: this.scope, focusReturn: this.focusTarget, workArea: this.bounds,
 			contextMenu: WORKBENCH_MENUS['activity.window.context'], content: { draw() {} },
 			layoutContent: bounds => {

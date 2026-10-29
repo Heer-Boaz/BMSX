@@ -11,7 +11,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.target' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'window.minimizable.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -43,6 +43,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'window.status': readonly WorkbenchMenuCommandItem[];
 	readonly 'status.context': readonly WorkbenchMenuCommandItem[];
 	readonly 'window.title': readonly WorkbenchMenuCommandItem[];
+	readonly 'window.minimizable.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.reader.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'events.title': readonly WorkbenchMenuCommandItem[];
@@ -59,7 +60,6 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'menubar.view': readonly WorkbenchMenuItem[];
 	readonly 'menubar.tools': readonly WorkbenchMenuItem[];
 	readonly 'menubar.window': readonly WorkbenchMenuItem[];
-	readonly 'scenarioLab.target': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.graph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.stateGraph.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'behaviorLens.title': readonly WorkbenchMenuCommandItem[];
@@ -70,6 +70,11 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'editorTabs.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'animation.clients': readonly WorkbenchMenuCommandItem[];
 };
+
+const WINDOW_TITLE_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
+	{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
+	{ type: 'command', command: 'window.hide', icon: 'close' },
+];
 
 const WINDOW_CONTEXT_ACTIONS: readonly WorkbenchMenuItem[] = [
 	{ type: 'command', command: 'window.restore' },
@@ -86,14 +91,6 @@ const GRAPH_ZOOM_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
 	{ type: 'command', command: 'graph.zoomIn' },
 ];
 
-const TEST_DEBUG_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
-	{ type: 'command', command: 'scenarioLab.continue' },
-	{ type: 'command', command: 'scenarioLab.stepInto' },
-	{ type: 'command', command: 'scenarioLab.stepOver' },
-	{ type: 'command', command: 'scenarioLab.stepOut' },
-	{ type: 'command', command: 'scenarioLab.pause' },
-	{ type: 'command', command: 'scenarioLab.breakpoints' },
-];
 
 /** The same supported entrypoints feed Home cards and the Tools menu. */
 const CONTENT_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
@@ -268,9 +265,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'activity.context': [{ type: 'command', command: 'workspace.activity.float' }, { type: 'command', command: 'workspace.activity.hide' }],
 	'activity.window.context': [{ type: 'command', command: 'workspace.activity.dock' }, { type: 'separator' },
 		{ type: 'command', command: 'window.minimize' }, ...WINDOW_CONTEXT_ACTIONS],
-	'window.title': [{ type: 'command', command: 'window.minimize', icon: 'minimize' },
-		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
-		{ type: 'command', command: 'window.hide', icon: 'close' }],
+	'window.title': WINDOW_TITLE_ACTIONS,
+	'window.minimizable.title': [{ type: 'command', command: 'window.minimize', icon: 'minimize' }, ...WINDOW_TITLE_ACTIONS],
 	'code.context': [
 		{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' },
 		{ type: 'separator' },
@@ -510,12 +506,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'gpuDebugger' },
 		{ type: 'command', command: 'hostError' },
 	],
-	'scenarioLab.target': [
-		...TEST_DEBUG_ACTIONS,
-		{ type: 'command', command: 'scenarioLab.cancel' },
-		{ type: 'command', command: 'scenarioLab.details' },
-		{ type: 'command', command: 'scenarioLab.closeTarget' },
-	],
+
 	'scenarioLab.context': [
 		{ type: 'command', command: 'scenarioLab.runWithCompanion' },
 		{ type: 'command', command: 'scenarioLab.debugWithCompanion' },
