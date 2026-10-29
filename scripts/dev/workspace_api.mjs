@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { open, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { deleteWorkspaceRecord, publishWorkspaceRecord, WORKSPACE_SAVE_DIRECTORY } from '../../hosts/node/workspace/files.mjs';
+import { createWorkspaceDirectory, deleteWorkspaceRecord, publishWorkspaceRecord, WORKSPACE_SAVE_DIRECTORY } from '../../hosts/node/workspace/files.mjs';
 import { HttpError } from './http_security.mjs';
 import { resolveRootedPath } from './rooted_path.mjs';
 
@@ -24,6 +24,16 @@ export async function handleWorkspaceRequest(root, req, res, url) {
 			const stats = await file.stat(), contents = await file.readFile('utf8');
 			res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ path, contents, updatedAt: Math.round(stats.mtimeMs) }));
 		} finally { await file.close(); }
+		return;
+	}
+	if (req.method === 'POST') {
+		const path = await resolveRootedPath(root, url.searchParams.get('directory'), true);
+		try { await createWorkspaceDirectory(path); }
+		catch (error) {
+			if (error.code === 'EEXIST') throw new HttpError(412, 'Directory already exists.');
+			throw error;
+		}
+		res.writeHead(204).end();
 		return;
 	}
 	if (req.method === 'PUT') {
@@ -50,5 +60,5 @@ export async function handleWorkspaceRequest(root, req, res, url) {
 		res.writeHead(204).end();
 		return;
 	}
-	res.writeHead(405, { Allow: 'GET,PUT,DELETE' }).end();
+	res.writeHead(405, { Allow: 'GET,POST,PUT,DELETE' }).end();
 }

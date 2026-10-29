@@ -27,7 +27,7 @@ import { IdeMicrotaskQueue } from '../../../ide/common/microtask_queue';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import { createRuntimeSourceState, createLoadedProjectSourceCatalog } from '../../../ide/runtime/sources';
 import type { WorkspaceSourceCatalog } from '../../../ide/workspace/source_catalog';
-import { closeWorkspaceRecords, openWorkspaceRecords } from '../../../ide/workspace/records';
+import { closeWorkspaceRecords, openWorkspaceRecords, workspaceRecords } from '../../../ide/workspace/records';
 import { WorkspaceSourceRecovery } from '../../../ide/workbench/services/working_copy/source_recovery';
 import { applyAllWorkspaceSourceOverrides, discoverWorkspaceSources } from '../../../ide/workspace/workspace';
 import { PlayRuntimeSession } from '../../../ide/workbench/play_runtime';
@@ -91,7 +91,7 @@ class HeadlessStudioRuntime {
 		this.workbench = new StudioWorkbench({ runtime: this.runtime, input: this.input, audioOutput: this.audioOutput,
 			runtimeTasks: this.tasks, execution: this.execution, rewind: this.rewind, clock: this.clock,
 			microtasks: new IdeMicrotaskQueue(), logOutput: this.log, sources, models: editorTextModelService,
-			workspaceDirtyRecords,
+			workspaceDirtyRecords, workspaceFiles: workspaceRecords!,
 			gameCapture: new GameCaptureService(this.presenter, this.presentation, this.tasks, encodePngImage),
 			createTestTarget: (system, slots, model, input) => new OffscreenMachine(system, slots, model, input),
 			createPlaySession: (system, slots, model, input, program) => new PlayRuntimeSession(

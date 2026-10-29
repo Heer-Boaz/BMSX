@@ -23,6 +23,7 @@ import { pointerHover } from '../../ide/input/pointer/hover';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 
 const pointer = (x: number, y: number): PointerInputSnapshot => ({
 	viewportX: x, viewportY: y, valid: true, insideViewport: true,
@@ -37,7 +38,7 @@ function fixture(t: TestContext) {
 	const sources = createScenarioTestSourceState([]);
 	const panel = new ResourcePanelController(editor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
+		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)), new VirtualHeadlessClock());
 	t.after(() => { panel.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); pointerHover.clear(); });
 	panel.show();
 	return { panel, parts };

@@ -21,6 +21,7 @@ export class WorkerWorkspaceRecordProvider implements WorkspaceRecordProvider {
 
 	public read(path: string): Promise<WorkspaceRecord | null> { return this.request({ method: 'read', path }); }
 	public readDirectory(path: string): Promise<WorkspaceDirectoryEntry[] | null> { return this.request({ method: 'readDirectory', path }); }
+	public createDirectory(path: string): Promise<void> { return this.request({ method: 'createDirectory', path }); }
 	public write(path: string, record: WorkspaceRecord, overwrite: boolean, expectedSource?: string | null): Promise<void> {
 		return this.request({ method: 'write', path, record, overwrite, expectedSource });
 	}

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { chmod, mkdtemp, open, readFile, readdir, rm, stat, utimes, writeFile, type FileHandle } from 'node:fs/promises';
+import { chmod, mkdtemp, open, readFile, readdir, rm, stat, symlink, utimes, writeFile, type FileHandle } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -29,8 +29,50 @@ async function fixture(t: TestContext) {
 		method: 'PUT', headers: { 'Content-Type': 'application/json', ...(exclusive ? { 'If-None-Match': '*' } : {}) },
 		body: JSON.stringify({ path, contents, updatedAt }),
 	});
-	return { root, save };
+	const createDirectory = (path: string) => fetch(`${address}?directory=${encodeURIComponent(path)}`, { method: 'POST' });
+	return { root, save, createDirectory };
 }
+
+test('directory creation persists an empty namespace entry with implicit parents and an exclusive final name', async t => {
+	const { root, createDirectory } = await fixture(t), provider = new DiskWorkspaceRecordProvider(root);
+	await provider.createDirectory('cart/new/empty');
+	assert.deepEqual(await provider.readDirectory('cart/new'), [{ name: 'empty', type: 'directory' }]);
+	assert.deepEqual(await provider.readDirectory('cart/new/empty'), []);
+	assert.equal((await stat(join(root, 'cart/new/empty'))).isDirectory(), true);
+	await assert.rejects(provider.createDirectory('cart/new/empty'), { code: 'EEXIST' });
+	assert.equal((await createDirectory('cart/new/empty')).status, 412);
+	assert.equal((await createDirectory('cart/http/empty')).status, 204);
+	const reopened = new DiskWorkspaceRecordProvider(root);
+	assert.deepEqual(await reopened.readDirectory('cart/http/empty'), []);
+	assert.deepEqual((await prepareRomInputs([root], [])).resourceFiles, [], 'empty directories do not manufacture source records');
+});
+
+test('native and HTTP directory creation share final-name admission and preserve file collisions', async t => {
+	const { root, createDirectory } = await fixture(t), provider = new DiskWorkspaceRecordProvider(root);
+	const raced = await Promise.allSettled([provider.createDirectory('raced'), createDirectory('raced').then(response => {
+		if (response.status !== 204) throw new Error(`Directory was refused: ${response.status}`);
+	})]);
+	assert.deepEqual(raced.map(result => result.status).sort(), ['fulfilled', 'rejected']);
+	assert.deepEqual(await provider.readDirectory('raced'), []);
+	await writeFile(join(root, 'file.lua'), 'return true\n');
+	await assert.rejects(provider.createDirectory('file.lua'), { code: 'EEXIST' });
+	await assert.rejects(provider.createDirectory('file.lua/child'));
+	assert.equal((await createDirectory('file.lua')).status, 412);
+	assert.equal((await createDirectory('file.lua/child')).ok, false);
+	assert.equal(await readFile(join(root, 'file.lua'), 'utf8'), 'return true\n');
+});
+
+test('HTTP directory creation retains rooted path and symbolic-link admission', async t => {
+	const { root, createDirectory } = await fixture(t);
+	const outside = await mkdtemp(join(tmpdir(), 'bmsx-workspace-outside-'));
+	t.after(() => rm(outside, { recursive: true, force: true }));
+	await symlink(outside, join(root, 'external'), 'dir');
+	for (const [path, status] of [['../escape', 403], ['/absolute', 400], ['invalid\0path', 400], ['external/empty', 403], ['external', 403]] as const) {
+		assert.equal((await createDirectory(path)).status, status);
+	}
+	assert.deepEqual(await readdir(outside), []);
+	assert.deepEqual(await readdir(root), ['external']);
+});
 
 test('build capture during Save sees the previous complete file, then the newly published source and timestamp', async t => {
 	const { root, save } = await fixture(t);

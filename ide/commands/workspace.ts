@@ -10,19 +10,14 @@ import { captureEditorActionPresentation } from './actions';
 import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
-import type { EditorCommandId, EditorResourceCreationCommandId, EditorWorkspaceCommandId } from '../common/commands';
-import type { NewSourceKind } from '../workbench/contrib/resources/create/source_templates';
+import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
+import { RESOURCE_CREATION_KINDS } from '../workbench/contrib/resources/create/source_templates';
 import type { CartEditor } from '../cart_editor';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { canRunSource, showSourceRunPicker } from './run_source';
 import type { RunTargetSelection } from '../workbench/services/execution/run_target';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { inputFocus, type FocusCommandInvocation, type InputFocusTarget } from '../input/focus';
-
-const RESOURCE_CREATION_KINDS: Readonly<Record<EditorResourceCreationCommandId, NewSourceKind>> = {
-	createResource: 'empty', 'aem.create': 'aem', 'animation.create': 'animation', 'animation.createSprite': 'sprite_animation',
-	'progression.createProgram': 'progression', 'input.createBindings': 'input', 'behaviorLens.createEffect': 'action_effect',
-};
 
 export function isEditorWorkspaceCommand(command: EditorCommandId): command is EditorWorkspaceCommandId {
 	switch (command) {

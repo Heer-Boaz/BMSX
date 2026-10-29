@@ -94,6 +94,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	resourceSearch: { category: 'Go', title: 'Go to File' },
 	runtimeErrorFocus: { category: 'Go', title: 'Go to Runtime Error' },
 	createResource: { category: 'File', title: 'New Lua File' },
+	'resources.newFolder': { category: 'Files', title: 'New Folder', invocationTarget: 'control' },
+	'resources.refresh': { category: 'Files', title: 'Refresh Files', invocationTarget: 'control' },
 	'resources.import': { category: 'File', title: 'Import Files into Cartridge' },
 	'projects.createCartridge': { category: 'File', title: 'New Cartridge' },
 	findGlobal: { category: 'Search', title: 'Find in Workspace' },

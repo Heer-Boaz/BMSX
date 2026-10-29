@@ -5,6 +5,7 @@ import type { WorkspaceDirectoryEntry, WorkspaceRecord } from '../../../ide/work
 export type StudioWorkspaceOperation =
 	| { readonly method: 'read'; readonly path: string }
 	| { readonly method: 'readDirectory'; readonly path: string }
+	| { readonly method: 'createDirectory'; readonly path: string }
 	| { readonly method: 'write'; readonly path: string; readonly record: WorkspaceRecord;
 		readonly overwrite: boolean; readonly expectedSource?: string | null }
 	| { readonly method: 'delete'; readonly path: string };

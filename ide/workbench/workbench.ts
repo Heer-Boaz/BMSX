@@ -39,6 +39,8 @@ import { PlayService } from './services/play/service';
 import type { PlaySessionFactory } from './services/play/session';
 import { ScenarioRunService } from './services/testing/scenario_runs';
 import { TextFileSaveService } from './services/working_copy/text_file_save';
+import { WorkspaceDirectoryModel } from '../workspace/directory_model';
+import type { WorkspaceRecords } from '../workspace/records';
 
 export type StudioWorkbenchOptions = {
 	readonly runtime: Runtime;
@@ -53,6 +55,7 @@ export type StudioWorkbenchOptions = {
 	readonly sources: RuntimeSourceState;
 	readonly models: EditorTextModelService;
 	readonly workspaceDirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
+	readonly workspaceFiles?: WorkspaceRecords;
 	readonly gameCapture: GameImageCapture;
 	readonly createTestTarget: TestTargetFactory;
 	readonly createPlaySession: PlaySessionFactory;
@@ -80,6 +83,7 @@ export class StudioWorkbench {
 	public readonly scenarioRuns: ScenarioRunService;
 	public readonly play: PlayService;
 	public readonly textFileSaves: TextFileSaveService;
+	public readonly directories: WorkspaceDirectoryModel | undefined;
 	public readonly hotResumes: HotResumeService;
 	public readonly boots: BootService;
 	public readonly diagnostics: ResourceDiagnosticsService;
@@ -122,6 +126,7 @@ export class StudioWorkbench {
 		this.guest = new SuspendedGuestSession(runtime);
 		this.scenarioRuns = new ScenarioRunService(models, sources, workspaceDirtyRecords, runtime.model, createTestTarget);
 		this.textFileSaves = new TextFileSaveService(models, clock, sources.catalog);
+		this.directories = options.workspaceFiles === undefined ? undefined : new WorkspaceDirectoryModel(options.workspaceFiles, sources.catalog);
 		this.hotResumes = new HotResumeService(models, sources, this.guest, this.fault, this.debugger,
 			input, runtime, runtimeTasks, execution, workspaceDirtyRecords);
 		this.hotResumes.onDidApply(() => { this.events.beginTimeline(); this.gte.didInstall(); this.gpu.didInstall(); });
@@ -210,10 +215,14 @@ export class StudioWorkbench {
 
 
 	public shutdown(): Promise<void> {
-		if (this.shutdownOperation === undefined) this.shutdownOperation = this.close();
-		return this.shutdownOperation;
+		if (this.shutdownOperation !== undefined) return this.shutdownOperation;
+		const completion = Promise.withResolvers<void>();
+		this.shutdownOperation = completion.promise;
+		void this.close().then(completion.resolve, completion.reject);
+		return completion.promise;
 	}
 	private async close(): Promise<void> {
+		const directoriesDrained = this.directories?.shutdown();
 		this.transport.retire();
 		this.runTargets.select(undefined);
 		this.unbindRunTargetAudio();
@@ -227,6 +236,7 @@ export class StudioWorkbench {
 		const executionDrained = this.hotResumes.shutdown(), bootsDrained = this.boots.shutdown();
 		discardRuntimeDebuggerPlans(this.debugger);
 		await this.textFileSaves.shutdown();
+		await directoriesDrained;
 		await executionDrained; await bootsDrained; await evaluationDrained; await actorsDrained; await playDrained;
 		this.runtime.onStateRestored = undefined;
 		this.runtime.onStateReset = undefined;

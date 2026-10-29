@@ -12,6 +12,7 @@ export type ResourceFilesRootReference = {
 export type ResourceFilesContainerReference =
 	| { readonly kind: 'root'; readonly root: ResourceFilesRootReference }
 	| { readonly kind: 'directory'; readonly root: ResourceFilesRootReference; readonly path: string }
+	| { readonly kind: 'physicalFile'; readonly root: ResourceFilesRootReference; readonly path: string }
 	| { readonly kind: 'file'; readonly resource: ResourceIdentity };
 
 export type ResourceFilesNodeReference = ResourceFilesContainerReference

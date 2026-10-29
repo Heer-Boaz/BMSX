@@ -93,6 +93,7 @@ import { BehaviorLensInputSerializer } from './workbench/contrib/behavior_lens/e
 import { CallHierarchyPane } from './workbench/contrib/call_hierarchy/editor_pane';
 import { WorkspaceSearchPane, measureWorkspaceSearchInput } from './workbench/contrib/workspace_search/editor_pane';
 import { SceneEditorInputSerializer } from './workbench/contrib/scene_editor/editor_serializer';
+import type { WorkspaceDirectoryModel } from './workspace/directory_model';
 import { ScenarioLabInputSerializer } from './workbench/contrib/scenario_lab/editor_serializer';
 import { ResourceViewerInputSerializer } from './workbench/contrib/resources/editor_serializer';
 import { ContextMenuController } from './workbench/services/context_menu/controller';
@@ -199,6 +200,7 @@ const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
 export type CartEditor = TextInputHost & {
+	readonly directories: WorkspaceDirectoryModel | undefined;
 	readonly events: RuntimeEventHistory;
 	readonly gte: RuntimeGteHistory;
 	readonly gpu: RuntimeGpuHistory;
@@ -276,6 +278,7 @@ export type CartEditor = TextInputHost & {
 };
 
 export class RuntimeCartEditor implements CartEditor {
+	public get directories(): WorkspaceDirectoryModel | undefined { return this.workbench.directories; }
 	public readonly play: PlayController;
 	public readonly terminal: BiosTerminal;
 	public readonly gamePanel: GamePanel;
@@ -1113,7 +1116,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const resourcePanel = new ResourcePanelController(this, this.sources.catalog, {
 			resourceVertical: new Scrollbar('vertical'),
 			resourceHorizontal: new Scrollbar('horizontal'),
-		}, resourcePanelWidthRatio, content);
+		}, resourcePanelWidthRatio, content, this.clock);
 		if (!this.isAvailable) {
 			configureFontVariant(editorViewState.fontVariant);
 			resourcePanel.setFontMetrics(editorViewState.font);

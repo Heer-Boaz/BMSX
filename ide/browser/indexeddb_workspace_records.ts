@@ -13,14 +13,14 @@ function workspaceStorageError(cause: DOMException): Error {
 		: `Browser storage failed (${cause.name}): ${cause.message}`, { cause });
 }
 
-/** File admission and its parent directories share the content write's transaction. */
-function admitFile(entries: IDBObjectStore, path: string, overwrite: boolean, admitted: () => void, abort: (error: Error) => void): void {
+/** Namespace admission and its parent directories share the owning write transaction. */
+function admitEntry(entries: IDBObjectStore, path: string, type: Entry['type'], overwrite: boolean, admitted: () => void, abort: (error: Error) => void): void {
 	const destination = entries.get(path);
 	destination.onsuccess = () => {
 		const existing: Entry | undefined = destination.result;
 		if (existing !== undefined) {
-			if (existing.type === 'directory') { abort(new Error(`Is a directory: ${path}`)); return; }
-			if (!overwrite) { abort(new Error(`File already exists: ${path}`)); return; }
+			if (type === 'file' && existing.type === 'directory') { abort(new Error(`Is a directory: ${path}`)); return; }
+			if (!overwrite) { abort(new Error(`${type === 'directory' ? 'Directory' : 'File'} already exists: ${path}`)); return; }
 			// Existing files already own their namespace: ordinary Save does not re-walk the parents.
 			admitted();
 			return;
@@ -30,7 +30,7 @@ function admitFile(entries: IDBObjectStore, path: string, overwrite: boolean, ad
 			const slash = path.indexOf('/', offset);
 			const parent = offset === 0 ? '' : path.slice(0, offset - 1);
 			if (slash === -1) {
-				entries.add({ path, name: path.slice(offset), parent, type: 'file' } satisfies Entry);
+				entries.add({ path, name: path.slice(offset), parent, type } satisfies Entry);
 				admitted();
 				return;
 			}
@@ -73,7 +73,7 @@ export class IndexedDbWorkspaceRecordProvider implements WorkspaceRecordProvider
 				scan.onsuccess = () => {
 					const cursor = scan.result;
 					if (cursor === null) return;
-					admitFile(entries, cursor.key as string, false, () => cursor.continue(), error => {
+					admitEntry(entries, cursor.key as string, 'file', false, () => cursor.continue(), error => {
 						failure = error; transaction.abort();
 					});
 				};
@@ -114,9 +114,16 @@ export class IndexedDbWorkspaceRecordProvider implements WorkspaceRecordProvider
 		});
 	}
 
+	public async createDirectory(path: string): Promise<void> {
+		await this.transaction('readwrite', (_records, entries, abort) => {
+			admitEntry(entries, path, 'directory', false, () => {}, abort);
+			return () => undefined;
+		});
+	}
+
 	public async write(path: string, record: WorkspaceRecord, overwrite: boolean, expectedSource?: string | null): Promise<void> {
 		await this.transaction('readwrite', (records, entries, abort) => {
-			const publish = () => admitFile(entries, path, overwrite, () => records.put(record, path), abort);
+			const publish = () => admitEntry(entries, path, 'file', overwrite, () => records.put(record, path), abort);
 			if (expectedSource === undefined) publish();
 			else {
 				const read = records.get(path);

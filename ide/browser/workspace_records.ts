@@ -25,6 +25,12 @@ export class HttpWorkspaceRecordProvider implements WorkspaceRecordProvider {
 		return response.json();
 	}
 
+	public async createDirectory(relativePath: string): Promise<void> {
+		const response = await this.session.request(`${WORKSPACE_FILE_ENDPOINT}?directory=${encodeURIComponent(relativePath)}`, { method: 'POST' });
+		if (response.status === 412) throw new Error(`Directory already exists: ${relativePath}`);
+		if (!response.ok) throw new Error(`[WorkspaceStorage] Failed to create directory '${relativePath}': ${await response.text()}`);
+	}
+
 	public async write(relativePath: string, record: WorkspaceRecord, overwrite: boolean, expectedSource?: string | null): Promise<void> {
 		const response = await this.session.request(WORKSPACE_FILE_ENDPOINT, {
 			method: 'PUT',

@@ -40,7 +40,7 @@ import {
 	applyAllWorkspaceSourceOverrides,
 	discoverWorkspaceSources,
 } from '../workspace/workspace';
-import type { WorkspaceRecord } from '../workspace/records';
+import { workspaceRecords, type WorkspaceRecord } from '../workspace/records';
 import {
 	workspaceDirtyRecords,
 	workspaceState,
@@ -124,6 +124,7 @@ export async function initializeIdeFeatures(
 		createPlaySession,
 		connectAssistant,
 		observeConversation,
+		editorAvailable ? workspaceRecords! : undefined,
 	);
 	if (!editorAvailable) {
 		disposeShortcutHandlers(state);

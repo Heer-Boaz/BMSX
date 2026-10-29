@@ -19,6 +19,7 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import type { EditorInputSerializers } from '../../ide/workbench/services/editor/editor_serialization';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
 import { BehaviorLensInputSerializer } from '../../ide/workbench/contrib/behavior_lens/editor_serializer';
 import { SceneEditorInputSerializer } from '../../ide/workbench/contrib/scene_editor/editor_serializer';
@@ -100,7 +101,7 @@ function fixture(t: TestContext) {
 	const resourcePanel = new ResourcePanelController({ editorParts, isActive: true } as CartEditor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3,
 		new ProjectContentIndex(editorTextModelService, sources.catalog,
-			new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), scene.documents));
+			new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), scene.documents), new VirtualHeadlessClock());
 	resourcePanel.setFontMetrics(editorViewState.font);
 	t.after(() => { resourcePanel.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' })!;

@@ -97,6 +97,7 @@ export type EditorCommandId =
 	| 'gpu.follow' | 'gpu.view' | 'gpu.details' | 'gpu.goToFrame' | 'gpu.filter' | 'gpu.clear'
 	| 'gte.follow' | 'gte.view' | 'gte.details' | 'gte.source' | 'gte.goToFrame' | 'gte.filter' | 'gte.clear'
 	| 'resources.import'
+	| 'resources.newFolder' | 'resources.refresh'
 	| 'resources.open' | 'resources.openToSide' | 'resources.source' | 'resources.sourceToSide' | 'resources.disclosure' | 'resources.editInMain'
 	| 'workspace.focusPrimary' | 'workspace.clearPrimary'
 	| 'workspace.hierarchy.focus' | 'workspace.details.focus' | 'workspace.hierarchy.toggle' | 'workspace.details.toggle'

@@ -22,13 +22,29 @@ test('browser file provider coalesces session admission and keeps its capability
 	});
 	const provider = new HttpWorkspaceRecordProvider();
 	const writes = [provider.write('source.lua', { contents: 'return 1', updatedAt: 1 }, true),
-		provider.read('missing.lua'), provider.readDirectory('cart'), provider.delete('old.lua')];
+		provider.read('missing.lua'), provider.readDirectory('cart'), provider.delete('old.lua'), provider.createDirectory('cart/empty')];
 	assert.equal(admissions, 1);
 	assert.equal(requests.length, 0);
 	release();
-	assert.deepEqual(await Promise.all(writes), [undefined, null, [], undefined]);
+	assert.deepEqual(await Promise.all(writes), [undefined, null, [], undefined, undefined]);
 	assert.equal(admissions, 1);
-	assert.equal(requests.length, 4);
+	assert.equal(requests.length, 5);
+});
+
+test('HTTP directory creation sends one admitted exclusive operation and reports provider failure without replay', async t => {
+	const requests: { url: string; method: string | undefined }[] = [];
+	let status = 204;
+	t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
+		if (url === '/__bmsx__/session') return Response.json({ workspaceToken: 'directory-admission' });
+		requests.push({ url, method: init.method });
+		return new Response(status === 204 ? null : 'directory refused', { status });
+	});
+	const provider = new HttpWorkspaceRecordProvider();
+	await provider.createDirectory('cart/empty folder');
+	assert.deepEqual(requests, [{ url: '/__bmsx__/lua?directory=cart%2Fempty%20folder', method: 'POST' }]);
+	status = 412; await assert.rejects(provider.createDirectory('cart/empty folder'), /Directory already exists/);
+	status = 500; await assert.rejects(provider.createDirectory('cart/other'), /Failed to create directory.*directory refused/);
+	assert.equal(requests.length, 3, 'neither a collision nor failed provider operation is replayed');
 });
 
 test('server restart retires a capability once; concurrent unauthorized requests join one new admission', async t => {

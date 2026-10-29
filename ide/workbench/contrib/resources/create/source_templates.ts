@@ -1,8 +1,31 @@
 import { quoteLuaString } from '../../../../../toolchain/ts/lua/syntax/string_literal';
 import { DEFAULT_NEW_LUA_RESOURCE_CONTENT } from '../../../../common/constants';
+import type { EditorResourceCreationCommandId } from '../../../../common/commands';
+import { workspaceSourceDirectoryAccepts, type WorkspaceSourceFileKind } from '../../../../workspace/source_files';
 
 export type NewLuaSourceKind = 'animation' | 'sprite_animation' | 'empty' | 'action_effect' | 'progression' | 'input';
 export type NewSourceKind = NewLuaSourceKind | 'aem';
+
+const SOURCE_FILE_KINDS: Readonly<Record<NewSourceKind, WorkspaceSourceFileKind>> = {
+	empty: 'lua', animation: 'lua', sprite_animation: 'lua', action_effect: 'lua', progression: 'lua', input: 'lua', aem: 'aem',
+};
+
+export function canCreateNewSourceInDirectory(kind: NewSourceKind, directory: string): boolean {
+	return workspaceSourceDirectoryAccepts(directory, SOURCE_FILE_KINDS[kind]);
+}
+
+/** A valid child-path proposal relative to the chosen source directory, not a guessed admission probe. */
+export function newSourceInitialName(kind: NewSourceKind, directory: string): string {
+	switch (SOURCE_FILE_KINDS[kind]) {
+		case 'lua': return '';
+		case 'aem': return directory.length === 0 ? 'res/data/events.aem.yaml' : directory === 'res' ? 'data/events.aem.yaml' : 'events.aem.yaml';
+	}
+}
+
+export const RESOURCE_CREATION_KINDS: Readonly<Record<EditorResourceCreationCommandId, NewSourceKind>> = {
+	createResource: 'empty', 'aem.create': 'aem', 'animation.create': 'animation', 'animation.createSprite': 'sprite_animation',
+	'progression.createProgram': 'progression', 'input.createBindings': 'input', 'behaviorLens.createEffect': 'action_effect',
+};
 
 export const NEW_AEM_SOURCE = { yaml: 'events: {}\n', json: '{"events": {}}\n' } as const;
 

@@ -16,6 +16,7 @@ import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 
 // The contract under test is the font-dependent measurement cache, not UI wording or pixel placement.
 function fixture(t: TestContext, variant: FontVariant) {
@@ -25,7 +26,7 @@ function fixture(t: TestContext, variant: FontVariant) {
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(path, 1), createScenarioTestSourceRecord('short.lua', 1)]);
 	const parts = createTestEditorParts(t), editor = { editorParts: parts, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
+		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)), new VirtualHeadlessClock());
 	panel.setFontMetrics(editorViewState.font); panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }); panel.show();
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'file' && node.element.resource.path === path); assert.ok(index >= 0);
 	const publish = (next: FontVariant) => {

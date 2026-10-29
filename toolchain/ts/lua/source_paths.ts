@@ -9,11 +9,18 @@ export const LUA_SOURCE_EXCLUDED_DIRECTORIES: ReadonlySet<string> = new Set([
 	'.bmsx', '.git', '_ignore', 'node_modules', 'test',
 ]);
 
+/** Canonical project-relative file or directory membership, shared by source discovery and creation. */
+export function isProjectSourcePath(path: string): boolean {
+	let start = 0;
+	for (;;) {
+		const end = path.indexOf('/', start);
+		if (LUA_SOURCE_EXCLUDED_DIRECTORIES.has(end === -1 ? path.slice(start) : path.slice(start, end))) return false;
+		if (end === -1) return true;
+		start = end + 1;
+	}
+}
+
 export function isRuntimeLuaSourcePath(path: string): boolean {
 	const normalized = path.replace(/\\/g, '/');
-	if (!normalized.endsWith('.lua')) return false;
-	for (const segment of normalized.split('/')) {
-		if (LUA_SOURCE_EXCLUDED_DIRECTORIES.has(segment)) return false;
-	}
-	return true;
+	return normalized.endsWith('.lua') && isProjectSourcePath(normalized);
 }

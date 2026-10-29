@@ -27,6 +27,7 @@ import { testStudioBuildChooser } from './studio_build_chooser';
 import { testStudioRomCommands } from './studio_rom_commands';
 import { testStudioBatchClose } from './studio_batch_close';
 import { testStudioSaveAll } from './studio_save_all';
+import { testStudioFilesOperations } from './studio_files_operations';
 
 const SOURCE_READING_FIXTURE = `local function read_authoring_source()
     local readable_value = alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_kappa_lambda_mu_nu_xi_omicron_pi_rho_sigma_tau_upsilon_phi_chi_psi_omega
@@ -46,6 +47,7 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 	await testProjectBrowserSession(test);
 	await testStudioBatchClose(test);
 	await testStudioSaveAll(test);
+	await testStudioFilesOperations(test);
 	return { hostFrames: test.observations.hostFrames, cycles: test.cycles(), mainAuthoring: 'pass', filesBrowserRecovery: 'hybrid-pass' };
 }
 

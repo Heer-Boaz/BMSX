@@ -3,6 +3,8 @@ export interface WorkspaceRecordProvider {
 	readonly persistence: 'workspace' | 'browser';
 	read(relativePath: string): Promise<WorkspaceRecord | null>;
 	readDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[] | null>;
+	/** Create an exclusive final directory, admitting missing parent directories. */
+	createDirectory(relativePath: string): Promise<void>;
 	/** overwrite=false is an exclusive create in the owning store, not a read-before-write check. */
 	write(relativePath: string, record: WorkspaceRecord, overwrite: boolean, expectedSource?: string | null): Promise<void>;
 	delete(relativePath: string): Promise<void>;

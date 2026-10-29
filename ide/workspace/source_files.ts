@@ -1,14 +1,22 @@
-import { LUA_SOURCE_EXCLUDED_DIRECTORIES, isRuntimeLuaSourcePath } from '../../toolchain/ts/lua/source_paths';
+import { LUA_SOURCE_EXCLUDED_DIRECTORIES, isProjectSourcePath, isRuntimeLuaSourcePath } from '../../toolchain/ts/lua/source_paths';
 import type { WorkspaceRecordProvider } from './record_provider';
 import { joinWorkspacePaths, stripProjectRootPrefix } from './path';
 import { structuredTextAssetFromPath, type StructuredTextAsset } from '../../toolchain/ts/rompack/assets';
 
+export type WorkspaceSourceFileKind = 'lua' | 'aem';
+
+/** Whether a directory can contain any admitted child of this source kind. */
+export function workspaceSourceDirectoryAccepts(directory: string, kind: WorkspaceSourceFileKind): boolean {
+	if (!isProjectSourcePath(directory)) return false;
+	switch (kind) {
+		case 'lua': return true;
+		case 'aem': return directory.length === 0 || directory === 'res' || directory.startsWith('res/');
+	}
+}
+
 /** Editable asset admission is identical for new files and workspace reopening. */
 export function workspaceTextAssetFromPath(path: string): Extract<StructuredTextAsset, { type: 'aem' | 'data' }> | undefined {
-	if (!path.startsWith('res/')) return;
-	for (const segment of path.split('/')) {
-		if (LUA_SOURCE_EXCLUDED_DIRECTORIES.has(segment)) return;
-	}
+	if (!path.startsWith('res/') || !isProjectSourcePath(path)) return;
 	const asset = structuredTextAssetFromPath(path);
 	if (asset?.type === 'aem' || asset?.type === 'data' && asset.format === 'yaml') return asset;
 }

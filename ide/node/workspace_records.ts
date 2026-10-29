@@ -1,6 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { deleteWorkspaceRecord, publishWorkspaceRecord, WORKSPACE_SAVE_DIRECTORY } from '../../hosts/node/workspace/files.mjs';
+import { createWorkspaceDirectory, deleteWorkspaceRecord, publishWorkspaceRecord, WORKSPACE_SAVE_DIRECTORY } from '../../hosts/node/workspace/files.mjs';
 import type { WorkspaceDirectoryEntry, WorkspaceRecord, WorkspaceRecordProvider } from '../workspace/record_provider';
 
 /** The root is the directory against which packaged source paths are resolved. */
@@ -33,6 +33,10 @@ export class DiskWorkspaceRecordProvider implements WorkspaceRecordProvider {
 			if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
 			throw error;
 		}
+	}
+
+	public createDirectory(relativePath: string): Promise<void> {
+		return createWorkspaceDirectory(path.resolve(this.root, relativePath));
 	}
 
 	public async write(relativePath: string, record: WorkspaceRecord, overwrite: boolean, expectedSource?: string | null): Promise<void> {

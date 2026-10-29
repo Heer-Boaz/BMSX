@@ -30,6 +30,8 @@ export type RuntimeResource = ResourceIdentity & {
 
 export type TextResourceCreationRequest = {
 	contextId: string;
+	/** Captured project-relative parent; user input remains relative to this directory. */
+	directory?: string;
 	relativePath: string;
 	contents: string;
 };

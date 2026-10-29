@@ -33,16 +33,22 @@ export class ResourcePanelContextMenu {
 			&& editor.resourceEditors.hasEditor(resource, WORKBENCH_TEXT_EDITOR_ID);
 		const sourceDestination = hasSource ? editor.editorParts.editorDestination(invoking, { resource: resource!, editorId: WORKBENCH_TEXT_EDITOR_ID }) : undefined;
 		const sideCurrent = (): boolean => invoking.openingAdmitted && editor.editorParts.partForGroup(invoking) === invokingPart;
+		const createSource = panel.captureSourceCreation('empty', node), createFolder = panel.captureNewFolder(node), refresh = panel.captureRefresh(node);
 		const current = (): boolean => panel.isVisible()
 			&& panel.files.revision === revision && origin.scope.contextGeneration === context
 			&& (element.kind === 'definition' ? content.isCurrent(element.content)
 				: resource !== undefined ? catalog.resolveResource(resource) === resource : catalog.contexts.has(element.contextId));
-		const base = WORKBENCH_MENUS[resource === undefined ? 'resources.disclosure.context' : hasSource ? 'resources.open.context' : 'resources.resource.context'];
+		const base = element.kind === 'physicalFile' || element.kind === 'status' || resource === undefined && !node.expandable ? []
+			: WORKBENCH_MENUS[resource === undefined ? 'resources.disclosure.context' : hasSource ? 'resources.open.context' : 'resources.resource.context'];
 		const opening = element.kind === 'definition' && element.content.kind === 'scene'
 			? [...base, { type: 'command' as const, command: 'resources.editInMain' as const }] : base;
-		const items = resource !== undefined && node.expandable ? [...opening, ...WORKBENCH_MENUS['resources.disclosure.context']] : opening;
+		const disclosure = resource !== undefined && node.expandable ? [...opening, ...WORKBENCH_MENUS['resources.disclosure.context']] : opening;
+		const items = createFolder === undefined ? disclosure
+			: [...WORKBENCH_MENUS['resources.directory.context'], ...(disclosure.length === 0 ? [] : [{ type: 'separator' as const }, ...disclosure])];
 		editor.contextMenu.show(x, y, items, {
-			isEnabled: command => current() && (command === 'resources.open' ? resource !== undefined
+			isEnabled: command => current() && (command === 'createResource' ? createSource?.isEnabled() === true
+				: command === 'resources.newFolder' ? createFolder?.isEnabled() === true : command === 'resources.refresh' ? refresh?.isEnabled() === true
+				: command === 'resources.open' ? resource !== undefined
 				: command === 'resources.editInMain' ? element.kind === 'definition' && element.content.kind === 'scene'
 				: command === 'resources.openToSide' ? resource !== undefined && sideCurrent()
 				: command === 'resources.source' ? hasSource : command === 'resources.sourceToSide' ? hasSource && sideCurrent()
@@ -52,6 +58,9 @@ export class ResourcePanelContextMenu {
 				// A newer foreground interaction wins; it never supplies this action's destination.
 				if (!origin.hasFocus || !current()) return;
 				switch (command) {
+					case 'createResource': createSource?.run(); break;
+					case 'resources.newFolder': createFolder?.run(); break;
+					case 'resources.refresh': refresh?.run(); break;
 					case 'resources.editInMain': {
 						if (element.kind === 'definition' && element.content.kind === 'scene') void editProjectContentInMain(editor, content, element.content, origin);
 						break;

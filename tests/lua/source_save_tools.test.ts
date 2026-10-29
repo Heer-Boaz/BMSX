@@ -76,6 +76,7 @@ test('an accepted tool Save survives retirement and later typing; newer prompts 
 	const f = await fixture(t), write = Promise.withResolvers<void>();
 	let delayed = false;
 	const provider: WorkspaceRecordProvider = { persistence: 'workspace', async read() { return null; }, async readDirectory() { return []; }, async delete() {},
+		async createDirectory() { throw new Error('This fixture admits source Saves only.'); },
 		async write() { if (delayed) await write.promise; } };
 	await openWorkspaceRecords(provider);
 	delayed = true;
@@ -135,6 +136,7 @@ test('project write failure and AEM build failure remain distinct textual wire o
 	await openWorkspaceRecords({
 		persistence: 'workspace',
 		async read() { return null; }, async readDirectory() { return []; }, async delete() {},
+		async createDirectory() { throw new Error('This fixture admits source Saves only.'); },
 		async write(path, record) {
 			if (rejectWrite) throw new Error('provider refused write');
 			persisted.set(path, record.contents);
@@ -175,6 +177,7 @@ test('late Save completion cannot replace the acknowledgement of a newer accepte
 	await openWorkspaceRecords({
 		persistence: 'workspace',
 		async read() { return null; }, async readDirectory() { return []; }, async delete() {},
+		async createDirectory() { throw new Error('This fixture admits source Saves only.'); },
 		async write() { if (delayed) await new Promise<void>(resolve => gates.push(resolve)); },
 	});
 	delayed = true;

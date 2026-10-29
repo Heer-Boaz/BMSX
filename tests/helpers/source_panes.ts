@@ -20,9 +20,11 @@ import { parseLuaChunk } from '../lua/cpu_test_harness';
 import { linkTestSystemBlua32 } from './blua32';
 import { createHostFrameFixture } from './host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from './runtime_sources';
+import type { WorkspaceRecords } from '../../ide/workspace/records';
 
 /** Two real Source panes share one real workbench's services, never a substituted editor facade. */
-export function createActualSourcePanes(t: TestContext, sameModel = false, additionalSources: readonly (readonly [string, string])[] = [], createGraphLayoutEngine?: GraphLayoutEngineFactory) {
+export function createActualSourcePanes(t: TestContext, sameModel = false, additionalSources: readonly (readonly [string, string])[] = [],
+	createGraphLayoutEngine?: GraphLayoutEngineFactory, workspaceFiles?: WorkspaceRecords) {
 	const source = 'local alpha = 1\nreturn alpha\n', otherSource = 'local beta = 2\nreturn beta\n';
 	const image = linkTestSystemBlua32(compileLuaChunkToProgram(parseLuaChunk(source, 'first.lua'), [],
 		{ entrySource: source, programDomain: 'system', optLevel: 0 }));
@@ -42,7 +44,8 @@ export function createActualSourcePanes(t: TestContext, sameModel = false, addit
 	const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: externalWork }, externalWork,
 		{ measureDisplay: () => ({ left: 0, top: 0, width: editorViewState.viewportWidth, height: editorViewState.viewportHeight }) },
 		host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, clipboard,
-		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), createGraphLayoutEngine ?? externalWork, externalWork, externalWork);
+		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 800, height: 320 }, sources, new Map(), createGraphLayoutEngine ?? externalWork, externalWork, externalWork,
+		undefined, undefined, workspaceFiles);
 	const editor = ide.editor;
 	const firstBounds = { left: 0, top: 32, right: 384, bottom: 290 };
 	const secondBounds = { left: 400, top: 32, right: 800, bottom: 290 };

@@ -1,6 +1,6 @@
 import type { HostClock } from '../../hosts/common/clock';
 import type { KeyValueStorage } from './key_value_storage';
-import type { WorkspaceRecord, WorkspaceRecordProvider } from './record_provider';
+import type { WorkspaceDirectoryEntry, WorkspaceRecord, WorkspaceRecordProvider } from './record_provider';
 export type { WorkspaceRecord } from './record_provider';
 
 export const WORKSPACE_STORAGE_PREFIX = 'bmsx.workspace.records';
@@ -13,12 +13,31 @@ let lastWorkspaceRecordTimestamp = 0;
 /** Acknowledgement of a completed canonical write, never of a recovery checkpoint. */
 export type WorkspaceRecordPersistence = { readonly status: 'workspace' | 'browser' };
 
+export type WorkspaceFileChange = { readonly path: string; readonly kind: 'fileWritten' | 'fileDeleted' | 'directoryCreated' };
+
 /** One workspace's file operations and lifetime. Recovery and network admission are separate owners. */
 export class WorkspaceRecords {
 	private readonly operations = new Map<string, Promise<void>>();
+	private readonly changeListeners = new Set<(change: WorkspaceFileChange) => void>();
 	private closing = false;
 
 	public constructor(public readonly provider: WorkspaceRecordProvider) {}
+	public get acceptingOperations(): boolean { return !this.closing; }
+	public onDidChange(listener: (change: WorkspaceFileChange) => void): () => void {
+		this.changeListeners.add(listener);
+		return () => this.changeListeners.delete(listener);
+	}
+	private publish(change: WorkspaceFileChange): void { for (const listener of this.changeListeners) listener(change); }
+
+	public readDirectory(relativePath: string): Promise<WorkspaceDirectoryEntry[] | null> {
+		return this.enqueue(relativePath, () => this.provider.readDirectory(relativePath));
+	}
+	public createDirectory(relativePath: string): Promise<void> {
+		return this.enqueue(relativePath, async () => {
+			await this.provider.createDirectory(relativePath);
+			this.publish({ path: relativePath, kind: 'directoryCreated' });
+		});
+	}
 
 	public read(relativePath: string): Promise<WorkspaceRecord | null> {
 		return this.enqueue(relativePath, async () => {
@@ -32,24 +51,30 @@ export class WorkspaceRecords {
 	public write(relativePath: string, record: WorkspaceRecord, overwrite = true, expectedSource?: string | null): Promise<WorkspaceRecordPersistence> {
 		return this.enqueue(relativePath, async () => {
 			await this.provider.write(relativePath, record, overwrite, expectedSource);
+			this.publish({ path: relativePath, kind: 'fileWritten' });
 			return { status: this.provider.persistence };
 		});
 	}
 
 	public delete(relativePath: string): Promise<void> {
-		return this.enqueue(relativePath, () => this.provider.delete(relativePath));
+		return this.enqueue(relativePath, async () => {
+			await this.provider.delete(relativePath);
+			this.publish({ path: relativePath, kind: 'fileDeleted' });
+		});
 	}
 
 	/** Stop admission, then join accepted operations before replacing the workspace. */
 	public async close(): Promise<void> {
 		this.closing = true;
 		await Promise.all(this.operations.values());
+		this.changeListeners.clear();
 	}
 
 	private enqueue<T>(relativePath: string, operation: () => Promise<T>): Promise<T> {
 		if (this.closing) throw new Error('Cannot access files after workspace shutdown has started.');
 		const previous = this.operations.get(relativePath);
-		const result = previous ? previous.then(operation) : operation();
+		// Admission precedes provider callbacks, including reentrant workspace shutdown.
+		const result = Promise.resolve(previous).then(operation);
 		// Failure belongs to the requesting operation, not to subsequent operations on this path.
 		const tail = result.then(() => undefined, () => undefined);
 		this.operations.set(relativePath, tail);

@@ -8,7 +8,7 @@ import { TextEditorInput } from '../../ide/workbench/common/editor_input';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { inputFocus } from '../../ide/input/focus';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
-import type { WorkspaceRecord, WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
+import type { WorkspaceRecord } from '../../ide/workspace/record_provider';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
@@ -16,18 +16,15 @@ import { selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavi
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createScenarioTestSourceRecord } from '../helpers/scenario_sources';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 /** Only the filesystem is controlled; close, prompt, working copies and Save are the real workbench owners. */
-class CloseFiles implements WorkspaceRecordProvider {
-	public readonly persistence = 'workspace';
-	public readonly records = new Map<string, WorkspaceRecord>();
+class CloseFiles extends MemoryWorkspaceFiles {
+	public constructor() { super('workspace'); }
 	public readonly writes: { path: string; record: WorkspaceRecord; complete(): void }[] = [];
 	public delayed = false;
 	public failure: Error | undefined;
-	public async read(path: string): Promise<WorkspaceRecord | null> { return this.records.get(path) ?? null; }
-	public async readDirectory() { return []; }
-	public async delete(path: string): Promise<void> { this.records.delete(path); }
-	public async write(path: string, record: WorkspaceRecord): Promise<void> {
+	public override async write(path: string, record: WorkspaceRecord): Promise<void> {
 		if (this.failure !== undefined) throw this.failure;
 		if (this.delayed) await new Promise<void>(resolve => this.writes.push({ path, record, complete: resolve }));
 		this.records.set(path, record);

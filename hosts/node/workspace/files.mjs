@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { link, mkdir, open, rename, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 export const WORKSPACE_SAVE_DIRECTORY = '.bmsx/saves';
 const publications = new Map();
@@ -22,6 +22,13 @@ export function publishWorkspaceRecord(destination, stagingDirectory, record, ov
 
 export function deleteWorkspaceRecord(destination) {
 	return enqueuePublication(destination, () => rm(destination, { force: true }));
+}
+
+export function createWorkspaceDirectory(destination) {
+	return enqueuePublication(destination, async () => {
+		await mkdir(dirname(destination), { recursive: true });
+		await mkdir(destination);
+	});
 }
 
 /** Publish complete source bytes and their timestamp together, outside the ROM input set until commit. */

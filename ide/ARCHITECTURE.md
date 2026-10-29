@@ -178,6 +178,16 @@ source and semantic-project lifetimes; canonical working copies map occurrence
 ranges. The file tree owns disclosure and presentation, while contribution
 controllers own exact-subject editor lookup and opening. Browsing neither
 executes Lua nor creates a second source or asset database.
+`workspace/directory_model.ts` owns lazy project-directory observations over one
+admitted `WorkspaceRecords` lifetime; reserved Studio metadata stays outside that
+project-content namespace. Acknowledged membership remains separate
+from pending/error query state. Files overlays source semantics on that inventory;
+raw files, empty directories and virtual/generated sources retain distinct
+representations. Showing, expanding, restoring or explicitly refreshing a
+directory admits IO; layout and painting consume retained state. Folder and
+source creation capture the actual directory address independently of document
+focus. Storage acknowledges exclusive creation before namespace publication;
+retiring presentation does not cancel accepted file operations.
 Files gestures retain prospective resource/declaration openings independently of
 retained editor transfers. The shared drop target projects placement; Files owns
 source admission and contribution resolution, and editor parts own new receiver

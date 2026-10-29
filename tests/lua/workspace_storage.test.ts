@@ -480,7 +480,7 @@ function editorStub(
 	const resourcePanel = new ResourcePanelController(editor as CartEditor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3,
 		new ProjectContentIndex(editorTextModelService, sources.catalog,
-			new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
+			new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)), workspaceEnvironment.clock);
 	resourcePanel.setFontMetrics(editorViewState.font);
 	t.after(() => resourcePanel.dispose());
 	return Object.assign(editor, { resourcePanel });
@@ -1591,6 +1591,7 @@ test('local session write failure reports once, keeps recovery and schedules no 
 	const files: WorkspaceRecordProvider = {
 		persistence: 'browser',
 		async read() { return null; }, async readDirectory() { return []; }, async delete() {},
+		async createDirectory() { throw new Error('This fixture admits recovery writes only.'); },
 		async write() { writes++; throw failure; },
 	};
 	const { sources } = await startAutosaveSession(t, storage, TEST_SOURCE_CONTEXT, files);

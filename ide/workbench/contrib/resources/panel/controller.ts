@@ -28,6 +28,12 @@ import {
 } from './navigation';
 import { resourceIdentityKey, type ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
+import type { HostClock } from '../../../../../hosts/common/clock';
+import type { FocusCommandInvocation } from '../../../../input/focus';
+import type { EditorResourceCreationCommandId } from '../../../../common/commands';
+import { canCreateNewSourceInDirectory, RESOURCE_CREATION_KINDS, type NewSourceKind } from '../create/source_templates';
+import { openCreateResourcePrompt } from '../create';
+import type { WorkspaceDirectoryReference } from '../../../../workspace/directory_model';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
@@ -102,7 +108,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 	public get lineHeight(): number { return Math.max(this.fontLineHeight, WORKBENCH_ICON_SIZE) + 2; }
 	private fontVariant: FontVariant | null = null;
 
-	public readonly files = new ResourceFilesModel();
+	public readonly files: ResourceFilesModel;
+	private readonly unbindDirectories: (() => void) | undefined;
 	private filesMaxWidth = 0;
 	private filesWidthRevision = -1;
 	private filesWidthFont: FontVariant | null = null;
@@ -143,7 +150,14 @@ export class ResourcePanelController implements PointerHoverTarget {
 		scrollbars: ResourcePanelScrollbars,
 		initialWidthRatio: number,
 		private readonly content: ProjectContentIndex,
+		private readonly clock: HostClock,
 	) {
+		this.files = new ResourceFilesModel(editor.directories);
+		this.unbindDirectories = editor.directories?.onDidChange(() => {
+			this.content.sync();
+			this.files.sync(this.catalog, this.filterMode, this.content.entriesByResource, this.content.revision);
+			this.updateFilesMetrics(); this.resolveExpandedDirectories(); this.changed();
+		});
 		this.fontLineHeight = editorViewState.lineHeight;
 		this.split = new WorkbenchSplitView(clampResourcePanelRatio(initialWidthRatio));
 		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
@@ -179,10 +193,27 @@ export class ResourcePanelController implements PointerHoverTarget {
 				this.showContextMenu(index, layout.contentLeft, layout.contentTop + (index - (this.scroll | 0) + 1) * this.lineHeight, true);
 			},
 		});
+		if (editor.directories !== undefined) {
+			for (const command of Object.keys(RESOURCE_CREATION_KINDS) as EditorResourceCreationCommandId[]) {
+				const kind = RESOURCE_CREATION_KINDS[command];
+				this.focusTarget.registerCommand(command, {
+					isEnabled: () => this.canCreateSource(kind),
+					capture: () => this.captureSourceCreation(kind),
+					run: () => this.captureSourceCreation(kind)?.run(),
+				});
+			}
+			this.focusTarget.registerCommand('resources.newFolder', {
+				isEnabled: () => this.canUseDirectory(), capture: () => this.captureNewFolder(), run: () => this.captureNewFolder()?.run(),
+			});
+			this.focusTarget.registerCommand('resources.refresh', {
+				isEnabled: () => this.canUseDirectory(), capture: () => this.captureRefresh(), run: () => this.captureRefresh()?.run(),
+			});
+		}
 	}
 
 	public dispose(): void {
 		this.disposed = true; this.restoreRevision++;
+		this.unbindDirectories?.();
 		this.unbindFocus(); this.unbindBlur(); this.unbindNativeResize();
 		this.hide(); this.sash.dispose(); this.unbindResize(); this.focusTarget.release(); this.unbindKeyboard(); this.unbindModelClear(); this.content.dispose();
 		this.changeListeners.clear();
@@ -194,7 +225,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 	}
 	private changed(): void { for (const listener of this.changeListeners) listener(); }
 	/** New browser interaction retires recovery and an older explicit file-reveal request. */
-	private acceptBrowserIntent(): void { this.restoreRevision++; this.pendingSelectionIdentity = null; }
+	private acceptBrowserIntent(): void { this.restoreRevision++; this.pendingSelectionIdentity = null; this.files.cancelRestore(); }
 
 	public serialize(previous?: SerializedResourcePanel): SerializedResourcePanel {
 		const view = this.files.captureView(this.content, previous?.view), focused = this.isFocused();
@@ -221,6 +252,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 				this.files.sync(this.catalog, this.filterMode, this.content.entriesByResource, this.content.revision);
 				if (!isCurrent()) return false;
 				this.files.restoreView(state.view, this.content);
+				this.resolveExpandedDirectories();
 				if (!isCurrent()) return false;
 				this.updateFilesMetrics(); this.prepareLayout();
 				return isCurrent();
@@ -274,6 +306,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.files.tree.hoverIndex = -1;
 		this.visible = true;
 		this.refresh();
+		this.resolveExpandedDirectories();
 		this.focusTarget.focus();
 		if (changed) this.changed();
 	}
@@ -444,7 +477,9 @@ export class ResourcePanelController implements PointerHoverTarget {
 
 	public toggleFileDisclosure(node: WorkbenchTreeNode<FileElement>): void {
 		this.acceptBrowserIntent();
-		if (this.files.toggle(this.files.tree.rows.indexOf(node))) { this.updateFilesMetrics(); this.ensureSelectionVisible(); this.changed(); }
+		if (this.files.toggle(this.files.tree.rows.indexOf(node))) {
+			this.updateFilesMetrics(); this.ensureSelectionVisible(); this.resolveExpandedDirectories(); this.changed();
+		}
 	}
 
 	public showContextMenu(index: number, x: number, y: number, keyboard: boolean): void {
@@ -488,9 +523,80 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.acceptBrowserIntent();
 		this.prepareLayout();
 		const result = this.files.navigate(command);
+		if (command === 'right') this.resolveExpandedDirectories();
 		if (result === WorkbenchTreeNavigationResult.Collapse) this.updateFilesMetrics();
 		if (result !== WorkbenchTreeNavigationResult.None) this.ensureSelectionVisible();
 		if (result !== WorkbenchTreeNavigationResult.None) this.changed();
+	}
+
+	/** IO begins only at explicit show, expansion, recovery or directory-publication boundaries. */
+	private resolveExpandedDirectories(): void {
+		const namespace = this.editor.directories;
+		if (namespace === undefined || !namespace.acceptingRequests) return;
+		for (const directory of this.files.expandedDirectories()) if (namespace.isCurrent(directory.root) && namespace.get(directory.root, directory.path) === undefined)
+			void namespace.resolve(directory.root, directory.path);
+	}
+	private captureDirectory(node: WorkbenchTreeNode<FileElement> | null): { readonly directory: WorkspaceDirectoryReference; readonly isCurrent: () => boolean } | undefined {
+		const namespace = this.editor.directories, directory = this.files.directoryFor(node);
+		if (namespace === undefined || directory === undefined) return;
+		const generation = this.focusTarget.scope.contextGeneration;
+		return { directory, isCurrent: () => !this.disposed && this.isVisible() && this.focusTarget.scope.contextGeneration === generation
+			&& namespace.acceptingRequests && namespace.isCurrent(directory.root) };
+	}
+	private canUseDirectory(): boolean {
+		const namespace = this.editor.directories;
+		if (this.disposed || !this.isVisible() || namespace === undefined || !namespace.acceptingRequests) return false;
+		const directory = this.files.directoryFor(this.files.selectedNode);
+		return directory !== undefined && namespace.isCurrent(directory.root);
+	}
+	private canCreateSource(kind: NewSourceKind): boolean {
+		const namespace = this.editor.directories;
+		if (this.disposed || !this.isVisible() || namespace?.acceptingRequests !== true) return false;
+		const directory = this.files.directoryFor(this.files.selectedNode);
+		if (directory !== undefined && (!namespace.isCurrent(directory.root) || !canCreateNewSourceInDirectory(kind, directory.path))) return false;
+		const group = this.editor.editorParts.activeGroup;
+		return group.openingAdmitted && !this.editor.editorParts.partForGroup(group).retired;
+	}
+	public captureSourceCreation(kind: NewSourceKind, node = this.files.selectedNode): FocusCommandInvocation | undefined {
+		const namespace = this.editor.directories;
+		if (namespace === undefined) return;
+		const directory = this.files.directoryFor(node), generation = this.focusTarget.scope.contextGeneration;
+		const permitted = directory === undefined || canCreateNewSourceInDirectory(kind, directory.path);
+		const group = this.editor.editorParts.activeGroup, part = this.editor.editorParts.partForGroup(group);
+		const current = () => !this.disposed && this.isVisible() && this.focusTarget.scope.contextGeneration === generation
+			&& permitted && namespace.acceptingRequests && (directory === undefined || namespace.isCurrent(directory.root))
+			&& group.openingAdmitted && this.editor.editorParts.partForGroup(group) === part && !part.retired;
+		return { isEnabled: current, run: () => {
+			if (current()) openCreateResourcePrompt(this.editor, group, this.catalog, this.clock, undefined, kind, directory);
+		} };
+	}
+	public captureNewFolder(node = this.files.selectedNode): FocusCommandInvocation | undefined {
+		const captured = this.captureDirectory(node);
+		if (captured === undefined) return;
+		const namespace = this.editor.directories!, picker = this.editor.quickInput;
+		return { isEnabled: captured.isCurrent, run: () => {
+			if (!captured.isCurrent()) return;
+			picker.input('New Folder', 'Name relative to the selected folder', '', async path => {
+				if (!captured.isCurrent()) throw new Error('The selected folder owner is closed.');
+				return namespace.createDirectory(captured.directory, path);
+			}, (directory, preserveFocus) => {
+				if (!captured.isCurrent() || preserveFocus) return;
+				this.revealDirectory(directory);
+			}, lifetime => {
+				lifetime.add({ dispose: namespace.onDidChange(() => { if (!namespace.isCurrent(captured.directory.root)) picker.hide(false); }) });
+				if (!namespace.isCurrent(captured.directory.root)) picker.hide(false);
+			});
+		} };
+	}
+	public captureRefresh(node = this.files.selectedNode): FocusCommandInvocation | undefined {
+		const captured = this.captureDirectory(node);
+		if (captured === undefined) return;
+		const namespace = this.editor.directories!;
+		return { isEnabled: captured.isCurrent, run: () => { if (captured.isCurrent()) void namespace.refresh(captured.directory.root, captured.directory.path); } };
+	}
+	private revealDirectory(directory: WorkspaceDirectoryReference): void {
+		this.content.sync(); this.files.sync(this.catalog, this.filterMode, this.content.entriesByResource, this.content.revision);
+		this.files.revealDirectory(directory); this.updateFilesMetrics(); this.ensureSelectionVisible(); this.changed();
 	}
 
 	private updateFilesMetrics(): void {

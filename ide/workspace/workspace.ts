@@ -93,7 +93,8 @@ export async function saveLuaResourceSource(
 
 /** Canonical identity is captured before review and reused unchanged at creation. */
 export function prepareTextResourceCreation(request: TextResourceCreationRequest) {
-	return { contextId: request.contextId, path: normalizeRelativeWorkspacePath(request.relativePath), contents: request.contents };
+	const path = normalizeRelativeWorkspacePath(request.relativePath);
+	return { contextId: request.contextId, path: request.directory === undefined ? path : joinWorkspacePaths(request.directory, path), contents: request.contents };
 }
 
 export async function createTextResource(

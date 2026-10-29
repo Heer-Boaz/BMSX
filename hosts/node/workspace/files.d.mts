@@ -1,5 +1,6 @@
 export const WORKSPACE_SAVE_DIRECTORY: string;
 export function deleteWorkspaceRecord(destination: string): Promise<void>;
+export function createWorkspaceDirectory(destination: string): Promise<void>;
 export function publishWorkspaceRecord(
 	destination: string,
 	stagingDirectory: string,

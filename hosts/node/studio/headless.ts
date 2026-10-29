@@ -75,6 +75,7 @@ export class HeadlessStudio {
 			switch (operation.method) {
 				case 'read': value = await this.workspace.read(operation.path); break;
 				case 'readDirectory': value = await this.workspace.readDirectory(operation.path); break;
+				case 'createDirectory': await this.workspace.createDirectory(operation.path); break;
 				case 'write': await this.workspace.write(operation.path, operation.record, operation.overwrite, operation.expectedSource); break;
 				case 'delete': await this.workspace.delete(operation.path); break;
 			}

@@ -9,7 +9,7 @@ import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import type { EditorTextModel } from '../../ide/editor/model/text_model';
 import { TextFileSaveService } from '../../ide/workbench/services/working_copy/text_file_save';
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
-import type { WorkspaceRecord, WorkspaceRecordProvider } from '../../ide/workspace/record_provider';
+import type { WorkspaceRecord } from '../../ide/workspace/record_provider';
 import { closeWorkspaceRecords, openWorkspaceRecords, readLocalWorkspaceRecord, writeLocalWorkspaceRecord, workspaceRecords } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -18,6 +18,7 @@ import type { CartEditor } from '../../ide/cart_editor';
 import { editorFeedbackState } from '../../ide/common/feedback_state';
 import { getTextFileRuntimeSourceStatus } from '../../ide/workbench/services/working_copy/runtime_source_status';
 import { resolveWorkspacePath } from '../../ide/workspace/path';
+import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 class SaveStorage extends MemoryStorage {
 	public failure: Error | undefined;
@@ -27,16 +28,12 @@ class SaveStorage extends MemoryStorage {
 	}
 }
 
-class SaveFiles implements WorkspaceRecordProvider {
-	public readonly persistence = 'workspace';
-	public readonly records = new Map<string, WorkspaceRecord>();
+class SaveFiles extends MemoryWorkspaceFiles {
+	public constructor() { super('workspace'); }
 	public readonly writes: { path: string; record: WorkspaceRecord; complete(): void }[] = [];
 	public delayed = false;
 	public failure: Error | undefined;
-	public async read(path: string): Promise<WorkspaceRecord | null> { return this.records.get(path) ?? null; }
-	public async readDirectory() { return []; }
-	public async delete(path: string): Promise<void> { this.records.delete(path); }
-	public async write(path: string, record: WorkspaceRecord): Promise<void> {
+	public override async write(path: string, record: WorkspaceRecord): Promise<void> {
 		if (this.failure) throw this.failure;
 		if (this.delayed) await new Promise<void>(resolve => this.writes.push({ path, record, complete: resolve }));
 		this.records.set(path, record);

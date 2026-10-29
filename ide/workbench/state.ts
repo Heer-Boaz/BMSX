@@ -21,7 +21,7 @@ import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import type { PlaySessionFactory } from './services/play/session';
 import type { TestTargetFactory } from '../testing/target';
 import { editorTextModelService } from '../editor/model/model_service';
-import type { WorkspaceRecord } from '../workspace/records';
+import type { WorkspaceRecord, WorkspaceRecords } from '../workspace/records';
 import { clearAllRuntimeErrorOverlays } from '../runtime_error/navigation';
 import { pointerHover } from '../input/pointer/hover';
 import { StudioWorkbench } from './workbench';
@@ -61,9 +61,10 @@ export class RuntimeIdeState extends StudioWorkbench {
 		createPlaySession: PlaySessionFactory,
 		connectAssistant?: AssistantConnectionFactory,
 		observeConversation?: ConversationObserverFactory,
+		workspaceFiles?: WorkspaceRecords,
 	) {
 		super({ runtime, input, audioOutput, runtimeTasks, execution, rewind, clock, microtasks, logOutput, sources,
-			models: editorTextModelService, workspaceDirtyRecords, gameCapture, createTestTarget, createPlaySession });
+			models: editorTextModelService, workspaceDirtyRecords, workspaceFiles, gameCapture, createTestTarget, createPlaySession });
 		this.overlayRenderer = new OverlayRenderer(presenter.hostOverlayQueue);
 		this.editor = new RuntimeCartEditor(
 			this, presenter, display, input, clock, clipboard, logOutput, resourcePanelWidthRatio,

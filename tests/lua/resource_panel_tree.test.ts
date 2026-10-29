@@ -29,6 +29,7 @@ import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { handleResourcePanelPointer } from '../../ide/input/pointer/resource_panel_content';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { FontVariant } from '../../machine/ts/render/shared/bmsx_font';
+import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 
 function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.from({ length: 60 }, (_, index) => createScenarioTestSourceRecord(`directory_${index}/child.lua`, 1)), variant: FontVariant = 'tiny') {
 	configureFontVariant(variant);
@@ -37,7 +38,7 @@ function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.fro
 	const parts = createTestEditorParts(t), group = parts.createDocument().activeGroup;
 	const resourceEditors = createResourceEditorResolver(sources.catalog), editor = { editorParts: parts, resourceEditors, isActive: true } as CartEditor;
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
+		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)), new VirtualHeadlessClock());
 	const navigation = new EditorNavigationController(sources.catalog, resourceEditors, parts);
 	group.focus();
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();

@@ -5,6 +5,11 @@ export function joinWorkspacePaths(...segments: string[]): string {
 		.replace(/\/+/g, '/');
 }
 
+/** Paths use the owning workspace's canonical slash-separated representation. */
+export function workspacePathIsWithin(path: string, directory: string): boolean {
+	return directory.length === 0 || path === directory || path.startsWith(`${directory}/`);
+}
+
 export function stripProjectRootPrefix(resourcePath: string, projectRootPath: string | null): string {
 	const normalizedRoot = projectRootPath ? projectRootPath.replace(/^\.?\//, '') : '';
 	const normalizedPath = resourcePath.replace(/^\.?\//, '');
