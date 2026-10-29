@@ -85,7 +85,7 @@ test('the authored audio file and its Source view share a working copy but retai
 	assert.equal(group.getLabel(code), `PREVIEW: ${code.title}`); assert.ok(group.previewTab === code);
 });
 
-for (const distinction of ['path', 'domain'] as const) test(`same-name audio views disambiguate the entire title group by full metadata across ${distinction} changes`, t => {
+for (const distinction of ['path', 'domain'] as const) test(`same-name audio views disambiguate the entire title group by source directories across ${distinction} changes`, t => {
 	const group = new EditorTabGroupModel(), path = 'res/audio/events.aem.yaml';
 	t.after(() => group.clear());
 	const otherPath = distinction === 'path' ? 'res/other/events.aem.yaml' : path;
@@ -99,15 +99,20 @@ for (const distinction of ['path', 'domain'] as const) test(`same-name audio vie
 	assert.equal(first.title, second.title); assert.equal(first.shortDescription, second.shortDescription);
 	assert.notEqual(first.id, second.id); assert.notEqual(first.workingCopy, second.workingCopy);
 	assert.equal(new Set([first.description, second.description, code.description]).size, 3);
-	for (const input of [first, second]) assert.equal(group.getLabel(input), `${input.title} - ${input.description}`);
-	assert.equal(group.getLabel(code), `PREVIEW: ${code.title} - ${code.description}`);
-	const title = second.title, description = second.description, compact = second.shortDescription;
+	// Exact descriptions specify group-wide path shortening while full provenance remains lossless.
+	const firstPath = distinction === 'path' ? '…/audio' : 'Fixture project/…';
+	const secondPath = distinction === 'path' ? '…/other' : 'Other project/…';
+	assert.equal(group.getLabel(first), `${first.title} - Audio Events: ${firstPath}`);
+	assert.equal(group.getLabel(second), `${second.title} - Audio Events: ${secondPath}`);
+	assert.equal(group.getLabel(code), `PREVIEW: ${code.title} - Source: ${firstPath}`);
+	const title = second.title, description = second.description, compact = second.shortDescription, directory = second.descriptionPath;
 	second.title = `renamed-${title}`;
 	assert.equal(second.description, description); assert.equal(second.shortDescription, compact);
+	assert.equal(second.descriptionPath, directory);
 	assert.equal(group.getLabel(first), `${first.title} - ${first.shortDescription}`);
 	assert.equal(group.getLabel(code), `PREVIEW: ${code.title} - ${code.shortDescription}`);
 	second.title = title;
-	assert.equal(group.getLabel(first), `${first.title} - ${first.description}`);
+	assert.equal(group.getLabel(first), `${first.title} - Audio Events: ${firstPath}`);
 	group.removeAt(group.indexOf(second));
 	assert.equal(group.getLabel(first), `${first.title} - ${first.shortDescription}`);
 	assert.equal(group.getLabel(code), `PREVIEW: ${code.title} - ${code.shortDescription}`);

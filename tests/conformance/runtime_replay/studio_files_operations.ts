@@ -1,10 +1,12 @@
 import { DEFAULT_NEW_LUA_RESOURCE_CONTENT } from '../../../ide/common/constants';
+import { computeSourceLabel } from '../../../ide/common/paths';
 import { inputFocus } from '../../../ide/input/focus';
 import { joinWorkspacePaths } from '../../../ide/workspace/path';
 import { createWorkspaceRecord, workspaceRecords } from '../../../ide/workspace/records';
 import type { ResourceQuickPickItem } from '../../../ide/workbench/contrib/resources/quick_access';
 import type { FileElement } from '../../../ide/workbench/contrib/resources/panel/files_model';
 import type { WorkbenchTreeNode } from '../../../ide/workbench/ui/tree_view';
+import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
 import { TEST_STUDIO_CARTRIDGE_CONTEXT_ID } from '../../helpers/studio_source_contexts';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -59,6 +61,7 @@ export async function testStudioFilesOperations(test: StudioFixture): Promise<vo
 	const media = ide.sources.currentBlua32Media, cycles = test.cycles(), boot = ide.boots.latestOperation, hotResume = ide.hotResumes.latestOperation;
 	const primary = editor.mainWorkspace.primary, activity = editor.mainWorkspace.activity;
 	const groups = parts.groups.map(group => ({ group, inputs: [...group.model.tabs] }));
+	const created: CodeEditorInput[] = [];
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {
 			const step = font * 2 + theme, name = `created_${step}`, relative = `${fixture}/${name}`;
@@ -89,6 +92,7 @@ export async function testStudioFilesOperations(test: StudioFixture): Promise<vo
 				'Files: New Source uses the selected folder, never the unrelated active document parent');
 			const input = receivingGroup.model.activeTab;
 			if (input?.kind !== 'code_editor') throw new Error('Files: source creation must admit a canonical text view');
+			created.push(input);
 			const source = `${DEFAULT_NEW_LUA_RESOURCE_CONTENT}\nreturn ${step}\n`;
 			await test.press('ControlLeft', 'End'); await test.clipboard.writeText(`\nreturn ${step}\n`); await test.press('ControlLeft', 'KeyV');
 			await test.press('ControlLeft', 'KeyS');
@@ -124,6 +128,46 @@ export async function testStudioFilesOperations(test: StudioFixture): Promise<vo
 			check(ide.sources.currentBlua32Media === media && test.cycles() === cycles
 				&& ide.boots.latestOperation === boot && ide.hotResumes.latestOperation === hotResume,
 				'Files: namespace and source operations neither apply, boot nor execute the guest');
+			await test.press('ControlLeft', 'AltLeft', 'KeyT');
+		}
+		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
+	}
+	const captions = created.map(input => ({ input, group: parts.findGroup(input)!, description: input.description,
+		parent: computeSourceLabel(input.resource.path.slice(0, input.resource.path.lastIndexOf('/'))),
+		source: input.workingCopy.buffer.getText(), version: input.workingCopy.version }));
+	for (let font = 0; font < 2; font++) {
+		for (let theme = 0; theme < 2; theme++) {
+			for (const [index, caption] of captions.entries()) {
+				await test.runPaletteCommand('View: Open Editors');
+				await test.clipboard.writeText('created.lua'); await test.press('ControlLeft', 'KeyV');
+				const picker = editor.quickInput, rows = picker.model.list.rows;
+				const positions = captions.map(caption => rows.findIndex(row => 'input' in row.item && row.item.input === caption.input));
+				check(positions.every(index => index >= 0), 'Tab captions: native editor navigation offers every exact same-name input');
+				const choices = positions.map(index => rows[index].item);
+				// This slice's explicit caption contract is the real identity-bearing directory segment,
+				// not punctuation or incidental UI wording. Full navigation provenance stays separate.
+				check(new Set(choices.map(item => item.label)).size === captions.length && choices.every((item, index) =>
+					item.label.includes(captions[index].parent) && item.detail.startsWith(captions[index].description)),
+					'Tab captions: every same-name editor has a distinct directory caption without losing its full source provenance');
+				if (index === 0) await test.capture?.(`tab-captions-${editor.fontVariant}-theme-${theme}-open-editors`);
+				const target = positions[index];
+				await test.press('ControlLeft', 'Home');
+				for (let row = 0; row < target; row++) await test.press('ArrowDown');
+				await test.press('Enter');
+				await test.until(() => parts.activeGroup === caption.group && caption.group.model.activeTab === caption.input
+					&& inputFocus.admittedTarget === caption.group.panes.activePane?.commandTarget,
+					'Tab captions: native Open Editors selects the exact independently identified source');
+				const metric = caption.group.tabStrip.layoutState.items.peek(caption.group.model.indexOf(caption.input));
+				check(metric.text.includes(caption.parent),
+					'Tab captions: actual font-dependent rendered text keeps the distinguishing directory visible');
+			}
+			await test.capture?.(`tab-captions-${editor.fontVariant}-theme-${theme}-active-strip`);
+			check(captions.every(caption => caption.input.description === caption.description
+				&& caption.input.workingCopy.buffer.getText() === caption.source && caption.input.workingCopy.version === caption.version)
+				&& editor.mainWorkspace.primary === primary && editor.mainWorkspace.activity === activity
+				&& ide.sources.currentBlua32Media === media && test.cycles() === cycles
+				&& ide.boots.latestOperation === boot && ide.hotResumes.latestOperation === hotResume,
+				'Tab captions: compact navigation changes no canonical source, provenance, Main subject or guest execution');
 			await test.press('ControlLeft', 'AltLeft', 'KeyT');
 		}
 		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');

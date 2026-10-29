@@ -3,7 +3,7 @@ import { WorkingCopyEditorInput } from '../../common/editor_input';
 import { buildCodeTabId, type CodeEditorTabId } from '../../ui/tab/id';
 import type { CodeTabContext } from '../../ui/code_tab/model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
-import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
+import { computeResourceTabTitle, sourceTabDescription, sourceTabDirectory } from '../../ui/tab/titles';
 import { createCodeEditorViewState } from '../../../editor/ui/code_editor_state';
 import { CodeEditorViewBinding } from '../../../editor/ui/code_editor_view_binding';
 import { captureCodeEditorView, restoreCodeEditorView, type CodeEditorViewSnapshot } from './view_snapshot';
@@ -22,7 +22,7 @@ export class CodeEditorInput extends WorkingCopyEditorInput<CodeEditorTabId, 'co
 		const view = createCodeEditorViewState();
 		this.context = { model, view, runtimeErrorOverlay: null, executionStopRow: null };
 		this.disposables.add(new CodeEditorViewBinding(model, view));
-		this.setLabel(title, sourceTabDescription(model.resource), 'Source');
+		this.setLabel(title, sourceTabDescription(model.resource), 'Source', sourceTabDirectory(model.resource));
 	}
 
 	/** First attachment supplies a group memento; deserialization admits its own initial state earlier. */

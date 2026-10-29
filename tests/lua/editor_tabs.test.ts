@@ -218,6 +218,29 @@ test('tab layout invalidates measured labels on rename, font and viewport change
 	assert.deepEqual(bounds, narrowed);
 });
 
+for (const variant of ['tiny', 'msx'] as const) test(`same-name source captions retain their distinguishing directory through ${variant} strip measurement`, t => {
+	const f = fixture(t, variant, 384);
+	const inputs = Array.from({ length: 4 }, (_, index) => {
+		const path = `src/common/retained/variant_${index}/created.lua`;
+		const projectRootPath = `fixture/${'long-project-root-'.repeat(12)}`;
+		const model = new EditorTextModel({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], contextLabel: projectRootPath,
+			path, sourceFilePath: `${projectRootPath}/${path}`, location: { kind: 'project', projectRootPath, path },
+			source: { type: 'lua', resid: `caption_${index}` } }, 'lua', `return ${index}\n`);
+		t.after(() => model.dispose());
+		const input = new CodeEditorInput(model); f.group.add(input); f.group.activate(input);
+		return input;
+	});
+	f.layout();
+	// Caption text is the contract here: old root-first descriptions lost the only
+	// identity-bearing segment during measured truncation, despite distinct model labels.
+	const captions = inputs.map(input => f.item(input.id).text);
+	assert.equal(new Set(captions).size, inputs.length);
+	for (let index = 0; index < inputs.length; index++) assert.ok(captions[index].includes(`variant_${index}`));
+	const measured = f.measured();
+	for (let frame = 0; frame < 100; frame++) f.layout();
+	assert.equal(f.measured(), measured, 'unchanged source metadata retains the measured compact captions');
+});
+
 for (const variant of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 	test(`tabs use a bounded horizontal strip and retained labels at ${variant}/${width}`, t => {
 		const f = fixture(t, variant, width);

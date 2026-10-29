@@ -4,6 +4,7 @@ import type { EditorParts } from './editor_parts';
 import type { QuickInputController } from '../quick_input/controller';
 import { TextQuickPickProvider } from '../quick_input/text_provider';
 import type { EditorTabGroupChange } from '../../ui/tab/group_model';
+import { computeEditorLabels } from '../../ui/tab/titles';
 
 /** Workspace navigation enumerates actual membership, including background hosts and inactive tabs. */
 export function showOpenEditors(parts: EditorParts, picker: QuickInputController): void {
@@ -13,17 +14,24 @@ export function showOpenEditors(parts: EditorParts, picker: QuickInputController
 			const host = part.kind === 'main' ? 'Main Workspace' : part.window!.model.title;
 			for (const group of part.mostRecentlyActiveGroups) {
 				const description = part.groups.length === 1 ? host : `${host} / Group ${part.groups.indexOf(group) + 1}`;
-				for (const input of group.model.tabs) items.push({ group, input, label: group.model.getLabel(input), description,
+				for (const input of group.model.tabs) items.push({ group, input, label: input.title, description,
 					detail: `${input.description}${group === parts.activeGroup && input === group.model.activeTab ? ' / active' : ''}${input.isDirty() ? ' / unsaved changes' : ''}${part.window?.model.minimized ? ' / minimized' : ''}` });
 			}
+		}
+		let labels = computeEditorLabels(items.map(item => item.input));
+		for (let index = 0; index < items.length; index++) {
+			const item = items[index];
+			item.label = item.input === item.group.model.previewTab ? `PREVIEW: ${labels[index]}` : labels[index];
 		}
 		const provider = new TextQuickPickProvider(items);
 		const changed = (change: EditorTabGroupChange): void => {
 			if (change === 'editors') { picker.hide(); return; }
-			for (const item of items) {
+			if (change === 'label') labels = computeEditorLabels(items.map(item => item.input));
+			for (let index = 0; index < items.length; index++) {
+				const item = items[index];
 				const { group, input } = item, part = parts.partForGroup(group);
 				const host = part.kind === 'main' ? 'Main Workspace' : part.window!.model.title;
-				item.label = group.model.getLabel(input);
+				item.label = input === group.model.previewTab ? `PREVIEW: ${labels[index]}` : labels[index];
 				item.description = part.groups.length === 1 ? host : `${host} / Group ${part.groups.indexOf(group) + 1}`;
 				item.detail = `${input.description}${group === parts.activeGroup && input === group.model.activeTab ? ' / active' : ''}${input.isDirty() ? ' / unsaved changes' : ''}${part.window?.model.minimized ? ' / minimized' : ''}`;
 			}

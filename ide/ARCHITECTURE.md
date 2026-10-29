@@ -291,6 +291,10 @@ descendant controls are constructed. Pane factories consume that group's actual
 surface and extent. Layout publishes each group's retained title/content bounds;
 paint and input use those same surfaces. Tab layout, hover and gestures live in
 the strip, not in frontend-wide chrome state.
+Inputs publish lossless provenance separately from compact view qualifiers and
+optional display-path metadata. The shared title projection resolves collisions
+within the actual tab or picker enumeration; layout and paint consume retained
+labels without recovering source identity from captions.
 The strip's keyboard control retains focus independently of editor selection;
 its reusable command context ends with its concrete focused-input binding.
 `workbench/common/editor_inputs.ts` owns the retained view union. Commands can

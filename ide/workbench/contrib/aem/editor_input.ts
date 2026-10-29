@@ -7,7 +7,7 @@ import { createWorkbenchPropertyTree, type WorkbenchPropertyElement } from '../.
 import type { StructuredCollection } from '../../../language/yaml/structured_edits';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
-import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
+import { computeResourceTabTitle, sourceTabDescription, sourceTabDirectory } from '../../ui/tab/titles';
 import { captureWorkbenchTreeView, restoreWorkbenchTreeView } from '../../ui/tree_view';
 import { projectAemSource } from './source';
 import { AemSourceSelectionState, type AemSourceIdentity } from './source_selection';
@@ -41,7 +41,7 @@ export class AemEditorInput extends WorkingCopyEditorInput<`aem:${string}`, 'aem
 	public constructor(public readonly workingCopy: EditorTextModel) {
 		super(`aem:${resourceIdentityKey(workingCopy.resource)}`, 'aem_editor', computeResourceTabTitle(workingCopy.resource), true);
 		this.sourceSelection = this.disposables.add(new AemSourceSelectionState(workingCopy, this.editSource));
-		this.setLabel(this.title, `Audio Events / ${sourceTabDescription(workingCopy.resource)}`, 'Audio Events');
+		this.setLabel(this.title, `Audio Events / ${sourceTabDescription(workingCopy.resource)}`, 'Audio Events', sourceTabDirectory(workingCopy.resource));
 	}
 	public createView(): AemEditorInput {
 		projectAemSource(this);

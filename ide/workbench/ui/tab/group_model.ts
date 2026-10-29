@@ -18,6 +18,7 @@ import type { CodeEditorInput } from '../../contrib/code_editor/editor_input';
 import type { ResourceViewerInput } from '../../contrib/resources/editor_input';
 import type { ScenarioLabInput } from '../../contrib/scenario_lab/editor_input';
 import { DisposableStore } from '../../../common/lifecycle';
+import { computeEditorLabels } from './titles';
 import type { EditorInputSerializer, EditorInputSerializers, SerializedEditorGroup, SerializedEditorInput, PersistentEditorInput } from '../../services/editor/editor_serialization';
 
 export type EditorOpenOptions = { readonly pinned?: boolean; readonly index?: number };
@@ -187,24 +188,9 @@ export class EditorTabGroupModel {
 
 	/** Label work belongs to membership/metadata changes, not the render loop. */
 	private updateLabels(): void {
-		const counts = new Map<string, number>();
-		for (const tab of this.editorTabs) counts.set(tab.title, (counts.get(tab.title) || 0) + 1);
-		const shortDescriptions = new Map<string, Set<string>>();
-		for (const tab of this.editorTabs) {
-			if (counts.get(tab.title)! === 1) continue;
-			let descriptions = shortDescriptions.get(tab.title);
-			if (descriptions === undefined) {
-				descriptions = new Set();
-				shortDescriptions.set(tab.title, descriptions);
-			}
-			descriptions.add(tab.shortDescription);
-		}
-		for (const tab of this.editorTabs) {
-			const descriptions = shortDescriptions.get(tab.title);
-			// Escalate the whole duplicate-name group together; mixing short and full descriptions can create new collisions.
-			const description = descriptions !== undefined && descriptions.size === counts.get(tab.title) && !descriptions.has('')
-				? tab.shortDescription : tab.description;
-			const label = counts.get(tab.title)! > 1 && description.length > 0 ? `${tab.title} - ${description}` : tab.title;
+		const labels = computeEditorLabels(this.editorTabs);
+		for (let index = 0; index < this.editorTabs.length; index++) {
+			const tab = this.editorTabs[index], label = labels[index];
 			this.labels.set(tab, tab === this.previewEditor ? `PREVIEW: ${label}` : label);
 		}
 	}

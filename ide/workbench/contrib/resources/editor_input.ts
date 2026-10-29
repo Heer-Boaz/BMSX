@@ -4,7 +4,7 @@ import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { ResourceViewerTabId } from '../../ui/tab/id';
 import type { ResourceViewerContent, ResourceViewerState } from './model';
 import type { ResourceEditorIdentity } from '../../common/editor_input';
-import { computeResourceTabTitle, sourceTabDescription } from '../../ui/tab/titles';
+import { computeResourceTabTitle, sourceTabDescription, sourceTabDirectory } from '../../ui/tab/titles';
 import { buildResourceViewerContent } from './viewer';
 import { HostBitmap } from '../../../../machine/ts/render/host_overlay/bitmap';
 import { decodeRomAssetImage } from '../../../../toolchain/ts/rompack/asset_image';
@@ -35,7 +35,7 @@ export class ResourceViewerInput extends ReadonlyEditorInput<ResourceViewerTabId
 		const input = this;
 		this.view = { get content() { return input.content ??= buildResourceViewerContent(input.catalog, input.resource); },
 			scroll: 0, scrollLeft: 0, contentView: resource.source.type === 'image' ? 'preview' : 'info' };
-		this.setLabel(title, sourceTabDescription(resource));
+		this.setLabel(title, sourceTabDescription(resource), 'Resource', sourceTabDirectory(resource));
 	}
 
 	/** An explicit open resolves the live projection; the retained viewport stays with this input. */
