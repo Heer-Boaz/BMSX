@@ -58,7 +58,7 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	if (scene.kind !== 'scene_editor') throw new Error('navigation: selected scene input missing');
 	check(scene.workingCopy.resource.path === 'scenes/root.lua',
 		'navigation: tool title and exact source identity are separate');
-	const selected = scene.view.outline.rows[scene.view.outline.selectionIndex].element.source;
+	const selected = scene.view.hierarchy.outline.rows[scene.view.hierarchy.outline.selectionIndex].element.source;
 	await click(scene.view.actionBar.items[0].bounds);
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === scene.workingCopy
 		&& sourcePane(test).code.view.cursorRow === selected.start.line - 1,

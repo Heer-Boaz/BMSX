@@ -38,7 +38,7 @@ async function fixture(t: TestContext) {
 	};
 	f.first.focus(); assert.equal(await open(0), true); f.update();
 	const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(primary.view, 2), true); primary.control.update();
+	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 2), true); primary.control.update();
 	main.focusPrimary(); resetNavigationHistoryState();
 	return { ...f, model, resource, primary, main, parts, open };
 }
@@ -82,7 +82,7 @@ test('Main Source to Side retains its exact document neighbor across draft settl
 	await f.editor.navigation.openResource(f.secondGroup, f.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });
 	const floating = f.secondGroup.model.activeTab;
 	assert.equal(f.parts.main.activateGroup(origin), true); f.main.focusPrimary();
-	const field = f.primary.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+	const field = f.primary.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	const release = f.model.onDidChangeContent(() => { release(); assert.equal(f.parts.main.activateGroup(side), true); }); t.after(release);
 	const groups = [...f.parts.groups];
 	const expected = { row: 0, column: 0 }; f.model.buffer.positionAt(f.primary.consumer.selectionRange.start, expected);
@@ -118,7 +118,7 @@ test('Main Source enablement observes its attached capability without producing 
 });
 
 test('Main Source accepts the invoking member draft before computing its exact updated canonical range', async t => {
-	const f = await fixture(t), field = f.primary.control.controls[0];
+	const f = await fixture(t), field = f.primary.control.details.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	const request = t.mock.method(f.editor.navigation, 'openSource');
 	f.editor.commands.execute('editor.source', f.primary.commandTarget);
@@ -145,7 +145,7 @@ for (const change of ['selection', 'selected occurrence deletion', 'Main replace
 		f.editor.commands.execute('editor.sourceToSide', f.primary.commandTarget);
 		assert.equal(request.mock.callCount(), 1); assert.equal(opening.mock.callCount(), 0);
 		assert.equal(f.parts.groups.length, groups.length); assert.equal(navigationState.back.length, 0);
-		if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view, 1), true);
+		if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view.hierarchy, 1), true);
 		else if (change === 'selected occurrence deletion') assert.equal(f.primary.consumer.removeSelectedMember(), true);
 		else if (change === 'Main replacement') assert.equal(await f.open(1), true);
 		else if (change === 'suspension') f.main.suspend();
@@ -288,12 +288,12 @@ for (const change of ['source edit', 'source model replacement', 'selected occur
 
 for (const change of ['selection', 'selected occurrence deletion', 'foreign focus'] as const)
 	test(`Main Source captures its invoking member before draft publication changes ${change}`, async t => {
-		const f = await fixture(t), field = f.primary.control.controls[0];
+		const f = await fixture(t), field = f.primary.control.details.controls[0];
 		field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 		let published = false;
 		const release = f.model.onDidChangeContent(() => {
 			release(); published = true;
-			if (change === 'selection') { f.primary.view.refresh(); assert.equal(selectSceneOutlineRow(f.primary.view, 1), true); }
+			if (change === 'selection') { f.primary.view.refresh(); assert.equal(selectSceneOutlineRow(f.primary.view.hierarchy, 1), true); }
 			else if (change === 'selected occurrence deletion') assert.equal(f.primary.consumer.removeSelectedMember(), true);
 			else f.second.focus();
 		}); t.after(release);
@@ -316,7 +316,7 @@ for (const change of ['selection', 'selected occurrence deletion', 'Main replace
 		assert.ok(menu.model.selectedIndex >= 0 && menu.model.rows[menu.model.selectedIndex].enabled);
 		f.editor.dispatchKey(new KeyInputEvent('Enter', KeyModifier.none));
 		const request = t.mock.method(f.editor.navigation, 'openSource');
-		if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view, 1), true);
+		if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view.hierarchy, 1), true);
 		else if (change === 'selected occurrence deletion') assert.equal(f.primary.consumer.removeSelectedMember(), true);
 		else if (change === 'Main replacement') assert.equal(await f.open(1), true);
 		else f.main.suspend();
@@ -334,9 +334,9 @@ for (const change of ['selection', 'selected occurrence deletion'] as const)
 		menu.model.selectedIndex = menu.model.rows.findIndex(row => row.command === 'editor.source');
 		assert.ok(menu.model.selectedIndex >= 0 && menu.model.rows[menu.model.selectedIndex].enabled);
 		let published = false;
-		const release = f.primary.commandTarget.onDidFocus(() => {
+		const release = f.primary.control.commandTarget.onDidFocus(() => {
 			release(); published = true;
-			if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view, 1), true);
+			if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view.hierarchy, 1), true);
 			else assert.equal(f.primary.consumer.removeSelectedMember(), true);
 		}); t.after(release);
 		const opening = t.mock.method(f.editor.navigation, 'openResource');

@@ -18,6 +18,9 @@ export class SceneEditorInput extends WorkingCopyEditorInput<SceneEditorTabId, '
 		createView?: (source: SceneEditorInput) => SceneEditorInput) {
 		super(`scene:${resourceIdentityKey(workingCopy.resource)}`, 'scene_editor', 'SCENE EDITOR', true);
 		const authoring = this.disposables.add(new SceneAuthoringContext(workingCopy, documents));
+		// A newly opened document starts at its first declaration; refreshing a view never chooses a subject.
+		const scene = authoring.scenes[0];
+		if (scene !== undefined) authoring.select(authoring.document!, workingCopy.version, { kind: 'scene', scene });
 		this.view = this.disposables.add(new SceneEditorViewState(authoring));
 		if (createView !== undefined) this.createView = () => createView(this);
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));

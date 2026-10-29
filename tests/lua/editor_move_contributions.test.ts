@@ -30,7 +30,7 @@ test('Scene move retains its exact member and canonical history while Source bel
 	assert.ok(input instanceof SceneEditorInput);
 	const model = input.workingCopy;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
-	input.view.refresh(); selectSceneOutlineRow(input.view, 1); input.view.section = 'details'; f.update();
+	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1); input.view.section = 'details'; f.update();
 	const view = captureSceneEditorView(input.view), version = model.version, history = model.history;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const originPane = f.firstGroup.panes.activePane!;

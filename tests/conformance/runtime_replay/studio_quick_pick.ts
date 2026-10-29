@@ -21,9 +21,9 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('quick pick: actual Scene Editor required');
-	const x = pane.control.controls[0];
+	const x = pane.control.details.controls[0];
 	const picker = ide.editor.quickInput;
-	await click(scene.view.properties[0].bounds);
+	await click(scene.view.details.properties[0].bounds);
 	const codeTop = editorViewState.editorAreaTop;
 	await press('ControlLeft', 'Comma');
 	check(picker.visible && picker.field.focusTarget.hasFocus && ide.editor.editorParts.activeGroup.model.activeTab === scene,
@@ -42,12 +42,12 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 	await press('Digit7');
 	check(x.pending, 'quick pick: real property draft exists before navigation');
 	await press('ControlLeft', 'Comma');
-	check(!x.pending && scene.view.properties[0].value === 7, 'quick pick: the property owner commits valid blur, not the picker');
+	check(!x.pending && scene.view.details.properties[0].descriptor.value === 7, 'quick pick: the property owner commits valid blur, not the picker');
 	await press('Escape');
 	await press('Enter');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'quick pick: committed property remains one ordinary document Undo');
-	await click(scene.view.properties[0].bounds);
+	await click(scene.view.details.properties[0].bounds);
 	await press('Minus');
 	await press('ControlLeft', 'Comma');
 	check(!x.pending && model.buffer.getText() === original, 'quick pick: invalid property blur follows its existing cancel policy');
@@ -69,11 +69,11 @@ export async function testStudioQuickPick(test: StudioFixture): Promise<void> {
 		'quick pick: Enter with no matches neither closes nor navigates to invented source');
 	await press('ControlLeft', 'KeyA');
 	await press('Backspace');
-	const outlineScroll = scene.view.outline.scroll;
+	const outlineScroll = scene.view.hierarchy.outline.scroll;
 	test.remote.apply([{ type: 'wheel', deltaY: 3 }]);
 	await frame();
 	await frame();
-	check(picker.model.viewport.scrollTop > 0 && scene.view.outline.scroll === outlineScroll, 'quick pick: wheel scrolls only the popup list');
+	check(picker.model.viewport.scrollTop > 0 && scene.view.hierarchy.outline.scroll === outlineScroll, 'quick pick: wheel scrolls only the popup list');
 	await press('PageDown');
 	check(picker.model.list.selectionIndex >= picker.model.firstVisibleIndex, 'quick pick: keyboard selection is revealed after wheel scrolling');
 	await click(editorChromeState.menuEntryBounds.view, 8);

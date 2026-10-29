@@ -97,6 +97,7 @@ export class IdeCommandController {
 	public execute(command: EditorCommandId, target: InputFocusTarget | null = inputFocus.target, input?: EditorInput,
 		editorContext?: InputFocusTarget | null): void {
 		if (editorContext === null) return;
+		const targetScope = target?.scope, targetGeneration = targetScope?.contextGeneration;
 		const commandScope = target?.commandContext.scope, contextGeneration = commandScope?.contextGeneration;
 		const editorScope = editorContext?.commandContext.scope, editorGeneration = editorScope?.contextGeneration;
 		const invocationTarget = editorContext === undefined ? target : editorContext;
@@ -106,9 +107,7 @@ export class IdeCommandController {
 		if (originGroup === null) return;
 		const originPart = this.editor.editorParts.partForTarget(invocationTarget);
 		if (originPart === null) return;
-		let implementation = input === undefined ? target?.getCommand(command) : undefined;
-		if (implementation === undefined && input === undefined && SOURCE_COMMANDS.has(command)
-			&& invocationTarget?.commandContext !== target) implementation = invocationTarget?.commandContext.getCommand(command);
+		const implementation = input === undefined ? target?.resolveCommand(command) : undefined;
 		if (implementation !== undefined) {
 			const invocation = implementation.capture === undefined ? implementation : implementation.capture();
 			if (invocation === undefined) return;
@@ -124,12 +123,17 @@ export class IdeCommandController {
 					if (inputFocus.target !== null && !scope!.contains(inputFocus.target.scope)) return;
 				}
 			}
-			if (commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration) return;
-			if (invocation.isEnabled()) invocation.run(originGroup?.focusTarget);
+			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
+				|| editorScope?.contextGeneration !== editorGeneration) return;
+			if (!invocation.isEnabled()) return;
+			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
+				|| editorScope?.contextGeneration !== editorGeneration) return;
+			invocation.run(originGroup?.focusTarget);
 			return;
 		}
 		if (command === 'editor.source' || command === 'editor.sourceToSide') {
-			if (commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration) return;
+			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
+				|| editorScope?.contextGeneration !== editorGeneration) return;
 			const placement = command === 'editor.sourceToSide' ? 'side' : 'default';
 			const main = this.editor.mainWorkspace;
 			if (input === undefined && main.isPrimaryTarget(invocationTarget)) {
@@ -159,7 +163,7 @@ export class IdeCommandController {
 				if (inputFocus.target !== null && findEditorGroup(inputFocus.target) !== group) return;
 			}
 		}
-		if (commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration
+		if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration
 			|| input !== undefined && !group.model.contains(input)) return;
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
@@ -453,9 +457,7 @@ export class IdeCommandController {
 		if (originGroup === null) return false;
 		const originPart = this.editor.editorParts.partForTarget(focus);
 		if (originPart === null) return false;
-		let implementation = input === undefined ? focus?.getCommand(command) : undefined;
-		if (implementation === undefined && input === undefined && SOURCE_COMMANDS.has(command)
-			&& focus?.commandContext !== focus) implementation = focus?.commandContext.getCommand(command);
+		const implementation = input === undefined ? focus?.resolveCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isEnabled();
 		if ((command === 'editor.source' || command === 'editor.sourceToSide') && input === undefined && this.editor.mainWorkspace.isPrimaryTarget(focus))
 			return this.editor.mainWorkspace.canOpenSource(focus!);
@@ -646,7 +648,7 @@ export class IdeCommandController {
 		if (originPart === null) return false;
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return false;
-		const implementation = input === undefined ? target?.getCommand(command) : undefined;
+		const implementation = input === undefined ? target?.resolveCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isChecked?.() === true;
 		const part = this.editor.editorParts.partForGroup(group);
 		switch (command) {

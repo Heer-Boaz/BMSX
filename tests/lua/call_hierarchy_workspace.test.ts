@@ -33,7 +33,7 @@ async function fixture(t: TestContext, sources: readonly (readonly [string, stri
 	const calls = model('calls.lua'), scene = model('scene.lua'), document = f.ide.sceneSources.get(scene);
 	assert.equal(await f.editor.openSceneInMain(scene, { document, sourceVersion: scene.version, scene: document.scenes[0] }, inputFocus.target!), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(primary.view, 1), true);
+	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 	await f.editor.navigation.openResource(f.firstGroup, calls.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });
 	const sourceInput = f.firstGroup.model.activeTab; assert.ok(sourceInput instanceof CodeEditorInput);
 	const sourcePane = f.firstGroup.panes.activePane; assert.ok(sourcePane instanceof CodeEditorPane);

@@ -14,6 +14,18 @@ import { WorkbenchScrollControl } from '../../ide/workbench/ui/scroll_control';
 
 const PRIMARY = PointerButton.Primary;
 
+test('retiring a focused scroll attachment cannot erase a new input admitted by its blur observer', t => {
+	const f = fixture(t), next = new WorkbenchScrollViewport();
+	next.layout(20, 30, 123, 130, 800);
+	f.control.focusTarget.focus();
+	const unbind = f.control.focusTarget.onDidBlur(() => f.control.setInput(next));
+	t.after(unbind);
+	f.control.clearInput();
+	assert.equal(f.control.handleWheel({ valid: true, insideViewport: true, viewportX: 40, viewportY: 50 }, 30), true);
+	assert.equal(next.scrollTop, 30);
+	assert.equal(f.view.scrollTop, 0);
+});
+
 function fixture(t: TestContext) {
 	const view = new WorkbenchScrollViewport();
 	view.layout(20, 30, 123, 130, 400);

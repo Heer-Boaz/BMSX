@@ -3,11 +3,13 @@ import test, { type TestContext } from 'node:test';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
-import { inputFocus } from '../../ide/input/focus';
-import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
-import { SceneOptionEditor } from '../../ide/workbench/contrib/scene_editor/option_editor';
-import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
-import { installSceneOutline, selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
+import { inputFocus, InputFocusScope } from '../../ide/input/focus';
+import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
+import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
+import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { pointerCapture } from '../../ide/input/pointer/capture';
+import type { EditorCommandRunner } from '../../ide/common/commands';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
@@ -29,36 +31,35 @@ scenes.register('room', { objects = {
 function fixture(t: TestContext, source = SOURCE) {
 	configureFontVariant('tiny');
 	const { model, documents } = createSceneSourceFixture(t, source, 'room.lua');
-	const input = new SceneEditorInput(model, documents);
-	t.after(() => input.dispose());
-	let boundSource = '';
-	const refresh = () => {
-		if (boundSource === model.buffer.getText()) return;
-		boundSource = model.buffer.getText();
-		installSceneOutline(input.view);
-		selectSceneOutlineRow(input.view, 1);
-		layoutSceneEditor(input.view, true, false, { left: 0, top: 24, right: 384, bottom: 276 });
-		editor.bind(input.view);
+	const authoring = new SceneAuthoringContext(model, documents), view = new SceneDetailsViewState(authoring);
+	const scene = authoring.document!.scenes[0];
+	assert.equal(authoring.select(authoring.document!, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
+	const scope = new InputFocusScope(Symbol('option editor fixture'), inputFocus.workbenchScope), parent = inputFocus.createTarget(null, scope);
+	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const commands: EditorCommandRunner = {
+		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
+		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const navigation = { isEnabled: () => true, run: () => assert.fail('source editing invoked view navigation') };
-	const editor = new SceneOptionEditor(inputFocus.createTarget(), refresh, () => {}, { outline: navigation, details: navigation });
-	refresh();
-	return { model, input, editor, refresh,
-		control: (label: string) => editor.controls[input.view.optionProperties.findIndex(property => property.label === label)] };
+	const details = new SceneDetailsControl(commands, menu, scope, parent, { outline: navigation, details: navigation });
+	details.setView(view, { left: 0, top: 24, right: 384, bottom: 276 });
+	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); });
+	return { model, view, editor: details.options, refresh: () => details.update(),
+		control: (label: string) => details.options.controls[view.optionProperties.findIndex(property => property.descriptor.label === label)] };
 }
 
 test('scene inspector projects written leaves, expressions and arrays without evaluating them', t => {
-	const f = fixture(t); t.after(() => f.editor.clear());
-	assert.deepEqual(f.input.view.optionProperties.map(property => property.label),
+	const f = fixture(t);
+	assert.deepEqual(f.view.optionProperties.map(property => property.descriptor.label),
 		['color', 'visible', 'imgid', 'region.x', 'region.width', 'items[1]', 'items[2]', "['custom-key']", 'callback']);
 	assert.equal(f.control("['custom-key']").field.text, 'math.max(1, 2)');
 	assert.equal(f.control('callback').field.readOnly, true, 'multiline implementation remains source-owned');
-	assert.equal(f.input.view.optionProperties.at(-1)!.preview, 'function()');
+	assert.equal(f.view.optionProperties.at(-1)!.descriptor.preview, 'function()');
 	assert.equal(f.model.dirty, false);
 });
 
 test('option acceptance edits only its source expression and shares document undo/redo', t => {
-	const f = fixture(t); t.after(() => f.editor.clear());
+	const f = fixture(t);
 	const edit = (label: string, text: string) => {
 		const control = f.control(label);
 		setFieldText(control.field, text, true);
@@ -81,7 +82,7 @@ test('option acceptance edits only its source expression and shares document und
 });
 
 test('invalid and revoked option drafts cannot damage enclosing Lua or a different source field', t => {
-	const f = fixture(t); t.after(() => f.editor.clear());
+	const f = fixture(t);
 	const control = f.control('color');
 	for (const text of ['1, visible = false', '17 -- eats the separator', 'math.max(']) {
 		setFieldText(control.field, text, true);
@@ -101,8 +102,7 @@ test('invalid and revoked option drafts cannot damage enclosing Lua or a differe
 test('dynamic option builders and empty authored tables remain their actual expression target', t => {
 	for (const value of ['make_options()', '{}']) {
 		const f = fixture(t, `local scenes = require('cartlib/world/scene_library')\nscenes.register('r', { objects = { { member_id = 'x', definition_id = 'p', options = ${value} } } })`);
-		t.after(() => f.editor.clear());
-		assert.deepEqual(f.input.view.optionProperties.map(property => property.label), ['options']);
+		assert.deepEqual(f.view.optionProperties.map(property => property.descriptor.label), ['options']);
 		assert.equal(f.control('options').field.text, value);
 	}
 });

@@ -46,6 +46,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		this.control = new SceneEditorControl(options.commands, options.sources, options.contextMenu,
 			options.surfaces, options.owner, options.workArea, options.scope);
 		this.control.focusTarget.registerCommand('save', {
+			contextual: true,
 			isEnabled: () => this.control.hasView && !consumer.workingCopy.readOnly,
 			run: () => options.save(consumer.workingCopy),
 		});
@@ -87,8 +88,8 @@ export function createScenePrimaryClient(model: EditorTextModel, documents: Scen
 	options: ScenePrimaryClientOptions, view?: SceneEditorViewSnapshot): ScenePrimaryClient | undefined {
 	const context = new SceneAuthoringContext(model, documents, subject);
 	if (!context.isCurrent || context.availability !== 'available') { context.dispose(); return undefined; }
+	context.select(context.document!, model.version, { kind: 'scene', scene: context.subject! });
 	const client = new ScenePrimaryClient(context, options);
-	client.view.refresh();
 	if (view !== undefined) restoreSceneEditorView(client.view, view);
 	return client;
 }

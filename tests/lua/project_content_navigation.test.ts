@@ -79,10 +79,10 @@ test('the real project tree activates all authored kinds and reveals each retain
 	const sceneGroup = f.activate(secondScene), scene = sceneGroup.model.activeTab;
 	assert.ok(sceneGroup === chosen); assert.ok(scene instanceof SceneEditorInput);
 	assert.deepEqual(scene.view.authoring.selectionRange, secondScene.element.content.range);
-	const sceneRoot = scene.view.outline.rows[scene.view.outline.selectionIndex];
+	const sceneRoot = scene.view.hierarchy.outline.rows[scene.view.hierarchy.outline.selectionIndex];
 	assert.equal(sceneRoot.element.kind, 'scene');
-	const memberIndex = scene.view.outline.rows.findIndex(node => node.parent === sceneRoot);
-	assert.ok(memberIndex >= 0); selectSceneOutlineRow(scene.view, memberIndex); f.update();
+	const memberIndex = scene.view.hierarchy.outline.rows.findIndex(node => node.parent === sceneRoot);
+	assert.ok(memberIndex >= 0); selectSceneOutlineRow(scene.view.hierarchy, memberIndex); f.update();
 	const sceneSelection = { ...scene.view.authoring.selectionRange };
 	for (const node of nodes) {
 		const entry = node.element.content;

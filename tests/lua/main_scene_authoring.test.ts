@@ -36,9 +36,9 @@ test('Main retains an exact authored Scene beside independent document groups wi
 	assert.equal(await f.open(1), true); f.update();
 	const client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
 	assert.equal(client.consumer.subject, client.consumer.document!.scenes[1]);
-	assert.equal(client.view.outline.roots.length, 1);
+	assert.equal(client.view.hierarchy.outline.roots.length, 1);
 	assert.ok(f.editor.editorParts.groups.every(group => group.model.tabs.every(input => input.kind !== 'scene_editor')));
-	selectSceneOutlineRow(client.view, 1); client.control.update();
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
 	const selected = client.consumer.selection;
 	f.first.focus(); f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
 	f.second.focus(); f.update();
@@ -54,8 +54,8 @@ test('Main retains an exact authored Scene beside independent document groups wi
 test('closing Source cannot prompt or discard the dirty working copy retained by actual Main authoring', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	selectSceneOutlineRow(client.view, 1); client.control.update();
-	const field = client.control.controls[0];
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
+	const field = client.control.details.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '123', true); assert.equal(field.commit(), true);
 	const source = f.model.buffer.getText(); assert.ok(source !== SOURCE);
 	const group = f.editor.editorParts.main.activeGroup, input = new CodeEditorInput(f.model);
@@ -104,15 +104,15 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const)
 	test(`Main ${command} preserves a newer selection published by its departing field instead of navigating it`, async t => {
 		const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 		const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-		selectSceneOutlineRow(client.view, 1); client.control.update();
-		const field = client.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
-		const release = f.model.onDidChangeContent(() => { release(); client.view.refresh(); selectSceneOutlineRow(client.view, 2); });
+		selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
+		const field = client.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+		const release = f.model.onDidChangeContent(() => { release(); client.view.refresh(); selectSceneOutlineRow(client.view.hierarchy, 2); });
 		t.after(release);
 		const navigation = t.mock.method(f.editor.navigation, 'openResource');
 		const groups = [...f.editor.editorParts.groups];
 		f.editor.commands.execute(command, client.commandTarget);
 		assert.ok(f.model.buffer.getText().includes('x = 123'));
-		assert.equal(client.view.outline.selectionIndex, 2);
+		assert.equal(client.view.hierarchy.outline.selectionIndex, 2);
 		assert.equal(navigation.mock.callCount(), 0);
 		assert.deepEqual(f.editor.editorParts.groups, groups);
 	});
@@ -120,10 +120,10 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const)
 test('hiding Studio detaches Main control authority while retaining its exact subject for a new attachment', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
-	selectSceneOutlineRow(client.view, 1); client.control.update();
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
 	const selected = client.consumer.selection;
 	const invocation = client.control.focusTarget.getCommand('sceneEditor.removeMember')!.capture!()!;
-	const field = client.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+	const field = client.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	f.editor.deactivate();
 	assert.equal(client.control.hasView, false); assert.equal(field.pending, false);
 	assert.equal(main.primary, client); assert.equal(client.consumer.selection, selected);
@@ -149,8 +149,8 @@ test('Main Ctrl+S accepts its concrete pending field and saves its own canonical
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	selectSceneOutlineRow(client.view, 1); client.control.update();
-	const field = client.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
+	const field = client.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	f.key('KeyS', KeyModifier.ctrl);
 	const operation = f.ide.textFileSaves.latestOperation(f.model);
 	assert.ok(operation !== undefined, 'Save addresses the actual Main working-copy consumer');

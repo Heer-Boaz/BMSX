@@ -233,7 +233,7 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	f.editor.sceneEditor.openResource(sceneGroup, resource); f.update();
 	const scene = sceneGroup.model.activeTab;
 	assert.ok(scene instanceof SceneEditorInput);
-	selectSceneOutlineRow(scene.view, 1); f.update();
+	selectSceneOutlineRow(scene.view.hierarchy, 1); f.update();
 	const selection = { ...scene.view.authoring.selectionRange }, scenePane = sceneGroup.panes.activePane!;
 	const sourceGroup = parts.splitGroup(sceneGroup, 'right');
 	assert.ok(sourceGroup);
@@ -249,7 +249,7 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	const model = source.input.workingCopy, offset = model.buffer.getText().indexOf('x = 11') + 4;
 	assert.equal(source.code.focusTarget.textInput!.replaceText(offset, offset + 2, '17'), true);
 	f.update();
-	assert.equal(scene.view.properties[0].value, 17, 'the sibling Scene inspector consumes the same edited working copy');
+	assert.equal(scene.view.details.properties[0].descriptor.value, 17, 'the sibling Scene inspector consumes the same edited working copy');
 	assert.equal(scene.isDirty(), true); assert.equal(source.input.isDirty(), true);
 	f.editor.commands.execute('save', source.commandTarget); await setImmediate(); f.update();
 	assert.equal(model.dirty, false); assert.equal(scene.isDirty(), false);
@@ -415,7 +415,7 @@ for (const activation of ['keyboard', 'pointer'] as const) test(`${activation} P
 	f.editor.sceneEditor.openResource(main.activeGroup, sceneResource); f.update();
 	const scene = main.activeGroup.model.activeTab!, pane = main.activeGroup.panes.activePane!;
 	assert.ok(scene instanceof SceneEditorInput);
-	selectSceneOutlineRow(scene.view, 1); f.update();
+	selectSceneOutlineRow(scene.view.hierarchy, 1); f.update();
 	const selection = { ...scene.view.authoring.selectionRange }, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'broken.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);

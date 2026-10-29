@@ -38,6 +38,8 @@ import { captureBehaviorLensView, restoreBehaviorLensView } from '../../ide/work
 import { captureCodeEditorView } from '../../ide/workbench/contrib/code_editor/view_snapshot';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { captureSceneEditorView, restoreSceneEditorView } from '../../ide/workbench/contrib/scene_editor/view_snapshot';
+import { layoutSceneDetails } from '../../ide/workbench/contrib/scene_editor/details_layout';
+import { layoutSceneHierarchy } from '../../ide/workbench/contrib/scene_editor/hierarchy_layout';
 import { layoutSceneEditor } from '../../ide/workbench/contrib/scene_editor/layout';
 import { applyWorkspaceAutosavePayload } from '../../ide/workbench/workspace/restore';
 import { workspaceDirtyRecords } from '../../ide/workbench/workspace/state';
@@ -112,8 +114,8 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 		input.view.presentation.position = { scrollX: 37 + index, scrollY: 25 + index, zoom: 0.75 };
 		f.group.model.add(input); return input;
 	});
-	const scene = new SceneEditorInput(f.model, f.scene.documents); scene.view.refresh(); selectSceneOutlineRow(scene.view, 1);
-	scene.view.position = { outlineScroll: 1, detailsScroll: 17 }; f.group.model.add(scene);
+	const scene = new SceneEditorInput(f.model, f.scene.documents); scene.view.refresh(); selectSceneOutlineRow(scene.view.hierarchy, 1);
+	scene.view.hierarchy.position = 1; scene.view.details.position = 17; f.group.model.add(scene);
 	const cleanResource = f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: 'definitions.lua' })!;
 	const cleanModel = editorTextModelService.retain(cleanResource, 'lua', '-- second slot');
 	const clean = new CodeEditorInput(cleanModel); f.group.model.add(clean, { pinned: false });
@@ -225,10 +227,10 @@ test('retained Scene presentation publishes source and reading changes without a
 	const unsubscribe = input.view.onDidChange(() => { changes++; });
 	input.view.section = 'details'; input.view.section = 'details';
 	assert.equal(changes, 1);
-	const scrollbar = input.view.details.scrollbar, track = { left: 0, top: 0, right: 3, bottom: 100 };
+	const scrollbar = input.view.details.viewport.scrollbar, track = { left: 0, top: 0, right: 3, bottom: 100 };
 	scrollbar.layout(track, 400, 100, 0); scrollbar.setScroll(20); scrollbar.setScroll(20);
 	assert.equal(changes, 2);
-	assert.equal(selectSceneOutlineRow(input.view, 1), true);
+	assert.equal(selectSceneOutlineRow(input.view.hierarchy, 1), true);
 	assert.equal(changes, 3);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- source generation\n' }]);
 	assert.equal(changes, 4);
@@ -239,14 +241,20 @@ test('retained Scene presentation publishes source and reading changes without a
 
 test('scene memento survives first layout and retains pending coordinates before its pane is attached', t => {
 	const f = fixture(t);
-	const old = new SceneEditorInput(f.model, f.scene.documents); old.view.refresh(); selectSceneOutlineRow(old.view, 1); layoutSceneEditor(old.view, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-	old.view.details.scrollbar.setScroll(17); old.view.outline.scroll = 1;
+	const old = new SceneEditorInput(f.model, f.scene.documents); old.view.refresh(); selectSceneOutlineRow(old.view.hierarchy, 1); layoutSceneEditor(old.view, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+	old.view.details.refresh();
+	layoutSceneHierarchy(old.view.hierarchy, old.view.layout.hierarchyBounds, true);
+	layoutSceneDetails(old.view.details, true, old.view.layout.detailsBounds);
+	old.view.details.viewport.scrollbar.setScroll(17); old.view.hierarchy.outline.scroll = 1;
 	const snapshot = JSON.parse(JSON.stringify(captureSceneEditorView(old.view)));
 	const fresh = new SceneEditorInput(f.model, f.scene.documents); fresh.view.refresh(); restoreSceneEditorView(fresh.view, snapshot);
 	assert.deepEqual(captureSceneEditorView(fresh.view), snapshot, 'no hidden default geometry overwrites the pending memento');
 	layoutSceneEditor(fresh.view, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-	assert.equal(fresh.view.position, undefined); assert.equal(fresh.view.details.scrollTop, old.view.details.scrollTop);
-	assert.equal(fresh.view.outline.selectionIndex, 1); assert.deepEqual(fresh.view.properties.map(p => p.value), [11, -22, 33]);
+	fresh.view.details.refresh();
+	layoutSceneHierarchy(fresh.view.hierarchy, fresh.view.layout.hierarchyBounds, true);
+	layoutSceneDetails(fresh.view.details, true, fresh.view.layout.detailsBounds);
+	assert.equal(fresh.view.details.position, undefined); assert.equal(fresh.view.details.viewport.scrollTop, old.view.details.viewport.scrollTop);
+	assert.equal(fresh.view.hierarchy.outline.selectionIndex, 1); assert.deepEqual(fresh.view.details.properties.map(p => p.descriptor.value), [11, -22, 33]);
 	assert.equal(f.model.dirty, false); old.dispose(); fresh.dispose();
 });
 

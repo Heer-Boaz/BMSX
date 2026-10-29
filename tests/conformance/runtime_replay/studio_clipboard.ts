@@ -60,7 +60,7 @@ export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (na
 			test.ide.editor.commands.execute('sceneEditor'); await test.frame();
 			const view = test.ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'scene_editor') throw new Error('Scene Editor expected');
 			await selectMember(test, view, 2);
-			await test.click(view.view.properties[0].bounds);
+			await test.click(view.view.details.properties[0].bounds);
 		},
 		async transcript() {
 			test.ide.editor.commands.execute('assistant'); await test.frame();

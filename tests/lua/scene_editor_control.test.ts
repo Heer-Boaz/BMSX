@@ -22,7 +22,7 @@ function fixture(t: TestContext) {
 		f.editor.surfaces, f.editor.editorParts.main.clientSurface, f.editor.editorParts.main.clientBounds,
 		new InputFocusScope(f.editor.editorParts.main.scope.surfaceScope, f.editor.editorParts.main.scope));
 	const bounds = { left: 0, top: 30, right: 800, bottom: 300 };
-	view.refresh(); selectSceneOutlineRow(view, 1);
+	view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	control.setView(view, bounds); control.update();
 	t.after(() => { control.dispose(); view.dispose(); context.dispose(); });
 	return { ...f, model, context, view, control, bounds };
@@ -31,7 +31,7 @@ function fixture(t: TestContext) {
 test('standalone Scene control detaches drafts and focus without retiring its work context or shared source', t => {
 	const f = fixture(t), selected = f.context.selection;
 	assert.equal(findEditorGroup(f.control.commandTarget), undefined, 'the actual widget needs no group or hidden input');
-	const field = f.control.controls[0];
+	const field = f.control.details.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	assert.equal(field.pending, true);
 	f.control.clearView();
@@ -41,12 +41,12 @@ test('standalone Scene control detaches drafts and focus without retiring its wo
 	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 	f.control.setView(f.view, f.bounds); f.control.update();
 	assert.equal(f.context.selection, selected);
-	assert.equal(f.control.controls[0].field.text, '11');
+	assert.equal(f.control.details.controls[0].field.text, '11');
 	assert.equal(f.model.dirty, false);
 });
 
 test('source-consuming intrinsic command settles its concrete standalone Scene field before resolving the member', t => {
-	const f = fixture(t), field = f.control.controls[0];
+	const f = fixture(t), field = f.control.details.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	f.editor.commands.execute('sceneEditor.removeMember', f.control.focusTarget);
 	assert.equal(f.context.selection, undefined);
@@ -60,19 +60,19 @@ test('source-consuming intrinsic command settles its concrete standalone Scene f
 for (const command of ['sceneEditor.removeMember', 'sceneEditor.moveMemberUp', 'sceneEditor.moveMemberDown'] as const)
 	test(`captured ${command} cannot acquire a new member selected while its field draft publishes`, t => {
 		const f = fixture(t);
-		if (command === 'sceneEditor.moveMemberUp') { selectSceneOutlineRow(f.view, 2); f.control.update(); }
-		const field = f.control.controls[command === 'sceneEditor.moveMemberUp' ? 1 : 0];
+		if (command === 'sceneEditor.moveMemberUp') { selectSceneOutlineRow(f.view.hierarchy, 2); f.control.update(); }
+		const field = f.control.details.controls[command === 'sceneEditor.moveMemberUp' ? 1 : 0];
 		field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 		let published = '';
 		const release = f.model.onDidChangeContent(() => {
 			release(); f.view.refresh();
-			selectSceneOutlineRow(f.view, command === 'sceneEditor.moveMemberUp' ? 1 : 2);
+			selectSceneOutlineRow(f.view.hierarchy, command === 'sceneEditor.moveMemberUp' ? 1 : 2);
 			published = f.model.buffer.getText();
 		}); t.after(release);
 		f.editor.commands.execute(command, f.control.focusTarget);
 		assert.notEqual(published, '', 'the concrete departing draft was accepted');
 		assert.equal(f.model.buffer.getText(), published, 'the older command must not mutate the newly selected member');
-		assert.equal(f.view.outline.selectionIndex, command === 'sceneEditor.moveMemberUp' ? 1 : 2);
+		assert.equal(f.view.hierarchy.outline.selectionIndex, command === 'sceneEditor.moveMemberUp' ? 1 : 2);
 		f.model.undo(); assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 	});
 

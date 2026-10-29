@@ -50,14 +50,14 @@ test('Scene fresh views preserve the selected source occurrence while retaining 
 	controller.openResource(group, resource);
 	const source = group.model.activeTab;
 	assert.ok(source instanceof SceneEditorInput);
-	source.view.refresh(); selectSceneOutlineRow(source.view, 1);
-	source.view.section = 'details'; source.view.position = { outlineScroll: 2, detailsScroll: 7 };
+	source.view.refresh(); selectSceneOutlineRow(source.view.hierarchy, 1);
+	source.view.section = 'details'; source.view.hierarchy.position = 2; source.view.details.position = 7;
 	const before = captureSceneEditorView(source.view), input = source.createView!();
 	t.after(() => input.dispose());
 	assert.ok(input !== source && input.workingCopy === source.workingCopy);
 	assert.deepEqual(captureSceneEditorView(input.view), before, 'the selected member and reading position, not a namesake/default scene, are copied');
-	assert.ok(input.view.outline !== source.view.outline && input.view.details !== source.view.details && input.view.authoring.selectionRange !== source.view.authoring.selectionRange);
-	selectSceneOutlineRow(input.view, 0);
+	assert.ok(input.view.hierarchy.outline !== source.view.hierarchy.outline && input.view.details !== source.view.details && input.view.authoring.selectionRange !== source.view.authoring.selectionRange);
+	selectSceneOutlineRow(input.view.hierarchy, 0);
 	assert.deepEqual(captureSceneEditorView(source.view), before, 'the new view cannot change its sibling selection');
 	source.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared\n' }]);
 	source.view.refresh(); input.view.refresh();

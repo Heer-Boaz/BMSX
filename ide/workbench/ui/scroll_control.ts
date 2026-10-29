@@ -35,9 +35,9 @@ export class WorkbenchScrollControl {
 	}
 
 	public clearInput(): void {
+		this.input = null;
 		this.pointer.cancelPointer();
 		this.focusTarget.release();
-		this.input = null;
 	}
 
 	public dispose(): void { this.clearInput(); this.unbindKeyboard(); }

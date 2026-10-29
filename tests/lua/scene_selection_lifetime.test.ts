@@ -168,3 +168,54 @@ test('a source location admission callback cannot return the former selection af
 	});
 	assert.equal(context.getSourceLocation(), undefined); assert.equal(context.selection, undefined);
 });
+
+test('restoring a retired Scene member cannot clear a newer selection published by semantic admission', t => {
+	const f = fixture(t), { context, model, document } = f, scene = document.scenes[0];
+	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
+	const reference = context.captureSourceReference().selected!;
+	t.after(model.trackRanges(new Map([['root', reference.root], ['member', reference.span]])));
+	const range = { ...context.selectionRange };
+	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: 'nil' }]);
+	let published = false;
+	const unsubscribe = context.onDidChangeSelection(() => {
+		if (context.selection !== undefined) return;
+		unsubscribe();
+		const current = context.document!, surviving = current.scenes[0];
+		published = context.select(current, model.version, { kind: 'member', scene: surviving, entry: surviving.objects[1], index: 1 });
+	});
+	t.after(unsubscribe);
+	assert.equal(context.restoreSelection(reference), false);
+	assert.equal(published, true);
+	const selection = context.selection;
+	assert.ok(selection?.kind === 'member');
+	assert.ok(selection.entry === context.document!.scenes[0].objects[1], 'the later explicit selection owns the semantic subject');
+});
+
+test('a reserved Scene selection request follows its exact mapped occurrence through source edits', t => {
+	const f = fixture(t), { context, model, document } = f, scene = document.scenes[0];
+	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
+	const reference = context.captureSourceReference().selected!;
+	t.after(model.trackRanges(new Map([['root', reference.root], ['member', reference.span]])));
+	const request = context.captureSelectionRequest(), intent = context.selectionRevision;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved declaration\n' }]);
+	assert.equal(request.isCurrent(), true);
+	assert.equal(request.restore(reference), true);
+	assert.equal(request.isCurrent(), true);
+	assert.equal(context.selectionRevision, intent);
+	const selection = context.selection;
+	assert.ok(selection?.kind === 'member');
+	assert.ok(selection.entry === context.document!.scenes[0].objects[0]);
+	assert.deepEqual(context.selectionRange, reference.span);
+});
+
+test('a newer explicit Scene selection revokes a pending request before another semantic query', t => {
+	const f = fixture(t), { context, model, document } = f, scene = document.scenes[0];
+	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
+	const reference = context.captureSourceReference().selected!, request = context.captureSelectionRequest();
+	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
+	const selected = context.selection, queries = t.mock.method(f.documents, 'get');
+	assert.equal(request.isCurrent(), false);
+	assert.equal(request.restore(reference), false);
+	assert.equal(queries.mock.callCount(), 0, 'a retired intent cannot restart source admission');
+	assert.ok(context.selection === selected);
+});

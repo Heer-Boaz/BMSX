@@ -1,12 +1,11 @@
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
-import { luaSourceRangeToTextRange, readLuaExpressionPreview, readLuaSourceRange, readLuaTableFieldInteger } from '../../../language/lua/source_edits';
+import { luaSourceRangeToTextRange, readLuaExpressionPreview, readLuaSourceRange } from '../../../language/lua/source_edits';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode } from '../../ui/tree_view';
 import { sourceTabDescription } from '../../ui/tab/titles';
 import type { SceneSourceDefinition, SceneSourceEntry } from './model';
-import type { SceneEditorViewState } from './view_state';
-import { collectSceneOptionProperties } from './option_properties';
+import type { SceneHierarchyViewState } from './hierarchy_view';
 
 type SceneOutlineSource = {
 	readonly scene: SceneSourceDefinition;
@@ -24,9 +23,8 @@ export type SceneMemberElement = SceneOutlineSource & { readonly kind: 'member';
 export type SceneOutlineElement = SceneOutlineSource & { readonly kind: 'scene' } | SceneMemberElement;
 
 /** Source correspondence belongs to this outline, not to labels or the generic tree. */
-export function installSceneOutline(input: SceneEditorViewState): void {
+export function installSceneOutline(input: SceneHierarchyViewState): void {
 	input.authoring.refresh();
-	const first = input.outlineDocument === undefined;
 	const document = input.authoring.document!;
 	input.outlineDocument = document;
 	input.outlineSourceVersion = input.authoring.workingCopy.version;
@@ -77,12 +75,11 @@ export function installSceneOutline(input: SceneEditorViewState): void {
 		}
 	}
 	rebuildWorkbenchTreeRows(outline, null);
-	if (first && input.authoring.selection === undefined && outline.rows.length > 0) selectSceneOutlineRow(input, 0);
-	else projectSceneSelection(input);
+	projectSceneSelection(input);
 }
 
 /** Bind only the selected source member; a definition is never a fake member. */
-export function selectSceneOutlineRow(input: SceneEditorViewState, index: number): boolean {
+export function selectSceneOutlineRow(input: SceneHierarchyViewState, index: number): boolean {
 	const row = input.outline.rows[index]?.element;
 	if (!input.authoring.select(input.outlineDocument!, input.outlineSourceVersion, row === undefined ? undefined : row.kind === 'scene'
 		? { kind: 'scene', scene: row.scene } : { kind: 'member', scene: row.scene, entry: row.entry, index: row.index })) return false;
@@ -91,22 +88,12 @@ export function selectSceneOutlineRow(input: SceneEditorViewState, index: number
 }
 
 /** Project the domain's admitted selection; this does not select or re-admit old row syntax. */
-export function projectSceneSelection(input: SceneEditorViewState): void {
+export function projectSceneSelection(input: SceneHierarchyViewState): void {
 	const selection = input.authoring.selection, document = input.authoring.document;
 	input.outline.selectionIndex = selection === undefined ? -1 : input.outline.rows.findIndex(row => row.element.scene === selection.scene
 		&& (selection.kind === 'scene' ? row.element.kind === 'scene'
 			: row.element.kind === 'member' && row.element.entry === selection.entry));
 	input.outline.hoverIndex = -1;
-	if (selection === undefined) input.section = 'outline';
-	input.optionProperties = selection?.kind === 'member' && selection.entry.kind === 'object'
-		? collectSceneOptionProperties(input.authoring.workingCopy.buffer, document!.analysis.chunk.locations, selection.entry) : [];
-	for (const property of input.properties) {
-		const field = selection?.kind === 'member' && selection.entry.kind === 'object' && selection.entry.position !== null
-			? selection.entry.position[property.axis] : null;
-		property.field = field;
-		property.value = field === null ? null : readLuaTableFieldInteger(field);
-		property.sourceText = field === null ? 'Lua source' : readLuaSourceRange(input.authoring.workingCopy.buffer, document!.analysis.chunk.locations.range(field.value.span)).replace(/\s+/g, ' ');
-	}
 	input.outlineRevision = input.outlineDocument === document && input.outlineSourceVersion === input.authoring.workingCopy.version
 		? input.authoring.revision : -1;
 }

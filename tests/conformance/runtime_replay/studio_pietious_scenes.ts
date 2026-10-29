@@ -51,7 +51,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await editPosition(test, gameplay, 0, 0, 168);
 	await selectMember(test, gameplay, 1);
 	await test.click(gameplay.view.actionBar.items.find(item => item.command === 'sceneEditor.moveMemberUp')!.bounds);
-	check(gameplay.view.outline.roots[0].children[0].element.label === "'hud'", 'Studio moved HUD before the player');
+	check(gameplay.view.hierarchy.outline.roots[0].children[0].element.label === "'hud'", 'Studio moved HUD before the player');
 	await press('ControlLeft', 'KeyS');
 	await until(() => !gameplay.workingCopy.dirty, 'persist the reordered gameplay members');
 	const effects = await openScene(test, 'effects', 4);
@@ -62,7 +62,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await press('Enter');
 	check(visibility.field.text === 'true', 'boolean options accept ordinary Lua values');
 	await press('ControlLeft', 'KeyZ');
-	check(effects.view.optionProperties.find(property => property.label === 'visible')!.sourceText === 'false', 'Undo restores the hidden effect before gameplay');
+	check(effects.view.details.optionProperties.find(property => property.descriptor.label === 'visible')!.descriptor.sourceText === 'false', 'Undo restores the hidden effect before gameplay');
 	await press('ControlLeft', 'KeyS');
 	await until(() => !effects.workingCopy.dirty, 'save the original effect visibility');
 	await editPosition(test, await openScene(test, 'inventory', 12), 3, 0, 136);
@@ -114,7 +114,7 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const reopened = await openScene(test, 'intro', 2);
 	await selectMember(test, reopened, 1);
-	check(reopened.view.properties[0].value === 48, 'authored Lua logo placement survives gameplay and reopening');
+	check(reopened.view.details.properties[0].descriptor.value === 48, 'authored Lua logo placement survives gameplay and reopening');
 	console.info('STUDIO: Pietious named-member reorder, option/position authoring, save, reboot, walking and Enter/halo PASS');
 	return { hostFrames: test.observations.hostFrames, logoX: 48, rockX: 104, playerX: 168, haloX: 136 };
 }

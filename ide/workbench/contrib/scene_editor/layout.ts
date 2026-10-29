@@ -1,151 +1,52 @@
-import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import { clamp } from '../../../../machine/ts/common/clamp';
-import type { RectBounds } from '../../../../machine/ts/common/rect';
-import { write_rect_bounds } from '../../../../machine/ts/common/rect';
-import * as constants from '../../../common/constants';
-import { uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
-import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
+import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import type { EditorFont } from '../../../editor/ui/view/font';
 import { editorViewState } from '../../../editor/ui/view/state';
+import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
+import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import { getWorkbenchEditorBounds, updateFullWidthWorkbenchLayout } from '../../common/layout';
+import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
 import { layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, WORKBENCH_ACTION_BAR_ITEM_SPACING } from '../../ui/action_bar';
-import { clampWorkbenchListScroll, layoutWorkbenchList } from '../../ui/list_view';
-import type { WorkbenchTreeLayout, WorkbenchTreeNode } from '../../ui/tree_view';
 import type { SceneEditorInput } from './editor_input';
 import type { SceneEditorViewState } from './view_state';
-import type { SceneOutlineElement } from './outline';
-import type { EditorFont } from '../../../editor/ui/view/font';
-import type { EditorPaneConstraints } from '../../services/editor/editor_pane';
 
 const PADDING = 4;
 const CLIENT_READING_COLUMNS = 24;
 
-/** Either retained compact section keeps one readable column and its scroll lane. */
 export function measureSceneEditorMinimumWidth(font: EditorFont = editorViewState.font): number {
-	return font.charAdvance * CLIENT_READING_COLUMNS + PADDING * 2 + constants.SCROLLBAR_WIDTH;
+	return font.charAdvance * CLIENT_READING_COLUMNS + PADDING * 2 + SCROLLBAR_WIDTH;
 }
-
 export function measureSceneEditor(_input: SceneEditorInput, font: EditorFont, companionRequested: boolean, target: EditorPaneConstraints): void {
 	target.minimumWidth = 0; target.minimumHeight = 0;
 	target.companionWidth = companionRequested ? measureSceneEditorMinimumWidth(font) : undefined;
 }
 
-/** Measure content on invalidation; a scroll only projects the retained field rectangles. */
-export function layoutSceneEditor(input: SceneEditorViewState, contentChanged: boolean, selectionChanged = false, bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): boolean {
-	const changed = updateFullWidthWorkbenchLayout(input.layout, bounds);
-	const layout = input.layout;
-	// Each split column needs usable text width; font changes can cross this boundary.
+/** Allocate actual sibling clients; their own layout owners measure and project content. */
+export function layoutSceneEditor(input: SceneEditorViewState, contentChanged: boolean, selectionChanged = false,
+	bounds: Readonly<RectBounds> = getWorkbenchEditorBounds()): boolean {
+	const changed = updateFullWidthWorkbenchLayout(input.layout, bounds), layout = input.layout;
 	if (changed) layout.splitMinimumWidth = 2 * measureSceneEditorMinimumWidth() + 1;
 	const mode = layout.right - layout.left >= layout.splitMinimumWidth ? 'split' : input.section;
 	const measured = changed || contentChanged || selectionChanged || mode !== layout.mode;
 	layout.mode = mode;
-	if (measured) {
-		const rowHeight = layout.rowHeight + PADDING;
-		layout.detailsLeft = mode === 'split' ? layout.left + ((layout.right - layout.left) >> 1) : layout.left;
-		const contentTop = Math.min(layout.bottom, layout.top + rowHeight * 2);
-		const treeLayout = input.outline.layout;
-		layoutWorkbenchList(treeLayout, layout.left + PADDING, contentTop,
-			mode === 'details' ? layout.left + PADDING : (mode === 'split' ? layout.detailsLeft : layout.right) - PADDING,
-			mode === 'details' ? contentTop : layout.bottom, rowHeight);
-		// The row-based tree draws whole rows; its hit area excludes a partial last row.
-		treeLayout.contentBottom = treeLayout.contentTop + treeLayout.visibleRowCount * rowHeight;
-		treeLayout.indentWidth = Math.max(editorViewState.font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2);
-		treeLayout.twistieWidth = treeLayout.indentWidth;
-		if (mode !== 'details') {
-			clampWorkbenchListScroll(input.outline);
-			layoutSceneOutlineNodes(input.outline.roots, treeLayout);
-		}
-		const caption = input.sourceCaption;
-		const iconWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, rowHeight);
-		const actionWidth = mode === 'split' ? iconWidth : iconWidth * 2 + WORKBENCH_ACTION_BAR_ITEM_SPACING;
-		const left = clamp(layout.left + PADDING, layout.left, layout.right), right = clamp(layout.right - PADDING, left, layout.right);
-		const actionLeft = clamp(layout.left + measureText(caption) + PADDING * 3, left, Math.max(left, right - actionWidth));
-		const actionBottom = Math.min(layout.bottom, layout.top + rowHeight);
-		layoutWorkbenchActionBar(input.actionBar, right, layout.top, actionBottom, measureText, editorViewState.font.renderFont(), actionLeft);
-		input.sourceText = truncateTextToWidth(caption, input.actionBar.bounds.left - layout.left - PADDING * 2);
-		write_rect_bounds(layout.sourceBounds, left, layout.top, Math.max(left, input.actionBar.bounds.left - PADDING), actionBottom);
-		layout.outlineTitle = mode === 'details' ? '' : 'Scenes';
-		layout.detailsTitle = mode === 'outline' ? '' : 'Details';
-		if (mode === 'outline') input.details.layout(layout.left, contentTop, layout.left, contentTop, input.details.contentHeight);
-		else {
-			const width = layout.right - constants.SCROLLBAR_WIDTH - layout.detailsLeft;
-			const height = measureSceneDetails(input, width);
-			input.details.layout(layout.detailsLeft, contentTop, layout.right, layout.bottom, height);
-		}
-	}
-	const position = input.position;
-	if (position !== undefined) {
-		if (position.outlineScroll !== undefined) {
-			input.outline.scroll = position.outlineScroll;
-			if (mode !== 'details') clampWorkbenchListScroll(input.outline);
-			position.outlineScroll = undefined;
-		}
-		// A hidden client has no measured range yet. Its bookmark belongs to
-		// the first visible layout, not the empty viewport's zero range.
-		if (mode !== 'outline') {
-			input.details.scrollbar.setScroll(position.detailsScroll);
-			input.position = undefined;
-		}
-	}
-
-	if (measured || layout.projectedOffsetTop !== input.details.offsetTop) {
-		for (const property of input.properties) {
-			if (mode === 'outline') write_rect_bounds(property.bounds, 0, 0, 0, 0);
-			else input.details.project(property.contentBounds, property.bounds);
-		}
-		for (const property of input.optionProperties) {
-			if (mode === 'outline') write_rect_bounds(property.bounds, 0, 0, 0, 0);
-			else input.details.project(property.contentBounds, property.bounds);
-		}
-		layout.projectedOffsetTop = input.details.offsetTop;
-	}
-	return measured;
-}
-
-/** Scene composition chooses content, not screen rows. All text, including notes, contributes height. */
-function measureSceneDetails(input: SceneEditorViewState, width: number): number {
-	input.detailsText.length = 0;
-	const node = input.outline.rows[input.outline.selectionIndex];
-	if (node === undefined) return 0;
-	const textWidth = width - PADDING * 2;
-	let top = appendDetailsText(input, node.element.preserveLabelCase ? node.element.label : uppercaseOutsideStrings(node.element.label), textWidth, PADDING);
-	top = appendDetailsText(input, node.element.preserveDetailCase ? node.element.detail : uppercaseOutsideStrings(node.element.detail), textWidth, top);
-	if (node.element.kind === 'scene') return top;
-	top = appendDetailsText(input, 'POSITION / WORLD UNITS', textWidth, top);
-	const fieldHeight = input.layout.rowHeight + PADDING;
-	const fieldLeft = PADDING * 2 + editorViewState.font.advance('X');
-	for (const property of input.properties) {
-		write_rect_bounds(property.contentBounds, fieldLeft, top, width - PADDING, top + fieldHeight);
-		property.text = truncateTextToWidth(uppercaseOutsideStrings(property.sourceText), width - PADDING - fieldLeft - 6);
-		top += fieldHeight + PADDING;
-	}
-	if (input.optionProperties.length > 0) top = appendDetailsText(input, 'OPTIONS / LUA VALUES', textWidth, top);
-	for (const property of input.optionProperties) {
-		top = appendDetailsText(input, uppercaseOutsideStrings(property.label), textWidth, top);
-		write_rect_bounds(property.contentBounds, PADDING, top, width - PADDING, top + fieldHeight);
-		property.text = truncateTextToWidth(uppercaseOutsideStrings(property.preview), textWidth - 6);
-		top += fieldHeight + PADDING;
-	}
-	top = appendDetailsText(input, node.element.scene.resolution === 'partial' ? 'PARTIAL DEFINITION' : 'DEFINITION ONLY',
-		textWidth, top, true);
-	return appendDetailsText(input, 'AFFECTS NEW INSTANCES', textWidth, top);
-}
-
-function appendDetailsText(input: SceneEditorViewState, text: string, width: number, top: number, warning = false): number {
-	writeWrappedMeasuredText(input.wrappedLines, text, width, width, text.length, measureTextRange);
-	for (const line of input.wrappedLines) {
-		input.detailsText.push({ text: line, top, warning });
-		top += input.layout.rowHeight;
-	}
-	return top + PADDING;
-}
-
-function layoutSceneOutlineNodes(nodes: readonly WorkbenchTreeNode<SceneOutlineElement>[], layout: WorkbenchTreeLayout): void {
-	for (const node of nodes) {
-		const badge = node.element.kind === 'scene' && node.element.scene.resolution === 'partial' ? '* ' : '';
-		const label = badge + (node.element.preserveLabelCase ? node.element.label : uppercaseOutsideStrings(node.element.label));
-		node.element.displayLabel = truncateTextToWidth(label,
-			layout.contentRight - layout.contentLeft - node.depth * layout.indentWidth - layout.twistieWidth);
-		node.element.labelClipped = node.element.displayLabel !== label;
-		layoutSceneOutlineNodes(node.children, layout);
-	}
+	if (!measured) return false;
+	const rowHeight = layout.rowHeight + PADDING;
+	layout.detailsLeft = mode === 'split' ? layout.left + ((layout.right - layout.left) >> 1) : layout.left;
+	const contentTop = Math.min(layout.bottom, layout.top + rowHeight * 2);
+	write_rect_bounds(layout.hierarchyBounds, layout.left, contentTop,
+		mode === 'details' ? layout.left : mode === 'split' ? layout.detailsLeft : layout.right,
+		mode === 'details' ? contentTop : layout.bottom);
+	write_rect_bounds(layout.detailsBounds, layout.detailsLeft, contentTop,
+		mode === 'outline' ? layout.detailsLeft : layout.right, mode === 'outline' ? contentTop : layout.bottom);
+	const iconWidth = Math.max(WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, rowHeight);
+	const actionWidth = mode === 'split' ? iconWidth : iconWidth * 2 + WORKBENCH_ACTION_BAR_ITEM_SPACING;
+	const left = clamp(layout.left + PADDING, layout.left, layout.right), right = clamp(layout.right - PADDING, left, layout.right);
+	const actionLeft = clamp(layout.left + measureText(input.sourceCaption) + PADDING * 3, left, Math.max(left, right - actionWidth));
+	const actionBottom = Math.min(layout.bottom, layout.top + rowHeight);
+	layoutWorkbenchActionBar(input.actionBar, right, layout.top, actionBottom, measureText, editorViewState.font.renderFont(), actionLeft);
+	input.sourceText = truncateTextToWidth(input.sourceCaption, input.actionBar.bounds.left - layout.left - PADDING * 2);
+	write_rect_bounds(layout.sourceBounds, left, layout.top, Math.max(left, input.actionBar.bounds.left - PADDING), actionBottom);
+	layout.outlineTitle = mode === 'details' ? '' : 'Scenes';
+	layout.detailsTitle = mode === 'outline' ? '' : 'Details';
+	return true;
 }

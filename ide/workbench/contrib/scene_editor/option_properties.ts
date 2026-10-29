@@ -1,5 +1,4 @@
 import type { LuaSourceLocations } from '../../../../toolchain/ts/lua/syntax/source_locations';
-import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { LuaSyntaxKind, LuaTableFieldKind, type LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { readLuaExpressionPreview, readLuaSourceRange } from '../../../language/lua/source_edits';
@@ -11,9 +10,6 @@ export type SceneOptionProperty = {
 	readonly sourceText: string;
 	readonly preview: string;
 	readonly editable: boolean;
-	text: string;
-	readonly contentBounds: RectBounds;
-	readonly bounds: RectBounds;
 };
 
 /** The written options are the inspector schema. Never evaluate referenced Lua. */
@@ -34,7 +30,7 @@ export function collectSceneOptionProperties(buffer: TextBuffer, locations: LuaS
 		} else {
 			const sourceText = readLuaSourceRange(buffer, locations.range(field.value.span));
 			properties.push({ field, label: label === '' ? 'options' : label, sourceText, editable: !sourceText.includes('\n'),
-				preview: readLuaExpressionPreview(buffer, locations, field.value), text: '', contentBounds: create_rect_bounds(), bounds: create_rect_bounds() });
+				preview: readLuaExpressionPreview(buffer, locations, field.value) });
 		}
 	};
 	append(options, options.value.kind === LuaSyntaxKind.TableConstructorExpression ? '' : 'options');

@@ -12,23 +12,23 @@ export async function testSceneFieldInsertion(test: StudioFixture): Promise<void
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('insert: actual Scene controls required');
-	const x = pane.control.controls[0], fieldSource = readLuaSourceRange(model.buffer, scene.view.outline.roots[0].children[2].element.source);
+	const x = pane.control.details.controls[0], fieldSource = readLuaSourceRange(model.buffer, scene.view.hierarchy.outline.roots[0].children[2].element.source);
 	await click(scene.view.actionBar.items.find(item => item.command === 'sceneEditor.removeMember')!.bounds);
 	const removed = model.buffer.getText();
-	check(scene.view.outline.roots[0].children.length === 3 && scene.view.authoring.selection === undefined, 'insert: accepted source removal contracts the authored list');
+	check(scene.view.hierarchy.outline.roots[0].children.length === 3 && scene.view.authoring.selection === undefined, 'insert: accepted source removal contracts the authored list');
 	await selectMember(test, scene, 2);
 	const selected = scene.view.authoring.selection;
 	check(selected?.kind === 'member', 'insert: an existing neighbor owns selection before construction');
 	model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, scene.view.authoring.document!.analysis.chunk,
-		scene.view.outline.roots[0].element.scene.objectsTable, 2, [fieldSource]));
+		scene.view.hierarchy.outline.roots[0].element.scene.objectsTable, 2, [fieldSource]));
 	await frame();
 	const inserted = model.buffer.getText(), after = scene.view.authoring.selection;
-	check(after?.kind === 'member' && after.index === 3 && scene.view.properties[0].value === 7,
+	check(after?.kind === 'member' && after.index === 3 && scene.view.details.properties[0].descriptor.value === 7,
 		'insert: preceding insertion retains the old neighbor rather than selecting the new field');
-	check(readLuaSourceRange(model.buffer, scene.view.outline.roots[0].children[2].element.source) === fieldSource,
+	check(readLuaSourceRange(model.buffer, scene.view.hierarchy.outline.roots[0].children[2].element.source) === fieldSource,
 		'insert: the new field contains exactly the supplied authored construction');
-	await selectMember(test, scene, 2); await click(scene.view.properties[0].bounds);
-	check(x.field.focusTarget.hasFocus && !x.field.readOnly && scene.view.properties[0].value === 0, 'insert: the ordinary inspector binds the inserted member field');
+	await selectMember(test, scene, 2); await click(scene.view.details.properties[0].bounds);
+	check(x.field.focusTarget.hasFocus && !x.field.readOnly && scene.view.details.properties[0].descriptor.value === 0, 'insert: the ordinary inspector binds the inserted member field');
 	await press('Escape'); await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === removed && scene.view.authoring.selection === undefined && x.field.readOnly,
 		'insert: Undo removes the selected construction and retires only its source authority');

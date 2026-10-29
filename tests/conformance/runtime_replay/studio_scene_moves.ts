@@ -11,22 +11,22 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('move: actual Scene controls required');
-	const x = pane.control.controls[0];
+	const x = pane.control.details.controls[0];
 	const up = scene.view.actionBar.items.find(item => item.command === 'sceneEditor.moveMemberUp')!;
 	const down = scene.view.actionBar.items.find(item => item.command === 'sceneEditor.moveMemberDown')!;
-	const field = scene.view.outline.roots[0].children[2].element.source;
+	const field = scene.view.hierarchy.outline.roots[0].children[2].element.source;
 	const start = model.buffer.offsetAt(field.start.line - 1, field.start.column - 1);
 	const end = model.buffer.offsetAt(field.end.line - 1, field.end.column);
 	const source = readLuaSourceRange(model.buffer, field), grouped = '(--[[owned member comment]]\n' + source + ')';
 	model.pushEditOperations([{ offset: start, deleteLength: end - start, text: grouped }]); await frame();
 	await selectMember(test, scene, 2);
 	const authored = model.buffer.getText();
-	await click(scene.view.properties[0].bounds); await press('Minus'); await click(up.bounds);
+	await click(scene.view.details.properties[0].bounds); await press('Minus'); await click(up.bounds);
 	check(model.buffer.getText() === authored && x.pending && x.field.focusTarget.hasFocus, 'move: invalid field admission prevents a structural edit');
-	await press('Escape'); await click(scene.view.properties[0].bounds); await press('Digit1'); await press('Digit8');
+	await press('Escape'); await click(scene.view.details.properties[0].bounds); await press('Digit1'); await press('Digit8');
 	await click(up.bounds, 8);
 	let selection = scene.view.authoring.selection;
-	check(selection?.kind === 'member' && selection.index === 1 && scene.view.properties[0].value === 18,
+	check(selection?.kind === 'member' && selection.index === 1 && scene.view.details.properties[0].descriptor.value === 18,
 		'move: one held action accepts the draft and follows the original member to its sibling position');
 	const moved = model.buffer.getText();
 	check(moved.includes(grouped.replace('x = 0', 'x = 18')), 'move: complete grouped syntax and its comment move together');
@@ -59,11 +59,11 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	model.pushEditOperations([{ offset: duplicate, deleteLength: "'second'".length, text: "'first'" }]); await frame();
 	await selectMember(test, scene, 1); await click(up.bounds);
 	selection = scene.view.authoring.selection;
-	check(selection?.kind === 'member' && selection.index === 0 && scene.view.properties[0].value === 4,
+	check(selection?.kind === 'member' && selection.index === 0 && scene.view.details.properties[0].descriptor.value === 4,
 		'move: same-name members retain their own field identity and values');
-	await click(scene.view.properties[0].bounds); await press('Digit9'); await press('Enter');
+	await click(scene.view.details.properties[0].bounds); await press('Digit9'); await press('Enter');
 	await selectMember(test, scene, 1);
-	check(scene.view.properties[0].value === 1, 'move: editing the moved member does not edit its namesake');
+	check(scene.view.details.properties[0].descriptor.value === 1, 'move: editing the moved member does not edit its namesake');
 	for (let index = 0; index < 3; index++) await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty, 'move: source restoration does not depend on a cart assembly');
 	check(cycles() === before && ide.sources.currentBlua32Media === media, 'move: authoring order never executes or installs runtime data');

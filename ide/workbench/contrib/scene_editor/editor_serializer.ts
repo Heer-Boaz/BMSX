@@ -4,7 +4,6 @@ import { resolveTextFileModelSnapshot, type TextFileModelSnapshot } from '../../
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { SceneEditorController } from './controller';
 import { SceneEditorInput } from './editor_input';
-import { selectSceneOutlineRow } from './outline';
 import { captureSceneEditorView, restoreSceneEditorView, type SceneEditorViewSnapshot } from './view_snapshot';
 
 export type SerializedSceneEditorInput = { readonly source: TextFileModelSnapshot; readonly view: SceneEditorViewSnapshot };
@@ -23,9 +22,8 @@ export class SceneEditorInputSerializer implements EditorInputSerializer<SceneEd
 		const state: SerializedSceneEditorInput = JSON.parse(value);
 		const { model, sameSource } = await resolveTextFileModelSnapshot(editorTextModelService, this.catalog, state.source);
 		const input = new SceneEditorInput(model, this.controller.documents, this.controller.createView);
-		input.view.refresh();
 		if (sameSource) restoreSceneEditorView(input.view, state.view);
-		else selectSceneOutlineRow(input.view, -1);
+		else input.view.authoring.restoreSelection(undefined);
 		return input;
 	}
 }

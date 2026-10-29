@@ -33,6 +33,12 @@ export type SceneAuthoredSelectionReference = {
 	readonly root: TrackedTextRange;
 };
 
+/** One explicit selection intent, retained through source admission and delayed presentation. */
+export type SceneSelectionRequest = {
+	isCurrent(): boolean;
+	restore(reference: SceneAuthoredSelectionReference | undefined): boolean;
+};
+
 /** Inert source correspondence, not semantic authority for an editing command. */
 export type SceneAuthoredSourceReference = {
 	readonly source: TextFileModelSnapshot;
@@ -88,6 +94,8 @@ export class SceneAuthoringContext {
 	}
 	/** Selection intent and subject retirement; rebinding the same mapped occurrence preserves authority. */
 	public get selectionRevision(): number { return this.selectionRevisionValue; }
+	/** Retained command presentation; invocation separately admits the current source occurrence. */
+	public get hasSelection(): boolean { return !this.lifetime.isDisposed && this.selectionValue !== undefined; }
 	public get isCurrent(): boolean {
 		const changed = this.refresh();
 		if (this.lifetime.isDisposed) return false;
@@ -139,6 +147,34 @@ export class SceneAuthoringContext {
 			selected: unavailable || selected === undefined || this.selectionRange.start === this.selectionRange.end || this.sceneRange.start === this.sceneRange.end
 				? undefined : { kind: selected.kind, span: { ...this.selectionRange }, root: { ...this.sceneRange } },
 		};
+	}
+
+	/** Restore an exact mapped source occurrence without constructing a hierarchy presentation. */
+	public restoreSelection(reference: SceneAuthoredSelectionReference | undefined): boolean {
+		return this.restoreSelectionForRequest(++this.selectionRequestRevision, reference);
+	}
+
+	/** Reserve before a query can publish retirement and a newer explicit selection. */
+	public captureSelectionRequest(): SceneSelectionRequest {
+		const request = ++this.selectionRequestRevision;
+		return {
+			isCurrent: () => !this.lifetime.isDisposed && request === this.selectionRequestRevision,
+			restore: reference => this.restoreSelectionForRequest(request, reference),
+		};
+	}
+
+	private restoreSelectionForRequest(request: number, reference: SceneAuthoredSelectionReference | undefined): boolean {
+		if (request !== this.selectionRequestRevision || !this.isCurrent || request !== this.selectionRequestRevision) return false;
+		const document = this.document!, version = this.workingCopy.version, buffer = this.workingCopy.buffer;
+		if (reference !== undefined && reference.root.start !== reference.root.end && reference.span.start !== reference.span.end) {
+			const scene = this.scenes.find(candidate => luaSourceRangeMatchesTextRange(buffer, candidate.range, reference.root));
+			if (scene !== undefined) {
+				if (reference.kind === 'scene') return this.admitSelection(request, document, version, { kind: 'scene', scene });
+				const index = scene.objects.findIndex(entry => luaSourceRangeMatchesTextRange(buffer, document.analysis.chunk.locations.range(entry.field.span), reference.span));
+				if (index !== -1) return this.admitSelection(request, document, version, { kind: 'member', scene, entry: scene.objects[index], index });
+			}
+		}
+		return this.admitSelection(request, document, version, undefined);
 	}
 
 	/** Authoring admission reads the producer, even when only an API provider changed. */
@@ -194,10 +230,15 @@ export class SceneAuthoringContext {
 	/** The selecting control supplies the source generation it actually presented. */
 	public select(document: SceneSourceDocument, sourceVersion: number, selection: SceneAuthoredSelection | undefined): boolean {
 		const request = ++this.selectionRequestRevision;
-		if (!this.isCurrent || request !== this.selectionRequestRevision || document !== this.documentValue || sourceVersion !== this.workingCopy.version) return false;
+		if (!this.isCurrent) return false;
+		return this.admitSelection(request, document, sourceVersion, selection);
+	}
+
+	private admitSelection(request: number, document: SceneSourceDocument, sourceVersion: number, selection: SceneAuthoredSelection | undefined): boolean {
+		if (request !== this.selectionRequestRevision || document !== this.documentValue || sourceVersion !== this.workingCopy.version) return false;
 		if (selection === undefined) {
 			this.clearSelection();
-			return true;
+			return request === this.selectionRequestRevision;
 		}
 		if (this.subjectScenes !== undefined && selection.scene !== this.subject) return false;
 		const previous = this.selectionValue;
@@ -213,7 +254,7 @@ export class SceneAuthoringContext {
 		this.sceneRange.start = sceneRange.start; this.sceneRange.end = sceneRange.end;
 		this.selectionRange.start = range.start; this.selectionRange.end = range.end;
 		if (changed) this.selectionChanged();
-		return true;
+		return request === this.selectionRequestRevision;
 	}
 
 	private clearSelection(): void {

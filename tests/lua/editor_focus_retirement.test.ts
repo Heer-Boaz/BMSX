@@ -70,11 +70,11 @@ for (const invocation of ['command', 'toolbar pointer', 'compact command'] as co
 	const pane = f.firstGroup.panes.activePane!;
 	assert.ok(pane instanceof SceneEditorPane);
 	if (invocation === 'compact command') { f.firstBounds.right = 160; f.update(); }
-	selectSceneOutlineRow(input.view, 1);
+	selectSceneOutlineRow(input.view.hierarchy, 1);
 	pane.update();
 	f.editor.commands.execute('sceneEditor.details', pane.commandTarget);
 	const commandTarget = pane.commandTarget;
-	const field = pane.control.controls[0].field, model = input.workingCopy, original = model.buffer.getText();
+	const field = pane.control.details.controls[0].field, model = input.workingCopy, original = model.buffer.getText();
 	assert.equal(field.focusTarget.focus(), true);
 	assert.equal(field.replaceText(0, field.readText().text.length, '789'), true);
 	assert.equal(field.focusTarget.edit!.pending, true);
@@ -95,7 +95,7 @@ for (const invocation of ['command', 'toolbar pointer', 'compact command'] as co
 		}
 	}
 	assert.equal(field.focusTarget.edit!.pending, false);
-	assert.equal(input.view.outline.selectionIndex, -1);
+	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
 	assert.ok(model.buffer.getText() !== original && model.buffer.getText() !== accepted);
 	f.update();
 	assert.equal(input.view.section, 'outline');
@@ -103,7 +103,7 @@ for (const invocation of ['command', 'toolbar pointer', 'compact command'] as co
 	assert.ok(inputFocus.admittedTarget !== commandTarget, 'the retired Details subject cannot remain the keyboard owner');
 	f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(model.buffer.getText(), accepted, 'first Undo reverses removal, not the separately accepted numeric draft');
-	assert.equal(input.view.outline.selectionIndex, -1);
+	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
 	f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(model.buffer.getText(), original);
 	assert.equal(model.canUndo, false);

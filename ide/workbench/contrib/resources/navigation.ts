@@ -55,7 +55,7 @@ export class EditorNavigationController {
 			return attached()
 				&& (focused === null || scope !== undefined && scope.contains(focused.scope));
 		};
-		const focused = inputFocus.target, edit = focused !== null && sourceScope.contains(focused.commandContext.scope) ? focused.edit : undefined;
+		const focused = inputFocus.target, edit = focused !== null && sourceScope.contains(focused.scope) ? focused.edit : undefined;
 		if (edit?.commit() === false || !current()) return;
 		const focusRevision = inputFocus.revision;
 		const admitLocation = (location: EditorSourceLocation | undefined): Promise<number | undefined> | undefined => {

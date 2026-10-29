@@ -31,6 +31,8 @@ export type FocusCommandInvocation = {
 };
 
 export type FocusCommand = FocusCommandInvocation & {
+	/** Explicit application actions may address this semantic command through a declared command context. */
+	readonly contextual?: true;
 	isChecked?(): boolean;
 	/** Capture this invocation's actual subject before draft publication can select another. */
 	capture?(): FocusCommandInvocation | undefined;
@@ -154,6 +156,14 @@ export class InputFocusTarget {
 
 	public getCommand(command: EditorCommandId): FocusCommand | undefined {
 		return this.commands.get(command);
+	}
+
+	/** Application addressing is separate from the native capabilities installed on a control. */
+	public resolveCommand(command: EditorCommandId): FocusCommand | undefined {
+		const local = this.commands.get(command);
+		if (local !== undefined || this.commandContext === this) return local;
+		const contextual = this.commandContext.getCommand(command);
+		return contextual?.contextual === true ? contextual : undefined;
 	}
 
 	public onDidBlur(listener: (next: InputFocusTarget | null) => void): () => void {

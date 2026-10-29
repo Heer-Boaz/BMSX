@@ -42,22 +42,22 @@ function fixture(t: TestContext) {
 
 test('a second Scene presentation projects an existing context selection instead of choosing its own first root', t => {
 	const f = fixture(t);
-	assert.equal(selectSceneOutlineRow(f.view, 2), true); f.control.update();
+	assert.equal(selectSceneOutlineRow(f.view.hierarchy, 2), true); f.control.update();
 	const selected = f.context.selection, next = new SceneEditorViewState(f.context);
 	t.after(() => next.dispose());
 	f.control.setView(next, f.bounds); f.control.update();
 	assert.equal(f.context.selection, selected);
-	assert.equal(next.outline.rows[next.outline.selectionIndex].element.kind, 'member');
-	assert.equal(f.control.controls[0].field.text, '4', 'the newly attached field binds the selected canonical numeric value');
+	assert.equal(next.hierarchy.outline.rows[next.hierarchy.outline.selectionIndex].element.kind, 'member');
+	assert.equal(f.control.details.controls[0].field.text, '4', 'the newly attached field binds the selected canonical numeric value');
 	assert.equal(f.model.buffer.getText(), SCENE_AUTHORING_SOURCE);
 });
 
 test('independent Scene contexts share source but not semantic selection or control drafts', t => {
 	const f = fixture(t), other = new SceneAuthoringContext(f.model, f.documents), otherView = new SceneEditorViewState(other);
 	t.after(() => { otherView.dispose(); other.dispose(); });
-	otherView.refresh(); selectSceneOutlineRow(otherView, 3);
-	selectSceneOutlineRow(f.view, 1); f.control.update();
-	const field = f.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '31', true);
+	otherView.refresh(); selectSceneOutlineRow(otherView.hierarchy, 3);
+	selectSceneOutlineRow(f.view.hierarchy, 1); f.control.update();
+	const field = f.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '31', true);
 	assert.equal(field.commit(), true);
 	f.context.refresh(); other.refresh();
 	assert.ok(f.context.document === other.document, 'contexts share the newly admitted projection');
@@ -69,26 +69,26 @@ test('independent Scene contexts share source but not semantic selection or cont
 
 test('a missing primary declaration revokes pending field edits and cannot retarget the control after Undo', t => {
 	const f = fixture(t);
-	selectSceneOutlineRow(f.view, 1); f.control.update();
-	const field = f.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '77', true);
+	selectSceneOutlineRow(f.view.hierarchy, 1); f.control.update();
+	const field = f.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '77', true);
 	const source = f.model.buffer.getText();
 	f.model.pushEditOperations([{ offset: 0, deleteLength: source.length, text: source }]);
 	assert.equal(field.commit(), true, 'admission retires the old draft instead of applying it to a replacement');
 	assert.equal(f.context.availability, 'unavailable');
-	assert.equal(f.view.outline.rows.length, 0);
+	assert.equal(f.view.hierarchy.outline.rows.length, 0);
 	assert.equal(field.field.readOnly, true);
 	assert.equal(f.model.buffer.getText(), source);
 	f.model.undo(); f.control.update();
 	assert.equal(f.context.availability, 'unavailable');
-	assert.equal(f.view.outline.rows.length, 0);
+	assert.equal(f.view.hierarchy.outline.rows.length, 0);
 	assert.equal(f.model.buffer.getText(), source);
 });
 
 
 test('canonical model retirement detaches a standalone Scene widget and revokes its field and history targets', t => {
 	const f = fixture(t);
-	selectSceneOutlineRow(f.view, 1); f.control.update();
-	const field = f.control.controls[0], origin = f.control.focusTarget;
+	selectSceneOutlineRow(f.view.hierarchy, 1); f.control.update();
+	const field = f.control.details.controls[0], origin = f.control.focusTarget;
 	field.field.focusTarget.focus(); setFieldText(field.field, '88', true);
 	f.models.clear();
 	assert.equal(f.control.hasView, false);

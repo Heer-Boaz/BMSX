@@ -26,7 +26,7 @@ function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [s
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, imports);
 	const document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	const view = new SceneEditorViewState(context); view.refresh(); selectSceneOutlineRow(view, 1);
+	const view = new SceneEditorViewState(context); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	t.after(() => { view.dispose(); context.dispose(); });
 	const bookmark = () => {
 		const location = new ScenePrimaryBookmark(context, view); t.after(() => location.dispose()); return location;
@@ -46,11 +46,11 @@ test('primary snapshots keep declaration identity independently from a cleared m
 	assert.deepEqual(snapshot.source.fingerprint, getTextSnapshotFingerprint(f.model.buffer));
 });
 
-test('primary capture follows the domain selection changed by a reentrant presentation observer', t => {
+test('primary capture observes a newer domain selection published by semantic retirement', t => {
 	const f = fixture(t); f.view.section = 'details';
 	let selected = false;
-	const release = f.view.onDidChange(() => {
-		if (selected || f.view.section !== 'outline') return;
+	const release = f.context.onDidChangeSelection(() => {
+		if (selected || f.context.selection !== undefined) return;
 		selected = true;
 		assert.equal(f.context.select(f.context.document!, f.model.version, { kind: 'scene', scene: f.context.subject! }), true);
 	}); t.after(release);
@@ -114,7 +114,7 @@ test('primary serialization observes current mapped source without refreshing st
 
 test('document serialization observes current mapped source without resolving or publishing a retired selection', t => {
 	const f = fixture(t), input = new SceneEditorInput(f.model, f.documents); t.after(() => input.dispose());
-	input.view.refresh(); selectSceneOutlineRow(input.view, 1);
+	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
 	const context = input.view.authoring;
 	let notifications = 0;
 	const release = context.onDidChangeSelection(() => {
@@ -213,10 +213,10 @@ test('member removal clears only bookmarked sub-selection and leaves its authore
 
 test('bookmark matching identifies source subjects and selection, not reading sections or scroll', t => {
 	const f = fixture(t), first = f.bookmark();
-	f.view.section = 'details'; f.view.position = { outlineScroll: 23, detailsScroll: 51 };
+	f.view.section = 'details'; f.view.hierarchy.position = 23; f.view.details.position = 51;
 	const same = f.bookmark();
 	assert.equal(first.matches(same), true);
-	selectSceneOutlineRow(f.view, 2);
+	selectSceneOutlineRow(f.view.hierarchy, 2);
 	const otherMember = f.bookmark();
 	assert.equal(first.matches(otherMember), false);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- moved\n' }]);

@@ -19,7 +19,7 @@ function fixture(t: TestContext) {
 	const f = createSceneSourceFixture(t, SOURCE), workspace = createTestEditorWorkspace(t);
 	const document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	const view = new SceneEditorViewState(context); view.refresh(); selectSceneOutlineRow(view, 1);
+	const view = new SceneEditorViewState(context); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	t.after(() => { view.dispose(); context.dispose(); resetNavigationHistoryState(); });
 	return { ...f, ...workspace, context, view, bookmark: () => new ScenePrimaryBookmark(context, view) };
 }
@@ -68,7 +68,7 @@ test('history release disposes the bookmark without announcing a separate source
 test('Scene history equality uses the bookmarked occurrence and selection rather than a former client', t => {
 	const f = fixture(t), first = new ScenePrimaryNavigationLocation(f.bookmark(), f.mainWorkspace, async () => true);
 	const same = new ScenePrimaryNavigationLocation(f.bookmark(), f.mainWorkspace, async () => false);
-	selectSceneOutlineRow(f.view, 2);
+	selectSceneOutlineRow(f.view.hierarchy, 2);
 	const other = new ScenePrimaryNavigationLocation(f.bookmark(), f.mainWorkspace, async () => true);
 	t.after(() => { first.dispose(); same.dispose(); other.dispose(); });
 	assert.equal(first.matches(same), true); assert.equal(first.matches(other), false);

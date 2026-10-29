@@ -53,11 +53,11 @@ function fixture(t: TestContext) {
 for (const clearSelection of [false, true]) test(`primary recovery shares one dirty canonical model and preserves exact subject and selection (cleared: ${clearSelection})`, async t => {
 	const f = fixture(t); assert.equal(await f.open(1), true);
 	const original = f.editor.mainWorkspace.primary; assert.ok(original instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(original.view, 1), true);
+	assert.equal(selectSceneOutlineRow(original.view.hierarchy, 1), true);
 	const copy = f.model();
 	copy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained draft\n' }]);
 	original.view.refresh();
-	if (clearSelection) assert.equal(selectSceneOutlineRow(original.view, -1), true);
+	if (clearSelection) assert.equal(selectSceneOutlineRow(original.view.hierarchy, -1), true);
 	else original.view.section = 'details';
 	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(copy));
 	f.editor.mainWorkspace.focusPrimary();

@@ -25,15 +25,15 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const menu = await openScene(test, 'title');
 	await selectMember(test, menu, 1);
-	check(menu.view.properties[0].value === 80, 'visible selector property matches the unmodified game');
-	await click(menu.view.properties[0].bounds);
+	check(menu.view.details.properties[0].descriptor.value === 80, 'visible selector property matches the unmodified game');
+	await click(menu.view.details.properties[0].bounds);
 	await press('ControlLeft', 'KeyA');
 	await press('Digit8'); await press('Digit8'); await press('Enter');
-	check(menu.view.properties[0].value === 88, 'pointer and typing change selector x');
+	check(menu.view.details.properties[0].descriptor.value === 88, 'pointer and typing change selector x');
 	await press('ControlLeft', 'KeyZ');
-	check(menu.view.properties[0].value === 80, 'ordinary Undo restores authored placement');
+	check(menu.view.details.properties[0].descriptor.value === 80, 'ordinary Undo restores authored placement');
 	await press('ControlLeft', 'KeyY');
-	check(menu.view.properties[0].value === 88, 'ordinary Redo restores the edit');
+	check(menu.view.details.properties[0].descriptor.value === 88, 'ordinary Redo restores the edit');
 	await press('ControlLeft', 'KeyS');
 	await until(() => !menu.workingCopy.dirty, 'save title through the product workspace API');
 	check(guest.readStringMember(originalSelector, 'x') === 80,
@@ -41,9 +41,9 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	await test.capture?.('title-editor');
 	const hangar = await openScene(test, 'hangar');
 	await selectMember(test, hangar, 1);
-	check(hangar.view.properties[0].value === 48 && hangar.view.properties[1].value === 129, 'ship has independently editable scene placement');
+	check(hangar.view.details.properties[0].descriptor.value === 48 && hangar.view.details.properties[1].descriptor.value === 129, 'ship has independently editable scene placement');
 	for (const [index, keys] of [[0, ['Digit5', 'Digit6']], [1, ['Digit1', 'Digit2', 'Digit5']]] as const) {
-		await click(hangar.view.properties[index].bounds);
+		await click(hangar.view.details.properties[index].bounds);
 		await press('ControlLeft', 'KeyA');
 		for (const key of keys) await press(key);
 		await press('Enter');
@@ -117,11 +117,11 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const reopened = await openScene(test, 'hangar');
 	await selectMember(test, reopened, 1);
-	check(reopened.view.properties[0].value === 56 && reopened.view.properties[1].value === 125,
+	check(reopened.view.details.properties[0].descriptor.value === 56 && reopened.view.details.properties[1].descriptor.value === 125,
 		'Studio readback after reboot and gameplay retains the saved placement');
 	const endDemo = await openScene(test, 'end_demo');
 	await selectMember(test, endDemo, 1);
-	check(endDemo.view.properties[1].value === 10, 'end-demo scene edit persists through reboot and gameplay');
+	check(endDemo.view.details.properties[1].descriptor.value === 10, 'end-demo scene edit persists through reboot and gameplay');
 	console.info('STUDIO: Nemesis presentation/gameplay authoring, reboot and relative animation PASS');
 	return { hostFrames: test.observations.hostFrames, selectorX: 88, shipX: 56, shipY: 69 };
 }

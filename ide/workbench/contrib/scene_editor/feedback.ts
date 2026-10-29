@@ -7,7 +7,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import type { WorkbenchTreeNode } from '../../ui/tree_view';
-import type { SceneEditorViewState } from './view_state';
+import type { SceneHierarchyViewState } from './hierarchy_view';
 import type { SceneOutlineElement } from './outline';
 
 /** Retained authored membership, not another row which later occupies the same index. */
@@ -15,7 +15,7 @@ export class SceneOutlineFeedback {
 	private readonly tooltip = new WorkbenchTooltip();
 	private readonly anchor = create_rect_bounds();
 	private readonly unbindBlur: () => void;
-	private input: SceneEditorViewState | undefined;
+	private input: SceneHierarchyViewState | undefined;
 	private row: WorkbenchTreeNode<SceneOutlineElement> | undefined;
 	private keyboard = false;
 	private scroll = 0;
@@ -31,13 +31,13 @@ export class SceneOutlineFeedback {
 	public clear(): void { this.tooltip.hide(); this.input = undefined; this.row = undefined; this.keyboard = false; }
 	public dispose(): void { this.clear(); this.tooltip.detach(); this.unbindBlur(); }
 
-	public keyboardSelection(input: SceneEditorViewState): void {
+	public keyboardSelection(input: SceneHierarchyViewState): void {
 		this.tooltip.hide(); this.input = input; this.row = input.outline.rows[input.outline.selectionIndex];
 		this.scroll = input.outline.scroll; this.keyboard = true;
 	}
 
 	/** Stationary pointer state cannot replace explicit keyboard intent or adopt a row after scrolling. */
-	public pointer(input: SceneEditorViewState, index: number, snapshot: PointerSnapshot): void {
+	public pointer(input: SceneHierarchyViewState, index: number, snapshot: PointerSnapshot): void {
 		const moved = this.pointerX !== snapshot.viewportX || this.pointerY !== snapshot.viewportY;
 		this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY;
 		if (snapshot.pressedButtons !== 0 || snapshot.justPressedButtons !== 0) { this.clear(); return; }

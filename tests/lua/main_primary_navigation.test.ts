@@ -35,7 +35,7 @@ function fixture(t: TestContext) {
 test('Main and Source share Back/Forward without moving the retained primary into a document tab', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const first = f.main.primary; assert.ok(first instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(first.view, 2), true); first.control.update();
+	assert.equal(selectSceneOutlineRow(first.view.hierarchy, 2), true); first.control.update();
 	resetNavigationHistoryState();
 	const group = f.parts.main.activeGroup;
 	await f.editor.navigation.openResource(group, f.copy.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });
@@ -60,7 +60,7 @@ test('Main and Source share Back/Forward without moving the retained primary int
 test('Main history restores exact same-named declarations and member selections after canonical movement', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const first = f.main.primary; assert.ok(first instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(first.view, 2), true); first.control.update();
+	assert.equal(selectSceneOutlineRow(first.view.hierarchy, 2), true); first.control.update();
 	resetNavigationHistoryState();
 	assert.equal(await f.open(1), true); f.update();
 	const second = f.main.primary; assert.ok(second instanceof ScenePrimaryClient && second !== first);
@@ -151,7 +151,7 @@ test('a retained history bookmark cannot suppress a dirty Source last-consumer d
 test('actual Main navigation ownership survives Files focus and background document movement and close', async t => {
 	const f = fixture(t); assert.equal(await f.open(1), true); f.update();
 	const current = f.main.primary; assert.ok(current instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(current.view, 1), true); const selected = current.consumer.selection;
+	assert.equal(selectSceneOutlineRow(current.view.hierarchy, 1), true); const selected = current.consumer.selection;
 	resetNavigationHistoryState();
 	f.editor.resourcePanel.show(); f.update();
 	assert.ok(inputFocus.target === f.editor.resourcePanel.focusTarget && navigationState.activeOwner === f.main);

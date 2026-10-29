@@ -65,7 +65,7 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	const sourceSelection = captureCodeEditorView(sourceInput);
 	const sourceGroup = ide.editor.editorParts.activeGroup;
 	const scene = new SceneEditorInput(model, ide.editor.sceneEditor.documents);
-	scene.view.refresh(); selectSceneOutlineRow(scene.view, 1);
+	scene.view.refresh(); selectSceneOutlineRow(scene.view.hierarchy, 1);
 	ide.editor.editorParts.main.activeGroup.openEditor(scene); await test.frame();
 	for (const [index, presentation] of [[0, 'graph'], [1, 'graph'], [2, 'state-graph']] as const) {
 		const input = ide.editor.behaviorLens.createInput(model, presentation);
@@ -152,7 +152,7 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	// Pagehide observes accepted model state, not the current inline draft.
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('session: actual SceneEditorPane required');
-	const field = pane.control.controls[0].field;
+	const field = pane.control.details.controls[0].field;
 	field.focusTarget.focus(); setFieldText(field, '-', true); // invalid draft, not an accepted source edit
 	const version = model.version;
 	persistWorkspaceSessionLocally();

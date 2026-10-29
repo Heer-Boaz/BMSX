@@ -260,9 +260,14 @@ and shared with project-content discovery. `SceneAuthoringContext` retains sourc
 correspondence, semantic selection and member editing independently of outline
 rows and document placement. A primary context scopes one exact declaration;
 independent Scene inputs retain their own contexts over shared source models.
-`SceneEditorViewState` retains presentation and `SceneEditorControl` owns concrete
-focus, fields, gestures and transients. A document pane adapts that control to a
-group; `ScenePrimaryClient` attaches it directly to Main without an editor input.
+`SceneDetailsProjection` derives selected source facts directly from that context,
+without tree rows or measured geometry. Hierarchy and Details retain their own
+reading/placement state and attach through separate controls and input scopes.
+`SceneEditorViewState` and `SceneEditorControl` compose those actual clients with
+shared chrome and region allocation. Semantic selection restore precedes optional
+tree highlighting; disclosure does not determine whether Details has a subject.
+A document pane adapts the composition to a group; `ScenePrimaryClient` attaches
+it directly to Main without an editor input.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
 An input's optional fresh-view capability belongs to its contribution. It creates
@@ -342,10 +347,13 @@ or mutable contribution-registration lifecycle.
 view or physical target happens to be active. Each frontend owns its central
 keybinding controller and pending chord lifetime. Binding metadata supplies
 resolution and shortcut presentation; pane handlers do not own chord state.
-Keyboard commands use the admitted application runner; isolated controls without
-one execute only their own capabilities. Native field commands and semantic
-source commands remain distinct. A source command can use its explicit client
-context without borrowing the active document group. Contribution-owned command
+Keyboard commands use the admitted application runner. Native capability lookup
+is control-local. Application command resolution gives local handlers precedence
+and admits only explicitly exported semantic commands from the declared action
+context. Focus-return parents do not provide command inheritance; borrowing an
+action context does not grant its widget's keyboard capabilities. Native field
+commands and semantic source commands remain distinct. A source command can use
+its explicit client context without borrowing the active document group. Contribution-owned command
 capture retains invocation subject and control lifetime before draft publication;
 UI enablement does not construct those invocations.
 

@@ -30,7 +30,7 @@ export type EditorCommandKeybinding = EditorKeybindingStroke & {
 	readonly command: EditorCommandId;
 	readonly chord?: EditorKeybindingStroke;
 	/** Applicability is distinct from command enablement (e.g. empty field history). */
-	readonly when?: (target: InputFocusTarget | null) => boolean;
+	readonly when?: (target: InputFocusTarget | null, commands?: EditorCommandEnablement) => boolean;
 	readonly repeat?: boolean;
 };
 
@@ -50,9 +50,12 @@ const NO_MODIFIERS: EditorModifierConstraint = {
 const editorContribKeybindings: readonly EditorCommandKeybinding[] = [
 	{ code: 'Tab', command: 'suggest.accept', modifiers: NO_MODIFIERS, when: target => target?.getCommand('suggest.accept')?.isEnabled() === true },
 	{ code: 'KeyZ', command: 'wrap', modifiers: { required: KeyModifier.alt, forbidden: PRIMARY_MODIFIER | KeyModifier.shift }, when: target => target?.getCommand('wrap') !== undefined },
-	{ code: 'KeyZ', command: 'undo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('undo') !== undefined, repeat: true },
-	{ code: 'KeyZ', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt }, when: target => target?.getCommand('redo') !== undefined, repeat: true },
-	{ code: 'KeyY', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, when: target => target?.getCommand('redo') !== undefined, repeat: true },
+	{ code: 'KeyZ', command: 'undo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS },
+		when: (target, commands) => (commands === undefined ? target?.getCommand('undo') : target?.resolveCommand('undo')) !== undefined, repeat: true },
+	{ code: 'KeyZ', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt },
+		when: (target, commands) => (commands === undefined ? target?.getCommand('redo') : target?.resolveCommand('redo')) !== undefined, repeat: true },
+	{ code: 'KeyY', command: 'redo', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS },
+		when: (target, commands) => (commands === undefined ? target?.getCommand('redo') : target?.resolveCommand('redo')) !== undefined, repeat: true },
 	{ code: 'KeyS', command: 'save', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'KeyO', command: 'symbolSearch', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift } },
 	{ code: 'KeyE', command: 'runtimeErrorFocus', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
@@ -180,7 +183,7 @@ export function resolveEditorCommandKeybinding(
 			}
 			const ownCommand = target?.getCommand(binding.command);
 			if (ownCommand === undefined && commands === undefined) continue;
-			if (binding.when !== undefined ? binding.when(target)
+			if (binding.when !== undefined ? binding.when(target, commands)
 				: ownCommand !== undefined || commands!.isEnabled(binding.command, target)) return binding;
 		}
 	}

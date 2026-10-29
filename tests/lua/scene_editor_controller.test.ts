@@ -51,7 +51,7 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 	left.view.refresh(); right.view.refresh();
 	assert.notEqual(left.view.authoring, right.view.authoring, 'independent document views own independent semantic selections');
 	assert.equal(left.view.authoring.document, right.view.authoring.document, 'view lifetime does not duplicate shared domain topology');
-	selectSceneOutlineRow(left.view, 1); selectSceneOutlineRow(right.view, 0);
+	selectSceneOutlineRow(left.view.hierarchy, 1); selectSceneOutlineRow(right.view.hierarchy, 0);
 	second.activate(right.id);
 	const siblingRange = { ...right.view.authoring.selectionRange };
 	const location = left.view.authoring.getSourceLocation();
@@ -64,14 +64,14 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 	assert.ok(text.indexOf("member_id = 'source only'") < text.indexOf("member_id = 'subject'"),
 		'the explicitly supplied first view determines the move, not the active sibling');
 	right.view.refresh();
-	const selected = right.view.outline.rows[right.view.outline.selectionIndex].element;
+	const selected = right.view.hierarchy.outline.rows[right.view.hierarchy.outline.selectionIndex].element;
 	assert.equal(selected.kind, 'scene', 'the active sibling keeps its independent scene-root selection');
 	assert.equal(second.model.activeTab, right);
 	assert.equal(left.view.authoring.canRemoveSelectedMember(), true);
 	left.view.authoring.removeSelectedMember(); left.view.refresh();
 	assert.equal(left.workingCopy.buffer.getText().includes("member_id = 'subject'"), false);
 	assert.equal(left.workingCopy.buffer.getText().includes("member_id = 'source only'"), true);
-	assert.equal(left.view.outline.selectionIndex, -1);
+	assert.equal(left.view.hierarchy.outline.selectionIndex, -1);
 	left.workingCopy.undo(); left.workingCopy.undo();
 	assert.equal(left.workingCopy.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 });
@@ -108,7 +108,7 @@ test('Scene pane source production and member commands retain their input when a
 	const left = first.model.activeTab, right = second.model.activeTab;
 	assert.ok(left instanceof SceneEditorInput); assert.ok(right instanceof SceneEditorInput);
 	left.view.refresh(); right.view.refresh();
-	selectSceneOutlineRow(left.view, 0); selectSceneOutlineRow(right.view, 1);
+	selectSceneOutlineRow(left.view.hierarchy, 0); selectSceneOutlineRow(right.view.hierarchy, 1);
 	const pane = second.panes.getPane('scene_editor')!;
 	t.after(() => {
 		parts.dispose(); menu.dispose(); surfaces.dispose(); inputFocus.setTarget(null);
@@ -119,13 +119,13 @@ test('Scene pane source production and member commands retain their input when a
 	first.activate(left.id);
 	const location = await pane.getSourceLocation!();
 	assert.ok(location?.model === right.workingCopy); assert.equal(location.modelVersion, right.workingCopy.version);
-	assert.equal(origin.getCommand('sceneEditor.moveMemberDown')!.isEnabled(), true);
-	inputFocus.executeCommand('sceneEditor.moveMemberDown', origin);
+	assert.equal(origin.commandContext.getCommand('sceneEditor.moveMemberDown')!.isEnabled(), true);
+	inputFocus.executeCommand('sceneEditor.moveMemberDown', origin.commandContext);
 	assert.ok(right.workingCopy.buffer.getText().indexOf("member_id = 'source only'") < right.workingCopy.buffer.getText().indexOf("member_id = 'subject'"));
 	left.view.refresh();
-	assert.equal(left.view.outline.rows[left.view.outline.selectionIndex].element.kind, 'scene');
+	assert.equal(left.view.hierarchy.outline.rows[left.view.hierarchy.outline.selectionIndex].element.kind, 'scene');
 	second.panes.clearEditor();
-	assert.equal(origin.getCommand('sceneEditor.removeMember')!.isEnabled(), false, 'a detached pane no longer admits its former subject');
+	assert.equal(origin.commandContext.getCommand('sceneEditor.removeMember')!.isEnabled(), false, 'a detached pane no longer admits its former subject');
 });
 
 function definitionOpeningFixture(t: TestContext, height = 288) {
@@ -171,7 +171,7 @@ scenes.register('incomplete', {})
 	const untrack = model.trackRanges(new Map(ranges.map((range, index) => [index, range])));
 	t.after(() => {
 		const pane = group.panes.getPane('scene_editor');
-		if (pane instanceof SceneEditorPane) for (const control of pane.control.controls) control.cancel();
+		if (pane instanceof SceneEditorPane) for (const control of pane.control.details.controls) control.cancel();
 		parts.dispose(); menu.dispose(); surfaces.dispose(); untrack(); inputFocus.setTarget(null);
 		editorTextModelService.clear(); resetSemanticProjects(editorTextModelService);
 	});
@@ -185,18 +185,18 @@ test('Scene definition opening selects the exact table among duplicate semantic 
 	const input = f.group.model.activeTab;
 	assert.ok(input instanceof SceneEditorInput);
 	assert.equal(input.workingCopy, f.model);
-	assert.equal(input.view.outline.rows[input.view.outline.selectionIndex].element.scene, input.view.authoring.document.scenes[1]);
+	assert.equal(input.view.hierarchy.outline.rows[input.view.hierarchy.outline.selectionIndex].element.scene, input.view.authoring.document.scenes[1]);
 	assert.equal(input.view.authoring.document.scenes.length, 2, 'a registration without an objects table is not an editable definition');
 	const pane = f.group.panes.getPane('scene_editor')!;
 	assert.ok(pane instanceof SceneEditorPane);
 	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
-	assert.equal(pane.control.controls[0].field.text, '22');
-	setFieldText(pane.control.controls[0].field, '123', false);
-	assert.equal(pane.control.controls[0].commit(), true);
+	assert.equal(pane.control.details.controls[0].field.text, '22');
+	setFieldText(pane.control.details.controls[0].field, '123', false);
+	assert.equal(pane.control.details.controls[0].commit(), true);
 	assert.ok(f.model.buffer.getText().includes('x = 123, y = 23'));
 	assert.ok(f.model.buffer.getText().includes('x = 11, y = 12'));
 	f.model.undo(); pane.update();
-	assert.equal(pane.control.controls[0].field.text, '22');
+	assert.equal(pane.control.details.controls[0].field.text, '22');
 	assert.equal(f.group.model.tabs.length, 1);
 });
 
@@ -210,22 +210,22 @@ test('reopening a surviving Scene occurrence keeps its subject and reading; expl
 	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
 	const history = new SceneEditorNavigationSelection(input.view);
 	t.after(() => history.dispose());
-	pane.control.controls[0].field.focusTarget.focus();
-	input.view.details.scrollbar.setScroll(17);
-	const subject = { ...input.view.authoring.selectionRange }, scroll = input.view.details.scrollTop;
+	pane.control.details.controls[0].field.focusTarget.focus();
+	input.view.details.viewport.scrollbar.setScroll(17);
+	const subject = { ...input.view.authoring.selectionRange }, scroll = input.view.details.viewport.scrollTop;
 	assert.ok(scroll > 0, 'the retained Details reading position is not its initial top');
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
 	assert.deepEqual(input.view.authoring.selectionRange, subject);
 	assert.equal(input.view.section, 'details');
-	assert.equal(input.view.details.scrollTop, scroll);
-	assert.equal(pane.control.controls[0].field.text, '11');
+	assert.equal(input.view.details.viewport.scrollTop, scroll);
+	assert.equal(pane.control.details.controls[0].field.text, '11');
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
-	assert.equal(input.view.outline.rows[input.view.outline.selectionIndex].element.scene, input.view.authoring.document.scenes[1]);
-	assert.equal(pane.control.controls[0].field.readOnly, true, 'switching to a definition retires the former member control subject');
+	assert.equal(input.view.hierarchy.outline.rows[input.view.hierarchy.outline.selectionIndex].element.scene, input.view.authoring.document.scenes[1]);
+	assert.equal(pane.control.details.controls[0].field.readOnly, true, 'switching to a definition retires the former member control subject');
 	const restored = f.group.openEditor(input, { navigationSelection: history });
 	assert.ok(restored !== undefined); assert.equal(restored.activated, true); assert.equal(restored.generation, f.group.panes.openGeneration);
-	assert.equal(pane.control.controls[0].field.readOnly, false);
-	assert.equal(pane.control.controls[0].field.text, '11', 'history restoration rebinds the retained member before accepting another field draft');
+	assert.equal(pane.control.details.controls[0].field.readOnly, false);
+	assert.equal(pane.control.details.controls[0].field.text, '11', 'history restoration rebinds the retained member before accepting another field draft');
 	assert.deepEqual(input.view.authoring.selectionRange, subject);
 	assert.equal(f.group.model.tabs.length, 1);
 });
@@ -236,8 +236,8 @@ test('Scene opening settles the attached field draft before consuming its tracke
 	const pane = f.group.panes.getPane('scene_editor')!;
 	assert.ok(pane instanceof SceneEditorPane);
 	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
-	pane.control.controls[0].field.focusTarget.focus();
-	setFieldText(pane.control.controls[0].field, '123456', false);
+	pane.control.details.controls[0].field.focusTarget.focus();
+	setFieldText(pane.control.details.controls[0].field, '123456', false);
 	const priorStart = f.ranges[1].start;
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[1]), true);
 	assert.ok(f.ranges[1].start > priorStart, 'accepted source text moves the tracked target before it is consumed');
@@ -245,7 +245,7 @@ test('Scene opening settles the attached field draft before consuming its tracke
 	assert.ok(input instanceof SceneEditorInput);
 	assert.deepEqual(input.view.authoring.selectionRange, f.ranges[1]);
 	assert.ok(f.model.buffer.getText().includes('x = 123456, y = 12'));
-	assert.equal(pane.control.controls[0].pending, false);
+	assert.equal(pane.control.details.controls[0].pending, false);
 });
 
 test('Scene position and option bindings reread canonical values after commit and Undo before the next update', t => {
@@ -254,12 +254,12 @@ test('Scene position and option bindings reread canonical values after commit an
 	const pane = f.group.panes.getPane('scene_editor')!;
 	assert.ok(pane instanceof SceneEditorPane);
 	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
-	setFieldText(pane.control.controls[0].field, '123', false);
-	assert.equal(pane.control.controls[0].commit(), true);
+	setFieldText(pane.control.details.controls[0].field, '123', false);
+	assert.equal(pane.control.details.controls[0].commit(), true);
 	f.model.undo();
 	pane.update();
-	assert.equal(pane.control.controls[0].field.text, '11');
-	const option = pane.control.options.controls[0];
+	assert.equal(pane.control.details.controls[0].field.text, '11');
+	const option = pane.control.details.options.controls[0];
 	setFieldText(option.field, 'false', false);
 	assert.equal(option.commit(), true);
 	f.model.undo();
@@ -276,8 +276,8 @@ test('invalid Scene draft admission leaves the attachment and subject intact wit
 	const pane = f.group.panes.getPane('scene_editor')!;
 	assert.ok(pane instanceof SceneEditorPane);
 	pane.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
-	pane.control.controls[0].field.focusTarget.focus();
-	setFieldText(pane.control.controls[0].field, '-', false);
+	pane.control.details.controls[0].field.focusTarget.focus();
+	setFieldText(pane.control.details.controls[0].field, '-', false);
 	const subject = { ...input.view.authoring.selectionRange }, generation = f.group.panes.openGeneration;
 	assert.equal(editorTextModelService.get(f.unopened), undefined);
 	assert.equal(f.controller.openDefinition(f.group, f.unopened, f.ranges[1]), false);
@@ -287,8 +287,8 @@ test('invalid Scene draft admission leaves the attachment and subject intact wit
 	assert.deepEqual(input.view.authoring.selectionRange, subject);
 	assert.equal(f.group.panes.openGeneration, generation);
 	assert.equal(f.group.panes.activePane?.input, input);
-	assert.equal(inputFocus.target, pane.control.controls[0].field.focusTarget);
-	assert.equal(pane.control.controls[0].pending, true);
+	assert.equal(inputFocus.target, pane.control.details.controls[0].field.focusTarget);
+	assert.equal(pane.control.details.controls[0].pending, true);
 	assert.equal(f.model.buffer.getText(), f.source);
 });
 
@@ -314,38 +314,38 @@ test('domain admission cannot hide a revoked provider generation from its retain
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['bridge.lua', "return require('cartlib/world/scene_library')"]]);
 	const input = new SceneEditorInput(f.model, f.documents);
 	t.after(() => input.dispose());
-	input.view.refresh(); selectSceneOutlineRow(input.view, 1);
-	const displayed = input.view.outlineDocument, row = input.view.outline.rows[1];
+	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
+	const displayed = input.view.hierarchy.outlineDocument, row = input.view.hierarchy.outline.rows[1];
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.model.resource.contextId, path: 'bridge.lua' })!);
 	provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.length, text: 'return external' }]);
 	assert.equal(input.view.authoring.canRemoveSelectedMember(), false, 'the domain admits the new proof before a view update');
 	assert.notEqual(input.view.authoring.document, displayed);
-	assert.equal(input.view.outline.rows[1], row, 'the control still holds its own earlier-generation receipt');
-	assert.equal(selectSceneOutlineRow(input.view, 1), false, 'old rows cannot borrow the newly admitted document as their proof');
+	assert.equal(input.view.hierarchy.outline.rows[1], row, 'the control still holds its own earlier-generation receipt');
+	assert.equal(selectSceneOutlineRow(input.view.hierarchy, 1), false, 'old rows cannot borrow the newly admitted document as their proof');
 	input.view.refresh();
-	assert.equal(input.view.outlineDocument, input.view.authoring.document);
-	assert.equal(input.view.outline.rows.length, 0);
-	assert.equal(input.view.outline.selectionIndex, -1);
-	assert.ok(input.view.properties.every(property => property.field === null));
+	assert.equal(input.view.hierarchy.outlineDocument, input.view.authoring.document);
+	assert.equal(input.view.hierarchy.outline.rows.length, 0);
+	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
+	assert.ok(input.view.details.properties.every(property => property.descriptor.field === null));
 	assert.equal(f.model.buffer.getText(), source);
 });
 
 test('same-byte replacement retires a row receipt even when its source projection is reused', t => {
 	const f = createSceneSourceFixture(t, SCENE_VIEWPORT_SOURCE), input = new SceneEditorInput(f.model, f.documents);
 	t.after(() => input.dispose());
-	input.view.refresh(); selectSceneOutlineRow(input.view, 1);
-	const displayed = input.view.outlineDocument, row = input.view.outline.rows[1], version = input.view.outlineSourceVersion;
+	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
+	const displayed = input.view.hierarchy.outlineDocument, row = input.view.hierarchy.outline.rows[1], version = input.view.hierarchy.outlineSourceVersion;
 	const { start, end } = input.view.authoring.selectionRange;
 	f.model.pushEditOperations([{ offset: start, deleteLength: end - start, text: f.model.buffer.getTextRange(start, end) }]);
 	assert.equal(input.view.authoring.selection, undefined);
 	assert.equal(input.view.authoring.document, displayed, 'identical source retains the shared immutable projection');
 	assert.notEqual(f.model.version, version);
-	assert.equal(selectSceneOutlineRow(input.view, 1), false, 'an old version cannot reselect a replaced occurrence from identical AST data');
+	assert.equal(selectSceneOutlineRow(input.view.hierarchy, 1), false, 'an old version cannot reselect a replaced occurrence from identical AST data');
 	input.view.refresh();
-	assert.notEqual(input.view.outline.rows[1], row);
-	assert.equal(input.view.outline.selectionIndex, -1);
-	assert.ok(input.view.properties.every(property => property.field === null));
+	assert.notEqual(input.view.hierarchy.outline.rows[1], row);
+	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
+	assert.ok(input.view.details.properties.every(property => property.descriptor.field === null));
 	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 });
 
@@ -354,7 +354,7 @@ test('Scene removal projects rather than clears a newer source selection from it
 	f.controller.openDefinition(f.group, f.resource, f.ranges[0]);
 	const input = f.group.model.activeTab;
 	assert.ok(input instanceof SceneEditorInput);
-	selectSceneOutlineRow(input.view, 1);
+	selectSceneOutlineRow(input.view.hierarchy, 1);
 	const release = f.model.onDidChangeContent(() => {
 		release();
 		const document = f.controller.documents.get(f.model);
@@ -362,9 +362,9 @@ test('Scene removal projects rather than clears a newer source selection from it
 	});
 	t.after(release);
 	input.view.authoring.removeSelectedMember(); input.view.refresh();
-	const selected = input.view.outline.rows[input.view.outline.selectionIndex].element;
+	const selected = input.view.hierarchy.outline.rows[input.view.hierarchy.outline.selectionIndex].element;
 	assert.equal(selected.kind, 'scene');
 	assert.equal(selected.scene, input.view.authoring.document!.scenes[1]);
 	assert.equal(input.view.authoring.selection?.scene, selected.scene);
-	assert.ok(input.view.properties.every(property => property.field === null));
+	assert.ok(input.view.details.properties.every(property => property.descriptor.field === null));
 });

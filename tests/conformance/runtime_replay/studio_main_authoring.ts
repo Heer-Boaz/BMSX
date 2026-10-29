@@ -52,8 +52,8 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	await press('ArrowDown'); await press('Enter'); await press('Home');
 	check(client.consumer.selection?.kind === 'member' && client.consumer.selection.index === 0,
 		'main: hierarchy navigation selects an actual authored member');
-	const field = client.control.controls[0];
-	await click(client.view.properties[0].bounds); await press('Digit1'); await press('Digit2');
+	const field = client.control.details.controls[0];
+	await click(client.view.details.properties[0].bounds); await press('Digit1'); await press('Digit2');
 	check(field.pending && field.field.text === '12' && model.buffer.getText() === original,
 		'main: the actual field owns its draft before source publication');
 	await press('ControlLeft', 'KeyZ');

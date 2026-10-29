@@ -6,6 +6,52 @@ import type { EditorCommandRunner } from '../../ide/common/commands';
 import { InputFocusService } from '../../ide/input/focus';
 import { EditorCommandKeybindingController } from '../../ide/input/keyboard/global_bindings';
 
+for (const route of ['control', 'keybinding'] as const) test(`${route} native dispatch does not inherit exported semantic commands or focus-return commands`, () => {
+	const focus = new InputFocusService(), parent = focus.createTarget(), context = focus.createTarget(), child = focus.createTarget(parent);
+	const bindings = new EditorCommandKeybindingController(focus, new VirtualHeadlessClock());
+	let invoked = 0;
+	parent.registerCommand('undo', { isEnabled: () => true, run: () => assert.fail('focus return is not command inheritance') });
+	context.registerCommand('undo', { contextual: true, isEnabled: () => true, run: () => { invoked++; } });
+	child.commandContext = context;
+	assert.equal(child.getCommand('undo'), undefined);
+	assert.equal(child.resolveCommand('undo'), context.getCommand('undo'));
+	if (route === 'control') focus.executeCommand('undo', child);
+	else assert.equal(bindings.handle(new KeyInputEvent('KeyZ', KeyModifier.ctrl), undefined, child), false);
+	assert.equal(invoked, 0);
+	child.commandContext = child;
+	assert.equal(child.getCommand('undo'), undefined);
+	bindings.dispose();
+});
+
+for (const declined of ['disabled', 'capture'] as const) test(`a ${declined} local command shadows the explicit context implementation`, () => {
+	const focus = new InputFocusService(), context = focus.createTarget(), child = focus.createTarget();
+	child.commandContext = context;
+	context.registerCommand('undo', { contextual: true, isEnabled: () => true, run: () => assert.fail('local capability must not fall through') });
+	child.registerCommand('undo', { isEnabled: () => false, run: () => assert.fail('unadmitted local command'),
+		capture: declined === 'capture' ? () => undefined : undefined });
+	assert.equal(child.resolveCommand('undo'), child.getCommand('undo'));
+	focus.executeCommand('undo', child);
+});
+
+test('application resolution exports only opted-in commands from the directly declared context', () => {
+	const focus = new InputFocusService(), context = focus.createTarget(), child = focus.createTarget();
+	child.commandContext = context;
+	let opened = 0;
+	context.registerCommand('contextMenu', { isEnabled: () => true, run: () => { opened++; } });
+	assert.ok(context.getCommand('contextMenu') !== undefined);
+	assert.equal(child.getCommand('contextMenu'), undefined);
+	assert.equal(child.resolveCommand('contextMenu'), undefined);
+	const other = focus.createTarget();
+	other.registerCommand('save', { contextual: true, isEnabled: () => true, run: () => assert.fail('context addressing is not recursive inheritance') });
+	context.commandContext = other;
+	assert.equal(context.resolveCommand('save'), other.getCommand('save'));
+	assert.equal(child.resolveCommand('save'), undefined);
+	focus.executeCommand('contextMenu', child);
+	assert.equal(opened, 0);
+	focus.executeCommand('contextMenu', context);
+	assert.equal(opened, 1);
+});
+
 for (const route of ['control', 'keybinding'] as const) test(`${route} execution captures a local subject once, independently of UI enablement`, () => {
 	const focus = new InputFocusService(), target = focus.createTarget(), clock = new VirtualHeadlessClock();
 	const bindings = new EditorCommandKeybindingController(focus, clock);
