@@ -20,7 +20,7 @@ export function buildCommandQuickPickItems(commands: Pick<IdeCommandController, 
 		const target = origin !== null && origin.getCommand(command) !== undefined ? origin
 			: presentation.invocationTarget === 'control' ? origin
 			: origin !== null && origin.commandContext.getCommand(command) !== undefined ? origin.commandContext
-			: origin?.clipboard !== undefined && (command === 'copy' || command === 'cut' || command === 'paste') ? origin : editorTarget;
+			: editorTarget;
 		if (!commands.isEnabled(command, target)) continue;
 		const binding = EDITOR_COMMAND_KEYBINDING_LABELS.get(command);
 		items.push({

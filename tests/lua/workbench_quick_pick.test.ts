@@ -37,6 +37,8 @@ import { createWorkbenchPropertyTree, layoutWorkbenchPropertyTree, type Workbenc
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
 import type { DisposableStore } from '../../ide/common/lifecycle';
 import { EditorFont } from '../../ide/editor/ui/view/font';
+import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
+import { executeClipboardAction } from '../../ide/input/clipboard';
 
 const items = [
 	{ label: 'scenes/root.lua', description: 'LUA / SLOT 0', detail: 'root', resourceId: 10 },
@@ -145,6 +147,60 @@ test('composed Palette keeps focused-control clipboard separate from its capture
 	for (const command of ['copy', 'cut', 'paste'] as const) assert.ok(items.find(item => item.command === command)!.target === origin);
 	assert.ok(items.find(item => item.command === 'save')!.target === editorTarget);
 });
+
+for (const command of ['copy', 'cut', 'paste'] as const) for (const hasClipboard of [true, false])
+	test(`Palette ${command} ${hasClipboard ? 'accepts its invoking control' : 'cannot borrow an editor clipboard'} independently of semantic context`, async t => {
+		const picker = createPicker(t), clipboard = new HeadlessClipboard();
+		const origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('native clipboard owner')));
+		const alias = inputFocus.createTarget(null, new InputFocusScope(Symbol('semantic context')));
+		const editorTarget = inputFocus.createTarget(null, new InputFocusScope(Symbol('separate editor')));
+		origin.commandContext = alias; t.after(origin.bindKeyboard(() => {}));
+		let selection = 'native selection', editorSelection = 'editor selection', aliasSelection = 'semantic selection';
+		if (hasClipboard) t.after(origin.bindClipboard({ readOnly: false, copy: () => selection,
+			cut: () => { selection = ''; }, paste: contents => { selection = contents.text; } }));
+		t.after(alias.bindClipboard({ readOnly: false, copy: () => aliasSelection,
+			cut: () => { aliasSelection = ''; }, paste: contents => { aliasSelection = contents.text; } }));
+		t.after(editorTarget.bindClipboard({ readOnly: false, copy: () => editorSelection,
+			cut: () => { editorSelection = ''; }, paste: contents => { editorSelection = contents.text; } }));
+		origin.focus(); await clipboard.writeText('clipboard ingress');
+		const operations: (void | Promise<void>)[] = [];
+		showCommandPalette(picker, {
+			isEnabled: (candidate, target) => candidate === command && target?.clipboard?.[command] !== undefined,
+			isActive: () => false,
+			execute: (candidate, target, input, editorContext) => {
+				assert.equal(candidate, command); assert.ok(target === origin && editorContext === origin);
+				assert.equal(input, undefined); assert.ok(inputFocus.admittedTarget === origin);
+				operations.push(executeClipboardAction(clipboard, command, target!));
+			},
+		}, origin, editorTarget);
+		assert.equal(picker.model.list.rows.length, hasClipboard ? 1 : 0);
+		if (hasClipboard) {
+			picker.accept(); await Promise.all(operations);
+			assert.equal(picker.visible, false); assert.equal(operations.length, 1);
+		} else {
+			picker.accept(); assert.equal(operations.length, 0); picker.hide();
+		}
+		// Clipboard/selection bytes are the action's actual data-integrity contract.
+		assert.equal(selection, hasClipboard && command === 'cut' ? '' : hasClipboard && command === 'paste' ? 'clipboard ingress' : 'native selection');
+		assert.equal(clipboard.text, hasClipboard && command !== 'paste' ? 'native selection' : 'clipboard ingress');
+		assert.equal(editorSelection, 'editor selection'); assert.equal(aliasSelection, 'semantic selection');
+	});
+
+for (const command of ['copy', 'cut', 'paste'] as const)
+	test(`Palette ${command} cannot accept after its native clipboard owner retires during focus return`, t => {
+		const picker = createPicker(t), origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('native clipboard owner')));
+		const editorTarget = inputFocus.createTarget(null, new InputFocusScope(Symbol('separate editor')));
+		t.after(origin.bindKeyboard(() => {}));
+		t.after(origin.bindClipboard({ readOnly: false, copy: () => 'native selection', cut() {}, paste() {} }));
+		t.after(editorTarget.bindClipboard({ readOnly: false, copy: () => 'editor selection', cut() {}, paste() {} }));
+		origin.focus(); let executions = 0;
+		showCommandPalette(picker, { isEnabled: (candidate, target) => candidate === command && target?.clipboard?.[command] !== undefined,
+			isActive: () => false, execute: () => { executions++; } }, origin, editorTarget);
+		assert.equal(picker.model.list.rows.length, 1);
+		t.after(origin.onDidFocus(() => origin.scope.retireContext()));
+		picker.accept();
+		assert.equal(picker.visible, false); assert.equal(executions, 0);
+	});
 
 test('composed Palette addresses physical view actions through the native control independently of semantic editor authority', () => {
 	const origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('native view')));

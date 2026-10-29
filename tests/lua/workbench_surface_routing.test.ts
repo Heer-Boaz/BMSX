@@ -1539,7 +1539,7 @@ test('chrome Palette after a preserve-focus switch addresses the new attached cl
 	assert.ok(inputFocus.target === chrome);
 });
 
-test('chrome Palette retains Host Error body Copy and writes the exact attached document bytes', async t => {
+test('Palette Copy uses the focused Host Error body without lending its clipboard to Files chrome', async t => {
 	const { editor } = fixture(t), group = editor.editorParts.main.activeGroup;
 	const stack = 'RangeError: invalid tuple\n\tat sample.lua:8:3\n';
 	group.openEditor(new HostErrorInput(stack));
@@ -1549,10 +1549,7 @@ test('chrome Palette retains Host Error body Copy and writes the exact attached 
 	assert.equal(pane.commandTarget, body);
 	assert.equal(body.parent!.clipboard, undefined, 'Copy belongs to the attached document body, not its containing pane root');
 	assert.equal(editor.commands.isEnabled('copy', body), true);
-	editor.resourcePanel.show();
-	const chrome = inputFocus.target;
-	assert.equal(chrome, editor.resourcePanel.focusTarget);
-	editor.commands.execute('commandPalette', chrome);
+	editor.commands.execute('commandPalette', body);
 	const items = editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>;
 	const copy = items.find(item => item.command === 'copy');
 	assert.ok(copy);
@@ -1562,6 +1559,16 @@ test('chrome Palette retains Host Error body Copy and writes the exact attached 
 	assert.ok(row >= 0);
 	editor.quickInput.model.list.selectionIndex = row;
 	editor.quickInput.accept();
+	assert.equal((await editor.clipboard.read()).text, stack);
+	assert.ok(inputFocus.target === body);
+
+	editor.resourcePanel.show();
+	const chrome = inputFocus.target;
+	assert.equal(chrome, editor.resourcePanel.focusTarget);
+	assert.equal(chrome!.clipboard, undefined);
+	editor.commands.execute('commandPalette', chrome);
+	assert.equal((editor.quickInput.model.items as ReturnType<typeof buildCommandQuickPickItems>).some(item => item.command === 'copy'), false);
+	editor.quickInput.hide();
 	assert.equal((await editor.clipboard.read()).text, stack);
 	assert.ok(inputFocus.target === chrome);
 	assert.equal(group.panes.activePane, pane);

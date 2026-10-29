@@ -479,7 +479,7 @@ enumeration capabilities do not grant launch authority. Project and file launche
 remain distinct requests. `IdeCommandController` owns the unsaved-source decision
 and confirmed action admission; accepted execution belongs to the existing Boot
 and run-target owners, independently of completion presentation. Command
-descriptors declare native-control addressing for physical view actions; Palette
+descriptors declare native-control addressing for control-owned actions; Palette
 enablement and execution retain that same invoker independently of the captured
 semantic editor target. Contribution-owned command capture retains invocation
 subject and control lifetime before draft publication. Captured source invocations

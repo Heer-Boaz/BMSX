@@ -600,10 +600,6 @@ export class IdeCommandController {
 				return this.runTargets.selected?.transport.execution.userPaused === true;
 			case 'resources':
 				return this.editor.resourcePanel.visible;
-			case 'behaviorLens':
-				return (group.model.activeTab?.kind === 'behavior_lens');
-			case 'scenarioLab':
-				return (group.model.activeTab?.kind === 'scenario_lab');
 			case 'filter':
 				return this.editor.resourcePanel.getFilterMode() === 'lua_only';
 			default:
