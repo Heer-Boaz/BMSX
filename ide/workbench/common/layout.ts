@@ -2,13 +2,12 @@ import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../..
 import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
 import { editorFeedbackState } from '../../common/feedback_state';
-import { problemsPanel } from '../contrib/problems/panel/controller';
-import { PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN, RESOURCE_PANEL_DIVIDER_DRAG_MARGIN } from '../../common/constants';
+import { RESOURCE_PANEL_DIVIDER_DRAG_MARGIN } from '../../common/constants';
 import { editorChromeState } from '../ui/chrome_state';
 import type { EditorFont } from '../../editor/ui/view/font';
 
 /** A view supplies readable content constraints; its container owns placement and overflow. */
-export type WorkbenchViewSizeConstraints = { minimumWidth: number; preferredWidth: number };
+export type WorkbenchViewSizeConstraints = { minimumWidth: number; preferredWidth: number; minimumHeight: number };
 
 const editorBounds = create_rect_bounds();
 const workArea = create_rect_bounds();
@@ -197,25 +196,8 @@ export function statusAreaHeight(): number {
 	return editorViewState.baseBottomMargin + lineCount * editorViewState.lineHeight + 4;
 }
 
-export function getVisibleProblemsPanelHeight(): number {
-	if (!problemsPanel.isVisible) {
-		return 0;
-	}
-	const planned = problemsPanel.visibleHeight;
-	if (planned <= 0) {
-		return 0;
-	}
-	const maxAvailable = editorViewState.viewportHeight - statusAreaHeight() - topMargin() - PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
-	if (maxAvailable <= 0) {
-		return 0;
-	}
-	return planned < maxAvailable ? planned : maxAvailable;
-}
-
-export function bottomMargin(): number {
-	const problems = getVisibleProblemsPanelHeight();
-	return statusAreaHeight() + problems + (problems > 0 ? PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN : 0);
-}
+/** Root chrome excludes only permanent status; temporary clients allocate inside Main. */
+export function bottomMargin(): number { return statusAreaHeight(); }
 
 export function refreshWorkbenchLayout(): boolean {
 	const inset = editorViewState.editorAreaLeft;

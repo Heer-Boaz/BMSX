@@ -56,7 +56,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 		});
 		this.unbindBlur = this.focusTarget.onDidBlur(() => {
 			this.cancelPointer();
-			this.input!.hasFocus = false;
+			if (this.input !== undefined) this.input.hasFocus = false;
 		});
 	}
 
@@ -78,13 +78,17 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 	public clearInput(): void {
 		for (const command of this.itemCommands) this.focusTarget.unregisterCommand(command);
 		this.itemCommands.length = 0;
-		if (this.overflowSession !== undefined) this.contextMenu!.hide();
 		this.hover.release(this);
 		this.cancelPointer();
-		this.focusTarget.release();
+		if (this.input !== undefined) this.input.hasFocus = false;
+		const overflow = this.overflowSession;
+		this.overflowSession = undefined;
+		// Native retirement is published before popup/focus callbacks can admit another input.
 		this.input = undefined;
 		this.layoutRevision = -1;
 		this.presentationRevision = -1;
+		if (overflow !== undefined) this.contextMenu!.hide();
+		if (this.input === undefined) this.focusTarget.release();
 	}
 
 	public dispose(): void {

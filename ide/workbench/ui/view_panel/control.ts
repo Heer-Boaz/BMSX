@@ -97,6 +97,7 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 	}
 	public measure(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
 		this.options.measureContent(font, target);
+		target.minimumHeight += font.lineHeight + 4;
 		target.minimumWidth = Math.max(target.minimumWidth, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH + font.advance('…') + 12);
 		target.preferredWidth = Math.max(target.minimumWidth, target.preferredWidth);
 	}

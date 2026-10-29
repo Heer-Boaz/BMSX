@@ -5,31 +5,26 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { measureText, measureTextRange } from '../../ide/editor/common/text/layout';
-import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchFloatingWindow, findWorkbenchWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-test('workspace Problems and coverage-header focus retain the active editor family and covering document', t => {
-	const f = createActualSourcePanes(t), parts = f.editor.editorParts;
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(73); f.update();
-	t.after(() => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); });
+test('Main activity and its coverage header raise their owning family without changing the retained document family', t => {
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, main = f.editor.mainWorkspace, problems = f.editor.problems;
+	main.regionLayout.activityHeight = 73; main.setActivityVisible(true); f.update();
 	f.secondPart.window!.setPlacement('maximized'); f.update();
 	const placement = { ...f.secondPart.window!.model.requestedBounds };
 	const source = f.secondInput.workingCopy.buffer.getText();
 	for (const header of [false, true]) {
 		f.second.focus(); assert.ok(parts.activePart === f.secondPart);
-		const bounds = f.secondPart.window!.model.client;
-		// Pointer targeting is the observable z-order contract; the point is derived from the covering window.
-		const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
-		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, f.secondPart.surface.captureScope), true);
-		if (header) f.editor.commands.execute('problems.coverage', problemsPanel.focusTarget);
-		else problemsPanel.setFocused(true);
-		assert.ok(parts.activePart === f.secondPart);
-		assert.equal(problemsPanel.isFocused, true);
-		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, f.secondPart.surface.captureScope), true,
-			'workspace chrome focus does not silently reorder the editor-host band');
+		main.focusActivity();
+		if (header) f.editor.commands.execute('problems.coverage', problems.focusTarget);
+		assert.ok(parts.activePart === parts.main);
+		assert.ok(inputFocus.admittedTarget !== null && problems.scope.contains(inputFocus.admittedTarget.scope));
+		const bounds = problems.bounds, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+		assert.equal(f.editor.surfaces.isInContext(f.editor.surfaces.hitTest(x, y)!.captureScope, main.activitySurface.captureScope), true,
+			'explicit activity focus raises the actual Main family over the covering document');
 		assert.ok(f.secondPart.activeGroup.model.activeTab === f.secondInput);
 		assert.equal(f.secondPart.retired, false); assert.equal(f.secondPart.window!.model.placement, 'maximized');
 		assert.deepEqual(f.secondPart.window!.model.requestedBounds, placement);

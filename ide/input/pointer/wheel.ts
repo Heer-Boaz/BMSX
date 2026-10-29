@@ -1,7 +1,6 @@
 import type { CartEditor } from '../../cart_editor';
 import type { WorkbenchSurfaceService } from '../../workbench/services/windows/service';
 import { point_in_rect } from '../../../machine/ts/common/rect';
-import { problemsPanel, getProblemsPanelBounds } from '../../workbench/contrib/problems/panel/controller';
 import type { ResourcePanelController } from '../../workbench/contrib/resources/panel/controller';
 import type { WheelInputSnapshot } from '../../common/models';
 import { isShiftDown } from '../keyboard/key_input';
@@ -30,7 +29,7 @@ export function handleEditorWheelInput(surfaces: WorkbenchSurfaceService, event:
 }
 
 export function handleWorkbenchChromeWheel(editor: CartEditor, event: WheelInputSnapshot): boolean {
-	if (handleResourcePanelWheel(editor.resourcePanel, event) || handleProblemsPanelWheel(event)) return true;
+	if (handleResourcePanelWheel(editor.resourcePanel, event)) return true;
 	const guest = inputFocus.admittedTarget?.guestInput;
 	return guest === undefined || !point_in_rect(event.viewportX, event.viewportY, guest.bounds);
 }
@@ -43,13 +42,5 @@ function handleResourcePanelWheel(resourcePanel: ResourcePanelController, event:
 	const deltaY = horizontal ? 0 : event.deltaY;
 	if (deltaX !== 0) resourcePanel.setHScroll(resourcePanel.hscroll + deltaX * editorViewState.charAdvance * 4);
 	if (deltaY !== 0) resourcePanel.setScroll(resourcePanel.scroll + deltaY);
-	return true;
-}
-
-function handleProblemsPanelWheel(event: WheelInputSnapshot): boolean {
-	if (!problemsPanel.isVisible) return false;
-	const bounds = getProblemsPanelBounds();
-	if (bounds === null || !point_in_rect(event.viewportX, event.viewportY, bounds)) return false;
-	problemsPanel.handlePointerWheel(event.deltaY, bounds);
 	return true;
 }

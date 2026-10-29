@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import type { WorkbenchSurfaceOptions, WorkbenchSurfacePainter } from '../../ide/workbench/services/windows/model';
 import type { RectBounds } from '../../machine/ts/common/rect';
-import { KeyModifier } from '../../hosts/common/input/text';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
+import { InputFocusService, InputFocusScope } from '../../ide/input/focus';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import type { PointerInputSnapshot } from '../../ide/common/models';
@@ -373,7 +374,7 @@ test('retirement detaches lookup, presentation and lifetime memberships before n
 	assert.equal(retained.retired, true);
 });
 
-test('physical ancestor clipping withdraws contained input without retiring an independently promoted popup', () => {
+test('physical ancestor clipping withdraws contained raster input without retiring an independently promoted popup', () => {
 	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
 	const clip = { ...extent };
 	const owner = surfaces.attach({ ...controller('owner', painted), role: 'content', getClip: () => clip });
@@ -387,4 +388,74 @@ test('physical ancestor clipping withdraws contained input without retiring an i
 	assert.equal(surfaces.isAdmitted(owner), false); assert.equal(surfaces.isAdmitted(contained), false);
 	assert.equal(popup.retired, false); assert.equal(surfaces.isAdmitted(popup), true);
 	owner.dispose(); assert.equal(popup.retired, true); surfaces.dispose();
+});
+
+
+test('scroll clipping removes a surface raster hit without suspending its retained native keyboard focus', () => {
+	const surfaces = new WorkbenchSurfaceService(), focus = new InputFocusService(), painted: string[] = [];
+	const clip = { ...extent };
+	const owner = surfaces.attach({ ...controller('scroll viewport', painted), role: 'window', getClip: () => clip });
+	const content = surfaces.attach({ ...controller('retained content', painted, firstWindow), role: 'content',
+		presentationParent: owner, lifetimeOwner: owner });
+	const target = focus.createTarget(null, new InputFocusScope(content.captureScope, focus.workbenchScope));
+	let received = 0;
+	target.bindKeyboard(() => { received++; });
+	const unbind = focus.bindScopeAdmission(scope => {
+		const surface = surfaces.findByScope(scope.surfaceScope);
+		return surface !== undefined && surfaces.isFocusAdmitted(surface);
+	});
+	try {
+		assert.equal(target.focus(), true);
+		focus.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+		assert.equal(received, 1);
+		const revision = focus.revision;
+		clip.bottom = clip.top; surfaces.changed();
+		assert.equal(surfaces.isAdmitted(content), false); assert.equal(surfaces.hitTest(40, 40), null);
+		assert.ok(focus.target === target); assert.equal(focus.revision, revision);
+		focus.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none));
+		assert.equal(received, 2, 'a clipped retained control must still receive the keyboard command that reveals another region');
+		assert.ok(focus.admittedTarget === target);
+	} finally { unbind(); focus.setTarget(null); surfaces.dispose(); }
+});
+
+
+test('native focus admission respects hidden and retired attachments and local versus root modal authority', () => {
+	const surfaces = new WorkbenchSurfaceService(), focus = new InputFocusService(), painted: string[] = [];
+	const owner = surfaces.attach({ ...controller('first window', painted, firstWindow), role: 'window' });
+	let visible = true;
+	const child = surfaces.attach({ ...controller('first content', painted, firstWindow), role: 'content',
+		presentationParent: owner, lifetimeOwner: owner, isVisible: () => visible });
+	const sibling = surfaces.attach({ ...controller('second window', painted, secondWindow), role: 'window' });
+	const first = focus.createTarget(null, new InputFocusScope(child.captureScope, focus.workbenchScope));
+	const second = focus.createTarget(null, new InputFocusScope(sibling.captureScope, focus.workbenchScope));
+	let received = 0;
+	first.bindKeyboard(() => { received++; }); second.bindKeyboard(() => { received++; });
+	const unbind = focus.bindScopeAdmission(scope => {
+		const surface = surfaces.findByScope(scope.surfaceScope);
+		return surface !== undefined && surfaces.isFocusAdmitted(surface);
+	});
+	try {
+		assert.equal(first.focus(), true);
+		visible = false; surfaces.changed();
+		assert.equal(surfaces.isFocusAdmitted(child), false); assert.equal(focus.admittedTarget, null);
+		focus.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none)); assert.equal(received, 0);
+		assert.equal(second.focus(), true);
+		visible = true; surfaces.changed(); assert.equal(first.focus(), true);
+		const local = surfaces.attach({ ...controller('first window decision', painted, firstWindow), role: 'modal',
+			blockedScope: owner, presentationParent: owner, lifetimeOwner: owner });
+		assert.equal(surfaces.isFocusAdmitted(child), false); assert.equal(focus.admittedTarget, null);
+		assert.equal(first.focus(), false); assert.equal(second.focus(), true);
+		focus.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none)); assert.equal(received, 1);
+		assert.equal(surfaces.isFocusAdmitted(local), true);
+		const root = surfaces.attach({ ...controller('workspace decision', painted), role: 'modal', blockedScope: null, presentationParent: null });
+		assert.equal(surfaces.isFocusAdmitted(local), false); assert.equal(surfaces.isFocusAdmitted(sibling), false);
+		assert.equal(focus.admittedTarget, null);
+		focus.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none)); assert.equal(received, 1);
+		root.dispose(); assert.ok(focus.admittedTarget === second);
+		local.dispose(); assert.equal(first.focus(), true);
+		owner.dispose();
+		assert.equal(surfaces.isFocusAdmitted(child), false); assert.equal(focus.admittedTarget, null);
+		assert.equal(first.focus(), false); assert.equal(second.focus(), true);
+		focus.handleKeyboard(new KeyInputEvent('ArrowDown', KeyModifier.none)); assert.equal(received, 2);
+	} finally { unbind(); focus.setTarget(null); surfaces.dispose(); }
 });

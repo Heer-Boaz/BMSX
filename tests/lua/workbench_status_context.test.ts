@@ -18,7 +18,7 @@ import { api } from '../../ide/runtime/overlay_api';
 import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
 import { RuntimeLuaEvaluation } from '../../ide/runtime/lua_evaluation';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
-import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
+import { createProblemsPanelFixture } from '../helpers/problems_panel';
 import { renderStatusBar } from '../../ide/workbench/render/status_bar';
 import { buildStatusLeftInfo } from '../../ide/workbench/render/status_bar_info';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
@@ -36,9 +36,10 @@ const PROMPT_REQUEST: ActionPromptRequest = { title: 'Pending source action', me
 
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const { models, documents, clock } = createTestCodeDocuments(t);
+	const problems = createProblemsPanelFixture(t, variant).controller;
 	configureFontVariant(variant);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	editorFeedbackState.message.visible = false; problemsPanel.hide();
+	editorFeedbackState.message.visible = false;
 	const record = createScenarioTestSourceRecord('status.lua', 1, 'return 1\nreturn 2\n');
 	const sources = createScenarioTestSourceState([record]);
 	const resource = sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'status.lua' }))!;
@@ -59,20 +60,20 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const menu = new ContextMenuController(inputFocus, pointerCapture), quick = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	const paint = (owner: InputFocusTarget | null) => {
 		refreshWorkbenchLayout(); overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		renderStatusBar(resources, fault, pane, evaluation, 'standalone', owner);
+		renderStatusBar(resources, fault, owner === problems.focusTarget ? problems : pane, evaluation, 'standalone', owner);
 		overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	};
 	t.after(() => {
-		quick.dispose(); menu.dispose(); problemsPanel.hide(); problemsPanel.setDiagnostics([], { ready: 0, pending: 0, unsupported: 0, failed: 0 });
+		quick.dispose(); menu.dispose();
 		inputFocus.setTarget(null); pointerCapture.cancel();
 	});
-	return { code, model, view, filesFocus, state, filter, status, lineCount, menu, quick, paint };
+	return { problems, code, model, view, filesFocus, state, filter, status, lineCount, menu, quick, paint };
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
 	test(`${variant} visible side panels do not replace the active source status owner`, t => {
 		const f = fixture(t, variant);
-		problemsPanel.show();
+
 		f.paint(f.code.focusTarget);
 		assert.equal(f.status.mock.callCount(), 1);
 		assert.equal(f.lineCount.mock.callCount(), 1, 'source status consumes the actual source document despite visible Problems');
@@ -84,10 +85,10 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const f = fixture(t, variant);
 		f.filesFocus.focus(); f.paint(f.filesFocus);
 		assert.equal(f.status.mock.callCount(), 0); assert.equal(f.filter.mock.callCount(), 1);
-		problemsPanel.show(); problemsPanel.setDiagnostics([{ model: f.model, version: f.model.version, row: 1,
+		 f.problems.setDiagnostics([{ model: f.model, version: f.model.version, row: 1,
 			startColumn: 2, endColumn: 3, message: 'diagnostic', severity: 'error' }], { ready: 1, pending: 0, unsupported: 0, failed: 0 });
-		problemsPanel.setSelectionIndex(0); problemsPanel.setFocused(true);
-		f.paint(problemsPanel.focusTarget);
+		f.problems.setSelectionIndex(0); f.problems.focus();
+		f.paint(f.problems.focusTarget);
 		assert.equal(f.status.mock.callCount(), 0);
 		assert.equal(f.lineCount.mock.callCount(), 0, 'a selected diagnostic is not the source cursor status');
 	});
@@ -121,9 +122,9 @@ for (const variant of ['tiny', 'msx'] as const) {
 			{ measureDisplay: () => ({ left: 0, top: 0, width: 384, height: 288 }) },
 			host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
 			new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
-		const editor = ide.editor;
+		const editor = ide.editor, problemsPanel = editor.problems;
 		t.after(async () => {
-			inputFocus.setTarget(null); problemsPanel.hide();
+			inputFocus.setTarget(null);
 			await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 		});
 		editorRuntimeState.active = true; editorFeedbackState.message.visible = false;
@@ -155,7 +156,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.equal(editor.actionPrompt.invocationOrigin, pane.code.focusTarget);
 		draw(); assert.equal(status.mock.callCount(), 3);
 		editor.contextMenu.hide(); editor.actionPrompt.close(); await prompt;
-		problemsPanel.show();
+		editor.mainWorkspace.setActivityVisible(true);
 		problemsPanel.setDiagnostics([{ model: model!, version: model!.version, row: 1, startColumn: 2, endColumn: 3,
 			message: 'diagnostic', severity: 'error' }], { ready: 1, pending: 0, unsupported: 0, failed: 0 });
 		problemsPanel.setSelectionIndex(0);

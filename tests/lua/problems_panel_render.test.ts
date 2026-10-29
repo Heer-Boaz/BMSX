@@ -1,10 +1,11 @@
+import { KeyModifier } from '../../hosts/common/input/text';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import * as colors from '../../ide/common/constants';
-import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
+import { createProblemsPanelFixture } from '../helpers/problems_panel';
 import type { EditorDiagnostic, PointerSnapshot } from '../../ide/common/models';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { api } from '../../ide/runtime/overlay_api';
@@ -13,7 +14,6 @@ import { RectRenderKind, type RectRenderSubmission, type GlyphRenderSubmission }
 import { beginHeadlessHost2D, renderHeadlessHost2DEntry } from '../../machine/ts/render/headless/host_2d';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { HostOverlayQuadStream } from '../../machine/ts/render/host_overlay/quad_stream';
-import { createTestEditorParts } from '../helpers/editor_panes';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 
@@ -26,18 +26,18 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 		configureFontVariant(font);
 		const previousTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme);
 		t.after(() => colors.setIdeThemeVariant(previousTheme));
-		const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
-		t.after(() => controller.setFocused(false));
+		const { controller } = createProblemsPanelFixture(t, font); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
+		t.after(() => controller.focusTarget.release());
 		const overlay = createHostOverlayFixture(256, 192);
 		const bounds = { left: 8, top: 8, right: 248, bottom: 168 };
 		const draw = (focused: boolean) => {
-			controller.setFocused(focused);
+			if (focused) controller.focus(); else controller.focusTarget.release();
 			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-			controller.draw(bounds); overlay.renderer.endFrame();
+			controller.layout(bounds); controller.draw(); overlay.renderer.endFrame();
 			return overlay.queue.consumeOverlayFrame();
 		};
 		const inactive = draw(false);
-		const layout = controller.getCachedLayout();
+		const layout = controller.layoutState;
 		const rows: RectRenderSubmission[] = [], text: GlyphRenderSubmission[] = [];
 		for (let index = 0; index < inactive.commandCount; index += 1) {
 			if (inactive.commandKinds[index] === Host2DKind.Rect) {
@@ -83,12 +83,12 @@ for (const font of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark
 
 for (const empty of [false, true]) test(`Problems owns its panel/content clips (empty: ${empty})`, t => {
 	configureFontVariant('tiny');
-	const controller = new ProblemsPanelController(); controller.show(); controller.setDiagnostics(empty ? [] : [diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(empty ? -1 : 0);
-	t.after(() => controller.setFocused(false));
+	const { controller } = createProblemsPanelFixture(t, 'tiny'); controller.setDiagnostics(empty ? [] : [diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(empty ? -1 : 0);
+	t.after(() => controller.focusTarget.release());
 	const overlay = createHostOverlayFixture(160, 96);
 	const bounds = { left: 8, top: 8, right: 112, bottom: 8 + editorViewState.lineHeight * 3 + 12 };
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-	controller.draw(bounds); overlay.renderer.endFrame();
+	controller.layout(bounds); controller.draw(); overlay.renderer.endFrame();
 	const frame = overlay.queue.consumeOverlayFrame();
 	const pixels = overlay.backend.framebufferPixels;
 	pixels.fill(0);
@@ -100,7 +100,7 @@ for (const empty of [false, true]) test(`Problems owns its panel/content clips (
 		assert.equal(pixels[(y * 160 + x) * 4 + 3], 0, `panel paint escaped to ${x},${y}`);
 	}
 	assert.deepEqual([context.clip.left, context.clip.top, context.clip.right, context.clip.bottom], [0, 0, 160, 96], 'drawing restores the caller clip');
-	const layout = controller.getCachedLayout();
+	const layout = controller.layoutState;
 	const background = pixels.subarray((bounds.top * 160 + bounds.left) * 4, (bounds.top * 160 + bounds.left) * 4 + 4);
 	const paddingOffset = (layout.contentBottom * 160 + bounds.left) * 4;
 	assert.deepEqual(pixels.subarray(paddingOffset, paddingOffset + 4), background, 'partial rows cannot paint the bottom content padding');
@@ -108,9 +108,9 @@ for (const empty of [false, true]) test(`Problems owns its panel/content clips (
 
 test('Problems restores a nested caller clip and retains warm paint/layout storage', t => {
 	configureFontVariant('tiny');
-	const controller = new ProblemsPanelController();
-	controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
-	t.after(() => controller.setFocused(false));
+	const { controller } = createProblemsPanelFixture(t, 'tiny');
+	controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(0);
+	t.after(() => controller.focusTarget.release());
 	const overlay = createHostOverlayFixture(160, 96);
 	const bounds = { left: 8, top: 8, right: 112, bottom: 48 };
 	const caller = { left: 16, top: 10, right: 100, bottom: 80 };
@@ -118,7 +118,7 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 	const draw = () => {
 		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 		api.pushClipRect(caller.left, caller.top, caller.right, caller.bottom);
-		controller.draw(bounds);
+		controller.layout(bounds); controller.draw();
 		api.fill_rect(0, 60, 160, 70, 0, colors.COLOR_SELECTION_TEXT);
 		api.popClipRect(); overlay.renderer.endFrame();
 		const frame = overlay.queue.consumeOverlayFrame();
@@ -154,18 +154,17 @@ test('Problems restores a nested caller clip and retains warm paint/layout stora
 
 test('Problems padding and header cannot hover clipped row geometry', t => {
 	configureFontVariant('tiny');
-	const controller = new ProblemsPanelController();
-	controller.show(); controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(-1);
-	t.after(() => controller.setFocused(false));
-	const parts = createTestEditorParts(t), group = parts.main.activeGroup;
-	const bounds = { left: 8, top: 8, right: 112, bottom: 38 };
-	const layout = controller.prepareLayout(bounds);
+	const { controller, group } = createProblemsPanelFixture(t, 'tiny');
+	controller.setDiagnostics([diagnostic], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); controller.setSelectionIndex(-1);
+	t.after(() => controller.focusTarget.release());
+		const bounds = { left: 8, top: 8, right: 112, bottom: 38 };
+	controller.layout(bounds); const layout = controller.layoutState;
 	const snapshot: PointerSnapshot = { valid: true, insideViewport: true, viewportX: 12, viewportY: 0,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 };
 	for (const y of [bounds.top, layout.contentTop - 1, layout.contentBottom, bounds.bottom - 1]) for (const pressed of [false, true]) {
 		controller.setHoverIndex(0); snapshot.viewportY = y;
 		snapshot.pressedButtons = snapshot.justPressedButtons = pressed ? PointerButton.Primary : 0;
-		assert.equal(controller.handlePointer(parts, snapshot, pressed, false, bounds), true);
+		controller.handlePointer({ ...snapshot, modifiers: KeyModifier.none, spaceDown: false });
 		assert.equal(controller.getHoverIndex(), -1);
 		assert.equal(controller.getSelectionIndex(), -1);
 		assert.equal(group.panes.activePane, null);

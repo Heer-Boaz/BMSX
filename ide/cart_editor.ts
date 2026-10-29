@@ -158,7 +158,7 @@ import { WorkspaceAutosaveChange } from './workbench/workspace/models';
 import { getWorkbenchEditorBounds, getWorkbenchWorkArea, refreshWorkbenchLayout, type WorkbenchChromeLayout } from './workbench/common/layout';
 import { BreakpointController } from './workbench/contrib/debugger/controller';
 import { ActionPrompt } from './workbench/contrib/modal/action_prompt';
-import { drawProblemsPanel, problemsPanel } from './workbench/contrib/problems/panel/controller';
+import { ProblemsPanelController } from './workbench/contrib/problems/panel/controller';
 import { ResourcePanelController } from './workbench/contrib/resources/panel/controller';
 import { IdeCommandController } from './commands/controller';
 import { initializeNavigationState } from './navigation/navigation_history';
@@ -223,6 +223,7 @@ export type CartEditor = TextInputHost & {
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorParts: EditorParts;
 	readonly mainWorkspace: MainWorkspace;
+	readonly problems: ProblemsPanelController;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly editorInputSerializers: EditorInputSerializers;
 	readonly navigation: EditorNavigationController;
@@ -286,6 +287,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
 	public readonly mainWorkspace: MainWorkspace;
+	public readonly problems: ProblemsPanelController;
 	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'regions' | 'scope'>;
 	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly surfaces: WorkbenchSurfaceService;
@@ -293,7 +295,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly resourceResizeScope = Symbol('resource panel resize');
 	private readonly resourceVerticalScope = Symbol('resource panel vertical scrollbar');
 	private readonly resourceHorizontalScope = Symbol('resource panel horizontal scrollbar');
-	private readonly problemsResizeScope = Symbol('problems panel resize');
 	private readonly rootSurfaceBounds = { left: 0, top: 0,
 		get right() { return editorViewState.viewportWidth; },
 		get bottom() { return editorViewState.viewportHeight; },
@@ -343,7 +344,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly unbindHostInput: () => void;
 	private readonly unbindNavigation: () => void;
 	private readonly unbindWorkspaceModels: () => void;
-	private readonly unbindProblemsPanel: () => void;
 	private readonly unbindBreakpoints: () => void;
 	private readonly unbindSourceStop: () => void;
 	private readonly chromeRenderContext: ChromeRenderContext & WorkbenchChromeLayout = {
@@ -528,15 +528,7 @@ export class RuntimeCartEditor implements CartEditor {
 			},
 			onRetire: () => pointerCapture.cancelTarget(this.resourcePanel),
 		});
-		this.surfaces.attach({
-			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.problemsResizeScope,
-			isVisible: () => problemsPanel.isVisible, getBounds: () => problemsPanel.resizeBounds,
-			getClip: () => this.rootSurfaceBounds, draw() {},
-			handlePointer: snapshot => {
-				if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) problemsPanel.beginResize(snapshot);
-			},
-			onRetire: () => pointerCapture.cancelTarget(problemsPanel),
-		});
+
 		this.surfaces.attach({
 			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourceVerticalScope,
 			isVisible: () => this.resourcePanel.isVisible() && this.resourcePanel.resourceVertical.isVisible(),
@@ -567,10 +559,10 @@ export class RuntimeCartEditor implements CartEditor {
 			isVisible: () => this.actionPrompt.visible, getBounds: () => this.actionPrompt.view.bounds,
 			getClip: () => this.rootSurfaceBounds, draw: () => this.actionPrompt.draw(),
 			handlePointer: snapshot => this.actionPrompt.handlePointer(snapshot),
+			handleWheel: event => { this.actionPrompt.handleWheel(event); return true; },
 			onRetire: () => pointerCapture.cancelScope(this.actionPrompt.pointerScope),
 		});
 		this.resourcePanel.focusTarget.scope.surfaceScope = this.chromeScope;
-		problemsPanel.focusTarget.scope.surfaceScope = this.chromeScope;
 		this.resourceEditors = createResourceEditorResolver(
 			this.sources.catalog,
 		);
@@ -635,9 +627,10 @@ export class RuntimeCartEditor implements CartEditor {
 			save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
 		};
 		this.crossFileRename = new CrossFileRenameManager(this.sources.catalog);
-		this.unbindProblemsPanel = problemsPanel.focusTarget.bindKeyboard(
-			input => problemsPanel.handleKeyboard(input, this.editorParts),
-		);
+		this.problems = new ProblemsPanelController(this.editorParts, this.commands, this.surfaces, this.mainWorkspace.activitySurface,
+			workArea, new InputFocusScope(this.mainWorkspace.activitySurface.captureScope, this.mainWorkspace.activityScope), this.editorParts.main.focusTarget);
+		this.mainWorkspace.setActivity(this.problems);
+		this.problems.setDiagnostics(diagnostics.diagnostics, diagnostics.coverage);
 		this.breakpoints = new BreakpointController(debuggerState);
 		this.unbindBreakpoints = debuggerState.breakpoints.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.Breakpoints));
 		this.unbindSourceStop = debuggerState.source.onDidChangeStop(stop => {
@@ -652,15 +645,14 @@ export class RuntimeCartEditor implements CartEditor {
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
 		});
 		const publishDiagnostics = () => {
-			problemsPanel.setDiagnostics(diagnostics.diagnostics, diagnostics.coverage);
+			this.problems.setDiagnostics(diagnostics.diagnostics, diagnostics.coverage);
 		};
 		this.unsubscribeDiagnosticsChanged = diagnostics.onDidChange(publishDiagnostics);
 		publishDiagnostics();
 		this.unbindSurfaceAdmission = inputFocus.bindScopeAdmission(scope => {
 			const surface = this.surfaces.findByScope(scope.surfaceScope);
-			return surface !== undefined && this.surfaces.isAdmitted(surface);
+			return surface !== undefined && this.surfaces.isFocusAdmitted(surface);
 		});
-		problemsPanel.attach(this.surfaces, chromeSurface, workArea, this.commands);
 		this.input.setEditingInput(this);
 		this.unbindHostInput = input.onDidChangeEditingInputEnabled(() => {
 			if (input.editingInputEnabled) pointerCapture.interrupt(input.pointerButtonsDown);
@@ -839,9 +831,9 @@ export class RuntimeCartEditor implements CartEditor {
 		const part = this.editorParts.main, bounds = getWorkbenchEditorBounds();
 		part.prepareLayout();
 		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
-		layoutChanged = this.mainWorkspace.layout(bounds, minimum) || layoutChanged;
+		layoutChanged = this.mainWorkspace.layout(bounds, minimum, part.minimumClientHeight) || layoutChanged;
 		const finalMinimum = part.minimumClientWidth(this.mainWorkspace.regionLayout.viewport.bottom - this.mainWorkspace.regionLayout.viewport.top);
-		if (finalMinimum !== minimum) layoutChanged = this.mainWorkspace.layout(bounds, finalMinimum) || layoutChanged;
+		if (finalMinimum !== minimum) layoutChanged = this.mainWorkspace.layout(bounds, finalMinimum, part.minimumClientHeight) || layoutChanged;
 		this.gamePanel.prepareLayout(this.mainWorkspace.documentBounds);
 		layoutChanged = part.layoutPrepared(this.mainWorkspace.documentBounds) || layoutChanged;
 		this.mainWorkspace.layoutClients();
@@ -860,7 +852,6 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorParts.update(deltaSeconds);
 		this.mainWorkspace.update();
 		this.windowStatus.update(inputFocus.admittedTarget?.guestInput !== undefined, this.fault.hostFrameFailure !== undefined);
-		problemsPanel.update();
 		this.quickInput.update();
 		this.actionPrompt.update();
 		this.contextMenu.update();
@@ -872,7 +863,6 @@ export class RuntimeCartEditor implements CartEditor {
 		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
 		this.menubar.update();
 		this.layoutMainEditor();
-		problemsPanel.update();
 		this.surfaces.changed();
 	}
 
@@ -909,14 +899,14 @@ export class RuntimeCartEditor implements CartEditor {
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 		renderTopBar(this.chromeRenderContext, this.menubar);
 		drawResourcePanel(this.resourcePanel);
-		drawProblemsPanel();
 		let contextTarget = inputFocus.target;
 		if (contextTarget === this.contextMenu.focusTarget) contextTarget = this.contextMenu.invocationOrigin;
 		if (contextTarget === this.quickInput.field.focusTarget) contextTarget = this.quickInput.invocationOrigin;
 		if (contextTarget === this.actionPrompt.focusTarget) contextTarget = this.actionPrompt.invocationOrigin;
 		const primary = this.mainWorkspace.primary, commandTarget = contextTarget?.commandContext;
-		const statusClient = primary !== undefined && commandTarget !== undefined && primary.scope.contains(commandTarget.scope)
-			? primary : this.editorParts.activeGroup.panes.activePane;
+		const statusClient = this.mainWorkspace.isActivityTarget(contextTarget) ? this.mainWorkspace.activity!
+			: primary !== undefined && commandTarget !== undefined && primary.scope.contains(commandTarget.scope)
+				? primary : this.editorParts.activeGroup.panes.activePane;
 		renderStatusBar(this.resourcePanel, this.fault, statusClient, this.luaEvaluation, this.serverConnectionState,
 			contextTarget === null ? null : contextTarget.commandContext, this.windowStatus.width, this.keybindings.pendingLabel);
 	}
@@ -958,8 +948,7 @@ export class RuntimeCartEditor implements CartEditor {
 			this.menubar.dispose();
 			this.gamePanel.dispose();
 			this.quickInput.dispose();
-			this.unbindProblemsPanel();
-			problemsPanel.detach();
+			this.problems.dispose();
 			if (this.isAvailable) {
 				for (const group of this.editorParts.groups) group.panes.clearEditor();
 			}
@@ -1098,7 +1087,6 @@ export class RuntimeCartEditor implements CartEditor {
 		editorTextModelService.clear();
 		configureFontVariant(editorViewState.fontVariant);
 		resourcePanel.setFontMetrics(editorViewState.font);
-		problemsPanel.setDiagnostics(this.diagnostics.diagnostics, this.diagnostics.coverage);
 		return resourcePanel;
 	}
 

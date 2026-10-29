@@ -1,309 +1,218 @@
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { editorViewState } from '../../../../editor/ui/view/state';
-import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
-import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
-import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
-import type { EditorDiagnostic, PointerSnapshot } from '../../../../common/models';
-import { write_rect_bounds, type RectBounds } from '../../../../../machine/ts/common/rect';
+import { copy_rect_bounds, create_rect_bounds, type RectBounds } from '../../../../../machine/ts/common/rect';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import * as constants from '../../../../common/constants';
-import type { DiagnosticsCoverage } from '../../../services/diagnostics/resource_diagnostics';
-import { resetInlineBlink } from '../../../../editor/render/caret';
-import {
-	clampProblemsPanelScrollIndex,
-	computeProblemsPanelVisibleHeight,
-	findProblemsPanelPreferredSelection,
-	createProblemsPanelItemLayout,
-	createProblemsPanelLayout,
-	writeProblemsPanelItemLayout,
-	writeProblemsPanelLayout,
-	type ProblemsPanelItemLayout,
-	type PanelLayout,
-	getProblemsPanelBounds,
-	clampProblemsPanelHeight,
-} from './layout';
-import { drawProblemsPanelSurface } from './render';
-import { handleProblemsPanelKeyboardInput } from './keyboard';
-import type { KeyInputEvent } from '../../../../../hosts/common/input/text';
-import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
-import { handleProblemsPanelPointerInput } from './pointer';
-import type { EditorGroupView } from '../../../services/editor/editor_group';
-import type { EditorParts } from '../../../services/editor/editor_parts';
-import { inputFocus } from '../../../../input/focus';
-import { ProblemsPanelHeader } from './header';
 import type { EditorCommandRunner } from '../../../../common/commands';
+import type { EditorDiagnostic, PointerInputSnapshot, WheelInputSnapshot } from '../../../../common/models';
+import type { EditorSourceLocationRequest } from '../../../../editor/navigation/source_location';
+import { getDiagnosticSourceLocation } from '../../code_editor/diagnostics/navigation';
+import type { EditorFont } from '../../../../editor/ui/view/font';
+import { editorViewState } from '../../../../editor/ui/view/state';
 import { measureText, measureTextRange } from '../../../../editor/common/text/layout';
+import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../../input/focus';
+import { pointerCapture } from '../../../../input/pointer/capture';
+import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
+import type { MainWorkspaceActivityClient, MainWorkspaceActivitySizeConstraints } from '../../../common/main_workspace_activity';
+import { truncateMeasuredText } from '../../../../common/text';
+import { api } from '../../../../runtime/overlay_api';
+import type { DiagnosticsCoverage } from '../../../services/diagnostics/resource_diagnostics';
+import type { EditorParts } from '../../../services/editor/editor_parts';
 import type { WorkbenchSurface } from '../../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../../services/windows/service';
 import { WorkbenchTooltip } from '../../../ui/tooltip';
+import { clampProblemsPanelScrollIndex, createProblemsPanelItemLayout, createProblemsPanelLayout,
+	findProblemsPanelPreferredSelection, problemsPanelHeaderHeight, writeProblemsPanelItemLayout, writeProblemsPanelLayout,
+	type PanelLayout, type ProblemsPanelItemLayout } from './layout';
+import { ProblemsPanelHeader } from './header';
+import { handleProblemsPanelKeyboardInput } from './keyboard';
+import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
+import { handleProblemsPanelPointerInput } from './pointer';
+import { drawProblemsPanelSurface } from './render';
 
-export {
-	getProblemsPanelBounds,
-} from './layout';
+const EMPTY_DIAGNOSTICS: readonly EditorDiagnostic[] = [];
 
-const EMPTY_DIAGNOSTICS: EditorDiagnostic[] = [];
-
-export class ProblemsPanelController implements PointerHoverTarget, PointerCaptureTarget {
-	public onPointerLeave(): void { this.hoverIndex = -1; this.header.onPointerLeave(); this.feedback.hide(); }
-	private visible = false;
-	public readonly focusTarget = inputFocus.createTarget();
-	public readonly header = new ProblemsPanelHeader(this.focusTarget);
+/** Retained diagnostic reading, independently attached to Main's activity allocation. */
+export class ProblemsPanelController implements MainWorkspaceActivityClient, PointerHoverTarget {
+	public readonly focusTarget: InputFocusTarget;
+	public readonly commandTarget: InputFocusTarget;
+	public readonly header: ProblemsPanelHeader;
+	public readonly bounds = create_rect_bounds();
+	public readonly layoutState = createProblemsPanelLayout();
+	private attachedValue = false;
+	private attachmentRevision = 0;
 	private diagnostics: readonly EditorDiagnostic[] = EMPTY_DIAGNOSTICS;
 	/** Marker identity survives pending coverage; version belongs only to fresh published rows. */
 	private selectionIntent: Omit<EditorDiagnostic, 'version'> | undefined;
 	private selectionIndex = -1;
+	private selectionRevisionValue = 0;
 	private hoverIndex = -1;
-	/** Requested diagnostic-row position; pending projection cannot erase the reading intent. */
+	/** Pending projection and native detachment cannot erase the reading intent. */
 	private scrollPosition = 0;
-	private readonly layout = createProblemsPanelLayout();
-	public readonly resizeBounds = this.layout.resizeBounds;
 	private readonly itemLayouts = new ScratchBuffer<ProblemsPanelItemLayout>(createProblemsPanelItemLayout);
-	private cachedLayout: PanelLayout = null;
-	private fixedHeightPx: number = null;
-	private resizeStartY = 0;
-	private resizeStartHeight = 0;
-	private resizeLastY = 0;
-	private lastAvailableWidth = 1;
+	private font: EditorFont | undefined;
+	private measuredFont: EditorFont | undefined;
+	private measuredWidth = -1;
+	private measuredContent = false;
+	private minimumHeight = 0;
+	private preferredHeight = 0;
 	private readonly feedback = new WorkbenchTooltip();
-	private feedbackArea: Readonly<RectBounds> | undefined;
-	private unbindFeedbackBlur: (() => void) | undefined;
+	private readonly unbindKeyboard: () => void;
+	private readonly unbindFeedbackBlur: () => void;
+	public emptyText = '';
+	private emptySource = '';
 	public emptyMessage = 'No resources checked.';
 
-	public constructor() {
+	public constructor(private readonly parts: EditorParts, commands: EditorCommandRunner,
+		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>,
+		public readonly scope: InputFocusScope, focusReturn: InputFocusTarget) {
+		this.commandTarget = this.focusTarget = inputFocus.createTarget(focusReturn, scope);
+		this.focusTarget.canFocus = () => this.attached && this.bounds.left < this.bounds.right && this.bounds.top < this.bounds.bottom;
 		this.focusTarget.clipboard = { readOnly: true, copy: () => this.selectionIndex < 0 ? null : this.getItemLayout(this.selectionIndex).feedback };
-	}
-
-	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, commands: EditorCommandRunner): void {
-		this.header.attach(surfaces, owner, workArea, commands);
-		this.feedback.attach(surfaces, owner, workArea); this.feedbackArea = workArea;
+		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => handleProblemsPanelKeyboardInput(input, this, parts));
+		this.header = new ProblemsPanelHeader(this.focusTarget, surfaces, owner, workArea, commands);
+		this.feedback.attach(surfaces, owner, workArea);
 		this.unbindFeedbackBlur = this.focusTarget.onDidBlur(() => this.feedback.hide());
 	}
-
-	public detach(): void {
-		pointerCapture.cancelTarget(this);
-		write_rect_bounds(this.resizeBounds, 0, 0, 0, 0);
-		this.feedback.detach(); this.feedbackArea = undefined;
-		this.unbindFeedbackBlur?.(); this.unbindFeedbackBlur = undefined;
-		this.header.detach();
+	public get attached(): boolean { return this.attachedValue; }
+	public get isFocused(): boolean { return this.focusTarget.hasFocus || this.header.hasFocus; }
+	public get selectedDiagnostic(): EditorDiagnostic | undefined { return this.diagnostics[this.selectionIndex]; }
+	public get contentWidth(): number { return this.bounds.right - this.bounds.left - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2; }
+	public getDiagnostics(): readonly EditorDiagnostic[] { return this.diagnostics; }
+	public get selectionRevision(): number { return this.selectionRevisionValue; }
+	public getSelectionIndex(): number { return this.selectionIndex; }
+	public getHoverIndex(): number { return this.hoverIndex; }
+	public getScrollIndex(): number { return clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length) | 0; }
+	public setSelectionIndex(index: number): void {
+		if (this.selectionIndex !== index) this.selectionRevisionValue++;
+		this.selectionIndex = index; this.selectionIntent = this.diagnostics[index];
 	}
-
-	public get isVisible(): boolean {
-		return this.visible;
-	}
-
-	public get isFocused(): boolean {
-		return this.focusTarget.hasFocus || this.header.hasFocus;
-	}
-
-	public get selectedDiagnostic(): EditorDiagnostic {
-		if (this.selectionIndex < 0 || this.selectionIndex >= this.diagnostics.length) return null;
-		return this.diagnostics[this.selectionIndex];
-	}
-
-	public getDiagnostics(): readonly EditorDiagnostic[] {
-		return this.diagnostics;
-	}
-
-	public get visibleHeight(): number {
-		if (!this.visible) return 0;
-		if (this.fixedHeightPx !== null) return computeProblemsPanelVisibleHeight(0, this.fixedHeightPx);
-		const width = editorViewState.viewportWidth - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2;
-		const limit = constants.PROBLEMS_PANEL_MAX_VISIBLE_ROWS * editorViewState.lineHeight;
-		let contentHeight = 0;
-		for (let index = 0; index < this.diagnostics.length && contentHeight < limit; index++) contentHeight += this.getItemLayout(index, width).height;
-		return computeProblemsPanelVisibleHeight(contentHeight, this.fixedHeightPx);
-	}
-
-	public show(): void {
-		if (this.visible) return;
-		this.visible = true;
-		this.header.setVisible(true);
-		this.scrollPosition = 0; // open at top
-		this.hoverIndex = -1;
-		this.selectionIndex = -1; // no implicit selection on open
-		this.selectionIntent = undefined;
-		this.cachedLayout = null;
-	}
-
-	public hide(): void {
-		pointerCapture.cancelTarget(this);
-		pointerHover.release(this);
-		if (!this.visible) {
-			return;
-		}
-		this.visible = false;
-		write_rect_bounds(this.resizeBounds, 0, 0, 0, 0);
-		this.feedback.hide();
-		this.header.setVisible(false);
-		this.focusTarget.release();
-		this.hoverIndex = -1;
-		this.cachedLayout = null;
-	}
-
-	public setFocused(focused: boolean): void {
-		if (focused) this.focusTarget.focus();
-		else this.focusTarget.release();
-	}
-
 	public setHoverIndex(index: number): void {
 		this.hoverIndex = index;
-		if (index < 0) this.feedback.hide();
+		if (index >= 0) pointerHover.visit(this);
+		else { pointerHover.release(this); this.feedback.hide(); }
+	}
+	public focus(): void { this.focusTarget.focus(); }
+	public get canOpenSource(): boolean { return this.attached && this.selectedDiagnostic !== undefined; }
+	public captureSourceLocation(): EditorSourceLocationRequest | undefined {
+		const diagnostic = this.selectedDiagnostic;
+		if (!this.attached || diagnostic === undefined) return;
+		const revision = this.selectionRevision, generation = this.scope.contextGeneration;
+		const isCurrent = () => this.attached && this.selectionRevision === revision
+			&& this.scope.contextGeneration === generation && this.selectedDiagnostic === diagnostic;
+		return { isCurrent, readLocation: () => isCurrent() ? getDiagnosticSourceLocation(diagnostic) : undefined };
 	}
 
-	public setSelectionIndex(index: number): void {
-		this.selectionIndex = index;
-		this.selectionIntent = this.diagnostics[index];
+	public measure(font: EditorFont, width: number, target: MainWorkspaceActivitySizeConstraints): void {
+		if (!this.measuredContent || this.measuredFont !== font || this.measuredWidth !== width) {
+			this.measuredFont = font; this.measuredWidth = width; this.measuredContent = true;
+			const headerHeight = problemsPanelHeaderHeight(font) + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;
+			const minimumContent = constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS * font.lineHeight;
+			const maximumContent = constants.PROBLEMS_PANEL_MAX_VISIBLE_ROWS * font.lineHeight;
+			let contentHeight = 0;
+			for (let index = 0; index < this.diagnostics.length && contentHeight < maximumContent; index++)
+				contentHeight += this.getItemLayout(index, width - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2, font).height;
+			this.minimumHeight = headerHeight + minimumContent;
+			this.preferredHeight = headerHeight + clamp(contentHeight, minimumContent, maximumContent);
+		}
+		target.minimumHeight = this.minimumHeight; target.preferredHeight = this.preferredHeight;
 	}
-
-	public getSelectionIndex(): number {
-		return this.selectionIndex;
+	public attach(bounds: Readonly<RectBounds>): void {
+		if (this.attached) { this.layout(bounds); return; }
+		const revision = ++this.attachmentRevision;
+		this.attachedValue = true;
+		this.layout(bounds);
+		if (revision !== this.attachmentRevision) return;
+		this.header.attach();
 	}
-
-	public getHoverIndex(): number {
-		return this.hoverIndex;
+	public layout(bounds: Readonly<RectBounds>): void {
+		const font = editorViewState.font;
+		const geometryChanged = this.font !== font || this.bounds.left !== bounds.left || this.bounds.top !== bounds.top
+			|| this.bounds.right !== bounds.right || this.bounds.bottom !== bounds.bottom;
+		if (geometryChanged) {
+			this.font = font; copy_rect_bounds(this.bounds, bounds);
+			writeProblemsPanelLayout(bounds, font, this.layoutState);
+			this.header.layout(font.renderFont(), bounds.left, this.layoutState.headerTop, bounds.right, this.layoutState.headerBottom);
+		}
+		if (geometryChanged || this.emptySource !== this.emptyMessage) {
+			this.emptySource = this.emptyMessage;
+			this.emptyText = truncateMeasuredText(this.emptyMessage, this.contentWidth, font.measureTextRange);
+		}
 	}
-
-	public getScrollIndex(): number {
-		return clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length) | 0;
+	public detach(): void {
+		if (!this.attached) return;
+		const revision = ++this.attachmentRevision;
+		this.attachedValue = false; this.hoverIndex = -1;
+		this.feedback.hide(); pointerHover.release(this);
+		this.scope.retireContext();
+		if (revision !== this.attachmentRevision) return;
+		pointerCapture.cancelScope(this.scope.surfaceScope);
+		if (revision !== this.attachmentRevision) return;
+		this.header.detach();
+		if (revision === this.attachmentRevision) this.focusTarget.release();
 	}
-
-
-	public getCachedLayout(): PanelLayout {
-		return this.cachedLayout;
+	public dispose(): void {
+		this.detach(); this.header.dispose(); this.feedback.detach(); this.unbindKeyboard(); this.unbindFeedbackBlur();
 	}
-
-	public resolveAvailableWidth(bounds: RectBounds): number {
-		return bounds.right - bounds.left - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2;
+	public onPointerLeave(): void { this.hoverIndex = -1; this.header.onPointerLeave(); this.feedback.hide(); }
+	public getItemLayout(index: number, width = this.contentWidth, font = this.font!): ProblemsPanelItemLayout {
+		return writeProblemsPanelItemLayout(this.itemLayouts.get(index), this.diagnostics[index], width, font);
 	}
-
-	public prepareLayout(bounds: RectBounds): PanelLayout {
-		this.cachedLayout = writeProblemsPanelLayout(bounds, this.layout);
-		this.lastAvailableWidth = this.resolveAvailableWidth(bounds);
-		this.header.layout(editorViewState.font.renderFont(), bounds.left, this.layout.headerTop, bounds.right, this.layout.headerBottom);
-		return this.layout;
-	}
-
-	public getItemLayout(index: number, availableWidth = this.lastAvailableWidth): ProblemsPanelItemLayout {
-		const itemLayout = this.itemLayouts.get(index);
-		return writeProblemsPanelItemLayout(itemLayout, this.diagnostics[index], this.resolvePanelWidth(availableWidth));
-	}
-
 	public setDiagnostics(diagnostics: readonly EditorDiagnostic[], coverage: DiagnosticsCoverage): void {
-		this.feedback.hide();
-		this.diagnostics = diagnostics;
+		const selected = this.selectedDiagnostic;
+		this.feedback.hide(); this.diagnostics = diagnostics;
 		this.header.setCoverage(diagnostics.length, coverage);
 		this.emptyMessage = coverage.failed > 0 ? 'Diagnostic computation failed.'
 			: coverage.pending > 0 ? 'Diagnostics pending.'
-				: coverage.ready === 0 ? 'No resources checked.'
-					: 'No problems in checked resources. Unopened files are not checked.';
-		this.itemLayouts.clear();
+				: coverage.ready === 0 ? 'No resources checked.' : 'No problems in checked resources. Unopened files are not checked.';
+		this.itemLayouts.clear(); this.measuredContent = false;
 		this.ensureSelectionValidity(coverage.pending > 0);
+		if (this.selectedDiagnostic !== selected) this.selectionRevisionValue++;
 		this.hoverIndex = -1;
-		this.cachedLayout = null;
 	}
-
-	public draw(bounds: RectBounds): void {
-		if (!this.visible) {
-			this.cachedLayout = null;
-			return;
-		}
-		const layout = this.prepareLayout(bounds);
-		drawProblemsPanelSurface(
-			this,
-			bounds,
-			layout,
-		);
+	public draw(): void {
+		if (this.attached) drawProblemsPanelSurface(this, this.bounds, this.layoutState);
 	}
-
+	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
+		if (this.selectionIndex < 0) return;
+		api.blit_text_inline_with_font(this.getItemLayout(this.selectionIndex).location, bounds.left + 4, bounds.top + 2,
+			0, color, this.font!.renderFont());
+	}
 	public update(): void {
-		const bounds = getProblemsPanelBounds();
-		if (bounds === null) { write_rect_bounds(this.resizeBounds, 0, 0, 0, 0); pointerCapture.cancelTarget(this); return; }
-		this.prepareLayout(bounds);
-		this.header.updateFeedback();
-		this.updateFeedback(bounds);
+		if (!this.attached) return;
+		this.layout(this.bounds);
+		this.header.layout(this.font!.renderFont(), this.bounds.left, this.layoutState.headerTop, this.bounds.right, this.layoutState.headerBottom);
+		this.header.updateFeedback(); this.updateFeedback();
 	}
-
-	/** The row is compact; its passive disclosure retains the qualified resource and whole message. */
-	public updateFeedback(bounds: RectBounds): void {
-		if (!this.visible || this.feedbackArea === undefined) return;
+	/** The compact row discloses its qualified resource and complete message outside its allocation. */
+	public updateFeedback(): void {
+		if (!this.attached) return;
 		if (this.header.hasFocus || this.header.actions.hoveredCommand !== null) { this.feedback.hide(); return; }
 		const index = this.hoverIndex >= 0 ? this.hoverIndex : this.focusTarget.hasFocus ? this.selectionIndex : -1;
 		if (index < this.getScrollIndex()) { this.feedback.hide(); return; }
-		const layout = this.cachedLayout;
+		const layout = this.layoutState;
 		let top = layout.contentTop;
-		for (let row = this.getScrollIndex(); row < index; row++) top += this.getItemLayout(row).height;
+		for (let row = this.getScrollIndex(); row < index && top < layout.contentBottom; row++) top += this.getItemLayout(row).height;
 		if (top >= layout.contentBottom) { this.feedback.hide(); return; }
-		const item = this.getItemLayout(index);
-		// Disclose outside the part, not over a neighboring diagnostic card.
-		this.feedback.show(item.feedback, bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.feedbackArea);
+		this.feedback.show(this.getItemLayout(index).feedback, this.bounds, this.font!.renderFont(), measureTextRange, measureText, this.workArea);
 	}
-
-	public handlePointer(
-		parts: EditorParts,
-		snapshot: PointerSnapshot,
-		justPressed: boolean,
-		_justReleased: boolean,
-		bounds: RectBounds,
-	): boolean {
-		return handleProblemsPanelPointerInput(this, parts, snapshot, justPressed, bounds);
+	public handlePointer(snapshot: PointerInputSnapshot): void {
+		if (this.attached) handleProblemsPanelPointerInput(this, this.parts, snapshot);
 	}
-
-	public handlePointerWheel(deltaRows: number, bounds: RectBounds): boolean {
-		if (!this.visible || this.diagnostics.length === 0) return false;
-		this.prepareLayout(bounds);
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (!this.attached || this.diagnostics.length === 0) return;
 		const projectedPosition = clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length);
 		let index = projectedPosition | 0;
-		let offset = (projectedPosition - index) * this.getItemLayout(index).height + deltaRows * editorViewState.lineHeight;
-		while (offset < 0 && index > 0) {
-			index -= 1;
-			offset += this.getItemLayout(index).height;
-		}
+		let offset = (projectedPosition - index) * this.getItemLayout(index).height + event.deltaY * this.font!.lineHeight;
+		while (offset < 0 && index > 0) { index--; offset += this.getItemLayout(index).height; }
 		while (index < this.diagnostics.length - 1 && offset >= this.getItemLayout(index).height) {
-			offset -= this.getItemLayout(index).height;
-			index += 1;
+			offset -= this.getItemLayout(index).height; index++;
 		}
 		const position = clamp(index + offset / this.getItemLayout(index).height, 0, this.diagnostics.length - 1);
-		if (position === this.scrollPosition) return false;
-		this.scrollPosition = position;
-		this.hoverIndex = -1;
-		return true;
+		if (position !== this.scrollPosition) { this.scrollPosition = position; this.hoverIndex = -1; }
 	}
-
-	public handleKeyboard(playerInput: KeyInputEvent, parts: EditorParts): void {
-		handleProblemsPanelKeyboardInput(playerInput, this, parts);
+	public handleKeyboardCommand(command: ProblemsPanelCommand): boolean {
+		return handleProblemsPanelNavigationCommand(this, this.parts, command);
 	}
-
-	public handleKeyboardCommand(
-		parts: EditorParts,
-		command: ProblemsPanelCommand,
-	): boolean {
-		return handleProblemsPanelNavigationCommand(this, parts, command);
-	}
-
-	public setFixedHeightPx(height: number): void { this.fixedHeightPx = height > 0 ? height : null; this.cachedLayout = null; }
-
-	public beginResize(snapshot: PointerSnapshot): void {
-		this.resizeStartY = this.resizeLastY = snapshot.viewportY;
-		this.resizeStartHeight = this.layout.contentBottom + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y - this.layout.headerTop;
-		pointerCapture.capture(this);
-		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
-	}
-
-	public handleCapturedPointer(snapshot: PointerSnapshot): void {
-		if (snapshot.viewportY === this.resizeLastY) return;
-		this.resizeLastY = snapshot.viewportY;
-		this.setFixedHeightPx(clampProblemsPanelHeight(this.resizeStartHeight + this.resizeStartY - snapshot.viewportY));
-	}
-
-	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
-		pointerCapture.release(this);
-		this.handleCapturedPointer(snapshot);
-	}
-
-	public cancelPointer(): void { pointerCapture.release(this); }
-
-	public resolvePanelWidth(width = this.lastAvailableWidth): number { return width; }
-
 	public estimateVisibleCount(layout: PanelLayout, availableWidth: number): number {
 		if (this.diagnostics.length === 0) {
 			return 0;
@@ -368,33 +277,4 @@ export class ProblemsPanelController implements PointerHoverTarget, PointerCaptu
 		if (index >= 0 || !pending) this.selectionIntent = this.diagnostics[index];
 		if (!pending) this.scrollPosition = clampProblemsPanelScrollIndex(this.scrollPosition, this.diagnostics.length);
 	}
-}
-
-export const problemsPanel = new ProblemsPanelController();
-
-export function drawProblemsPanel() {
-	const bounds = getProblemsPanelBounds();
-	if (!bounds) {
-		return null;
-	}
-	problemsPanel.draw(bounds);
-	return bounds;
-}
-export function toggleProblemsPanel(editorGroup: EditorGroupView): void {
-	if (problemsPanel.isVisible) {
-		hideProblemsPanel(editorGroup);
-		return;
-	}
-	showProblemsPanel();
-}
-
-export function showProblemsPanel(): void {
-	problemsPanel.show();
-}
-
-export function hideProblemsPanel(editorGroup: EditorGroupView): void {
-	const restoreEditorFocus = problemsPanel.isFocused;
-	problemsPanel.hide();
-	if (restoreEditorFocus) editorGroup.panes.activePane?.focus();
-	resetInlineBlink();
 }

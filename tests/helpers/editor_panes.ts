@@ -166,9 +166,9 @@ export function createTestEditorWorkspace(
 		const part = parts.main, bounds = presentation.workArea;
 		part.prepareLayout();
 		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
-		main.layout(bounds, minimum);
+		main.layout(bounds, minimum, part.minimumClientHeight);
 		const constrained = part.minimumClientWidth(main.regionLayout.viewport.bottom - main.regionLayout.viewport.top);
-		if (constrained !== minimum) main.layout(bounds, constrained);
+		if (constrained !== minimum) main.layout(bounds, constrained, part.minimumClientHeight);
 		part.layoutPrepared(main.documentBounds); main.layoutClients();
 	};
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,

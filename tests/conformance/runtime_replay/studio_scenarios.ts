@@ -1,4 +1,5 @@
 import { runStudioMainAuthoring } from './studio_main_authoring';
+import { runStudioActivity } from './studio_activity';
 import { runStudioTerminal } from './studio_terminal';
 import { runStudioGameInput } from './studio_game_input';
 import { runStudioActorChanges } from './studio_actor_changes';
@@ -33,7 +34,7 @@ import { testStudioPointerCapture } from './studio_pointer_capture';
 import { runStudioSceneViewport, testStudioSceneViewport } from './studio_scene_viewport';
 import type { StudioFixture } from './studio_fixture';
 
-export type StudioScenario = { kind: 'frame-recovery' | 'game-input' | 'actor-pins' | 'actor-changes' | 'actor-find' | 'event-navigation' | 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'main-authoring' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
+export type StudioScenario = { kind: 'activity' | 'frame-recovery' | 'game-input' | 'actor-pins' | 'actor-changes' | 'actor-find' | 'event-navigation' | 'terminal' | 'workflows' | 'edit-review' | 'resource-context' | 'boot-operations' | 'source-saves' | 'execution-operations' | 'test-runner' | 'scene-viewport' | 'main-authoring' | 'fsm-initial' | 'fsm-retarget' | 'fsm-retarget-imported' | 'bt-reparent' | 'runtime-inspection' | 'preload' | 'nemesis-scenes' }
 	| { kind: 'cart-scenes'; cart: '2025' | 'pietious' }
 	| { kind: 'cart-maps'; cart: 'pietious' | 'nemesis_s'; restored?: CartMapExpectation }
 	| { kind: 'navigation'; cart: NavigationCart };
@@ -41,6 +42,7 @@ export type StudioScenario = { kind: 'frame-recovery' | 'game-input' | 'actor-pi
 /** One scenario composition for every renderer project; backend checks remain in their project. */
 export function runStudioScenario(test: StudioFixture, scenario: StudioScenario) {
 	switch (scenario.kind) {
+		case 'activity': return runStudioActivity(test);
 		case 'game-input': return runStudioGameInput(test);
 		case 'actor-changes': return runStudioActorChanges(test);
 		case 'actor-pins': return runStudioActorPins(test);

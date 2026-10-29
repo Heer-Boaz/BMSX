@@ -1,15 +1,18 @@
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect } from '../../../../machine/ts/common/rect';
-import type { PointerSnapshot } from '../../../common/models';
+import type { PointerSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { InputFocusScope, type InputFocusService, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown } from '../../../input/keyboard/key_input';
+import { editorViewState } from '../../../editor/ui/view/state';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../../input/pointer/capture';
 import { ActionPromptView, type ActionPromptRequest, type ActionPromptChoice } from './action_prompt_view';
 import type { WorkbenchModalPresentation } from '../../services/windows/model';
+import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
 
 const TRIGGER_KEYS = ['Enter', 'NumpadEnter', 'Space'] as const;
 const NAVIGATION_KEYS = ['Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'] as const;
+const BODY_SCROLL_KEYS = ['PageUp', 'PageDown', 'Home', 'End'] as const;
 
 /** Owns modal focus and physical gestures. The workspace command awaits only the decision. */
 export class ActionPrompt implements PointerCaptureTarget {
@@ -27,6 +30,8 @@ export class ActionPrompt implements PointerCaptureTarget {
 	private triggerKey: string | undefined;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
+	private readonly bodyPointer: ScrollbarPointerControl;
+	private readonly footerPointer: ScrollbarPointerControl;
 	private readonly presentForFocus = (): void => {
 		const request = this.request!;
 		if (this.presentation.kind === 'part') this.presentation.reveal();
@@ -40,6 +45,8 @@ export class ActionPrompt implements PointerCaptureTarget {
 		private readonly acceptsFocusTransfer: (next: InputFocusTarget | null) => boolean = () => false,
 		public readonly presentation: WorkbenchModalPresentation) {
 		this.view = new ActionPromptView(presentation.bounds);
+		this.bodyPointer = new ScrollbarPointerControl(capture, this.pointerScope);
+		this.footerPointer = new ScrollbarPointerControl(capture, this.pointerScope);
 		this.focusTarget = focus.createTarget(null, new InputFocusScope(this.pointerScope, presentation.scope));
 		this.focusTarget.canFocus = () => this.visible;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(input => this.handleKeyboard(input), () => this.cancelPointer());
@@ -70,6 +77,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 		const result = new Promise<ActionPromptChoice>(resolve => { this.resolve = resolve; });
 		if (takeFocus) this.focus.setTarget(this.focusTarget, this.presentForFocus);
 		else { this.view.update(request); this.onDidChangeVisibility(); }
+		if (this.request === request) this.view.revealButton(this.focused);
 		return result;
 	}
 
@@ -96,13 +104,17 @@ export class ActionPrompt implements PointerCaptureTarget {
 	public dispose(): void { this.close(); this.unbindKeyboard(); this.unbindBlur(); }
 
 	public handlePointer(snapshot: PointerSnapshot): void {
+		if (this.bodyPointer.handlePointer(snapshot, this.view.body.scrollbar, this.cancelPointer)
+			|| this.footerPointer.handlePointer(snapshot, this.view.footer.scrollbar, this.cancelPointer)) return;
 		const index = this.hitTest(snapshot);
 		this.hovered = index;
-		if (index < 0 || (snapshot.justPressedButtons & PointerButton.Primary) === 0) return;
+		if ((snapshot.justPressedButtons & PointerButton.Primary) === 0) return;
+		if (index < 0 && (!snapshot.valid || !snapshot.insideViewport
+			|| !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.view.bounds))) return;
 		const request = this.request;
-		this.focusTarget.focus();
-		if (this.request !== request) return;
+		if (!this.focusTarget.focus() || this.request !== request) return;
 		this.cancelPointer();
+		if (index < 0) return;
 		this.capture.capture(this, PointerButton.Primary, this.pointerScope);
 		this.focused = this.pointerButton = this.hovered = index;
 		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
@@ -117,14 +129,16 @@ export class ActionPrompt implements PointerCaptureTarget {
 		if (accept) this.close(this.view.buttons[index].choice);
 	}
 
-	public cancelPointer(): void {
+	public readonly cancelPointer = (): void => {
 		this.capture.release(this);
+		this.bodyPointer.cancelPointer(); this.footerPointer.cancelPointer();
 		this.pointerButton = this.hovered = -1;
 		this.triggerKey = undefined;
-	}
+	};
 
 	private hitTest(snapshot: PointerSnapshot): number {
 		if (!snapshot.valid || !snapshot.insideViewport) return -1;
+		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, this.view.footer.bounds)) return -1;
 		const buttons = this.view.buttons;
 		for (let index = 0; index < buttons.length; index++) {
 			if (buttons[index].enabled && point_in_rect(snapshot.viewportX, snapshot.viewportY, buttons[index].bounds)) return index;
@@ -143,6 +157,13 @@ export class ActionPrompt implements PointerCaptureTarget {
 		if (this.triggerKey === 'Escape') return;
 		const modifiers = input.modifiers;
 		if (modifiers !== KeyModifier.none && modifiers !== KeyModifier.shift) { this.cancelPointer(); return; }
+		for (const key of BODY_SCROLL_KEYS) if (isKeyDown(key, input)) {
+			consumeIdeKey(key, input); this.cancelPointer();
+			const body = this.view.body;
+			body.scrollbar.setScroll(key === 'Home' ? 0 : key === 'End' ? body.contentHeight
+				: body.scrollTop + (key === 'PageUp' ? -body.height : body.height));
+			return;
+		}
 		for (const key of NAVIGATION_KEYS) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			this.cancelPointer();
@@ -150,6 +171,7 @@ export class ActionPrompt implements PointerCaptureTarget {
 			do {
 				this.focused = (this.focused + (backward ? -1 : 1) + this.view.buttons.length) % this.view.buttons.length;
 			} while (!this.view.buttons[this.focused].enabled);
+			this.view.revealButton(this.focused);
 			return;
 		}
 		if (!TRIGGER_KEYS.includes(input.code as typeof TRIGGER_KEYS[number]) || input.consumed) return;
@@ -163,7 +185,23 @@ export class ActionPrompt implements PointerCaptureTarget {
 	}
 
 	public update(): void {
-		if (this.visible) this.view.update(this.request!);
+		if (this.visible) {
+			const revision = this.view.revision;
+			this.view.update(this.request!);
+			if (revision !== this.view.revision) { this.cancelPointer(); this.view.revealButton(this.focused); }
+		}
+	}
+
+	public handleWheel(event: WheelInputSnapshot): void {
+		if (!event.valid || !event.insideViewport || event.deltaY === 0) return;
+		const footer = this.view.footer, body = this.view.body;
+		const view = point_in_rect(event.viewportX, event.viewportY, footer.bounds)
+			|| point_in_rect(event.viewportX, event.viewportY, footer.scrollbar.getTrack()) ? footer
+			: point_in_rect(event.viewportX, event.viewportY, body.bounds)
+				|| point_in_rect(event.viewportX, event.viewportY, body.scrollbar.getTrack()) ? body : undefined;
+		if (view === undefined) return;
+		this.cancelPointer();
+		view.scrollbar.setScroll(view.scrollTop + event.deltaY * (editorViewState.lineHeight + 2));
 	}
 
 	public draw(): void {

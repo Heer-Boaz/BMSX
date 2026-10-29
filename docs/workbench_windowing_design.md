@@ -547,6 +547,10 @@ of the focused control. The window scope retains its last focused eligible
 content control for explicit reactivation. Merely hovering, painting or raising
 a window programmatically does not steal keyboard focus.
 
+Scroll clipping limits paint and pointer exposure, not the keyboard eligibility
+of an attached control. Focus remains with that control when its pixels scroll
+out of view; hiding, detaching or modal blocking still revokes input admission.
+
 A new pointer press activates its admitted interaction scope; a focusable hit
 receives focus. In a window, a press on nonfocusable chrome/empty content enters
 its last eligible control or scope target, rather than leaving game focus active

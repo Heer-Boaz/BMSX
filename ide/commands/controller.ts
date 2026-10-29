@@ -21,7 +21,6 @@ import { editorViewState } from '../editor/ui/view/state';
 import type { EditorActionRequest } from './action_request';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
 import { executeEditorViewCommand, isEditorViewCommand } from './view';
-import { problemsPanel } from '../workbench/contrib/problems/panel/controller';
 import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
 import { performEditorAction } from './actions';
 import { TextEditorInput } from '../workbench/common/editor_input';
@@ -134,6 +133,12 @@ export class IdeCommandController {
 		}
 		// Named regions settle only their own input at the Main owner; an unrelated document draft is not their subject.
 		switch (command) {
+			case 'problems': {
+				const main = this.editor.mainWorkspace;
+				if (main.activity === this.editor.problems && main.regionLayout.activityVisible) main.setActivityVisible(false);
+				else { main.setActivity(this.editor.problems); main.focusActivity(); }
+				return;
+			}
 			case 'workspace.hierarchy.focus': this.editor.mainWorkspace.focusPrimary('hierarchy'); return;
 			case 'workspace.details.focus': this.editor.mainWorkspace.focusPrimary('details'); return;
 			case 'workspace.hierarchy.toggle': this.editor.mainWorkspace.toggleRegion('hierarchy'); return;
@@ -144,7 +149,7 @@ export class IdeCommandController {
 				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
 			const placement = command === 'editor.sourceToSide' ? 'side' : 'default';
 			const main = this.editor.mainWorkspace;
-			if (input === undefined && main.isPrimaryTarget(invocationTarget)) {
+			if (input === undefined && (main.isPrimaryTarget(invocationTarget) || main.isActivityTarget(invocationTarget))) {
 				if (main.canOpenSource(invocationTarget!)) void this.editor.navigation.openSource(main, { placement, target: invocationTarget! });
 				return;
 			}
@@ -343,7 +348,7 @@ export class IdeCommandController {
 					group.timeline.focus();
 				}
 				return;
-			case 'problems.coverage': inputFocus.executeCommand(command, problemsPanel.focusTarget); return;
+			case 'problems.coverage': inputFocus.executeCommand(command, this.editor.problems.focusTarget); return;
 			case 'runtime.pause':
 				if (transport?.available !== true) return;
 				if (local !== undefined) { local.running = false; this.editor.interaction.activateRuntime(target!); }
@@ -467,7 +472,7 @@ export class IdeCommandController {
 		if (originPart === null) return false;
 		const implementation = input === undefined ? focus?.resolveCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isEnabled();
-		if ((command === 'editor.source' || command === 'editor.sourceToSide') && input === undefined && this.editor.mainWorkspace.isPrimaryTarget(focus))
+		if ((command === 'editor.source' || command === 'editor.sourceToSide') && input === undefined && (this.editor.mainWorkspace.isPrimaryTarget(focus) || this.editor.mainWorkspace.isActivityTarget(focus)))
 			return this.editor.mainWorkspace.canOpenSource(focus!);
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		if (input !== undefined && !group.model.contains(input)) return false;
@@ -482,6 +487,7 @@ export class IdeCommandController {
 				return group.openingAdmitted && pane !== null && pane.input === editor && pane.canOpenSource;
 			}
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
+			case 'problems': return this.editor.isActive;
 			case 'findGlobal': return workspaceState.context !== null;
 			case 'workspace.focusPrimary': case 'workspace.clearPrimary':
 			case 'workspace.hierarchy.focus': case 'workspace.details.focus':
@@ -572,7 +578,7 @@ export class IdeCommandController {
 			case 'runtime.focusTimeline': return this.editor.isActive && (local === undefined ? group.timeline.available : transport?.available === true);
 			case 'runtime.hideTimeline': return this.editor.isActive && group.timeline.canHide;
 			case 'runtime.toggleTimeline': return this.editor.isActive && ((local === undefined ? group.timeline.available : transport?.available === true) || group.timeline.requested);
-			case 'problems.coverage': return this.editor.isActive && problemsPanel.focusTarget.getCommand(command)!.isEnabled();
+			case 'problems.coverage': return this.editor.isActive && this.editor.problems.focusTarget.getCommand(command)!.isEnabled();
 			case 'runtime.pause': return transport?.playbackEnabled === true;
 			case 'runtime.present':
 			case 'runtime.accept':
@@ -691,7 +697,7 @@ export class IdeCommandController {
 			case 'resources':
 				return this.editor.resourcePanel.visible;
 			case 'problems':
-				return problemsPanel.isVisible;
+				return this.editor.mainWorkspace.regionLayout.activityVisible && this.editor.mainWorkspace.activity === this.editor.problems;
 			case 'behaviorLens':
 				return (group.model.activeTab?.kind === 'behavior_lens');
 			case 'scenarioLab':

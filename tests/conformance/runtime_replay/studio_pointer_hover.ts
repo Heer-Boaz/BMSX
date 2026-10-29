@@ -1,5 +1,4 @@
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
-import { getProblemsPanelBounds } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -10,7 +9,7 @@ export async function testStudioPointerHover(test: StudioFixture, scene: SceneEd
 	const source = scene.view.actionBar.items.find(item => item.command === 'editor.source')!;
 	movePointer(source.bounds); await frame();
 	check(scene.view.actionBar.hoveredCommand === source.command, 'A09: the real Scene Source button is hovered');
-	movePointer(getProblemsPanelBounds()!); await frame();
+	movePointer(ide.editor.problems.bounds); await frame();
 	check(scene.view.actionBar.hoveredCommand === null, 'A09: Source → Problems without a click sends leave');
 	movePointer(source.bounds); await frame();
 	movePointer(editorChromeState.topBarBounds); await frame();

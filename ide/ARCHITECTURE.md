@@ -62,9 +62,11 @@ the shared close/transfer admission and the frontend drop-target projection.
 Internal membership projections settle before external topology/model events;
 retiring group authority is separate from history handoff and final disposal. An
 `EditorPart` owns real groups, local active/MRU state, retained client bounds,
-Quick Input and decision dialogs. `group_arrangement.ts` owns the retained split
-tree, hard and reading minimum extents, overflow viewport, constrained drop
-previews and temporary group maximization. Both constraint tiers use the same
+Quick Input and decision dialogs. Local modal sessions retain the requesting
+part's input authority while their placement uses the actual host's physical
+extent, independently of its scrolled document clip. `group_arrangement.ts` owns
+the retained split tree, hard and reading minimum extents, overflow viewport,
+constrained drop previews and temporary group maximization. Both constraint tiers use the same
 tree; an optional companion must fit the presented arrangement's reading
 budget, not only its active group. `common/main_area_layout.ts` owns the nested
 allocation between Main's document arrangement and optional Game companion,
@@ -108,8 +110,9 @@ the editor-host area. Main's editor-client family and floating parts share the
 surface owner's ordered host band; activating an editor raises only that family,
 not the shell. Main's available client excludes temporary panels and shared
 sash lanes. Outer window/popup placement retains the reserved shell extent;
-Main clipping does not retire independently promoted surfaces. Logical surface
-lifetime and physical input admission are distinct. Workspace Open Editors
+Main clipping does not retire independently promoted surfaces. Attached keyboard
+focus follows visibility and modal ownership independently of scroll clipping;
+pointer routes also require an exposed extent. Workspace Open Editors
 projects every actual input/group/part from membership, while tab overflow remains group-local. Owned inspectors stay
 in their window/modal presentation family. Status consumes the actual primary
 client or document control context rather than a background Main pane. Shared window models retain
@@ -249,7 +252,7 @@ does not change group selection to manufacture that subject.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
 `workbench/main_workspace.ts` owns Main's permanent presentation family and its
-named Hierarchy, document and Details regions. `common/main_workspace_layout.ts`
+named Hierarchy, document, Details and activity regions. `common/main_workspace_layout.ts`
 allocates their measured constraints, requested side widths/visibility and
 overflow. The frontend composition measures the document part, allocates Main,
 then arranges its actual clients before publishing input routing. The composition
@@ -264,6 +267,18 @@ single semantic consumer from its independently attached region presentations.
 contributions supply the content controls and measurements. Hiding a region
 retires that attachment, not its sibling or retained work context. The logical
 primary surface groups modality without covering the document region.
+The activity is independent of the primary authored subject and document tabs.
+Its contribution supplies intrinsic height and retained reading state; Main owns
+visibility, requested height, sash and two-axis overflow. The document part
+consumes Main's row clip and reveals a concrete leaf through that parent before
+native focus admission. Root chrome reserves permanent shell geometry, not a
+contribution's temporary panel height.
+`contrib/problems/panel/` is the workspace-owned diagnostic activity. It consumes
+`ResourceDiagnosticsService` results, retains its diagnostic selection and reading
+intent while detached, and binds native controls only to supplied bounds/scope.
+Diagnostic navigation and Source share the canonical-model/version proof at the
+diagnostic navigation owner. Application Source/Palette routing retains the
+actual primary or activity producer rather than borrowing the document behind it.
 Scene source documents are generation-cached at `contrib/scene_editor/source_documents.ts`
 and shared with project-content discovery. `SceneAuthoringContext` retains source
 correspondence, semantic selection and member editing independently of outline
@@ -275,8 +290,8 @@ reading/placement state and attach through separate controls and input scopes.
 `SceneEditorViewState` and `SceneEditorControl` compose those actual clients with
 shared chrome and region allocation. Semantic selection restore precedes optional
 tree highlighting; disclosure does not determine whether Details has a subject.
-A document pane adapts the composition to a group; `ScenePrimaryClient` attaches
-it directly to Main without an editor input.
+A document pane adapts the composition to a group; `ScenePrimaryClient` supplies
+the independent region controls directly to Main without an editor input.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
 An input's optional fresh-view capability belongs to its contribution. It creates

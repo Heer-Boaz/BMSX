@@ -19,15 +19,14 @@ import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../ide/editor/ui/view/view';
 import { focusRuntimeErrorOverlay } from '../../ide/runtime_error/navigation';
-import { PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN } from '../../ide/common/constants';
+import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { api } from '../../ide/runtime/overlay_api';
 import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { AemEditorInput } from '../../ide/workbench/contrib/aem/editor_input';
-import { getProblemsPanelBounds } from '../../ide/workbench/contrib/problems/panel/layout';
-import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
+import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { getWorkbenchEditorBounds } from '../../ide/workbench/common/layout';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -71,7 +70,7 @@ function fixture(t: TestContext, source = 'local value = 42\nreturn value') {
 	const editor = ide.editor;
 	editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
 	t.after(async () => {
-		problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null);
+		inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
@@ -97,6 +96,31 @@ function openAemFixture(f: ReturnType<typeof fixture>, source = 'events:\n  stor
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
 	return { input, model, source };
 }
+
+test('the workspace Problems command and palette own activity admission independently of the current document', t => {
+	const f = fixture(t), main = f.editor.mainWorkspace, problems = f.editor.problems;
+	assert.equal(f.editor.commands.isEnabled('problems'), true);
+	f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
+	const palette = f.editor.quickInput;
+	assert.equal(palette.visible, true);
+	const index = palette.model.list.rows.findIndex(row => (row.item as CommandQuickPickItem).command === 'problems');
+	assert.ok(index >= 0, 'the global activity command is an admitted command item, not a document view contribution');
+	palette.model.list.selectionIndex = index; f.key('Enter');
+	assert.ok(main.activity === problems && problems.attached && main.isActivityTarget(inputFocus.admittedTarget));
+	assert.ok(f.editor.editorParts.main.activeGroup.model.activeTab === f.input);
+	f.key('KeyM', KeyModifier.ctrl | KeyModifier.shift);
+	assert.equal(problems.attached, false); assert.equal(f.editor.commands.isEnabled('problems'), true);
+	const part = f.editor.editorParts.main, empty = part.splitGroup(part.activeGroup, 'right');
+	empty.focus(); f.editor.update(0);
+	assert.equal(f.editor.editorParts.main.activeGroup.model.activeTab, null);
+	f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
+	const emptyIndex = palette.model.list.rows.findIndex(row => (row.item as CommandQuickPickItem).command === 'problems');
+	assert.ok(emptyIndex >= 0, 'activity admission remains available with no active document');
+	palette.model.list.selectionIndex = emptyIndex; f.key('Enter');
+	assert.ok(problems.attached && main.isActivityTarget(inputFocus.admittedTarget));
+	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
+	f.editor.deactivate(); assert.equal(f.editor.commands.isEnabled('problems'), false);
+});
 
 test('ordinary Source close and reopen restores a plain reading memento in a fresh live view', t => {
 	const source = Array.from({ length: 100 }, (_, row) => `-- row ${row} with readable source`).join('\n') + '\nreturn 1';
@@ -243,12 +267,13 @@ for (const control of ['tree', 'actions'] as const) {
 		}
 		const target = inputFocus.admittedTarget;
 		assert.ok(target !== null);
-		problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+		const part = f.editor.editorParts.main, sibling = part.splitGroup(part.activeGroup, 'right');
+		part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 		assert.notEqual(inputFocus.admittedTarget, target);
 		f.key(control === 'tree' ? 'Delete' : 'Enter'); f.key('KeyZ', KeyModifier.ctrl);
 		assert.equal(aem.model.buffer.getText(), edited); assert.equal(aem.model.version, version);
 		assert.equal(aem.model.canUndo, true); assert.equal(aem.model.canRedo, false);
-		problemsPanel.hide(); f.editor.update(0);
+		part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 		assert.notEqual(inputFocus.admittedTarget, target, 'recovery does not silently reclaim focus');
 		f.key('Delete'); assert.equal(aem.model.buffer.getText(), edited);
 		assert.ok(aem.input.tree.rows[aem.input.tree.selectionIndex] === selected);
@@ -260,22 +285,24 @@ for (const control of ['tree', 'actions'] as const) {
 	});
 }
 
-test('the independently presented AEM property edit retains its own input above an unavailable main tree', t => {
+test('the independently presented AEM property edit retains its own input while Main activity is shown', t => {
 	const f = fixture(t), aem = openAemFixture(f);
 	assert.ok(aem.input.tree.selectionIndex >= 0);
 	f.key('Enter');
 	const field = f.editor.textTarget!;
 	assert.ok(field !== undefined);
 	const target = inputFocus.admittedTarget;
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	f.editor.mainWorkspace.setActivityVisible(true); f.editor.update(0);
 	assert.ok(f.editor.textTarget === field && inputFocus.admittedTarget === target);
 	assert.equal(field.replaceText(0, 'music'.length, 'audiofx'), true);
 	assert.equal(aem.model.buffer.getText(), aem.source, 'an independent field draft is not an accepted source edit');
 	f.key('Enter');
 	assert.equal(aem.model.buffer.getText(), aem.source.replace('music', 'audiofx'));
 	assert.ok(f.editor.textTarget === undefined);
-	problemsPanel.hide(); f.editor.update(0);
-	assert.ok(inputFocus.admittedTarget === null);
+	const returned = inputFocus.admittedTarget;
+	assert.ok(returned !== null && returned !== target);
+	f.editor.mainWorkspace.setActivityVisible(false); f.editor.update(0);
+	assert.ok(inputFocus.admittedTarget === returned, 'hiding an unrelated activity does not change the accepted prompt return focus');
 	f.editor.editorParts.main.activeGroup.panes.activePane!.focus(); f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(aem.model.buffer.getText(), aem.source); assert.equal(aem.model.canRedo, true);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
@@ -317,7 +344,8 @@ for (const command of ['findLocal', 'lineJump', 'rename'] as const) test(`${comm
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
 	assert.equal(pointerCapture.active, true);
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	const part = f.editor.editorParts.main, sibling = part.splitGroup(part.activeGroup, 'right');
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	pending.resolve({ text: 'late_paste', images: [] }); await pending.promise;
 	assert.ok(f.editor.textTarget === undefined && f.editor.clipboardTarget === undefined,
 		'a retained field draft is not permission for native input outside its presented geometry');
@@ -331,7 +359,7 @@ for (const command of ['findLocal', 'lineJump', 'rename'] as const) test(`${comm
 	assert.equal(pointerCapture.draining, false); assert.equal(field.pointerSelecting, false);
 	assert.equal(field.text, draft); assert.equal(field.revision, revision); assert.equal(field.canUndo, true);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.view.scrollRow, sourceScroll);
-	problemsPanel.hide(); f.editor.update(0);
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	assert.ok(f.editor.textTarget === undefined, 'rearranging a retained field does not steal focus');
 	assert.equal(f.view.scrollRow, sourceScroll);
 	if (command === 'rename') {
@@ -344,25 +372,6 @@ for (const command of ['findLocal', 'lineJump', 'rename'] as const) test(`${comm
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
 
-test('Find remains an admitted text owner when its own bar is visible above a zero-height Source body', t => {
-	const f = fixture(t);
-	f.editor.commands.execute('findLocal'); f.editor.update(0);
-	const field = f.pane.find.state.field, bar = f.pane.bars.searchBounds!, bounds = getWorkbenchEditorBounds();
-	// Keep the produced Find bar exposed, including the group's actual tab chrome.
-	const sourceBodyBudget = bounds.bottom - bar.bottom;
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(sourceBodyBudget); f.editor.update(0);
-	assert.ok(!f.pane.code.focusTarget.canFocus!(), 'the physical body budget withholds Source, independently of its inline bar');
-	assert.ok(f.editor.textTarget === field && f.editor.clipboardTarget === field);
-	assert.ok(field.nativeCaret.width > 0 && field.nativeCaret.height > 0);
-	assert.equal(f.editor.textTarget!.replaceText(0, field.text.length, 'visible_field'), true);
-	assert.equal(field.text, 'visible_field'); assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
-	f.key('Escape');
-	assert.equal(f.pane.find.state.visible, false);
-	assert.ok(inputFocus.admittedTarget === f.pane.code.focusTarget && f.editor.textTarget !== undefined,
-		'explicit Find close returns focus only after its own bar has freed Source client space');
-	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
-});
-
 test('Rename rejected before field presentation retires its source-reading subscriptions and admits a later fresh operation', t => {
 	const f = fixture(t);
 	f.key('End', KeyModifier.ctrl); f.key('ArrowLeft');
@@ -372,12 +381,13 @@ test('Rename rejected before field presentation retires its source-reading subsc
 		const unbind = subscribe.call(editorTextModelService, listener); subscriptions++;
 		return () => { subscriptions--; unbind(); };
 	});
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	const part = f.editor.editorParts.main, sibling = part.splitGroup(part.activeGroup, 'right');
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	f.editor.commands.execute('rename');
 	assert.equal(f.pane.rename.isVisible(), false); assert.equal(f.pane.rename.isActive(), false);
 	assert.equal(f.pane.rename.getMatchCount(), 0); assert.equal(subscriptions, 0, 'rejected Rename cannot retain a workspace-source observer');
 	assert.ok(f.editor.textTarget === undefined && f.editor.clipboardTarget === undefined);
-	problemsPanel.hide(); f.editor.update(0); f.editor.editorParts.main.activeGroup.panes.activePane!.focus();
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0); f.editor.editorParts.main.activeGroup.panes.activePane!.focus();
 	f.editor.commands.execute('rename');
 	assert.equal(f.pane.rename.isActive(), true); assert.ok(f.pane.rename.getMatchCount() > 0); assert.equal(subscriptions, 1);
 	f.key('Escape'); assert.equal(subscriptions, 0); assert.equal(f.pane.rename.isVisible(), false);
@@ -390,23 +400,25 @@ test('actual inspector and source attachments preserve user-opened Files and Pro
 	for (let index = 0; index < 20; index++) resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.resource(index));
 	resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.resource(50));
 	f.editor.diagnostics.computePending();
-	assert.ok(problemsPanel.getDiagnostics().length >= 20, 'the real diagnostics producer supplies a scrollable authored-error list');
+	assert.ok(f.editor.problems.getDiagnostics().length >= 20, 'the real diagnostics producer supplies a scrollable authored-error list');
 	files.show(); files.queuePendingSelection(f.resource(40)); files.applyPendingSelection();
 	files.navigateFiles('left'); files.navigateFiles('left');
 	const selectedFolder = files.files.selectedNode!; assert.equal(selectedFolder.collapsed, true);
 	files.setScroll(10); const fileScroll = files.scroll; assert.ok(fileScroll > 0);
-	problemsPanel.show();
+	f.editor.mainWorkspace.setActivityVisible(true);
 	// This is explicit user part-size intent, not a pane-position or layout oracle.
-	problemsPanel.setFixedHeightPx(73); problemsPanel.setSelectionIndex(14);
-	problemsPanel.handlePointerWheel(12, getProblemsPanelBounds()!);
-	const selectedDiagnostic = problemsPanel.selectedDiagnostic, diagnostics = problemsPanel.getDiagnostics(), problemScroll = problemsPanel.getScrollIndex();
+	f.editor.mainWorkspace.regionLayout.activityHeight = 73; f.editor.problems.setSelectionIndex(14);
+	f.editor.update(0);
+	const activityBounds = f.editor.problems.bounds;
+	f.editor.dispatchWheel({ x: activityBounds.left + 4, y: activityBounds.bottom - 4, deltaX: 0, deltaY: 12, attachmentDeltaY: 12, modifiers: KeyModifier.none, timestamp: 1 });
+	const selectedDiagnostic = f.editor.problems.selectedDiagnostic, diagnostics = f.editor.problems.getDiagnostics(), problemScroll = f.editor.problems.getScrollIndex();
 	assert.ok(problemScroll > 0);
 	const unchanged = () => {
 		assert.equal(files.isVisible(), true); assert.ok(files.files.tree === tree);
 		assert.ok(files.files.selectedNode === selectedFolder); assert.equal(selectedFolder.collapsed, true); assert.equal(files.scroll, fileScroll);
-		assert.equal(problemsPanel.isVisible, true); assert.ok(problemsPanel.getDiagnostics() === diagnostics);
-		assert.ok(problemsPanel.selectedDiagnostic === selectedDiagnostic); assert.equal(problemsPanel.getScrollIndex(), problemScroll);
-		assert.equal(problemsPanel.visibleHeight, 73, 'switching editors cannot replace the explicitly requested part size');
+		assert.equal(f.editor.mainWorkspace.regionLayout.activityVisible, true); assert.ok(f.editor.problems.getDiagnostics() === diagnostics);
+		assert.ok(f.editor.problems.selectedDiagnostic === selectedDiagnostic); assert.equal(f.editor.problems.getScrollIndex(), problemScroll);
+		assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 73, 'switching editors cannot replace the explicitly requested part size');
 		assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version); assert.equal(f.model.canUndo, true);
 		assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 	};
@@ -420,7 +432,7 @@ test('actual inspector and source attachments preserve user-opened Files and Pro
 	f.editor.editorParts.main.activeGroup.activate(f.input.id); f.editor.update(0); unchanged();
 	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canRedo, true);
 	files.setFocused(true); files.hide(); assert.equal(files.isVisible(), false); assert.equal(files.isFocused(), false);
-	problemsPanel.setFocused(true); inputFocus.moveFocus(false); assert.equal(problemsPanel.header.hasFocus, true); problemsPanel.hide(); assert.equal(problemsPanel.isVisible, false); assert.equal(problemsPanel.header.hasFocus, false);
+	f.editor.problems.focus(); inputFocus.moveFocus(false); assert.equal(f.editor.problems.header.hasFocus, true); f.editor.mainWorkspace.setActivityVisible(false); assert.equal(f.editor.mainWorkspace.regionLayout.activityVisible, false); assert.equal(f.editor.problems.header.hasFocus, false);
 });
 
 test('outgoing source presentation retires without clearing the retained context of another editor', t => {
@@ -479,7 +491,8 @@ test('an already-focused Source loses native editing admission and pending Paste
 	const pending = Promise.withResolvers<ClipboardContents>();
 	const read = t.mock.method(f.clipboard, 'read', () => pending.promise), execute = t.mock.method(f.clipboard, 'execute');
 	f.key('KeyV', KeyModifier.ctrl); assert.equal(read.mock.callCount(), 1);
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	const part = f.editor.editorParts.main, sibling = part.splitGroup(part.activeGroup, 'right');
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	pending.resolve({ text: 'late asynchronous paste', images: [] }); await pending.promise;
 	assert.ok(f.editor.textTarget === undefined, 'zero-body Source must not publish a native editing target');
 	assert.ok(f.editor.clipboardTarget === undefined, 'zero-body Source must not publish its clipboard capability');
@@ -487,7 +500,7 @@ test('an already-focused Source loses native editing admission and pending Paste
 	f.key('Backspace'); f.key('KeyX', KeyModifier.ctrl); f.key('KeyV', KeyModifier.ctrl); f.key('KeyZ', KeyModifier.ctrl);
 	assert.equal(read.mock.callCount(), 1); assert.equal(execute.mock.callCount(), 0);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
-	problemsPanel.hide(); f.editor.update(0);
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	assert.ok(f.editor.textTarget === undefined, 'recovering layout does not silently steal keyboard focus');
 	f.pane.code.focusTarget.focus();
 	assert.ok(f.editor.textTarget !== undefined && f.editor.clipboardTarget !== undefined);
@@ -502,10 +515,11 @@ test('withholding Source body retains its authored reading position, cursor and 
 	const scroll = f.view.scrollRow, row = f.view.cursorRow, column = f.view.cursorColumn;
 	const anchor = { ...f.view.selectionAnchor! };
 	assert.ok(scroll > 0 && f.view.selectionAnchor !== null, 'real source navigation established a scrolled selection near EOF');
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	const part = f.editor.editorParts.main, sibling = part.splitGroup(part.activeGroup, 'right');
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	assert.equal(f.view.scrollRow, scroll, 'zero-body layout cannot replace retained reading intent with a one-row viewport');
 	assert.equal(f.view.cursorRow, row); assert.equal(f.view.cursorColumn, column); assert.deepEqual(f.view.selectionAnchor, anchor);
-	problemsPanel.hide(); f.editor.update(0);
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	assert.equal(f.view.scrollRow, scroll); assert.equal(f.view.cursorRow, row); assert.equal(f.view.cursorColumn, column);
 	assert.deepEqual(f.view.selectionAnchor, anchor); assert.ok(f.editor.textTarget === undefined);
 	assert.ok(f.pane.code.model === f.model && f.pane.code.view === f.view);
@@ -536,10 +550,10 @@ test('ordinary inspector return preserves manual Source reading away from its re
 
 test('the actual Problems sash preserves automatic sizing until motion and commits relative movement through final release', t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(0); f.editor.update(0);
-	let bounds = getProblemsPanelBounds()!, x = (bounds.left + bounds.right) / 2;
-	let y = (problemsPanel.resizeBounds.top + problemsPanel.resizeBounds.bottom) / 2;
-	const automatic = problemsPanel.visibleHeight;
+	f.editor.mainWorkspace.setActivityVisible(true); f.editor.mainWorkspace.regionLayout.activityHeight = undefined; f.editor.update(0);
+	let bounds = f.editor.problems.bounds, x = (bounds.left + bounds.right) / 2;
+	let y = (f.editor.mainWorkspace.regionLayout.activitySashBounds.top + f.editor.mainWorkspace.regionLayout.activitySashBounds.bottom) / 2;
+	const automatic = bounds.bottom - bounds.top;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	assert.equal(pointerCapture.active, true);
@@ -547,46 +561,47 @@ test('the actual Problems sash preserves automatic sizing until motion and commi
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
 	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
-	assert.equal(pointerCapture.active, false); assert.equal(problemsPanel.visibleHeight, automatic);
+	assert.equal(pointerCapture.active, false); assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, undefined);
 	for (let index = 0; index < 20; index++) resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.resource(index));
 	f.editor.diagnostics.computePending(); f.editor.update(0);
-	assert.ok(problemsPanel.visibleHeight > automatic, 'a stationary sash click must not pin the automatic content-size owner');
-	problemsPanel.setFixedHeightPx(73); f.editor.update(0);
-	bounds = getProblemsPanelBounds()!; x = (bounds.left + bounds.right) / 2;
-	y = bounds.top - PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN;
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, undefined);
+	assert.ok(f.editor.problems.bounds.bottom - f.editor.problems.bounds.top > automatic, 'a stationary sash click must not pin the automatic content-size owner');
+	f.editor.mainWorkspace.regionLayout.activityHeight = 73; f.editor.update(0);
+	bounds = f.editor.problems.bounds; x = (bounds.left + bounds.right) / 2;
+	y = bounds.top - WORKBENCH_SPLIT_SIZE / 2;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
 	assert.equal(pointerCapture.active, true);
-	assert.equal(problemsPanel.visibleHeight, 73, 'grabbing the divider margin cannot jump the requested part size');
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 73, 'grabbing the divider margin cannot jump the requested part size');
 	f.editor.dispatchPointer({ x, y: y - 12, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 5 });
-	assert.equal(problemsPanel.visibleHeight, 85, 'continuous drag changes the explicit size by its pointer displacement');
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 85, 'continuous drag changes the explicit size by its pointer displacement');
 	f.editor.dispatchPointer({ x, y: y - 19, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 6 });
-	assert.equal(problemsPanel.visibleHeight, 92, 'the release occurrence contributes its final movement');
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 92, 'the release occurrence contributes its final movement');
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
-	problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
-	bounds = getProblemsPanelBounds()!; const presented = bounds.bottom - bounds.top;
-	x = (bounds.left + bounds.right) / 2; y = (problemsPanel.resizeBounds.top + problemsPanel.resizeBounds.bottom) / 2;
+	f.editor.mainWorkspace.regionLayout.activityHeight = 1000000; f.editor.update(0);
+	bounds = f.editor.problems.bounds; const presented = bounds.bottom - bounds.top;
+	x = (bounds.left + bounds.right) / 2; y = (f.editor.mainWorkspace.regionLayout.activitySashBounds.top + f.editor.mainWorkspace.regionLayout.activitySashBounds.bottom) / 2;
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 7 });
-	assert.equal(pointerCapture.active, true); assert.equal(problemsPanel.visibleHeight, 1000000);
+	assert.equal(pointerCapture.active, true); assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 1000000);
 	f.editor.dispatchPointer({ x, y: y + 12, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 8 });
-	assert.equal(problemsPanel.visibleHeight, presented - 12, 'drag begins at the displayed size, not an occluded larger request');
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, presented - 12, 'drag begins at the displayed size, not an occluded larger request');
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
 
 for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as const) test(`Problems sash ${retirement} retires and drains before a fresh Source click`, t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(73); f.editor.update(0);
+	f.editor.mainWorkspace.setActivityVisible(true); f.editor.mainWorkspace.regionLayout.activityHeight = 73; f.editor.update(0);
 	f.ide.overlayRenderer.beginFrame(f.host.presenter); api.beginFrame(f.ide.overlayRenderer);
 	f.editor.draw(); f.ide.overlayRenderer.endFrame();
 	const caret = { ...f.editor.textTarget!.caretRect() };
-	problemsPanel.setFocused(true);
-	const bounds = getProblemsPanelBounds()!, x = (bounds.left + bounds.right) / 2;
-	const y = (problemsPanel.resizeBounds.top + problemsPanel.resizeBounds.bottom) / 2;
+	f.editor.problems.focus();
+	const bounds = f.editor.problems.bounds, x = (bounds.left + bounds.right) / 2;
+	const y = (f.editor.mainWorkspace.regionLayout.activitySashBounds.top + f.editor.mainWorkspace.regionLayout.activitySashBounds.bottom) / 2;
 	// The physical producer is down before the corresponding native editor occurrence.
 	f.host.input.inputButton('pointer:0', 'pointer_primary', true, 1, 1, 1);
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
@@ -594,18 +609,18 @@ for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as
 	assert.equal(pointerCapture.active, true, 'Problems must own a captured control, not a global resize flag');
 	if (retirement === 'input-cancel') f.editor.cancelInput();
 	else if (retirement === 'deactivate') { f.editor.deactivate(); f.editor.activate(); f.editor.update(0); }
-	else if (retirement === 'hide') { problemsPanel.hide(); problemsPanel.show(); f.editor.update(0); }
+	else if (retirement === 'hide') { f.editor.mainWorkspace.setActivityVisible(false); f.editor.mainWorkspace.setActivityVisible(true); f.editor.update(0); }
 	else { f.editor.updateViewport({ width: 0, height: 288 }); f.editor.updateViewport({ width: 384, height: 288 }); f.editor.update(0); }
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	const sourceX = caret.x + caret.width / 2, sourceY = caret.y + caret.height / 2;
 	f.editor.dispatchPointer({ x: sourceX, y: sourceY, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
-	assert.equal(problemsPanel.visibleHeight, 73, 'the retired hold cannot resize a recovered part');
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 73, 'the retired hold cannot resize a recovered part');
 	f.host.input.inputButton('pointer:0', 'pointer_primary', false, 0, 3, 1);
 	f.editor.dispatchPointer({ x: sourceX, y: sourceY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, false);
-	problemsPanel.setFocused(true);
+	f.editor.problems.focus();
 	f.host.input.inputButton('pointer:0', 'pointer_primary', true, 1, 4, 2);
 	f.editor.dispatchPointer({ x: sourceX, y: sourceY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
@@ -613,14 +628,14 @@ for (const retirement of ['input-cancel', 'deactivate', 'hide', 'zero-width'] as
 	f.editor.dispatchPointer({ x: sourceX, y: sourceY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 5 });
 	assert.equal(f.pane.code.focusTarget.hasFocus, true, 'the next fresh Source click must not be stolen by the retired sash');
-	assert.equal(problemsPanel.visibleHeight, 73);
+	assert.equal(f.editor.mainWorkspace.regionLayout.activityHeight, 73);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 });
 
 test('retiring Problems does not cancel the actual sibling tab-strip scrollbar gesture', t => {
 	const f = fixture(t); t.after(() => pointerCapture.interrupt(false));
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(73);
+	f.editor.mainWorkspace.setActivityVisible(true); f.editor.mainWorkspace.regionLayout.activityHeight = 73;
 	for (let index = 40; index < 48; index++) f.editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
 	f.editor.editorParts.main.activeGroup.activate(f.input.id); f.editor.update(0);
 	const thumb = f.editor.editorParts.main.activeGroup.tabStrip.scrollbar.getThumb()!; assert.ok(thumb !== null);
@@ -629,7 +644,7 @@ test('retiring Problems does not cancel the actual sibling tab-strip scrollbar g
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
 	assert.equal(pointerCapture.active, true);
-	problemsPanel.hide(); f.editor.update(0);
+	f.editor.mainWorkspace.setActivityVisible(false); f.editor.update(0);
 	assert.equal(pointerCapture.active, true); assert.equal(pointerCapture.draining, false);
 	f.editor.dispatchPointer({ x: x + 32, y, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
@@ -726,9 +741,9 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 	f.editor.dispatchPointer({ x: liveX, y: liveY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 4 });
 	assert.equal(pointerCapture.active, true);
-	// Another real workbench part consumes the editor client, while the physical canvas stays available.
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
-	assert.equal(panel.visible, true); assert.equal(panel.getBounds(), null); assert.equal(panel.isFocused(), false);
+	// Files retires its own native presentation; the physical canvas remains available.
+	panel.hide(); f.editor.update(0);
+	assert.equal(panel.visible, false); assert.equal(panel.getBounds(), null); assert.equal(panel.isFocused(), false);
 	assert.equal(getWorkbenchEditorBounds().left, 0, 'an unavailable part contributes no editor-client inset in the same composition');
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
 	assert.equal(panel.resourceVertical.getThumb(), null); assert.equal(panel.resourceHorizontal.getThumb(), null);
@@ -742,8 +757,8 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 6 });
 	assert.equal(panel.scroll, scroll); assert.equal(panel.selectionIndex, selected);
 	f.editor.updateViewport({ width: 512, height: 288 }); f.editor.update(0);
-	assert.equal(panel.getBounds(), null); assert.equal(panel.visible, true);
-	problemsPanel.hide(); f.editor.update(0); panel.prepareLayout();
+	assert.equal(panel.getBounds(), null); assert.equal(panel.visible, false);
+	panel.show(); f.editor.update(0); panel.prepareLayout();
 	assert.equal(getWorkbenchEditorBounds().left, panel.resizeBounds.right, 'recovery publishes the actual part and its reserved sash lane before editor layout');
 	assert.equal(panel.itemCount, count); assert.equal(panel.scroll, scroll);
 	f.editor.dispatchPointer({ x: liveX, y: liveY + 24, buttons: PointerButton.Primary, pressedButtons: 0,
@@ -772,9 +787,9 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 	f.editor.dispatchPointer({ x: dividerX, y: dividerY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 12 });
 	assert.equal(pointerCapture.active, true, 'the actual resource sash, not a resize flag, owns its hold');
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
+	panel.hide(); f.editor.update(0);
 	assert.equal(pointerCapture.active, false); assert.equal(pointerCapture.draining, true);
-	problemsPanel.hide(); f.editor.update(0);
+	panel.show(); f.editor.update(0);
 	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: PointerButton.Primary, pressedButtons: 0,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 13 });
 	assert.equal(panel.getBounds()!.right - panel.getBounds()!.left, committedSpan, 'the retired sash hold cannot resize the recovered part');
@@ -789,8 +804,7 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 	assert.ok(panel.getBounds()!.right - panel.getBounds()!.left > committedSpan, 'a fresh admitted sash gesture still changes the user size intent');
 	f.editor.dispatchPointer({ x: dividerX + 32, y: dividerY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 17 });
-	// This strip belongs to an independent host: Problems withholds Main and Files,
-	// so a Main-owned strip would correctly lose its physical capture as well.
+	// This strip belongs to an independent host; retiring Files cannot revoke its capture.
 	const tabGroup = f.editor.editorParts.createDocument().activeGroup, tabSource = new CodeEditorInput(f.model);
 	tabGroup.openEditor(tabSource);
 	for (let index = 40; index < 48; index++) tabGroup.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource(index)));
@@ -801,8 +815,8 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 	f.editor.dispatchPointer({ x: tabX, y: tabY, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 18 });
 	assert.equal(pointerCapture.active, true);
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(1000000); f.editor.update(0);
-	assert.equal(panel.getBounds(), null); assert.equal(panel.visible, true);
+	panel.hide(); f.editor.update(0);
+	assert.equal(panel.getBounds(), null); assert.equal(panel.visible, false);
 	assert.equal(pointerCapture.active, true, 'withholding Files cannot cancel a sibling tab-strip capture');
 	assert.equal(pointerCapture.draining, false);
 	f.editor.dispatchPointer({ x: tabX + 32, y: tabY, buttons: PointerButton.Primary, pressedButtons: 0,
@@ -810,7 +824,7 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 	assert.ok(tabGroup.tabStrip.scrollbar.getScroll() > tabScroll); assert.equal(panel.scroll, fileScroll);
 	f.editor.dispatchPointer({ x: tabX + 32, y: tabY, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 20 });
-	assert.equal(pointerCapture.active, false); problemsPanel.hide(); f.editor.update(0);
+	assert.equal(pointerCapture.active, false); panel.show(); f.editor.update(0);
 	assert.equal(f.model.buffer.getText(), f.edited); assert.equal(f.model.version, f.version);
 	assert.equal(f.model.canUndo, true); assert.equal(f.host.runtime.machine.scheduler.nowCycles, f.cycles);
 	panel.hide(); assert.equal(panel.visible, false);
@@ -968,7 +982,7 @@ test('Home publishes action geometry before accepting a fresh pointer release', 
 	assert.equal(pointerCapture.active, false);
 });
 
-test('Home cover revokes both a held action and keyboard admission before the next frame', t => {
+test('Home group withdrawal revokes both a held action and keyboard admission before the next frame', t => {
 	const f = fixture(t);
 	openHome(f.editor.editorParts.main.activeGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
 	const home = f.editor.editorParts.main.activeGroup.model.activeTab!;
@@ -979,7 +993,8 @@ test('Home cover revokes both a held action and keyboard admission before the ne
 		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
 	assert.equal(pointerCapture.active, true);
 	const invoke = t.mock.method(f.editor.commands, 'execute', () => {});
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(1000000);
+	const part = f.editor.editorParts.main, sibling = part.splitGroup(part.activeGroup, 'right');
+	part.arrangement.toggleMaximize(sibling);
 	f.editor.updateViewport({ width: 384, height: 288 });
 	assert.equal(pointerCapture.active, false);
 	assert.equal(pointerCapture.draining, true);
@@ -991,7 +1006,7 @@ test('Home cover revokes both a held action and keyboard admission before the ne
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
 	assert.equal(invoke.mock.callCount(), 0);
 	assert.equal(pointerCapture.draining, false);
-	problemsPanel.hide(); f.editor.update(0);
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	assert.ok(inputFocus.target !== focused, 'uncovering the retained page must not steal focus');
 	assert.equal(f.model.buffer.getText(), f.edited);
 	assert.equal(f.model.version, f.version);

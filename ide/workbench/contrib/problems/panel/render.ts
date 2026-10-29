@@ -1,6 +1,4 @@
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
-import type { EditorFont } from '../../../../editor/ui/view/font';
-import { truncateTextToWidth } from '../../../../editor/common/text/layout';
 import * as constants from '../../../../common/constants';
 import { api } from '../../../../runtime/overlay_api';
 import { drawEditorText } from '../../../../editor/render/text_renderer';
@@ -9,11 +7,6 @@ import type { ProblemsPanelController } from './controller';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import { renderWorkbenchActionBar } from '../../../render/action_bar';
 
-let emptyProblemsMessage = '';
-let emptyProblemsSource = '';
-let emptyProblemsMessageWidth = 0;
-let emptyProblemsMessageFont: EditorFont = null;
-
 function severityColor(severity: 'error' | 'warning'): number {
 	switch (severity) {
 		case 'error':
@@ -21,16 +14,6 @@ function severityColor(severity: 'error' | 'warning'): number {
 		case 'warning':
 			return constants.COLOR_PROBLEMS_PANEL_WARNING;
 	}
-}
-
-function getEmptyProblemsMessage(source: string, availableWidth: number): string {
-	if (emptyProblemsSource !== source || emptyProblemsMessageWidth !== availableWidth || emptyProblemsMessageFont !== editorViewState.font) {
-		emptyProblemsSource = source;
-		emptyProblemsMessageWidth = availableWidth;
-		emptyProblemsMessageFont = editorViewState.font;
-		emptyProblemsMessage = truncateTextToWidth(source, availableWidth);
-	}
-	return emptyProblemsMessage;
 }
 
 export function drawProblemsPanelSurface(
@@ -61,7 +44,7 @@ export function drawProblemsPanelSurface(
 
 	api.pushClipRect(bounds.left, layout.contentTop, bounds.right, layout.contentBottom);
 	if (diagnostics.length === 0) {
-		drawEditorText(editorViewState.font, getEmptyProblemsMessage(controller.emptyMessage, availableWidth), contentLeft, layout.contentTop, 0, constants.COLOR_PROBLEMS_PANEL_TEXT);
+		drawEditorText(editorViewState.font, controller.emptyText, contentLeft, layout.contentTop, 0, constants.COLOR_PROBLEMS_PANEL_TEXT);
 	}
 
 	let cursorY = layout.contentTop;

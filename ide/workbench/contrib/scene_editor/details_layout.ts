@@ -11,6 +11,7 @@ const PADDING = 4;
 
 /** Inspector fields keep an editing column alongside their axis label and their own scroll lane. */
 export function measureSceneDetails(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
+	target.minimumHeight = font.lineHeight + 4;
 	const chrome = PADDING * 3 + font.advance('X') + constants.SCROLLBAR_WIDTH;
 	target.minimumWidth = chrome + font.charAdvance * 16;
 	target.preferredWidth = chrome + font.charAdvance * 24;

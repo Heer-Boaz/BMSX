@@ -188,7 +188,7 @@ test('resizing and hiding a named region during awaited primary recovery retain 
 	assert.notEqual(width, oldWidth); assert.equal(f.main.regionLayout.detailsVisible, false);
 	ready.resolve();
 	try {
-		assert.equal(await restoring, true); request.focusPrimary(); f.update();
+		assert.equal(await restoring, true); request.focusClient(); f.update();
 		const restored = f.main.primary; assert.ok(restored instanceof ScenePrimaryClient && restored !== original);
 		assert.ok(restored.consumer.subject === restored.consumer.document!.scenes[0]);
 		assert.equal(f.main.regionLayout.hierarchyWidth, width); assert.equal(f.main.regionLayout.detailsVisible, false);

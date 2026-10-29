@@ -1,20 +1,14 @@
 import type { EditorDiagnostic, EditorDiagnosticSeverity } from '../../../../common/models';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { EditorFont } from '../../../../editor/ui/view/font';
-import { measureText, measureTextRange } from '../../../../editor/common/text/layout';
 import { writeWrappedMeasuredText, truncateMeasuredText } from '../../../../common/text';
 import { clamp } from '../../../../../machine/ts/common/clamp';
-import { create_rect_bounds, write_rect_bounds } from '../../../../../machine/ts/common/rect';
-import { getVisibleProblemsPanelHeight, statusAreaHeight } from '../../../common/layout';
 import * as constants from '../../../../common/constants';
-import { editorViewState } from '../../../../editor/ui/view/state';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
 import { computeSourceLabel } from '../../../../common/paths';
 import { sourceTabDescription } from '../../../ui/tab/titles';
-import { editorChromeState } from '../../../ui/chrome_state';
 
 export type PanelLayout = {
-	resizeBounds: RectBounds;
 	headerTop: number;
 	headerBottom: number;
 	contentTop: number;
@@ -38,8 +32,6 @@ export type ProblemsPanelItemLayout = {
 	lines: string[];
 };
 
-const panelBoundsScratch: RectBounds = create_rect_bounds();
-
 function renderSeverityLabel(severity: EditorDiagnosticSeverity): string {
 	switch (severity) {
 		case 'error': return 'E';
@@ -47,23 +39,12 @@ function renderSeverityLabel(severity: EditorDiagnosticSeverity): string {
 	}
 }
 
-export function problemsPanelHeaderHeight(): number {
-	return Math.max(editorViewState.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2, WORKBENCH_ICON_SIZE + 5);
-}
-
-export function computeProblemsPanelVisibleHeight(contentHeightPx: number, fixedHeightPx: number): number {
-	const headerHeight = problemsPanelHeaderHeight();
-	if (fixedHeightPx && fixedHeightPx > headerHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2) {
-		return fixedHeightPx;
-	}
-	const contentHeight = clamp(contentHeightPx, constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS * editorViewState.lineHeight,
-		constants.PROBLEMS_PANEL_MAX_VISIBLE_ROWS * editorViewState.lineHeight);
-	return headerHeight + contentHeight + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2;
+export function problemsPanelHeaderHeight(font: EditorFont): number {
+	return Math.max(font.lineHeight + constants.PROBLEMS_PANEL_HEADER_PADDING_Y * 2, WORKBENCH_ICON_SIZE + 5);
 }
 
 export function createProblemsPanelLayout(): PanelLayout {
 	return {
-		resizeBounds: create_rect_bounds(),
 		headerTop: 0,
 		headerBottom: 0,
 		contentTop: 0,
@@ -72,20 +53,12 @@ export function createProblemsPanelLayout(): PanelLayout {
 	};
 }
 
-export function writeProblemsPanelLayout(bounds: RectBounds, out: PanelLayout): PanelLayout {
-	if (bounds.left === bounds.right || bounds.top === bounds.bottom) write_rect_bounds(out.resizeBounds, bounds.left, bounds.top, bounds.left, bounds.top);
-	else write_rect_bounds(out.resizeBounds, bounds.left, bounds.top - constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN,
-		bounds.right, bounds.top + constants.PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN);
-	const headerTop = bounds.top;
-	const headerBottom = headerTop + problemsPanelHeaderHeight();
-	const contentTop = headerBottom;
-	const contentBottom = bounds.bottom - constants.PROBLEMS_PANEL_CONTENT_PADDING_Y;
-	out.headerTop = headerTop;
-	out.headerBottom = headerBottom;
-	out.contentTop = contentTop + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y;
-	out.contentBottom = contentBottom;
-	out.visibleHeight = contentBottom - contentTop - constants.PROBLEMS_PANEL_CONTENT_PADDING_Y;
-	return out;
+export function writeProblemsPanelLayout(bounds: Readonly<RectBounds>, font: EditorFont, out: PanelLayout): void {
+	out.headerTop = bounds.top;
+	out.headerBottom = bounds.top + problemsPanelHeaderHeight(font);
+	out.contentTop = out.headerBottom + constants.PROBLEMS_PANEL_CONTENT_PADDING_Y;
+	out.contentBottom = bounds.bottom - constants.PROBLEMS_PANEL_CONTENT_PADDING_Y;
+	out.visibleHeight = out.contentBottom - out.contentTop;
 }
 
 export function createProblemsPanelItemLayout(): ProblemsPanelItemLayout {
@@ -106,9 +79,8 @@ export function createProblemsPanelItemLayout(): ProblemsPanelItemLayout {
 	};
 }
 
-export function writeProblemsPanelItemLayout(out: ProblemsPanelItemLayout, diagnostic: EditorDiagnostic, availableWidth: number): ProblemsPanelItemLayout {
-	const lineHeight = editorViewState.lineHeight;
-	const font = editorViewState.font;
+export function writeProblemsPanelItemLayout(out: ProblemsPanelItemLayout, diagnostic: EditorDiagnostic, availableWidth: number, font: EditorFont): ProblemsPanelItemLayout {
+	const lineHeight = font.lineHeight;
 	const severity = diagnostic.severity;
 	const message = diagnostic.message;
 	if (
@@ -122,12 +94,12 @@ export function writeProblemsPanelItemLayout(out: ProblemsPanelItemLayout, diagn
 		return out;
 	}
 	const severityLabel = renderSeverityLabel(diagnostic.severity);
-	const severityWidth = measureText(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS;
+	const severityWidth = font.measure(severityLabel) + constants.PROBLEMS_PANEL_GAP_BETWEEN_COLUMNS;
 	const firstLineWidth = availableWidth - severityWidth;
-	writeWrappedMeasuredText(out.lines, message, firstLineWidth, availableWidth, constants.PROBLEMS_PANEL_MAX_WRAP_LINES, measureTextRange);
+	writeWrappedMeasuredText(out.lines, message, firstLineWidth, availableWidth, constants.PROBLEMS_PANEL_MAX_WRAP_LINES, font.measureTextRange);
 	const identity = diagnostic.model.identity, line = diagnostic.row + 1, column = diagnostic.startColumn + 1;
 	const position = `:${line}:${column}`;
-	out.location = truncateMeasuredText(computeSourceLabel(identity.path), availableWidth - measureText(position), measureTextRange) + position;
+	out.location = truncateMeasuredText(computeSourceLabel(identity.path), availableWidth - font.measure(position), font.measureTextRange) + position;
 	out.feedback = `${sourceTabDescription(diagnostic.model.resource)}:${line}:${column}\n${message}`;
 	out.diagnostic = diagnostic;
 	out.availableWidth = availableWidth;
@@ -162,29 +134,4 @@ export function findProblemsPanelPreferredSelection(
 		}
 	}
 	return 0;
-}
-
-export function getProblemsPanelBounds(): RectBounds | null {
-	const panelHeight = getVisibleProblemsPanelHeight();
-	if (panelHeight <= 0) {
-		return null;
-	}
-	const statusHeight = statusAreaHeight();
-	const bottom = editorViewState.viewportHeight - statusHeight;
-	const top = bottom - panelHeight;
-	if (editorViewState.viewportWidth <= 0 || bottom <= top) {
-		return null;
-	}
-	write_rect_bounds(panelBoundsScratch, 0, top, editorViewState.viewportWidth, bottom);
-	return panelBoundsScratch;
-}
-
-export function clampProblemsPanelHeight(requestedHeight: number): number {
-	const statusHeight = statusAreaHeight();
-	const bottom = editorViewState.viewportHeight - statusHeight;
-	const minTop = Math.max(editorChromeState.menuBarHeight, editorChromeState.menuButtonBounds.bottom) + 1;
-	const minHeight = problemsPanelHeaderHeight()
-		+ constants.PROBLEMS_PANEL_CONTENT_PADDING_Y * 2
-		+ constants.PROBLEMS_PANEL_MIN_VISIBLE_ROWS * editorViewState.lineHeight;
-	return clamp(requestedHeight, minHeight, Math.max(minHeight, bottom - minTop));
 }

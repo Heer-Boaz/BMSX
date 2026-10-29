@@ -32,8 +32,8 @@ class FixtureMainRegion implements MainWorkspaceRegionClient {
 		this.commandTarget = inputFocus.createTarget(null, this.scope);
 		this.commandTarget.canFocus = () => this.attached;
 	}
-	public measure(_font: EditorFont, target: WorkbenchViewSizeConstraints): void {
-		target.minimumWidth = this.minimumWidth; target.preferredWidth = 180;
+	public measure(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
+		target.minimumWidth = this.minimumWidth; target.preferredWidth = 180; target.minimumHeight = font.lineHeight;
 	}
 	public attach(bounds: Readonly<RectBounds>): void { this.attachCount++; this.attached = true; copy_rect_bounds(this.bounds, bounds); }
 	public detach(): void { this.detachCount++; this.attached = false; this.scope.retireContext(); this.commandTarget.release(); }

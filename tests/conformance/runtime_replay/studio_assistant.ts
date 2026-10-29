@@ -9,7 +9,6 @@ export { runAssistantTestInspection } from './studio_assistant_test_inspection';
 export { runAssistantDebugger } from './studio_assistant_debugger';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
-import { problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { check, createStudioFixture } from './studio_fixture';
 import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -76,8 +75,8 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 		&& marker.message === "Struct type 'studio_type_probe' is not a runtime value.")!;
 	check(typeDiagnostic !== undefined && typeDiagnostic.version === main.version, 'the semantic type/value error reaches the ordinary diagnostics owner');
 	await test.runPaletteCommand('View: Problems Panel');
-	check(problemsPanel.isVisible && problemsPanel.getDiagnostics().includes(diagnostic)
-		&& problemsPanel.getDiagnostics().includes(typeDiagnostic), 'ordinary Problems shares both exact diagnostics');
+	check(ide.editor.mainWorkspace.regionLayout.activityVisible && ide.editor.problems.getDiagnostics().includes(diagnostic)
+		&& ide.editor.problems.getDiagnostics().includes(typeDiagnostic), 'ordinary Problems shares both exact diagnostics');
 	await frame(); await capture('shared-diagnostics');
 	await test.runPaletteCommand('View: Problems Panel');
 	await test.click(view.composerBounds);

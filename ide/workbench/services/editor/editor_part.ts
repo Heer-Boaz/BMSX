@@ -32,11 +32,13 @@ import type { WorkbenchMainAreaLayout } from '../../common/main_area_layout';
 import type { SerializedEditorPart, SerializedEditorGroupLayout } from './editor_parts_serialization';
 import type { EditorInputSerializers } from './editor_serialization';
 
-/** The actual Main container reveals its document region before child focus admission. */
+/** Main owns the scrolled document clip/reveal and the physical extent used by local modal sheets. */
 export type MainEditorPresentation = {
 	readonly surface: WorkbenchSurface;
 	readonly scope: InputFocusScope;
-	revealDocuments(): void;
+	readonly documentClip: Readonly<RectBounds>;
+	readonly modalBounds: Readonly<RectBounds>;
+	revealDocuments(region: Readonly<RectBounds>): void;
 };
 
 type EditorPartOptions = {
@@ -136,7 +138,7 @@ export class EditorPart {
 			this.focusTarget.canFocus = () => !this.retired;
 			this.surface = options.surfaces.attach({
 				role: 'content', lifetimeOwner: options.mainPresentation.surface, presentationParent: options.mainPresentation.surface, captureScope: this.scope.surfaceScope,
-				isVisible: () => this.presented, getBounds: () => options.mainArea.availableBounds, getClip: () => options.mainArea.availableBounds,
+				isVisible: () => this.presented, getBounds: () => options.mainArea.availableBounds, getClip: () => options.mainPresentation.documentClip,
 				draw() {}, handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
 				onRetire: () => pointerCapture.cancelScope(this.scope.surfaceScope),
 			});
@@ -151,7 +153,9 @@ export class EditorPart {
 		const first = this.makeGroup(options.presented);
 		this.arrangement = new EditorGroupArrangement(first); this.activeGroup = first; this.groupMru.push(first);
 		this.subscriptions.push(this.focusTarget.onDidFocus(() => this.activeGroup.focus()));
-		const presentation = { scope: this.scope, bounds: this.clientBounds, kind: 'part' as const };
+		const presentation = { scope: this.scope,
+			bounds: options.kind === 'main' ? options.mainPresentation.modalBounds : this.clientBounds, kind: 'part' as const };
+		const modalParent = options.kind === 'main' ? options.mainPresentation.surface : this.surface;
 		this.quickInput = new QuickInputController(options.contextMenu, () => options.surfaces.changed(),
 			next => next !== null && options.surfaces.isInContext(next.scope.surfaceScope, this.quickInput.pointerScope),
 			{ ...presentation, reveal: () => this.reveal(this.quickInputSurface) });
@@ -159,15 +163,16 @@ export class EditorPart {
 			next => next !== null && options.surfaces.isInContext(next.scope.surfaceScope, this.actionPrompt.pointerScope),
 			{ ...presentation, reveal: () => this.reveal(this.promptSurface), shouldRevealOnShow: () => this.window?.model.minimized === true });
 		this.quickInputSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
-			presentationParent: this.surface, captureScope: this.quickInput.pointerScope, lifetimeOwner: this.clientSurface,
-			isVisible: () => this.quickInput.visible, getBounds: () => this.quickInput.layout.bounds, getClip: () => this.clientBounds,
+			presentationParent: modalParent, captureScope: this.quickInput.pointerScope, lifetimeOwner: this.clientSurface,
+			isVisible: () => this.quickInput.visible, getBounds: () => this.quickInput.layout.bounds, getClip: () => presentation.bounds,
 			draw: () => this.quickInput.draw(), handlePointer: snapshot => this.quickInput.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0),
 			handleWheel: event => { this.quickInput.handleWheel(event.deltaY); return true; }, onRetire: () => this.quickInput.hide(false),
 		});
 		this.promptSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
-			presentationParent: this.surface, captureScope: this.actionPrompt.pointerScope, lifetimeOwner: this.clientSurface,
-			isVisible: () => this.actionPrompt.visible, getBounds: () => this.actionPrompt.view.bounds, getClip: () => this.clientBounds,
+			presentationParent: modalParent, captureScope: this.actionPrompt.pointerScope, lifetimeOwner: this.clientSurface,
+			isVisible: () => this.actionPrompt.visible, getBounds: () => this.actionPrompt.view.bounds, getClip: () => presentation.bounds,
 			draw: () => this.actionPrompt.draw(), handlePointer: snapshot => this.actionPrompt.handlePointer(snapshot),
+			handleWheel: event => { this.actionPrompt.handleWheel(event); return true; },
 			onRetire: () => this.actionPrompt.close('cancel', false),
 		});
 		this.scrollbarControl = new ScrollbarController(this.scrollbars, (kind, scroll) => {
@@ -215,7 +220,8 @@ export class EditorPart {
 			if (!openOptions.preserveFocus) {
 				const focusRevision = inputFocus.revision;
 				if (!this.activateGroup(group) || inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
-				this.arrangement.reveal(group); this.reveal(null);
+				if (!this.revealGroup(group) || inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
+				this.reveal(null);
 			}
 			else this.relayout();
 		})]);
@@ -242,6 +248,8 @@ export class EditorPart {
 		this.relayout();
 		if (this.retired || group.surface.retired || !this.groups.includes(group)) return false;
 		this.arrangement.reveal(group); this.relayout();
+		if (this.retired || group.surface.retired || !this.groups.includes(group)) return false;
+		if (this.options.kind === 'main') this.options.mainPresentation.revealDocuments(group.bounds);
 		return !this.retired && !group.surface.retired && this.groups.includes(group);
 	}
 	/** The construction owner retains provisional controls without publishing topology. */
@@ -334,7 +342,7 @@ export class EditorPart {
 		if (this.retired) return false;
 		const focusRevision = inputFocus.revision;
 		if (!this.activateGroup(group) || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
-		if (!this.revealGroup(group)) return false;
+		if (!this.revealGroup(group) || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
 		if (!this.reveal(null)) return false;
 		this.options.onDidActivate(this);
 		return !this.retired && (inputFocus.revision === focusRevision || inputFocus.target === null);
@@ -342,7 +350,8 @@ export class EditorPart {
 	public focus(): boolean {
 		if (this.retired) return false;
 		const focusRevision = inputFocus.revision, group = this.activeGroup;
-		if (!this.reveal(null)) return false;
+		const modal = this.actionPrompt.visible ? this.promptSurface : this.quickInput.visible ? this.quickInputSurface : null;
+		if (!this.reveal(modal)) return false;
 		this.options.onDidActivate(this);
 		if (this.retired || this.activeGroup !== group || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
 		if (this.actionPrompt.visible && this.options.surfaces.isAdmitted(this.promptSurface)) {
@@ -354,7 +363,7 @@ export class EditorPart {
 	}
 	private reveal(modal: WorkbenchSurface | null): boolean {
 		const focusRevision = inputFocus.revision;
-		if (this.options.kind === 'main') { this.options.mainPresentation.revealDocuments(); this.options.layoutMain(); }
+		if (this.options.kind === 'main') this.options.layoutMain();
 		else this.window.show(false);
 		if (this.retired || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
 		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
@@ -469,6 +478,8 @@ export class EditorPart {
 			this.arrangement.setMinimum(group, width, height, reading === undefined ? width : Math.max(width, reading));
 		}
 	}
+
+	public get minimumClientHeight(): number { return this.arrangement.minimumHeight; }
 
 	public minimumClientWidth(height: number): number {
 		return this.arrangement.minimumClientWidth(height, colors.SCROLLBAR_WIDTH);

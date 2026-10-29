@@ -7,6 +7,7 @@ export type SerializedPrimaryClient = { readonly kind: 'scene'; readonly value: 
 export type SerializedMainWorkspace = WorkbenchMainWorkspaceState & {
 	readonly primary: SerializedPrimaryClient | null;
 	readonly scrollX: number;
-	readonly activeClient: 'primary' | 'documents';
+	readonly scrollY: number;
+	readonly activeClient: 'primary' | 'documents' | 'activity';
 	readonly activeRegion: 'hierarchy' | 'details';
 };

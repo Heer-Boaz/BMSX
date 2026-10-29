@@ -615,3 +615,15 @@ test('physical action activation may retire the armed input before a coalesced r
 	assert.equal(activations, 1); assert.equal(f.capture.active, false); assert.equal(f.state.pressedCommand, null);
 	assert.deepEqual(f.calls, []); assert.ok(f.focus.target === field);
 });
+
+test('clearing an action bar publishes old input retirement before blur admits a new input', t => {
+	const f = fixture(t), next = createWorkbenchActionBar('window.title'), context = f.focus.createTarget();
+	for (const item of next.items) { f.enabled.add(item.command); context.registerCommand(item.command, { isEnabled: () => true, run() {} }); }
+	layoutWorkbenchActionBar(next, 240, 10, 22, text => text.length * 4, null, 0);
+	f.bar.focusTarget.focus();
+	const unbind = f.bar.focusTarget.onDidBlur(() => f.bar.setInput(next, context));
+	f.bar.clearInput(); unbind();
+	assert.equal(f.state.hasFocus, false); assert.equal(f.state.pressedCommand, null); assert.equal(f.state.hoveredCommand, null);
+	assert.equal(f.bar.focusTarget.focus(), true);
+	assert.equal(next.hasFocus, true); assert.equal(f.bar.focusTarget.commandContext, context);
+});

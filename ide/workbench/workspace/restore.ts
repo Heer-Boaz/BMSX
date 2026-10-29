@@ -26,10 +26,10 @@ export async function applyWorkspaceAutosavePayload(
 		const primaryRestored = primary.restore(payload.mainWorkspace, (record, regions, scope, isCurrent) =>
 			editor.restorePrimaryClient(record, regions, scope, isCurrent));
 		const documentsRestored = documents.restore(payload.editorParts, editor.editorInputSerializers,
-			{ preserveFocus: payload.editorParts.active === 0 && payload.mainWorkspace.activeClient === 'primary' });
+			{ preserveFocus: payload.editorParts.active === 0 && payload.mainWorkspace.activeClient !== 'documents' });
 		const [restoredPrimary, restoredDocuments] = await Promise.all([primaryRestored, documentsRestored]);
 		if (!restoredDocuments) return;
-		if (restoredPrimary && payload.editorParts.active === 0) primary.focusPrimary();
+		if (restoredPrimary && payload.editorParts.active === 0) primary.focusClient();
 		debuggerState.breakpoints.restore(payload.breakpoints);
 	} finally { primary.dispose(); documents.dispose(); }
 }

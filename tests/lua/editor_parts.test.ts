@@ -17,8 +17,6 @@ import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
-import { getProblemsPanelBounds } from '../../ide/workbench/contrib/problems/panel/layout';
-import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { api } from '../../ide/runtime/overlay_api';
 import { COLOR_FRAME } from '../../ide/common/constants';
@@ -409,7 +407,7 @@ for (const activation of ['keyboard', 'pointer'] as const) test(`${activation} P
 		['authoring_scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', ''],
 		['broken.lua', 'local value =\nreturn value'],
 	]);
-	t.after(() => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); });
+	const problemsPanel = f.editor.problems;
 	const main = f.editor.editorParts.main;
 	const sceneResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'authoring_scene.lua' })!;
 	f.editor.sceneEditor.openResource(main.activeGroup, sceneResource); f.update();
@@ -424,12 +422,12 @@ for (const activation of ['keyboard', 'pointer'] as const) test(`${activation} P
 	assert.ok(index >= 0, 'the authored invalid source supplies a real diagnostic');
 	const diagnostic = diagnostics[index], text = model.buffer.getText(), version = model.version;
 	f.editor.editorParts.minimize(f.firstPart); f.editor.editorParts.minimize(f.secondPart);
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(73); f.update();
-	problemsPanel.setFocused(true); problemsPanel.setSelectionIndex(index);
+	f.editor.mainWorkspace.regionLayout.activityHeight = 73; f.editor.mainWorkspace.setActivityVisible(true); f.update();
+	f.editor.mainWorkspace.focusActivity(); problemsPanel.setSelectionIndex(index);
 	if (activation === 'keyboard') f.key('Enter');
 	else {
-		const bounds = getProblemsPanelBounds()!, layout = problemsPanel.prepareLayout(bounds);
-		problemsPanel.revealSelection(layout, problemsPanel.resolveAvailableWidth(bounds));
+		const bounds = problemsPanel.bounds, layout = problemsPanel.layoutState;
+		problemsPanel.revealSelection(layout, problemsPanel.contentWidth);
 		let top = layout.contentTop;
 		for (let row = problemsPanel.getScrollIndex(); row < index; row++) top += problemsPanel.getItemLayout(row).height;
 		const x = (bounds.left + bounds.right) / 2, y = top + Math.min(problemsPanel.getItemLayout(index).height, layout.contentBottom - top) / 2;

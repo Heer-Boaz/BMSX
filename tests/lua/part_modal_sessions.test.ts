@@ -13,6 +13,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 import type { PointerInputSnapshot } from '../../ide/common/models';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
 
 const REQUEST: ActionPromptRequest = { title: 'Unsaved source', message: 'Choose the source operation.',
 	primary: 'Save', secondary: 'Discard', primaryEnabled: true, defaultChoice: 'primary' };
@@ -131,7 +132,10 @@ test('translated retained modal geometry owns native caret, backdrop and dialog 
 	const backdrop = t.mock.method(api, 'fill_rect'), outline = t.mock.method(api, 'blit_rect');
 	t.mock.method(api, 'blit_text_inline_with_font', () => {});
 	backdrop.mock.mockImplementation(() => {}); outline.mock.mockImplementation(() => {});
+	const overlay = createHostOverlayFixture(800, 400);
+	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
 	first.prompt.draw();
+	overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
 	assert.deepEqual(backdrop.mock.calls[0].arguments.slice(0, 4), [first.bounds.left, first.bounds.top, first.bounds.right, first.bounds.bottom]);
 });
 
@@ -200,3 +204,82 @@ for (const kind of ['pick', 'input'] as const) for (const retirement of ['origin
 		assert.ok(inputFocus.target !== first.quick.field.focusTarget);
 	});
 }
+
+test('a background local decision body admits native keyboard reading without arming a response, while wheel and scrollbar stay non-focusing', async t => {
+	const { first, second } = fixture(t);
+	first.bounds.bottom = first.bounds.top + 58;
+	second.origin.focus();
+	const decision = first.prompt.show({ ...REQUEST, message: 'authoring/scenes/retained-source-identity/'.repeat(35) }, second.origin);
+	const body = first.prompt.view.body;
+	assert.ok(inputFocus.target === second.origin);
+	const pointer: PointerInputSnapshot = { valid: true, insideViewport: true, viewportX: body.bounds.left + 1, viewportY: body.bounds.top + 1,
+		modifiers: KeyModifier.none, spaceDown: false, pressedButtons: PointerButton.Primary,
+		justPressedButtons: PointerButton.Primary, justReleasedButtons: PointerButton.Primary };
+	first.prompt.handleWheel({ ...pointer, deltaX: 0, deltaY: 1 });
+	assert.ok(body.scrollTop > 0 && inputFocus.target === second.origin);
+	const track = body.scrollbar.getTrack();
+	const scrollbarPress = { ...pointer, viewportX: (track.left + track.right) / 2, viewportY: (track.top + track.bottom) / 2,
+		justReleasedButtons: 0 };
+	first.prompt.handlePointer(scrollbarPress);
+	assert.equal(pointerCapture.active, true); assert.ok(inputFocus.target === second.origin);
+	pointerCapture.dispatch({ ...scrollbarPress, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: PointerButton.Primary },
+		false, 0, first.prompt.pointerScope);
+	for (const invalid of [{ ...pointer, valid: false }, { ...pointer, insideViewport: false }, { ...pointer, viewportX: first.bounds.left - 1 }])
+		first.prompt.handlePointer(invalid);
+	assert.ok(inputFocus.target === second.origin);
+	first.prompt.handlePointer(pointer);
+	assert.ok(inputFocus.target === first.prompt.focusTarget);
+	assert.equal(pointerCapture.active, false); assert.equal(first.prompt.visible, true);
+	for (const down of [true, false]) inputFocus.handleKeyboard(new KeyInputEvent('Home', KeyModifier.none, false, down));
+	assert.equal(body.scrollTop, 0);
+	for (const down of [true, false]) inputFocus.handleKeyboard(new KeyInputEvent('End', KeyModifier.none, false, down));
+	assert.equal(body.scrollTop, body.scrollbar.getMaximumScroll());
+	for (const down of [true, false]) inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none, false, down));
+	assert.equal(await decision, 'cancel'); assert.ok(inputFocus.target === second.origin);
+});
+
+test('a local response press cannot accept after its native focus request was redirected by the departing control', async t => {
+	const { first, second } = fixture(t), replacement = inputFocus.createTarget(null, second.scope);
+	second.origin.focus();
+	const decision = first.prompt.show(REQUEST, null);
+	let cancelled = 0;
+	const newerGesture = { handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancelled++; } };
+	const unbind = second.origin.onDidBlur(next => {
+		if (next !== first.prompt.focusTarget) return;
+		unbind(); replacement.focus(); pointerCapture.capture(newerGesture, PointerButton.Primary, second.scope.surfaceScope);
+	});
+	t.after(unbind);
+	const button = first.prompt.view.buttons[0].bounds;
+	try {
+		first.prompt.handlePointer({ valid: true, insideViewport: true, viewportX: (button.left + button.right) / 2,
+			viewportY: (button.top + button.bottom) / 2,
+			pressedButtons: 0, justPressedButtons: PointerButton.Primary, justReleasedButtons: PointerButton.Primary });
+		assert.ok(inputFocus.target === replacement);
+		assert.equal(first.prompt.visible, true, 'the still-live request is not permission to bypass refused native focus');
+		assert.equal(cancelled, 0); assert.equal(pointerCapture.active, true);
+	} finally { pointerCapture.release(newerGesture); first.prompt.close('cancel', false); }
+	assert.equal(await decision, 'cancel');
+});
+
+test('a refused older body focus request does not cancel a newer physical response gesture admitted during blur', async t => {
+	const { first, second } = fixture(t), replacement = inputFocus.createTarget(null, second.scope);
+	second.origin.focus(); const decision = first.prompt.show(REQUEST, null);
+	const button = first.prompt.view.buttons[0].bounds;
+	const response: PointerInputSnapshot = { valid: true, insideViewport: true, viewportX: (button.left + button.right) / 2,
+		viewportY: (button.top + button.bottom) / 2, modifiers: KeyModifier.none, spaceDown: false,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
+	const unbind = second.origin.onDidBlur(next => {
+		if (next !== first.prompt.focusTarget) return;
+		unbind(); replacement.focus(); first.prompt.handlePointer(response);
+	});
+	t.after(unbind);
+	try {
+		const body = first.prompt.view.body.bounds;
+		first.prompt.handlePointer({ ...response, viewportX: body.left + 1, viewportY: body.top + 1 });
+		assert.ok(inputFocus.target === first.prompt.focusTarget);
+		assert.equal(first.prompt.visible, true); assert.equal(pointerCapture.active, true);
+		assert.equal(pointerCapture.dispatch({ ...response, pressedButtons: 0, justPressedButtons: 0,
+			justReleasedButtons: PointerButton.Primary }, false, 0, first.prompt.pointerScope), true);
+		assert.equal(await decision, 'primary');
+	} finally { first.prompt.close('cancel', false); }
+});

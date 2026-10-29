@@ -3,7 +3,6 @@ import { SCROLLBAR_WIDTH } from '../../../ide/common/constants';
 import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
-import { getProblemsPanelBounds, problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
@@ -76,13 +75,14 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 	await selectMember(test, scene, 0);
 	const point = (x: number, y: number) => ({ left: x, right: x, top: y, bottom: y });
 	const resize = async (y: number) => {
-		const panel = getProblemsPanelBounds()!;
-		movePointer(point(10, panel.top)); await frame();
+		const sash = ide.editor.mainWorkspace.regionLayout.activitySashBounds;
+		const x = (sash.left + sash.right) / 2;
+		movePointer(point(x, (sash.top + sash.bottom) / 2)); await frame();
 		setPointerButton('pointer_primary', true); await frame();
-		movePointer(point(10, y)); await frame();
+		movePointer(point(x, y)); await frame();
 		setPointerButton('pointer_primary', false); await frame();
-		check(scene.view.layout.bottom === editorViewState.editorAreaBottom,
-			'A02: pane consumes resized parent bounds in the same frame');
+		check(scene.view.layout.bottom === sourceGroup.panes.contentBounds.bottom,
+			'A02: Scene consumes its actual document-group allocation after activity resize');
 	};
 	const wheel = async (steps: number) => {
 		movePointer(scene.view.details.viewport.bounds); await frame();
@@ -100,9 +100,9 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		const groupBounds = sourceGroup.panes.contentBounds;
 		check(scene.view.layout.top === groupBounds.top && scene.view.layout.bottom === groupBounds.bottom,
 			'A02/A04: the actual invoking group passes its font-sized tab strip and body to the Scene child layout');
-		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
+		if (!ide.editor.mainWorkspace.regionLayout.activityVisible) await runPaletteCommand('View: Problems Panel');
 		await testStudioPointerHover(test, scene);
-		if (!problemsPanel.isVisible) await runPaletteCommand('View: Problems Panel');
+		if (!ide.editor.mainWorkspace.regionLayout.activityVisible) await runPaletteCommand('View: Problems Panel');
 		const bodyTop = scene.view.layout.top + (editorViewState.lineHeight + 4) * 2;
 		await resize(bodyTop + 52);
 		check(scene.view.details.viewport.height > 30 && scene.view.details.viewport.height < scene.view.details.viewport.contentHeight && scene.view.details.viewport.scrollbar.isVisible(),
@@ -156,18 +156,19 @@ export async function testStudioSceneViewport(test: StudioFixture): Promise<void
 		await resize(bodyTop + 38);
 		check(z.field.focusTarget.hasFocus, 'A02: divider resize preserves the field focus'); visible(2);
 		await resize(scene.view.layout.top);
-		check(scene.view.details.viewport.height === 0 && !scene.view.details.viewport.scrollbar.isVisible(), 'A02: a fully collapsed editor has no fabricated content viewport or thumb');
+		check(z.field.focusTarget.hasFocus && ide.editor.textTarget === z.field,
+			'A02: growing activity respects the real document minimum and does not revoke its sibling field');
 		await resize(bodyTop + 38);
-		check(z.field.focusTarget.hasFocus, 'A02: expanding a collapsed viewport retains the actual focused field'); visible(2);
-		const selectedProblem = problemsPanel.selectedDiagnostic;
-		const panel = getProblemsPanelBounds()!;
+		check(z.field.focusTarget.hasFocus, 'A02: restoring activity size retains the actual focused field'); visible(2);
+		const selectedProblem = ide.editor.problems.selectedDiagnostic;
+		const panel = ide.editor.problems.bounds;
 		await test.click(point(panel.left + 4, panel.bottom - 1));
-		check(problemsPanel.isFocused && problemsPanel.getHoverIndex() === -1 && ide.editor.editorParts.activeGroup.panes.activePane === pane,
+		check(ide.editor.problems.isFocused && ide.editor.problems.getHoverIndex() === -1 && ide.editor.editorParts.activeGroup.panes.activePane === pane,
 			'A02: Problems padding focuses the panel without activating a clipped diagnostic');
-		check(problemsPanel.selectedDiagnostic === selectedProblem && model.buffer.getText() === authored,
+		check(ide.editor.problems.selectedDiagnostic === selectedProblem && model.buffer.getText() === authored,
 			'A02: panel focus does not change diagnostic selection or authored source');
 		pane.focus(); await frame();
-		check(!problemsPanel.isFocused && problemsPanel.selectedDiagnostic === selectedProblem,
+		check(!ide.editor.problems.isFocused && ide.editor.problems.selectedDiagnostic === selectedProblem,
 			'A02: returning to Scene retains an inactive Problems selection');
 		console.log(`STUDIO-SCENE-VIEWPORT:${variant}:PASS`);
 	}

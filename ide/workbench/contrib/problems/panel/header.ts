@@ -25,11 +25,11 @@ export class ProblemsPanelHeader {
 	public summaryLeft = 0;
 	private readonly bounds = create_rect_bounds();
 	private readonly feedback = new WorkbenchTooltip();
-	private controls: WorkbenchActionBarControl | undefined;
-	private workArea: Readonly<RectBounds> | undefined;
-	private unbindBlur: (() => void) | undefined;
-	private unbindActionBlur: (() => void) | undefined;
-	private visible = false;
+	public readonly controls: WorkbenchActionBarControl;
+	private readonly unbindBlur: () => void;
+	private readonly unbindActionBlur: () => void;
+	private attached = false;
+	private attachmentRevision = 0;
 	private diagnosticCount = -1;
 	private ready = 0;
 	private pending = 0;
@@ -42,17 +42,12 @@ export class ProblemsPanelHeader {
 	private measuredRevision = -1;
 	private font: BFont | undefined;
 
-	public constructor(private readonly parent: InputFocusTarget) {
+	public constructor(private readonly parent: InputFocusTarget, surfaces: WorkbenchSurfaceService,
+		owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, commands: EditorCommandRunner) {
 		this.setCoverage(0, EMPTY_COVERAGE);
-		parent.registerCommand('problems.coverage', { isEnabled: () => this.visible && this.controls !== undefined, run: () => {
-			this.controls!.focusTarget.focus();
+		parent.registerCommand('problems.coverage', { isEnabled: () => this.attached, run: () => {
+			this.controls.focusTarget.focus();
 		} });
-	}
-
-	public get hasFocus(): boolean { return this.controls?.focusTarget.hasFocus === true; }
-
-	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, commands: EditorCommandRunner): void {
-		this.workArea = workArea;
 		this.feedback.attach(surfaces, owner, workArea);
 		const controls = this.controls = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands,
 			this.parent, () => this.parent.focus());
@@ -61,21 +56,25 @@ export class ProblemsPanelHeader {
 		controls.focusTarget.next = controls.focusTarget.previous = this.parent;
 		this.unbindBlur = this.parent.onDidBlur(() => this.feedback.hide());
 		this.unbindActionBlur = controls.focusTarget.onDidBlur(() => this.feedback.hide());
-		if (this.visible) { controls.setInput(this.actions, this.parent); controls.update(); }
+	}
+
+	public get hasFocus(): boolean { return this.controls.focusTarget.hasFocus; }
+
+	public attach(): void {
+		const revision = ++this.attachmentRevision;
+		this.attached = true;
+		this.controls.clearInput();
+		if (revision !== this.attachmentRevision) return;
+		this.controls.setInput(this.actions, this.parent);
 	}
 
 	public detach(): void {
-		this.controls?.dispose(); this.controls = undefined;
-		this.feedback.detach(); this.workArea = undefined;
-		this.unbindBlur?.(); this.unbindActionBlur?.();
-		this.unbindBlur = this.unbindActionBlur = undefined;
-		this.parent.next = this.parent.previous = null;
+		this.attachmentRevision++; this.attached = false;
+		this.feedback.hide(); this.controls.clearInput();
 	}
-
-	public setVisible(visible: boolean): void {
-		this.visible = visible;
-		if (visible && this.controls !== undefined) { this.controls.setInput(this.actions, this.parent); this.controls.update(); }
-		else { this.controls?.clearInput(); this.feedback.hide(); }
+	public dispose(): void {
+		this.detach(); this.controls.dispose(); this.feedback.detach(); this.unbindBlur(); this.unbindActionBlur();
+		this.parent.next = this.parent.previous = null;
 	}
 
 	public setCoverage(count: number, coverage: DiagnosticsCoverage): void {
@@ -103,17 +102,17 @@ export class ProblemsPanelHeader {
 			this.title = truncateMeasuredText(this.fullTitle, textRight - textLeft, measureTextRange);
 			this.summary = truncateMeasuredText(this.fullSummary, textRight - textLeft - PROBLEMS_PANEL_HEADER_PADDING_X - measureText(this.title), measureTextRange);
 			this.summaryLeft = textRight - measureText(this.summary);
-			this.controls?.update();
+			if (this.attached) this.controls.update();
 		}
 	}
 
 	public updateFeedback(): void {
-		if (!this.visible || this.workArea === undefined) return;
-		if (this.controls!.tooltipItem !== undefined)
+		if (!this.attached) return;
+		if (this.controls.tooltipItem !== undefined)
 			this.feedback.show(this.coverageText, this.actions.bounds, this.font!, measureTextRange, measureText, this.workArea);
 		else this.feedback.hide();
 	}
 
-	public handlePointer(snapshot: PointerSnapshot): boolean { return this.controls?.handlePointer(snapshot) === true; }
+	public handlePointer(snapshot: PointerSnapshot): boolean { return this.attached && this.controls.handlePointer(snapshot); }
 	public onPointerLeave(): void { this.feedback.hide(); }
 }

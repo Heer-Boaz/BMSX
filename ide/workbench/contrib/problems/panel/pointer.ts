@@ -1,6 +1,6 @@
 import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
-import type { PointerSnapshot } from '../../../../common/models';
-import type { RectBounds } from '../../../../../machine/ts/common/rect';
+import { point_in_rect } from '../../../../../machine/ts/common/rect';
+import type { PointerInputSnapshot } from '../../../../common/models';
 import { gotoDiagnostic } from '../../code_editor/diagnostics/navigation';
 import type { ProblemsPanelController } from './controller';
 import type { EditorParts } from '../../../services/editor/editor_parts';
@@ -8,71 +8,33 @@ import type { EditorParts } from '../../../services/editor/editor_parts';
 export function handleProblemsPanelPointerInput(
 	controller: ProblemsPanelController,
 	parts: EditorParts,
-	snapshot: PointerSnapshot,
-	justPressed: boolean,
-	bounds: RectBounds,
-): boolean {
-	if (!controller.isVisible) {
-		return false;
-	}
-	const layout = controller.prepareLayout(bounds);
-	const inside =
-		snapshot.valid
-		&& snapshot.insideViewport
-		&& snapshot.viewportX >= bounds.left
-		&& snapshot.viewportX < bounds.right
-		&& snapshot.viewportY >= bounds.top
-		&& snapshot.viewportY < bounds.bottom;
-	if (!inside) {
-		if (justPressed) {
-			controller.setFocused(false);
+	snapshot: PointerInputSnapshot,
+): void {
+	if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, controller.bounds)) return;
+	if (controller.header.handlePointer(snapshot)) { controller.setHoverIndex(-1); return; }
+	// A press owns the diagnostic hit in this layout, before focus may reveal or reflow the activity.
+	const diagnostics = controller.getDiagnostics(), generation = controller.scope.contextGeneration;
+	const selection = controller.selectionRevision, layout = controller.layoutState;
+	let diagnosticIndex = -1;
+	if (snapshot.viewportY >= layout.contentTop && snapshot.viewportY < layout.contentBottom) {
+		const relativeY = snapshot.viewportY - layout.contentTop;
+		let itemTop = 0;
+		diagnosticIndex = controller.getScrollIndex();
+		while (diagnosticIndex < diagnostics.length) {
+			const itemHeight = controller.getItemLayout(diagnosticIndex).height;
+			if (relativeY < itemTop + itemHeight) break;
+			itemTop += itemHeight; diagnosticIndex++;
+			if (layout.contentTop + itemTop >= layout.contentBottom) break;
 		}
-		if ((snapshot.pressedButtons & PointerButton.Primary) === 0) {
-			controller.setHoverIndex(-1);
-		}
-		return false;
+		if (diagnosticIndex >= diagnostics.length) diagnosticIndex = -1;
 	}
-	if (controller.header.handlePointer(snapshot)) { controller.setHoverIndex(-1); return true; }
-	if (justPressed) {
-		controller.setFocused(true);
-	}
-	if (snapshot.viewportY < layout.contentTop || snapshot.viewportY >= layout.contentBottom) {
-		controller.setHoverIndex(-1);
-		return true;
-	}
-	const diagnostics = controller.getDiagnostics();
-	if (diagnostics.length === 0) {
-		controller.setHoverIndex(-1);
-		if (justPressed) {
-			controller.setSelectionIndex(-1);
-		}
-		return true;
-	}
-	const availableWidth = controller.resolveAvailableWidth(bounds);
-	const relativeY = snapshot.viewportY - layout.contentTop;
-	let itemTop = 0;
-	let diagnosticIndex = controller.getScrollIndex();
-	while (diagnosticIndex < diagnostics.length) {
-		const itemHeight = controller.getItemLayout(diagnosticIndex, availableWidth).height;
-		if (relativeY < itemTop + itemHeight) {
-			break;
-		}
-		itemTop += itemHeight;
-		diagnosticIndex += 1;
-		if (layout.contentTop + itemTop >= layout.contentBottom) {
-			break;
-		}
-	}
-	if (diagnosticIndex >= diagnostics.length) {
-		controller.setHoverIndex(-1);
-		return true;
-	}
+	const justPressed = (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
+	if (justPressed && !controller.focusTarget.focus()) return;
+	if (!controller.attached || controller.scope.contextGeneration !== generation || controller.getDiagnostics() !== diagnostics
+		|| controller.selectionRevision !== selection) return;
 	controller.setHoverIndex(diagnosticIndex);
-	if (!justPressed) {
-		return true;
-	}
+	if (!justPressed || diagnosticIndex < 0) return;
 	controller.setSelectionIndex(diagnosticIndex);
-	controller.revealSelection(layout, availableWidth);
+	controller.revealSelection(controller.layoutState, controller.contentWidth);
 	gotoDiagnostic(parts, diagnostics[diagnosticIndex]);
-	return true;
 }

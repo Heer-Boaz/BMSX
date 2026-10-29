@@ -358,7 +358,7 @@ test('unavailable retained Main Source opens only its admitted current canonical
 	const restore = f.main.beginRestore();
 	try {
 		assert.equal(await restore.restore(saved, (...args) => f.editor.restorePrimaryClient(...args)), true);
-		restore.focusPrimary(); f.update();
+		restore.focusClient(); f.update();
 	} finally { restore.dispose(); }
 	const unavailable = f.main.primary; assert.ok(unavailable instanceof UnavailableScenePrimaryClient);
 	const copies = unavailable.getWorkingCopies(); assert.equal(copies.length, 1); assert.ok(copies[0] === f.model);

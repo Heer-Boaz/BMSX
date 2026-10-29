@@ -83,6 +83,7 @@ export class WorkbenchFixedEdgeSplitView implements WorkbenchSashView {
 	public moveTo(position: number): void {
 		if (!this.resizable) return;
 		position = clamp(position, this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
+		if (position === this.position) return;
 		const size = (this.edge === 'start' ? position - this.start : this.end - position) - WORKBENCH_SPLIT_SIZE / 2;
 		if (size === this.requestedSize) return;
 		this.requestedSize = size;

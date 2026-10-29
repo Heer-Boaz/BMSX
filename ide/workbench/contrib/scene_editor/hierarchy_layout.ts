@@ -13,6 +13,7 @@ import type { SceneOutlineElement } from './outline';
 /** A member needs its two disclosure levels plus a usable caption, not its complete source path. */
 export function measureSceneHierarchy(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
 	const disclosure = Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2) * 2 + 8;
+	target.minimumHeight = font.lineHeight + 4;
 	target.minimumWidth = disclosure + font.charAdvance * 12;
 	target.preferredWidth = disclosure + font.charAdvance * 24;
 }

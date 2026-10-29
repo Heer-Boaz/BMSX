@@ -14,7 +14,6 @@ import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegi
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { LuaProgramEditorPane } from '../../ide/workbench/contrib/lua_program/editor_pane';
-import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
@@ -62,7 +61,7 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 			for (const control of pane.control.details.options.controls) control.cancel();
 		}
 		inputFocus.cancelInput();
-		problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null);
+		inputFocus.setTarget(null);
 		await editor.shutdown(); host.audio.dispose(); host.input.dispose();
 	});
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
@@ -103,31 +102,33 @@ for (const kind of ['position', 'option'] as const) test(`Scene ${kind} draft lo
 	assert.equal(control.pending, false, 'writable return cannot revive a revoked draft');
 });
 
-test('covering the Scene detail client retires its draft without publishing through blur', t => {
-	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { input, pane } = f.scene(), control = pane.control.details.controls[0];
+test('withholding the Scene group retires its detail draft without publishing through blur', t => {
+	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { pane } = f.scene(), control = pane.control.details.controls[0];
 	control.field.focusTarget.focus();
 	assert.equal(f.editor.textTarget!.replaceText(0, control.field.text.length, '9'), true);
 	assert.equal(control.pending, true);
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
-	assert.equal(input.view.details.viewport.height, 0, 'the actual Problems layout must cover the source client');
+	const part = f.editor.editorParts.main, group = part.activeGroup, sibling = part.splitGroup(group, 'right');
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
+	assert.equal(group.presented, false);
 	assert.ok(inputFocus.admittedTarget !== control.field.focusTarget);
 	assert.equal(control.pending, false); f.unchanged();
 	f.press('Enter'); f.press('Digit8'); f.unchanged();
-	problemsPanel.hide(); f.editor.update(0);
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	assert.ok(inputFocus.admittedTarget !== control.field.focusTarget, 'recovery does not reactivate hidden draft input');
 });
 
-for (const target of ['outline', 'actions'] as const) test(`a fully covered Scene ${target} cannot retain destructive keyboard admission`, t => {
+for (const target of ['outline', 'actions'] as const) test(`an unpresented Scene ${target} cannot retain destructive keyboard admission`, t => {
 	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { input } = f.scene();
 	f.press('Escape');
 	if (target === 'actions') f.press('Tab', KeyModifier.shift);
 	assert.ok(inputFocus.admittedTarget !== null);
 	assert.equal(input.view.actionBar.hasFocus, target === 'actions');
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
+	const part = f.editor.editorParts.main, group = part.activeGroup, sibling = part.splitGroup(group, 'right');
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	assert.ok(inputFocus.admittedTarget === null, 'no covered Scene control retains keyboard admission');
 	assert.equal(input.view.actionBar.hasFocus, false);
 	f.press('Delete'); f.unchanged();
-	problemsPanel.hide(); f.editor.update(0);
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	f.press('Delete'); f.unchanged();
 });
 
@@ -153,7 +154,7 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 	f.unchanged();
 });
 
-test('a fully covered Lua Program has no destructive keyboard admission and preserves its selected source', t => {
+test('an unpresented Lua Program has no destructive keyboard admission and preserves its selected source', t => {
 	const f = fixture(t, PROGRAM_SOURCE, 'cartlib/progression');
 	f.editor.luaPrograms.openResource(f.editor.editorParts.main.activeGroup, f.model.resource, 'progression'); f.editor.update(0);
 	const input = f.editor.editorParts.main.activeGroup.model.activeTab!, pane = f.editor.editorParts.main.activeGroup.panes.activePane!;
@@ -163,12 +164,13 @@ test('a fully covered Lua Program has no destructive keyboard admission and pres
 	for (let index = 0; index < target; index++) f.press('ArrowDown');
 	assert.equal(f.editor.commands.isEnabled('luaProgram.remove'), true);
 	const selected = input.tree.rows[input.tree.selectionIndex].element;
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
-	assert.equal(input.tree.layout.visibleRowCount, 0, 'the actual Problems layout must cover every authored row');
+	const part = f.editor.editorParts.main, group = part.activeGroup, sibling = part.splitGroup(group, 'right');
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
+	assert.equal(group.presented, false);
 	assert.ok(inputFocus.admittedTarget === null, 'covered source controls cannot retain keyboard admission');
 	f.press('Delete'); f.unchanged();
 	assert.ok(input.tree.rows[input.tree.selectionIndex].element === selected);
-	problemsPanel.hide(); f.editor.update(0);
+	part.arrangement.toggleMaximize(sibling); f.editor.update(0);
 	f.press('Delete'); f.unchanged();
 	pane.focus(); assert.equal(f.editor.commands.isEnabled('luaProgram.remove'), true);
 });

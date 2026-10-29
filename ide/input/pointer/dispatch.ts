@@ -1,6 +1,6 @@
 import type { PointerInputSnapshot } from '../../common/models';
 import { PointerButton, type PointerInputEvent } from '../../../hosts/common/input/pointer_event';
-import { handleEditorPanelPointer } from './panel';
+import { handleResourcePanelPointer } from './resource_panel_content';
 import { handleEditorChromePointerDispatch } from './chrome_dispatch';
 import type { CartEditor } from '../../cart_editor';
 import type { WorkbenchSurfaceService } from '../../workbench/services/windows/service';
@@ -70,6 +70,5 @@ export function handleWorkbenchChromePointer(editor: CartEditor, snapshot: Point
 		return;
 	}
 	if (handleEditorChromePointerDispatch(editor, snapshot, justPressed)) return;
-	handleEditorPanelPointer(editor.resourcePanel, editor.editorParts, snapshot, justPressed,
-		(snapshot.justReleasedButtons & PointerButton.Primary) !== 0);
+	handleResourcePanelPointer(editor.resourcePanel, snapshot, justPressed);
 }

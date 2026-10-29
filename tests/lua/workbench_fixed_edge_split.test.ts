@@ -36,6 +36,20 @@ test('the end-anchored sash retains its side width rather than its absolute posi
 	view.requestedSize = 10000; assert.equal(view.position, 404); assert.equal(view.requestedSize, 10000);
 });
 
+for (const edge of ['start', 'end'] as const) test(`the ${edge}-edge sash leaves default and clamped explicit intent unchanged at its admitted position`, () => {
+	const view = new WorkbenchFixedEdgeSplitView(edge);
+	view.preferredSize = 140; view.minimumFirstSize = 204; view.minimumSecondSize = 94;
+	view.layout(100, 20, 900, 200);
+	let changes = 0; view.onDidResize(() => changes++);
+	view.moveTo(view.position);
+	assert.equal(view.requestedSize, undefined); assert.equal(changes, 0);
+	view.requestedSize = 10000;
+	view.moveTo(view.position);
+	assert.equal(view.requestedSize, 10000); assert.equal(changes, 0);
+	view.moveTo(edge === 'start' ? 10000 : -10000);
+	assert.equal(view.requestedSize, 10000); assert.equal(changes, 0, 'overshooting the already admitted boundary is not a new size request');
+});
+
 for (const edge of ['start', 'end'] as const) test(`the shared ${edge}-edge sash uses ordinary capture, keyboard resizing and default reset without moving editor focus on drag`, t => {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);

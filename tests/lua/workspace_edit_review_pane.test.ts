@@ -18,7 +18,6 @@ import { captureInstalledLuaSources, registerLuaSourceRecord, type LuaSourceRegi
 import { createBlua32SystemSourceImage } from '../../ide/runtime/sources';
 import { RuntimeIdeState } from '../../ide/workbench/state';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
-import { problemsPanel } from '../../ide/workbench/contrib/problems/panel/controller';
 import { WorkspaceEditReviewPane } from '../../ide/workbench/contrib/edit_review/editor_pane';
 import { WorkspaceEditReviewInput } from '../../ide/workbench/contrib/edit_review/editor_input';
 import { WorkspaceEditProposal } from '../../ide/workbench/services/working_copy/workspace_edit';
@@ -53,7 +52,7 @@ function fixture(t: TestContext) {
 		new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
 	const editor = ide.editor;
 	editor.editorParts.main.activeGroup.openEditor(resolveLuaCodeEditorInput(sources.catalog, sources.catalog.resolveResource({ contextId: TEST_SYSTEM_CONTEXT_ID, path: registry.entrySourcePath })!));
-	t.after(async () => { problemsPanel.hide(); problemsPanel.setFixedHeightPx(0); inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
+	t.after(async () => { inputFocus.setTarget(null); await editor.shutdown(); host.audio.dispose(); host.input.dispose(); });
 	editorRuntimeState.active = true; host.input.setPointerAdmissionMode('routed'); editor.update(0);
 	const sourcePane = editor.editorParts.main.activeGroup.panes.getPane('code_editor') as CodeEditorPane;
 	const code = editor.editorParts.main.activeGroup.model.activeTab!, model = sourcePane.code.model!;
@@ -65,7 +64,7 @@ function fixture(t: TestContext) {
 		editor.dispatchPointer({ x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2,
 			buttons: held, pressedButtons: down, releasedButtons: up, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 }); editor.update(0);
 	};
-	const show = (count = 36, detailCopies = 1) => {
+	const createReview = (count = 36, detailCopies = 1) => {
 		const context = new WorkspaceSourceContext(editorTextModelService, sources.catalog), text = context.read(model).source;
 		const proposal = new WorkspaceEditProposal('Transfer authored behavior', context, { kind: 'edit', edits: new Map([[model,
 			{ version: model.version, edits: [{ offset: text.lastIndexOf('before'), deleteLength: 6, text: 'after' }] }]]) });
@@ -73,10 +72,13 @@ function fixture(t: TestContext) {
 			label: `consumer ${i}`, value: 'before -> after', description: `Captured authored consumer ${i}; source remains unchanged until explicit acceptance. `.repeat(detailCopies),
 			location: { model, version: model.version, offset: text.indexOf(`-- captured consumer ${i}`) },
 		})) };
-		const input = new WorkspaceEditReviewInput(proposal, evidence);
+		return new WorkspaceEditReviewInput(proposal, evidence);
+	};
+	const show = (count = 36, detailCopies = 1) => {
+		const input = createReview(count, detailCopies);
 		editor.editorParts.main.activeGroup.openEditor(input); editor.update(0); return input;
 	};
-	return { sourcePane, editor, host, sources, code, model, source, cycles, key, press, pointer, show };
+	return { sourcePane, editor, host, sources, code, model, source, cycles, key, press, pointer, show, createReview };
 }
 
 test('the retained review tab exposes exact pending bytes and captured Source without acquiring document history', async t => {
@@ -342,10 +344,11 @@ test('Impacts retains its immutable destination when the whole review initially 
 });
 
 
-test('an initially covered review retains an Impacts command destination before any row projection exists', t => {
+test('an initially minimized review retains an Impacts command destination before any row projection exists', t => {
 	const f = fixture(t);
-	problemsPanel.show(); problemsPanel.setFixedHeightPx(editorViewState.viewportHeight * 4); f.editor.update(0);
-	const review = f.show(1, 16), pane = f.editor.editorParts.main.activeGroup.panes.activePane!;
+	const part = f.editor.editorParts.createDocument({ minimized: true }), review = f.createReview(1, 16);
+	part.activeGroup.openEditor(review, { preserveFocus: true }); f.editor.update(0);
+	const pane = part.activeGroup.panes.activePane!;
 	assert.ok(pane instanceof WorkspaceEditReviewPane);
 	assert.equal(review.rows.length, 0); assert.equal(review.viewport.height, 0);
 	const destination = review.lines.find(line => line.part === 'impacts')!;
@@ -353,7 +356,7 @@ test('an initially covered review retains an Impacts command destination before 
 	// a pixel destination. This is a logical command, not hidden native input.
 	pane.execute('workspaceEditReview.impacts');
 	editorViewState.font = new EditorFont('msx'); f.editor.updateViewport({ width: 192, height: 288 });
-	problemsPanel.hide(); f.editor.update(0);
+	part.window!.show(false); f.editor.update(0);
 	assert.ok(review.viewport.contentHeight > review.viewport.height);
 	const first = review.rows[Math.trunc(review.viewport.scrollTop / review.layout.rowHeight)];
 	assert.ok(first.line === destination, 'first publication must reveal the retained immutable destination');

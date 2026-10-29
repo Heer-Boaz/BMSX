@@ -4,20 +4,21 @@ import test from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../machine/ts/common/rect';
 import type { CartEditor } from '../../ide/cart_editor';
-import { PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN, RESOURCE_PANEL_DIVIDER_DRAG_MARGIN } from '../../ide/common/constants';
+import { RESOURCE_PANEL_DIVIDER_DRAG_MARGIN } from '../../ide/common/constants';
 import type { PointerSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
-import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
-import { createProblemsPanelLayout, writeProblemsPanelLayout } from '../../ide/workbench/contrib/problems/panel/layout';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
 import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { createResourcePanelLayout, writeResourcePanelLayout } from '../../ide/workbench/contrib/resources/panel/layout';
+import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
+import { WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
+import { pointerHover } from '../../ide/input/pointer/hover';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -46,22 +47,6 @@ test('Resource layout publishes one retained divider strip, updates it with its 
 	assert.equal(strip.left, strip.right); assert.equal(strip.top, strip.bottom);
 });
 
-test('Problems layout publishes a retained top divider strip with exclusive right and bottom edges', () => {
-	configureFontVariant('tiny');
-	const layout = createProblemsPanelLayout(), strip = layout.resizeBounds;
-	writeProblemsPanelLayout({ left: 12, top: 180, right: 380, bottom: 274 }, layout);
-	assert.deepEqual(strip, { left: 12, top: 180 - PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN,
-		right: 380, bottom: 180 + PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN });
-	assert.equal(point_in_rect(strip.left, strip.top, strip), true);
-	assert.equal(point_in_rect(strip.right, strip.top, strip), false);
-	assert.equal(point_in_rect(strip.left, strip.bottom, strip), false);
-	writeProblemsPanelLayout({ left: 12, top: 150, right: 380, bottom: 274 }, layout);
-	assert.ok(layout.resizeBounds === strip);
-	assert.equal(strip.top, 150 - PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN);
-	writeProblemsPanelLayout({ left: 12, top: 150, right: 12, bottom: 274 }, layout);
-	assert.equal(strip.left, strip.right); assert.equal(strip.top, strip.bottom);
-});
-
 test('Resource resize retains its extent while hiding retires only its own captured gesture and strip', t => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
@@ -70,8 +55,10 @@ test('Resource resize retains its extent while hiding retires only its own captu
 	const panel = new ResourcePanelController(editor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
 		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)));
-	const sibling = new ProblemsPanelController();
-	t.after(() => { panel.dispose(); sibling.hide(); inputFocus.setTarget(null); pointerCapture.cancel(); });
+	const sibling = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, parts.main.focusTarget);
+	const split = new WorkbenchSplitView(0.5, 'vertical');
+	split.layout(0, 40, 384, 240); sibling.setInput(split);
+	t.after(() => { panel.dispose(); sibling.dispose(); inputFocus.setTarget(null); pointerCapture.cancel(); });
 	panel.show();
 	const strip = panel.resizeBounds, right = panel.getBounds().right;
 	panel.beginResize(pointer(right, strip.top));
@@ -85,34 +72,9 @@ test('Resource resize retains its extent while hiding retires only its own captu
 	panel.show();
 	assert.ok(panel.resizeBounds === strip);
 	assert.equal(panel.getBounds().right, resized);
-	sibling.show(); sibling.prepareLayout({ left: 0, top: 140, right: 384, bottom: 274 });
-	sibling.beginResize(pointer(100, 140));
+	parts.main.focusTarget.focus(); sibling.handlePointer(pointer(100, split.position));
 	panel.hide();
 	assert.equal(pointerCapture.active, true, 'another controller retains its own resize gesture');
-	sibling.hide();
-	assert.equal(pointerCapture.active, false);
-});
-
-test('Problems resize consumes its actual published height and preserves requested extent across hide/show', t => {
-	configureFontVariant('tiny');
-	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
-	const panel = new ProblemsPanelController(), sibling = new ProblemsPanelController();
-	t.after(() => { panel.hide(); sibling.hide(); pointerCapture.cancel(); inputFocus.setTarget(null); });
-	panel.show(); panel.prepareLayout({ left: 0, top: 140, right: 384, bottom: 274 });
-	const strip = panel.resizeBounds;
-	panel.beginResize(pointer(100, 140));
-	panel.handleCapturedPointer(pointer(100, 130));
-	assert.equal(panel.visibleHeight, 144, '134 presented pixels plus a 10-pixel upward drag');
-	panel.hide();
-	assert.equal(pointerCapture.active, false);
-	assert.equal(strip.top, strip.bottom);
-	panel.show(); panel.prepareLayout({ left: 0, top: 130, right: 384, bottom: 274 });
-	assert.ok(panel.resizeBounds === strip);
-	assert.equal(panel.visibleHeight, 144);
-	sibling.show(); sibling.prepareLayout({ left: 0, top: 140, right: 384, bottom: 274 });
-	sibling.beginResize(pointer(100, 140));
-	panel.hide();
-	assert.equal(pointerCapture.active, true, 'hiding another panel cannot cancel this gesture');
-	sibling.hide();
+	sibling.clearInput();
 	assert.equal(pointerCapture.active, false);
 });

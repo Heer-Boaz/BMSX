@@ -47,9 +47,11 @@ export function executeEditorSearchCommand(editor: CartEditor, sources: RuntimeS
 		case 'commandPalette': {
 			const picker = editor.quickInput;
 			const invoking = target === null ? inputFocus.target : target;
-			const main = editor.mainWorkspace, primaryOrigin = main.isPrimaryTarget(invoking), primary = main.primary;
-			if (primaryOrigin && (primary === undefined || !primary.scope.contains(invoking!.commandContext.scope))) return;
-			const editorTarget = primaryOrigin ? primary!.commandTarget : group.panes.activePane?.commandTarget ?? group.tabFocusTarget;
+			const main = editor.mainWorkspace;
+			const contextOrigin = main.isPrimaryTarget(invoking) || main.isActivityTarget(invoking);
+			const client = main.isActivityTarget(invoking) ? main.activity : main.primary;
+			if (contextOrigin && (client === undefined || !client.scope.contains(invoking!.commandContext.scope))) return;
+			const editorTarget = contextOrigin ? client!.commandTarget : group.panes.activePane?.commandTarget ?? group.tabFocusTarget;
 			const origin = target === null ? editorTarget
 				: target === inputFocus.target || target === picker.field.focusTarget ? undefined : target;
 			showCommandPalette(picker, editor.commands, origin, editorTarget);

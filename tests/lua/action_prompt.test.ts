@@ -230,3 +230,72 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} prompt layout w
 	assert.ok(measurement.mock.callCount() > measured, 'viewport publication invalidates wrapped geometry');
 	f.prompt.close(); assert.equal(await result, 'cancel');
 });
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} constrained decisions reserve their native footer while the complete source identity remains keyboard-readable`, async t => {
+	const f = fixture(t); configureFontVariant(variant);
+	Object.assign(f.prompt.presentation.bounds, { right: 300, bottom: 58 });
+	const finalComponent = 'independent_activity_diagnostics.lua';
+	const request = { ...REQUEST, message: `authoring/${'retained/scenes/'.repeat(35)}${finalComponent}` };
+	const measurement = t.mock.method(editorViewState.font, 'measureTextRange');
+	const decision = f.prompt.show(request), body = f.prompt.view.body;
+	assert.ok(body.scrollbar.getMaximumScroll() > 0);
+	// Constrained layout spends its extent on content and decisions, retaining only the one-pixel border.
+	assert.equal(body.bounds.top, f.prompt.view.bounds.top + 1);
+	assert.equal(body.bounds.bottom, f.prompt.view.footer.bounds.top);
+	assert.equal(f.prompt.view.footer.bounds.bottom, f.prompt.view.bounds.bottom - 1);
+	const buttons = f.prompt.view.buttons.map(button => ({ ...button.bounds })), measured = measurement.mock.callCount();
+	f.press('End');
+	assert.equal(body.scrollTop, body.scrollbar.getMaximumScroll());
+	assert.equal(f.prompt.visible, true);
+	assert.deepEqual(f.prompt.view.buttons.map(button => button.bounds), buttons, 'reading the message does not move decision targets');
+	const overlay = createHostOverlayFixture(384, 288), text = t.mock.method(api, 'blit_text_inline_with_font');
+	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
+	f.prompt.draw(); overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
+	// The supplied final path component is critical request data, not incidental dialog wording:
+	// reaching the body end must expose it without replacing it with a truncation marker.
+	const bodyLines = text.mock.calls.filter(call => call.arguments[2] < f.prompt.view.footer.bounds.top).map(call => call.arguments[0]).join('');
+	assert.ok(bodyLines.endsWith(finalComponent.toUpperCase()));
+	assert.ok(text.mock.callCount() <= Math.trunc(body.height / (editorViewState.lineHeight + 2)) + 5,
+		'drawing a long retained message visits visible lines and the three decisions, not all wrapped content');
+	const track = body.scrollbar.getTrack();
+	f.prompt.handleWheel({ valid: true, insideViewport: true, viewportX: track.left, viewportY: (track.top + track.bottom) / 2,
+		modifiers: KeyModifier.none, deltaX: 0, deltaY: -1 });
+	assert.ok(body.scrollTop < body.scrollbar.getMaximumScroll());
+	f.press('Home'); assert.equal(body.scrollTop, 0);
+	Object.assign(f.prompt.presentation.bounds, { bottom: 54 }); f.prompt.update();
+	assert.equal(measurement.mock.callCount(), measured, 'scrolling and height-only arrangement reuse the retained wrapped request');
+	for (const button of f.prompt.view.buttons) {
+		// Footer containment is this layout regression's explicit contract, not a workflow pixel snapshot.
+		assert.ok(button.bounds.top >= f.prompt.view.footer.bounds.top && button.bounds.bottom <= f.prompt.view.footer.bounds.bottom);
+	}
+	f.pointer(2, 0, 1, 1); assert.equal(await decision, 'cancel');
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} a constrained stacked footer reveals each actual choice through keyboard traversal`, async t => {
+	const f = fixture(t); configureFontVariant(variant);
+	Object.assign(f.prompt.presentation.bounds, { right: 96, bottom: 40 });
+	for (let index = 0; index < f.prompt.view.buttons.length; index++) {
+		const decision = f.prompt.show(REQUEST);
+		for (let step = 0; step < index; step++) f.press('Tab');
+		const { bounds, choice } = f.prompt.view.buttons[index], footer = f.prompt.view.footer;
+		assert.ok(bounds.top >= footer.bounds.top && bounds.bottom <= footer.bounds.bottom,
+			'the selected response is exposed by its own footer viewport, independently of message scrolling');
+		f.pointer(index, 0, 1, 1); assert.equal(await decision, choice);
+	}
+});
+
+test('body scrolling and responsive reflow revoke armed confirmation without completing its decision', async t => {
+	const f = fixture(t);
+	Object.assign(f.prompt.presentation.bounds, { right: 300, bottom: 58 });
+	const result = f.prompt.show({ ...REQUEST, message: 'retained/identity/'.repeat(70) });
+	f.key('Enter', true);
+	const body = f.prompt.view.body;
+	f.prompt.handleWheel({ valid: true, insideViewport: true, viewportX: body.bounds.left + 1, viewportY: body.bounds.top + 1,
+		modifiers: KeyModifier.none, deltaX: 0, deltaY: 1 });
+	f.key('Enter', false); assert.equal(f.prompt.visible, true);
+	f.pointer(0, 1, 1);
+	Object.assign(f.prompt.presentation.bounds, { bottom: 52 }); f.prompt.update();
+	assert.equal(f.capture.active, false);
+	f.pointer(0, 0, 0, 1); assert.equal(f.prompt.visible, true);
+	f.pointer(2, 0, 1, 1); assert.equal(await result, 'cancel');
+});

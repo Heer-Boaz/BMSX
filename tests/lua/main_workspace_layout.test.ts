@@ -9,8 +9,8 @@ import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
 
 // These rectangles and equality thresholds are the allocation algorithm's contract,
 // not pixel assertions over an editor workflow.
-const HIERARCHY = { minimumWidth: 80, preferredWidth: 120 };
-const DETAILS = { minimumWidth: 90, preferredWidth: 140 };
+const HIERARCHY = { minimumWidth: 80, preferredWidth: 120, minimumHeight: 0 };
+const DETAILS = { minimumWidth: 90, preferredWidth: 140, minimumHeight: 0 };
 
 test('Main allocates three real siblings and gives spare width to its permanent document client', () => {
 	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 219 };
@@ -112,8 +112,8 @@ for (const role of ['hierarchy', 'details'] as const) test(`Main ${role} visibil
 
 test('Main default reading widths follow producer font metrics while explicit size requests remain independent', () => {
 	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 1200, bottom: 200 };
-	const hierarchy: WorkbenchViewSizeConstraints = { minimumWidth: 0, preferredWidth: 0 };
-	const details: WorkbenchViewSizeConstraints = { minimumWidth: 0, preferredWidth: 0 };
+	const hierarchy: WorkbenchViewSizeConstraints = { minimumWidth: 0, preferredWidth: 0, minimumHeight: 0 };
+	const details: WorkbenchViewSizeConstraints = { minimumWidth: 0, preferredWidth: 0, minimumHeight: 0 };
 	const tiny = new EditorFont('tiny'), msx = new EditorFont('msx');
 	measureSceneHierarchy(tiny, hierarchy); measureSceneDetails(tiny, details);
 	view.layout(bounds, 200, hierarchy, details, 6, 0);
@@ -149,17 +149,17 @@ test('Main placement publishes a complete state before reentrant observers reque
 	let redirected = false;
 	view.onDidChange(() => {
 		observed.push({ hierarchyVisible: view.hierarchyVisible, detailsVisible: view.detailsVisible,
-			hierarchyWidth: view.hierarchyWidth, detailsWidth: view.detailsWidth });
+			activityVisible: view.activityVisible, hierarchyWidth: view.hierarchyWidth, detailsWidth: view.detailsWidth });
 		if (redirected) return;
 		redirected = true; view.detailsVisible = true; view.detailsWidth = 175;
 	});
-	const state = { hierarchyVisible: false, detailsVisible: false, hierarchyWidth: 180, detailsWidth: 190 };
+	const state = { hierarchyVisible: false, detailsVisible: false, activityVisible: false, hierarchyWidth: 180, detailsWidth: 190 };
 	view.setState(state);
 	assert.deepEqual(observed[0], state, 'the first observer sees all four requested fields, not an intermediate restore');
 	assert.equal(view.hierarchyVisible, false); assert.equal(view.hierarchyWidth, 180);
 	assert.equal(view.detailsVisible, true); assert.equal(view.detailsWidth, 175);
 	assert.equal(observed.length, 3);
-	view.setState({ hierarchyVisible: false, detailsVisible: true, hierarchyWidth: 180, detailsWidth: 175 });
+	view.setState({ hierarchyVisible: false, detailsVisible: true, activityVisible: false, hierarchyWidth: 180, detailsWidth: 175 });
 	assert.equal(observed.length, 3, 'an unchanged state does not publish another placement');
 });
 
@@ -168,7 +168,7 @@ test('Main owns coordinated width publication while the fixed sash reports only 
 	let changes = 0, resizes = 0;
 	view.onDidChange(() => changes++);
 	view.hierarchySash.onDidResize(() => resizes++); view.detailsSash.onDidResize(() => resizes++);
-	view.setState({ hierarchyVisible: true, detailsVisible: true, hierarchyWidth: 160, detailsWidth: 180 });
+	view.setState({ hierarchyVisible: true, detailsVisible: true, activityVisible: false, hierarchyWidth: 160, detailsWidth: 180 });
 	assert.equal(changes, 1); assert.equal(resizes, 0);
 	view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0);
 	view.hierarchySash.moveTo(view.hierarchySash.position + 20);

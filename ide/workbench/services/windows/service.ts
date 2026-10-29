@@ -152,10 +152,16 @@ export class WorkbenchSurfaceService implements IDisposable {
 		return null;
 	}
 
-	/** Admission is independent of pointer position and applies to commands too. */
+	/** Scrolling clips pixels, not an attached control's keyboard ownership. */
+	public isFocusAdmitted(surface: WorkbenchSurface): boolean {
+		const node = surface as Surface;
+		return node.visible && this.blockingModal(node) === null;
+	}
+
+	/** Pointer routes require an exposed extent as well as lifetime/modal admission. */
 	public isAdmitted(surface: WorkbenchSurface): boolean {
 		const node = surface as Surface;
-		if (!node.visible || this.blockingModal(node) !== null) return false;
+		if (!this.isFocusAdmitted(node)) return false;
 		const bounds = node.getBounds();
 		let left = bounds.left, top = bounds.top, right = bounds.right, bottom = bounds.bottom;
 		for (let current: Surface | null | undefined = node; current != null; current = current.presentationParent) {

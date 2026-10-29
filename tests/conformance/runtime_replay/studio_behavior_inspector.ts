@@ -1,6 +1,5 @@
 import type { BehaviorLensEditorPane } from '../../../ide/workbench/contrib/behavior_lens/editor_pane';
 
-import { problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { chooseBehavior } from './studio_behavior_picker';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
@@ -30,7 +29,7 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	await press('Home'); await press('ArrowDown');
 	const selected = viewport.selection;
 	if (selected?.kind !== 'node') throw new Error('inspection: authored task selection required');
-	const hadProblems = problemsPanel.isVisible;
+	const hadProblems = ide.editor.mainWorkspace.regionLayout.activityVisible;
 	if (!hadProblems) await runPaletteCommand('View: Problems Panel');
 	const version = model.version, dirty = model.dirty, geometry = viewport.model, x = viewport.scrollX, y = viewport.scrollY;
 	const sourceSelection = lens.view.selection;

@@ -1,7 +1,6 @@
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 
 import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
-import { getProblemsPanelBounds, problemsPanel } from '../../../ide/workbench/contrib/problems/panel/controller';
 import { resolveTextFileModel } from '../../../ide/workbench/services/working_copy/text_file_model';
 import { runBackgroundTasks } from '../../../ide/common/background_tasks';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
@@ -34,15 +33,15 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	check(ide.diagnostics.get(yamlModel)!.status === 'unsupported', 'resource context: YAML is not an empty successful Lua analysis');
 	check(editorTextModelService.get({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/hangar.lua' }) === undefined, 'resource context: unopened source is unrequested coverage');
 	await test.runPaletteCommand('View: Problems Panel');
-	check(problemsPanel.isVisible && problemsPanel.getDiagnostics().includes(marker), 'resource context: Problems reads the visual resource result');
+	check(ide.editor.mainWorkspace.regionLayout.activityVisible && ide.editor.problems.getDiagnostics().includes(marker), 'resource context: Problems reads the visual resource result');
 	await frame();
 	await test.capture?.('visual-diagnostics');
-	const index = problemsPanel.getDiagnostics().indexOf(marker);
-	const bounds = getProblemsPanelBounds()!, layout = problemsPanel.getCachedLayout();
+	const index = ide.editor.problems.getDiagnostics().indexOf(marker);
+	const bounds = ide.editor.problems.bounds, layout = ide.editor.problems.layoutState;
 	await test.click({ left: bounds.left + 4, right: bounds.right - 4, top: layout.headerTop + 2, bottom: layout.headerBottom - 2 });
 	await press('Home');
 	for (let step = 0; step < index; step++) await press('ArrowDown');
-	check(problemsPanel.selectedDiagnostic === marker, 'resource context: keyboard selects the actual Problems row');
+	check(ide.editor.problems.selectedDiagnostic === marker, 'resource context: keyboard selects the actual Problems row');
 	await press('Enter');
 	check(harness.getActiveEditorDocument().model === model && sourcePane(test).code.view.cursorRow === marker.row,
 		'resource context: Problems navigation opens the shared source, not a private buffer');

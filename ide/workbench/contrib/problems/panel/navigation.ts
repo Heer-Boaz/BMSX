@@ -10,13 +10,10 @@ export function handleProblemsPanelNavigationCommand(
 	parts: EditorParts,
 	command: ProblemsPanelCommand,
 ): boolean {
-	if (!controller.isVisible || !controller.isFocused) {
+	if (!controller.attached || !controller.isFocused) {
 		return false;
 	}
-	const layout = controller.getCachedLayout();
-	if (!layout) {
-		return false;
-	}
+	const layout = controller.layoutState;
 	const diagnostics = controller.getDiagnostics();
 	switch (command) {
 		case 'activate': {
@@ -32,7 +29,7 @@ export function handleProblemsPanelNavigationCommand(
 				return false;
 			}
 			controller.setSelectionIndex(0);
-			controller.revealSelection(layout, controller.resolvePanelWidth());
+			controller.revealSelection(layout, controller.contentWidth);
 			return true;
 		case 'end': {
 			if (diagnostics.length === 0) {
@@ -43,7 +40,7 @@ export function handleProblemsPanelNavigationCommand(
 				return false;
 			}
 			controller.setSelectionIndex(lastIndex);
-			controller.revealSelection(layout, controller.resolvePanelWidth());
+			controller.revealSelection(layout, controller.contentWidth);
 			return true;
 		}
 		case 'page-up':
@@ -51,7 +48,7 @@ export function handleProblemsPanelNavigationCommand(
 			if (diagnostics.length === 0) {
 				return false;
 			}
-			const step = controller.estimateVisibleCount(layout, controller.resolvePanelWidth());
+			const step = controller.estimateVisibleCount(layout, controller.contentWidth);
 			const delta = command === 'page-up' ? -step : step;
 			const selectionIndex = controller.getSelectionIndex();
 			const nextIndex = clamp(
@@ -63,7 +60,7 @@ export function handleProblemsPanelNavigationCommand(
 				return false;
 			}
 			controller.setSelectionIndex(nextIndex);
-			controller.revealSelection(layout, controller.resolvePanelWidth());
+			controller.revealSelection(layout, controller.contentWidth);
 			return true;
 		}
 		case 'up':
@@ -79,7 +76,7 @@ export function handleProblemsPanelNavigationCommand(
 				return false;
 			}
 			controller.setSelectionIndex(nextIndex);
-			controller.revealSelection(layout, controller.resolvePanelWidth());
+			controller.revealSelection(layout, controller.contentWidth);
 			return true;
 		}
 	}

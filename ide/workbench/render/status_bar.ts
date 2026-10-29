@@ -6,7 +6,6 @@ import { drawEditorText } from '../../editor/render/text_renderer';
 import { measureText } from '../../editor/common/text/layout';
 import { api } from '../../runtime/overlay_api';
 import { editorViewState } from '../../editor/ui/view/state';
-import { problemsPanel } from '../contrib/problems/panel/controller';
 import type { RuntimeFaultState } from '../../runtime/fault_state';
 import type { EditorPane } from '../services/editor/editor_pane';
 import type { EditorInput } from '../common/editor_inputs';
@@ -64,12 +63,6 @@ export function renderStatusBar(
 		drawEditorText(editorViewState.font, keyChordLabel, context.left + 4, context.top + 2, 0, statusTextColor);
 	} else if (!runtimeFaulted && evaluation.active !== undefined) {
 		drawEditorText(editorViewState.font, evaluation.paused ? 'LUA CALL PAUSED' : 'LUA CALL RUNNING', context.left + 4, context.top + 2, 0, statusTextColor);
-	} else if (problemsPanel.isVisible && contextTarget === problemsPanel.focusTarget) {
-		const diagnostic = problemsPanel.selectedDiagnostic;
-		if (diagnostic !== null) {
-			const info = `Ln ${diagnostic.row + 1}, Col ${diagnostic.startColumn + 1} • ${diagnostic.model.identity.path}`;
-			drawEditorText(editorViewState.font, info, context.left + 4, context.top + 2, 0, statusTextColor);
-		}
 	} else if (resourcePanel.isVisible() && contextTarget === resourcePanel.focusTarget) {
 		const fileInfo = resourcePanel.getFilterMode() === 'lua_only' ? 'FILES (LUA)' : 'FILES (ALL)';
 		const hint = 'CTRL+SHIFT+L TOGGLE FILTER';

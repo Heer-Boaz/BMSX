@@ -6,7 +6,7 @@ import { test, type TestContext } from 'node:test';
 import { EditorTextModelService, editorTextModelService as models } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { ResourceDiagnosticsService } from '../../ide/workbench/services/diagnostics/resource_diagnostics';
-import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
+import { createProblemsPanelFixture } from '../helpers/problems_panel';
 import { registerLuaSourceRecord, type LuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { setWorkspaceLuaSourceOverride, deleteWorkspaceLuaSourceOverride } from '../../ide/workspace/cache';
 import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
@@ -206,17 +206,16 @@ test('provider failure is explicit coverage and a later source change can be ana
 
 
 test('new retained source pending publication cannot replace the Problems semantic selection with the first resource', t => {
-	const { service, retain } = fixture(t), panel = new ProblemsPanelController();
+	const { service, retain } = fixture(t), panel = createProblemsPanelFixture(t).controller;
 	const unsubscribe = service.onDidChange(() => panel.setDiagnostics(service.diagnostics, service.coverage));
-	t.after(() => { unsubscribe(); panel.hide(); });
-	panel.show();
+	t.after(unsubscribe);
 	retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'cart.lua', '9return 1'); const intro = retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'intro.lua', '9return 1');
 	service.computePending(); panel.setSelectionIndex(1);
 	assert.ok(panel.selectedDiagnostic!.model === intro);
 	const previous = panel.selectedDiagnostic;
 	retain(TEST_CARTRIDGE_CONTEXT_IDS[0], 'new.lua', 'return 1');
 	assert.ok(service.coverage.pending > 0); assert.equal(service.diagnostics.length, 0);
-	assert.equal(panel.selectedDiagnostic, null); assert.equal(panel.focusTarget.clipboard!.copy(), null);
+	assert.equal(panel.selectedDiagnostic, undefined); assert.equal(panel.focusTarget.clipboard!.copy(), null);
 	service.computePending(); const result = service.get(intro)!;
 	assert.ok(result.status === 'ready' && panel.selectedDiagnostic === result.diagnostics[0],
 		'actual pending-to-ready source publication reconnects the selected marker to its fresh producer row');

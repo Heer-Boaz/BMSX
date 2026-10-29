@@ -12,7 +12,6 @@ import { openObservedConversation } from '../workbench/contrib/conversations/qui
 import { openAssistant } from '../workbench/contrib/assistant/editor_input';
 import { openTerminal } from '../workbench/contrib/terminal/editor_input';
 import type { CartEditor } from '../cart_editor';
-import { toggleProblemsPanel } from '../workbench/contrib/problems/panel/controller';
 import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
 import { openSourceView } from '../workbench/contrib/source_views/quick_access';
@@ -33,7 +32,6 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'conversations':
 		case 'resources':
 		case 'resources.focus':
-		case 'problems':
 		case 'behaviorLens':
 		case 'behaviorLens.preview':
 		case 'keepEditor':
@@ -80,9 +78,6 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			return;
 		case 'resources.focus':
 			editor.resourcePanel.show();
-			return;
-		case 'problems':
-			toggleProblemsPanel(group);
 			return;
 		case 'behaviorLens':
 			editor.behaviorLens.open(group, picker);

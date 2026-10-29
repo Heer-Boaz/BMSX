@@ -1,3 +1,4 @@
+import * as constants from '../../ide/common/constants';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestCodeControl } from '../helpers/code_control';
 import { createTestCodeDocuments } from '../helpers/code_documents';
@@ -32,7 +33,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { ensureVisualLines } from '../../ide/editor/common/text/layout';
 import { measureTextRange } from '../../ide/editor/common/text/layout';
 import { renderCodeArea } from '../../ide/editor/render/code_area/area';
-import { ProblemsPanelController } from '../../ide/workbench/contrib/problems/panel/controller';
+import { createProblemsPanelFixture } from '../helpers/problems_panel';
 import type { EditorDiagnostic } from '../../ide/common/models';
 
 test('indexed list and tree retain tiny deltas across layout while hit tests address real rows', () => {
@@ -121,24 +122,24 @@ test('Problems wheel integrates sub-row distances without changing selection or 
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'problems.lua', location: { kind: 'workspace' as const, path: 'problems.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'problems.lua', source: { type: 'lua', resid: 'problems' } }, 'lua', 'x');
 	const diagnostics: EditorDiagnostic[] = Array.from({ length: 10 }, (_, row) => ({ model, version: 1, row,
 		startColumn: 0, endColumn: 1, message: 'A diagnostic message that wraps across several narrow panel lines.', severity: 'error' }));
-	const controller = new ProblemsPanelController();
-	controller.show(); controller.setDiagnostics(diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
-	controller.setSelectionIndex(0); controller.setFocused(true);
-	t.after(() => { controller.hide(); model.dispose(); });
+	const { controller, wheel } = createProblemsPanelFixture(t, 'tiny');
+	controller.setDiagnostics(diagnostics, { ready: 1, pending: 0, unsupported: 0, failed: 0 });
+	controller.setSelectionIndex(0); controller.focus();
+	t.after(() => { model.dispose(); });
 	const bounds = { left: 0, top: 0, right: 160, bottom: 100 };
-	controller.prepareLayout(bounds);
+	controller.layout(bounds);
 	const rowHeight = controller.getItemLayout(0).height;
 	const delta = rowHeight / editorViewState.lineHeight / 4;
 	for (let step = 1; step <= 4; step++) {
-		assert.equal(controller.handlePointerWheel(delta, bounds), true);
+		wheel(delta);
 		assert.equal(controller.getScrollIndex(), step === 4 ? 1 : 0);
 	}
 	const overlay = createHostOverlayFixture(160, 100);
 	overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-	controller.draw(bounds); overlay.renderer.endFrame();
+	controller.draw(); overlay.renderer.endFrame();
 	assert.equal(controller.getSelectionIndex(), 0);
 	assert.equal(controller.getScrollIndex(), 1);
-	controller.handlePointerWheel(-delta, bounds);
+	wheel(-delta);
 	assert.equal(controller.getScrollIndex(), 0);
 	assert.equal(controller.getSelectionIndex(), 0);
 });
@@ -149,25 +150,25 @@ test('Problems wheel prepares current variable-height layout after show, resize 
 	const diagnostic = (message: string, row: number): EditorDiagnostic => ({ model, version: 1, row, startColumn: 0, endColumn: 1, message, severity: 'error' });
 	const diagnostics = [diagnostic('Short', 0), diagnostic('A diagnostic message that wraps across several narrow panel lines.', 1), diagnostic('Last', 2)];
 	const coverage = { ready: 1, pending: 0, unsupported: 0, failed: 0 };
-	const controller = new ProblemsPanelController();
-	controller.show(); controller.setDiagnostics(diagnostics, coverage);
-	t.after(() => { controller.hide(); model.dispose(); });
+	const { controller, wheel } = createProblemsPanelFixture(t, 'tiny');
+	controller.setDiagnostics(diagnostics, coverage);
+	t.after(() => { model.dispose(); });
 	const wide = { left: 0, top: 0, right: 320, bottom: 100 };
-	assert.equal(controller.getCachedLayout(), null);
-	const firstRowLines = controller.getItemLayout(0, controller.resolveAvailableWidth(wide)).height / editorViewState.lineHeight;
-	assert.equal(controller.handlePointerWheel(firstRowLines, wide), true);
+
+	const firstRowLines = controller.getItemLayout(0, wide.right - wide.left - constants.PROBLEMS_PANEL_CONTENT_PADDING_X * 2).height / editorViewState.lineHeight;
+	controller.layout(wide); wheel(firstRowLines);
 	assert.equal(controller.getScrollIndex(), 1, 'first wheel after showing and installing diagnostics is not dropped');
 	const wideHeight = controller.getItemLayout(1).height;
 	const narrow = { ...wide, right: 80 };
-	controller.setFixedHeightPx(90);
-	assert.equal(controller.getCachedLayout(), null);
-	assert.equal(controller.handlePointerWheel(1, narrow), true);
+	controller.layout(narrow);
+
+	wheel(1);
 	const narrowHeight = controller.getItemLayout(1).height;
 	assert.ok(narrowHeight > wideHeight);
 	assert.equal(controller.getScrollIndex(), 1, 'one line must not skip a multiline diagnostic');
 	controller.setDiagnostics(diagnostics, coverage);
-	assert.equal(controller.getCachedLayout(), null);
-	assert.equal(controller.handlePointerWheel(narrowHeight / editorViewState.lineHeight - 1, narrow), true);
+
+	wheel(narrowHeight / editorViewState.lineHeight - 1);
 	assert.equal(controller.getScrollIndex(), 2, 'fractional progress survives invalidation and crosses the actual wrapped height');
 	assert.equal(controller.getSelectionIndex(), 0);
 });
