@@ -16,6 +16,7 @@ import type { SuspendedGuestSession, SuspendedValueIdentity } from '../../../run
 import type { WorkbenchPropertyElement } from '../../ui/property_tree';
 import { InputInteraction } from '../../../input/interaction';
 import type { RuntimeTransport } from '../../../runtime/transport';
+import { LuaProgramSourceSelection, luaProgramPropertyEditState } from './source_selection';
 
 let nextInputId = 0;
 
@@ -31,8 +32,13 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	public readonly tree = createWorkbenchPropertyTree<LuaProgramProperty>();
 	public readonly live = createWorkbenchPropertyTree<WorkbenchPropertyElement>();
 	public readonly sourceModels = new Map<string, EditorTextModel>();
+	public readonly sourceSelection = new LuaProgramSourceSelection();
+	public readonly editSource = Symbol('Lua Program source edit');
 	private readonly projectionListeners = new Set<() => void>();
 	public sourceRevision: symbol | undefined;
+	public sourceGeneration = 0;
+	public publishedSourceGeneration = -1;
+	public sourceProjecting = false;
 	public occurrence: LuaProgramOccurrence | undefined;
 	public readonly occurrenceRange: TrackedTextRange;
 	public readonly interaction = new InputInteraction();
@@ -57,9 +63,20 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 		this.sourceModels.set(resourceIdentityKey(workingCopy.resource), workingCopy);
 		this.setWorkingCopies(new Set(this.sourceModels.values()));
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
-		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
-			if (this.sourceModels.get(resourceIdentityKey(model.resource)) === model) this.invalidateProjection();
+		this.disposables.add({ dispose: editorTextModelService.onDidApplyChanges((model, event) => {
+			if (this.sourceModels.get(resourceIdentityKey(model.resource)) === model) this.sourceGeneration++;
 			if (this.workingCopy === model) mapTrackedTextRange(this.occurrenceRange, event.changes);
+			this.sourceSelection.mapSourceChange(model, event.changes);
+		}) });
+		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
+			const state = event.editState;
+			if (event.editSource === this.editSource && model.version === event.version && state !== null && state.is(luaProgramPropertyEditState)) {
+				const { producer, bookmark, originIntent } = state.value;
+				if (resourceIdentityEquals(producer.resource, this.workingCopy.identity) && this.occurrenceRange.start !== this.occurrenceRange.end
+					&& producer.start === this.occurrenceRange.start && producer.end === this.occurrenceRange.end)
+					this.sourceSelection.continueEdit(bookmark, originIntent, event.kind !== 'edit');
+			}
+			if (this.sourceModels.get(resourceIdentityKey(model.resource)) === model) this.invalidateProjection();
 		}) });
 		this.disposables.add({ dispose: guest.onDidInvalidate(reason => {
 			this.liveDirty = true;
@@ -84,6 +101,6 @@ export class LuaProgramInput extends CompositeTextEditorInput<`program:${string}
 	}
 	public invalidateProjection(): void { for (const listener of this.projectionListeners) listener(); }
 	public onDidInvalidateProjection(listener: () => void): () => void { this.projectionListeners.add(listener); return () => this.projectionListeners.delete(listener); }
-	public override dispose(): void { this.interaction.setRuntime(null); this.invalidateProjection(); this.projectionListeners.clear(); super.dispose(); }
+	public override dispose(): void { this.sourceSelection.retire(); this.interaction.setRuntime(null); this.invalidateProjection(); this.projectionListeners.clear(); super.dispose(); }
 	public publishModels(): void { this.setWorkingCopies(new Set(this.sourceModels.values())); }
 }

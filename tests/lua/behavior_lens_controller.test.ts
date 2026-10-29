@@ -50,7 +50,7 @@ function fixture(t: TestContext, source = SOURCE) {
 	const navigation = new EditorNavigationController(sources.catalog, null!, null!);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources.catalog);
 	const controller = new BehaviorLensController(sources, navigation, documents,
-		() => assert.fail('Behavior-tree views do not create an FSM layout worker'), null!, null!, null!);
+		() => assert.fail('Behavior-tree views do not create an FSM layout worker'), null!, null!, null!, null!);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),

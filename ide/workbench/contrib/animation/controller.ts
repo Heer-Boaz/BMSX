@@ -24,6 +24,7 @@ import { animationDefinitionAtPosition, animationDefinitionAtRange, animationDef
 import { AnimationAuthoring } from './authoring';
 import { revealWorkbenchListSelection } from '../../ui/list_view';
 import { WorkspaceSourceContext } from '../../services/working_copy/source_context';
+import type { SourceViewOpening } from '../source_views/quick_access';
 
 /** Admits source generations, selects syntax and issues edits through their real working copies. */
 export class AnimationEditorController {
@@ -53,7 +54,7 @@ export class AnimationEditorController {
 		return input;
 	};
 
-	public open(group: EditorGroupView, quickInput: QuickInputController): void {
+	public open(group: EditorGroupView, quickInput: QuickInputController, source?: SourceViewOpening): void {
 		const snapshots = new Map<string, LuaSemanticWorkspaceSnapshot>();
 		const snapshotFor = (contextId: string): LuaSemanticWorkspaceSnapshot => {
 			let snapshot = snapshots.get(contextId);
@@ -64,17 +65,19 @@ export class AnimationEditorController {
 			}
 			return snapshot;
 		};
-		const active = group.model.activeTab;
-		if (active?.kind === 'code_editor' && active.workingCopy.mode === 'lua') {
-			const model = active.workingCopy, snapshot = snapshotFor(model.resource.contextId), file = snapshot.getFileData(resourceIdentityKey(model.resource))!;
-			const table = animationDefinitionAtPosition(file, active.context.view.cursorRow + 1, active.context.view.cursorColumn + 1);
+		if (source?.options.isCurrent?.() === false) return;
+		if (source !== undefined && source.model.mode === 'lua') {
+			const model = source.model, snapshot = snapshotFor(model.resource.contextId), file = snapshot.getFileData(resourceIdentityKey(model.resource))!;
+			const table = source.selection === undefined ? undefined
+				: animationDefinitionAtPosition(file, source.selection.row + 1, source.selection.startColumn + 1);
 			if (table !== undefined) {
 				const registered = collectAnimationDefinitions(model.resource, snapshot).find(item => item.table === table);
-				this.openDefinition(group, model.resource.contextId, registered === undefined ? { file, table, label: `${model.resource.path}:${file.chunk.locations.range(table.span).start.line}` } : registered);
+				this.openDefinition(group, model.resource.contextId, registered === undefined ? { file, table, label: `${model.resource.path}:${file.chunk.locations.range(table.span).start.line}` } : registered, source.options);
 				return;
 			}
-			if (buildAnimationSourceDocument(model.resource, snapshot) !== undefined) { this.openResource(group, model.resource); return; }
+			if (buildAnimationSourceDocument(model.resource, snapshot) !== undefined) { this.openResource(group, model.resource, source.options); return; }
 		}
+		if (source?.options.isCurrent?.() === false) return;
 		quickInput.pick('ANIMATIONS', 'Choose a written definition', (_origin, lifetime) => {
 			const retire = () => quickInput.hide();
 			lifetime.add({ dispose: editorTextModelService.onDidChangeContent(retire) });

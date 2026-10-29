@@ -40,9 +40,9 @@ export function indexStateMachineInitialTargets(body: StateMachineSourceBody, ta
 
 /** Stable command queries do no source traversal, formatting or allocation. */
 export function stateMachineInitialTarget(view: BehaviorLensViewState): StateMachineInitialTarget | undefined {
-	if (!view.document.syntaxComplete || view.presentation.kind !== 'state-graph') return undefined;
-	const selected = view.presentation.viewport.selection;
-	return selected?.kind === 'node' && selected.role === 'source' ? view.stateMachines.initialTargets.get(selected.source.rowKey) : undefined;
+	if (!view.source.isCurrent || !view.document.syntaxComplete || view.presentation.kind !== 'state-graph') return undefined;
+	const selected = view.selectionState.selected;
+	return selected?.kind === 'node' ? view.stateMachines.initialTargets.get(selected.rowKey) : undefined;
 }
 
 export function createStateMachineInitialEdits(buffer: TextBuffer, target: StateMachineInitialTarget): readonly EditorTextEdit[] {

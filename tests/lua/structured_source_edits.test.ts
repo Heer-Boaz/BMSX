@@ -156,3 +156,18 @@ test('value replacement rejects invalid lexical boundaries without modifying sou
 	const jsonNode = parseStructuredSource(json, 'json').get('value', true) as Node;
 	assert.throws(() => createStructuredValueEdit(json, 'json', jsonNode, '3 // eat the comma'));
 });
+
+test('a structured value edit publishes its parsed replacement extent rather than surrounding trivia', () => {
+	for (const [format, source, text, value] of [
+		['yaml', 'value: 3\n', '  "🐉" # retained comment\n', '"🐉"'],
+		['yaml', 'value: 3\n', ' { nested: [1, 2] } # trailing\n', '{ nested: [1, 2] }'],
+		['json', '{"value":3}', ' \n 55 \t', '55'],
+	] as const) {
+		const node = parseStructuredSource(source, format).get('value', true) as Node;
+		const edit = createStructuredValueEdit(source, format, node, text), next = apply(source, edit);
+		assert.equal(next.slice(edit.valueRange.start, edit.valueRange.end), value);
+		assert.equal(edit.valueRange.start, edit.offset + text.indexOf(value));
+		assert.equal(edit.valueRange.end, edit.valueRange.start + value.length);
+		assert.deepEqual(parseStructuredSource(next, format).toJS(), { value: parseStructuredSource(text, format).toJS() });
+	}
+});

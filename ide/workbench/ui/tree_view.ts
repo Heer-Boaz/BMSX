@@ -21,7 +21,7 @@ export type WorkbenchTreeState<Element> = WorkbenchListState<WorkbenchTreeNode<E
 
 /** The topology owner computes depth and attaches a node to its actual parent. */
 export function appendWorkbenchTreeNode<Element>(
-	state: WorkbenchTreeState<Element>, parent: WorkbenchTreeNode<Element> | null, element: Element, collapsed = false, identity: unknown = element,
+	state: Pick<WorkbenchTreeState<Element>, 'roots'>, parent: WorkbenchTreeNode<Element> | null, element: Element, collapsed = false, identity: unknown = element,
 ): WorkbenchTreeNode<Element> {
 	const node: WorkbenchTreeNode<Element> = { element, identity, parent, children: [], depth: parent === null ? 0 : parent.depth + 1, collapsed, expandable: false };
 	if (parent === null) state.roots.push(node);

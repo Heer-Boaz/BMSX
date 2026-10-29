@@ -1,5 +1,4 @@
 import type { CartEditor } from '../../../cart_editor';
-import { WORKBENCH_TEXT_EDITOR_ID } from '../code_editor/editor_input';
 import type { EditorPlayCommandId } from '../../../common/commands';
 import type { ScenarioTestModule } from '../../../testing/scenario/test_collection';
 import { showEditorMessage } from '../../../common/feedback_state';
@@ -10,10 +9,21 @@ import type { ScenarioRunService } from '../../services/testing/scenario_runs';
 import { openHostError } from '../host_error/editor_input';
 import { openCompiledDebugSources } from '../debugger/compiled_sources';
 import { PlayEditorInput } from './editor_input';
-import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { inputFocus } from '../../../input/focus';
+import type { EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
+import { editorTextModelService } from '../../../editor/model/model_service';
+import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_model';
+
+export type PlaySessionCommand = Exclude<EditorPlayCommandId, 'play.reveal' | 'play.details' | 'play.more'>;
+export type PlayCommandIntent = {
+	readonly command: PlaySessionCommand;
+	readonly input: PlayEditorInput;
+	readonly handle: PlayHandle;
+	readonly binding: number;
+	readonly module?: ScenarioTestModule;
+};
 
 /** Contribution commands select a captured session; no retargeting of authoring state. */
 export class PlayController {
@@ -35,38 +45,64 @@ export class PlayController {
 	}
 	public start(module: ScenarioTestModule, group: EditorGroupView, companionContextId: string | null = null): void {
 		const handle = this.service.start(module, companionContextId);
+		if (this.service.current !== handle || handle.closing) return;
 		let input = this.currentInput;
 		if (input === undefined) {
 			input = this.currentInput = new PlayEditorInput(handle, this.service);
-			input.onWillDispose(() => { this.currentInput = undefined; });
-		} else input.replaceHandle(handle);
+			input.onWillDispose(() => { if (this.currentInput === input) this.currentInput = undefined; });
+		} else {
+			const binding = input.replaceHandle(handle);
+			if (binding === undefined || this.currentInput !== input || this.service.current !== handle || !input.isBindingCurrent(handle, binding)) {
+				if (this.currentInput?.handle !== handle) void this.service.close(handle);
+				return;
+			}
+		}
 		this.editor.editorParts.revealEditor(input, group);
 	}
 
-	public startWithCompanion(module: ScenarioTestModule, group: EditorGroupView, picker: QuickInputController): void {
-		const catalog = this.sources.catalog;
-		const choices: Array<{ label: string; description: string; detail: string; contextId: string | null }> = [
-			{ label: 'No companion cartridge', description: 'Primary project only', detail: '', contextId: null },
-		];
-		for (const context of catalog.contexts.values()) {
-			if (context.programDomain !== 'cart') continue;
-			choices.push({ label: context.projectRootPath, description: context.id === module.resource.contextId ? 'Primary project' : '',
-				detail: 'Use this project as the companion cartridge', contextId: context.id });
-		}
-		picker.pick('PLAY FIXTURE', `Primary: ${module.resource.path}; choose a companion project`, (_origin, lifetime) => {
-			lifetime.add({ dispose: catalog.onDidChange(() => picker.hide()) });
-			return new TextQuickPickProvider(choices);
-		}, choice => this.start(module, group, choice.contextId));
+	public get canRevealCurrent(): boolean { return this.currentInput !== undefined; }
+	public revealCurrent(group: EditorGroupView): void {
+		if (this.currentInput !== undefined) this.editor.editorParts.revealEditor(this.currentInput, group);
 	}
 
-	public isCommandEnabled(command: EditorPlayCommandId, input: PlayEditorInput | undefined): boolean {
-		if (input === undefined) return false;
-		if (command === 'play.reveal' || command === 'play.source' || command === 'play.details' || command === 'play.more') return true;
+	public captureSourceLocation(input: PlayEditorInput): EditorSourceLocationRequest {
+		const handle = input.handle, binding = input.bindingRevision;
+		const isCurrent = () => input.isBindingCurrent(handle, binding);
+		return { isCurrent, readLocation: () => {
+			if (!isCurrent()) return;
+			const resource = this.sources.catalog.resolveResource(handle.module);
+			if (resource === undefined) return;
+			const model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
+			return isCurrent() && this.sources.catalog.resolveResource(handle.module) === resource ? { model, modelVersion: model.version } : undefined;
+		} };
+	}
+
+	public captureCommand(command: PlaySessionCommand, input: PlayEditorInput): PlayCommandIntent | undefined {
+		const handle = input.handle, binding = input.bindingRevision;
+		if (!input.isBindingCurrent(handle, binding)) return;
+		const module = command === 'play.reset' ? this.currentModule(handle) : undefined;
+		if (command === 'play.reset' && module === undefined) return;
+		return { command, input, handle, binding, module };
+	}
+
+	public isCommandCurrent(intent: PlayCommandIntent): boolean {
+		return intent.input.isBindingCurrent(intent.handle, intent.binding) && intent.handle === this.service.current
+			&& (intent.module === undefined || this.runs.collection.getNode(intent.module.id) === intent.module);
+	}
+
+	public isCommandInvocationEnabled(intent: PlayCommandIntent): boolean {
+		if (!this.isCommandCurrent(intent)) return false;
+		if (intent.command === 'play.reset') this.runs.refreshSources();
+		return this.isCommandCurrent(intent) && this.isCommandEnabled(intent.command, intent.input);
+	}
+
+	/** Presentation reads the retained fixture membership; only an accepted Reset refreshes source. */
+	public isCommandEnabled(command: PlaySessionCommand, input: PlayEditorInput): boolean {
 		const handle = input.handle;
-		if (handle !== this.service.current) return false;
+		if (!input.isBindingCurrent(handle, input.bindingRevision) || handle !== this.service.current) return false;
 		const session = handle.session;
 		switch (command) {
-			case 'play.reset': this.runs.refreshSources(); return !this.runs.active && this.currentModule(handle) !== undefined;
+			case 'play.reset': return !this.runs.active && this.currentModule(handle)?.suite?.kind === 'integration';
 			case 'play.stop': return handle.state === 'preparing' || handle.state === 'initializing' || handle.state === 'setup' || handle.state === 'ready';
 			case 'play.actors': case 'play.breakpoints': return session?.ready === true;
 			case 'play.continue': return session?.ready === true && session.debuggerExecution.canResume('continue');
@@ -75,11 +111,10 @@ export class PlayController {
 			case 'play.stepOut': return session?.ready === true && session.debuggerExecution.canResume('out');
 		}
 	}
-	public execute(command: Exclude<EditorPlayCommandId, 'play.details' | 'play.more'>, input: PlayEditorInput,
-		group: EditorGroupView, picker: QuickInputController): void {
-		const handle = input.handle;
+	public executeCommand(intent: PlayCommandIntent, group: EditorGroupView, picker: QuickInputController, attachmentCurrent: () => boolean): void {
+		if (!attachmentCurrent() || !this.isCommandCurrent(intent)) return;
+		const { input, handle, command } = intent;
 		switch (command) {
-			case 'play.reveal': this.editor.editorParts.revealEditor(input, group); return;
 			case 'play.actors': {
 				if (this.actors === undefined) {
 					const session = handle.session!;
@@ -90,17 +125,23 @@ export class PlayController {
 				}
 				this.actors.controller.open(this.editor.editorParts.findGroup(input)!); return;
 			}
-			case 'play.stop': input.interaction.running = false; this.service.stop(handle); return;
+			case 'play.stop':
+				input.interaction.running = false;
+				if (attachmentCurrent() && this.isCommandCurrent(intent)) this.service.stop(handle);
+				return;
 			case 'play.reset': {
-				this.runs.refreshSources();
-				input.replaceHandle(this.service.reset(handle, this.currentModule(handle)!));
+				const next = this.service.reset(handle, intent.module!);
+				if (next === undefined) return;
+				if (!attachmentCurrent() || this.currentInput !== input || !input.isBindingCurrent(handle, intent.binding)) {
+					if (this.currentInput?.handle !== next) void this.service.close(next);
+					return;
+				}
+				const binding = input.replaceHandle(next);
+				if (binding === undefined || this.service.current !== next || !input.isBindingCurrent(next, binding)) {
+					if (this.currentInput?.handle !== next) void this.service.close(next);
+					return;
+				}
 				this.editor.editorParts.revealEditor(input, group); return;
-			}
-			case 'play.source': {
-				const resource = { contextId: handle.module.contextId, path: handle.module.path };
-				const destination = this.editor.editorParts.editorDestination(this.editor.editorParts.findGroup(input)!,
-					{ resource, editorId: WORKBENCH_TEXT_EDITOR_ID });
-				void this.editor.navigation.focusChunkSource(destination, resource); return;
 			}
 			case 'play.breakpoints':
 				openCompiledDebugSources(picker, handle.session!.debugSources,
@@ -113,12 +154,16 @@ export class PlayController {
 		}
 	}
 	private currentModule(handle: PlayHandle): ScenarioTestModule | undefined {
-		return this.runs.collection.roots.find(root => root.contextId === handle.module.contextId)?.children
-			.find(module => module.resource.path === handle.module.path && module.suite?.kind === 'integration');
+		for (const root of this.runs.collection.roots) {
+			if (root.contextId !== handle.module.contextId) continue;
+			for (const module of root.children) if (module.resource.path === handle.module.path) return module;
+		}
+		return undefined;
 	}
 	private didChange(event: PlayEvent): void {
-		if (this.actors?.handle === event.handle && event.handle.session?.ready !== true) {
-			this.actors.controller.dispose(); this.actors = undefined;
+		const actors = this.actors;
+		if (actors?.handle === event.handle && event.handle.session?.ready !== true) {
+			this.actors = undefined; actors.controller.dispose();
 		}
 		const error = event.handle.failure ?? (event.handle.session?.failure?.kind === 'host' ? event.handle.session.failure : undefined);
 		if (event.state === 'failed' || event.state === 'faulted') {

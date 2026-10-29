@@ -169,7 +169,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'play.actors' },
 		{ type: 'command', command: 'play.reset' },
-		{ type: 'command', command: 'play.source' },
+		{ type: 'command', command: 'editor.source' },
 		{ type: 'command', command: 'play.breakpoints' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'play.continue' },

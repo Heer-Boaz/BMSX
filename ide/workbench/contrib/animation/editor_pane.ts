@@ -274,7 +274,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		const valueRange = locations.range(property.field.value.span), range = luaSourceRangeToTextRange(model.buffer, valueRange);
 		this.edit.open({ model, tree: input.details, row, parse: text => parseLuaFieldValueEdit(model.buffer, locations, property.field, text),
 			apply: value => this.controller.authoring.editProperty(input, property, value) }, { edit: { offset: range.start, deleteLength: range.end - range.start, text: readLuaSourceRange(model.buffer, valueRange) },
-			fieldRange: locations.range(property.field.span), expressionRange: valueRange });
+			fieldRange: locations.range(property.field.span), expressionRange: valueRange, expressionKind: property.field.value.kind, expressionOffset: 0, firstTokenOffset: 0 });
 	}
 	public override update(): void {
 		this.controller.refresh(this.input);

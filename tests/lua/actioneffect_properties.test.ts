@@ -74,7 +74,7 @@ function propertyEditFixture(t: TestContext, f: ReturnType<typeof fixture>, pane
 			parse: text => parseLuaFieldValueEdit(model.buffer, locations, field, text),
 			apply: value => { applyActionEffectPropertyEdit(f.input, write, value); f.refresh(); },
 		}, { edit: { offset: span.start, deleteLength: span.end - span.start, text: readLuaSourceRange(model.buffer, locations.range(field.value.span)) },
-			fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span) });
+			fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span), expressionKind: field.value.kind, expressionOffset: 0, firstTokenOffset: 0 });
 		lifetime.add({ dispose: f.view.source.onDidInvalidate(() => edit.close()) });
 	};
 	t.after(() => { edit.dispose(); inputFocus.setTarget(null); surfaces.dispose(); f.input.dispose(); });

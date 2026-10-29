@@ -13,7 +13,7 @@ import { clearBackgroundTasks } from '../../ide/common/background_tasks';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
 import { editorViewState } from '../../ide/editor/ui/view/state';
-import { inputFocus } from '../../ide/input/focus';
+import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { TestInput } from '../../ide/testing/input';
 import { RuntimeIdeState } from '../../ide/workbench/state';
@@ -107,7 +107,7 @@ test('preparing Play moves its exact retained handle and survives closing its fo
 	assert.equal(input.interaction.running, true); assert.equal(handle.session!.execution.paused, false);
 	const cycles = runtime.machine.scheduler.nowCycles, revision = handle.session!.execution.revision;
 	f.editor.editorParts.minimize(f.secondPart);
-	play.execute('play.reveal', input, f.editor.editorParts.main.activeGroup, f.editor.editorParts.main.quickInput);
+	play.revealCurrent(f.editor.editorParts.main.activeGroup);
 	assert.equal(f.secondPart.window!.model.minimized, false); assert.ok(f.secondPart.activeGroup.panes.activePane === pane);
 	assert.equal(input.interaction.running, true); assert.equal(runtime.machine.scheduler.nowCycles, cycles);
 	assert.equal(handle.session!.execution.revision, revision); assert.equal(f.editor.editorParts.main.activeGroup.model.findById(input.id), undefined);
@@ -152,11 +152,11 @@ test('Play chrome intent moves independently of guest input and Reset replaces o
 	assert.equal(f.secondPart.activeGroup.model.activeTab, input); assert.equal(f.firstPart.activeGroup.model.findById(input.id), undefined);
 	const game = next.session!.guest.global(buildModuleExportSlotName('game', []));
 	assert.equal(next.session!.guest.readStringMember(game, 'marker'), 34);
-	f.editor.commands.execute('play.source', f.secondPart.activeGroup.panes.activePane!.commandTarget); await setImmediate(); f.update();
+	f.editor.commands.execute('editor.source', f.secondPart.activeGroup.panes.activePane!.commandTarget); await setImmediate(); f.update();
 	const source = f.secondPart.activeGroup.panes.activePane;
 	assert.ok(source instanceof CodeEditorPane && source.input.workingCopy === f.model);
 	assert.equal(next.closed, false); assert.equal(f.ide.runTargets.selected, next.session);
-	play.execute('play.reveal', input, f.firstPart.activeGroup, f.firstPart.quickInput);
+	play.revealCurrent(f.firstPart.activeGroup);
 	f.editor.commands.execute('play.stop', f.secondPart.activeGroup.panes.activePane!.commandTarget);
 	for (let grant = 0; next.state !== 'stopped' && grant < 2000; grant++) await f.advance();
 	assert.equal(next.state, 'stopped'); assert.equal(next.closed, false); assert.equal(input.interaction.running, false);
@@ -215,7 +215,7 @@ test('late Play preparation failure stays on its captured view and never activat
 	const properties = describePlaySession(handle), message = properties.findIndex(property => property.warning && property.value === error.message);
 	const stack = properties.findIndex(property => property.warning && property.value === error.stack);
 	assert.ok(message >= 0 && stack >= 0);
-	play.execute('play.reveal', input, f.secondPart.activeGroup, f.secondPart.quickInput);
+	play.revealCurrent(f.secondPart.activeGroup);
 	const pane = destination.activeGroup.panes.activePane!;
 	f.editor.commands.execute('play.details', pane.commandTarget); f.update();
 	assert.notEqual(inputFocus.target, pane.commandTarget); assert.equal(destination.activeGroup.model.activeTab, input);
@@ -234,14 +234,18 @@ test('Play physical Reset and Stop retire their exact moved Actor view without o
 	let retired = 0; actors.onWillDispose(() => { retired++; });
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, actors, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
 	assert.equal(f.firstPart.quickInput.visible, false); assert.equal(f.secondPart.activeGroup.model.activeTab, actors);
-	play.execute('play.reset', input, f.firstPart.activeGroup, f.firstPart.quickInput);
+	const reset = play.captureCommand('play.reset', input)!;
+	assert.equal(play.isCommandInvocationEnabled(reset), true);
+	play.executeCommand(reset, f.firstPart.activeGroup, f.firstPart.quickInput, () => input.isBindingCurrent(reset.handle, reset.binding));
 	assert.equal(retired, 1); assert.equal(f.secondPart.activeGroup.model.findById(actors.id), undefined);
 	const next = input.handle; await f.ready(next);
 	f.editor.commands.execute('play.actors', f.firstPart.activeGroup.panes.activePane!.commandTarget); f.update();
 	const nextActors = f.firstPart.activeGroup.model.activeTab; assert.ok(nextActors?.kind === 'actor_lab');
 	assert.notEqual(nextActors, actors); assert.equal(nextActors.controller.viewport.transport, next.session!.transport);
 	assert.equal(f.editor.editorParts.moveEditor(f.firstPart.activeGroup, nextActors, { kind: 'group', group: f.secondPart.activeGroup }), true); f.update();
-	play.execute('play.stop', input, f.firstPart.activeGroup, f.firstPart.quickInput);
+	const stop = play.captureCommand('play.stop', input)!;
+	assert.equal(play.isCommandInvocationEnabled(stop), true);
+	play.executeCommand(stop, f.firstPart.activeGroup, f.firstPart.quickInput, () => input.isBindingCurrent(stop.handle, stop.binding));
 	for (let grant = 0; next.state !== 'stopped' && grant < 2000; grant++) await f.advance();
 	assert.equal(next.state, 'stopped'); assert.equal(f.secondPart.activeGroup.model.findById(nextActors.id), undefined);
 	assert.equal(f.firstPart.activeGroup.model.findById(input.id), input); assert.equal(next.closed, false);
@@ -272,11 +276,161 @@ test('moved Play Details discloses the original quarantined host error and stack
 	const properties = describePlaySession(handle), message = properties.findIndex(property => property.warning && property.value === error.message);
 	const stack = properties.findIndex(property => property.warning && property.value === error.stack);
 	assert.ok(message >= 0 && stack >= 0);
-	play.execute('play.reveal', input, f.secondPart.activeGroup, f.secondPart.quickInput);
+	play.revealCurrent(f.secondPart.activeGroup);
 	const pane = destination.activeGroup.panes.activePane!;
 	f.editor.commands.execute('play.details', pane.commandTarget); f.update(); assert.notEqual(inputFocus.target, pane.commandTarget);
 	f.key('Home'); for (let row = 0; row < message; row++) f.key('ArrowDown');
 	f.key('KeyC', KeyModifier.ctrl); assert.equal(await f.clipboard.readText(), error.message);
 	f.key('Home'); for (let row = 0; row < stack; row++) f.key('ArrowDown');
 	f.key('KeyC', KeyModifier.ctrl); assert.equal(await f.clipboard.readText(), error.stack);
+});
+
+test('Play Reset presentation reads retained membership without refreshing authored source', async t => {
+	const f = await fixture(t); f.editor.play.start(f.module, f.firstPart.activeGroup);
+	const pane = f.firstPart.activeGroup.panes.activePane!, refresh = t.mock.method(f.ide.scenarioRuns, 'refreshSources');
+	assert.equal(pane.commandTarget.getCommand('play.reset')!.isEnabled(), true);
+	assert.equal(f.editor.commands.isEnabled('play.reset', pane.commandTarget), true);
+	assert.equal(refresh.mock.callCount(), 0);
+});
+
+for (const route of ['native', 'application'] as const) {
+	test(`${route} Reset captures its existing fixture membership before a draft reparses it`, async t => {
+		const f = await fixture(t); f.editor.play.start(f.module, f.firstPart.activeGroup);
+		const input = f.editor.play.input!, old = input.handle, pane = f.firstPart.activeGroup.panes.activePane!;
+		const field = inputFocus.createTarget(pane.commandTarget, new InputFocusScope(pane.commandTarget.scope.surfaceScope, pane.commandTarget.scope));
+		let pending = true;
+		field.edit = { get pending() { return pending; }, cancel() { pending = false; }, commit() {
+			pending = false; f.model.pushEditOperations([{ offset: SCENE.indexOf('12'), deleteLength: 2, text: '34' }]); return true;
+		} };
+		field.focus();
+		if (route === 'native') inputFocus.executeCommand('play.reset', pane.commandTarget);
+		else f.editor.commands.execute('play.reset', pane.commandTarget);
+		assert.equal(pending, false);
+		assert.notEqual(input.handle, old);
+		assert.equal(input.handle.source, SCENE.replace('12', '34'));
+		await f.ready(input.handle);
+		assert.equal(old.closed, true);
+	});
+
+	for (const revocation of ['binding', 'attachment'] as const) test(`${route} Reset rejects a returned ${revocation} after draft acceptance`, async t => {
+		const f = await fixture(t); f.editor.play.start(f.module, f.firstPart.activeGroup);
+		const input = f.editor.play.input!, handle = input.handle, pane = f.firstPart.activeGroup.panes.activePane!;
+		const reset = t.mock.method(f.editor.play.service, 'reset');
+		const field = inputFocus.createTarget(pane.commandTarget, new InputFocusScope(pane.commandTarget.scope.surfaceScope, pane.commandTarget.scope));
+		let pending = true;
+		field.edit = { get pending() { return pending; }, cancel() { pending = false; }, commit() {
+			pending = false;
+			if (revocation === 'binding') input.replaceHandle(handle);
+			else {
+				f.firstPart.activeGroup.openEditor(new GameViewInput());
+				f.firstPart.activeGroup.activate(input.id);
+			}
+			return true;
+		} };
+		field.focus();
+		if (route === 'native') inputFocus.executeCommand('play.reset', pane.commandTarget);
+		else f.editor.commands.execute('play.reset', pane.commandTarget);
+		assert.equal(pending, false);
+		assert.equal(reset.mock.callCount(), 0);
+		assert.equal(input.handle, handle);
+	});
+
+	test(`${route} Stop cannot target a replacement admitted by its interaction publication`, async t => {
+		const f = await fixture(t), play = f.editor.play;
+		play.start(f.module, f.firstPart.activeGroup); const input = play.input!, old = input.handle;
+		await f.ready(old);
+		input.interaction.running = true;
+		const stop = t.mock.method(play.service, 'stop');
+		const unbind = input.interaction.onDidChange(() => {
+			unbind();
+			void play.service.close(old); play.start(f.module, f.secondPart.activeGroup);
+		});
+		t.after(unbind);
+		const target = f.firstPart.activeGroup.panes.activePane!.commandTarget;
+		if (route === 'native') inputFocus.executeCommand('play.stop', target);
+		else f.editor.commands.execute('play.stop', target);
+		const newer = play.input!.handle;
+		assert.notEqual(newer, old);
+		assert.equal(stop.mock.callCount(), 0);
+		assert.equal(newer.closing, false);
+		await f.ready(newer);
+	});
+}
+
+test('an unrelated editor has no implicit Play session command but explicit Reveal retains the real Play owner', async t => {
+	const f = await fixture(t), play = f.editor.play;
+	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, handle = input.handle;
+	f.secondPart.activeGroup.openEditor(new GameViewInput());
+	const foreign = f.secondPart.activeGroup.panes.activePane!.commandTarget;
+	for (const command of ['play.stop', 'play.reset', 'play.actors', 'play.breakpoints', 'play.continue'] as const) {
+		assert.equal(f.editor.commands.isEnabled(command, foreign), false);
+		f.editor.commands.execute(command, foreign);
+	}
+	assert.equal(input.handle, handle); assert.equal(handle.closing, false);
+	f.editor.commands.execute('play.reveal', foreign);
+	assert.equal(f.firstPart.activeGroup.model.activeTab, input);
+	assert.equal(f.secondPart.activeGroup.model.contains(input), false);
+});
+
+test('Play Source captures its handle passively and resolves the canonical current text, not captured fixture bytes', async t => {
+	const f = await fixture(t); f.editor.play.start(f.module, f.firstPart.activeGroup);
+	const input = f.editor.play.input!, pane = f.firstPart.activeGroup.panes.activePane!;
+	const retain = t.mock.method(editorTextModelService, 'retain');
+	const request = pane.captureSourceLocation()!;
+	assert.equal(retain.mock.callCount(), 0);
+	f.model.pushEditOperations([{ offset: SCENE.indexOf('12'), deleteLength: 2, text: '34' }]);
+	const location = await request.readLocation();
+	assert.equal(location!.model, f.model); assert.equal(location!.modelVersion, f.model.version);
+	assert.equal(input.handle.source, SCENE);
+	input.replaceHandle(input.handle);
+	assert.equal(request.isCurrent!(), false);
+	assert.equal(await request.readLocation(), undefined);
+});
+
+test('a newer Play request during Reset close publication owns the retained input instead of the old Reset', async t => {
+	const f = await fixture(t), play = f.editor.play;
+	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, old = input.handle;
+	let newer: PlayHandle | undefined;
+	t.after(play.service.onDidChange(event => {
+		if (event.handle !== old || !old.closing || newer !== undefined) return;
+		play.start(f.module, f.secondPart.activeGroup); newer = play.input!.handle;
+	}));
+	inputFocus.executeCommand('play.reset', f.firstPart.activeGroup.panes.activePane!.commandTarget);
+	assert.ok(newer !== undefined); assert.equal(input.handle, newer); assert.equal(play.service.current, newer);
+	await f.ready(newer);
+	assert.equal(old.closed, true); assert.equal(newer.closing, false);
+});
+
+for (const change of ['dispose', 'claim'] as const) test(`a Reset replacement ${change} during will-change publication is not overwritten or wrongly closed`, async t => {
+	const f = await fixture(t), play = f.editor.play;
+	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, old = input.handle;
+	let candidate: PlayHandle | undefined;
+	const unbind = input.onWillChangeHandle(() => {
+		unbind(); candidate = play.service.current!;
+		if (change === 'dispose') f.firstPart.activeGroup.removeEditor(input);
+		else input.replaceHandle(candidate);
+	});
+	t.after(unbind);
+	inputFocus.executeCommand('play.reset', f.firstPart.activeGroup.panes.activePane!.commandTarget);
+	assert.ok(candidate !== undefined); assert.notEqual(candidate, old);
+	if (change === 'dispose') {
+		assert.equal(play.input, undefined); assert.equal(play.service.current, undefined);
+		await candidate.closeOperation; assert.equal(candidate.closed, true);
+	} else {
+		assert.equal(play.input, input); assert.equal(input.handle, candidate); assert.equal(play.service.current, candidate);
+		assert.equal(candidate.closing, false); await f.ready(candidate);
+	}
+});
+
+test('input runtime publication rejects an outer replacement without reviving an older binding receipt', async t => {
+	const f = await fixture(t), play = f.editor.play;
+	play.start(f.module, f.firstPart.activeGroup); const input = play.input!, handle = input.handle;
+	await f.ready(handle);
+	const before = input.bindingRevision;
+	const unbind = input.interaction.onDidChange(() => { unbind(); input.replaceHandle(handle); });
+	t.after(unbind);
+	assert.equal(input.replaceHandle(handle), undefined);
+	assert.equal(input.handle, handle); assert.equal(input.isBindingCurrent(handle, before), false);
+	assert.equal(input.isBindingCurrent(handle, input.bindingRevision), true);
+	assert.equal(input.interaction.transport, handle.session!.transport);
 });

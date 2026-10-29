@@ -37,6 +37,7 @@ export type PlayEvent = { readonly handle: PlayHandle; readonly state: PlayHandl
 export class PlayService {
 	public current: PlayHandle | undefined;
 	private closed = false;
+	private requestRevision = 0;
 	private retirement = Promise.resolve();
 	private readonly listeners = new Set<(event: PlayEvent) => void>();
 	private readonly unbindModels: () => void;
@@ -44,7 +45,10 @@ export class PlayService {
 	public constructor(private readonly models: EditorTextModelService, private readonly sources: RuntimeSourceState,
 		private readonly dirtyRecords: ReadonlyMap<string, WorkspaceRecord>, private readonly model: MachineModelSpec,
 		private readonly input: Input, private readonly runTargets: RunTargetSelection, private readonly factory: PlaySessionFactory) {
-		this.unbindModels = models.onWillClear(() => { if (this.current !== undefined) void this.close(this.current); });
+		this.unbindModels = models.onWillClear(() => {
+			this.requestRevision++;
+			if (this.current !== undefined) void this.close(this.current);
+		});
 	}
 	public onDidChange(listener: (event: PlayEvent) => void): () => void {
 		this.listeners.add(listener); return () => this.listeners.delete(listener);
@@ -53,6 +57,7 @@ export class PlayService {
 		if (this.closed) throw new Error('Play service is closed.');
 		if (this.current !== undefined) throw new Error('Close or reset the current Play session first.');
 		if (module.suite?.kind !== 'integration') throw new Error('Play requires an integration fixture.');
+		this.requestRevision++;
 		// Capture working copies and begin the independent build before the first await.
 		const handle = new PlayHandle({ ...module.resource }, module.label, module.source, module.sourceTimestamp, companionContextId,
 			this.runTargets.request());
@@ -70,8 +75,10 @@ export class PlayService {
 			const companion = media.cartridgeSlots[1];
 			const program = await buildFixtureProgram(media, { sourcePath: handle.module.path, source: handle.source });
 			if (handle.closing) return;
-			handle.session = this.factory(media.systemRom, [program.layer.bytes, companion], media.machineModel,
+			const session = this.factory(media.systemRom, [program.layer.bytes, companion], media.machineModel,
 				new PlayInput(new InputChannel(this.input)), program);
+			if (handle.closing) { await session.dispose(); return; }
+			handle.session = session;
 		} catch (error) {
 			handle.selectionRequest = undefined;
 			if (!handle.closing) handle.failure = { error };
@@ -101,31 +108,37 @@ export class PlayService {
 		else handle.session.stop();
 	}
 	/** Reset recaptures source now, waits for the old physical lifetime, then admits a new world. */
-	public reset(handle: PlayHandle, module: ScenarioTestModule): PlayHandle {
+	public reset(handle: PlayHandle, module: ScenarioTestModule): PlayHandle | undefined {
 		if (this.current !== handle) throw new Error('Play handle is not the current session.');
+		const request = ++this.requestRevision;
 		void this.close(handle);
-		return this.start(module, handle.companionContextId);
+		if (this.closed || this.requestRevision !== request) return;
+		const next = this.start(module, handle.companionContextId);
+		return this.current === next ? next : undefined;
 	}
 	public close(handle: PlayHandle): Promise<void> {
 		if (handle.closeOperation !== undefined) return handle.closeOperation;
+		const completion = Promise.withResolvers<void>();
+		handle.closeOperation = completion.promise;
+		this.retirement = completion.promise;
 		handle.closing = true;
 		handle.selectionRequest = undefined;
 		if (this.current === handle) this.current = undefined;
-		// Revoke admission/input immediately; join preparation and backend work before completion.
+		// Publish retirement authority before target/input revocation can admit another request.
+		void this.retire(handle).then(completion.resolve, completion.reject);
+		this.publish(handle);
+		return completion.promise;
+	}
+	private async retire(handle: PlayHandle): Promise<void> {
 		if (handle.session !== undefined) this.runTargets.retire(handle.session);
 		const disposing = handle.session?.dispose();
-		handle.closeOperation = (async () => {
-			await handle.preparation;
-			await disposing;
-			handle.closed = true;
-			this.publish(handle);
-		})();
-		this.retirement = handle.closeOperation;
+		await handle.preparation;
+		await disposing;
+		handle.closed = true;
 		this.publish(handle);
-		return handle.closeOperation;
 	}
 	public async dispose(): Promise<void> {
-		this.closed = true; this.unbindModels();
+		this.closed = true; this.requestRevision++; this.unbindModels();
 		if (this.current !== undefined) await this.close(this.current);
 		await this.retirement; this.listeners.clear();
 	}

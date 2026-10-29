@@ -1,5 +1,5 @@
 import { resourceIdentityEquals } from '../../../common/resource';
-import type { EffectPropertyWrite } from './action_effect_index';
+import { indexActionEffectWrites, type EffectPropertyWrite } from './action_effect_index';
 import type { LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { BehaviorLensInput } from './editor_input';
@@ -10,9 +10,10 @@ import { mapTextOffset } from '../../../editor/text/text_change';
 /** Retained source field, not a resolved runtime value or a referenced initializer. */
 export function selectedActionEffectProperty(view: BehaviorLensViewState): EffectPropertyWrite | undefined {
 	if (!view.source.isCurrent || !view.document.syntaxComplete || view.presentation.kind !== 'properties') return undefined;
-	const selected = view.presentation.tree.rows[view.presentation.tree.selectionIndex];
-	if (selected === undefined || selected.element.kind !== 'property') return undefined;
-	return selected.element.write;
+	const selected = view.selectionState.selected;
+	if (selected?.kind !== 'node') return undefined;
+	const definition = view.selectionState.definitionRowKey === null ? undefined : view.source.definitionsByRowKey.get(view.selectionState.definitionRowKey);
+	return definition?.behaviorKind === 'action_effect' ? indexActionEffectWrites(definition).get(selected.rowKey) : undefined;
 }
 
 /** Replace the actual written expression and associate its authored selection with source history. */

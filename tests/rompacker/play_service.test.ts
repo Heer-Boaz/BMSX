@@ -36,7 +36,7 @@ return { kind='integration', setup=function(t) game.marker=12; t:log('ready') en
  teardown=function(t) game.closed=true; t:log('cleanup') end,
  tests={never=function() error('Play must not execute this case') end} }`;
 
-async function fixture(t: TestContext, optLevel: 0 | 3 = 0) {
+async function fixture(t: TestContext, optLevel: 0 | 3 = 0, onSessionCreated?: (session: PlayRuntimeSession) => void) {
 	const directory = await mkdtemp(join(tmpdir(), 'bmsx-play-service-'));
 	await openWorkspaceRecords(new MemoryWorkspaceFiles());
 	const media = await buildScenarioMediaFixture(directory, [{ path: PATH, source: SCENE }], {
@@ -59,7 +59,7 @@ while true do game.updates=game.updates+1; mem[${gxGpuPcrtcRegisterAddress(GX_GP
 	const runTargets = new RunTargetSelection();
 	const service = new PlayService(models, sources, new Map(), PSX_MACHINE_SPEC, input, runTargets, (system, slots, model, channel, program) => {
 		const session = new PlayRuntimeSession(new OffscreenMachine(system, slots, model, channel), program, device, { log() {} });
-		sessions.push(session); return session;
+		sessions.push(session); onSessionCreated?.(session); return session;
 	});
 	const module = runs.collection.findModuleBySourcePath(TEST_CARTRIDGE_CONTEXT_IDS[0], PATH), model = models.retain(sources.catalog.luaResources.find(resource => resource.path === PATH)!, 'lua', SCENE);
 	const advance = async () => { service.advance(1000 / 60); await service.current?.session?.tasks.join(); await setImmediate(); };
@@ -132,6 +132,60 @@ test('closing preparation cannot create a late world; model clear closes the act
 	f.models.clear();
 	await live.closeOperation;
 	assert.equal(f.service.current, undefined); assert.equal(live.closed, true); assert.equal(live.session!.state, 'closed');
+});
+
+test('Reset cannot override a newer Play request published while its old handle closes', async t => {
+	const f = await fixture(t), accepted = f.service.start(f.module);
+	await f.ready();
+	let newer: ReturnType<PlayService['start']> | undefined;
+	t.after(f.service.onDidChange(event => {
+		if (event.handle !== accepted || !accepted.closing || newer !== undefined) return;
+		newer = f.service.start(f.module);
+		void f.service.close(newer);
+	}));
+	assert.equal(f.service.reset(accepted, f.module), undefined);
+	assert.ok(newer !== undefined);
+	assert.equal(f.service.current, undefined);
+	await newer.closeOperation;
+	assert.equal(accepted.closed, true);
+	assert.equal(newer.closed, true);
+	assert.equal(newer.session, undefined);
+});
+
+test('close publishes one retirement before run-target callbacks admit a newer world', async t => {
+	const f = await fixture(t), accepted = f.service.start(f.module);
+	await f.ready();
+	const disposing = Promise.withResolvers<void>();
+	const originalDispose = accepted.session!.dispose.bind(accepted.session!);
+	t.mock.method(accepted.session!, 'dispose', () => {
+		const physical = originalDispose();
+		return Promise.all([physical, disposing.promise]).then(() => {});
+	});
+	let newer: ReturnType<PlayService['start']> | undefined, recursive: Promise<void> | undefined;
+	t.after(f.runTargets.onDidChange(target => {
+		if (target !== undefined || newer !== undefined) return;
+		recursive = f.service.close(accepted);
+		newer = f.service.start(f.module);
+	}));
+	const closing = f.service.close(accepted);
+	assert.equal(recursive, closing);
+	assert.ok(newer !== undefined);
+	await setImmediate();
+	assert.equal(newer.session, undefined);
+	disposing.resolve(); await closing; await f.ready();
+	assert.equal(accepted.closed, true);
+	assert.equal(f.service.current, newer);
+	assert.equal(newer.session!.ready, true);
+});
+
+test('a physical session constructed after its handle is revoked is disposed rather than adopted', async t => {
+	const f = await fixture(t, 0, () => { void f.service.close(accepted); });
+	const accepted = f.service.start(f.module);
+	await accepted.preparation; await accepted.closeOperation;
+	assert.equal(accepted.closed, true);
+	assert.equal(accepted.session, undefined);
+	assert.equal(f.sessions.length, 1);
+	assert.equal(f.sessions[0].state, 'closed');
 });
 
 test('a newer explicit run choice supersedes late Play readiness without preventing physical admission', async t => {

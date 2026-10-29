@@ -1,5 +1,6 @@
 import type { EditorGroupView } from '../workbench/services/editor/editor_group';
 import type { EditorInput } from '../workbench/common/editor_inputs';
+import type { EditorCommandDocument } from './context';
 import type { HostExecutionControl } from '../../hosts/common/execution_control';
 import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/index';
 import { TextEditorInput } from '../workbench/common/editor_input';
@@ -49,9 +50,6 @@ export function isEditorWorkspaceCommand(command: EditorCommandId): command is E
 	}
 }
 
-/** A resolved document subject is distinct from an opening destination or a named Main client. */
-export type EditorWorkspaceDocument = { readonly group: EditorGroupView; readonly input: EditorInput | null };
-
 export function isEditorWorkspaceCommandEnabled(command: EditorWorkspaceCommandId, group: EditorGroupView | undefined,
 	input: EditorInput | null | undefined, sources: RuntimeSourceState, saves: TextFileSaveService, hotResumes: HotResumeService,
 	boots: BootService, execution: HostExecutionControl, tasks: RuntimeTaskQueue): boolean {
@@ -91,7 +89,7 @@ export function captureEditorWorkspaceCommand(
 	textFileSaves: TextFileSaveService,
 	command: EditorWorkspaceCommandId,
 	destination: EditorGroupView,
-	document: EditorWorkspaceDocument | undefined,
+	document: EditorCommandDocument | undefined,
 	runTargets: RunTargetSelection,
 	tasks: RuntimeTaskQueue,
 	target: InputFocusTarget | null,

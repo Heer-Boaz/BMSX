@@ -28,7 +28,7 @@ export type EditorModelEdit = {
 
 export type EditorTextModelChangeKind = 'edit' | 'undo' | 'redo' | 'restore' | 'revert';
 
-/** Post-apply delta. Internal owners only track/invalidate here; never query or mutate models. */
+/** Post-apply delta. Internal owners track/invalidate here; never query semantic projects or mutate models. */
 export type EditorTextModelAppliedChanges = {
 	readonly version: number;
 	readonly startRow: number;

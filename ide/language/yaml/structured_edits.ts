@@ -1,6 +1,7 @@
 import { changedTextRange } from '../../common/text';
 import { CST, Document, Pair, YAMLMap, YAMLSeq, isMap, parseDocument, type Node } from 'yaml';
 import type { EditorTextEdit } from '../../editor/model/text_model';
+import type { TrackedTextRange } from '../../editor/text/text_change';
 import type { StructuredTextDocumentFormat } from '../../../toolchain/ts/rompack/aem';
 
 export type StructuredCollection = YAMLMap<unknown, Node | null> | YAMLSeq<Node | null>;
@@ -15,11 +16,15 @@ export function parseStructuredSource(source: string, format: StructuredTextDocu
 	return document;
 }
 
-export function createStructuredValueEdit(source: string, format: StructuredTextDocumentFormat, node: Node, text: string): EditorTextEdit {
+/** The parsed replacement owns its value extent independently of its surrounding authored trivia. */
+export type StructuredValueEdit = EditorTextEdit & { readonly valueRange: TrackedTextRange };
+
+export function createStructuredValueEdit(source: string, format: StructuredTextDocumentFormat, node: Node, text: string): StructuredValueEdit {
 	const fragment = parseStructuredSource(text, format);
 	if (fragment.contents === null) throw new Error('Enter a YAML / JSON value.');
 	const [start, end] = node.range!;
-	const edit = { offset: start, deleteLength: end - start, text };
+	const [valueStart, valueEnd] = fragment.contents.range!;
+	const edit = { offset: start, deleteLength: end - start, text, valueRange: { start: start + valueStart, end: start + valueEnd } };
 	// Validate the untouched lexical boundary as well (comments, block scalars and flow punctuation).
 	parseStructuredSource(source.slice(0, start) + text + source.slice(end), format);
 	return edit;

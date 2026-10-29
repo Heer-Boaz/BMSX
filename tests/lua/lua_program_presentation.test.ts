@@ -19,6 +19,7 @@ function fixture(t: TestContext) {
 	f.firstGroup.model.pin(input);
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["rules",1,"id"]');
 	assert.ok(input.tree.selectionIndex >= 0);
+	input.sourceSelection.select(input.tree.rows[input.tree.selectionIndex], input.sourceModels);
 	pane.focus();
 	const target = pane.commandTarget;
 	const draft = (text: string) => {

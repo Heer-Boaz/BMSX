@@ -523,7 +523,7 @@ export class RuntimeCartEditor implements CartEditor {
 				this.clock,
 			), measure: measureSourceEditor },
 			resource_view: { create: group => new ResourceViewerEditorPane(group.focusScope, this.commands, this.contextMenu), measure: measureResourceViewerEditor },
-			aem_editor: { create: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureAemEditor },
+			aem_editor: { create: group => new AemEditorPane(this.aemEditor, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureAemEditor },
 			lua_program: { create: group => new LuaProgramEditorPane(this.luaPrograms, this.commands, this.actionStrings, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureLuaProgramEditor },
 			behavior_lens: { create: group => new BehaviorLensEditorPane(this.behaviorLens, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureBehaviorLensEditor },
 			actor_lab: { create: group => new ActorLabEditorPane(this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea,
@@ -616,6 +616,7 @@ export class RuntimeCartEditor implements CartEditor {
 			guest,
 			rewind,
 			workbench.transport,
+			this.actorLab,
 		);
 		this.scenarioLab = new ScenarioLabController(
 			this,
@@ -624,7 +625,7 @@ export class RuntimeCartEditor implements CartEditor {
 			scenarioRuns,
 			this.play,
 		);
-		this.aemEditor = new AemEditorController(sources, guest, runtime, runtimeTasks);
+		this.aemEditor = new AemEditorController(sources, guest, runtime, runtimeTasks, this.actorLab);
 		this.luaPrograms = new LuaProgramController(sources, guest, rewind, workbench.transport);
 		this.actionStrings = new ActionStringTester(sources.catalog, clock, scenarioRuns, this.scenarioLab);
 		this.editorInputSerializers = {

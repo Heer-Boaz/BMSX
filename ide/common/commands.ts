@@ -80,7 +80,7 @@ export type EditorScenarioLabCommandId =
 	| 'scenarioLab.cancel';
 
 export type EditorPlayCommandId =
-	| 'play.reveal' | 'play.actors' | 'play.stop' | 'play.reset' | 'play.source' | 'play.breakpoints'
+	| 'play.reveal' | 'play.actors' | 'play.stop' | 'play.reset' | 'play.breakpoints'
 	| 'play.continue' | 'play.stepInto' | 'play.stepOver' | 'play.stepOut'
 	| 'play.details' | 'play.more';
 

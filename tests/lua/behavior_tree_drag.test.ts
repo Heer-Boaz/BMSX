@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { beginBehaviorTreeDrag } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_drag';
+import { acceptBehaviorGraphSelection } from '../../ide/workbench/contrib/behavior_lens/graph_navigation';
 import type { BehaviorGraphNode } from '../../ide/workbench/contrib/behavior_lens/graph_model';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
@@ -73,6 +74,7 @@ test('different parents use real source lists; unchanged shared positions, defin
 	f.select(2);
 	const children = f.viewport.model.nodes[0].children[0].children;
 	f.viewport.selection = children[1].children[0];
+	acceptBehaviorGraphSelection(f.view, f.graph);
 	const drag = beginBehaviorTreeDrag(f.model, f.view, () => assert.fail('unexpected list transfer'))!;
 	for (const [node, accepted] of [[f.viewport.model.nodes[0], false], [children[0], true], [children[1], true], [children[2].children[1], false]] as const) {
 		f.viewport.reveal(node);
@@ -120,6 +122,7 @@ test('unknown, keyed, mutated lists and parallel roles expose navigation but no 
 		const f = fixture(t, source);
 		for (const node of f.viewport.model.nodes) {
 			f.viewport.selection = node;
+			acceptBehaviorGraphSelection(f.view, f.graph);
 			assert.equal(beginBehaviorTreeDrag(f.model, f.view, () => assert.fail('unexpected list transfer')), undefined);
 		}
 	}

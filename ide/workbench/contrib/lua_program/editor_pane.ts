@@ -11,7 +11,7 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import type { IdeCommandController } from '../../../commands/controller';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
-import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, type FocusCommandInvocation, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
@@ -40,6 +40,8 @@ import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ActionStringTester } from '../scenario_lab/actionstring';
 import { truncateMeasuredText } from '../../../common/text';
 import { WorkbenchTooltip } from '../../ui/tooltip';
+import type { LuaProgramProperty } from './source';
+import { applyLuaProgramPropertyEdit } from './source_edit';
 
 
 export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInput> {
@@ -65,7 +67,7 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	public constructor(private readonly controller: LuaProgramController,
 		private readonly commands: IdeCommandController, private readonly tester: ActionStringTester,
 		private readonly contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
+		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, private readonly group: EditorGroupView, scope: InputFocusScope, private readonly quickInput: QuickInputController) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && (this.input.liveVisible ? this.input.live : this.input.tree).layout.visibleRowCount > 0;
 		this.pointer.attachFeedback(surfaces, paneSurface, workArea);
@@ -85,15 +87,15 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		this.focusTarget.registerCommand('luaProgram.edit', { isEnabled: () => {
 			const property = this.selected();
 			return property?.field !== undefined && property.inlineEditable && !this.input.sourceModels.get(property.file.file)!.readOnly;
-		}, run: () => this.editProperty() });
+		}, capture: () => this.captureSourceCommand('luaProgram.edit'), run: () => inputFocus.executeCommand('luaProgram.edit', this.focusTarget) });
 		this.focusTarget.registerCommand('luaProgram.add', { isEnabled: () => {
 			const property = this.selected() ?? this.input.tree.roots[0]?.element;
 			return !this.input.liveVisible && property?.table?.structural === true && !this.input.sourceModels.get(property.table.file.file)!.readOnly;
-		}, run: () => this.controller.add(this.input, this.quickInput) });
+		}, capture: () => this.captureSourceCommand('luaProgram.add'), run: () => inputFocus.executeCommand('luaProgram.add', this.focusTarget) });
 		this.focusTarget.registerCommand('luaProgram.remove', { isEnabled: () => {
 			const property = this.selected();
 			return property?.field !== undefined && property.container!.structural && !this.input.sourceModels.get(property.file.file)!.readOnly;
-		}, run: () => this.controller.remove(this.input) });
+		}, capture: () => this.captureSourceCommand('luaProgram.remove'), run: () => inputFocus.executeCommand('luaProgram.remove', this.focusTarget) });
 		this.focusTarget.registerCommand('luaProgram.live', { isEnabled: () => !this.input.liveVisible, run: () => {
 			const input = this.input;
 			if (!this.focusInput(input)) return;
@@ -113,18 +115,15 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 				run: () => { this.input.interaction.running = false; this.input.interaction.transport!.navigation.step(direction); },
 			});
 		}
-		this.focusTarget.registerCommand('luaProgram.testInput', { isEnabled: () => this.input.programKind === 'input' && this.tester.canStart(this.input.workingCopy.resource.contextId), run: () => {
-			const selected = this.selected();
-			const pattern = selected?.valueExpression?.kind === LuaSyntaxKind.StringLiteralExpression ? selected.valueExpression.value : '';
-			this.tester.open(this.input.workingCopy.resource.contextId, group, this.quickInput, pattern);
-		} });
+		this.focusTarget.registerCommand('luaProgram.testInput', { isEnabled: () => this.input.programKind === 'input' && this.tester.canStart(this.input.workingCopy.resource.contextId),
+			capture: () => this.captureSourceCommand('luaProgram.testInput'), run: () => inputFocus.executeCommand('luaProgram.testInput', this.focusTarget) });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => true, run: () => {
 			const tree = this.input.liveVisible ? this.input.live : this.input.tree;
 			this.openContextMenu(tree.layout.contentLeft + 8, tree.layout.contentTop + (tree.selectionIndex - (tree.scroll | 0)) * tree.layout.rowHeight, true);
 		} });
 		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
 			isEnabled: () => { const model = this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction); return model !== undefined && !model.readOnly; },
-			run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction),
+			run: () => executeTextHistoryCommand(this.input.workingCopy.history.findModel(this.input.getWorkingCopies(), direction)!, direction, this.input.editSource),
 		});
 	}
 	protected override activate(): void {
@@ -148,17 +147,66 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		this.unbindInteraction!(); this.unbindInteraction = undefined;
 	}
 	public override dispose(): void { this.unbindInteraction?.(); this.edit.dispose(); this.pointer.dispose(); this.actionTooltip.detach(); this.actions.dispose(); super.dispose(); }
-	private selected() { return this.input.liveVisible ? undefined : this.input.tree.rows[this.input.tree.selectionIndex]?.element; }
-	private editProperty(): void {
+	private selected() { return this.input.liveVisible || this.input.sourceProjecting ? undefined : this.input.sourceSelection.property; }
+	private captureSourceCommand(command: 'luaProgram.edit' | 'luaProgram.add' | 'luaProgram.remove' | 'luaProgram.testInput'): FocusCommandInvocation | undefined {
+		if (!this.hasInput || this.input.sourceProjecting || this.input.liveVisible && command !== 'luaProgram.testInput') return;
+		const input = this.input, scope = this.focusTarget.scope, generation = scope.contextGeneration, live = input.liveVisible;
+		const initialRevision = input.sourceSelection.revision;
+		if (!this.controller.refresh(input)) return;
+		if (!this.hasInput || this.input !== input || scope.contextGeneration !== generation || input.liveVisible !== live
+			|| input.sourceSelection.revision !== initialRevision) return;
+		if (command === 'luaProgram.add' && input.tree.selectionIndex < 0 && input.tree.roots.length !== 0) {
+			input.tree.selectionIndex = input.tree.rows.indexOf(input.tree.roots[0]);
+			input.sourceSelection.select(input.tree.roots[0], input.sourceModels);
+		}
+		const revision = input.sourceSelection.revision;
+		const isCurrent = () => this.hasInput && this.input === input && scope.contextGeneration === generation
+			&& input.liveVisible === live && input.sourceSelection.revision === revision
+			&& (command === 'luaProgram.testInput' || input.sourceSelection.available);
+		const readProperty = () => {
+			if (!isCurrent()) return;
+			if (!this.controller.refresh(input)) return;
+			return isCurrent() && !live ? input.sourceSelection.property : undefined;
+		};
+		const enabled = (property: LuaProgramProperty | undefined) => {
+			if (command === 'luaProgram.testInput') return isCurrent() && input.programKind === 'input'
+				&& this.tester.canStart(input.workingCopy.resource.contextId);
+			if (command === 'luaProgram.add') return property?.table?.structural === true && !input.sourceModels.get(property.table.file.file)!.readOnly;
+			return property?.field !== undefined && (command === 'luaProgram.edit' ? property.inlineEditable : property.container!.structural)
+				&& !input.sourceModels.get(property.file.file)!.readOnly;
+		};
+		return { editScope: command === 'luaProgram.remove' ? scope : undefined,
+			isEnabled: () => enabled(readProperty()),
+			run: () => {
+				if (!isCurrent()) return;
+				if (command !== 'luaProgram.remove' && (!this.focusInput(input) || !isCurrent())) return;
+				const property = readProperty();
+				if (!enabled(property)) return;
+				if (command === 'luaProgram.add') this.controller.add(input, property!, this.quickInput, readProperty);
+				else if (command === 'luaProgram.remove') this.controller.remove(input, property!);
+				else if (command === 'luaProgram.edit') this.editProperty(input, property!, readProperty);
+				else {
+					const pattern = property?.valueExpression?.kind === LuaSyntaxKind.StringLiteralExpression ? property.valueExpression.value : '';
+					this.tester.open(input.workingCopy.resource.contextId, this.group, this.quickInput, pattern);
+				}
+			} };
+	}
+	private editProperty(input: LuaProgramInput, property: LuaProgramProperty, readProperty: () => LuaProgramProperty | undefined): void {
 		this.pointer.hideFeedback();
-		const input = this.input, row = input.tree.rows[input.tree.selectionIndex], property = row.element;
+		const row = input.tree.rows[input.tree.selectionIndex];
 		const model = input.sourceModels.get(property.file.file)!, locations = property.file.chunk.locations, field = property.field!;
 		const valueRange = locations.range(field.value.span), fieldRange = locations.range(field.span);
 		const range = luaSourceRangeToTextRange(model.buffer, valueRange);
 		const lifetime = this.edit.open({ model, tree: input.tree, row,
 			parse: text => parseLuaFieldValueEdit(model.buffer, locations, field, text),
-			apply: value => { model.pushEditOperations([value.edit]); this.controller.refresh(input); },
-		}, { edit: { offset: range.start, deleteLength: range.end - range.start, text: readLuaSourceRange(model.buffer, valueRange) }, fieldRange, expressionRange: valueRange });
+			apply: value => {
+				const current = readProperty();
+				if (current?.field === undefined || model.readOnly) return;
+				applyLuaProgramPropertyEdit(input, current, value);
+				this.controller.refresh(input);
+			},
+		}, { edit: { offset: range.start, deleteLength: range.end - range.start, text: readLuaSourceRange(model.buffer, valueRange) },
+			fieldRange, expressionRange: valueRange, expressionKind: field.value.kind, expressionOffset: 0, firstTokenOffset: 0 });
 		lifetime.add({ dispose: input.onDidInvalidateProjection(() => this.edit.close()) });
 	}
 	public override update(): void {
@@ -207,10 +255,16 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 	}
 	public updateStatus(): void { this.statusItem.text = this.input.status; }
 	public handleKeyboard(input: KeyInputEvent): void {
+		if (!this.input.liveVisible) {
+			const revision = this.input.sourceRevision;
+			if (!this.controller.refresh(this.input)) return;
+			if (revision !== this.input.sourceRevision) this.layoutInput();
+		}
 		const tree = this.input.liveVisible ? this.input.live : this.input.tree;
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input);
 			if (navigateWorkbenchTree(tree, command) === WorkbenchTreeNavigationResult.Collapse && this.input.liveVisible) this.controller.resolveRuntime(this.input);
+			if (!this.input.liveVisible) this.input.sourceSelection.select(this.input.tree.rows[this.input.tree.selectionIndex], this.input.sourceModels);
 			this.pointer.keyboardSelection();
 			return;
 		}
@@ -222,10 +276,16 @@ export class LuaProgramEditorPane extends WorkbenchViewEditorPane<LuaProgramInpu
 		if (isKeyJustPressed('Delete', input)) { consumeIdeKey('Delete', input); this.commands.execute('luaProgram.remove', this.focusTarget); }
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number): boolean {
+		if (!this.input.liveVisible) {
+			const revision = this.input.sourceRevision;
+			if (!this.controller.refresh(this.input)) return true;
+			if (revision !== this.input.sourceRevision) this.layoutInput();
+		}
 		if (this.actions.handlePointer(snapshot)) return true;
 		const result = this.pointer.handle(snapshot, justPressed, now);
 		if (result === WorkbenchPropertyPointerResult.Outside) return false;
 		if (result === WorkbenchPropertyPointerResult.Rejected) return true;
+		if (!this.input.liveVisible) this.input.sourceSelection.select(this.input.tree.rows[this.input.tree.selectionIndex], this.input.sourceModels);
 		if (result === WorkbenchPropertyPointerResult.ContextMenu) this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 		if (this.input.liveVisible) {
 			if (result === WorkbenchPropertyPointerResult.Collapse) this.controller.resolveRuntime(this.input);

@@ -82,6 +82,7 @@ test('busy AEM refuses collision disposal but moves its same operation to a new 
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# retained\n' }]);
 	f.firstGroup.openEditor(input); f.secondGroup.openEditor(receiver); f.firstGroup.activate(input.id); f.update();
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events"]');
+	input.sourceSelection.select(input.tree.rows[input.tree.selectionIndex].element.sourceIdentity);
 	input.applying = true;
 	const view = captureWorkbenchTreeView(input.tree, element => element.key), version = model.version;
 	const originPane = f.firstGroup.panes.activePane!, count = f.editor.editorParts.documents.length;
@@ -167,6 +168,7 @@ test('LuaProgram move retains its running interaction and binds subsequent autho
 	const input = f.firstGroup.model.activeTab;
 	assert.ok(input instanceof LuaProgramInput);
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.path.join('/') === 'rules/1/on');
+	input.sourceSelection.select(input.tree.rows[input.tree.selectionIndex], input.sourceModels);
 	const view = captureWorkbenchTreeView(input.tree, element => element.key), model = input.workingCopy;
 	input.inspectRuntime(f.editor.commands.transport); input.interaction.running = true;
 	const interaction = input.interaction, transport = interaction.transport, cycles = f.host.runtime.machine.scheduler.nowCycles;
@@ -178,6 +180,7 @@ test('LuaProgram move retains its running interaction and binds subsequent autho
 	assert.equal(model.buffer.getText(), program); assert.equal(model.canUndo, false);
 	f.editor.commands.execute('luaProgram.authoring', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.commandContext);
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.path.join('/') === 'rules');
+	input.sourceSelection.select(input.tree.rows[input.tree.selectionIndex], input.sourceModels);
 	assert.equal(f.editor.commands.isEnabled('luaProgram.add', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.commandContext), true);
 	f.editor.commands.execute('luaProgram.add', f.editor.editorParts.main.activeGroup.panes.activePane!.commandTarget.commandContext);
 	assert.equal(f.editor.editorParts.main.quickInput.visible, true); assert.equal(f.firstPart.quickInput.visible, false);

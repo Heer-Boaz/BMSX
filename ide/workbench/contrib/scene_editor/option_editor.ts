@@ -38,7 +38,7 @@ export class SceneOptionEditor {
 			const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
 			this.controls[index].setValue({ binding,
 				edit: { offset: span.start, deleteLength: span.end - span.start, text: property.sourceText },
-				fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span) });
+				fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span), expressionKind: field.value.kind, expressionOffset: 0, firstTokenOffset: 0 });
 			if (revision !== this.revision || !binding.isCurrent()) return;
 		}
 		this.updateControlAdmission();

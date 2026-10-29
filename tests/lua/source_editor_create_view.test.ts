@@ -167,7 +167,7 @@ test('Behavior fresh views acquire their own source lease and graph state withou
 		createScenarioTestSourceRecord('tree.lua', 1, text), createScenarioTestSourceRecord('cartlib/behaviour_tree/library.lua', 1, ''),
 	]);
 	const controller = new BehaviorLensController(sources, null!, new BehaviorSourceDocuments(editorTextModelService, sources.catalog),
-		() => assert.fail('copying source does not run an FSM layout'), null!, null!, null!);
+		() => assert.fail('copying source does not run an FSM layout'), null!, null!, null!, null!);
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'tree.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource), source = controller.createInput(model, 'graph');
 	const group = createTestEditorGroup(); group.openEditor(source); t.after(() => group.dispose());

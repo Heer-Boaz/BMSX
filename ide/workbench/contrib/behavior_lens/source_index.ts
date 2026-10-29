@@ -2,7 +2,7 @@ import { resourceIdentityKey } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextLocation } from '../../../editor/text/text_location';
 import { luaSourceRangeToTextLocation } from '../../../language/lua/source_location';
-import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
+import type { BehaviorSourceDefinition, BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 
 /** Shared indices and mapped occurrences of one document generation, not view selection. */
 export class BehaviorSourceIndex {
@@ -11,6 +11,7 @@ export class BehaviorSourceIndex {
 	public readonly models: ReadonlyMap<string, EditorTextModel>;
 	public readonly nodes: BehaviorSourceNode[] = [];
 	public readonly nodesByRowKey = new Map<BehaviorSourceRowKey, BehaviorSourceNode>();
+	public readonly definitionsByRowKey = new Map<BehaviorSourceRowKey, BehaviorSourceDefinition>();
 	public readonly parentByRowKey = new Map<BehaviorSourceRowKey, BehaviorSourceRowKey | null>();
 	private references = 0;
 	private readonly subscriptions: (() => void)[] = [];
@@ -25,6 +26,7 @@ export class BehaviorSourceIndex {
 			this.subscriptions.push(owner.onWillChangeContent(() => this.invalidate()));
 		}
 		this.models = models;
+		for (const definition of document.definitions) this.definitionsByRowKey.set(definition.rowKey, definition);
 		this.index(document.definitions, null, rangesByModel);
 		for (const [owner, ranges] of rangesByModel) this.subscriptions.push(owner.trackRanges(ranges));
 	}

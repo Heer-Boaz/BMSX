@@ -122,7 +122,7 @@ export class EditorTextModelService {
 		return () => this.clearListeners.delete(listener);
 	}
 
-	/** Internal post-apply phase: track/invalidate deltas only, without queries or model writes. */
+	/** Internal post-apply phase: track/invalidate deltas, without semantic queries or model writes. */
 	public onDidApplyChanges(listener: ModelAppliedChangesListener): () => void {
 		this.appliedChangesListeners.add(listener);
 		return () => this.appliedChangesListeners.delete(listener);

@@ -70,10 +70,11 @@ for (const { format, source } of documents) {
 		assert.ok(input.tree.rows.every((row, index) => row === rows[index])); assert.equal(input.tree.textDirty, false);
 	});
 
-	test(`AEM ${format} source edits and Undo retain selection and collapse by semantic path`, t => {
+	test(`AEM ${format} source edits and Undo retain native selected key and disclosure through source correspondence`, t => {
 		const { model, input } = fixture(t, format, source);
 		const selected = JSON.stringify(['events', 'story', 'channel']), collapsed = JSON.stringify(['events', 'impact']);
 		input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === selected);
+		input.sourceSelection.select(input.tree.rows[input.tree.selectionIndex].element.sourceIdentity);
 		setWorkbenchTreeCollapsed(input.tree, input.tree.rows.findIndex(row => row.element.key === collapsed), true);
 		const property = input.tree.rows[input.tree.selectionIndex].element, range = property.node.range!;
 		model.pushEditOperations([createStructuredValueEdit(source, format, property.node, '"audiofx"')]); projectAemSource(input);

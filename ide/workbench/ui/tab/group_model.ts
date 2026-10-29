@@ -110,6 +110,11 @@ export class EditorTabGroupModel {
 		return this.editorTabs;
 	}
 	public contains(input: EditorInput): boolean { return this.listeners.has(input); }
+	/** Exact retained membership; moving away and back creates a different lifetime. */
+	public captureMembership(input: EditorInput): (() => boolean) | undefined {
+		const membership = this.listeners.get(input);
+		return membership === undefined ? undefined : () => !membership.isDisposed;
+	}
 
 	public get activeTab(): EditorInput | null {
 		return this.activeEditor;

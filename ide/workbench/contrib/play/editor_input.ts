@@ -18,7 +18,13 @@ export class PlayEditorInput extends ReadonlyEditorInput<PlayTabId, 'play_sessio
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public readonly interaction = new InputInteraction();
 	private readonly handleListeners = new Set<() => void>();
+	private bindingRevisionValue = 0;
+	private disposed = false;
 	public get handle(): PlayHandle { return this.handleValue; }
+	public get bindingRevision(): number { return this.bindingRevisionValue; }
+	public isBindingCurrent(handle: PlayHandle, revision: number): boolean {
+		return !this.disposed && this.handleValue === handle && this.bindingRevisionValue === revision;
+	}
 	public constructor(private handleValue: PlayHandle, service: PlayService) {
 		const sequence = ++nextInputId;
 		super(`play-session:${sequence}`, 'play_session', 'PLAY', true);
@@ -34,10 +40,22 @@ export class PlayEditorInput extends ReadonlyEditorInput<PlayTabId, 'play_sessio
 	public onWillChangeHandle(listener: () => void): () => void {
 		this.handleListeners.add(listener); return () => this.handleListeners.delete(listener);
 	}
-	public replaceHandle(handle: PlayHandle): void {
-		for (const listener of this.handleListeners) listener();
+	public replaceHandle(handle: PlayHandle): number | undefined {
+		if (this.disposed) return;
+		const revision = ++this.bindingRevisionValue;
+		for (const listener of this.handleListeners) {
+			listener();
+			if (this.disposed || this.bindingRevisionValue !== revision) return;
+		}
 		this.interaction.setRuntime(null);
+		if (this.disposed || this.bindingRevisionValue !== revision) return;
 		this.handleValue = handle;
 		if (handle.session?.ready === true) this.interaction.setRuntime(handle.session.transport);
+		return this.isBindingCurrent(handle, revision) ? revision : undefined;
+	}
+	public override dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true; this.bindingRevisionValue++;
+		super.dispose();
 	}
 }

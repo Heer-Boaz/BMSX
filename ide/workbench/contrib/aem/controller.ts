@@ -2,7 +2,7 @@ import { isMap, isSeq } from 'yaml';
 import { DisposableStore } from '../../../common/lifecycle';
 import { showEditorWarningBanner } from '../../../common/feedback_state';
 import { aemDocumentFormat } from '../../../../toolchain/ts/rompack/aem';
-import { createStructuredInsertionEdit, createStructuredRemovalEdit, type StructuredCollection } from '../../../language/yaml/structured_edits';
+import { createStructuredInsertionEdit, createStructuredRemovalEdit, type StructuredCollection, type StructuredValueEdit } from '../../../language/yaml/structured_edits';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain, type RuntimeResource } from '../../../common/resource';
 import type { Blua32SourceImage } from '../../../runtime/sources';
@@ -19,8 +19,12 @@ import type { QuickInputController } from '../../services/quick_input/controller
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { projectAemSource } from './source';
-import { AemEditorInput } from './editor_input';
+import { AemEditorInput, type AemProperty } from './editor_input';
 import { aemFieldTemplates, aemSequenceTemplate, aemSequenceValueTemplate } from './schema';
+import { aemPropertyEditState, type AemSourceIdentity } from './source_selection';
+import { mapTrackedTextRange } from '../../../editor/text/text_change';
+import type { ActorLabController } from '../actor_lab/controller';
+import { getTextFileRuntimeSourceInstallations } from '../../services/working_copy/runtime_source_status';
 
 export async function resolveAemEditorInput(catalog: WorkspaceSourceCatalog, resource: RuntimeResource): Promise<AemEditorInput> {
 	return new AemEditorInput(await resolveTextFileModel(editorTextModelService, catalog, resource));
@@ -29,7 +33,8 @@ export async function resolveAemEditorInput(catalog: WorkspaceSourceCatalog, res
 export class AemEditorController {
 	public constructor(private readonly sources: RuntimeSourceState,
 		private readonly guest: SuspendedGuestSession,
-		private readonly runtime: Runtime, private readonly tasks: RuntimeTaskQueue) {}
+		private readonly runtime: Runtime, private readonly tasks: RuntimeTaskQueue,
+		private readonly actorLab: ActorLabController) {}
 	public open(group: EditorGroupView, quickInput: QuickInputController): void {
 		quickInput.pick('AUDIO EVENT MAPS', 'Canonical YAML / JSON', (_origin, lifetime) => {
 			const retire = () => quickInput.hide();
@@ -53,12 +58,52 @@ export class AemEditorController {
 	}
 	public getSourceLocation(input: AemEditorInput): EditorSourceLocation {
 		projectAemSource(input);
-		const model = input.workingCopy, selected = input.tree.rows[input.tree.selectionIndex]?.element;
+		const model = input.workingCopy, selected = input.sourceSelection.selected?.property;
 		if (selected === undefined) return { model, modelVersion: input.version };
 		const position = { row: 0, column: 0 };
 		model.buffer.positionAt(selected.node.range![0], position);
 		return { model, modelVersion: input.version,
 			selection: { row: position.row, startColumn: position.column, endColumn: position.column } };
+	}
+	public applyPropertyEdit(input: AemEditorInput, property: AemProperty, edit: StructuredValueEdit): void {
+		const identity = property.sourceIdentity, before = { id: identity.id, role: identity.role, range: { ...identity.range } };
+		input.workingCopy.pushEditOperations([edit], aemPropertyEditState.of(before, input.editSource), changes => {
+			const range = { ...before.range };
+			if (identity.role === 'root' || identity.role === 'item') {
+				range.start = edit.valueRange.start; range.end = Math.min(edit.valueRange.end, edit.valueRange.start + 1);
+			} else mapTrackedTextRange(range, changes);
+			return aemPropertyEditState.of({ id: identity.id, role: identity.role, range }, input.editSource);
+		});
+		projectAemSource(input);
+	}
+	public canTestEvent(input: AemEditorInput): boolean {
+		if (input.sourceSelection.event === undefined) return false;
+		for (const installation of getTextFileRuntimeSourceInstallations(this.sources, input.workingCopy))
+			if (installation.status === 'applied' && this.actorLab.canInteract(installation.domain)) return true;
+		return false;
+	}
+	/** Audition the captured applied event, not the pending authoring buffer accepted by ordinary blur. */
+	public testEvent(input: AemEditorInput, event: AemSourceIdentity, isCurrent: () => boolean,
+		group: EditorGroupView, quickInput: QuickInputController): void {
+		if (!isCurrent()) return;
+		const name = event.property!.eventName!;
+		const choices = getTextFileRuntimeSourceInstallations(this.sources, input.workingCopy)
+			.filter(installation => installation.status === 'applied' && this.actorLab.canInteract(installation.domain))
+			.map(installation => ({ ...installation, label: `Physical ${installation.domain}`,
+				description: input.workingCopy.resource.contextLabel, detail: name }));
+		if (!isCurrent()) return;
+		const provider = new TextQuickPickProvider(choices);
+		quickInput.pick('AUDITION APPLIED EVENT', 'Choose the actual installed attachment', (_origin, lifetime) => {
+			if (!isCurrent()) quickInput.hide();
+			lifetime.add({ dispose: input.onWillDispose(() => quickInput.hide()) });
+			return provider;
+		}, choice => {
+			if (!isCurrent()) return;
+			const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
+			const rom = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.systemRom.bytes : this.sources.cartridgeSlots[choice.domain]?.rom.bytes;
+			if (image !== choice.image || rom !== choice.rom || !this.actorLab.canInteract(choice.domain) || !isCurrent()) return;
+			this.actorLab.auditionEvent(group, choice.domain, name);
+		});
 	}
 	public apply(input: AemEditorInput, quickInput: QuickInputController): void {
 		const resource = input.workingCopy.resource;
@@ -90,20 +135,26 @@ export class AemEditorController {
 	public audioIds(input: AemEditorInput): readonly string[] {
 		return [...this.sources.catalog.getAssetBindings(input.workingCopy.resource.contextId, 'audio').keys()];
 	}
-	public add(input: AemEditorInput, quickInput: QuickInputController): void {
-		const property = input.tree.rows[input.tree.selectionIndex]?.element ?? input.tree.roots[0].element;
-		const collection = property.node as StructuredCollection;
+	public add(input: AemEditorInput, identity: AemSourceIdentity, isCurrent: () => boolean, quickInput: QuickInputController): void {
+		const property = identity.property!, collection = property.node as StructuredCollection;
 		const format = aemDocumentFormat(input.workingCopy.resource.path);
-		const insertion = (value: string, name?: string) => createStructuredInsertionEdit(input.source, format, collection, value, name);
+		const insert = (value: string, name?: string): void => {
+			if (!isCurrent()) return;
+			projectAemSource(input);
+			if (!isCurrent() || !this.canAdd(input, identity.property)) return;
+			input.workingCopy.pushEditOperations([createStructuredInsertionEdit(input.source, format, identity.property!.node as StructuredCollection, value, name)]);
+			projectAemSource(input);
+		};
 		if (property.path.length === 1 && property.path[0] === 'events') {
 			quickInput.input('NEW AUDIO EVENT', 'Event name', 'game.effect', async name => {
-				if (collection.has(name)) throw new Error(`Event '${name}' already exists.`);
+				if (isCurrent() && (identity.property!.node as StructuredCollection).has(name)) throw new Error(`Event '${name}' already exists.`);
 				return name;
 			}, name => {
+				if (!isCurrent()) return;
 				quickInput.pick('EVENT AUDIO', 'Real cartridge audio asset', (_origin, lifetime) => {
 					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					return new TextQuickPickProvider(this.audioIds(input).map(id => ({ label: id, description: '', detail: '' })));
-				}, audio => input.workingCopy.pushEditOperations([insertion(JSON.stringify({ channel: 'sfx', rules: [{ go: { audio_id: audio.label } }] }), name)]));
+				}, audio => insert(JSON.stringify({ channel: 'sfx', rules: [{ go: { audio_id: audio.label } }] }), name));
 			}, lifetime => {
 				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 			});
@@ -113,7 +164,7 @@ export class AemEditorController {
 			const value = aemSequenceValueTemplate(property.path);
 			if (value !== undefined) {
 				quickInput.input('NEW VALUE', 'YAML / JSON value', value,
-					async text => insertion(text), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+					async text => insert(text), undefined, lifetime => {
 						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					});
 				return;
@@ -122,8 +173,9 @@ export class AemEditorController {
 				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 				return new TextQuickPickProvider(this.audioIds(input).map(id => ({ label: id, description: '', detail: '' })));
 			}, audio => {
-				quickInput.input('NEW AUDIO RULE / ACTION', 'YAML / JSON value', aemSequenceTemplate(property.path, audio.label),
-					async text => insertion(text), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+				if (!isCurrent()) return;
+				quickInput.input('NEW AUDIO RULE / ACTION', 'YAML / JSON value', aemSequenceTemplate(identity.property!.path, audio.label),
+					async text => insert(text), undefined, lifetime => {
 						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					});
 			});
@@ -136,19 +188,21 @@ export class AemEditorController {
 			lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 			return new TextQuickPickProvider(choices);
 		}, item => {
+			if (!isCurrent()) return;
 			if (item.name === 'audio_id') {
 				quickInput.pick('ACTION AUDIO', 'Real cartridge audio asset', (_origin, lifetime) => {
 					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					return new TextQuickPickProvider(this.audioIds(input).map(id => ({ label: id, description: '', detail: '' })));
-				}, audio => input.workingCopy.pushEditOperations([insertion(JSON.stringify(audio.label), item.name)]));
+				}, audio => insert(JSON.stringify(audio.label), item.name));
 				return;
 			}
 			if (item.name === '') {
 				quickInput.input('PROPERTY NAME', 'Authored map key', '', async name => {
-					if (collection.has(name)) throw new Error(`Property '${name}' already exists.`);
+					if (isCurrent() && (identity.property!.node as StructuredCollection).has(name)) throw new Error(`Property '${name}' already exists.`);
 					return name;
 				}, name => {
-					quickInput.input(name, 'YAML / JSON value', '{}', async text => insertion(text, name), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+					if (!isCurrent()) return;
+					quickInput.input(name, 'YAML / JSON value', '{}', async text => insert(text, name), undefined, lifetime => {
 						lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 					});
 				}, lifetime => {
@@ -157,18 +211,18 @@ export class AemEditorController {
 				return;
 			}
 			quickInput.input(item.name, 'YAML / JSON value', item.value,
-				async text => insertion(text, item.name), edit => input.workingCopy.pushEditOperations([edit]), lifetime => {
+				async text => insert(text, item.name), undefined, lifetime => {
 					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => quickInput.hide()) });
 				});
 		});
 	}
-	public remove(input: AemEditorInput): void {
-		const property = input.tree.rows[input.tree.selectionIndex].element;
+	public remove(input: AemEditorInput, property: AemProperty): void {
+		input.sourceSelection.select(undefined);
 		input.tree.selectionIndex = -1;
 		input.workingCopy.pushEditOperations([createStructuredRemovalEdit(input.source, property.parent!, property.index!)]);
+		projectAemSource(input);
 	}
-	public canAdd(input: AemEditorInput): boolean {
-		const property = input.tree.rows[input.tree.selectionIndex]?.element ?? input.tree.roots[0]?.element;
+	public canAdd(input: AemEditorInput, property: AemProperty | undefined): boolean {
 		return !input.workingCopy.readOnly && property !== undefined && (isMap(property.node) || isSeq(property.node));
 	}
 }

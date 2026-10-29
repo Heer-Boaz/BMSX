@@ -8,7 +8,7 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import { WORKBENCH_MENUS, type WorkbenchContextMenuId } from '../../ui/menu/registry';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { BehaviorLensNavigationSelection } from './navigation_selection';
-import { inputFocus, type InputFocusScope } from '../../../input/focus';
+import { inputFocus, type FocusCommandInvocation, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchGraphControl, WorkbenchGraphPointerResult } from '../../ui/graph/control';
 import { scrollWorkbenchList } from '../../ui/list_view';
@@ -121,21 +121,47 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 			run: () => { const interaction = this.input.runtimeInspection!.interaction; interaction.running = false; interaction.transport!.navigation.step(direction); },
 		});
 		this.focusTarget.registerCommand('behaviorLens.addProperty', {
-			isEnabled: () => !this.inspector.visible && editableActionEffect(this.input.view) !== undefined,
-			run: () => addActionEffectProperty(this.input.view, this.quickInput),
+			isEnabled: () => this.hasInput && !this.inspector.visible && editableActionEffect(this.input.view) !== undefined,
+			capture: () => {
+				const intent = this.captureSourceIntent('definition');
+				if (intent === undefined) return;
+				return { isEnabled: () => intent.isCurrent() && !this.inspector.visible && editableActionEffect(intent.input.view) !== undefined,
+					run: () => addActionEffectProperty(intent.input.view, this.quickInput, () => {
+						if (!intent.isCurrent()) return;
+						this.controller.updateView(intent.input);
+						return intent.isCurrent() ? editableActionEffect(intent.input.view) : undefined;
+					}) };
+			},
+			run: () => inputFocus.executeCommand('behaviorLens.addProperty', this.focusTarget),
 		});
 		this.focusTarget.registerCommand('behaviorLens.removeProperty', {
-			isEnabled: () => !this.inspector.visible && editableActionEffect(this.input.view) !== undefined
+			isEnabled: () => this.hasInput && !this.inspector.visible && editableActionEffect(this.input.view) !== undefined
 				&& selectedActionEffectProperty(this.input.view) !== undefined,
-			run: () => removeActionEffectProperty(this.input.view),
+			capture: () => this.captureSourceMutation(input => !this.inspector.visible && editableActionEffect(input.view) !== undefined
+				&& selectedActionEffectProperty(input.view) !== undefined, input => removeActionEffectProperty(input.view)),
+			run: () => inputFocus.executeCommand('behaviorLens.removeProperty', this.focusTarget),
 		});
 		this.focusTarget.registerCommand('behaviorLens.editProperty', {
 			isEnabled: () => {
-				if (this.inspector.visible) return false;
+				if (!this.hasInput || this.inspector.visible) return false;
 				const property = selectedActionEffectProperty(this.input.view);
 				return property !== undefined && !this.input.view.source.models.get(property.file.file)!.readOnly;
 			},
-			run: () => this.editProperty(),
+			capture: () => this.captureSourceMutation(input => {
+				const property = selectedActionEffectProperty(input.view);
+				return !this.inspector.visible && property !== undefined && !input.view.source.models.get(property.file.file)!.readOnly;
+			}, () => this.editProperty()),
+			run: () => inputFocus.executeCommand('behaviorLens.editProperty', this.focusTarget),
+		});
+		this.focusTarget.registerCommand('behaviorLens.testEffect', {
+			isEnabled: () => this.hasInput && this.controller.canTestEffect(this.input),
+			capture: () => {
+				const intent = this.captureSourceIntent('definition');
+				if (intent === undefined) return;
+				return { isEnabled: () => intent.isCurrent() && this.controller.canTestEffect(intent.input),
+					run: () => this.controller.testEffect(intent.input, this.group, this.quickInput, intent.isCurrent) };
+			},
+			run: () => inputFocus.executeCommand('behaviorLens.testEffect', this.focusTarget),
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.details', {
 			isEnabled: () => this.input.view.selectionState.selected !== null && !this.inspector.visible,
@@ -187,32 +213,50 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		}
 		for (const [command, direction] of [['behaviorLens.moveChildEarlier', -1], ['behaviorLens.moveChildLater', 1]] as const) this.graph.focusTarget.registerCommand(command, {
 			isEnabled: () => this.controller.canMoveSelectedChild(this.input, direction),
-			run: () => {
-				const input = this.input;
-				if (this.focusInput(input)) this.controller.moveSelectedChild(input, direction);
-			},
+			capture: () => this.captureSourceMutation(input => this.controller.canMoveSelectedChild(input, direction),
+				input => this.controller.moveSelectedChild(input, direction)),
+			run: () => inputFocus.executeCommand(command, this.graph.focusTarget),
 		});
 		this.graph.focusTarget.registerCommand('behaviorLens.duplicateChild', {
 			isEnabled: () => this.controller.canEditSelectedChild(this.input),
-			run: () => {
-				const input = this.input;
-				if (this.focusInput(input)) this.controller.duplicateSelectedChild(input);
-			},
+			capture: () => this.captureSourceMutation(input => this.controller.canEditSelectedChild(input), input => this.controller.duplicateSelectedChild(input)),
+			run: () => inputFocus.executeCommand('behaviorLens.duplicateChild', this.graph.focusTarget),
 		});
 		this.graph.focusTarget.registerCommand('behaviorLens.setInitialState', {
 			isEnabled: () => this.controller.canSetSelectedInitialState(this.input),
-			run: () => {
-				const input = this.input;
-				if (this.focusInput(input)) this.controller.setSelectedInitialState(input);
-			},
+			capture: () => this.captureSourceMutation(input => this.controller.canSetSelectedInitialState(input), input => this.controller.setSelectedInitialState(input)),
+			run: () => inputFocus.executeCommand('behaviorLens.setInitialState', this.graph.focusTarget),
 		});
 		this.graph.focusTarget.registerCommand('behaviorLens.removeChild', {
 			isEnabled: () => this.controller.canEditSelectedChild(this.input),
-			run: () => {
-				const input = this.input;
-				if (this.focusInput(input)) this.controller.removeSelectedChild(input);
-			},
+			capture: () => this.captureSourceMutation(input => this.controller.canEditSelectedChild(input), input => this.controller.removeSelectedChild(input)),
+			run: () => inputFocus.executeCommand('behaviorLens.removeChild', this.graph.focusTarget),
 		});
+	}
+
+	/** The input owns semantic intent; reparsing can replace its source nodes without replacing that intent. */
+	private captureSourceIntent(subject: 'selected' | 'definition'): { readonly input: BehaviorLensInput; isCurrent(): boolean } | undefined {
+		if (!this.hasInput) return;
+		const input = this.input, scope = this.focusTarget.scope, generation = scope.contextGeneration;
+		const owner = input.view.selectionState, definition = owner.definitionRevision, selection = owner.selectionRevision;
+		if (!owner.available || owner.definitionRowKey === null) return;
+		return { input, isCurrent: () => this.hasInput && this.input === input && scope.contextGeneration === generation
+			&& owner.available && owner.definitionRevision === definition && (subject === 'definition' || owner.selectionRevision === selection) };
+	}
+
+	/** Native source mutations settle this attachment before resolving its corresponding semantic target. */
+	private captureSourceMutation(enabled: (input: BehaviorLensInput) => boolean, run: (input: BehaviorLensInput) => void): FocusCommandInvocation | undefined {
+		const intent = this.captureSourceIntent('selected');
+		if (intent === undefined) return;
+		return { editScope: this.focusTarget.scope, isEnabled: () => {
+			if (!intent.isCurrent()) return false;
+			this.controller.updateView(intent.input);
+			return intent.isCurrent() && enabled(intent.input) && intent.isCurrent();
+		}, run: () => {
+			if (!intent.isCurrent() || !this.focusInput(intent.input) || !intent.isCurrent()) return;
+			this.controller.updateView(intent.input);
+			if (intent.isCurrent() && enabled(intent.input) && intent.isCurrent()) run(intent.input);
+		} };
 	}
 
 	protected override activate(): void {
@@ -420,7 +464,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 					parse: text => parseLuaFieldValueEdit(model.buffer, locations, property.field, text),
 					apply: value => { applyActionEffectPropertyEdit(input, property, value); this.controller.updateView(input); },
 				}, { edit: { offset: span.start, deleteLength: span.end - span.start, text: readLuaSourceRange(model.buffer, range) },
-					fieldRange: locations.range(property.field.span), expressionRange: range });
+					fieldRange: locations.range(property.field.span), expressionRange: range, expressionKind: property.field.value.kind, expressionOffset: 0, firstTokenOffset: 0 });
 				lifetime.add({ dispose: input.view.source.onDidInvalidate(() => this.propertyEdit.close()) });
 			}
 		}

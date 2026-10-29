@@ -18,26 +18,32 @@ const INITIAL_VALUES: Readonly<Record<string, string>> = {
 
 export function editableActionEffect(view: BehaviorLensViewState): ActionEffectSourceDefinition | undefined {
 	if (!view.source.isCurrent || !view.document.syntaxComplete || view.presentation.kind !== 'properties') return;
-	const definition = view.document.definitions.find(node => node.rowKey === view.selectionState.definitionRowKey);
+	const definition = view.selectionState.definitionRowKey === null ? undefined : view.source.definitionsByRowKey.get(view.selectionState.definitionRowKey);
 	if (definition?.behaviorKind !== 'action_effect' || definition.body === null || definition.body.issues !== SourceTableIssue.None) return;
 	return view.source.models.get(definition.body.file.file)!.readOnly ? undefined : definition;
 }
 
 /** Inserts into the written definition, including imported tables; never reconstructs it. */
-export function addActionEffectProperty(view: BehaviorLensViewState, quickInput: QuickInputController): void {
-	const definition = editableActionEffect(view)!;
-	const body = definition.body!;
-	const existing = new Set<string>(body.fields.flatMap(field => field.kind === 'unknown' ? [] : [field.name]));
-	const choices = [...ACTION_EFFECT_FIELDS].filter(([name]) => !existing.has(name)).map(([name, metadata]) => ({
-		label: metadata.label, description: name, detail: metadata.description, name,
-	}));
+export function addActionEffectProperty(view: BehaviorLensViewState, quickInput: QuickInputController,
+	resolveDefinition: () => ActionEffectSourceDefinition | undefined): void {
 	quickInput.pick('ADD EFFECT PROPERTY', 'Edits authored Lua; Save / Hot Resume applies it',
 		(_origin, lifetime) => {
+			// The chooser's ordinary blur publishes a field before its source choices are read.
+			const definition = resolveDefinition();
+			if (definition === undefined) { quickInput.hide(); return new TextQuickPickProvider([]); }
+			const existing = new Set<string>(definition.body!.fields.flatMap(field => field.kind === 'unknown' ? [] : [field.name]));
+			const choices = [...ACTION_EFFECT_FIELDS].filter(([name]) => !existing.has(name)).map(([name, metadata]) => ({
+				label: metadata.label, description: name, detail: metadata.description, name,
+			}));
 			lifetime.add({ dispose: view.source.onDidInvalidate(() => quickInput.hide()) });
 			return new TextQuickPickProvider(choices);
 		}, choice => {
+			if (resolveDefinition() === undefined) return;
 			quickInput.input(choice.label, 'Lua expression', INITIAL_VALUES[choice.name],
 				async text => validateLuaTableFieldExpression(text), value => {
+				const definition = resolveDefinition();
+				if (definition === undefined) return;
+				const body = definition.body!;
 				const model = view.source.models.get(body.file.file)!;
 				model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, body.file.chunk, body.table,
 					body.table.fields.length, [formatLuaTableFieldSource(choice.name, value)]));

@@ -20,6 +20,7 @@ import { parseLuaFieldValueEdit } from '../../ide/language/lua/field_value_edit'
 import { newLuaSource } from '../../ide/workbench/contrib/resources/create/source_templates';
 import { buildBehaviorSourceDocument } from '../../ide/workbench/contrib/behavior_lens/recognizer';
 import { programEntryTemplate, programFieldTemplates } from '../../ide/workbench/contrib/lua_program/schema';
+import { LuaProgramSourceSelection } from '../../ide/workbench/contrib/lua_program/source_selection';
 
 function project(source: string, imports: readonly { path: string; source: string }[] = []) {
 	const file = buildResourceLuaSemanticFixtureFile(source, { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'entry.lua' });
@@ -31,7 +32,7 @@ function project(source: string, imports: readonly { path: string; source: strin
 		source: { resid: file.resource.path, type: 'lua' } }, 'lua', file.source)]));
 	const occurrence = collectLuaPrograms(file.resource, snapshot)[0];
 	const tree = createWorkbenchPropertyTree<LuaProgramProperty>();
-	if (occurrence !== undefined) projectLuaProgram(tree, occurrence, new LuaSourceReader(snapshot), file => models.get(file.file)!);
+	if (occurrence !== undefined) projectLuaProgram(tree, occurrence, new LuaSourceReader(snapshot), file => models.get(file.file)!, models, new LuaProgramSourceSelection(), () => true);
 	return { occurrence, snapshot, tree, models };
 }
 

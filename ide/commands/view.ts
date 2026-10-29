@@ -1,5 +1,5 @@
 import type { EditorGroupView } from '../workbench/services/editor/editor_group';
-import type { EditorInput } from '../workbench/common/editor_inputs';
+import type { EditorCommandDocument } from './context';
 import { openHome } from '../workbench/contrib/home/editor_input';
 import { workspaceState } from '../workbench/workspace/state';
 import type { RuntimeFaultState } from '../runtime/fault_state';
@@ -14,7 +14,7 @@ import { openTerminal } from '../workbench/contrib/terminal/editor_input';
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
-import { openSourceView } from '../workbench/contrib/source_views/quick_access';
+import { captureSourceViewOpening, openSourceView } from '../workbench/contrib/source_views/quick_access';
 import { hasSceneSourceDefinitions } from '../workbench/contrib/scene_editor/source';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { showOpenEditors } from '../workbench/services/editor/open_editors';
@@ -55,11 +55,15 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 	}
 }
 
-export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView, input?: EditorInput): void {
+export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSourceState, fault: RuntimeFaultState, command: EditorViewCommandId, group: EditorGroupView, document?: EditorCommandDocument): void {
 	const picker = editor.editorParts.partForGroup(group).quickInput;
 	switch (command) {
 		case 'home': openHome(group, workspaceState.context); return;
-		case 'animation': editor.animations.open(group, picker); return;
+		case 'animation': {
+			const source = document === undefined ? undefined : captureSourceViewOpening(document.group, document.input, group);
+			if (source !== null) editor.animations.open(group, picker, source);
+			return;
+		}
 		case 'hostError': openHostError(group, fault.hostFrameFailure!); return;
 		case 'romInspector': openRomInspector(group, picker, sources); return;
 		case 'events': openEventViewer(group, editor.events); return;
@@ -86,7 +90,7 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 			editor.behaviorLens.open(group, picker, null, { pinned: false });
 			return;
 		case 'keepEditor':
-			group.model.pin(input === undefined ? group.model.activeTab : input);
+			if (document !== undefined) document.group.model.pin(document.input);
 			return;
 		case 'openEditors': showOpenEditors(editor.editorParts, editor.quickInput); return;
 		case 'behaviorLens.actionEffects':
@@ -98,19 +102,26 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'behaviorLens.behaviorTrees':
 			editor.behaviorLens.open(group, picker, 'behavior_tree');
 			return;
-		case 'cartMap': editor.cartMaps.open(group, picker); return;
+		case 'cartMap': {
+			const source = document === undefined ? undefined : captureSourceViewOpening(document.group, document.input, group);
+			if (source !== null) editor.cartMaps.open(group, picker, source);
+			return;
+		}
 		case 'aem': editor.aemEditor.open(group, picker); return;
 		case 'progression': editor.luaPrograms.open(group, picker, 'progression'); return;
 		case 'inputBindings': editor.luaPrograms.open(group, picker, 'input'); return;
 		case 'scenarioLab':
 			editor.scenarioLab.open(group);
 			return;
-		case 'sceneEditor':
+		case 'sceneEditor': {
+			const source = document === undefined ? undefined : captureSourceViewOpening(document.group, document.input, group);
+			if (source === null) return;
 			openSourceView(group, sources.catalog, picker, {
 				title: 'SCENE EDITOR', accepts: hasSceneSourceDefinitions,
 				openResource: (resource, options) => editor.sceneEditor.openResource(group, resource, options),
-			});
+			}, source?.model.mode === 'lua' ? source : undefined);
 			return;
+		}
 		case 'filter':
 			editor.resourcePanel.toggleFilterMode();
 			return;

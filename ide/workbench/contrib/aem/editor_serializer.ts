@@ -20,6 +20,7 @@ export class AemEditorInputSerializer implements EditorInputSerializer<AemEditor
 		projectAemSource(input);
 		if (sameSource) {
 			restoreWorkbenchTreeView(input.tree, state.view, element => element.key);
+			input.sourceSelection.restore(input.tree.rows[input.tree.selectionIndex]?.element.sourceIdentity);
 		}
 		return input;
 	}

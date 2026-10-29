@@ -41,7 +41,7 @@ test('Play Source reuses the authored document view without replacing its main P
 	const input = new PlayEditorInput(handle, f.ide.play), main = f.editor.editorParts.main;
 	main.activeGroup.openEditor(input); f.update();
 	const pane = main.activeGroup.panes.activePane;
-	f.editor.commands.execute('play.source', pane!.commandTarget); await setImmediate(); f.update();
+	f.editor.commands.execute('editor.source', pane!.commandTarget); await setImmediate(); f.update();
 	assert.ok(main.activeGroup.model.activeTab === input && main.activeGroup.panes.activePane === pane);
 	assert.ok(f.editor.editorParts.activeGroup === f.firstGroup);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);

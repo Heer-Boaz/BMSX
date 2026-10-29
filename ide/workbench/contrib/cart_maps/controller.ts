@@ -3,7 +3,6 @@ import { DisposableStore } from '../../../common/lifecycle';
 import type { RuntimeResource } from '../../../common/resource';
 import { editorTextModelService } from '../../../editor/model/model_service';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
-import { TextEditorInput } from '../../common/editor_input';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { FileQuickPickProvider } from '../../services/quick_input/file_provider';
@@ -12,6 +11,7 @@ import type { EditorSourceLocation } from '../../../editor/navigation/source_loc
 import { buildResourceQuickPickItems } from '../resources/quick_access';
 import { CartMapInput, type CartMapKind } from './editor_input';
 import { projectCartMap } from './source_projection';
+import type { SourceViewOpening } from '../source_views/quick_access';
 
 /** Explicit authored-resource associations, not a schema guessed from a cooked asset. */
 export const CART_MAP_SOURCES: readonly { suffix: string; kind: CartMapKind }[] = [
@@ -30,11 +30,10 @@ export async function resolveCartMapInput(catalog: WorkspaceSourceCatalog, resou
 
 export class CartMapController {
 	public constructor(private readonly catalog: WorkspaceSourceCatalog) {}
-	public open(group: EditorGroupView, quickInput: QuickInputController): void {
-		const active = group.model.activeTab;
-		if (active instanceof TextEditorInput) {
-			const kind = cartMapKind(active.workingCopy.resource);
-			if (kind !== undefined) { this.openResource(group, active.workingCopy.resource, kind); return; }
+	public open(group: EditorGroupView, quickInput: QuickInputController, source?: SourceViewOpening): void {
+		if (source !== undefined) {
+			const kind = cartMapKind(source.model.resource);
+			if (kind !== undefined) { this.openResource(group, source.model.resource, kind, source.options); return; }
 		}
 		quickInput.pick('MAP EDITOR', 'Authored room objects / stage markers', (_origin, lifetime) => {
 			const retire = () => quickInput.hide();

@@ -889,6 +889,21 @@ test('input boxes share focus and text history without filtering a hidden picker
 	assert.equal(input.field.readOnly, false);
 });
 
+test('input submission owns an operation without requiring a navigation callback', async t => {
+	const input = createPicker(t), origin = inputFocus.createTarget(); origin.focus();
+	const completion = Promise.withResolvers<void>();
+	let submissions = 0;
+	input.input('OPERATION', '', '', () => { submissions++; return completion.promise; });
+	const pending = input.accept();
+	await input.accept();
+	assert.equal(submissions, 1);
+	assert.equal(input.visible, true);
+	completion.resolve();
+	await pending;
+	assert.equal(input.visible, false);
+	assert.equal(inputFocus.target, origin);
+});
+
 test('input submission shows failure in place, releases busy state and accepts a corrected value', async t => {
 	const input = createPicker(t);
 	let calls = 0, accepted = '';

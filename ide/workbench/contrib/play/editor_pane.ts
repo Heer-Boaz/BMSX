@@ -30,8 +30,9 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { PlayController } from './controller';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
+import type { EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 
-const COMMANDS = ['play.reveal', 'play.actors', 'play.stop', 'play.reset', 'play.source', 'play.breakpoints',
+const COMMANDS = ['play.actors', 'play.stop', 'play.reset', 'play.breakpoints',
 	'play.continue', 'play.stepInto', 'play.stepOver', 'play.stepOut'] as const;
 
 /** A completed bitmap and physical input recipient from the same independent Play target. */
@@ -47,7 +48,9 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	private readonly actions: WorkbenchActionBarControl;
 	private unbindHandle: (() => void) | undefined;
 	private readonly details = new WorkbenchPropertyInspector<PlayDetailsProperty>(inputFocus, pointerCapture, pointerHover, this.focusTarget);
-	public constructor(private readonly commands: IdeCommandController, controller: PlayController, private readonly contextMenu: ContextMenuController,
+	public override getSourceLocation() { return this.controller.captureSourceLocation(this.input).readLocation(); }
+	public override captureSourceLocation(): EditorSourceLocationRequest { return this.controller.captureSourceLocation(this.input); }
+	public constructor(private readonly commands: IdeCommandController, private readonly controller: PlayController, private readonly contextMenu: ContextMenuController,
 		navigation: EditorNavigationController, group: EditorGroupView, picker: QuickInputController, scope: InputFocusScope) {
 		super(scope);
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus());
@@ -55,20 +58,40 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		this.actions.focusTarget.next = this.focusTarget; this.actions.focusTarget.previous = this.focusTarget;
 		for (const command of COMMANDS) this.focusTarget.registerCommand(command, {
 			isEnabled: () => this.hasInput && controller.isCommandEnabled(command, this.input),
-			run: () => controller.execute(command, this.input, group, picker),
+			capture: () => {
+				if (!this.hasInput) return;
+				const intent = controller.captureCommand(command, this.input);
+				if (intent === undefined) return;
+				const scope = this.focusTarget.scope, generation = scope.contextGeneration;
+				const current = () => this.hasInput && this.input === intent.input && scope.contextGeneration === generation
+					&& intent.input.isBindingCurrent(intent.handle, intent.binding);
+				return { editScope: command === 'play.reset' ? scope : undefined,
+					isEnabled: () => current() && controller.isCommandInvocationEnabled(intent) && current(),
+					run: () => { if (current()) controller.executeCommand(intent, group, picker, current); } };
+			},
+			run: () => inputFocus.executeCommand(command, this.focusTarget),
 		});
 		this.focusTarget.registerCommand('play.more', { isEnabled: () => this.hasInput, run: () => {
 			const bounds = this.input.actionBar.items.find(item => item.command === 'play.more')!.bounds;
 			this.contextMenu.show(bounds.left, bounds.bottom, WORKBENCH_MENUS['play.context'], commands,
 				{ selectFirst: true, invocationOrigin: this.actions.focusTarget, commandTarget: this.focusTarget });
 		} });
-		this.focusTarget.registerCommand('play.details', { isEnabled: () => this.hasInput, run: () => {
-			this.details.show({ title: 'Play session', items: describePlaySession(this.input.handle),
-				canOpenSource: item => item.location !== undefined,
-				openSource: item => navigation.focusChunkSourceForContext(group, item.location!.resource.contextId, item.location!.resource.path,
-					{ row: item.location!.line - 1, startColumn: item.location!.column - 1, endColumn: item.location!.column - 1 }),
-			});
-		} });
+		this.focusTarget.registerCommand('play.details', { isEnabled: () => this.hasInput, capture: () => {
+			if (!this.hasInput) return;
+			const input = this.input, handle = input.handle, binding = input.bindingRevision;
+			const scope = this.focusTarget.scope, generation = scope.contextGeneration;
+			const current = () => this.hasInput && this.input === input && scope.contextGeneration === generation && input.isBindingCurrent(handle, binding);
+			return { isEnabled: current, run: () => {
+				if (!current()) return;
+				this.details.show({ title: 'Play session', items: describePlaySession(handle),
+					canOpenSource: item => current() && item.location !== undefined,
+					openSource: item => {
+						if (current()) navigation.focusChunkSourceForContext(group, item.location!.resource.contextId, item.location!.resource.path,
+							{ row: item.location!.line - 1, startColumn: item.location!.column - 1, endColumn: item.location!.column - 1 });
+					},
+				});
+			} };
+		}, run: () => inputFocus.executeCommand('play.details', this.focusTarget) });
 		this.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.hasInput
 			&& this.contentBounds.left < this.contentBounds.right && this.contentBounds.top < this.contentBounds.bottom,
 			run: () => this.openContextMenu(this.contentBounds.left, this.contentBounds.top, true) });

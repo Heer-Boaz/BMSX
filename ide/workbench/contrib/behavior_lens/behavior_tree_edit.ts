@@ -8,14 +8,15 @@ import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_
 import { createLuaTableFieldTransfer } from '../../../language/lua/table_field_transfer';
 import type { BehaviorTreeTransferCheck } from './behavior_tree_transfer';
 import { behaviorSourceEditState, captureBehaviorSourceBookmark, mapBehaviorSourceBookmark } from './source_bookmark';
+import { indexBehaviorTreeSource } from './behavior_tree_index';
 
-/** Constant-time command admission from the current projection's source evidence. */
+/** Commands consume semantic membership independently of a graph generation. */
 export function behaviorTreeEditTarget(view: BehaviorLensViewState): BehaviorTreeSourceMember | null {
-	if (!view.document.syntaxComplete || view.presentation.kind !== 'graph') return null;
-	const selection = view.presentation.viewport.selection;
-	if (selection === null) return null;
-	const member = (selection.kind === 'node' ? selection : selection.child).member;
-	return member;
+	if (!view.source.isCurrent || !view.document.syntaxComplete || view.presentation.kind !== 'graph') return null;
+	const selection = view.selectionState.selected;
+	if (selection === null || selection.kind !== 'node' && selection.kind !== 'tree-edge') return null;
+	const definition = view.selectionState.definitionRowKey === null ? undefined : view.source.definitionsByRowKey.get(view.selectionState.definitionRowKey);
+	return definition?.behaviorKind === 'behavior_tree' ? indexBehaviorTreeSource(definition).members.get(selection.rowKey) ?? null : null;
 }
 
 export function behaviorTreeMoveTarget(view: BehaviorLensViewState, direction: -1 | 1): BehaviorTreeSourceMember | undefined {

@@ -58,12 +58,14 @@ import type { HostRewind } from '../../../../hosts/common/rewind';
 import { BehaviorRuntimeInspection, type BehaviorRuntimeSelection } from './runtime_inspection';
 import type { RuntimeTransport } from '../../../runtime/transport';
 import { captureBehaviorLensView, restoreBehaviorLensView } from './view_snapshot';
+import type { ActorLabController } from '../actor_lab/controller';
 
 const PICKER_TITLES: Readonly<Record<BehaviorKind, string>> = {
 	action_effect: 'ACTIONEFFECTS',
 	state_machine: 'STATE MACHINES',
 	behavior_tree: 'BEHAVIOR TREES',
 };
+const RUNTIME_DOMAINS = [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const;
 
 /** Workbench contribution for source-derived behavior topology. Inputs own every view. */
 export class BehaviorLensController {
@@ -75,6 +77,7 @@ export class BehaviorLensController {
 		private readonly guest: SuspendedGuestSession,
 		private readonly rewind: HostRewind,
 		private readonly transport: RuntimeTransport,
+		private readonly actorLab: ActorLabController,
 	) {}
 
 	public readonly createView = (source: BehaviorLensInput): BehaviorLensInput => {
@@ -221,6 +224,38 @@ export class BehaviorLensController {
 		const path = resourceIdentityKey(model.identity), file = view.document.files.find(file => file.file === path)!;
 		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId);
 		return luaSourceLocation(project, model, file, range);
+	}
+
+	public canTestEffect(input: BehaviorLensInput): boolean {
+		if (input.view.presentation.kind !== 'properties' || input.view.selectionState.definitionRowKey === null) return false;
+		for (const domain of RUNTIME_DOMAINS) {
+			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+			if (image !== null && image.sourceContextId === input.workingCopy.resource.contextId && this.actorLab.canInteract(domain)) return true;
+		}
+		return false;
+	}
+
+	/** The source definition and chosen physical attachment remain independent authorities. */
+	public testEffect(input: BehaviorLensInput, group: EditorGroupView, quickInput: QuickInputController, isCurrent: () => boolean): void {
+		if (!isCurrent()) return;
+		const choices: Array<{ domain: ResourceDomain; image: Blua32SourceImage; label: string; description: string; detail: string }> = [];
+		for (const domain of RUNTIME_DOMAINS) {
+			const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
+			if (image === null || image.sourceContextId !== input.workingCopy.resource.contextId || !this.actorLab.canInteract(domain)) continue;
+			choices.push({ domain, image, label: `Physical ${domain}`, description: input.workingCopy.resource.contextLabel,
+				detail: 'Choose a granted runtime effect on this attachment' });
+		}
+		quickInput.pick('TEST GRANTED EFFECT', 'Choose the actual installed attachment', (_origin, lifetime) => {
+			if (isCurrent()) this.updateView(input);
+			if (!isCurrent()) quickInput.hide();
+			lifetime.add({ dispose: input.onWillDispose(() => quickInput.hide()) });
+			return new TextQuickPickProvider(choices);
+		}, choice => {
+			if (!isCurrent()) return;
+			this.updateView(input);
+			const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
+			if (isCurrent() && image === choice.image && this.actorLab.canInteract(choice.domain)) this.actorLab.testEffect(group, choice.domain);
+		}, lifetime => lifetime.add({ dispose: group.onWillDispose(() => quickInput.hide()) }));
 	}
 
 	public inspectRuntimeEffect(group: EditorGroupView, quickInput: QuickInputController, input: BehaviorLensInput, inspector: WorkbenchPropertyInspector<BehaviorInspectionProperty>): void {
@@ -380,19 +415,16 @@ export class BehaviorLensController {
 	}
 
 	public canMoveSelectedChild(input: BehaviorLensInput, direction: -1 | 1): boolean {
-		if (!input.view.source.isCurrent) return false;
 		const member = behaviorTreeMoveTarget(input.view, direction);
 		return member !== undefined && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
 	public canEditSelectedChild(input: BehaviorLensInput): boolean {
-		if (!input.view.source.isCurrent) return false;
 		const member = behaviorTreeEditTarget(input.view);
 		return member !== null && !input.view.source.models.get(member.file.file)!.readOnly;
 	}
 
 	public canSetSelectedInitialState(input: BehaviorLensInput): boolean {
-		if (!input.view.source.isCurrent) return false;
 		const target = stateMachineInitialTarget(input.view);
 		return target !== undefined && !input.view.source.models.get(target.owner.file.file)!.readOnly;
 	}

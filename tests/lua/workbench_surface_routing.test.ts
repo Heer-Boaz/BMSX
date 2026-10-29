@@ -493,6 +493,7 @@ function aemPointerFixture(t: TestContext) {
 	const pane = f.firstGroup.panes.activePane!, target = pane.commandTarget, tree = input.tree;
 	const selectedKey = JSON.stringify(['events', 'story', 'channel']), offeredKey = JSON.stringify(['events', 'impact']);
 	tree.selectionIndex = tree.rows.findIndex(row => row.element.key === selectedKey);
+	input.sourceSelection.select(tree.rows[tree.selectionIndex].element.sourceIdentity);
 	const offeredIndex = tree.rows.findIndex(row => row.element.key === offeredKey), offered = tree.rows[offeredIndex];
 	assert.ok(offered !== undefined && offered.expandable && !offered.collapsed && offeredIndex < tree.layout.visibleRowCount);
 	f.update(); f.second.focus(); assert.ok(inputFocus.admittedTarget === f.second.commandTarget);

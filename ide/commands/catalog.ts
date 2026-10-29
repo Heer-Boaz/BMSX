@@ -314,7 +314,6 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'play.actors': { category: 'Play', title: 'Inspect Actors', shortTitle: 'Actors' },
 	'play.stop': { category: 'Play', title: 'Stop Fixture', shortTitle: 'Stop' },
 	'play.reset': { category: 'Play', title: 'Reset from Current Source', shortTitle: 'Reset' },
-	'play.source': { category: 'Play', title: 'Open Fixture Source', shortTitle: 'Source' },
 	'play.breakpoints': { category: 'Play', title: 'Compiled Sources and Breakpoints', shortTitle: 'Breakpoints' },
 	'play.continue': { category: 'Play', title: 'Continue Source Execution', shortTitle: 'Continue' },
 	'play.stepInto': { category: 'Play', title: 'Step Into Source', shortTitle: 'Into' },

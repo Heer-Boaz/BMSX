@@ -41,7 +41,7 @@ function fixture(t: TestContext, source = PROGRAM, dependencies = [createScenari
 	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
 	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	const guest = new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload()));
-	const aem = new AemEditorController(sources, guest, null!, null!);
+	const aem = new AemEditorController(sources, guest, null!, null!, null!);
 	const programs = new LuaProgramController(sources, guest, null!, null!);
 	t.after(() => {
 		picker.dispose(); menu.dispose(); first.dispose(); second.dispose();
@@ -197,7 +197,7 @@ trees.register('same', { root = { type = 'wait', duration_ticks = 2 } })`;
 	const f = fixture(t, source, [createScenarioTestSourceRecord('cartlib/behaviour_tree/library.lua', 1, '')]);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, f.sources.catalog);
 	const controller = new BehaviorLensController(f.sources, null!, documents,
-		() => assert.fail('matching behavior trees does not create a graph worker'), f.guest, null!, null!);
+		() => assert.fail('matching behavior trees does not create a graph worker'), f.guest, null!, null!, null!);
 	const registrations = documents.registrations.getRegistrations(f.resource.contextId);
 	assert.equal(registrations.length, 2);
 	const first = controller.openDefinition(f.first, registrations[0]), second = controller.openDefinition(f.second, registrations[1]);

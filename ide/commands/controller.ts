@@ -21,6 +21,7 @@ import { editorViewState } from '../editor/ui/view/state';
 import type { EditorActionRequest } from './action_request';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
 import { executeEditorViewCommand, isEditorViewCommand } from './view';
+import { resolveEditorCommandGroup } from './context';
 import { captureEditorWorkspaceCommand, isEditorWorkspaceCommand, isEditorWorkspaceCommandEnabled } from './workspace';
 import { performEditorAction } from './actions';
 import { editorTextModelService } from '../editor/model/model_service';
@@ -38,30 +39,13 @@ import { deactivateEditor } from '../workbench/overlay_modes';
 import { inputFocus, type FocusCommandInvocation, type InputFocusTarget } from '../input/focus';
 import { showServerConnection } from '../workbench/contrib/server/connection';
 import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
-import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../common/resource';
 import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
-import type { Blua32SourceImage } from '../runtime/sources';
-import { getTextFileRuntimeSourceInstallations } from '../workbench/services/working_copy/runtime_source_status';
 import { showMoveDestination } from '../workbench/services/editor/open_windows';
 import { showOpenWindows } from '../workbench/ui/window/picker';
 import { findWorkbenchWindowSurface, minimizedWorkbenchWindowCount, workbenchWindowForSurface } from '../workbench/ui/window/control';
 import { showGroupOpenEditors } from '../workbench/services/editor/open_editors';
 import { workspaceState } from '../workbench/workspace/state';
 import { WORKBENCH_VIEW_RESIZE_COMMANDS, canResizeWorkbenchView, resizeWorkbenchView } from './layout';
-
-// Source-consuming commands accept the concrete control's value before dirty
-// model selection, prompts or asynchronous source capture (Godot EditorData).
-const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'play.reset', 'play.source',
-	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
-	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
-	'animation',
-	'aem.edit', 'aem.add', 'aem.remove', 'aem.apply', 'aem.testEvent',
-	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove',
-	'luaProgram.testInput', 'input.testActionString',
-	'behaviorLens.addProperty', 'behaviorLens.removeProperty',
-	'sceneEditor',
-]);
 
 export class IdeCommandController {
 	private readonly editorConstraints: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
@@ -97,23 +81,17 @@ export class IdeCommandController {
 		if (originPart === null) return;
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		const part = this.editor.editorParts.partForGroup(group);
+		const documentGroup = resolveEditorCommandGroup(this.editor, target, input);
+		if (documentGroup === null || input !== undefined && documentGroup === undefined) return;
 		const implementation = input === undefined ? target?.resolveCommand(command) : undefined;
 		const workspaceCommand = isEditorWorkspaceCommand(command) ? command : undefined;
 		if (implementation !== undefined || workspaceCommand !== undefined) {
 			let invocation: FocusCommandInvocation | undefined;
 			if (implementation !== undefined) invocation = implementation.capture === undefined ? implementation : implementation.capture();
 			else {
-				const commandGroup = target === invocationTarget ? originGroup : findEditorGroup(target);
-				const commandPart = target === invocationTarget ? originPart : this.editor.editorParts.partForTarget(target);
-				if (commandGroup === null || commandPart === null) return;
-				const documentGroup = input !== undefined ? this.editor.editorParts.findGroup(input) : commandGroup
-					?? (this.editor.mainWorkspace.isPrimaryTarget(target) || this.editor.mainWorkspace.isActivityTarget(target)
-						? undefined : commandPart?.activeGroup ?? this.editor.editorParts.activeGroup);
-				if (input !== undefined && documentGroup === undefined) return;
-				const document = documentGroup === undefined ? undefined
-					: { group: documentGroup, input: input === undefined ? documentGroup.model.activeTab : input };
 				invocation = captureEditorWorkspaceCommand(this.editor, this.sources, this.hotResumes, this.boots, this.execution,
-						this.overlayRenderer, this.clock, this.logOutput, this.textFileSaves, workspaceCommand!, group, document,
+						this.overlayRenderer, this.clock, this.logOutput, this.textFileSaves, workspaceCommand!, group, documentGroup === undefined ? undefined
+							: { group: documentGroup, input: input === undefined ? documentGroup.model.activeTab : input },
 						this.runTargets, this.runtimeTasks, target);
 			}
 			if (invocation === undefined) return;
@@ -121,7 +99,7 @@ export class IdeCommandController {
 				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
 			// A concrete widget owns its draft even when it is not an editor-group
 			// child. Resolving the later active group must not choose this authority.
-			const scope = invocation.editScope ?? (SOURCE_COMMANDS.has(command) ? target?.commandContext.scope : undefined);
+			const scope = invocation.editScope;
 			if (scope !== undefined) {
 				const subjectGroup = findEditorGroup(target), attachment = subjectGroup?.panes.openGeneration;
 				if (!inputFocus.commitEdit(scope) || attachment !== subjectGroup?.panes.openGeneration) return;
@@ -134,7 +112,6 @@ export class IdeCommandController {
 			invocation.run(originGroup?.focusTarget);
 			return;
 		}
-		if (input !== undefined && !group.model.contains(input)) return;
 		// Named regions settle only their own input at the Main owner; an unrelated document draft is not their subject.
 		const activityId = this.editor.mainWorkspace.activities.idForCommand(command);
 		if (activityId !== undefined) {
@@ -161,6 +138,12 @@ export class IdeCommandController {
 			case 'workspace.hierarchy.toggle': this.editor.mainWorkspace.toggleRegion('hierarchy'); return;
 			case 'workspace.details.toggle': this.editor.mainWorkspace.toggleRegion('details'); return;
 		}
+		if (isEditorViewCommand(command)) {
+			executeEditorViewCommand(this.editor, this.sources, this.fault, command, group, documentGroup === undefined ? undefined
+				: { group: documentGroup, input: input === undefined ? documentGroup.model.activeTab : input });
+			return;
+		}
+		if (input !== undefined && !group.model.contains(input)) return;
 		if (command === 'editor.source' || command === 'editor.sourceToSide') {
 			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
 				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
@@ -180,17 +163,6 @@ export class IdeCommandController {
 		const runtimeContext = target?.scope.runtimeOwner?.runtime;
 		const local = runtimeContext?.interaction;
 		const transport = local === undefined ? selected?.transport : local.transport;
-		// Committing the focused draft and choosing an action's target are distinct.
-		// Pointer actions retain field focus but invoke their own explicit context.
-		if (SOURCE_COMMANDS.has(command)) {
-			const focused = inputFocus.target;
-			const edit = findEditorGroup(focused) === group && (input === undefined || input === group.model.activeTab) ? focused?.edit : undefined;
-			if (edit !== undefined) {
-				const attachment = group.panes.openGeneration;
-				if (!edit.commit() || attachment !== group.panes.openGeneration) return;
-				if (inputFocus.target !== null && findEditorGroup(inputFocus.target) !== group) return;
-			}
-		}
 		if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration
 			|| invocationScope?.contextGeneration !== invocationGeneration || input !== undefined && !group.model.contains(input)) return;
 		const editor = input === undefined ? group.model.activeTab : input;
@@ -234,13 +206,7 @@ export class IdeCommandController {
 				if (implementation?.isEnabled()) implementation.run();
 				return;
 			}
-			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
-			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut': {
-				const active = group.model.activeTab;
-				const input = active?.kind === 'play_session' ? active : this.editor.play.input;
-				if (input !== undefined) this.editor.play.execute(command, input, group, part.quickInput);
-				return;
-			}
+			case 'play.reveal': this.editor.play.revealCurrent(group); return;
 			case 'copy': case 'cut': case 'paste':
 				void executeClipboardAction(this.editor.clipboard, command, target);
 				return;
@@ -262,48 +228,13 @@ export class IdeCommandController {
 			case 'assistant.stop':
 				this.editor.assistantCommands.execute(command, group, part.quickInput);
 				return;
-			case 'aem.testEvent': {
-				const input = group.model.activeTab!;
-				if (input.kind !== 'aem_editor') return;
-				const property = input.tree.rows[input.tree.selectionIndex].element, event = property.path[1] as string;
-				const choices = getTextFileRuntimeSourceInstallations(this.sources, input.workingCopy)
-					.filter(installation => installation.status === 'applied' && this.editor.actorLab.canInteract(installation.domain))
-					.map(installation => ({ ...installation, label: `Physical ${installation.domain}`, description: input.workingCopy.resource.contextLabel, detail: event }));
-				part.quickInput.pick('AUDITION APPLIED EVENT', 'Choose the actual installed attachment', (_origin, lifetime) => {
-					lifetime.add({ dispose: input.onWillDispose(() => part.quickInput.hide()) });
-					lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => part.quickInput.hide()) });
-					return new TextQuickPickProvider(choices);
-				}, choice => {
-					const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
-					if (image === choice.image) this.editor.actorLab.auditionEvent(group, choice.domain, event);
-				});
-				return;
-			}
 			case 'input.testActionString': {
-				const resource = group.model.activeTab?.resource;
+				const resource = (input === undefined ? documentGroup?.model.activeTab : input)?.resource;
 				if (resource !== undefined && this.editor.actionStrings.canStart(resource.contextId)) { this.editor.actionStrings.open(resource.contextId, group, part.quickInput); return; }
 				const contexts = [...this.sources.catalog.contexts.values()].filter(context => this.editor.actionStrings.canStart(context.id));
 				part.quickInput.pick('INPUT EXPERIMENT PROJECT', 'Choose the authored project', () => new TextQuickPickProvider(contexts.map(context => ({
 					label: context.projectRootPath, description: context.programDomain, detail: '', contextId: context.id,
 				}))), item => this.editor.actionStrings.open(item.contextId, group, part.quickInput));
-				return;
-			}
-			case 'behaviorLens.testEffect': {
-				const input = group.model.activeTab!;
-				if (input.kind !== 'behavior_lens') return;
-				const choices: Array<{ domain: ResourceDomain; image: Blua32SourceImage; label: string; description: string; detail: string }> = [];
-				for (const domain of [SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const) {
-					const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
-					if (image === null || image.sourceContextId !== input.workingCopy.resource.contextId || !this.editor.actorLab.canInteract(domain)) continue;
-					choices.push({ domain, image, label: `Physical ${domain}`, description: input.workingCopy.resource.contextLabel, detail: 'Choose a granted runtime effect on this attachment' });
-				}
-				part.quickInput.pick('TEST GRANTED EFFECT', 'Choose the actual installed attachment', (_origin, lifetime) => {
-					lifetime.add({ dispose: input.onWillDispose(() => part.quickInput.hide()) });
-					return new TextQuickPickProvider(choices);
-				}, choice => {
-					const image = choice.domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[choice.domain];
-					if (image === choice.image) this.editor.actorLab.testEffect(group, choice.domain);
-				});
 				return;
 			}
 			case 'progression.createProgram': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'progression'); return;
@@ -418,10 +349,6 @@ export class IdeCommandController {
 			executeEditorSearchCommand(this.editor, this.sources, command, group, invocationTarget, this.clock);
 			return;
 		}
-		if (isEditorViewCommand(command)) {
-			executeEditorViewCommand(this.editor, this.sources, this.fault, command, group, input);
-			return;
-		}
 	}
 
 	public async executeConfirmedAction(
@@ -473,12 +400,9 @@ export class IdeCommandController {
 		const transport = local === undefined ? selected?.transport : local.transport;
 		const editor = input === undefined ? group.model.activeTab : input;
 		if (isEditorWorkspaceCommand(command)) {
-			const documentGroup = input !== undefined ? this.editor.editorParts.findGroup(input) : originGroup
-				?? (this.editor.mainWorkspace.isPrimaryTarget(focus) || this.editor.mainWorkspace.isActivityTarget(focus)
-					? undefined : originPart?.activeGroup ?? this.editor.editorParts.activeGroup);
-			if (input !== undefined && documentGroup === undefined) return false;
-			return isEditorWorkspaceCommandEnabled(command, documentGroup,
-				input === undefined ? documentGroup?.model.activeTab : input,
+			const documentGroup = resolveEditorCommandGroup(this.editor, focus, input);
+			if (documentGroup === null || input !== undefined && documentGroup === undefined) return false;
+			return isEditorWorkspaceCommandEnabled(command, documentGroup, input === undefined ? documentGroup?.model.activeTab : input,
 				this.sources, this.textFileSaves, this.hotResumes, this.boots, this.execution, this.runtimeTasks);
 		}
 		if (input !== undefined && !group.model.contains(input)) return false;
@@ -518,11 +442,7 @@ export class IdeCommandController {
 				const window = originWindowSurface === undefined ? part.window : workbenchWindowForSurface(originWindowSurface);
 				return window?.focusTarget.getCommand(command)?.isEnabled() === true;
 			}
-			case 'play.reveal': case 'play.actors': case 'play.stop': case 'play.reset': case 'play.source': case 'play.breakpoints':
-			case 'play.continue': case 'play.stepInto': case 'play.stepOver': case 'play.stepOut': {
-				const input = group.model.activeTab;
-				return this.editor.play.isCommandEnabled(command, input?.kind === 'play_session' ? input : this.editor.play.input);
-			}
+			case 'play.reveal': return this.editor.play.canRevealCurrent;
 			case 'menubar.focus': return this.editor.isActive && !this.editor.actionPrompt.visible && !part.quickInput.visible;
 			case 'hostError': return this.fault.hostFrameFailure !== undefined;
 			case 'assistant': return this.editor.assistant.available;
@@ -531,8 +451,11 @@ export class IdeCommandController {
 			case 'copy': case 'cut': case 'paste':
 				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly)
 					&& (command !== 'paste' || this.editor.clipboard.canRead);
-			case 'keepEditor':
-				return group.model.previewTab !== null && group.model.previewTab === editor;
+			case 'keepEditor': {
+				const owner = resolveEditorCommandGroup(this.editor, focus, input);
+				return owner !== undefined && owner !== null && owner.model.previewTab !== null
+					&& owner.model.previewTab === (input === undefined ? owner.model.activeTab : input);
+			}
 			case 'navigateBack':
 				return navigationState.captureSuspendDepth === 0 && navigationState.back.length > 0;
 			case 'navigateForward':
@@ -602,24 +525,8 @@ export class IdeCommandController {
 			case 'debugStepOver':
 			case 'debugStepOut':
 				return selected?.debuggerExecution.canResume(command === 'debugStepInto' ? 'into' : command === 'debugStepOver' ? 'over' : 'out') === true;
-			case 'aem.testEvent': {
-				const input = group.model.activeTab;
-				if (input?.kind !== 'aem_editor') return false;
-				const property = input.tree.rows[input.tree.selectionIndex]?.element;
-				return property !== undefined && property.path[0] === 'events' && property.path.length >= 2
-					&& getTextFileRuntimeSourceInstallations(this.sources, input.workingCopy).some(installation =>
-						installation.status === 'applied' && this.editor.actorLab.canInteract(installation.domain));
-			}
 			case 'aem': return true;
 			case 'input.testActionString': return [...this.sources.catalog.contexts.keys()].some(contextId => this.editor.actionStrings.canStart(contextId));
-			case 'behaviorLens.testEffect': {
-				const input = group.model.activeTab;
-				return input?.kind === 'behavior_lens' && input.view.presentation.kind === 'properties'
-					&& ([SYSTEM_RESOURCE_DOMAIN, ...CARTRIDGE_RESOURCE_DOMAINS] as const).some(domain => {
-						const image = domain === SYSTEM_RESOURCE_DOMAIN ? this.sources.currentBlua32Media.system : this.sources.currentBlua32Media.cartridgeSlots[domain];
-						return image !== null && image.sourceContextId === input.workingCopy.resource.contextId && this.editor.actorLab.canInteract(domain);
-					});
-			}
 			case 'animation': case 'progression': case 'inputBindings':
 			case 'scenarioLab':
 			case 'behaviorLens':

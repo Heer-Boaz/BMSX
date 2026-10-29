@@ -65,6 +65,7 @@ test('AEM movement retains a busy input but cannot dispose its asynchronous oper
 test('AEM navigation restores semantic property, disclosure and reading state through the actual pane and ordinary Back', async t => {
 	const f = aemFixture(t), selected = '["events","event_20","channel"]', folded = '["events","event_5"]';
 	f.input.tree.selectionIndex = f.input.tree.rows.findIndex(row => row.element.key === selected);
+	f.input.sourceSelection.select(f.input.tree.rows[f.input.tree.selectionIndex].element.sourceIdentity);
 	setWorkbenchTreeCollapsed(f.input.tree, f.input.tree.rows.findIndex(row => row.element.key === folded), true);
 	f.input.tree.scroll = 7.5;
 	const view = captureWorkbenchTreeView(f.input.tree, element => element.key), version = f.model.version;
@@ -72,7 +73,7 @@ test('AEM navigation restores semantic property, disclosure and reading state th
 	assert.ok(entry.selection instanceof AemNavigationSelection); entry.dispose();
 	f.firstGroup.activate(f.firstInput.id);
 	setWorkbenchTreeCollapsed(f.input.tree, f.input.tree.rows.findIndex(row => row.element.key === folded), false);
-	f.input.tree.selectionIndex = 0; f.input.tree.scroll = 0;
+	f.input.tree.selectionIndex = 0; f.input.sourceSelection.select(f.input.tree.rows[0].element.sourceIdentity); f.input.tree.scroll = 0;
 	await f.editor.navigation.goBackward();
 	assert.ok(f.firstGroup.model.activeTab === f.input && f.firstGroup.panes.activePane instanceof AemEditorPane);
 	assert.deepEqual(captureWorkbenchTreeView(f.input.tree, element => element.key), view);
@@ -87,6 +88,7 @@ test('AEM navigation restores semantic property, disclosure and reading state th
 test('AEM navigation identity follows authored keys across reparsing rather than retaining row or parser-node identity', t => {
 	const f = aemFixture(t), selected = '["events","event_20","channel"]';
 	f.input.tree.selectionIndex = f.input.tree.rows.findIndex(row => row.element.key === selected);
+	f.input.sourceSelection.select(f.input.tree.rows[f.input.tree.selectionIndex].element.sourceIdentity);
 	const before = new AemNavigationSelection(f.input); t.after(() => before.dispose());
 	const node = f.input.tree.rows[f.input.tree.selectionIndex].element.node;
 	f.model.pushEditOperations([{ offset: f.authored.indexOf('  event_0:'), deleteLength: 0, text: '  earlier: {channel: music}\n' }]);
@@ -94,7 +96,7 @@ test('AEM navigation identity follows authored keys across reparsing rather than
 	const after = new AemNavigationSelection(f.input); t.after(() => after.dispose());
 	assert.equal(before.matches(after), true);
 	assert.notEqual(f.input.tree.rows[f.input.tree.selectionIndex].element.node, node);
-	f.input.tree.selectionIndex = 0; before.restore(f.input);
+	f.input.tree.selectionIndex = 0; f.input.sourceSelection.select(f.input.tree.rows[0].element.sourceIdentity); before.restore(f.input);
 	assert.equal(f.input.tree.rows[f.input.tree.selectionIndex].element.key, selected);
 	const other = new AemNavigationSelection(f.receiver); t.after(() => other.dispose());
 	assert.equal(before.matches(other), false);

@@ -17,7 +17,7 @@ import type { EditorGroupView, EditorTabOpenOptions } from '../../services/edito
 import type { PreparedEditorInput } from '../../services/editor/editor_opening';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
-import { collectLuaPrograms, projectLuaProgram, type LuaProgramKind, type LuaProgramOccurrence } from './source';
+import { collectLuaPrograms, projectLuaProgram, type LuaProgramKind, type LuaProgramOccurrence, type LuaProgramProperty } from './source';
 import { LuaProgramInput } from './editor_input';
 import { LuaProgramRuntimeProjection, readProgramInstances, type ProgramInstanceChoice } from './runtime';
 import { programFieldTemplates, programEntryTemplate } from './schema';
@@ -39,6 +39,7 @@ export class LuaProgramController {
 		input.publishModels();
 		this.refresh(input);
 		restoreWorkbenchTreeView(input.tree, view, element => element.key);
+		input.sourceSelection.select(input.tree.rows[input.tree.selectionIndex], input.sourceModels);
 		return input;
 	};
 	public open(group: EditorGroupView, quickInput: QuickInputController, kind: LuaProgramKind): void {
@@ -117,41 +118,55 @@ export class LuaProgramController {
 		projection.refresh(input);
 	}
 	public resolveRuntime(input: LuaProgramInput): void { this.projections.get(input)!.resolve(input); }
-	public refresh(input: LuaProgramInput): void {
-		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId);
-		project.synchronizeSources(this.sources.catalog);
-		const snapshot = project.getSnapshot();
-		if (input.sourceRevision === snapshot.revision) return;
-		input.sourceRevision = snapshot.revision;
-		input.invalidateProjection();
-		const occurrences = collectLuaPrograms(input.workingCopy.resource, snapshot);
-		input.occurrence = occurrences.find(item => item.kind === input.programKind && (() => {
-			const range = luaSourceRangeToTextRange(input.workingCopy.buffer, item.file.chunk.locations.range(item.call.expression.span));
-			return range.start === input.occurrenceRange.start && range.end === input.occurrenceRange.end;
-		})());
-		if (input.occurrence === undefined) {
-			input.tree.roots.length = 0; input.tree.rows.length = 0; input.tree.selectionIndex = -1;
-			input.status = 'Producer call removed or incomplete; source and Undo remain available.';
-			return;
-		}
-		const reader = new LuaSourceReader(snapshot);
-		projectLuaProgram(input.tree, input.occurrence, reader, file => {
-			let model = input.sourceModels.get(file.file);
-			if (model === undefined) {
-				const resource = this.sources.catalog.resolveResource(project.getResourceIdentity(file.file))!;
-				model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
-				input.sourceModels.set(file.file, model);
+	public refresh(input: LuaProgramInput): boolean {
+		if (input.sourceProjecting || input.sourceSelection.retired) return false;
+		input.sourceProjecting = true;
+		try {
+			const generation = input.sourceGeneration;
+			const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId);
+			project.synchronizeSources(this.sources.catalog);
+			const snapshot = project.getSnapshot();
+			if (input.sourceRevision === snapshot.revision && input.publishedSourceGeneration === generation) return true;
+			input.invalidateProjection();
+			const occurrences = collectLuaPrograms(input.workingCopy.resource, snapshot);
+			const occurrence = occurrences.find(item => item.kind === input.programKind && (() => {
+				const range = luaSourceRangeToTextRange(input.workingCopy.buffer, item.file.chunk.locations.range(item.call.expression.span));
+				return range.start === input.occurrenceRange.start && range.end === input.occurrenceRange.end;
+			})());
+			if (occurrence === undefined) {
+				if (input.sourceSelection.retired || input.sourceGeneration !== generation || project.getSnapshot().revision !== snapshot.revision) return false;
+				input.occurrence = undefined;
+				input.tree.roots.length = 0; input.tree.rows.length = 0; input.tree.selectionIndex = -1;
+				input.sourceSelection.reconcile(undefined, input.sourceModels);
+				input.status = 'Producer call removed or incomplete; source and Undo remain available.';
+				input.sourceRevision = snapshot.revision;
+				input.publishedSourceGeneration = generation;
+				return true;
 			}
-			return model;
-		});
-		// Previously presented documents retain this view's Save / Undo ownership
-		// when an import is removed, including edits waiting to be saved or redone.
-		input.publishModels();
-		input.status = reader.syntaxComplete ? 'Authored Lua / Save and Hot Resume apply changes' : 'Incomplete syntax / source editing required';
+			const reader = new LuaSourceReader(snapshot);
+			if (!projectLuaProgram(input.tree, occurrence, reader, file => {
+				let model = input.sourceModels.get(file.file);
+				if (model === undefined) {
+					const resource = this.sources.catalog.resolveResource(project.getResourceIdentity(file.file))!;
+					model = resolveLuaTextFileModel(editorTextModelService, this.sources.catalog, resource);
+					input.sourceModels.set(file.file, model);
+				}
+				return model;
+			}, input.sourceModels, input.sourceSelection, () => !input.sourceSelection.retired && input.sourceGeneration === generation
+				&& project.getSnapshot().revision === snapshot.revision)) return false;
+			input.occurrence = occurrence;
+			input.sourceRevision = snapshot.revision;
+			input.publishedSourceGeneration = generation;
+			// Previously presented documents retain this view's Save / Undo ownership
+			// when an import is removed, including edits waiting to be saved or redone.
+			input.publishModels();
+			input.status = reader.syntaxComplete ? 'Authored Lua / Save and Hot Resume apply changes' : 'Incomplete syntax / source editing required';
+			return input.sourceGeneration === generation && project.getSnapshot().revision === snapshot.revision;
+		} finally { input.sourceProjecting = false; }
 	}
 	public getSourceLocation(input: LuaProgramInput): EditorSourceLocation | undefined {
-		this.refresh(input);
-		const row = input.liveVisible ? undefined : input.tree.rows[input.tree.selectionIndex]?.element;
+		if (!this.refresh(input)) return;
+		const row = input.liveVisible ? undefined : input.sourceSelection.property;
 		const file = row?.file ?? input.occurrence?.file;
 		if (file === undefined) return { model: input.workingCopy, modelVersion: input.workingCopy.version };
 		const model = input.sourceModels.get(file.file)!;
@@ -177,42 +192,39 @@ export class LuaProgramController {
 			input.inspectRuntime(this.transport);
 		});
 	}
-	public add(input: LuaProgramInput, quickInput: QuickInputController): void {
-		const property = input.tree.rows[input.tree.selectionIndex]?.element ?? input.tree.roots[0]?.element;
-		const target = property?.table;
-		if (target === undefined || !target.structural) return;
-		const model = input.sourceModels.get(target.file.file)!;
+	public add(input: LuaProgramInput, property: LuaProgramProperty, quickInput: QuickInputController, readProperty: () => LuaProgramProperty | undefined): void {
+		const target = property.table!;
+		const insert = (value: string) => {
+			const current = readProperty(), table = current?.table;
+			if (table === undefined || !table.structural) return;
+			const model = input.sourceModels.get(table.file.file)!;
+			if (model.readOnly) return;
+			model.pushEditOperations(createLuaTableFieldsInsertionEdits(model.buffer, table.file.chunk, table.table, table.table.fields.length, [value]));
+		};
 		const entry = programEntryTemplate(input.programKind, property);
 		if (entry !== undefined) {
 			quickInput.input('ADD ENTRY', 'Authored Lua table', entry,
-				async text => validateLuaTableFieldExpression(text), value => model.pushEditOperations(
-					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])), lifetime => {
-					lifetime.add({ dispose: input.onDidInvalidateProjection(() => quickInput.hide()) });
-				});
+				async text => validateLuaTableFieldExpression(text), insert);
 			return;
 		}
 		const existing = new Set(target.table.fields.map(staticLuaTableFieldName));
 		const choices = programFieldTemplates(input.programKind, property).filter(item => !existing.has(item.name))
 			.map(item => ({ ...item, label: item.name, description: '', detail: item.value }));
 		choices.push({ name: '', value: '', label: 'Custom field', description: 'Lua table field', detail: 'Handlers, event matchers, custom commands and authored extensions' });
-		quickInput.pick('ADD PROPERTY', 'Canonical Lua table field', (_origin, lifetime) => {
-			lifetime.add({ dispose: input.onDidInvalidateProjection(() => quickInput.hide()) });
+		quickInput.pick('ADD PROPERTY', 'Canonical Lua table field', () => {
 			return new TextQuickPickProvider(choices);
 		}, item => {
+			if (readProperty() === undefined) return;
 			quickInput.input(item.label, item.name === '' ? 'Complete Lua field: name = expression or [key] = expression' : 'Lua expression', item.value,
 				async text => {
 					if (item.name !== '') return formatLuaTableFieldSource(item.name, validateLuaTableFieldExpression(text));
 					// Admit a complete authored table field through the same Lua grammar as source insertion.
 					validateLuaTableFieldExpression(`{ ${text} }`);
 					return text;
-				}, value => model.pushEditOperations(
-					createLuaTableFieldsInsertionEdits(model.buffer, target.file.chunk, target.table, target.table.fields.length, [value])), lifetime => {
-					lifetime.add({ dispose: input.onDidInvalidateProjection(() => quickInput.hide()) });
-				});
+				}, insert);
 		});
 	}
-	public remove(input: LuaProgramInput): void {
-		const property = input.tree.rows[input.tree.selectionIndex].element;
+	public remove(input: LuaProgramInput, property: LuaProgramProperty): void {
 		input.tree.selectionIndex = -1;
 		input.sourceModels.get(property.file.file)!.pushEditOperations(createLuaTableFieldRemovalEdits(
 			input.sourceModels.get(property.file.file)!.buffer, property.file.chunk.locations, property.file.chunk.tokens, property.field!));

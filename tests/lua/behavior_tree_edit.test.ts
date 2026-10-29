@@ -2,7 +2,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
-import { behaviorTreeMoveTarget } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
+import { behaviorTreeEditTarget, behaviorTreeMoveTarget } from '../../ide/workbench/contrib/behavior_lens/behavior_tree_edit';
 import { prepareBehaviorLensLayout, selectBehaviorLensDefinition } from '../../ide/workbench/contrib/behavior_lens/layout';
 import { selectedBehaviorLensSourceRange } from '../../ide/workbench/contrib/behavior_lens/navigation';
 import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
@@ -121,4 +121,19 @@ test('known list mutation is not admitted as an ordered source edit', t => {
 	assert.equal(behaviorTreeMoveTarget(f.view, -1), undefined);
 	assert.equal(behaviorTreeMoveTarget(f.view, 1), undefined);
 	assert.ok(f.viewport.selection?.kind === 'node');
+});
+
+test('source invalidation retires cached membership without relying on a graph refresh', t => {
+	const f = fixture(t); f.select(1);
+	const geometry = f.viewport.model, document = f.view.document, selection = f.view.selectionState.selectionRevision;
+	assert.ok(behaviorTreeEditTarget(f.view));
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- corresponding source\n' }]);
+	assert.equal(f.view.source.isCurrent, false);
+	assert.equal(f.view.document, document);
+	assert.equal(f.viewport.model, geometry);
+	assert.equal(behaviorTreeEditTarget(f.view), null);
+	assert.equal(behaviorTreeMoveTarget(f.view, -1), undefined);
+	f.refresh();
+	assert.equal(f.view.selectionState.selectionRevision, selection);
+	assert.equal(behaviorTreeMoveTarget(f.view, -1)!.index, 1);
 });

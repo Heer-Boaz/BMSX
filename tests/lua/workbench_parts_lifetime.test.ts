@@ -94,6 +94,7 @@ function openAemFixture(f: ReturnType<typeof fixture>, source = 'events:\n  stor
 	const model = editorTextModelService.retain(resource, 'aem', source), input = new AemEditorInput(model);
 	f.editor.editorParts.main.activeGroup.openEditor(input); f.editor.update(0);
 	input.tree.selectionIndex = input.tree.rows.findIndex(row => row.element.key === '["events","story","channel"]');
+	input.sourceSelection.select(input.tree.rows[input.tree.selectionIndex]?.element.sourceIdentity);
 	return { input, model, source };
 }
 

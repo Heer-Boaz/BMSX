@@ -1,6 +1,6 @@
 import { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
 import { LuaSyntaxError } from '../../../toolchain/ts/lua/errors';
-import type { LuaSourcePosition, LuaSourceRange, LuaTableField } from '../../../toolchain/ts/lua/syntax/ast';
+import type { LuaExpression, LuaSourcePosition, LuaSourceRange, LuaTableField } from '../../../toolchain/ts/lua/syntax/ast';
 import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
 import { LuaParser } from '../../../toolchain/ts/lua/syntax/parser';
 import { isLuaTrivia, LuaTokenType } from '../../../toolchain/ts/lua/syntax/token';
@@ -12,6 +12,9 @@ export type LuaFieldValueEdit = {
 	readonly edit: EditorTextEdit;
 	readonly fieldRange: LuaSourceRange;
 	readonly expressionRange: LuaSourceRange;
+	readonly expressionKind: LuaExpression['kind'];
+	readonly expressionOffset: number;
+	readonly firstTokenOffset: number;
 };
 export type LuaFieldValueEditResult = { readonly value: LuaFieldValueEdit } | { readonly error: string };
 
@@ -60,6 +63,9 @@ export function parseLuaFieldValueEdit(buffer: TextBuffer, locations: LuaSourceL
 			edit: { offset: range.start, deleteLength: range.end - range.start, text },
 			fieldRange: { path, start, end },
 			expressionRange: { path, start: at(expressionRange.start), end: at(expressionRange.end) },
+			expressionKind: fragment.expression.kind,
+			expressionOffset: lexicalLocations.offsetAt(expressionRange.start),
+			firstTokenOffset: lexicalLocations.offsetAt(lexicalLocations.range(first).start),
 		} };
 	} catch (error) {
 		if (!(error instanceof LuaSyntaxError)) throw error;

@@ -442,8 +442,9 @@ and admits only explicitly exported semantic commands from the declared action
 context. Focus-return parents do not provide command inheritance; borrowing an
 action context does not grant its widget's keyboard capabilities. Native field
 commands and semantic source commands remain distinct. A source command can use
-its explicit client context without borrowing the active document group. Routing
-resolves optional document authority independently of an opening destination;
+its explicit client context without borrowing the active document group.
+`commands/context.ts` resolves optional document authority independently of an
+opening destination;
 workspace commands consume that retained subject rather than infer one from the
 receiving group. Named Main clients expose their own document capabilities. Command
 descriptors declare native-control addressing for physical view actions; Palette
@@ -454,7 +455,9 @@ declare their native edit scope; the focus owner accepts only its actual focused
 pending edit before execution enablement. Native execution and application
 routing share that acceptance boundary, independently of the receiving editor
 arrangement. Pure presentation commands use ordinary focus/blur behavior.
-UI enablement does not construct invocations or publish drafts.
+UI enablement does not construct invocations or publish drafts. Source-projection
+openers consume an explicit source seed; an absent document subject opens the
+contribution's chooser instead of borrowing the destination's active tab.
 Source navigation carries a contribution's location reader and semantic-intent
 receipt together. The producer attachment is captured before contribution code
 runs; both authorities remain current through draft acceptance, source discovery

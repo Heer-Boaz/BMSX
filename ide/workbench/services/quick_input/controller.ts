@@ -172,7 +172,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		placeholder: string,
 		value: string,
 		submit: (value: string) => Promise<T>,
-		accept: (result: T, preserveFocus: boolean) => void,
+		accept?: (result: T, preserveFocus: boolean) => void,
 		onWillShow?: (lifetime: DisposableStore) => void,
 		options: QuickInputOptions = {},
 	): void {
@@ -211,7 +211,7 @@ export class QuickInputController implements PointerCaptureTarget {
 				try {
 					this.retireSession(true, true);
 					session.disposables.dispose();
-					if (session.contextAdmitted) accept(result, preserveFocus);
+					if (session.contextAdmitted) accept?.(result, preserveFocus);
 				} finally {
 					session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
 					if (this.retiringSession === session) this.retiringSession = null;

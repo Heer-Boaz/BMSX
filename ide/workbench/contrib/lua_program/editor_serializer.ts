@@ -37,6 +37,7 @@ export class LuaProgramInputSerializer implements EditorInputSerializer<LuaProgr
 		this.controller.refresh(input);
 		if (sameSource && sameDependencies) {
 			restoreWorkbenchTreeView(input.tree, state.view, element => element.key);
+			input.sourceSelection.select(input.tree.rows[input.tree.selectionIndex], input.sourceModels);
 		}
 		return input;
 	}
