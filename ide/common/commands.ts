@@ -48,8 +48,13 @@ export type EditorViewCommandId =
 	| 'filter'
 	| 'wrap';
 
-export type EditorWorkspaceCommandId =
+export type EditorResourceCreationCommandId =
 	| 'createResource'
+	| 'aem.create' | 'animation.create' | 'animation.createSprite'
+	| 'progression.createProgram' | 'input.createBindings' | 'behaviorLens.createEffect';
+
+export type EditorWorkspaceCommandId =
+	| EditorResourceCreationCommandId
 	| 'hot-resume'
 	| 'reboot'
 	| 'runCurrentFile'
@@ -151,8 +156,8 @@ export type EditorCommandId =
 	| 'luaProgram.edit' | 'luaProgram.add' | 'luaProgram.remove' | 'luaProgram.live' | 'luaProgram.authoring' | 'luaProgram.selectInstance' | 'luaProgram.more' | 'luaProgram.testInput'
 	| 'tabs.close' | 'tabs.next' | 'tabs.previous'
 	| 'tabs.scrollLeft' | 'tabs.scrollRight'
-	| 'progression.createProgram' | 'input.createBindings' | 'behaviorLens.createEffect' | 'aem.create' | 'aem.edit' | 'aem.add' | 'aem.remove' | 'aem.apply' | 'aem.testEvent'
-	| 'animation.create' | 'animation.createSprite' | 'animation.addTrack' | 'animation.addKey'
+	| 'aem.edit' | 'aem.add' | 'aem.remove' | 'aem.apply' | 'aem.testEvent'
+	| 'animation.addTrack' | 'animation.addKey'
 	| 'animation.edit' | 'animation.remove' | 'animation.producerSource' | 'animation.producerSourceToSide'
 	| 'animation.fit' | 'animation.snap' | 'animation.addClip' | 'animation.addFrame' | 'animation.addProperty'
 	| 'animation.openClip' | 'animation.duplicate' | 'animation.earlier' | 'animation.later' | 'animation.more'

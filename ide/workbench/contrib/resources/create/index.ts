@@ -12,18 +12,19 @@ import { openLuaCodeTab } from '../../../ui/code_tab/io';
 import { NEW_AEM_SOURCE, newLuaSource, type NewSourceKind } from './source_templates';
 import { TextQuickPickProvider } from '../../../services/quick_input/text_provider';
 import type { QuickPickItem } from '../../../services/quick_input/provider';
+import type { ResourceIdentity } from '../../../../common/resource';
 
 export function openCreateResourcePrompt(
 	editor: CartEditor,
 	group: EditorGroupView,
 	catalog: WorkspaceSourceCatalog,
 	clock: HostClock,
+	source: ResourceIdentity | undefined,
 	kind: NewSourceKind = 'empty',
 ): void {
 	const quickInput = editor.editorParts.partForGroup(group).quickInput;
-	const identity = group.model.activeTab?.resource;
-	if (identity !== undefined) {
-		const resource = catalog.resolveResource(identity)!;
+	if (source !== undefined) {
+		const resource = catalog.resolveResource(source)!;
 		if (resource.location.kind === 'project') {
 			const path = resource.location.path;
 			showNewSourceInput(editor, quickInput, group, catalog, clock, resource.contextId, path.slice(0, path.lastIndexOf('/') + 1), kind);

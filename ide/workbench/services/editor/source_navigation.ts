@@ -11,6 +11,8 @@ export type SourceNavigationCaptureOptions = {
 export type SourceNavigationOrigin = {
 	readonly commandTarget: InputFocusTarget;
 	readonly anchor: EditorGroupView;
+	/** The document attachment whose opening receipt this producer advances during resolution. */
+	readonly openingOwner?: EditorGroupView;
 	readonly readLocation: EditorSourceLocationReader;
 	isCurrent(receiver?: EditorGroupView): boolean;
 	/** The receiving group owns its opening receipt after producer admission. */

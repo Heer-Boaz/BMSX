@@ -101,7 +101,7 @@ export class EditorGroupView {
 			&& (receiver === this || this.panes.openGeneration === generation)
 			&& scope.contextGeneration === context && source.isCurrent?.() !== false;
 		if (!current()) return;
-		return { commandTarget, anchor: this, readLocation: source.readLocation, isCurrent: current,
+		return { commandTarget, anchor: this, openingOwner: this, readLocation: source.readLocation, isCurrent: current,
 			// Same-group admission intentionally retires its producing control; the new receiver receipt and request intent remain authoritative.
 			isCurrentAfterHandoff: receiver => receiver === this
 				? this.openingAdmitted && !this.surface.retired && this.sourceOpeningRevision === request : current(),

@@ -12,7 +12,8 @@ import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
 import type { LogOutput } from '../../hosts/common/log';
-import type { EditorCommandId, EditorWorkspaceCommandId } from '../common/commands';
+import type { EditorCommandId, EditorResourceCreationCommandId, EditorWorkspaceCommandId } from '../common/commands';
+import type { NewSourceKind } from '../workbench/contrib/resources/create/source_templates';
 import type { CartEditor } from '../cart_editor';
 import type { Blua32SourceImage, RuntimeSourceState } from '../runtime/sources';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
@@ -35,9 +36,16 @@ const ACTION_PROMPTS: Readonly<Record<Exclude<EditorActionRequest['action'], 'th
 		primary: 'SAVE & HIDE', secondary: 'HIDE WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
 };
 
+const RESOURCE_CREATION_KINDS: Readonly<Record<EditorResourceCreationCommandId, NewSourceKind>> = {
+	createResource: 'empty', 'aem.create': 'aem', 'animation.create': 'animation', 'animation.createSprite': 'sprite_animation',
+	'progression.createProgram': 'progression', 'input.createBindings': 'input', 'behaviorLens.createEffect': 'action_effect',
+};
+
 export function isEditorWorkspaceCommand(command: EditorCommandId): command is EditorWorkspaceCommandId {
 	switch (command) {
 		case 'createResource':
+		case 'aem.create': case 'animation.create': case 'animation.createSprite':
+		case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect':
 		case 'hot-resume':
 		case 'reboot':
 		case 'runCurrentFile':
@@ -72,7 +80,9 @@ export function isEditorWorkspaceCommandEnabled(command: EditorWorkspaceCommandI
 		}
 		case 'runProject': return group !== undefined && boots.acceptingRequests && tasks.ready
 			&& sources.cartridgeSlots.some(cart => cart !== null && sources.catalog.getContext(cart.contextId).luaSources.can_boot_from_source);
-		case 'createResource': case 'theme-toggle': return true;
+		case 'createResource': case 'aem.create': case 'animation.create': case 'animation.createSprite':
+		case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect':
+		case 'theme-toggle': return true;
 	}
 }
 
@@ -109,7 +119,10 @@ export function captureEditorWorkspaceCommand(
 		case 'save':
 			if (!enabled()) return;
 			break;
-		case 'createResource': return { isEnabled: enabled, run: () => openCreateResourcePrompt(editor, destination, sources.catalog, clock) };
+		case 'createResource': case 'aem.create': case 'animation.create': case 'animation.createSprite':
+		case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect':
+			return { isEnabled: enabled,
+				run: () => openCreateResourcePrompt(editor, destination, sources.catalog, clock, document?.input?.resource, RESOURCE_CREATION_KINDS[command]) };
 		case 'theme-toggle': return { isEnabled: enabled, run: () => requestAction({ action: command }) };
 		case 'hot-resume': case 'reboot': {
 			const presentation = captureEditorActionPresentation(target);

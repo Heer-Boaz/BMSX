@@ -1,5 +1,4 @@
 import { findEditorGroup } from '../workbench/services/editor/editor_group';
-import { openCreateResourcePrompt } from '../workbench/contrib/resources/create';
 import { chooseBuild, chooseBuildOutput, showBuildJobs } from '../workbench/contrib/builds/commands';
 import { createCartridge } from '../workbench/contrib/projects/commands';
 import { importCartridgeFiles } from '../workbench/contrib/resources/import';
@@ -143,21 +142,21 @@ export class IdeCommandController {
 				: { group: documentGroup, input: input === undefined ? documentGroup.model.activeTab : input });
 			return;
 		}
-		if (input !== undefined && !group.model.contains(input)) return;
 		if (command === 'editor.source' || command === 'editor.sourceToSide') {
 			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
 				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
 			const placement = command === 'editor.sourceToSide' ? 'side' : 'default';
 			const main = this.editor.mainWorkspace;
-			if (input === undefined && (main.isPrimaryTarget(invocationTarget) || main.isActivityTarget(invocationTarget))) {
-				if (main.canOpenSource(invocationTarget!)) void this.editor.navigation.openSource(main, { placement, target: invocationTarget! });
+			if (documentGroup === undefined) {
+				if (target !== null && main.canOpenSource(target)) void this.editor.navigation.openSource(main, { placement, target, reference: group });
 				return;
 			}
-			const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup, pane = group.panes.activePane;
-			if (pane === null || pane.input !== (input ?? group.model.activeTab) || !pane.canOpenSource) return;
-			void this.editor.navigation.openSource(group, { placement, target: invocationTarget ?? undefined });
+			const pane = documentGroup.panes.activePane;
+			if (pane === null || pane.input !== (input ?? documentGroup.model.activeTab) || !pane.canOpenSource) return;
+			void this.editor.navigation.openSource(documentGroup, { placement, target: target ?? undefined, reference: group });
 			return;
 		}
+		if (input !== undefined && !group.model.contains(input)) return;
 
 		const selected = this.runTargets.selected;
 		const runtimeContext = target?.scope.runtimeOwner?.runtime;
@@ -237,12 +236,6 @@ export class IdeCommandController {
 				}))), item => this.editor.actionStrings.open(item.contextId, group, part.quickInput));
 				return;
 			}
-			case 'progression.createProgram': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'progression'); return;
-			case 'aem.create': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'aem'); return;
-			case 'animation.createSprite': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'sprite_animation'); return;
-			case 'animation.create': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'animation'); return;
-			case 'input.createBindings': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'input'); return;
-			case 'behaviorLens.createEffect': openCreateResourcePrompt(this.editor, group, this.sources.catalog, this.clock, 'action_effect'); return;
 			case 'builds.start': void chooseBuild(this.editor); return;
 			case 'projects.createCartridge': createCartridge(this.editor); return;
 			case 'resources.import': importCartridgeFiles(this.editor, this.sources.catalog); return;
@@ -387,8 +380,6 @@ export class IdeCommandController {
 		if (implementation !== undefined) return implementation.isEnabled();
 		const resize = WORKBENCH_VIEW_RESIZE_COMMANDS[command];
 		if (resize !== undefined) return canResizeWorkbenchView(this.editor, focus, resize.axis, resize.direction);
-		if ((command === 'editor.source' || command === 'editor.sourceToSide') && input === undefined && (this.editor.mainWorkspace.isPrimaryTarget(focus) || this.editor.mainWorkspace.isActivityTarget(focus)))
-			return this.editor.mainWorkspace.canOpenSource(focus!);
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
 		const part = this.editor.editorParts.partForGroup(group);
 		const selected = this.runTargets.selected;
@@ -401,12 +392,15 @@ export class IdeCommandController {
 			return isEditorWorkspaceCommandEnabled(command, documentGroup, input === undefined ? documentGroup?.model.activeTab : input,
 				this.sources, this.textFileSaves, this.hotResumes, this.boots, this.execution, this.runtimeTasks);
 		}
+		if (command === 'editor.source' || command === 'editor.sourceToSide') {
+			const owner = resolveEditorCommandGroup(this.editor, focus, input);
+			if (owner === null) return false;
+			if (owner === undefined) return focus !== null && this.editor.mainWorkspace.canOpenSource(focus);
+			const pane = owner.panes.activePane, subject = input === undefined ? owner.model.activeTab : input;
+			return owner.openingAdmitted && pane !== null && pane.input === subject && pane.canOpenSource;
+		}
 		if (input !== undefined && !group.model.contains(input)) return false;
 		switch (command) {
-			case 'editor.source': case 'editor.sourceToSide': {
-				const pane = group.panes.activePane;
-				return group.openingAdmitted && pane !== null && pane.input === editor && pane.canOpenSource;
-			}
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'workspace.focusNextRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, 1);
 			case 'workspace.focusPreviousRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, -1);
@@ -467,7 +461,6 @@ export class IdeCommandController {
 			case 'assistant.stop':
 				return this.editor.assistantCommands.isEnabled(command, group);
 			case 'builds.start': return this.editor.builds !== undefined;
-			case 'aem.create': case 'animation.create': case 'animation.createSprite': case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect': return this.isEnabled('createResource');
 			case 'projects.createCartridge': return this.editor.projects !== undefined;
 			case 'resources.import': return this.editor.importFiles !== undefined
 				&& [...this.sources.catalog.contexts.values()].some(context => context.programDomain === 'cart');

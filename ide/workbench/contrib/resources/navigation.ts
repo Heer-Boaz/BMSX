@@ -27,7 +27,10 @@ export type ResourceNavigationOptions = {
 	readonly activationIsCurrent?: () => boolean;
 };
 
-export type SourceNavigationOptions = SourceNavigationCaptureOptions & { readonly placement?: 'default' | 'side' };
+export type SourceNavigationOptions = SourceNavigationCaptureOptions & {
+	readonly placement?: 'default' | 'side';
+	readonly reference?: EditorGroupView;
+};
 
 export class EditorNavigationController {
 	public constructor(
@@ -39,9 +42,11 @@ export class EditorNavigationController {
 
 	/** Settle the sender before its contribution selects one canonical source generation. */
 	public openSource(owner: SourceNavigationOwner, options: SourceNavigationOptions = {}): Promise<number | undefined> | undefined {
+		const requestedGeneration = options.reference?.panes.openGeneration;
 		const source = owner.captureSourceNavigation(options);
 		if (source === undefined) return;
-		const reference = source.anchor, part = this.parts.partForGroup(reference);
+		const reference = options.reference ?? source.anchor, part = this.parts.partForGroup(reference);
+		let referenceGeneration = requestedGeneration ?? reference.panes.openGeneration;
 		if (part === undefined || part.retired || part.surface.retired || !reference.openingAdmitted || part.operation !== 'none') return;
 		const sourceScope = source.commandTarget.scope;
 		const focusedOrigin = inputFocus.admittedTarget, originScope = focusedOrigin?.scope, originContext = originScope?.contextGeneration;
@@ -49,6 +54,7 @@ export class EditorNavigationController {
 		const scope = originScope !== undefined && sourceScope.contains(originScope) ? sourceScope : originScope;
 		const attached = (receiver?: EditorGroupView): boolean => source.isCurrent(receiver)
 			&& this.parts.partForGroup(reference) === part && !part.retired && !part.surface.retired && part.operation === 'none'
+			&& (receiver === reference || reference.panes.openGeneration === referenceGeneration)
 			&& reference.openingAdmitted && originScope?.contextGeneration === originContext;
 		const current = (): boolean => {
 			const focused = inputFocus.admittedTarget;
@@ -74,6 +80,7 @@ export class EditorNavigationController {
 				// Accepted Source retains the canonical model after edits; its generation-bound selection separately admits the caret.
 				activationIsCurrent: () => source.isCurrentAfterHandoff(destination)
 					&& this.parts.partForGroup(reference) === part && !part.retired && !part.surface.retired && part.operation === 'none' && reference.openingAdmitted
+					&& (destination === reference || reference.panes.openGeneration === referenceGeneration)
 					&& editorTextModelService.get(model.resource) === model
 					&& this.catalog.resolveResource(model.resource) === model.resource });
 		};
@@ -81,7 +88,9 @@ export class EditorNavigationController {
 		if (!(location instanceof Promise)) return admitLocation(location);
 		if (!current() || inputFocus.revision !== focusRevision && inputFocus.target !== null) return location.then(() => undefined);
 		// Location IO has a real sender opening receipt, without creating a destination or detaching its control.
-		if (!source.beginResolution() || !current()) return location.then(() => undefined);
+		if (!source.beginResolution()) return location.then(() => undefined);
+		if (reference === source.openingOwner) referenceGeneration = reference.panes.openGeneration;
+		if (!current()) return location.then(() => undefined);
 		return location.then(admitLocation);
 	}
 

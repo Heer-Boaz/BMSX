@@ -6,6 +6,10 @@ import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { captureSourceViewOpening } from '../../ide/workbench/contrib/source_views/quick_access';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
+import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 
 function fixture(t: Parameters<typeof createActualSourcePanes>[0]) {
 	const f = createActualSourcePanes(t, false, [
@@ -153,4 +157,90 @@ test('a retained membership receipt cannot revive after a transfer away and back
 	assert.equal(f.firstGroup.model.contains(f.firstInput), true);
 	assert.equal(current(), false);
 	assert.equal(f.firstGroup.model.captureMembership(f.firstInput)!(), true);
+});
+
+async function sourceCommandFixture(t: Parameters<typeof createActualSourcePanes>[0]) {
+	const f = createActualSourcePanes(t, false, [
+		['primary-scene.lua', SCENE_VIEWPORT_SOURCE], ['document-scene.lua', `-- Independent document source\n${SCENE_VIEWPORT_SOURCE}`],
+		['cartlib/world/scene_library.lua', 'return {}'],
+	]);
+	const primaryResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'primary-scene.lua' })!;
+	const documentResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'document-scene.lua' })!;
+	const primaryModel = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, primaryResource);
+	const document = f.ide.sceneSources.get(primaryModel);
+	assert.equal(await f.editor.openSceneInMain(primaryModel,
+		{ document, sourceVersion: primaryModel.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	f.editor.sceneEditor.openResource(f.secondGroup, documentResource, { pinned: true }); f.update();
+	const pane = f.secondGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
+	return { ...f, primary, primaryModel, pane, documentModel: pane.input.workingCopy };
+}
+
+for (const direction of ['main-to-document', 'document-to-main'] as const)
+	for (const command of ['editor.source', 'editor.sourceToSide'] as const)
+		for (const explicit of direction === 'document-to-main' ? [false, true] : [false])
+		test(`${command} retains its ${direction} ${explicit ? 'explicit active' : 'implicit'} semantic source independently of the invoking context`, async t => {
+			const f = await sourceCommandFixture(t), main = f.editor.mainWorkspace;
+			const target = direction === 'main-to-document' ? f.primary.hierarchy.control.focusTarget : f.pane.commandTarget;
+			const invoking = direction === 'main-to-document' ? f.pane.commandTarget : f.primary.hierarchy.control.focusTarget;
+			const expected = direction === 'main-to-document' ? f.primaryModel : f.documentModel;
+			const reference = direction === 'main-to-document' ? f.secondGroup : f.editor.editorParts.main.activeGroup;
+			const receiver = command === 'editor.sourceToSide' ? f.editor.editorParts.splitGroup(reference, 'right') : reference;
+			assert.ok(receiver !== undefined);
+			assert.equal(invoking.focus(), true);
+			const primarySource = f.primaryModel.buffer.getText(), documentSource = f.documentModel.buffer.getText();
+			const results: Array<Promise<number | undefined> | undefined> = [];
+			const open = f.editor.navigation.openSource.bind(f.editor.navigation);
+			t.mock.method(f.editor.navigation, 'openSource', (owner, options) => {
+				const result = open(owner, options); results.push(result); return result;
+			});
+			assert.equal(f.editor.commands.isEnabled(command, target), true);
+			f.editor.commands.execute(command, target, explicit ? f.pane.input : undefined, invoking);
+			assert.equal(results.length, 1); assert.ok(await results[0] !== undefined);
+			const opened = f.editor.editorParts.activeGroup.model.activeTab;
+			assert.ok(opened instanceof CodeEditorInput);
+			assert.ok(opened.workingCopy === expected, 'the native invocation context cannot replace the admitted source producer');
+			assert.ok(f.editor.editorParts.activeGroup === receiver, 'the source producer cannot replace the explicitly addressed receiving group');
+			assert.ok(main.primary === f.primary);
+			assert.equal(f.primaryModel.buffer.getText(), primarySource); assert.equal(f.documentModel.buffer.getText(), documentSource);
+		});
+
+test('an explicit inactive Source subject has no attached producer to borrow from its foreign receiver', async t => {
+	const f = await sourceCommandFixture(t), subject = f.pane.input;
+	const replacement = new HostErrorInput('Independent newer document');
+	f.secondGroup.openEditor(replacement, { pinned: true }); f.update();
+	const invoking = f.primary.hierarchy.control.focusTarget;
+	assert.equal(invoking.focus(), true);
+	const open = t.mock.method(f.editor.navigation, 'openSource');
+	for (const command of ['editor.source', 'editor.sourceToSide'] as const) {
+		assert.equal(f.editor.commands.isEnabled(command, f.secondGroup.tabFocusTarget, subject), false);
+		f.editor.commands.execute(command, f.secondGroup.tabFocusTarget, subject, invoking);
+	}
+	assert.equal(open.mock.callCount(), 0);
+	assert.ok(f.secondGroup.model.contains(subject) && f.secondGroup.model.activeTab === replacement);
+	assert.ok(f.editor.mainWorkspace.primary === f.primary);
+});
+
+test('a pending Main Source cannot replace a newer opening in its explicit foreign reference group', async t => {
+	const f = await sourceCommandFixture(t), target = f.primary.hierarchy.control.focusTarget;
+	assert.equal(target.focus(), true);
+	const request = f.primary.captureSourceLocation()!;
+	let complete: (() => void) | undefined;
+	t.mock.method(f.primary, 'captureSourceLocation', () => ({ ...request,
+		readLocation: () => new Promise(resolve => { complete = () => { void Promise.resolve(request.readLocation()).then(resolve); }; }),
+	}));
+	const results: Array<Promise<number | undefined> | undefined> = [];
+	const open = f.editor.navigation.openSource.bind(f.editor.navigation);
+	t.mock.method(f.editor.navigation, 'openSource', (owner, options) => {
+		const result = open(owner, options); results.push(result); return result;
+	});
+	f.editor.commands.execute('editor.source', target, undefined, f.pane.commandTarget);
+	assert.ok(complete !== undefined, 'source resolution belongs to the actual Main producer');
+	const replacement = new HostErrorInput('A newer explicit receiving-group opening');
+	f.secondGroup.openEditor(replacement, { pinned: true, preserveFocus: true });
+	complete();
+	assert.equal(await results[0], undefined);
+	assert.ok(f.secondGroup.model.activeTab === replacement);
+	assert.ok(f.editor.mainWorkspace.primary === f.primary);
+	assert.equal(f.primaryModel.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 });
