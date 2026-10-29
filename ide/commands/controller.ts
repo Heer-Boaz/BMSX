@@ -325,12 +325,8 @@ export class IdeCommandController {
 				if (local === undefined && transport === this.transport) openGameView(group);
 				transport.navigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
-			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
-			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
-			case 'scenarioLab.revealRun':
-			case 'scenarioLab.cancel': {
-				const input = group.model.activeTab;
-				this.editor.scenarioLab.executeCommand(command, input?.kind === 'scenario_lab' ? input : undefined, group, part.quickInput);
+			case 'scenarioLab.revealRun': case 'scenarioLab.cancel': {
+				this.editor.scenarioLab.executeCommand(command, undefined, group, part.quickInput);
 				return;
 			}
 			case 'debugContinue':
@@ -511,12 +507,8 @@ export class IdeCommandController {
 			}
 			case 'gameView.closePanel': return this.editor.gamePanel.enabled;
 			case 'runtime.playback': return transport?.playbackEnabled === true;
-			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
-			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
-			case 'scenarioLab.revealRun':
-			case 'scenarioLab.cancel': {
-				const input = group.model.activeTab;
-				return this.editor.scenarioLab.isCommandEnabled(command, input?.kind === 'scenario_lab' ? input : undefined);
+			case 'scenarioLab.revealRun': case 'scenarioLab.cancel': {
+				return this.editor.scenarioLab.isCommandEnabled(command, undefined);
 			}
 			case 'debugContinue':
 				return selected !== undefined && selected.debuggerExecution.state.source.stop !== undefined
