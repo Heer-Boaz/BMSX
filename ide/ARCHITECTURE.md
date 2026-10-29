@@ -157,6 +157,12 @@ opaque identities. A source-folder open has its own selection; matching paths
 do not select an arbitrary named project. Build receipts retain their exact
 project admission independently of immutable artifact generations. Browser
 published-build navigation preserves that receipt, not merely an artifact ID.
+`contrib/builds/output.ts` owns request-bound build observations for the admitted
+build provider's frontend lifetime. Receipt and captured-output reads remain
+separate publications; neither opens a document nor controls build execution.
+`view_model.ts` owns each reader's channel, selection, search and reading state
+over those shared buffers. Document inputs own readers, not build observations;
+closing one view does not cancel another view's read or retire its source.
 Frontend and native source recovery consume explicit context/session namespaces;
 canonical file Save addresses remain separate from
 [recovery storage](../docs/studio_source_recovery_design.md).

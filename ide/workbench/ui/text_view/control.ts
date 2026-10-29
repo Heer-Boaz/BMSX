@@ -81,9 +81,13 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 
 	public setInput(model: WorkbenchTextViewModel): void {
 		if (this.model === model) return;
-		this.clearInput(); this.model = model; this.scroll.setInput(model.viewport);
+		this.cancelPointer(); pointerHover.release(this);
+		this.unbindBuffer?.();
+		this.model = model; this.scroll.setInput(model.viewport);
 		this.unbindBuffer = model.onWillChangeBuffer(() => { this.cancelPointer(); this.scroll.cancelPointer(); });
 		setFieldText(this.findField, model.query, true);
+		this.findField.nativeCaret.width = this.findField.nativeCaret.height = 0;
+		this.removeFind();
 	}
 	public clearInput(): void {
 		this.cancelPointer(); pointerHover.release(this); this.removeFind(); this.findField.focusTarget.release();
@@ -120,8 +124,9 @@ export class WorkbenchTextViewControl implements PointerCaptureTarget, PointerHo
 		} else {
 			this.focusTarget.next = field.next;
 			if (field.next instanceof InputFocusTarget) field.next.previous = this.focusTarget;
-			field.next = field.previous = null; field.cancelInput(); field.release();
+			field.next = field.previous = null;
 			this.findField.nativeCaret.width = this.findField.nativeCaret.height = 0;
+			field.cancelInput(); field.release();
 		}
 	}
 

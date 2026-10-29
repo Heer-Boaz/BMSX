@@ -35,6 +35,7 @@ import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/edito
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
 import { openBuildLog } from '../../ide/workbench/contrib/builds/editor_input';
+import { BuildOutputs } from '../../ide/workbench/contrib/builds/output';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
 import type { StudioBuildJob } from '../../hosts/common/studio_builds';
@@ -252,24 +253,25 @@ test('Build Output opens the actual request identity once, retains its document,
 		cancel: async () => { throw new Error('Opening output must never cancel a build'); },
 		forget: () => { throw new Error('Opening output must never discard a receipt'); },
 	};
-	const first = openBuildLog(harness.group, builds, job);
-	await first.refresh();
-	assert.equal(first.id, 'build-log:request-42'); assert.equal(harness.group.panes.activePane!.input, first);
+	const outputs = new BuildOutputs(builds); t.after(() => outputs.dispose());
+	const first = openBuildLog(harness.group, outputs.get(job));
+	await first.view.result.refresh();
+	assert.equal(first.view.result.requestId, 'request-42'); assert.ok(harness.group.panes.activePane!.input === first);
 	assert.equal(first.resource, undefined); assert.equal(first.serializable, false); assert.equal(first.isDirty(), false);
 	assert.equal('workingCopy' in first, false, 'a durable build receipt is not an authored working copy');
-	const document = first.error!; document.select(0, 8);
+	const document = first.view.error!; document.select(0, 8);
 	assert.equal(document.copy(), 'Compiler');
-	const reopened = openBuildLog(harness.group, builds, job);
-	assert.equal(reopened, first); assert.equal(reopened.document, document); assert.equal(document.copy(), 'Compiler');
+	const reopened = openBuildLog(harness.group, outputs.get(job));
+	assert.ok(reopened === first && reopened.view.document === document); assert.equal(document.copy(), 'Compiler');
 	assert.equal(harness.group.model.tabs.length, 1, 'the request ID, not its target label, owns the open tab');
-	const other = openBuildLog(harness.group, builds, next);
-	assert.notEqual(other, first); assert.equal(other.id, 'build-log:request-43'); assert.equal(harness.group.model.tabs.length, 2);
-	assert.equal(other.job.request.target, first.job.request.target, 'same-target jobs still have independent identities');
+	const other = openBuildLog(harness.group, outputs.get(next));
+	assert.ok(other !== first); assert.notEqual(other.id, first.id); assert.equal(harness.group.model.tabs.length, 2);
+	assert.equal(other.view.result.job.request.target, first.view.result.job.request.target, 'same-target jobs still have independent identities');
 	harness.group.close(first.id);
 	assert.equal(harness.group.model.findById(first.id), undefined);
-	const replacement = openBuildLog(harness.group, builds, job);
-	assert.notEqual(replacement, first); assert.notEqual(replacement.error, document);
-	assert.equal(replacement.document.selectionStart, 0); assert.equal(replacement.document.copy(), null);
+	const replacement = openBuildLog(harness.group, outputs.get(job));
+	assert.ok(replacement !== first && replacement.view.error !== document && replacement.view.result === first.view.result);
+	assert.equal(replacement.view.document.selectionStart, 0); assert.equal(replacement.view.document.copy(), null);
 	assert.ok(requested.every(id => id === 'request-42' || id === 'request-43'));
 });
 

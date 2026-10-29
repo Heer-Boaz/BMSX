@@ -57,6 +57,7 @@ import { LuaProgramInputSerializer } from './workbench/contrib/lua_program/edito
 import { ActionStringTester } from './workbench/contrib/scenario_lab/actionstring';
 import type { PublishedBuildOpenResult } from './workbench/services/builds';
 import type { WorkspaceBuilds } from './workbench/services/builds';
+import { BuildOutputs } from './workbench/contrib/builds/output';
 import type { WorkspaceProjects } from './workbench/services/projects';
 import type { ImportWorkspaceFiles } from './workbench/services/file_import';
 import type { ConversationObserverFactory } from '../hosts/common/conversation_observer';
@@ -197,6 +198,7 @@ export type CartEditor = TextInputHost & {
 	readonly gte: RuntimeGteHistory;
 	readonly gpu: RuntimeGpuHistory;
 	builds: WorkspaceBuilds | undefined;
+	readonly buildOutputs: BuildOutputs | undefined;
 	projects: WorkspaceProjects | undefined;
 	importFiles: ImportWorkspaceFiles | undefined;
 	openPublishedBuild: ((requestId: string) => PublishedBuildOpenResult) | undefined;
@@ -360,7 +362,17 @@ export class RuntimeCartEditor implements CartEditor {
 	};
 
 	public readonly assistant: AssistantConversation;
-	public builds: WorkspaceBuilds | undefined;
+	private buildsValue: WorkspaceBuilds | undefined;
+	private buildOutputsValue: BuildOutputs | undefined;
+	public get buildOutputs(): BuildOutputs | undefined { return this.buildOutputsValue; }
+	public get builds(): WorkspaceBuilds | undefined { return this.buildsValue; }
+	public set builds(builds: WorkspaceBuilds | undefined) {
+		if (this.buildsValue === builds) return;
+		const previous = this.buildOutputsValue;
+		this.buildsValue = builds;
+		this.buildOutputsValue = builds === undefined ? undefined : new BuildOutputs(builds);
+		previous?.dispose();
+	}
 	public projects: WorkspaceProjects | undefined;
 	public importFiles: ImportWorkspaceFiles | undefined;
 	public openPublishedBuild: ((requestId: string) => PublishedBuildOpenResult) | undefined;
@@ -921,6 +933,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindWorkspaceModels();
 		this.statusBar.dispose();
 		this.windowStatus.dispose();
+		this.buildOutputs?.dispose();
 		try {
 			await this.workbench.shutdown();
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.All);

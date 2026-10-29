@@ -28,7 +28,7 @@ test('Build Jobs delivers its captured output to a document without replacing th
 	await f.editor.quickInput.accept(); await setImmediate();
 	const group = f.editor.editorParts.activeGroup, input = group.model.activeTab;
 	assert.ok(group !== main.activeGroup && input?.kind === 'build_log');
-	assert.ok(input.job === job);
+	assert.ok(input.view.result.job === job);
 	assert.ok(main.activeGroup.model.activeTab === subject && main.activeGroup.panes.activePane === pane);
 });
 
@@ -47,4 +47,29 @@ test('Play Source reuses the authored document view without replacing its main P
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 	assert.ok(f.ide.play.current === handle);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+});
+
+test('a retained Build Jobs action cannot reinterpret its receipt through a replacement provider', async t => {
+	const f = createActualSourcePanes(t);
+	const job: StudioBuildJob = { request: { requestId: 'retained-build', target: 'fixture', debug: true, optLevel: 0 },
+		state: 'failed', phase: 'compile', acceptedAt: 1, updatedAt: 2, version: { generation: 1, sequence: 1 }, error: 'Captured diagnostic' };
+	const builds: WorkspaceBuilds = {
+		jobs: [job], pending: [], targets: async () => [], get: async () => job, log: async () => 'Original provider output',
+		submit: async () => assert.fail('reading output must not submit a build'),
+		cancel: async () => assert.fail('reading output must not cancel a build'), forget() {},
+	};
+	f.editor.builds = builds;
+	showBuildJobs(f.editor);
+	await f.editor.quickInput.accept(); await setImmediate();
+	const original = f.editor.buildOutputs;
+	let replacementReads = 0;
+	f.editor.builds = { ...builds, get: async () => { replacementReads++; return job; },
+		log: async () => { replacementReads++; return 'Replacement provider output'; } };
+	const group = f.editor.editorParts.activeGroup, groups = [...f.editor.editorParts.groups], input = group.model.activeTab;
+	f.editor.quickInput.model.list.selectionIndex = 2;
+	await f.editor.quickInput.accept(); await setImmediate();
+	assert.equal(replacementReads, 0);
+	assert.ok(f.editor.buildOutputs !== original);
+	assert.ok(f.editor.editorParts.activeGroup === group && group.model.activeTab === input);
+	assert.deepEqual(f.editor.editorParts.groups, groups);
 });

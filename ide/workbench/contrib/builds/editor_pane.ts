@@ -23,6 +23,7 @@ import { WorkbenchTextViewControl } from '../../ui/text_view/control';
 import type { WorkbenchTextViewModel } from '../../ui/text_view/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import type { BuildLogInput } from './editor_input';
+import type { BuildLogViewModel } from './view_model';
 
 const ACTIONS = ['buildLog.error', 'buildLog.output', 'buildLog.refresh', 'buildLog.copyAll'] as const;
 
@@ -36,11 +37,12 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 	private readonly tooltip = new WorkbenchTooltip();
 	private readonly bodyBounds = create_rect_bounds();
 	private attachedDocument: WorkbenchTextViewModel | undefined;
-	private attachedInput: BuildLogInput | undefined;
+	private attachedView: BuildLogViewModel | undefined;
 	private renderedRevision = -1;
 	private heading = '';
-	private statusInput: BuildLogInput | undefined;
+	private statusView: BuildLogViewModel | undefined;
 	private statusRevision = -1;
+	private unbindDocument: (() => void) | undefined;
 
 	public constructor(private readonly clipboard: Clipboard, contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
@@ -61,56 +63,68 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 
 	public override get commandTarget() { return this.reading.focusTarget; }
 	protected override activate(): void {
-		this.actions.setInput(this.input.actions, this.focusTarget);
+		const view = this.input.view;
+		this.actions.setInput(view.actions, this.focusTarget);
+		this.unbindDocument = view.onDidChangeDocument(document => {
+			this.attachedDocument = document;
+			this.reading.setInput(document);
+			if (this.hasInput && this.input.view === view) this.reading.update(this.bodyBounds, editorViewState.font, view.layout.rowHeight);
+		});
 		this.update();
 	}
 	public override clearInput(): void {
+		this.unbindDocument?.(); this.unbindDocument = undefined;
 		this.tooltip.hide(); this.actions.clearInput(); this.reading.clearInput();
-		this.attachedDocument = undefined; this.attachedInput = undefined; this.renderedRevision = -1;
+		this.attachedDocument = undefined; this.attachedView = undefined; this.renderedRevision = -1;
 		super.clearInput();
 	}
-	public override dispose(): void { this.tooltip.detach(); this.actions.dispose(); this.reading.dispose(); super.dispose(); }
+	public override dispose(): void {
+		this.unbindDocument?.(); this.unbindDocument = undefined;
+		this.tooltip.detach(); this.actions.dispose(); this.reading.dispose(); super.dispose();
+	}
 
 	public isEnabled(command: EditorCommandId): boolean {
 		if (!this.hasInput) return false;
+		const view = this.input.view;
 		switch (command) {
-			case 'buildLog.refresh': return !this.input.loading;
-			case 'buildLog.error': return this.input.error !== undefined;
+			case 'buildLog.refresh': return !view.result.isDisposed && !view.result.loading;
+			case 'buildLog.error': return view.error !== undefined;
 			case 'buildLog.output': return true;
-			case 'buildLog.copyAll': return this.input.document.buffer.length !== 0;
+			case 'buildLog.copyAll': return view.document.buffer.length !== 0;
 			default: return false;
 		}
 	}
 	public isActive(command: EditorCommandId): boolean {
-		return this.hasInput && (command === 'buildLog.error' && this.input.channel === 'error'
-			|| command === 'buildLog.output' && this.input.channel === 'output');
+		return this.hasInput && (command === 'buildLog.error' && this.input.view.channel === 'error'
+			|| command === 'buildLog.output' && this.input.view.channel === 'output');
 	}
 	public execute(command: EditorCommandId): void {
 		if (!this.isEnabled(command)) return;
-		if (command === 'buildLog.refresh') { void this.input.refresh(); return; }
+		const view = this.input.view;
+		if (command === 'buildLog.refresh') { void view.result.refresh(); return; }
 		if (command === 'buildLog.copyAll') {
-			void writeClipboard(this.clipboard, this.input.document.buffer.getText(), 'Copied build document.');
+			void writeClipboard(this.clipboard, view.document.buffer.getText(), 'Copied build document.');
 			return;
 		}
 		const channel = command === 'buildLog.error' ? 'error' : 'output';
-		if (this.input.channel !== channel) { this.input.channel = channel; this.input.revision++; }
+		view.channel = channel;
 		this.update(); this.focus();
 	}
 
 	public override update(): void {
-		const input = this.input, layout = input.layout;
+		const view = this.input.view, layout = view.layout;
 		const changed = updateFullWidthWorkbenchLayout(layout, this.contentBounds);
-		const attached = this.attachedInput !== input;
-		if (this.attachedDocument !== input.document) {
-			this.attachedDocument = input.document; this.reading.setInput(input.document);
+		const attached = this.attachedView !== view;
+		if (this.attachedDocument !== view.document) {
+			this.attachedDocument = view.document; this.reading.setInput(view.document);
 		}
-		if (changed || attached || this.renderedRevision !== input.revision) {
-			this.attachedInput = input; this.renderedRevision = input.revision;
-			for (const item of input.actions.items) item.checked = this.isActive(item.command);
-			layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, layout.top + layout.rowHeight + 8,
+		if (changed || attached || this.renderedRevision !== view.revision) {
+			this.attachedView = view; this.renderedRevision = view.revision;
+			for (const item of view.actions.items) item.checked = this.isActive(item.command);
+			layoutWorkbenchActionBar(view.actions, layout.right - 4, layout.top + 2, layout.top + layout.rowHeight + 8,
 				measureText, editorViewState.font.renderFont(), layout.left + 4);
-			const recipe = `${input.job.request.debug ? 'Debug' : 'Release'} -O${input.job.request.optLevel}`;
-			this.heading = measureText(recipe) <= input.actions.bounds.left - layout.left - 12 ? recipe : '';
+			const recipe = `${view.result.job.request.debug ? 'Debug' : 'Release'} -O${view.result.job.request.optLevel}`;
+			this.heading = measureText(recipe) <= view.actions.bounds.left - layout.left - 12 ? recipe : '';
 			write_rect_bounds(this.bodyBounds, layout.left, Math.min(layout.bottom, layout.top + layout.rowHeight + 12), layout.right, layout.bottom);
 		}
 		this.reading.update(this.bodyBounds, editorViewState.font, layout.rowHeight);
@@ -120,31 +134,31 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 		else this.tooltip.hide();
 	}
 	public draw(): void {
-		const { layout, actions } = this.input;
+		const view = this.input.view, { layout, actions, result } = view;
 		api.fill_rect(layout.left, layout.top, layout.right, layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 		api.blit_text_inline_with_font(this.heading, layout.left + 4, layout.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, editorViewState.font.renderFont());
 		renderWorkbenchActionBar(actions, editorViewState.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		this.reading.draw();
-		if (this.input.channel === 'output' && this.input.document.buffer.length === 0) {
-			const bounds = this.input.document.viewport.bounds;
-			const text = this.input.outputText === undefined
-				? this.input.loading ? 'Loading…' : 'Unavailable' : 'No output';
+		if (view.channel === 'output' && view.document.buffer.length === 0) {
+			const bounds = view.document.viewport.bounds;
+			const text = result.outputText === undefined
+				? result.loading ? 'Loading…' : 'Unavailable' : 'No output';
 			api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 			api.blit_text_inline_with_font(text, bounds.left + 4, bounds.top + 4, 0, colors.COLOR_DESCRIPTION_TEXT, editorViewState.font.renderFont());
 			api.popClipRect();
 		}
 	}
 	public updateStatus(): void {
-		const input = this.input;
-		if (this.statusInput === input && this.statusRevision === input.revision) return;
-		this.statusInput = input; this.statusRevision = input.revision;
-		this.statusItems[0].text = input.readError === undefined
-			? `${input.channel === 'error' ? 'Failure diagnostic' : 'Captured output'} | ${input.loading ? 'Reading snapshot…' : input.job.state}`
-			: `Read failed: ${input.readError}`;
+		const view = this.input.view, result = view.result;
+		if (this.statusView === view && this.statusRevision === view.revision) return;
+		this.statusView = view; this.statusRevision = view.revision;
+		this.statusItems[0].text = result.readError === undefined
+			? `${view.channel === 'error' ? 'Failure diagnostic' : 'Captured output'} | ${result.loading ? 'Reading snapshot…' : result.job.state}`
+			: `Read failed: ${result.readError}`;
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
 		return this.actions.handlePointer(snapshot) || this.reading.handlePointer(snapshot);
 	}
 	public handleKeyboard(): void {}
-	public handleWheel(event: WheelInputSnapshot): void { this.reading.handleWheel(event, event.deltaY * this.input.layout.rowHeight); }
+	public handleWheel(event: WheelInputSnapshot): void { this.reading.handleWheel(event, event.deltaY * this.input.view.layout.rowHeight); }
 }

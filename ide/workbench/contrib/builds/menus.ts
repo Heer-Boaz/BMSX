@@ -1,7 +1,7 @@
 import type { WorkbenchMenuCommandDefinition } from '../../ui/menu/model';
-import type { BuildLogInput } from './editor_input';
+import type { BuildLogViewModel } from './view_model';
 
-export const BUILD_LOG_TITLE_ACTIONS: readonly WorkbenchMenuCommandDefinition<BuildLogInput>[] = [
+export const BUILD_LOG_TITLE_ACTIONS: readonly WorkbenchMenuCommandDefinition<BuildLogViewModel>[] = [
 	{ type: 'command', command: 'buildLog.error', when: input => input.error !== undefined },
 	{ type: 'command', command: 'buildLog.output', when: input => input.error !== undefined },
 	{ type: 'command', command: 'buildLog.refresh', icon: 'refresh' },

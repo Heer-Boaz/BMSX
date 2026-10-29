@@ -5,6 +5,7 @@ import type { WorkspaceBuilds } from '../../services/builds';
 import type { QuickPickItem } from '../../services/quick_input/provider';
 import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { openBuildLog } from './editor_input';
+import type { BuildOutputs } from './output';
 
 type BuildAction = QuickPickItem & { run(): Promise<void> };
 
@@ -28,22 +29,22 @@ export async function chooseBuild(editor: CartEditor): Promise<void> {
 }
 
 export function showBuildJobs(editor: CartEditor): void {
-	const builds = editor.builds!;
+	const builds = editor.builds!, outputs = editor.buildOutputs!;
 	const jobs = [...builds.jobs].sort((a, b) => b.acceptedAt - a.acceptedAt);
 	const choices = [
 		...builds.pending.map(request => ({ label: request.target, description: 'Acknowledgement unknown; inspect this request', detail: request.requestId, id: request.requestId })),
 		...jobs.map(job => ({ label: `${job.request.target} - ${job.state}`, description: job.phase, detail: job.request.requestId, id: job.request.requestId })),
 	];
 	editor.quickInput.pick('Workspace builds', 'Recent jobs; select a request to obtain its current state', () => new TextQuickPickProvider(choices),
-		choice => { void inspectBuild(editor, builds, choice.id).catch(reportBuildError); });
+		choice => { void inspectBuild(editor, builds, outputs, choice.id).catch(reportBuildError); });
 }
 
-async function inspectBuild(editor: CartEditor, builds: WorkspaceBuilds, id: string): Promise<void> {
+async function inspectBuild(editor: CartEditor, builds: WorkspaceBuilds, outputs: BuildOutputs, id: string): Promise<void> {
 	const job = await builds.get(id);
 	if (job === undefined) {
 		const choices: BuildAction[] = [
 			{ label: 'Check request again', description: id, detail: 'Retains the original request identity',
-				run: () => inspectBuild(editor, builds, id) },
+				run: () => inspectBuild(editor, builds, outputs, id) },
 			{ label: 'Copy request ID', description: id, detail: '', run: async () => { await editor.clipboard.writeText(id); } },
 			{ label: 'Dismiss local receipt', description: 'Does not cancel or repeat a build', detail: id,
 				run: async () => { builds.forget(id); } },
@@ -52,17 +53,18 @@ async function inspectBuild(editor: CartEditor, builds: WorkspaceBuilds, id: str
 			() => new TextQuickPickProvider(choices), choice => { void choice.run().catch(reportBuildError); });
 		return;
 	}
-	showBuildDetails(editor, builds, job);
+	showBuildDetails(editor, builds, outputs, job);
 }
 
-function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, job: StudioBuildJob): void {
+function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, outputs: BuildOutputs, job: StudioBuildJob): void {
 	const id = job.request.requestId;
 	const choices: BuildAction[] = [
 		{ label: `${job.request.target}: ${job.state}`, description: job.phase, detail: `${job.request.debug ? 'Debug' : 'Release'} -O${job.request.optLevel}`,
-			run: () => inspectBuild(editor, builds, id) },
-		{ label: 'Refresh status', description: 'Read the original request', detail: '', run: () => inspectBuild(editor, builds, id) },
+			run: () => inspectBuild(editor, builds, outputs, id) },
+		{ label: 'Refresh status', description: 'Read the original request', detail: '', run: () => inspectBuild(editor, builds, outputs, id) },
 		{ label: 'View build log', description: 'Read the captured output and failure diagnostic', detail: job.error ?? '', run: async () => {
-			openBuildLog(editor.editorParts.editorDestination(), builds, job);
+			const result = outputs.get(job);
+			openBuildLog(editor.editorParts.editorDestination(), result);
 		} },
 		{ label: 'Copy request ID', description: id, detail: '', run: async () => { await editor.clipboard.writeText(id); } },
 	];
@@ -87,7 +89,7 @@ function showBuildDetails(editor: CartEditor, builds: WorkspaceBuilds, job: Stud
 			detail: 'Published; not installed', run: async () => { await editor.clipboard.writeText(artifact); } });
 	}
 	if (!isBuildTerminal(job.state)) choices.push({ label: 'Cancel build', description: 'Wait for the producer to stop',
-		detail: 'Already published results are not rolled back.', run: async () => { showBuildDetails(editor, builds, await builds.cancel(id)); } });
+		detail: 'Already published results are not rolled back.', run: async () => { showBuildDetails(editor, builds, outputs, await builds.cancel(id)); } });
 	editor.quickInput.pick('Build details', 'Publication and runtime installation are separate',
 		() => new TextQuickPickProvider(choices), choice => { void choice.run().catch(reportBuildError); });
 }

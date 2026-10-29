@@ -110,4 +110,23 @@ for (const variant of ['tiny', 'msx'] as const) {
 		assert.equal(inputFocus.target, f.control.focusTarget);
 		assert.equal(f.control.focusTarget.next, f.actions); assert.equal(f.actions.previous, f.control.focusTarget);
 	});
+
+	test(`${variant} a focused Find return can publish a newer reader without the older replacement overwriting its native binding`, t => {
+		const f = fixture(t, variant), clipboard = new HeadlessClipboard();
+		f.press('KeyF', KeyModifier.ctrl);
+		const requested = new WorkbenchTextViewModel(new PieceTreeBuffer('older requested document\n'));
+		const newer = new WorkbenchTextViewModel(new PieceTreeBuffer('newer retained document\n'));
+		requested.setQuery('older query'); newer.setQuery('newer query');
+		let returned = false;
+		const unbind = f.control.focusTarget.onDidFocus(() => {
+			unbind(); returned = true; f.control.setInput(newer); f.update(); newer.selectAll();
+		});
+		t.after(unbind);
+		f.control.setInput(requested);
+		assert.equal(returned, true); assert.ok(inputFocus.admittedTarget === f.control.focusTarget);
+		clipboard.execute('copy', inputFocus.admittedTarget!.clipboard!);
+		assert.equal(clipboard.text, 'newer retained document\n');
+		f.control.openFind(); assert.ok(inputFocus.admittedTarget === f.control.findField.focusTarget);
+		assert.equal(f.control.findField.text, 'newer query'); assert.equal(requested.query, 'older query');
+	});
 }
