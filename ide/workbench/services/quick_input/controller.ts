@@ -4,7 +4,7 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture, type PointerCaptureTarget } from '../../../input/pointer/capture';
 import { create_rect_bounds, point_in_rect } from '../../../../machine/ts/common/rect';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
-import { DisposableStore } from '../../../common/lifecycle';
+import { DisposableStore, type ILifetime } from '../../../common/lifecycle';
 import type { PointerInputSnapshot } from '../../../common/models';
 import * as constants from '../../../common/constants';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
@@ -22,6 +22,8 @@ import { drawQuickInput, layoutQuickInput } from './render';
 import type { WorkbenchModalPresentation } from '../windows/model';
 
 export type QuickInputOptions = {
+	/** The actual bound resource retains command authority through accepted focus handoff. */
+	readonly owner?: ILifetime;
 	readonly preserveFocus?: boolean;
 	readonly invocationOrigin?: InputFocusTarget | null;
 	/** Workspace-command addressing, independent of local query editing and focus return. */
@@ -29,7 +31,6 @@ export type QuickInputOptions = {
 };
 
 type QuickInputSession = {
-	readonly kind: 'pick' | 'input';
 	origin: InputFocusTarget | null;
 	returnFocus: InputFocusTarget | null;
 	interactionOrigin: InputFocusScope | undefined;
@@ -38,7 +39,11 @@ type QuickInputSession = {
 	unbindOrigin: (() => void) | undefined;
 	readonly accept: (modifiers: KeyModifier) => void | Promise<void>;
 	prepare: (() => void) | undefined;
-};
+} & ({ readonly kind: 'pick'; state: 'preparing' | 'loading' | 'ready' | 'error' } | { readonly kind: 'input' });
+
+type QuickPickSource<T extends QuickPickItem> =
+	| ((origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T> | Promise<QuickPickProvider<T>>)
+	| Promise<QuickPickProvider<T>>;
 
 /** One transient workbench surface, independent of editor panes and their documents. */
 export class QuickInputController implements PointerCaptureTarget {
@@ -91,8 +96,9 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.field.onDidChangeText(() => {
 			this.cancelPointer();
 			this.scrollbarPointer.cancelPointer();
-			if (this.session?.kind === 'pick') this.model.filter(this.field.text);
-			else { this.message = ''; this.labelsDirty = true; }
+			if (this.session?.kind === 'pick') {
+				if (this.session.state === 'ready') this.model.filter(this.field.text);
+			} else { this.message = ''; this.labelsDirty = true; }
 			resetInlineBlink();
 		});
 		this.field.focusTarget.onDidBlur(next => {
@@ -104,48 +110,46 @@ export class QuickInputController implements PointerCaptureTarget {
 	public get visible(): boolean { return this.session !== null; }
 	public get invocationOrigin(): InputFocusTarget | null { return this.session!.origin; }
 	public get inputBox(): boolean { return this.session?.kind === 'input'; }
+	public get failed(): boolean { return this.session?.kind === 'pick' && this.session.state === 'error'; }
+	public get busy(): boolean {
+		return this.session?.kind === 'pick' ? this.session.state === 'preparing' || this.session.state === 'loading'
+			: this.session?.kind === 'input' && this.field.readOnly;
+	}
 
 	public pick<T extends QuickPickItem>(
 		title: string,
 		placeholder: string,
-		provide: (origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T>,
+		provide: QuickPickSource<T>,
 		accept: (item: T, modifiers: KeyModifier, preserveFocus: boolean) => void,
 		onWillShow?: (lifetime: DisposableStore) => void,
 		options: QuickInputOptions = {},
 	): void {
 		const { invocationOrigin } = options;
 		let provider: QuickPickProvider<T>;
-		const session: QuickInputSession = {
-			kind: 'pick', origin: null, returnFocus: null, interactionOrigin: undefined, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
+		const session: QuickInputSession & { readonly kind: 'pick' } = {
+			kind: 'pick', state: 'preparing', origin: null, returnFocus: null, interactionOrigin: undefined, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
 			prepare: () => {
 				// Catalogs observe the invoking control after ordinary blur has published
 				// its draft, before native focus sees the new field presentation.
 				session.origin = invocationOrigin === undefined ? inputFocus.resolveTarget(session.origin) : invocationOrigin;
-				provider = provide(session.origin, session.disposables);
-				if (this.session !== session) return;
+				session.state = 'loading';
 				this.title = title;
 				this.placeholder = placeholder;
-				this.model.setInput(provider);
-				if (provider.onDidChange !== undefined) {
-					const unbind = provider.onDidChange(() => {
-						if (this.session !== session) return;
-						this.cancelPointer(); this.scrollbarPointer.cancelPointer(); pointerHover.release(this);
-						if (this.session !== session) return;
-						this.model.refresh(this.field.text);
-						if (this.session !== session) return;
-						this.update();
-					});
-					if (this.session !== session) { unbind(); return; }
-					session.disposables.add({ dispose: unbind });
-				}
 				this.labelsDirty = true;
 				setFieldText(this.field, '', true);
 				if (this.session !== session) return;
+				if (!(provide instanceof Promise)) {
+					const supplied = provide(session.origin, session.disposables);
+					if (!(supplied instanceof Promise)) { admitProvider(supplied); return; }
+					supplied.then(admitProvider, rejectProvider);
+					if (this.session !== session) return;
+				}
 				this.update();
 				resetInlineBlink();
 				this.onDidChangeVisibility();
 			},
 			accept: modifiers => {
+				if (session.state !== 'ready') return;
 				const list = this.model.list;
 				if (list.selectionIndex === -1) return; // A real user choice is required.
 				const item = provider.items[list.rows[list.selectionIndex].itemIndex];
@@ -155,7 +159,7 @@ export class QuickInputController implements PointerCaptureTarget {
 					session.disposables.dispose();
 					// A return-focus observer may have chosen a newer foreground before
 					// an editor-opening callback starts its own lifetime.
-					const preserveFocus = inputFocus.admittedTarget !== null && inputFocus.admittedTarget !== returnFocus;
+					const preserveFocus = inputFocus.admittedTarget !== returnFocus;
 					if (session.contextAdmitted) accept(item, modifiers, preserveFocus);
 				} finally {
 					session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
@@ -163,6 +167,44 @@ export class QuickInputController implements PointerCaptureTarget {
 				}
 			},
 		};
+		const admitProvider = (supplied: QuickPickProvider<T>): void => {
+			if (this.session !== session || session.state !== 'loading') return;
+			provider = supplied;
+			session.state = 'ready';
+			this.labelsDirty = true;
+			this.model.setInput(provider);
+			if (this.session !== session) return;
+			if (provider.onDidChange !== undefined) {
+				const unbind = provider.onDidChange(() => {
+					if (this.session !== session) return;
+					this.cancelPointer(); this.scrollbarPointer.cancelPointer(); pointerHover.release(this);
+					if (this.session !== session) return;
+					this.model.refresh(this.field.text);
+					if (this.session !== session) return;
+					this.update();
+				});
+				if (this.session !== session) { unbind(); return; }
+				session.disposables.add({ dispose: unbind });
+			}
+			this.model.filter(this.field.text);
+			if (this.session !== session) return;
+			this.update();
+			resetInlineBlink();
+			this.onDidChangeVisibility();
+		};
+		const rejectProvider = (error: unknown): void => {
+			if (this.session !== session || session.state !== 'loading') return;
+			session.state = 'error';
+			this.model.clearInput();
+			if (this.session !== session) return;
+			this.message = error instanceof Error ? error.message : String(error);
+			this.labelsDirty = true;
+			this.update();
+			this.onDidChangeVisibility();
+		};
+		// Accepted operations can already be running. Observe their result even when
+		// focus handoff retires this presentation before its prepare callback runs.
+		if (provide instanceof Promise) provide.then(admitProvider, rejectProvider);
 		this.show(session, onWillShow, options);
 	}
 
@@ -223,8 +265,10 @@ export class QuickInputController implements PointerCaptureTarget {
 
 	/** Publish the new owner before retiring callbacks; replacements keep the invoking context. */
 	private show(session: QuickInputSession, onWillShow: ((lifetime: DisposableStore) => void) | undefined, options: QuickInputOptions): boolean {
-		if (this.disposed) { session.disposables.dispose(); return false; }
-		const { invocationOrigin, preserveFocus } = options;
+		const { owner, invocationOrigin, preserveFocus } = options;
+		if (this.disposed || owner?.isDisposed === true) {
+			session.contextAdmitted = false; session.disposables.dispose(); return false;
+		}
 		const previous = this.session;
 		const target = inputFocus.target === null ? inputFocus.pendingTarget : inputFocus.target;
 		const takeFocus = !preserveFocus;
@@ -255,8 +299,10 @@ export class QuickInputController implements PointerCaptureTarget {
 		};
 		const unbindSemantic = originScope.onDidRetireContext(retireOrigin);
 		const unbindNative = origin !== null && origin.scope !== originScope ? origin.scope.onDidRetireContext(retireOrigin) : undefined;
-		// Resource disposal is part of acceptance; neither origin lease ends before those callbacks finish.
-		session.unbindOrigin = unbindNative === undefined ? unbindSemantic : () => { unbindSemantic(); unbindNative(); };
+		const unbindOwner = owner?.onWillDispose(retireOrigin);
+		// Resource disposal is part of acceptance; source leases survive through those callbacks and focus return.
+		session.unbindOrigin = unbindNative === undefined && unbindOwner === undefined ? unbindSemantic
+			: () => { unbindSemantic(); unbindNative?.(); unbindOwner?.(); };
 		if (!this.presentation.scope.contains(originScope)) session.disposables.add({ dispose: this.presentation.scope.onDidRetireContext(() => this.hide(false)) });
 		this.clearPresentation();
 		onWillShow?.(session.disposables);

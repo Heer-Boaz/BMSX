@@ -7,7 +7,7 @@ export type PublishedBuildOpenResult = { readonly status: 'opened' | 'blocked'; 
 export interface WorkspaceBuilds {
 	readonly jobs: readonly StudioBuildJob[];
 	readonly pending: readonly StudioBuildRequest[];
-	targets(): Promise<readonly string[]>;
+	targets(signal?: AbortSignal): Promise<readonly string[]>;
 	submit(target: string, debug: boolean, optLevel: 0 | 1 | 2 | 3): Promise<StudioBuildJob>;
 	get(requestId: string, signal?: AbortSignal): Promise<StudioBuildJob | undefined>;
 	cancel(requestId: string): Promise<StudioBuildJob>;

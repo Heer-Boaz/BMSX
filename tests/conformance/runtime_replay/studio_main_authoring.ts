@@ -23,6 +23,7 @@ import { createTestSourceOnlyLuaRecord } from '../../helpers/runtime_sources';
 import { getCodeAreaBounds, resolveTextPositionBounds } from '../../../ide/editor/ui/view/view';
 import { testStudioWindowKeyboard } from './studio_window_keyboard';
 import { testStudioSashSizing, testStudioSashResetBlur } from './studio_sash_sizing';
+import { testStudioBuildChooser } from './studio_build_chooser';
 
 const SOURCE_READING_FIXTURE = `local function read_authoring_source()
     local readable_value = alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_kappa_lambda_mu_nu_xi_omicron_pi_rho_sigma_tau_upsilon_phi_chi_psi_omega
@@ -163,6 +164,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	await testMainSourceReadability(test, restored, input);
 	await testPrimarySourceDestinations(test, input);
 	await testStudioSashResetBlur(test, restored, input);
+	await testStudioBuildChooser(test, restored, input);
 	await testCallHierarchyResult(test, resource.contextId);
 	await testWorkspaceSearchResult(test, resource.contextId);
 	await press('ControlLeft', 'KeyW');

@@ -48,7 +48,9 @@ export class HttpWorkspaceBuilds implements WorkspaceBuilds {
 		if (isBuildTerminal(job.state) && previous?.state !== job.state) this.finished(job);
 	}
 
-	public async targets(): Promise<readonly string[]> { return (await this.request('/targets')).json(); }
+	public async targets(signal?: AbortSignal): Promise<readonly string[]> {
+		return (await this.request('/targets', 'GET', undefined, false, signal)).json();
+	}
 	public async submit(target: string, debug: boolean, optLevel: 0 | 1 | 2 | 3): Promise<StudioBuildJob> {
 		const request = { requestId: generateUuid(), target, debug, optLevel };
 		this.requests.add(request); // Commit recovery identity before making the request.

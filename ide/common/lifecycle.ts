@@ -1,5 +1,11 @@
 export interface IDisposable { dispose(): void }
 
+/** Observe an owning resource without taking ownership of its disposal. */
+export interface ILifetime {
+	readonly isDisposed: boolean;
+	onWillDispose(listener: () => void): () => void;
+}
+
 /** A lifetime owner, not a registry of services or a substitute for ownership. */
 export class DisposableStore implements IDisposable {
 	private readonly items = new Set<IDisposable>();

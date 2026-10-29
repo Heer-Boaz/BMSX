@@ -252,7 +252,7 @@ export class IdeCommandController {
 			case 'builds.start': void chooseBuild(this.editor); return;
 			case 'projects.createCartridge': createCartridge(this.editor); return;
 			case 'resources.import': importCartridgeFiles(this.editor, this.sources.catalog); return;
-			case 'builds.jobs': showBuildJobs(this.editor); return;
+			case 'builds.jobs': showBuildJobs(this.editor, group); return;
 			case 'builds.output.choose': chooseBuildOutput(this.editor); return;
 			case 'server.connection':
 				showServerConnection(this.editor);

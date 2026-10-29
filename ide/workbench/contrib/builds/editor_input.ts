@@ -28,11 +28,12 @@ export class BuildLogInput extends ReadonlyEditorInput<`build-log:${number}`, 'b
 	}
 }
 
-export function openBuildLog(group: EditorGroupView, result: BuildOutput): BuildLogInput {
-	let input: BuildLogInput | undefined;
-	for (const tab of group.model.tabs) if (tab instanceof BuildLogInput && tab.view.result === result) { input = tab; break; }
-	input ??= new BuildLogInput(result);
-	group.openEditor(input);
-	void result.refresh();
+export function openBuildLog(group: EditorGroupView, result: BuildOutput): BuildLogInput | undefined {
+	const input = group.openProducedEditor(() => {
+		for (const tab of group.model.tabs) if (tab instanceof BuildLogInput && tab.view.result === result) return tab;
+		return new BuildLogInput(result);
+	}, { isCurrent: () => !result.isDisposed });
+	// Accepted receiver handoff can retire the source while retaining its captured document.
+	if (input !== undefined && !result.isDisposed) void result.refresh();
 	return input;
 }

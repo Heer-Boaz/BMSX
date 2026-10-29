@@ -95,6 +95,23 @@ late receipt/output publication cannot reopen a hidden activity or take focus.
 Activity recovery remembers the selected tool, not a captured build request;
 restored Build Output remains explicitly unbound until a request is chosen.
 
+Build target discovery and receipt inspection admit their Quick Input session
+before starting observational I/O. Pending input can collect a query or close;
+only that exact session admits its resolved catalog or error. A binding's
+`BuildOutputs` owner retires its UI readers even if the same transport object is
+later reused. Source ownership is checked before replacing another presentation
+and remains leased through acceptance/disposal and focus-return callbacks.
+Accepted Submit/Cancel operations continue independently; closing their UI does
+not repeat, forget or undo a producer request. Log delivery keeps the original
+receiving group through receipt reads, refresh and cancellation instead of
+choosing whichever group is active when the response arrives. The receiving
+group's normal opening admission governs whether it can still present that log.
+An admitted reader can retain captured documents after its live source retires;
+receiver callbacks do not preserve refresh authority or require rolling back
+the accepted view.
+This follows VS Code's [promised Quick Input catalogs](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/platform/quickinput/browser/quickInputController.ts),
+without a separate Build-window or cancellation framework.
+
 An explicit authored-subject action binds Main; ordinary document opening
 continues to use the common group-routing contract.
 

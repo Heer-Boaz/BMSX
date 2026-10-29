@@ -54,7 +54,9 @@ export class QuickPickModel {
 	}
 
 	public setInput(input: QuickPickProvider): void {
+		const revision = this.revision;
 		this.clearInput();
+		if (this.revision !== revision + 1) return; // Retiring the old viewport may admit a newer input.
 		this.input = input;
 		this.items = input.items;
 	}
@@ -69,7 +71,7 @@ export class QuickPickModel {
 		this.list.selectionIndex = -1;
 		this.list.hoverIndex = -1;
 		this.pendingReveal = false;
-		this.viewport.scrollbar.setScroll(0);
+		this.viewport.layout(0, 0, 0, 0, 0);
 	}
 
 	public filter(value: string): void {

@@ -7,9 +7,17 @@ import type { WorkspaceBuilds } from '../../services/builds';
 /** Workspace-owned observations. Closing one reader does not retire a request's captured documents. */
 export class BuildOutputs implements IDisposable {
 	private readonly outputs = new Map<string, BuildOutput>();
+	private readonly retirementListeners = new Set<() => void>();
 	private disposed = false;
 
 	public constructor(private readonly builds: WorkspaceBuilds) {}
+	public get isDisposed(): boolean { return this.disposed; }
+
+	/** Each admitted workspace binding owns its readers even when its transport object is reused. */
+	public onWillDispose(listener: () => void): () => void {
+		this.retirementListeners.add(listener);
+		return () => this.retirementListeners.delete(listener);
+	}
 
 	public get(job: StudioBuildJob): BuildOutput {
 		if (this.disposed) throw new Error('Cannot obtain build output from a disposed workspace');
@@ -25,6 +33,8 @@ export class BuildOutputs implements IDisposable {
 	public dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		for (const listener of this.retirementListeners) listener();
+		this.retirementListeners.clear();
 		for (const output of this.outputs.values()) output.dispose();
 		this.outputs.clear();
 	}

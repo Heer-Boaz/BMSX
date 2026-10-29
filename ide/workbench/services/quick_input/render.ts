@@ -35,13 +35,16 @@ export function layoutQuickInput(input: QuickInputController): void {
 			input.titleText = truncateTextToWidth(input.title, right - left - 8);
 			input.placeholderText = truncateTextToWidth(input.placeholder, right - left - 14);
 			layout.messageLines.length = 0;
-			if (input.message.length !== 0) for (const line of input.message.split(/\r?\n/)) {
+			if (input.failed) layout.messageLines.push('FAILED');
+			const message = input.busy ? 'WORKING…' : input.message;
+			if (message.length !== 0) for (const line of message.split(/\r?\n/)) {
 				writeWrappedOverlayLine(layout.messageLines, line, right - left - 14);
 			}
 			layout.textRevision += 1;
 			input.labelsDirty = false;
 		}
-		if (input.inputBox) {
+		if (input.inputBox || input.busy || input.failed) {
+			model.viewport.layout(left + 4, rowsTop, right - 4, rowsTop, 0);
 			write_rect_bounds(layout.bounds, left, top, right,
 				Math.min(area.bottom - 4, rowsTop + layout.messageLines.length * view.lineHeight + 4));
 		} else {
@@ -54,7 +57,7 @@ export function layoutQuickInput(input: QuickInputController): void {
 			if (geometryChanged || model.selectionRevealPending) model.revealSelection();
 		}
 	}
-	if (input.inputBox) return;
+	if (input.inputBox || input.busy || input.failed) return;
 	layoutQuickPickRows(model, layout, layoutChanged);
 }
 
@@ -71,12 +74,12 @@ export function drawQuickInput(input: QuickInputController): void {
 		api.blit_text_inline_with_font(input.placeholderText, field.left + 3, field.top + 2, 0, constants.COLOR_INPUT_PLACEHOLDER, font);
 	}
 	drawSingleLineField(input.field, input.textViewport, constants.COLOR_INPUT_TEXT);
-	if (input.inputBox) {
+	if (input.inputBox || input.busy || input.failed) {
 		api.pushClipRect(bounds.left + 4, field.bottom + 4, bounds.right - 4, bounds.bottom - 4);
 		for (let index = 0; index < input.layout.messageLines.length; index += 1) {
 			api.blit_text_inline_with_font(input.layout.messageLines[index], field.left + 3,
 				field.bottom + 4 + index * editorViewState.lineHeight, 0,
-				input.field.readOnly ? constants.COLOR_QUICK_OPEN_TEXT : constants.COLOR_CONTENT_ERROR_TEXT, font);
+				input.busy ? constants.COLOR_QUICK_OPEN_TEXT : constants.COLOR_CONTENT_ERROR_TEXT, font);
 		}
 		api.popClipRect();
 		return;

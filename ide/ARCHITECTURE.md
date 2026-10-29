@@ -493,3 +493,10 @@ focus lifetime. Providers own their actual catalog, matching and ordering;
 providers and actions rather than adding feature-specific matching to the shell.
 Acceptance carries foreground-preservation intent across focus return; an
 opening consumes that intent instead of recapturing it after the handoff.
+
+Catalog factories can return immediately or resolve asynchronously within that
+same session. Quick Input owns pending/error presentation, query retention and
+late-result admission; providers do not open replacement UI after awaiting data.
+An optional observable resource lifetime is a source owner, not a disposal
+capability. Its retirement lease survives accepted handoff callbacks, while an
+already accepted producer operation remains independent of the presentation.

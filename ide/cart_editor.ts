@@ -951,7 +951,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindWorkspaceModels();
 		this.statusBar.dispose();
 		this.windowStatus.dispose();
-		this.buildOutputs?.dispose();
+		this.builds = undefined;
 		try {
 			await this.workbench.shutdown();
 			requestWorkspaceAutosave(WorkspaceAutosaveChange.All);
