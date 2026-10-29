@@ -130,12 +130,13 @@ export async function initializeIdeFeatures(
 		disposeShortcutHandlers(state);
 		return state;
 	}
-	await restoreWorkspaceStorageSession(
+	const restored = await restoreWorkspaceStorageSession(
 		state.editor,
 		sources.catalog,
 		state.debugger,
 		workspacePayload,
 	);
+	if (!restored) throw new Error('Workspace recovery was cancelled by workspace retirement.');
 	if (state.editor.editorParts.main.groups.every(group => group.model.tabs.length === 0)) openHome(state.editor.editorParts.main.activeGroup, workspaceState.context);
 	registerRuntimeShortcuts(state, runtime, input);
 	return state;

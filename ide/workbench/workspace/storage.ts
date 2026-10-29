@@ -220,7 +220,9 @@ export async function restoreWorkspaceStorageSession(
 	sourceCatalog: WorkspaceSourceCatalog,
 	runtimeDebuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload | null,
-): Promise<void> {
+): Promise<boolean> {
+	const records = workspaceRecords;
+	if (workspaceEditor.isClosing || records === null || !records.acceptingOperations) return false;
 	if (payload) {
 		await applyWorkspaceAutosavePayload(
 			workspaceEditor,
@@ -229,6 +231,7 @@ export async function restoreWorkspaceStorageSession(
 			payload,
 		);
 	}
+	if (workspaceEditor.isClosing || workspaceRecords !== records || !records.acceptingOperations) return false;
 	editor = workspaceEditor;
 	catalog = sourceCatalog;
 	debuggerState = runtimeDebuggerState;
@@ -240,6 +243,7 @@ export async function restoreWorkspaceStorageSession(
 		|| workspaceState.remoteRevision !== workspaceState.localRevision) {
 		scheduleWorkspaceAutosave();
 	}
+	return true;
 }
 
 export function requestWorkspaceAutosave(changes: WorkspaceAutosaveChange): void {
