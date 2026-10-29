@@ -120,6 +120,31 @@ export class EditorGroupArrangement<T> {
 		return Math.min(source.right, target.right) > Math.max(source.left, target.left)
 			&& (direction === 'up' ? target.bottom + WORKBENCH_SPLIT_SIZE === source.top : source.bottom + WORKBENCH_SPLIT_SIZE === target.top);
 	}
+	public canResizeGroup(group: T, axis: 'width' | 'height', delta: number): boolean {
+		return this.resizeGroupChild(group, axis, delta) !== undefined;
+	}
+	/** Change the exact group's nearest boundary on this axis without changing topology or maximization. */
+	public resizeGroup(group: T, axis: 'width' | 'height', delta: number): boolean {
+		const child = this.resizeGroupChild(group, axis, delta);
+		if (child === undefined) return false;
+		const parent = this.parents.get(child)!, split = parent.split, position = split.position;
+		split.moveTo(position + (parent.first === child ? delta : -delta));
+		if (split.position === position) return false;
+		this.layout(this.bounds);
+		return true;
+	}
+	/** Orthogonal parents share the requested extent; the first matching split owns its feasible interval. */
+	private resizeGroupChild(group: T, axis: 'width' | 'height', delta: number): EditorGroupNode<T> | undefined {
+		if (this.maximizedValue !== undefined) return;
+		const orientation = axis === 'width' ? 'horizontal' : 'vertical';
+		let child: EditorGroupNode<T> = this.leavesByGroup.get(group)!;
+		for (let parent = this.parents.get(child); parent !== undefined; child = parent, parent = this.parents.get(child)) {
+			if (parent.split.orientation !== orientation) continue;
+			const split = parent.split, movement = parent.first === child ? delta : -delta;
+			if (split.canMoveTo(split.position + movement)) return child;
+			return;
+		}
+	}
 	private get layoutRoot(): EditorGroupNode<T> {
 		if (this.minimaDirty) { this.measure(this.rootValue); this.minimaDirty = false; }
 		return this.maximizedValue === undefined ? this.rootValue : this.leavesByGroup.get(this.maximizedValue)!;

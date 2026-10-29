@@ -122,6 +122,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		for (let theme = 0; theme < 2; theme++) {
 			if (!(restored instanceof ScenePrimaryClient) || input?.kind !== 'code_editor') throw new Error('main: actual primary and Source required');
 			await testPrimaryRegionNavigation(test, restored, input, theme);
+			await testPrimaryViewResizing(test, restored, input, theme);
 			await testPrimaryRegionVisibility(test, restored, input, theme);
 			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-source`);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
@@ -185,6 +186,44 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'main: source-only authoring never executes or installs a cartridge');
+}
+
+/** Palette sizing addresses the captured native region and retains its independent authoring and Source reading. */
+async function testPrimaryViewResizing(test: StudioFixture, client: ScenePrimaryClient, source: CodeEditorInput, theme: number): Promise<void> {
+	const editor = test.ide.editor, main = editor.mainWorkspace, group = editor.editorParts.findGroup(source)!;
+	const selected = client.consumer.selection, text = source.workingCopy.buffer.getText(), version = source.workingCopy.version;
+	const row = source.context.view.cursorRow, column = source.context.view.cursorColumn;
+	const filesVisible = editor.resourcePanel.isVisible(), activityVisible = main.activityDisplayed;
+	if (filesVisible) await test.press('ControlLeft', 'KeyB');
+	// In the small real viewport, hiding the sibling creates an actual feasible interval rather than bypassing minima.
+	await test.runPaletteCommand('Workspace: Hide Details');
+	await test.runPaletteCommand('Workspace: Focus Hierarchy');
+	const hierarchy = inputFocus.admittedTarget!, generation = client.hierarchy.scope.contextGeneration;
+	const width = main.regionLayout.hierarchyWidth;
+	await test.runPaletteCommand('Workspace: Increase Focused View Width');
+	const wider = main.regionLayout.hierarchyWidth;
+	check(wider !== width && inputFocus.admittedTarget === hierarchy,
+		'main resize: the actual palette changes the invoking hierarchy sizing intent and returns to its native control');
+	await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-resized-hierarchy`);
+	await test.runPaletteCommand('Workspace: Decrease Focused View Width');
+	check(main.regionLayout.hierarchyWidth! < wider! && client.hierarchy.scope.contextGeneration === generation,
+		'main resize: decreasing uses the same retained hierarchy sizing owner without retiring its attachment');
+	await test.runPaletteCommand('Workspace: Show Details');
+	if (activityVisible) await test.runPaletteCommand('Workspace: Hide Activity Area');
+	await test.runPaletteCommand('View: Problems Panel');
+	const activity = main.activity!, target = inputFocus.admittedTarget!, height = main.regionLayout.activityHeight;
+	await test.runPaletteCommand('Workspace: Increase Focused View Height');
+	const taller = main.regionLayout.activityHeight;
+	check(taller !== height && inputFocus.admittedTarget === target && main.activity === activity,
+		'main resize: the palette addresses the focused docked reader height without replacing or refocusing its client');
+	await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-resized-activity`);
+	await test.runPaletteCommand('Workspace: Decrease Focused View Height');
+	check(main.regionLayout.activityHeight! < taller! && main.primary === client && client.consumer.selection === selected
+		&& group.model.activeTab === source && source.context.view.cursorRow === row && source.context.view.cursorColumn === column
+		&& source.workingCopy.buffer.getText() === text && source.workingCopy.version === version,
+		'main resize: axis commands preserve authored selection, canonical bytes, document membership and independent Source caret');
+	if (!activityVisible) await test.runPaletteCommand('Workspace: Hide Activity Area');
+	if (filesVisible) await test.press('ControlLeft', 'KeyB');
 }
 
 /** Actual outer-region keys preserve domain selection, independent Source reading and native local traversal. */

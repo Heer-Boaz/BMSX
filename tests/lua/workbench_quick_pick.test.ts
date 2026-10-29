@@ -16,7 +16,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { TextField } from '../../ide/editor/ui/inline/text_field_model';
 import { insertValue, selectAll, setCursorFromOffset, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { SingleLineFieldViewport } from '../../ide/editor/ui/inline/single_line_viewport';
-import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
+import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../ide/input/focus';
 import type { EditorCommandId } from '../../ide/common/commands';
 import { buildCommandQuickPickItems, showCommandPalette } from '../../ide/workbench/contrib/commands/quick_access';
 import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
@@ -145,6 +145,38 @@ test('composed Palette keeps focused-control clipboard separate from its capture
 	for (const command of ['copy', 'cut', 'paste'] as const) assert.ok(items.find(item => item.command === command)!.target === origin);
 	assert.ok(items.find(item => item.command === 'save')!.target === editorTarget);
 });
+
+test('composed Palette addresses physical view actions through the native control independently of semantic editor authority', () => {
+	const origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('native view')));
+	const alias = inputFocus.createTarget(null, new InputFocusScope(Symbol('native semantic subject')));
+	const editorTarget = inputFocus.createTarget(null, new InputFocusScope(Symbol('separate captured editor')));
+	origin.commandContext = alias;
+	const commands = new Set<EditorCommandId>(['workspace.increaseViewWidth', 'workspace.focusNextRegion', 'save']);
+	const items = buildCommandQuickPickItems({ isEnabled: command => commands.has(command), isActive: () => false }, origin, editorTarget);
+	for (const command of ['workspace.increaseViewWidth', 'workspace.focusNextRegion'] as const)
+		assert.ok(items.find(item => item.command === command)!.target === origin);
+	assert.ok(items.find(item => item.command === 'save')!.target === editorTarget);
+});
+
+for (const command of ['workspace.increaseViewWidth', 'workspace.focusNextRegion'] as const)
+	test(`Palette ${command} acceptance retains its native control as both command target and invocation context`, t => {
+		const picker = createPicker(t);
+		const origin = inputFocus.createTarget(null, new InputFocusScope(Symbol('native view')));
+		const alias = inputFocus.createTarget(null, new InputFocusScope(Symbol('native semantic subject')));
+		const editorTarget = inputFocus.createTarget(null, new InputFocusScope(Symbol('separate captured editor')));
+		origin.commandContext = alias; t.after(origin.bindKeyboard(() => {})); origin.focus();
+		let executions = 0;
+		showCommandPalette(picker, {
+			isEnabled: (candidate, target) => candidate === command && target === origin,
+			isActive: () => false,
+			execute: (candidate, target, input, editorContext) => {
+				assert.equal(candidate, command); assert.ok(target === origin && editorContext === origin);
+				assert.equal(input, undefined); assert.ok(inputFocus.admittedTarget === origin); executions++;
+			},
+		}, origin, editorTarget);
+		assert.equal(picker.model.list.rows.length, 1); picker.accept();
+		assert.equal(picker.visible, false); assert.equal(executions, 1);
+	});
 
 test('composed Palette captures secondary context before outgoing blur can replace its editor', t => {
 	const picker = createPicker(t), origin = inputFocus.createTarget(), editorTarget = inputFocus.createTarget();

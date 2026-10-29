@@ -205,7 +205,7 @@ not an editable asset schema or an isolated preview contract.
 | Workflow | Existing BMSX owners | Missing capability or boundary |
 | --- | --- | --- |
 | Main workspace and document editors | `main_workspace.ts` owns the permanent presentation family and named-region allocation around the actual document part, with an explicitly selected Scene context as its first authored client. `services/editor/editor_parts.ts`, `editor_part.ts` and `group_arrangement.ts` compose real split groups, group-aware opening, retained-input moves and local sessions over shared documents; `editor_drop_target.ts` shares editor and whole-group insertion, split drops and explicit canvas floating through retained-input admission. | Primary recovery and navigation are independent of document topology. Project-browser session mementos and the remaining output/tool activity composition must use their real owners without another group/window registry. Native host windows remain a separate host boundary. |
-| Window navigation and additional views | The Window menu exposes main-workspace activation, a physical window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping uses the shared placement/drag/keyboard contract below without moving editors or their inputs. Editor docking uses the group-transfer contract below; native host-window integration is separate. F6/Shift+F6 traverse the fixed visible outer work areas independently of local Tab, group navigation and the Window picker. Keyboard resizing and handle entry remain separate missing operations. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
+| Window navigation and additional views | The Window menu exposes main-workspace activation, a physical window picker, new editor windows and contribution-owned additional views. Shared window chrome exposes maximize/restore and owner-admitted document minimization; document close requests go through `EditorCloseController`. | Snapping uses the shared placement/drag/keyboard contract below without moving editors or their inputs. Editor docking uses the group-transfer contract below; native host-window integration is separate. F6/Shift+F6 traverse the fixed visible outer work areas independently of local Tab, group navigation and the Window picker. Palette sizing commands address the invoking Files/Main region or document group through its retained split owner. Explicit resize-handle entry/reset and floating-window keyboard resizing remain separate operations without an implementation. A contribution must supply a real fresh-view factory before its current subject can be opened in another window; an execution attachment cannot be copied as if it were an authored document. |
 | Authored Scene work area | `cartlib/world/scene_library.lua` registers and instantiates compositions; `scene.lua` owns member spawning/disposal. Studio's `contrib/scene_editor/` projects declarations and edits written positions/options, membership order and removal. | A spatial authored viewport, object placement and transform gizmos need source-to-visual correspondence, asset resolution and an authoring renderer. A running frame or Actor Lab inspection is not that viewport. This is mainly Studio work over explicit domain data, not a missing Scene runtime. |
 | Prefabs, objects and components | `cartlib/world/prefab.lua`, `world.lua` and `world_object.lua` provide classes, defaults, spawning and component factories. | A generic component palette and prefab editor need a contract for editable fields, component construction and visual proxies. Defaults and arbitrary Lua factories alone do not describe that editor contract. Studio adapters for known factories and cart-owned authoring metadata are possible producers; a mandatory new cartlib schema is not assumed. The read-only [runtime inspection contract](cartlib_inspection_contract.md) does not supply that authoring metadata. |
 | Hierarchy and Details | Scene source projections derive selected Details facts directly from each authoring context. Independently attached hierarchy and Details controls retain their own reading state, field bindings and input scopes; Main and document compositions use those same controls. Main allocates separately resizable/toggleable side regions around its document arrangement and reveals a named region on explicit focus. Actor Lab separately inspects runtime actors/components. | Scene membership is not an object-transform hierarchy. Component ownership and Space membership must not be relabelled as transform parenting. Reparenting and inherited transforms need their own authored/domain operations. Other primary domains need their own source-backed hierarchy and editing capabilities, not a global document-selection alias. |
@@ -944,9 +944,36 @@ reserved while a guest viewport owns keyboard input.
 
 This follows the separation in VS Code's [part-focus actions](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/actions/navigationActions.ts)
 and Qt's [MDI window activation](https://github.com/qt/qtbase/blob/dev/src/widgets/widgets/qmdiarea.cpp),
-not the assumption that canvas windows are separate native DOM windows. Keyboard
-resize/handle entry remains a distinct operation; VS Code's shared sash is not
-a precedent for adding resize handles to F6 or local Tab order.
+not the assumption that canvas windows are separate native DOM windows.
+
+Palette commands increase or decrease the invoking view's width or height
+without changing focus, committing an active draft, selecting another subject
+or changing document topology. Files, Hierarchy and Details expose their width;
+docked Activity exposes its height. Document groups resize their nearest owning
+split on the requested axis, including in floating editor parts. Orthogonal
+ancestors share that extent; a saturated boundary does not select a farther split
+or resize the entire Main/window as a fallback. A sole or maximized group has no
+resizable split. An unrelated floating inspector cannot resize its semantic
+parent's document group, and a modal origin cannot resize the view beneath it.
+
+The canvas-domain increment is two current font columns horizontally and two
+lines vertically, projected to the native sash's feasible interval. Shared split
+models project proportional intent to the nearest raster coordinate; commands
+do not add pixel corrections or maintain another size. At a directional limit,
+the corresponding command is unavailable. Pointer and command resizing publish
+the same retained layout intent; retired split attachments cannot publish into
+their former part. Command descriptors distinguish native-control actions from
+semantic editor actions, so Palette availability and execution use the same
+captured native invoker even when a separate authored editor subject is present.
+
+This uses VS Code's [resize-action separation](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/browser/actions/layoutActions.ts#L1008-L1178)
+and [grid-owned sizing](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/base/browser/ui/grid/gridview.ts#L1326-L1359)
+as references, not an identical command contract: VS Code's axis-specific actions
+target editors and its increment is in CSS pixels. Studio's commands explicitly
+name the focused view and bitmap font units. They have no default global
+keybindings and add no toolbar buttons. Resize-handle entry/reset and floating
+window keyboard resizing remain distinct missing operations; VS Code's shared
+sash is not a precedent for adding handles to F6 or local Tab order.
 
 The tab list is one composite keyboard control with a retained, exact focused
 input separate from the group's selected input. `Focus Editor Tabs` enters at

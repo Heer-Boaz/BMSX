@@ -13,14 +13,15 @@ export function buildCommandQuickPickItems(commands: Pick<IdeCommandController, 
 	editorTarget: InputFocusTarget | null = origin): WorkbenchCommandPick[] {
 	const items: WorkbenchCommandPick[] = [];
 	for (const command of EDITOR_COMMAND_IDS) {
+		const presentation = EDITOR_COMMAND_PRESENTATION[command];
 		// An explicit Palette action can address its view without granting that
 		// view's keyboard capabilities to a field or toolbar. Local commands win,
 		// including a disabled local Undo rather than another document's Undo.
 		const target = origin !== null && origin.getCommand(command) !== undefined ? origin
+			: presentation.invocationTarget === 'control' ? origin
 			: origin !== null && origin.commandContext.getCommand(command) !== undefined ? origin.commandContext
 			: origin?.clipboard !== undefined && (command === 'copy' || command === 'cut' || command === 'paste') ? origin : editorTarget;
 		if (!commands.isEnabled(command, target)) continue;
-		const presentation = EDITOR_COMMAND_PRESENTATION[command];
 		const binding = EDITOR_COMMAND_KEYBINDING_LABELS.get(command);
 		items.push({
 			command,
@@ -49,7 +50,8 @@ export function showCommandPalette(picker: QuickInputController, commands: Pick<
 			showEditorMessage(`${item.label} is no longer available.`, 'warning', 2);
 			return;
 		}
-		const origin = nativeOrigin !== null && (editorScope === undefined || editorScope.contains(nativeOrigin.commandContext.scope))
+		const origin = EDITOR_COMMAND_PRESENTATION[item.command].invocationTarget === 'control' ? item.target
+			: nativeOrigin !== null && (editorScope === undefined || editorScope.contains(nativeOrigin.commandContext.scope))
 			? nativeOrigin : editorTarget;
 		commands.execute(item.command, item.target, undefined, origin);
 	}, lifetime => {

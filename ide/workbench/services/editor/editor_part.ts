@@ -69,7 +69,7 @@ type EditorPartOptions = {
 	readonly placement: WindowPlacement;
 });
 
-type Sash = { readonly control: WorkbenchSplitControl; readonly surface: WorkbenchSurface };
+type Sash = { readonly control: WorkbenchSplitControl; readonly surface: WorkbenchSurface; readonly releaseResize: () => void };
 const SCROLLBARS = ['horizontal', 'vertical'] as const;
 
 /** One editor host owns its real group arrangement, not a tool-specific primary group. */
@@ -383,7 +383,7 @@ export class EditorPart {
 	}
 	private syncSashes(): void {
 		for (const [branch, sash] of this.sashes) if (!this.arrangement.splits.includes(branch)) {
-			sash.surface.dispose(); sash.control.dispose(); this.sashes.delete(branch);
+			sash.releaseResize(); sash.surface.dispose(); sash.control.dispose(); this.sashes.delete(branch);
 		}
 		for (const branch of this.arrangement.splits) if (!this.sashes.has(branch)) {
 			const control = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
@@ -395,7 +395,7 @@ export class EditorPart {
 				handlePointer: snapshot => { control.handlePointer(snapshot); }, handleWheel: () => true,
 				onRetire: () => { pointerCapture.cancelScope(control.focusTarget.scope.surfaceScope); control.clearInput(); },
 			});
-			this.sashes.set(branch, { control, surface });
+			this.sashes.set(branch, { control, surface, releaseResize: branch.split.onDidResize(this.options.onDidChange) });
 		}
 	}
 	public layout(bounds: Readonly<RectBounds>): boolean {
@@ -592,7 +592,7 @@ export class EditorPart {
 		this.restoreLifetime?.abort(); this.retired = true; this.scrollbarControl.cancel();
 		for (const unbind of this.subscriptions) unbind();
 		this.quickInput.dispose(); this.actionPrompt.dispose();
-		for (const sash of this.sashes.values()) { sash.surface.dispose(); sash.control.dispose(); } this.sashes.clear();
+		for (const sash of this.sashes.values()) { sash.releaseResize(); sash.surface.dispose(); sash.control.dispose(); } this.sashes.clear();
 		for (const [group, subscriptions] of this.groupSubscriptions) { for (const unbind of subscriptions) unbind(); group.dispose(); }
 		this.groupSubscriptions.clear(); this.groupListeners.clear(); this.scope.retireContext();
 		if (this.window === undefined) this.surface.dispose(); else this.window.dispose();

@@ -27,6 +27,25 @@ test('split intent changes notify session consumers, while constrained layout re
 	assert.deepEqual(ratios, [0.2, 0.5]);
 });
 
+test('coordinated ratio publication remains distinct from actual native sash resizing', () => {
+	const view = new WorkbenchSplitView(0.4), ratios: number[] = [], sizes: number[] = [];
+	const releaseRatio = view.onDidChangeRatio(() => ratios.push(view.ratio));
+	const releaseResize = view.onDidResize(() => sizes.push(view.ratio));
+	view.layout(0, 0, 800, 300);
+	view.ratio = 0.6;
+	assert.deepEqual(ratios, [0.6]); assert.deepEqual(sizes, []);
+	view.layout(0, 0, 1600, 300);
+	assert.deepEqual(ratios, [0.6]); assert.deepEqual(sizes, []);
+	view.moveTo(1120);
+	assert.deepEqual(ratios, [0.6, 0.7]); assert.deepEqual(sizes, [0.7]);
+	view.moveTo(view.position); view.resize(view.ratio);
+	assert.deepEqual(ratios, [0.6, 0.7]); assert.deepEqual(sizes, [0.7]);
+	view.reset();
+	assert.deepEqual(ratios, [0.6, 0.7, 0.4]); assert.deepEqual(sizes, [0.7, 0.4]);
+	releaseRatio(); releaseResize(); view.resize(0.5);
+	assert.deepEqual(ratios, [0.6, 0.7, 0.4]); assert.deepEqual(sizes, [0.7, 0.4]);
+});
+
 test('shared pane sash captures drag, releases on blur/replacement and consumes only its focused keyboard input', t => {
 	const input = new Input(new VirtualHeadlessClock(), new HeadlessInputHub(), -1);
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -111,6 +130,36 @@ test('requested split intent survives constrained placement while user resizing 
 	view.resize(0.2); assert.equal(view.ratio, 0.5); assert.equal(view.position, 323);
 	view.resize(0.99); assert.equal(view.ratio, 1 - 100 / 600); assert.equal(view.position, 523);
 });
+
+test('native ratio resize reaches the same nearest raster position admitted by its query, including at child limits', () => {
+	const view = new WorkbenchSplitView(0.35);
+	view.minimumFirstSize = 138; view.minimumSecondSize = 308;
+	view.layout(0, 20, 768, 400);
+	view.moveTo(1000);
+	assert.equal(view.position, 460);
+	view.moveTo(-100);
+	assert.equal(view.position, 138);
+});
+
+for (const orientation of ['horizontal', 'vertical'] as const) for (const start of [0, 37]) {
+	test(`${orientation} ratio resize preserves exact native steps and round trips at origin ${start}`, () => {
+		const view = new WorkbenchSplitView(0.5, orientation);
+		if (orientation === 'horizontal') view.layout(start, 0, start + 211, 120);
+		else view.layout(0, start, 120, start + 211);
+		const original = view.position;
+		assert.equal(original, start + Math.round(211 * 0.5));
+		assert.equal(view.canMoveTo(original), false);
+		for (let step = 0; step < 10; step++) {
+			assert.equal(view.canMoveTo(original + 12.4), true);
+			view.moveTo(original + 12.4);
+			assert.equal(view.position, original + 12);
+			assert.equal(view.canMoveTo(original + 12), false);
+			assert.equal(view.canMoveTo(original), true);
+			view.moveTo(original);
+			assert.equal(view.position, original);
+		}
+	});
+}
 
 test('unarranged or minimum-filled sashes cannot receive resize focus or capture', t => {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();

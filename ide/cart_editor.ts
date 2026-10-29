@@ -2,6 +2,7 @@ import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
 import { MainWorkspace } from './workbench/main_workspace';
 import { WorkbenchRegionNavigation } from './workbench/region_navigation';
+import { drawWorkbenchSplit } from './workbench/render/split_view';
 import type { MainWorkspaceClient, MainWorkspaceRegionSurfaces } from './workbench/common/main_workspace_client';
 import type { SerializedPrimaryClient } from './workbench/common/main_workspace_serialization';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
@@ -303,7 +304,6 @@ export class RuntimeCartEditor implements CartEditor {
 	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly surfaces: WorkbenchSurfaceService;
 	private readonly chromeScope = Symbol('workbench chrome');
-	private readonly resourceResizeScope = Symbol('resource panel resize');
 	private readonly resourceVerticalScope = Symbol('resource panel vertical scrollbar');
 	private readonly resourceHorizontalScope = Symbol('resource panel horizontal scrollbar');
 	private readonly rootSurfaceBounds = { left: 0, top: 0,
@@ -545,13 +545,12 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindWorkspaceModels = editorTextModelService.onWillClear(() => this.mainWorkspace.reset());
 
 		this.surfaces.attach({
-			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourceResizeScope,
+			role: 'content', lifetimeOwner: chromeSurface, presentationParent: chromeSurface, captureScope: this.resourcePanel.sash.focusTarget.scope.surfaceScope,
 			isVisible: () => this.resourcePanel.isVisible(), getBounds: () => this.resourcePanel.resizeBounds,
-			getClip: () => this.rootSurfaceBounds, draw() {},
-			handlePointer: snapshot => {
-				if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) this.resourcePanel.beginResize(snapshot);
-			},
-			onRetire: () => pointerCapture.cancelTarget(this.resourcePanel),
+			getClip: () => this.rootSurfaceBounds,
+			draw: () => drawWorkbenchSplit(this.resourcePanel.split, this.resourcePanel.sash.hovered || this.resourcePanel.sash.focusTarget.hasFocus),
+			handlePointer: snapshot => { this.resourcePanel.sash.handlePointer(snapshot); },
+			onRetire: () => this.resourcePanel.retireResize(),
 		});
 
 		this.surfaces.attach({

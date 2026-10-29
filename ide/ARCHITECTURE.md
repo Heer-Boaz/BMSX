@@ -409,14 +409,23 @@ group navigation and window discovery remain separate operations. Native
 attachment/modal admission determines eligibility, independently of scroll
 clipping. Pure focus entry uses native blur policy; source-consuming and
 topology-changing operations retain their explicit draft admission.
+`commands/layout.ts` resolves physical view-sizing actions from the exact native
+invoker. Main and Files expose their retained sash models; the document
+arrangement maps an exact group and axis to its nearest owning split. Pointer
+and command resizing share those constraints and session-change publication,
+without moving focus, committing drafts or changing document topology. Floating
+window placement and view-sizing commands remain separate operations.
 Keyboard commands use the admitted application runner. Native capability lookup
 is control-local. Application command resolution gives local handlers precedence
 and admits only explicitly exported semantic commands from the declared action
 context. Focus-return parents do not provide command inheritance; borrowing an
 action context does not grant its widget's keyboard capabilities. Native field
 commands and semantic source commands remain distinct. A source command can use
-its explicit client context without borrowing the active document group. Contribution-owned command
-capture retains invocation subject and control lifetime before draft publication;
+its explicit client context without borrowing the active document group. Command
+descriptors declare native-control addressing for physical view actions; Palette
+enablement and execution retain that same invoker independently of the captured
+semantic editor target. Contribution-owned command capture retains invocation
+subject and control lifetime before draft publication;
 UI enablement does not construct those invocations.
 
 ## Workbench Quick Input

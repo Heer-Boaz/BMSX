@@ -2,9 +2,8 @@ import { ScrollbarController } from '../../../ui/scrollbar_controller';
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import { create_rect_bounds, write_rect_bounds, point_in_rect } from '../../../../../machine/ts/common/rect';
-import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import type { PointerInputSnapshot, PointerSnapshot } from '../../../../common/models';
-import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
+import { pointerCapture } from '../../../../input/pointer/capture';
 import { ScratchBuffer } from '../../../../../machine/ts/common/scratchbuffer';
 import type { Scrollbar } from '../../../ui/scrollbar';
 import { renderResourcePanel } from '../../../render/resource_panel';
@@ -30,7 +29,7 @@ import {
 import { resourceIdentityKey, type ResourceIdentity } from '../../../../common/resource';
 import type { CartEditor } from '../../../../cart_editor';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
-import { inputFocus, type InputFocusTarget } from '../../../../input/focus';
+import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
 import type { ProjectContentIndex } from './content_index';
@@ -45,6 +44,8 @@ import { editorTextModelService } from '../../../../editor/model/model_service';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { isAltDown } from '../../../../input/keyboard/key_input';
 import type { ProspectiveEditorOpenSource } from '../../../services/editor/editor_opening';
+import { WorkbenchSplitControl } from '../../../ui/split_control';
+import { WorkbenchSplitView } from '../../../ui/split_view';
 
 export type ResourcePanelItemMetrics = {
 	fontVariant: FontVariant | null;
@@ -77,7 +78,7 @@ function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 	};
 }
 
-export class ResourcePanelController implements PointerHoverTarget, PointerCaptureTarget {
+export class ResourcePanelController implements PointerHoverTarget {
 	public readonly statusItems: readonly WorkbenchStatusItem[] = [
 		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
 		{ text: 'CTRL+SHIFT+L TOGGLE FILTER', alignment: 'right', priority: STATUS_PRIORITY_HINT, overflow: 'hide', tone: 'normal' },
@@ -86,7 +87,9 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	public onPointerLeave(): void { this.hoverIndex = -1; }
 	public visible = false;
 	public readonly focusTarget = inputFocus.createTarget();
-	private widthRatio: number;
+	public readonly split: WorkbenchSplitView;
+	public readonly sash: WorkbenchSplitControl;
+	private sashAttached = false;
 	private filterMode: ResourcePanelFilterMode = 'lua_only';
 	private fontLineHeight: number;
 	public get lineHeight(): number { return Math.max(this.fontLineHeight, WORKBENCH_ICON_SIZE) + 2; }
@@ -115,9 +118,8 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	private readonly scrollbarController: ScrollbarController<'resourceVertical' | 'resourceHorizontal'>;
 	public readonly resourceVertical: Scrollbar;
 	public readonly resourceHorizontal: Scrollbar;
-	private resizeStartX = 0;
-	private resizeStartRatio = 0;
 	private readonly unbindKeyboard: () => void;
+	private readonly unbindResize: () => void;
 	private readonly contextMenu: ResourcePanelContextMenu;
 	private drag: ResourcePanelDrag | undefined;
 	private readonly unbindModelClear: () => void;
@@ -130,7 +132,10 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		private readonly content: ProjectContentIndex,
 	) {
 		this.fontLineHeight = editorViewState.lineHeight;
-		this.widthRatio = initialWidthRatio;
+		this.split = new WorkbenchSplitView(clampResourcePanelRatio(initialWidthRatio));
+		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
+			new InputFocusScope(Symbol('Files resize'), this.focusTarget.scope));
+		this.unbindResize = this.split.onDidChangeRatio(() => this.prepareLayout());
 		this.resourceVertical = scrollbars.resourceVertical;
 		this.resourceHorizontal = scrollbars.resourceHorizontal;
 		this.scrollbarController = new ScrollbarController(scrollbars, (kind, scroll) => {
@@ -159,7 +164,7 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	public dispose(): void {
-		this.hide(); this.focusTarget.release(); this.unbindKeyboard(); this.unbindModelClear(); this.content.dispose();
+		this.hide(); this.sash.dispose(); this.unbindResize(); this.focusTarget.release(); this.unbindKeyboard(); this.unbindModelClear(); this.content.dispose();
 	}
 
 	public update(now: number): void { this.drag?.advance(now); }
@@ -200,7 +205,6 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		this.contextMenu.close(); this.focusTarget.scope.retireContext();
 		pointerHover.release(this);
 		this.files.tree.hoverIndex = -1;
-		this.widthRatio = clampResourcePanelRatio(this.widthRatio);
 		this.visible = true;
 		this.refresh();
 		this.focusTarget.focus();
@@ -364,36 +368,13 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 		this.contextMenu.open(node, x, y, keyboard);
 	}
 
-	setRatioFromViewportX(viewportX: number, viewportWidth: number): boolean {
-		if (!this.isVisible()) return false;
-		const requestedRatio = viewportX / viewportWidth;
-		const clampedRatio = clampResourcePanelRatio(requestedRatio);
-		this.widthRatio = clampedRatio;
-		this.prepareLayout();
-		this.focusTarget.focus();
-		return this.isVisible();
+	/** Surface retirement withdraws this attachment without discarding its requested width. */
+	public retireResize(): void {
+		if (!this.sashAttached) return;
+		this.sashAttached = false;
+		pointerCapture.cancelScope(this.sash.focusTarget.scope.surfaceScope);
+		this.sash.clearInput();
 	}
-
-	public beginResize(snapshot: PointerSnapshot): void {
-		this.resizeStartX = snapshot.viewportX;
-		this.resizeStartRatio = this.widthRatio;
-		this.focusTarget.focus();
-		pointerCapture.capture(this);
-		if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
-	}
-
-	public handleCapturedPointer(snapshot: PointerSnapshot): void {
-		const delta = snapshot.viewportX - this.resizeStartX;
-		const width = editorViewState.viewportWidth;
-		this.setRatioFromViewportX(this.resizeStartRatio * width + delta, width);
-	}
-
-	public releaseCapturedPointer(snapshot: PointerSnapshot): void {
-		pointerCapture.release(this);
-		this.handleCapturedPointer(snapshot);
-	}
-
-	public cancelPointer(): void { pointerCapture.release(this); }
 
 	// === Internals ===
 	/** Publish Files catalog and reading geometry without replacing its browser identity. */
@@ -460,18 +441,19 @@ export class ResourcePanelController implements PointerHoverTarget, PointerCaptu
 	}
 
 	public prepareLayout(): ResourcePanelLayout {
-		if (this.visible && this.editor.isActive) writeResourcePanelBounds(this.bounds, this.widthRatio);
+		if (this.visible && this.editor.isActive) writeResourcePanelBounds(this.bounds, this.split);
 		else write_rect_bounds(this.bounds, 0, 0, 0, 0);
 		const layout = writeResourcePanelLayout(this.layout, this.itemCount, this.maxLineWidth, this.lineHeight);
 		this.resourceVertical.layout(layout.verticalTrack, this.itemCount, layout.capacity, this.scroll);
 		this.resourceHorizontal.layout(layout.horizontalTrack, Math.max(this.maxLineWidth, layout.availableWidth), layout.availableWidth, this.hscroll);
 		editorViewState.editorAreaLeft = this.bounds.right - this.bounds.left;
 		if (this.isVisible()) {
+			if (!this.sashAttached) { this.sash.setInput(this.split); this.sashAttached = true; }
 			this.scroll = this.resourceVertical.getScroll();
 			this.hscroll = this.resourceHorizontal.getScroll();
 		} else {
 			pointerHover.release(this);
-			pointerCapture.cancelTarget(this);
+			this.retireResize();
 			this.setFocused(false);
 		}
 		const tree = this.files.tree.layout;

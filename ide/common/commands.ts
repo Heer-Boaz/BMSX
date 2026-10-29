@@ -142,6 +142,7 @@ export type EditorCommandId =
 	| 'problems.coverage'
 	| 'status.focus' | 'status.details'
 	| 'workspace.focusNextRegion' | 'workspace.focusPreviousRegion'
+	| 'workspace.increaseViewWidth' | 'workspace.decreaseViewWidth' | 'workspace.increaseViewHeight' | 'workspace.decreaseViewHeight'
 	| 'group.focusTabs' | 'group.move' | 'group.close' | 'group.openEditors' | 'group.splitRight' | 'group.splitDown' | 'group.focusNext' | 'group.focusPrevious' | 'group.maximize'
 	| 'window.minimize' | 'window.maximize' | 'window.hide' | 'window.snapLeft' | 'window.snapRight' | 'window.restore'
 	| 'window.showAll' | 'window.restoreMinimized' | 'window.focusMain' | 'window.newEditor' | 'window.copyEditor' | 'window.moveEditor'

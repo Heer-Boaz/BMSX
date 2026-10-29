@@ -604,7 +604,6 @@ export let COLOR_TAB_INACTIVE_TEXT: number;
 export let COLOR_TAB_ACTIVE_TEXT: number;
 export let COLOR_TAB_DIRTY_MARKER: number;
 export let COLOR_GOTO_UNDERLINE: number;
-export let RESOURCE_PANEL_DIVIDER_COLOR: number;
 export let SCROLLBAR_TRACK_COLOR: number;
 export let SCROLLBAR_THUMB_COLOR: number;
 export let COLOR_QUICK_OPEN_BACKGROUND: number;
@@ -812,7 +811,6 @@ function applyThemeDefinition(theme: ThemeDefinition): void {
 	COLOR_TAB_ACTIVE_TEXT = tab.activeText;
 	COLOR_TAB_DIRTY_MARKER = tab.dirtyMarker;
 	COLOR_GOTO_UNDERLINE = CODE_TEXT_DECORATION_STYLES[CodeTextDecoration.None].gotoUnderline;
-	RESOURCE_PANEL_DIVIDER_COLOR = tab.border;
 	SCROLLBAR_TRACK_COLOR = theme.status.background;
 	SCROLLBAR_THUMB_COLOR = theme.scrollbarThumb ?? theme.status.text;
 	COLOR_QUICK_OPEN_BACKGROUND = quickOpen.background;

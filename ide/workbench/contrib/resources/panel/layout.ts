@@ -4,6 +4,7 @@ import { copy_rect_bounds, create_rect_bounds, write_rect_bounds } from '../../.
 import * as constants from '../../../../common/constants';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import { getWorkbenchEditorBounds } from '../../../common/layout';
+import type { WorkbenchSplitView } from '../../../ui/split_view';
 
 export function defaultResourcePanelRatio(screenRelativeWidth: number): number {
 	const relative = screenRelativeWidth < 1 ? screenRelativeWidth : 1;
@@ -19,10 +20,6 @@ export function clampResourcePanelRatio(ratio: number): number {
 	const minRatio = constants.RESOURCE_PANEL_MIN_RATIO;
 	const maxRatio = resourcePanelMaxRatio();
 	return clamp(ratio, minRatio, maxRatio);
-}
-
-export function computeResourcePanelPixelWidth(ratio: number): number {
-	return (editorViewState.viewportWidth * ratio) | 0;
 }
 
 function resourcePanelMaxRatio(): number {
@@ -73,11 +70,15 @@ export function createResourcePanelLayout(bounds: RectBounds): ResourcePanelLayo
 const lineCapacityBoundsScratch = create_rect_bounds();
 const lineCapacityLayoutScratch = createResourcePanelLayout(lineCapacityBoundsScratch);
 
-export function writeResourcePanelBounds(out: RectBounds, widthRatio: number): boolean {
-	const width = computeResourcePanelPixelWidth(widthRatio);
+export function writeResourcePanelBounds(out: RectBounds, split: WorkbenchSplitView): boolean {
 	const root = getWorkbenchEditorBounds();
 	const top = root.top;
 	const bottom = root.bottom;
+	const viewportWidth = editorViewState.viewportWidth;
+	split.minimumFirstSize = Math.trunc(viewportWidth * constants.RESOURCE_PANEL_MIN_RATIO);
+	split.minimumSecondSize = viewportWidth - Math.trunc(viewportWidth * resourcePanelMaxRatio());
+	split.layout(0, top, viewportWidth, bottom);
+	const width = split.position;
 	if (width <= 0 || bottom <= top) {
 		write_rect_bounds(out, 0, top, 0, top);
 		return false;

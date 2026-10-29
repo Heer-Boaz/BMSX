@@ -48,6 +48,7 @@ import { showOpenWindows } from '../workbench/ui/window/picker';
 import { findWorkbenchWindowSurface, minimizedWorkbenchWindowCount, workbenchWindowForSurface } from '../workbench/ui/window/control';
 import { showGroupOpenEditors } from '../workbench/services/editor/open_editors';
 import { workspaceState } from '../workbench/workspace/state';
+import { WORKBENCH_VIEW_RESIZE_COMMANDS, canResizeWorkbenchView, resizeWorkbenchView } from './layout';
 
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
@@ -138,6 +139,11 @@ export class IdeCommandController {
 			const main = this.editor.mainWorkspace;
 			if (main.activities.selectedId === activityId && main.activityDisplayed) main.setActivityVisible(false);
 			else main.openActivity(activityId, { focus: true });
+			return;
+		}
+		const resize = WORKBENCH_VIEW_RESIZE_COMMANDS[command];
+		if (resize !== undefined) {
+			resizeWorkbenchView(this.editor, invocationTarget, resize.axis, resize.direction);
 			return;
 		}
 		switch (command) {
@@ -483,6 +489,8 @@ export class IdeCommandController {
 		if (this.editor.mainWorkspace.activities.idForCommand(command) !== undefined) return this.editor.isActive;
 		const implementation = input === undefined ? focus?.resolveCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isEnabled();
+		const resize = WORKBENCH_VIEW_RESIZE_COMMANDS[command];
+		if (resize !== undefined) return canResizeWorkbenchView(this.editor, focus, resize.axis, resize.direction);
 		if ((command === 'editor.source' || command === 'editor.sourceToSide') && input === undefined && (this.editor.mainWorkspace.isPrimaryTarget(focus) || this.editor.mainWorkspace.isActivityTarget(focus)))
 			return this.editor.mainWorkspace.canOpenSource(focus!);
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;

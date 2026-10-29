@@ -15,7 +15,6 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	const layout = controller.layout;
 	const bounds = layout.bounds;
 	const contentLeft = layout.contentLeft;
-	const dividerLeft = layout.dividerLeft;
 	const capacity = layout.capacity;
 	const itemCount = controller.itemCount;
 	const verticalScrollbar = controller.resourceVertical, horizontalScrollbar = controller.resourceHorizontal;
@@ -63,9 +62,6 @@ export function renderResourcePanel(controller: ResourcePanelController): void {
 	}
 	if (horizontalScrollbar.isVisible()) {
 		horizontalScrollbar.draw(constants.SCROLLBAR_TRACK_COLOR, constants.SCROLLBAR_THUMB_COLOR);
-	}
-	if (dividerLeft >= bounds.left && dividerLeft < bounds.right) {
-		api.fill_rect(dividerLeft, bounds.top, bounds.right, bounds.bottom, 0, constants.RESOURCE_PANEL_DIVIDER_COLOR);
 	}
 }
 

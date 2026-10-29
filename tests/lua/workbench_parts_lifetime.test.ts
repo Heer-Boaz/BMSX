@@ -707,7 +707,7 @@ test('Files open intent survives whole-Studio suspension without resetting its r
 	t.after(() => pointerCapture.interrupt(false));
 	panel.show(); panel.queuePendingSelection(f.resource(40)); panel.applyPendingSelection();
 	panel.navigateFiles('left'); panel.navigateFiles('left');
-	panel.setRatioFromViewportX(144, editorViewState.viewportWidth);
+	panel.split.moveTo(144);
 	panel.setScroll(10); panel.setFocused(true); f.editor.update(0); panel.prepareLayout();
 	const selected = panel.selectionIndex, count = panel.itemCount, scroll = panel.scroll, filesNode = panel.files.selectedNode;
 	const requestedWidth = panel.getBounds()!.right - panel.getBounds()!.left;

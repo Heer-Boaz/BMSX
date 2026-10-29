@@ -10,6 +10,7 @@ export interface WorkbenchSashView {
 	readonly orientation: 'horizontal' | 'vertical';
 	readonly resizable: boolean;
 	readonly position: number;
+	canMoveTo(position: number): boolean;
 	moveTo(position: number): void;
 	reset(): void;
 }
@@ -19,6 +20,7 @@ export class WorkbenchSplitView implements WorkbenchSashView {
 	public readonly bounds = create_rect_bounds();
 	private ratioValue: number;
 	private readonly ratioListeners = new Set<() => void>();
+	private resizeListeners: Set<() => void> | undefined;
 	public minimumFirstSize = 0;
 	public minimumSecondSize = 0;
 	public revision = 0;
@@ -27,6 +29,12 @@ export class WorkbenchSplitView implements WorkbenchSashView {
 	public onDidChangeRatio(listener: () => void): () => void {
 		this.ratioListeners.add(listener);
 		return () => { this.ratioListeners.delete(listener); };
+	}
+	/** Native sizing is distinct from the arrangement's coordinated topology/intent publication. */
+	public onDidResize(listener: () => void): () => void {
+		const listeners = this.resizeListeners ??= new Set();
+		listeners.add(listener);
+		return () => { listeners.delete(listener); };
 	}
 	/** Requested view intent is retained independently of current placement constraints. */
 	public set ratio(value: number) {
@@ -42,17 +50,23 @@ export class WorkbenchSplitView implements WorkbenchSashView {
 	}
 	/** Project the retained preference into another admitted interval without changing this split. */
 	public positionFor(start: number, end: number, minimumFirstSize: number, minimumSecondSize: number): number {
-		return clamp(Math.trunc(start + (end - start) * this.ratio), start + minimumFirstSize, end - minimumSecondSize);
+		return clamp(Math.round(start + (end - start) * this.ratio), start + minimumFirstSize, end - minimumSecondSize);
 	}
 	public layout(left: number, top: number, right: number, bottom: number): void { write_rect_bounds(this.bounds, left, top, right, bottom); }
 	public resize(ratio: number): void {
 		if (!this.resizable) return;
 		const size = this.end - this.start;
 		const min = this.minimumFirstSize / size;
-		const max = 1 - this.minimumSecondSize / size;
-		this.ratio = clamp(ratio, min, max);
+		const max = (size - this.minimumSecondSize) / size;
+		const requested = clamp(ratio, min, max);
+		if (requested === this.ratio) return;
+		this.ratio = requested;
+		if (this.resizeListeners !== undefined) for (const listener of this.resizeListeners) listener();
 	}
-	public moveTo(position: number): void { this.resize((position - this.start) / (this.end - this.start)); }
+	public canMoveTo(position: number): boolean {
+		return this.resizable && clamp(Math.round(position), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize) !== this.position;
+	}
+	public moveTo(position: number): void { this.resize((Math.round(position) - this.start) / (this.end - this.start)); }
 	public reset(): void { this.resize(this.defaultRatio); }
 }
 
@@ -77,12 +91,15 @@ export class WorkbenchFixedEdgeSplitView implements WorkbenchSashView {
 	public get position(): number {
 		const size = (this.requestedSize ?? this.preferredSize) + WORKBENCH_SPLIT_SIZE / 2;
 		const requested = this.edge === 'start' ? this.start + size : this.end - size;
-		return clamp(Math.trunc(requested), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
+		return clamp(Math.round(requested), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
 	}
 	public layout(left: number, top: number, right: number, bottom: number): void { write_rect_bounds(this.bounds, left, top, right, bottom); }
+	public canMoveTo(position: number): boolean {
+		return this.resizable && clamp(Math.round(position), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize) !== this.position;
+	}
 	public moveTo(position: number): void {
 		if (!this.resizable) return;
-		position = clamp(position, this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
+		position = clamp(Math.round(position), this.start + this.minimumFirstSize, this.end - this.minimumSecondSize);
 		if (position === this.position) return;
 		const size = (this.edge === 'start' ? position - this.start : this.end - position) - WORKBENCH_SPLIT_SIZE / 2;
 		if (size === this.requestedSize) return;

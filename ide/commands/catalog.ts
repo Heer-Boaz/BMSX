@@ -1,15 +1,17 @@
 import type { EditorCommandId } from '../common/commands';
 
-export type EditorCommandPresentation = {
+export type EditorCommandDescriptor = {
 	readonly title: string;
 	readonly category: string;
 	readonly shortTitle?: string;
 	readonly activeTitle?: string;
+	/** Physical view actions address the captured native control, not its semantic editor subject. */
+	readonly invocationTarget?: 'control';
 };
 
-/** Human-facing command metadata. Execution and enablement stay in the controller. */
+/** Command presentation and invocation addressing. Execution and enablement stay in the controller. */
 export const EDITOR_COMMAND_PRESENTATION: Readonly<
-	Record<EditorCommandId, EditorCommandPresentation>
+	Record<EditorCommandId, EditorCommandDescriptor>
 > = {
 	'callHierarchy.incoming': { category: 'Calls', title: 'Show Incoming Calls', shortTitle: 'Incoming' },
 	'callHierarchy.outgoing': { category: 'Calls', title: 'Show Outgoing Calls', shortTitle: 'Outgoing' },
@@ -33,8 +35,12 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'workspace.details.focus': { category: 'Workspace', title: 'Focus Details' },
 	'workspace.hierarchy.toggle': { category: 'Workspace', title: 'Show Hierarchy', activeTitle: 'Hide Hierarchy' },
 	'workspace.details.toggle': { category: 'Workspace', title: 'Show Details', activeTitle: 'Hide Details' },
-	'workspace.focusNextRegion': { category: 'Workspace', title: 'Focus Next Work Area' },
-	'workspace.focusPreviousRegion': { category: 'Workspace', title: 'Focus Previous Work Area' },
+	'workspace.focusNextRegion': { category: 'Workspace', title: 'Focus Next Work Area', invocationTarget: 'control' },
+	'workspace.focusPreviousRegion': { category: 'Workspace', title: 'Focus Previous Work Area', invocationTarget: 'control' },
+	'workspace.increaseViewWidth': { category: 'Workspace', title: 'Increase Focused View Width', invocationTarget: 'control' },
+	'workspace.decreaseViewWidth': { category: 'Workspace', title: 'Decrease Focused View Width', invocationTarget: 'control' },
+	'workspace.increaseViewHeight': { category: 'Workspace', title: 'Increase Focused View Height', invocationTarget: 'control' },
+	'workspace.decreaseViewHeight': { category: 'Workspace', title: 'Decrease Focused View Height', invocationTarget: 'control' },
 	'resources.openToSide': { category: 'Files', title: 'Open to Side' },
 	'resources.source': { category: 'Files', title: 'Open Source' },
 	'resources.sourceToSide': { category: 'Files', title: 'Source to Side' },
