@@ -128,10 +128,16 @@ export class RomEntryInspectorWindow {
 			this.tooltip.hide(); this.overflow = lifetime;
 			lifetime.add({ dispose: () => { if (this.overflow === lifetime) this.overflow = undefined; } });
 		};
-		for (const target of [this.window.focusTarget, this.inspector.focusTarget, this.image.focusTarget, this.bytes.focusTarget]) {
-			for (const command of READER_COMMANDS) target.registerCommand(command, {
+		const commandTargets = [this.window.focusTarget, this.inspector.focusTarget, this.image.focusTarget, this.bytes.focusTarget];
+		for (const command of READER_COMMANDS) {
+			const implementation = {
 				isEnabled: () => this.isEnabled(command), run: () => this.execute(command),
-			});
+				isChecked: () => this.window.isOpen && (command === 'romInspector.hold' ? input.readerHeld
+					: command === 'romInspector.collision' && input.reader.showCollision),
+			};
+			for (const target of commandTargets) target.registerCommand(command, implementation);
+		}
+		for (const target of commandTargets) {
 			if (target !== this.window.focusTarget) target.registerCommand('window.hide', this.window.focusTarget.getCommand('window.hide')!);
 		}
 	}
@@ -150,7 +156,7 @@ export class RomEntryInspectorWindow {
 	}
 
 	public isEnabled(command: EditorCommandId): boolean {
-		if (!this.input.readerWindow.open) return false;
+		if (!this.window.isOpen) return false;
 		const document = this.input.reader;
 		if (command === 'romInspector.hold') return document.subject !== undefined || this.input.readerHeld;
 		if (command === 'romInspector.source') return this.source() !== undefined;

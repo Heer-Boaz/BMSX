@@ -581,19 +581,6 @@ export class IdeCommandController {
 			case 'workspace.details.toggle': return this.editor.mainWorkspace.regionLayout.detailsVisible;
 			case 'runtime.toggleTimeline': return group.timeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
-			case 'romInspector.hold': {
-				const input = group.model.activeTab;
-				return input?.kind === 'rom_inspector' && input.readerHeld;
-			}
-			case 'romInspector.collision': {
-				const input = group.model.activeTab;
-				return input?.kind === 'rom_inspector' && input.reader.showCollision;
-			}
-			case 'romInspector.assets': case 'romInspector.structure': case 'romInspector.code': {
-				const input = group.model.activeTab;
-				return input?.kind === 'rom_inspector' && command === `romInspector.${input.model.mode}`;
-			}
-
 			case 'debugEvaluation':
 				return this.debuggerState.plans.controlSuspended;
 			case 'pause':

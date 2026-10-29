@@ -14,7 +14,6 @@ import { pointerHover } from '../../ide/input/pointer/hover';
 import { api } from '../../ide/runtime/overlay_api';
 import { RomInspectorInput } from '../../ide/workbench/contrib/rom_inspector/editor_input';
 import { RomInspectorPane } from '../../ide/workbench/contrib/rom_inspector/editor_pane';
-import type { RomInspectorSnapshot } from '../../ide/workbench/contrib/rom_inspector/model';
 import { RomEntryInspectorWindow } from '../../ide/workbench/contrib/rom_inspector/reader_window';
 import type { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
@@ -29,15 +28,12 @@ import { OpCode } from '../../machine/ts/spec/blua32/opcode';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { parseCartHeader } from '../../machine/ts/rompack/format';
-import { finalizePackedRomAssets, type RomAsset } from '../../toolchain/ts/rompack/assets';
-import { encodeDirect16GxUpload } from '../../toolchain/ts/rompack/gp0_encode';
-import { encodeDirect16GxTexture } from '../../toolchain/ts/rompack/gx_texture_codec';
-import { GX_SYSTEM_TEXTURE_ASSET_ID } from '../../toolchain/ts/rompack/system_texture';
 import { loadRomAssetList } from '../../toolchain/ts/rompack/loader';
 import { linkRawTestSystemBlua32, linkTestSystemBlua32 } from '../helpers/blua32';
 import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
 import { parseLuaChunk } from './cpu_test_harness';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { createRomInspectorImageSnapshot } from '../fixtures/studio/rom_inspector';
 import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -101,29 +97,9 @@ for (const client of ['catalog', 'held reader'] as const) test(`ROM ${client} So
 	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
 });
 
-function imageSnapshot(): RomInspectorSnapshot {
-	const texture = encodeDirect16GxTexture(2, 2, Uint8ClampedArray.of(255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255));
-	const upload = encodeDirect16GxUpload(texture, 0, 0), end = 72 + upload.length;
-	const rom = new Uint8Array(end + 1088); rom.set(upload, 72);
-	for (let index = end; index < end + 1024; index++) rom[index] = index & 255;
-	const assets: RomAsset[] = [
-		{ resid: GX_SYSTEM_TEXTURE_ASSET_ID, type: 'bin', start: 72, end },
-		{ resid: 'a-image', type: 'image', source_path: 'a.lua', metabuffer_start: end + 1024, metabuffer_end: end + 1040,
-			imgmeta: { width: 2, height: 2, texture_u: 0, texture_v: 0 } },
-		{ resid: 'b-data', type: 'bin', source_path: 'b.lua', start: end, end: end + 1024 },
-	];
-	finalizePackedRomAssets(assets);
-	return { domain: 0, sourceContextId: TEST_CARTRIDGE_CONTEXT_IDS[0], label: 'Captured cartridge', rom, assets, header: {
-		headerSize: 72, manifestOffset: 72, manifestLength: 0, dataOffset: 72, dataLength: end + 1024 - 72,
-		metadataOffset: end + 1024, metadataLength: 32, tocOffset: end + 1056, tocLength: 32,
-		blua32ImageOffset: 0, blua32ImageByteCount: 0, blua32StartupFunctionAddress: 0, blua32IrqFunctionAddress: 0,
-		blua32ExceptionFunctionAddress: 0, blua32StaticLayoutTokenLo: 0, blua32StaticLayoutTokenHi: 0, blua32DiagnosticDirectoryOffset: 0,
-	} };
-}
-
 test('ROM catalog commands dispatch from the actual focused list and after filter Enter', t => {
 	configureFontVariant('tiny');
-	const input = new RomInspectorInput(imageSnapshot()), surfaces = new WorkbenchSurfaceService();
+	const input = new RomInspectorInput(createRomInspectorImageSnapshot(0, TEST_CARTRIDGE_CONTEXT_IDS[0])), surfaces = new WorkbenchSurfaceService();
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, area), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('ROM catalog command owner'), getBounds: () => area,
 		getClip: () => area, isVisible: () => true, draw() {} });
@@ -167,7 +143,7 @@ test('ROM catalog commands dispatch from the actual focused list and after filte
 	assert.equal(input.model.mode, 'structure', 'the retained control admits work again only after attachment');
 });
 
-function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'light', snapshot = imageSnapshot()) {
+function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'light', snapshot = createRomInspectorImageSnapshot(0, TEST_CARTRIDGE_CONTEXT_IDS[0])) {
 	const previousTheme = colors.getActiveIdeThemeVariant(), previousCommands = inputFocus.workbenchScope.commands;
 	configureFontVariant(variant); applyViewportSize({ width: 384, height: 288 }); colors.setIdeThemeVariant(theme);
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,

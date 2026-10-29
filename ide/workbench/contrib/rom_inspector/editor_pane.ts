@@ -87,7 +87,9 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 		this.actionTooltip.attach(surfaces, owner, workArea);
 		this.actions.onDidOpenOverflow = () => this.actionTooltip.hide();
 		for (const command of COMMANDS) {
-			const implementation = { isEnabled: () => this.isEnabled(command), run: () => this.execute(command) };
+			const implementation = { isEnabled: () => this.isEnabled(command),
+				isChecked: () => this.hasInput && command === `romInspector.${this.input.model.mode}`,
+				run: () => this.execute(command) };
 			for (const target of [this.focusTarget, this.filter.focusTarget, this.list.focusTarget]) target.registerCommand(command, implementation);
 		}
 		this.list.focusTarget.commandContext = this.focusTarget;
