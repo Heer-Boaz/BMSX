@@ -210,8 +210,7 @@ test('workspace Close All retains Main primary, activity, file selection and lay
 	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const parts = f.editor.editorParts, main = f.editor.mainWorkspace, resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	f.first.focus(); assert.equal(await f.editor.openSceneInMain(model,
-		{ document, sourceVersion: model.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+	f.first.focus(); assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	const central = parts.main.activeGroup; central.openEditor(new CodeEditorInput(model));
 	const split = parts.splitGroup(central, 'right'); split.openEditor(new CodeEditorInput(f.firstInput.workingCopy));

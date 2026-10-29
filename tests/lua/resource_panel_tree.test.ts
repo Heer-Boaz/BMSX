@@ -14,7 +14,7 @@ import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { createResourceEditorResolver } from '../../ide/workbench/contrib/resources/editor_contributions';
 import { EditorNavigationController } from '../../ide/workbench/contrib/resources/navigation';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
@@ -37,13 +37,14 @@ function fixture(t: TestContext, records: readonly LuaSourceRecord[] = Array.fro
 	const sources = createScenarioTestSourceState(records);
 	const parts = createTestEditorParts(t), group = parts.createDocument().activeGroup;
 	const resourceEditors = createResourceEditorResolver(sources.catalog), editor = { editorParts: parts, resourceEditors, isActive: true } as CartEditor;
+	const content = new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)), new VirtualHeadlessClock());
+		content, new VirtualHeadlessClock());
 	const navigation = new EditorNavigationController(sources.catalog, resourceEditors, parts);
 	group.focus();
 	Object.assign(editor, { navigation }); panel.setFontMetrics(editorViewState.font); panel.show();
 	group.panes.layout({ left: 140, top: 20, right: 384, bottom: 270 });
-	t.after(() => { panel.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
+	t.after(() => { panel.dispose(); content.dispose(); editorTextModelService.clear(); inputFocus.setTarget(null); pointerHover.clear(); });
 	return { panel, sources, group, navigation };
 }
 

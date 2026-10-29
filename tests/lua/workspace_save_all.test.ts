@@ -32,7 +32,7 @@ async function mainFixture(t: TestContext) {
 	const f = await fixture(t);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	f.update(); const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 	primary.hierarchy.update(); primary.details.update(); f.editor.mainWorkspace.focusPrimary('details');

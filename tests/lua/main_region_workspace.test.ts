@@ -33,7 +33,7 @@ async function fixture(t: TestContext, bind = true) {
 	const main = f.editor.mainWorkspace, parts = f.editor.editorParts;
 	const open = (index: number) => {
 		const document = f.ide.sceneSources.get(model);
-		return f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[index] }, inputFocus.target!);
+		return f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[index] } }), inputFocus.target!);
 	};
 	if (bind) { assert.equal(await open(0), true); f.update(); }
 	return { ...f, main, parts, model, resource, open };

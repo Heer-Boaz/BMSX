@@ -33,7 +33,7 @@ function fixture(t: TestContext) {
 	const model = () => resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.sources.catalog.resolveResource(identity)!);
 	const open = (index: number) => {
 		const copy = model(), document = f.ide.sceneSources.get(copy);
-		return f.editor.openSceneInMain(copy, { document, sourceVersion: copy.version, scene: document.scenes[index] }, inputFocus.target!);
+		return f.editor.openSceneInMain(() => ({ model: copy, subject: { document, sourceVersion: copy.version, scene: document.scenes[index] } }), inputFocus.target!);
 	};
 	const checkpoint = (): WorkspaceAutosavePayload => {
 		const mainWorkspace = f.editor.mainWorkspace.serialize();

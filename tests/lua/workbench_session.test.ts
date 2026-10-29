@@ -54,7 +54,7 @@ import { ScenarioLabController } from '../../ide/workbench/contrib/scenario_lab/
 import { ScenarioRunService } from '../../ide/workbench/services/testing/scenario_runs';
 import type { CartEditor } from '../../ide/cart_editor';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
 import { captureScenarioLabTestView } from '../../ide/workbench/contrib/scenario_lab/view_snapshot';
@@ -98,12 +98,12 @@ function fixture(t: TestContext) {
 		resource_view: new ResourceViewerInputSerializer(sources.catalog),
 		scenario_lab: new ScenarioLabInputSerializer(scenario),
 	};
+	const content = new ProjectContentIndex(editorTextModelService, sources.catalog,
+		new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), scene.documents);
 	const resourcePanel = new ResourcePanelController({ editorParts, isActive: true } as CartEditor, sources.catalog,
-		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3,
-		new ProjectContentIndex(editorTextModelService, sources.catalog,
-			new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), scene.documents), new VirtualHeadlessClock());
+		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3, content, new VirtualHeadlessClock());
 	resourcePanel.setFontMetrics(editorViewState.font);
-	t.after(() => { resourcePanel.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
+	t.after(() => { resourcePanel.dispose(); content.dispose(); scenario.dispose(); runs.dispose(); editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); workspaceDirtyRecords.clear(); });
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definitions.lua' })!;
 	const model = editorTextModelService.retain(resource, 'lua', SOURCE);
 	return { sources, group, editorParts, mainWorkspace, resourcePanel, behavior, scene, scenario, serializers, model, runtime };

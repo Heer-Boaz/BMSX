@@ -21,7 +21,7 @@ for (const font of ['tiny', 'msx'] as const) for (const direction of ['right', '
 		const editor = f.editor, main = editor.mainWorkspace, part = editor.editorParts.main;
 		const sceneResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, sceneResource), document = f.ide.sceneSources.get(model);
-		assert.equal(await editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+		assert.equal(await editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 		main.focusActivity();
 		editor.updateViewport(direction === 'right' ? { width: 200, height: 320 } : { width: 300, height: 120 });
 		editor.setFontVariant(font); f.update();

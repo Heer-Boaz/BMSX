@@ -9,7 +9,7 @@ import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus } from '../../ide/input/focus';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { WORKBENCH_ICON_SIZE } from '../../ide/workbench/ui/icon';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
@@ -25,15 +25,16 @@ function fixture(t: TestContext, variant: FontVariant) {
 	const path = `deep/tree/${'wide_name_'.repeat(12)}.lua`;
 	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(path, 1), createScenarioTestSourceRecord('short.lua', 1)]);
 	const parts = createTestEditorParts(t), editor = { editorParts: parts, isActive: true } as CartEditor;
+	const content = new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const panel = new ResourcePanelController(editor, sources.catalog, { resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)), new VirtualHeadlessClock());
+		content, new VirtualHeadlessClock());
 	panel.setFontMetrics(editorViewState.font); panel.queuePendingSelection({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path }); panel.show();
 	const index = panel.files.tree.rows.findIndex(node => node.element.kind === 'file' && node.element.resource.path === path); assert.ok(index >= 0);
 	const publish = (next: FontVariant) => {
 		configureFontVariant(next);
 		panel.setFontMetrics(editorViewState.font); refreshWorkbenchLayout();
 	};
-	t.after(() => { panel.dispose(); inputFocus.setTarget(null); });
+	t.after(() => { panel.dispose(); content.dispose(); inputFocus.setTarget(null); });
 	return { panel, index, publish };
 }
 

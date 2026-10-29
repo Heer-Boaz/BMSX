@@ -76,7 +76,7 @@ for (const variant of ['tiny', 'msx'] as const) {
 		const documentPane = group.panes.activePane; assert.ok(documentPane instanceof CodeEditorPane);
 		const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-		assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 		const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 		main.focusPrimary('hierarchy'); f.update();
 		assertStatusProjection(t, f, primary, [documentPane, f.first, f.second, f.editor.problems]);

@@ -172,12 +172,17 @@ Frontend and native source recovery consume explicit context/session namespaces;
 canonical file Save addresses remain separate from
 [recovery storage](../docs/studio_source_recovery_design.md).
 
-`contrib/resources/panel/content_index.ts` projects authored declarations from
-existing semantic/source owners into the retained file tree. Its cache follows
-source and semantic-project lifetimes; canonical working copies map occurrence
-ranges. The file tree owns disclosure and presentation, while contribution
+`contrib/resources/content_index.ts` owns the workspace's shared authored-declaration
+projection over existing semantic/source owners. Files and the Main Scene chooser
+consume the same cached facts; discovery does not require a document or browser
+attachment. Canonical working copies map occurrence ranges. The file tree owns
+disclosure and presentation, while contribution
 controllers own exact-subject editor lookup and opening. Browsing neither
 executes Lua nor creates a second source or asset database.
+Retirement revokes query authority after accepted work drains; the final inert
+projection remains readable for the frontend's source-correspondence checkpoint.
+It freezes observed correspondence and mapped canonical source proof without
+admitting new semantic discovery during teardown.
 `workspace/directory_model.ts` owns lazy project-directory observations over one
 admitted `WorkspaceRecords` lifetime; reserved Studio metadata stays outside that
 project-content namespace. Acknowledged membership remains separate

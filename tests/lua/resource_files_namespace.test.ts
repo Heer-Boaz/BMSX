@@ -3,7 +3,7 @@ import test from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { createLuaSourceRegistry } from '../../ide/runtime/source_registry';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { ResourceFilesModel } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import { WorkspaceDirectoryModel } from '../../ide/workspace/directory_model';

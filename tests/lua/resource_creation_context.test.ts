@@ -73,9 +73,7 @@ for (const command of NEW_SOURCE_COMMANDS) {
 	test(`${command} from Main chooses an explicit project instead of the background destination document`, async t => {
 		const f = commandFixture(t);
 		const document = f.ide.sceneSources.get(f.input.workingCopy);
-		assert.equal(await f.editor.openSceneInMain(f.input.workingCopy,
-			{ document, sourceVersion: f.input.workingCopy.version, scene: document.scenes[0] },
-			f.group.panes.activePane!.commandTarget), true);
+		assert.equal(await f.editor.openSceneInMain(() => ({ model: f.input.workingCopy, subject: { document, sourceVersion: f.input.workingCopy.version, scene: document.scenes[0] } }), f.group.panes.activePane!.commandTarget), true);
 		const origin = f.editor.mainWorkspace.primary!.commandTarget;
 		assert.equal(f.editor.mainWorkspace.isPrimaryTarget(origin), true);
 		f.editor.commands.execute(command, origin, undefined, f.receiver.panes.activePane!.commandTarget);

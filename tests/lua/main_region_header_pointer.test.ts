@@ -17,7 +17,7 @@ for (const font of ['tiny', 'msx'] as const) for (const actionKind of ['source',
 	f.editor.setFontVariant(font); f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(model)); f.update();
 	f.editor.commands.execute('workspace.details.focus', primary.commandTarget);

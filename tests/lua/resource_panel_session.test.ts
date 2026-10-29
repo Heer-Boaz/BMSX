@@ -33,7 +33,7 @@ async function fixture(t: TestContext) {
 	const resource = (path: string) => f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource('scene.lua'));
 	const document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 	panel.show(); f.update(); panel.queuePendingSelection(resource('scene.lua')); panel.applyPendingSelection();

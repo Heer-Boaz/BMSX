@@ -1,21 +1,21 @@
-import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../../toolchain/ts/lua/semantic/model';
-import type { LuaSourceRange, LuaTableConstructorExpression } from '../../../../../toolchain/ts/lua/syntax/ast';
-import { stringLiteralValue } from '../../../../../toolchain/ts/lua/syntax/literals';
-import { resourceIdentityEquals, resourceIdentityKey, type ResourceIdentity, type RuntimeResource } from '../../../../common/resource';
-import type { EditorTextModelService } from '../../../../editor/model/model_service';
-import type { EditorTextModel } from '../../../../editor/model/text_model';
-import type { TrackedTextRange } from '../../../../editor/text/text_change';
-import { computeTextSnapshotFingerprint, getTextSnapshot, type TextSnapshotFingerprint } from '../../../../editor/text/source_text';
-import { getOrCreateSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/state';
-import type { EditorLuaSemanticProject } from '../../../../editor/contrib/intellisense/semantic/workspace/project';
-import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
-import { collectAnimationDefinitions, type AnimationDefinitionSource } from '../../animation/definitions';
-import type { BehaviorKind, BehaviorRegistrationSource } from '../../behavior_lens/model';
-import type { BehaviorRegistrationIndex } from '../../behavior_lens/registration_index';
-import { collectLuaPrograms, type LuaProgramKind, type LuaProgramOccurrence } from '../../lua_program/source';
-import type { SceneSourceDefinition, SceneSourceDocument } from '../../scene_editor/model';
-import type { SceneSourceDocuments } from '../../scene_editor/source_documents';
-import type { TextFileModelSnapshot } from '../../../services/working_copy/text_file_model';
+import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import type { LuaSourceRange, LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
+import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
+import { resourceIdentityEquals, resourceIdentityKey, type ResourceIdentity, type RuntimeResource } from '../../../common/resource';
+import type { EditorTextModelService } from '../../../editor/model/model_service';
+import type { EditorTextModel } from '../../../editor/model/text_model';
+import type { TrackedTextRange } from '../../../editor/text/text_change';
+import { computeTextSnapshotFingerprint, getTextSnapshot, getTextSnapshotFingerprint, type TextSnapshotFingerprint } from '../../../editor/text/source_text';
+import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
+import type { EditorLuaSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/project';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
+import { collectAnimationDefinitions, type AnimationDefinitionSource } from '../animation/definitions';
+import type { BehaviorKind, BehaviorRegistrationSource } from '../behavior_lens/model';
+import type { BehaviorRegistrationIndex } from '../behavior_lens/registration_index';
+import { collectLuaPrograms, type LuaProgramKind, type LuaProgramOccurrence } from '../lua_program/source';
+import type { SceneSourceDefinition, SceneSourceDocument } from '../scene_editor/model';
+import type { SceneSourceDocuments } from '../scene_editor/source_documents';
+import type { TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 
 type ProjectContentSource = {
 	readonly projectContextId: string;
@@ -47,6 +47,7 @@ type EntryRecord = {
 	readonly entry: ProjectContentEntry;
 	analysis: FileSemanticData;
 	tracking: ModelTracking | undefined;
+	finalReference?: ProjectContentReference;
 };
 type ModelTracking = {
 	readonly model: EditorTextModel;
@@ -88,6 +89,7 @@ export class ProjectContentIndex {
 			models.onWillClear(() => this.clear()),
 		];
 	}
+	public get acceptingQueries(): boolean { return !this.disposed; }
 
 	public onDidChange(listener: () => void): () => void {
 		this.changeListeners.add(listener);
@@ -144,7 +146,7 @@ export class ProjectContentIndex {
 		}
 		this.entriesByResource = published;
 		this.revision++;
-		for (const listener of this.changeListeners) listener();
+		if (!this.disposed) for (const listener of this.changeListeners) listener();
 		return true;
 	}
 
@@ -154,8 +156,9 @@ export class ProjectContentIndex {
 
 	/** Command admission consumes the current source generation, never a stale tree payload. */
 	public isCurrent(entry: ProjectContentEntry): boolean {
+		if (this.disposed) return false;
 		this.sync();
-		return this.records.has(entry);
+		return !this.disposed && this.records.has(entry);
 	}
 
 	/** Read the synchronized producer generation without publishing callbacks or admitting working copies. */
@@ -163,6 +166,7 @@ export class ProjectContentIndex {
 		const record = this.records.get(entry);
 		if (record === undefined) return undefined;
 		if (previous !== undefined && this.matchesReference(record, previous)) return previous;
+		if (record.finalReference !== undefined) return record.finalReference;
 		const browser = entry.kind === 'animation' && entry.definition.consumer !== undefined ? entry.definition.consumer : record.analysis;
 		return { projectContextId: entry.projectContextId, kind: entry.kind,
 			owner: { resource: { contextId: entry.ownerResource.contextId, path: entry.ownerResource.path }, fingerprint: this.fingerprint(record.analysis) },
@@ -183,7 +187,8 @@ export class ProjectContentIndex {
 			|| !resourceIdentityEquals(entry.browserResource, reference.browser.resource)
 			|| entry.range.start !== reference.range.start || entry.range.end !== reference.range.end) return false;
 		const browser = entry.kind === 'animation' && entry.definition.consumer !== undefined ? entry.definition.consumer : record.analysis;
-		const ownerFingerprint = this.fingerprint(record.analysis), browserFingerprint = this.fingerprint(browser);
+		const ownerFingerprint = record.finalReference === undefined ? this.fingerprint(record.analysis) : record.finalReference.owner.fingerprint;
+		const browserFingerprint = record.finalReference === undefined ? this.fingerprint(browser) : record.finalReference.browser.fingerprint;
 		return ownerFingerprint.length === reference.owner.fingerprint.length && ownerFingerprint.hash === reference.owner.fingerprint.hash
 			&& browserFingerprint.length === reference.browser.fingerprint.length && browserFingerprint.hash === reference.browser.fingerprint.hash;
 	}
@@ -200,8 +205,27 @@ export class ProjectContentIndex {
 	public dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		// Freeze observed correspondence, not a fresh declaration query. Only tracked
+		// owners can prove their mapped position in a newer canonical source generation.
+		for (const record of this.records.values()) {
+			const reference = this.captureReference(record.entry)!;
+			const owner = record.tracking?.model, browser = this.models.get(record.entry.browserResource);
+			const ownerFingerprint = owner === undefined ? reference.owner.fingerprint : getTextSnapshotFingerprint(owner.buffer);
+			const browserFingerprint = resourceIdentityEquals(record.entry.ownerResource, record.entry.browserResource) ? ownerFingerprint
+				: browser === undefined ? reference.browser.fingerprint : getTextSnapshotFingerprint(browser.buffer);
+			record.finalReference = { ...reference,
+				owner: { resource: reference.owner.resource, fingerprint: ownerFingerprint },
+				browser: { resource: reference.browser.resource, fingerprint: browserFingerprint } };
+		}
 		for (const unsubscribe of this.subscriptions) unsubscribe();
-		this.clear();
+		for (const generation of this.contexts.values()) generation.release();
+		this.contexts.clear();
+		for (const tracking of this.tracking.values()) tracking.release();
+		this.tracking.clear(); this.recordsByOwner.clear();
+		for (const record of this.records.values()) record.tracking = undefined;
+		// Final source/session checkpoints still consume this last inert correspondence.
+		this.revision++;
+		for (const listener of this.changeListeners) listener();
 		this.changeListeners.clear();
 	}
 

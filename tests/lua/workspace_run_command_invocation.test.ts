@@ -148,7 +148,7 @@ for (const command of ['runCurrentFile', 'runProject'] as const) {
 		const documentTarget = group.panes.activePane!.commandTarget;
 		const resource = f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-		assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, documentTarget), true);
+		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), documentTarget), true);
 		const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 		selectSceneOutlineRow(primary.view.hierarchy, 1); primary.hierarchy.update(); primary.details.update(); f.update();
 		const control = primary.details.control.controls[0]; control.field.focusTarget.focus();

@@ -1,5 +1,5 @@
 import type { ResourceIdentity, RuntimeResourceLocation } from '../../../../common/resource';
-import type { ProjectContentReference } from './content_index';
+import type { ProjectContentReference } from '../content_index';
 import type { ResourcePanelFilterMode } from './files_model';
 
 /** An admitted namespace and authoring root, independent of its label or visible row. */

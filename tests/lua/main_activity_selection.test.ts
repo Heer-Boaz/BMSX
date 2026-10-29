@@ -45,7 +45,7 @@ async function fixture(t: TestContext, failed = false, initialResult = true) {
 test('an actual native authoring draft can veto activity selection without publishing or blurring it', async t => {
 	const f = await fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	selectSceneOutlineRow(primary.view.hierarchy, 1); primary.hierarchy.update(); primary.details.update();
 	const field = primary.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, 'not an integer', true);
@@ -166,7 +166,7 @@ test('workspace recovery retains the selected concrete activity ID and requested
 test('a newer background activity selection during primary restoration is not refocused as the saved activity', async t => {
 	const f = await fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	f.main.openActivity('builds.output'); const state = f.main.serialize(); f.second.focus();
 	const foreground = inputFocus.admittedTarget, ready = Promise.withResolvers<void>(), request = f.main.beginRestore();
 	try {

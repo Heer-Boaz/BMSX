@@ -970,7 +970,7 @@ test('Home publishes action geometry before accepting a fresh pointer release', 
 	openHome(f.editor.editorParts.main.activeGroup, { id: 'home-source-context', projectRoot: '/workspace/current' }); f.editor.update(0);
 	const home = f.editor.editorParts.main.activeGroup.model.activeTab!;
 	if (home.kind !== 'home') throw new Error('Home contribution');
-	const bounds = home.sections[0].actions.items[1].bounds;
+	const action = home.sections[0].actions.items[1], bounds = action.bounds;
 	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
 	const invoke = t.mock.method(f.editor.commands, 'execute', () => {});
 	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
@@ -979,7 +979,7 @@ test('Home publishes action geometry before accepting a fresh pointer release', 
 	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
 		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 3 });
 	assert.equal(invoke.mock.callCount(), 1);
-	assert.equal(invoke.mock.calls[0].arguments[0], 'resourceSearch');
+	assert.equal(invoke.mock.calls[0].arguments[0], action.command);
 	assert.equal(pointerCapture.active, false);
 });
 

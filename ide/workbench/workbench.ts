@@ -41,6 +41,7 @@ import { ScenarioRunService } from './services/testing/scenario_runs';
 import { TextFileSaveService } from './services/working_copy/text_file_save';
 import { WorkspaceDirectoryModel } from '../workspace/directory_model';
 import type { WorkspaceRecords } from '../workspace/records';
+import { ProjectContentIndex } from './contrib/resources/content_index';
 
 export type StudioWorkbenchOptions = {
 	readonly runtime: Runtime;
@@ -94,6 +95,7 @@ export class StudioWorkbench {
 	public readonly debuggerExecution: RuntimeDebuggerExecution;
 	public readonly behaviorSources: BehaviorSourceDocuments;
 	public readonly sceneSources: SceneSourceDocuments;
+	public readonly projectContent: ProjectContentIndex;
 	public readonly tools: WorkspaceToolService;
 	public readonly fault = createRuntimeFaultState();
 	public readonly frame = { outputDrained: false, collectingHistory: true };
@@ -147,6 +149,7 @@ export class StudioWorkbench {
 			rewind, this.fault, this.frameNavigation, this.debuggerExecution);
 		this.behaviorSources = new BehaviorSourceDocuments(models, sources.catalog);
 		this.sceneSources = new SceneSourceDocuments(models, sources.catalog);
+		this.projectContent = new ProjectContentIndex(models, sources.catalog, this.behaviorSources.registrations, this.sceneSources);
 		this.tools = new WorkspaceToolService(models, sources, this.diagnostics, this.scenarioRuns, this.inspection,
 			this.frameNavigation, gameCapture, this.luaEvaluation, this.debuggerExecution, this.actorExecution,
 			this.behaviorSources, this.textFileSaves, this.boots, this.hotResumes, this.events, this.gte, this.gpu, clock);
@@ -238,6 +241,7 @@ export class StudioWorkbench {
 		await this.textFileSaves.shutdown();
 		await directoriesDrained;
 		await executionDrained; await bootsDrained; await evaluationDrained; await actorsDrained; await playDrained;
+		this.projectContent.dispose();
 		this.runtime.onStateRestored = undefined;
 		this.runtime.onStateReset = undefined;
 		this.runtime.history.onWillResumeRecording = undefined;

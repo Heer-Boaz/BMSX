@@ -81,7 +81,7 @@ export function createProjectRunFixture(t: TestContext, bootable = true, attachm
 	const openMain = async (contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0]) => {
 		const resource = sources.catalog.resolveResource({ contextId, path: 'scene.lua' })!;
 		const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource), document = ide.sceneSources.get(model);
-		assert.equal(await editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+		assert.equal(await editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 		update(); const primary = editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 		return { model, primary };
 	};

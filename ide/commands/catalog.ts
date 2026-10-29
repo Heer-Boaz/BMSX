@@ -32,6 +32,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'resources.open': { category: 'Files', title: 'Open' },
 	'resources.editInMain': { category: 'Files', title: 'Edit in Main Workspace' },
 	'workspace.focusPrimary': { category: 'Workspace', title: 'Focus Primary Authoring' },
+	'sceneEditor.chooseMain': { category: 'Workspace', title: 'Choose Main Scene', shortTitle: 'Main Scene' },
 	'workspace.clearPrimary': { category: 'Workspace', title: 'Clear Primary Authoring' },
 	'workspace.hierarchy.focus': { category: 'Workspace', title: 'Focus Hierarchy' },
 	'workspace.details.focus': { category: 'Workspace', title: 'Focus Details' },

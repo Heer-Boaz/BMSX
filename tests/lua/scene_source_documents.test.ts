@@ -4,7 +4,7 @@ import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject, resetSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';

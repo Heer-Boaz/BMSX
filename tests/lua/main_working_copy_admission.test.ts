@@ -16,7 +16,7 @@ test('a pending Main replacement cannot retain another dirty Source view through
 	const a = model('scene-a.lua'), b = model('scene-b.lua'), main = f.editor.mainWorkspace;
 	const open = (copy: typeof a) => {
 		const document = f.ide.sceneSources.get(copy);
-		return f.editor.openSceneInMain(copy, { document, sourceVersion: copy.version, scene: document.scenes[0] }, inputFocus.target!);
+		return f.editor.openSceneInMain(() => ({ model: copy, subject: { document, sourceVersion: copy.version, scene: document.scenes[0] } }), inputFocus.target!);
 	};
 	assert.equal(await open(a), true); f.update();
 	const current = main.primary; assert.ok(current instanceof ScenePrimaryClient);

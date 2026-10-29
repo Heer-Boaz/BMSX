@@ -12,7 +12,7 @@ import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/edit
 import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/editor_input';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
 import { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_input';
-import type { ProjectContentEntry } from '../../ide/workbench/contrib/resources/panel/content_index';
+import type { ProjectContentEntry } from '../../ide/workbench/contrib/resources/content_index';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';

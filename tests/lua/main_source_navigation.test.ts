@@ -34,7 +34,7 @@ async function fixture(t: TestContext) {
 	const main = f.editor.mainWorkspace, parts = f.editor.editorParts;
 	const open = (index: number, workingCopy = model) => {
 		const document = f.ide.sceneSources.get(workingCopy);
-		return f.editor.openSceneInMain(workingCopy, { document, sourceVersion: workingCopy.version, scene: document.scenes[index] }, inputFocus.target!);
+		return f.editor.openSceneInMain(() => ({ model: workingCopy, subject: { document, sourceVersion: workingCopy.version, scene: document.scenes[index] } }), inputFocus.target!);
 	};
 	f.first.focus(); assert.equal(await open(0), true); f.update();
 	const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
@@ -300,8 +300,7 @@ for (const change of ['source edit', 'source model replacement', 'selected occur
 			const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.resource);
 			assert.ok(model !== f.model);
 			const document = f.ide.sceneSources.get(model);
-			assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] },
-				f.parts.main.activeGroup.focusTarget), true);
+			assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.parts.main.activeGroup.focusTarget), true);
 		}
 		else if (change === 'selected occurrence deletion') assert.equal(f.primary.consumer.removeSelectedMember(), true);
 		else if (change === 'Main replacement') assert.equal(await f.open(1), true);

@@ -17,8 +17,7 @@ async function fixture(t: TestContext) {
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
 	const document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model,
-		{ document, sourceVersion: model.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	f.update();
 	const main = f.editor.mainWorkspace, primary = main.primary;
 	assert.ok(primary instanceof ScenePrimaryClient);

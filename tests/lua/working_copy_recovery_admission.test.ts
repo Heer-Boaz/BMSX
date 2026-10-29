@@ -207,7 +207,7 @@ for (const equal of [false, true]) test(`Scene and browser occurrences admitted 
 		assert.ok(browser !== undefined);
 		panel.setSelectionIndex(panel.files.tree.rows.indexOf(browser));
 		const document = f.ide.sceneSources.get(model);
-		opening = f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[1] }, inputFocus.target!);
+		opening = f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[1] } }), inputFocus.target!);
 		const admitted = f.editor.mainWorkspace.primary; assert.ok(admitted instanceof ScenePrimaryClient); primary = admitted;
 		assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 		primary.hierarchy.update(); primary.details.update();

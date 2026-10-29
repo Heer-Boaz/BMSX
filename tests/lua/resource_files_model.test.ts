@@ -1,5 +1,5 @@
 import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
-import { ProjectContentIndex, type ProjectContentEntry } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex, type ProjectContentEntry } from '../../ide/workbench/contrib/resources/content_index';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resourceIdentityKey } from '../../ide/common/resource';

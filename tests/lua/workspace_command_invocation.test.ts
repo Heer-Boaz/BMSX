@@ -21,7 +21,7 @@ async function fixture(t: TestContext, main = false, text = '123') {
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
 	if (main) {
 		const document = f.ide.sceneSources.get(model);
-		assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	} else f.editor.sceneEditor.openResource(f.firstGroup, resource, { pinned: true });
 	f.update();
 	const client = main ? f.editor.mainWorkspace.primary : undefined, pane = f.firstGroup.panes.activePane;

@@ -41,8 +41,7 @@ for (const explicit of [false, true]) test(`Scene opens its ${explicit ? 'explic
 
 for (const command of ['animation', 'sceneEditor'] as const) test(`${command} from Main has no implicit background document subject`, async t => {
 	const f = fixture(t), document = f.ide.sceneSources.get(f.input.workingCopy);
-	assert.equal(await f.editor.openSceneInMain(f.input.workingCopy,
-		{ document, sourceVersion: f.input.workingCopy.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model: f.input.workingCopy, subject: { document, sourceVersion: f.input.workingCopy.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	const main = f.editor.mainWorkspace.primary;
 	assert.ok(main instanceof ScenePrimaryClient);
 	if (command === 'animation') {
@@ -168,8 +167,7 @@ async function sourceCommandFixture(t: Parameters<typeof createActualSourcePanes
 	const documentResource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'document-scene.lua' })!;
 	const primaryModel = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, primaryResource);
 	const document = f.ide.sceneSources.get(primaryModel);
-	assert.equal(await f.editor.openSceneInMain(primaryModel,
-		{ document, sourceVersion: primaryModel.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model: primaryModel, subject: { document, sourceVersion: primaryModel.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	f.editor.sceneEditor.openResource(f.secondGroup, documentResource, { pinned: true }); f.update();
 	const pane = f.secondGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane);

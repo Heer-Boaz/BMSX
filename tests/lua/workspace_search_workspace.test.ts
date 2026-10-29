@@ -34,7 +34,7 @@ async function fixture(t: TestContext, bound = true, additionalSources: readonly
 	const resource = (path: string) => f.sources.catalog.resolveResource({ contextId: context.id, path })!;
 	const scene = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource('scene.lua'));
 	const document = f.ide.sceneSources.get(scene);
-	assert.equal(await f.editor.openSceneInMain(scene, { document, sourceVersion: scene.version, scene: document.scenes[0] }, inputFocus.target!), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model: scene, subject: { document, sourceVersion: scene.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 	const activity = new HostErrorInput('fixture activity'); f.firstGroup.openEditor(activity); f.firstGroup.focus(); f.update();

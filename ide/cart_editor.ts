@@ -81,7 +81,7 @@ import { AssistantChatCommands } from './workbench/contrib/assistant/chat_comman
 import type { StudioServerConnectionState } from './workbench/common/server_connection';
 import type { AssistantConnectionFactory } from '../hosts/common/assistant_protocol';
 import { ActorLabController } from './workbench/contrib/actor_lab/controller';
-import { ProjectContentIndex } from './workbench/contrib/resources/panel/content_index';
+import type { ProjectContentIndex } from './workbench/contrib/resources/content_index';
 import { GameViewInput } from './workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from './workbench/contrib/game_view/editor_pane';
 import { GamePanel } from './workbench/contrib/game_view/game_panel';
@@ -94,6 +94,7 @@ import { CallHierarchyPane } from './workbench/contrib/call_hierarchy/editor_pan
 import { WorkspaceSearchPane, measureWorkspaceSearchInput } from './workbench/contrib/workspace_search/editor_pane';
 import { SceneEditorInputSerializer } from './workbench/contrib/scene_editor/editor_serializer';
 import type { WorkspaceDirectoryModel } from './workspace/directory_model';
+import type { WorkspaceSourceContext } from './workspace/source_catalog';
 import { ScenarioLabInputSerializer } from './workbench/contrib/scenario_lab/editor_serializer';
 import { ResourceViewerInputSerializer } from './workbench/contrib/resources/editor_serializer';
 import { ContextMenuController } from './workbench/services/context_menu/controller';
@@ -199,8 +200,12 @@ type RenderRuntimeFaultOverlayOptions = {
 const EDITOR_TARGET_WIDTH = 384;
 const EDITOR_TARGET_HEIGHT = 288;
 
+/** Exact authored source prepared under Main's opening request. */
+export type ScenePrimarySource = { readonly model: EditorTextModel; readonly subject: SceneAuthoredSubject };
+
 export type CartEditor = TextInputHost & {
 	readonly directories: WorkspaceDirectoryModel | undefined;
+	readonly projectContent: ProjectContentIndex;
 	readonly events: RuntimeEventHistory;
 	readonly gte: RuntimeGteHistory;
 	readonly gpu: RuntimeGpuHistory;
@@ -242,7 +247,7 @@ export type CartEditor = TextInputHost & {
 	readonly navigation: EditorNavigationController;
 	readonly cartMaps: CartMapController;
 	readonly sceneEditor: SceneEditorController;
-	openSceneInMain(model: EditorTextModel, subject: SceneAuthoredSubject, origin: InputFocusTarget): Promise<boolean>;
+	openSceneInMain(produce: () => ScenePrimarySource | undefined, origin: InputFocusTarget | null): Promise<boolean>;
 	restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceRegionSurfaces, scope: InputFocusScope, isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined>;
 	readonly animations: AnimationEditorController;
 	readonly actorLab: ActorLabController;
@@ -279,6 +284,7 @@ export type CartEditor = TextInputHost & {
 
 export class RuntimeCartEditor implements CartEditor {
 	public get directories(): WorkspaceDirectoryModel | undefined { return this.workbench.directories; }
+	public get projectContent(): ProjectContentIndex { return this.workbench.projectContent; }
 	public readonly play: PlayController;
 	public readonly terminal: BiosTerminal;
 	public readonly gamePanel: GamePanel;
@@ -467,7 +473,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.keybindings = new EditorCommandKeybindingController(inputFocus, clock);
 		inputFocus.workbenchScope.commands = this.commands;
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant,
-			new ProjectContentIndex(editorTextModelService, sources.catalog, behaviorSources.registrations, workbench.sceneSources));
+			workbench.projectContent);
 		refreshWorkbenchLayout();
 		const workArea = getWorkbenchWorkArea();
 		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
@@ -756,9 +762,17 @@ export class RuntimeCartEditor implements CartEditor {
 	}
 	public get fontVariant(): FontVariant { return editorViewState.fontVariant; }
 
-	public openSceneInMain(model: EditorTextModel, subject: SceneAuthoredSubject, origin: InputFocusTarget): Promise<boolean> {
-		return this.mainWorkspace.openPrimary((regions, scope) => createScenePrimaryClient(model, this.workbench.sceneSources,
-			subject, { ...this.scenePrimaryOptions, regions, scope }), this.editorParts.closeController, origin);
+	/** Main owns the intent before source preparation can publish callbacks. */
+	public openSceneInMain(produce: () => ScenePrimarySource | undefined, origin: InputFocusTarget | null): Promise<boolean> {
+		let source: ScenePrimarySource | undefined, context: WorkspaceSourceContext;
+		return this.mainWorkspace.openPrimary((regions, scope) => {
+			source = produce();
+			if (source === undefined) return;
+			const { model, subject } = source;
+			context = this.sources.catalog.getContext(model.identity.contextId);
+			return createScenePrimaryClient(model, this.workbench.sceneSources, subject, { ...this.scenePrimaryOptions, regions, scope });
+		}, this.editorParts.closeController, origin, { isCurrent: () => source !== undefined
+			&& this.sources.catalog.contexts.get(context.id) === context && this.workbench.models.get(source.model.identity) === source.model });
 	}
 
 	private readonly restoreSceneNavigation: RestoreScenePrimaryBookmark = (bookmark, options) =>

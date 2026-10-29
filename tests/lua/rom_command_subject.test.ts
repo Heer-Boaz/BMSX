@@ -88,8 +88,7 @@ test('unrelated Main cannot inherit checked ROM state from a background document
 	const f = fixture(t, true);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model,
-		{ document, sourceVersion: model.version, scene: document.scenes[0] }, f.pane.commandTarget), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.pane.commandTarget), true);
 	const main = f.editor.mainWorkspace.primary!;
 	f.input.model.select(f.input.model.rows.findIndex(row => row.asset?.type === 'image')); f.update();
 	f.editor.commands.execute('romInspector.inspect', f.pane.commandTarget); f.update();
@@ -110,8 +109,7 @@ test('unrelated Main cannot inherit checked ROM state from a background document
 test('focused Main primary does not acquire a ROM capability from its own active document group', async t => {
 	const f = fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model,
-		{ document, sourceVersion: model.version, scene: document.scenes[0] }, f.pane.commandTarget), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.pane.commandTarget), true);
 	const main = f.editor.mainWorkspace.primary!, group = f.editor.editorParts.main.activeGroup;
 	const input = new RomInspectorInput(f.input.snapshot); group.openEditor(input, { pinned: true }); f.update();
 	const pane = group.panes.activePane; assert.ok(pane instanceof RomInspectorPane);

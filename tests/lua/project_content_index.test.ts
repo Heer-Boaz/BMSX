@@ -2,10 +2,12 @@ import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/s
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
+import { EditorLuaSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/project';
 import { getOrCreateSemanticProject, resetSemanticProject, resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
+import { computeTextSnapshotFingerprint, getTextSnapshot } from '../../ide/editor/text/source_text';
 import { resourceIdentityEquals, type RuntimeResource } from '../../ide/common/resource';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
@@ -310,6 +312,116 @@ test('model-service clear rebinds current semantic projects and disposal retires
 	f.model('main.lua').pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- after disposal\n' }]);
 	assert.deepEqual(current.range, span, 'index releases canonical marker tracking');
 	assert.equal(f.index.sync(), false); assert.equal(f.index.isCurrent(current), false);
+});
+
+test('retirement revokes query authority but retains final declaration correspondence for session checkpoints', t => {
+	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
+	t.after(f.dispose);
+	const model = f.model('main.lua');
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- final authored source\n' }]);
+	f.index.sync();
+	const entries = f.index.entriesFor(model.resource), entry = entries[0], reference = f.index.captureReference(entry)!;
+	assert.ok(reference !== undefined); assert.equal(f.index.acceptingQueries, true);
+	let retirements = 0;
+	f.index.onDidChange(() => {
+		retirements++;
+		assert.equal(f.index.acceptingQueries, false); assert.equal(f.index.isCurrent(entry), false);
+	});
+	f.index.dispose();
+	assert.equal(retirements, 1); assert.equal(f.index.acceptingQueries, false);
+	assert.ok(f.index.entriesFor(model.resource) === entries);
+	assert.ok(f.index.captureReference(entry, reference) === reference);
+	assert.ok(f.index.resolveReference(reference) === entry);
+	const range = { ...entry.range };
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- after retirement\n' }]);
+	assert.deepEqual(entry.range, range, 'retired correspondence no longer tracks canonical edits');
+	f.models.clear(); f.sources.catalog.dispose();
+	assert.ok(f.index.captureReference(entry, reference) === reference);
+	assert.ok(f.index.resolveReference(reference) === entry);
+	assert.equal(f.index.sync(), false); assert.equal(f.index.isCurrent(entry), false);
+	f.index.dispose(); assert.equal(retirements, 1);
+});
+
+test('retiring an unobserved project index performs no semantic discovery', t => {
+	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
+	t.after(f.dispose);
+	const snapshots = t.mock.method(EditorLuaSemanticProject.prototype, 'getSnapshot');
+	const sources = t.mock.method(EditorLuaSemanticProject.prototype, 'synchronizeSources');
+	f.index.dispose();
+	assert.equal(f.index.acceptingQueries, false); assert.equal(f.index.sync(), false);
+	assert.equal(snapshots.mock.callCount(), 0); assert.equal(sources.mock.callCount(), 0);
+	assert.equal(f.index.entriesByResource.size, 0);
+});
+
+test('retirement freezes mapped canonical correspondence without semantic discovery or reentrant admission', t => {
+	const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
+	t.after(f.dispose);
+	const model = f.model('main.lua');
+	f.index.sync();
+	const entry = f.index.entriesFor(model.resource)[0], previous = f.index.captureReference(entry)!;
+	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- final changed source\n' }]);
+	const expected = computeTextSnapshotFingerprint(getTextSnapshot(model.buffer));
+	const project = getOrCreateSemanticProject(f.models, contextId);
+	const snapshots = t.mock.method(project, 'getSnapshot', () => assert.fail('retirement does not query semantic snapshots'));
+	const sources = t.mock.method(project, 'synchronizeSources', () => assert.fail('retirement does not discover sources'));
+	let retirements = 0;
+	f.index.onDidChange(() => {
+		retirements++;
+		assert.equal(f.index.acceptingQueries, false); assert.equal(f.index.isCurrent(entry), false);
+		f.index.dispose();
+	});
+	f.index.dispose();
+	assert.equal(snapshots.mock.callCount(), 0); assert.equal(sources.mock.callCount(), 0); assert.equal(retirements, 1);
+	const reference = f.index.captureReference(entry)!;
+	assert.deepEqual(reference.owner.fingerprint, expected); assert.notDeepEqual(reference.owner.fingerprint, previous.owner.fingerprint);
+	assert.ok(f.index.resolveReference(reference) === entry); assert.equal(f.index.sync(), false);
+});
+
+for (const transition of ['reset project', 'clear models', 'admit context'] as const) {
+	test(`retiring an observed index after ${transition} never admits a replacement semantic generation`, t => {
+		const f = fixture({ 'main.lua': "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})" });
+		t.after(f.dispose); f.index.sync();
+		if (transition === 'reset project') resetSemanticProject(f.models, contextId);
+		else if (transition === 'clear models') f.models.clear();
+		else f.sources.catalog.admitContext({ ...f.sources.catalog.getContext(contextId),
+			admission: { id: TEST_CARTRIDGE_CONTEXT_IDS[1], projectRoot: 'carts/second' } });
+		const snapshots = t.mock.method(EditorLuaSemanticProject.prototype, 'getSnapshot', () => assert.fail('retirement cannot admit a snapshot'));
+		const sources = t.mock.method(EditorLuaSemanticProject.prototype, 'synchronizeSources', () => assert.fail('retirement cannot discover sources'));
+		f.index.dispose();
+		assert.equal(f.index.acceptingQueries, false); assert.equal(f.index.sync(), false);
+		assert.equal(snapshots.mock.callCount(), 0); assert.equal(sources.mock.callCount(), 0);
+	});
+}
+
+test('final imported-animation correspondence retains independently changed owner and consumer bytes', t => {
+	const owner = "return { frames = {'idle.1'}, frame_run = 2 }";
+	const consumer = "local sprite=require('cartlib/component/sprite_animation_component'); sprite.factory(require('frames'))";
+	const f = fixture({ 'frames.lua': owner, 'caller.lua': consumer });
+	t.after(f.dispose); f.index.sync();
+	const entry = f.index.entriesFor(f.resource('caller.lua'))[0];
+	const table = f.model('frames.lua'), caller = f.model('caller.lua');
+	table.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- owner\n' }]);
+	caller.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- consumer\n' }]);
+	f.index.dispose();
+	const reference = f.index.captureReference(entry)!;
+	assert.deepEqual(reference.owner.fingerprint, computeTextSnapshotFingerprint(getTextSnapshot(table.buffer)));
+	assert.deepEqual(reference.browser.fingerprint, computeTextSnapshotFingerprint(getTextSnapshot(caller.buffer)));
+	const reopened = fixture({ 'frames.lua': table.buffer.getText(), 'caller.lua': caller.buffer.getText() });
+	t.after(reopened.dispose); reopened.index.sync();
+	assert.equal(reopened.index.resolveReference(reference), reopened.index.entriesFor(reopened.resource('caller.lua'))[0]);
+});
+
+test('retirement does not claim source correspondence for an untracked replacement working copy', t => {
+	const source = "local fsm=require('cartlib/fsm/library'); fsm.register('one', {})";
+	const f = fixture({ 'main.lua': source });
+	t.after(f.dispose); f.index.sync();
+	const resource = f.resource('main.lua'), entry = f.index.entriesFor(resource)[0], previous = f.index.captureReference(entry)!;
+	const model = f.models.retain(resource, 'lua', '-- changed before canonical admission\n' + source);
+	f.index.dispose();
+	const reference = f.index.captureReference(entry)!;
+	assert.deepEqual(reference.owner.fingerprint, previous.owner.fingerprint);
+	assert.deepEqual(reference.browser.fingerprint, previous.browser.fingerprint);
+	assert.notDeepEqual(reference.owner.fingerprint, computeTextSnapshotFingerprint(getTextSnapshot(model.buffer)));
 });
 
 for (const reset of ['single', 'all'] as const) test(`${reset} semantic project reset retires warmed entries and rebinds replacement invalidation`, t => {

@@ -107,7 +107,7 @@ import type { RuntimeSourceState } from '../../ide/runtime/sources';
 import { createTestEditorGroup, createTestEditorWorkspace } from '../helpers/editor_panes';
 import type { CartEditor } from '../../ide/cart_editor';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import { Scrollbar } from '../../ide/workbench/ui/scrollbar';
@@ -477,12 +477,12 @@ function editorStub(
 		setFontVariant() { /* noop */ },
 		updateViewport() { /* noop */ },
 	};
+	const content = new ProjectContentIndex(editorTextModelService, sources.catalog,
+		new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const resourcePanel = new ResourcePanelController(editor as CartEditor, sources.catalog,
-		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3,
-		new ProjectContentIndex(editorTextModelService, sources.catalog,
-			new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)), workspaceEnvironment.clock);
+		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.3, content, workspaceEnvironment.clock);
 	resourcePanel.setFontMetrics(editorViewState.font);
-	t.after(() => resourcePanel.dispose());
+	t.after(() => { resourcePanel.dispose(); content.dispose(); });
 	return Object.assign(editor, { resourcePanel });
 }
 

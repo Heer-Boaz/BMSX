@@ -188,6 +188,7 @@ export type EditorCommandId =
 	| 'behaviorLens.duplicateChild'
 	| 'behaviorLens.setInitialState'
 	| 'sceneEditor.removeMember'
+	| 'sceneEditor.chooseMain'
 	| 'sceneEditor.details' | 'sceneEditor.outline'
 	| 'sceneEditor.moveMemberUp'
 	| 'sceneEditor.moveMemberDown'

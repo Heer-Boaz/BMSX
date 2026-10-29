@@ -14,7 +14,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { ResourcePanelController } from '../../ide/workbench/contrib/resources/panel/controller';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { BehaviorRegistrationIndex } from '../../ide/workbench/contrib/behavior_lens/registration_index';
 import { createResourcePanelLayout, writeResourcePanelBounds, writeResourcePanelLayout } from '../../ide/workbench/contrib/resources/panel/layout';
 import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
@@ -36,10 +36,11 @@ function fixture(t: TestContext) {
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288; refreshWorkbenchLayout();
 	const parts = createTestEditorParts(t), editor = { editorParts: parts, isActive: true } as CartEditor;
 	const sources = createScenarioTestSourceState([]);
+	const content = new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog));
 	const panel = new ResourcePanelController(editor, sources.catalog,
 		{ resourceVertical: new Scrollbar('vertical'), resourceHorizontal: new Scrollbar('horizontal') }, 0.35,
-		new ProjectContentIndex(editorTextModelService, sources.catalog, new BehaviorRegistrationIndex(editorTextModelService, sources.catalog), new SceneSourceDocuments(editorTextModelService, sources.catalog)), new VirtualHeadlessClock());
-	t.after(() => { panel.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); pointerHover.clear(); });
+		content, new VirtualHeadlessClock());
+	t.after(() => { panel.dispose(); content.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); pointerHover.clear(); });
 	panel.show();
 	return { panel, parts };
 }

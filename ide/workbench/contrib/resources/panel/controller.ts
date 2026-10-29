@@ -38,7 +38,7 @@ import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalo
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../../input/focus';
 import { handleResourcePanelKeyboardInput } from './keyboard';
 import { ResourceFilesModel, type ResourcePanelFilterMode } from './files_model';
-import type { ProjectContentIndex } from './content_index';
+import type { ProjectContentIndex } from '../content_index';
 import type { SerializedResourcePanel } from './session';
 import { findProjectContentEditor, openProjectContent, prepareProjectContent, resolveProjectContentDestination } from './open_actions';
 import { WORKBENCH_ICON_SIZE } from '../../../ui/icon';
@@ -215,7 +215,7 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.disposed = true; this.restoreRevision++;
 		this.unbindDirectories?.();
 		this.unbindFocus(); this.unbindBlur(); this.unbindNativeResize();
-		this.hide(); this.sash.dispose(); this.unbindResize(); this.focusTarget.release(); this.unbindKeyboard(); this.unbindModelClear(); this.content.dispose();
+		this.hide(); this.sash.dispose(); this.unbindResize(); this.focusTarget.release(); this.unbindKeyboard(); this.unbindModelClear();
 		this.changeListeners.clear();
 	}
 

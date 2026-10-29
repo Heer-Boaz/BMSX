@@ -1,4 +1,4 @@
-import type { ProjectContentEntry } from '../../ide/workbench/contrib/resources/panel/content_index';
+import type { ProjectContentEntry } from '../../ide/workbench/contrib/resources/content_index';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 

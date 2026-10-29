@@ -1,7 +1,7 @@
 import type { CartEditor } from '../../../../cart_editor';
 import { inputFocus, type InputFocusTarget } from '../../../../input/focus';
 import type { EditorGroupView } from '../../../services/editor/editor_group';
-import type { ProjectContentEntry, ProjectContentIndex } from './content_index';
+import type { ProjectContentEntry, ProjectContentIndex } from '../content_index';
 import { editorTextModelService } from '../../../../editor/model/model_service';
 import type { EditorTextModel } from '../../../../editor/model/text_model';
 import { resolveLuaTextFileModel } from '../../../services/working_copy/text_file_model';
@@ -77,12 +77,17 @@ export function openProjectContent(editor: CartEditor, index: ProjectContentInde
 
 /** Primary authoring is an explicit contribution action, not ordinary file activation. */
 export function editProjectContentInMain(editor: CartEditor, index: ProjectContentIndex, entry: Extract<ProjectContentEntry, { kind: 'scene' }>,
-	origin: InputFocusTarget): Promise<boolean> | undefined {
+	origin: InputFocusTarget): Promise<boolean> {
 	const scope = origin.scope, context = scope.contextGeneration;
-	if (!index.isCurrent(entry) || inputFocus.admittedTarget !== origin || scope.contextGeneration !== context) return;
-	const model = resolveLuaTextFileModel(editorTextModelService, index.catalog, entry.ownerResource);
-	if (!index.isCurrent(entry) || inputFocus.admittedTarget !== origin || scope.contextGeneration !== context) return;
-	return editor.openSceneInMain(model, { document: entry.document, sourceVersion: model.version, scene: entry.definition }, origin);
+	return editor.openSceneInMain(() => {
+		const sourceContext = index.catalog.contexts.get(entry.ownerResource.contextId);
+		const current = () => inputFocus.admittedTarget === origin && scope.contextGeneration === context
+			&& index.catalog.contexts.get(entry.ownerResource.contextId) === sourceContext;
+		if (!index.isCurrent(entry) || !current()) return;
+		const model = resolveLuaTextFileModel(editorTextModelService, index.catalog, entry.ownerResource);
+		if (!index.isCurrent(entry) || !current()) return;
+		return { model, subject: { document: entry.document, sourceVersion: model.version, scene: entry.definition } };
+	}, origin);
 }
 
 /** Declaration offsets belong to their canonical authored owner, even when browsed at an importing consumer. */

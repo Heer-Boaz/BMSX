@@ -153,6 +153,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'group.close' },
 	],
 	'home.work': [
+		{ type: 'command', command: 'sceneEditor.chooseMain', icon: 'scene' },
 		{ type: 'command', command: 'resources.focus', icon: 'source' },
 		{ type: 'command', command: 'resourceSearch', icon: 'filter' },
 		{ type: 'command', command: 'createResource', icon: 'source' },
@@ -477,6 +478,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'menubar.window': [
 		{ type: 'command', command: 'window.focusMain' },
 		{ type: 'command', command: 'workspace.focusPrimary' },
+		{ type: 'command', command: 'sceneEditor.chooseMain' },
 		{ type: 'command', command: 'workspace.clearPrimary' },
 		{ type: 'command', command: 'workspace.hierarchy.focus' },
 		{ type: 'command', command: 'workspace.details.focus' },

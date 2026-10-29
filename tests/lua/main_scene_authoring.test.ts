@@ -4,7 +4,7 @@ import { inputFocus } from '../../ide/input/focus';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/panel/content_index';
+import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
 import { editProjectContentInMain } from '../../ide/workbench/contrib/resources/panel/open_actions';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
@@ -25,7 +25,7 @@ function fixture(t: TestContext) {
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);
 	const open = (index: number) => {
 		const document = f.ide.sceneSources.get(model);
-		return f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[index] }, inputFocus.target!);
+		return f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[index] } }), inputFocus.target!);
 	};
 	f.first.focus();
 	return { ...f, model, open };
@@ -283,9 +283,7 @@ test('Files primary admission cannot outlive its captured origin generation duri
 		if (model.identity.path !== resource.path) return;
 		release(); origin.scope.retireContext();
 	}); t.after(release);
-	const opening = t.mock.method(f.editor, 'openSceneInMain');
-	await editProjectContentInMain(f.editor, index, entry, origin);
+	assert.equal(await editProjectContentInMain(f.editor, index, entry, origin), false);
 	assert.ok(origin.scope.contextGeneration !== before);
-	assert.equal(opening.mock.callCount(), 0);
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
 });

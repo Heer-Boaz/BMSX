@@ -202,7 +202,7 @@ test('Main owns both overflowing scroll routes while real documents, authoring r
 	const f = fixture(t), group = f.editor.editorParts.main.activeGroup;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	group.openEditor(new CodeEditorInput(f.model));
 	f.editor.updateViewport({ width: 280, height: 100 }); f.editor.setFontVariant('msx'); f.update();
 	const primary = f.main.primary!, layout = f.main.regionLayout;
@@ -231,7 +231,7 @@ test('attached scrolled-out hierarchy focus admits native Problems commands whil
 	f.editor.editorParts.minimize(f.firstPart); f.editor.editorParts.minimize(f.secondPart);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-	assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.main.primary;
 	group.openEditor(new CodeEditorInput(f.model));
 	f.main.regionLayout.activityHeight = 50;
@@ -314,7 +314,7 @@ for (const font of ['tiny', 'msx'] as const)
 	test(`a dirty final Main consumer presents a reachable ${font} release decision from the scrolled activity`, async t => {
 		const f = fixture(t), resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
-		assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+		assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 		const primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 		assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true); f.main.focusPrimary('details'); f.update();
 		const field = primary.details.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true);

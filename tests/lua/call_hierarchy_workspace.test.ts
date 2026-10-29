@@ -31,7 +31,7 @@ async function fixture(t: TestContext, sources: readonly (readonly [string, stri
 	const model = (path: string) => resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!);
 	const calls = model('calls.lua'), scene = model('scene.lua'), document = f.ide.sceneSources.get(scene);
-	assert.equal(await f.editor.openSceneInMain(scene, { document, sourceVersion: scene.version, scene: document.scenes[0] }, inputFocus.target!), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model: scene, subject: { document, sourceVersion: scene.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true);
 	await f.editor.navigation.openResource(f.firstGroup, calls.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });

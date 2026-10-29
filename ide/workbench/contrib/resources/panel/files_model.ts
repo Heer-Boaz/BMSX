@@ -11,7 +11,7 @@ import {
 	appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed,
 	WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation, type WorkbenchTreeNode, type WorkbenchTreeState,
 } from '../../../ui/tree_view';
-import type { ProjectContentEntry, ProjectContentIndex } from './content_index';
+import type { ProjectContentEntry, ProjectContentIndex } from '../content_index';
 import type { WorkbenchIcon } from '../../../ui/icon';
 import type { ResourceFilesContainerReference, ResourceFilesNodeReference, ResourceFilesRootReference, ResourceFilesSnapshot } from './session';
 

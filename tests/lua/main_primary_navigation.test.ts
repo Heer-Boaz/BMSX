@@ -26,7 +26,7 @@ function fixture(t: TestContext) {
 	const copy = model('scene.lua'), other = model('other-scene.lua'), main = f.editor.mainWorkspace, parts = f.editor.editorParts;
 	const open = (index: number, workingCopy = copy) => {
 		const document = f.ide.sceneSources.get(workingCopy);
-		return f.editor.openSceneInMain(workingCopy, { document, sourceVersion: workingCopy.version, scene: document.scenes[index] }, inputFocus.target!);
+		return f.editor.openSceneInMain(() => ({ model: workingCopy, subject: { document, sourceVersion: workingCopy.version, scene: document.scenes[index] } }), inputFocus.target!);
 	};
 	f.first.focus(); resetNavigationHistoryState();
 	return { ...f, copy, other, main, parts, open };

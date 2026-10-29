@@ -92,7 +92,7 @@ test('shutdown retains Main and document mementos plus unsaved canonical source 
 	const scene = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);
 	const document = f.ide.sceneSources.get(scene);
-	assert.equal(await f.editor.openSceneInMain(scene, { document, sourceVersion: scene.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model: scene, subject: { document, sourceVersion: scene.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	selectSceneOutlineRow(primary.view.hierarchy, 1); primary.hierarchy.update(); primary.details.update();
 	scene.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved Main source\n' }]);

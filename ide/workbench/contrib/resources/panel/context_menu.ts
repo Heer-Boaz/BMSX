@@ -6,7 +6,7 @@ import type { WorkbenchTreeNode } from '../../../ui/tree_view';
 import { WORKBENCH_MENUS } from '../../../ui/menu/registry';
 import { WORKBENCH_TEXT_EDITOR_ID } from '../../code_editor/editor_input';
 import type { ResourcePanelController } from './controller';
-import type { ProjectContentIndex } from './content_index';
+import type { ProjectContentIndex } from '../content_index';
 import type { FileElement } from './files_model';
 import { editProjectContentInMain, openProjectContent, openProjectContentSource, resolveProjectContentDestination } from './open_actions';
 

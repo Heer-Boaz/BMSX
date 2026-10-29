@@ -60,7 +60,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} actual Main all
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	f.first.focus();
-	assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, f.first.commandTarget), true);
+	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	const home = new HomeInput(f.sources.catalog.getContext(resource.contextId).admission), group = f.editor.editorParts.main.activeGroup;
 	group.openEditor(home); f.update();
