@@ -152,11 +152,11 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	check(testIndex >= 0, 'A03: actual scenario catalog has a source destination');
 	await press('Home');
 	for (let index = 0; index < testIndex; index += 1) await press('ArrowDown');
-	const testId = scenario.view.testPane.selectedNodeId;
+	const testId = scenario.view.testPane.selection.nodeId;
 	await press('Enter');
 	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor', 'A03: Scenario test opens its source without running');
 	await press('AltLeft', 'ArrowLeft');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === scenario && scenario.view.testPane.selectedNodeId === testId && scenario.view.focus === 'tests',
+	check(ide.editor.editorParts.activeGroup.model.activeTab === scenario && scenario.view.testPane.selection.nodeId === testId && scenario.view.focus === 'tests',
 		'A03: Scenario source returns to its exact test selection');
 	check(test.cycles() === cycles && ide.sources.currentBlua32Media === media, 'A03: all history routes preserve the paused machine and installed media');
 	for (const group of ide.editor.editorParts.groups) for (const input of [...group.model.tabs])

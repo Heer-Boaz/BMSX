@@ -47,7 +47,7 @@ test(`O${optLevel}: named cases use fresh machines, fixture hooks, retained fail
 		const program = await buildFixtureProgram({ ...fixture, systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: testSource.path, source });
 		const results = new ScenarioResultService();
 		const items: ScenarioTestItem[] = program.suite.tests.map(test => ({
-			kind: 'test', id: `scenario:0:${test.name}`, parentId: 'scenario-module:0:fixture', label: test.name,
+			kind: 'test', membership: Symbol(), id: `scenario:0:${test.name}`, parentId: 'scenario-module:0:fixture', label: test.name,
 			caseName: test.name, resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: testSource.path }, assetId: 'fixture', sourceTimestamp: 0, range: test.range,
 		}));
 		const run = results.beginRun('scenario-root:0', items.map(test => ({ test, source, sourceRevision: 0 })));
@@ -161,7 +161,7 @@ end`,
 		const program = await buildFixtureProgram({ systemRom: fixture.systemRom, cartridgeSlots: [fixture.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[0], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: SCENARIO_FIXTURE_TEST_SOURCE_PATH, source });
 		const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 		const results = new ScenarioResultService();
-		const item: ScenarioTestItem = { kind: 'test', id: 'scenario:0:integration', caseName: 'input_and_boundary',
+		const item: ScenarioTestItem = { kind: 'test', membership: Symbol(), id: 'scenario:0:integration', caseName: 'input_and_boundary',
 			parentId: 'scenario-module:0:fixture', label: 'input_and_boundary', assetId: 'fixture', sourceTimestamp: 0,
 			resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: program.suite.tests[0].range };
 		const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]);
@@ -215,7 +215,7 @@ end`,
 			const target = new OffscreenMachine(fixture.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 			const results = new ScenarioResultService();
 			const declaration = program.suite.tests.find(test => test.name === caseName)!;
-			const item: ScenarioTestItem = { kind: 'test', id: `scenario:0:${caseName}`, caseName,
+			const item: ScenarioTestItem = { kind: 'test', membership: Symbol(), id: `scenario:0:${caseName}`, caseName,
 				parentId: 'scenario-module:0:fixture', label: caseName, assetId: 'fixture', sourceTimestamp: 0,
 				resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: SCENARIO_FIXTURE_TEST_SOURCE_PATH }, range: declaration.range };
 			const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]);

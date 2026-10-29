@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { afterEach } from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { resetSemanticProjects, getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
@@ -20,7 +21,7 @@ const PROGRAM_SOURCES = [['program.lua', PROGRAM], ['cartlib/progression.lua', '
 
 afterEach(() => { editorTextModelService.clear(); resetSemanticProjects(editorTextModelService); });
 
-for (const transfer of ['editor', 'group'] as const) test(`copied Progress ${transfer} merges into its existing Main editor before retiring the incoming view`, t => {
+for (const transfer of ['editor', 'group'] as const) test(`copied Progress ${transfer} merges into its existing Main editor before retiring the incoming view`, async t => {
 	const f = createActualSourcePanes(t, false, PROGRAM_SOURCES), parts = f.editor.editorParts, main = parts.main.activeGroup;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'program.lua' })!;
 	f.editor.luaPrograms.openResource(main, resource, 'progression'); main.focus(); f.update();
@@ -28,7 +29,7 @@ for (const transfer of ['editor', 'group'] as const) test(`copied Progress ${tra
 	assert.ok(original?.kind === 'lua_program');
 	const model = original.workingCopy, version = model.version, history = model.history, cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const count = main.model.tabs.length;
-	f.editor.commands.execute('window.copyEditor', main.panes.activePane!.commandTarget); f.update();
+	f.editor.commands.execute('window.copyEditor', main.panes.activePane!.commandTarget); await setImmediate(); f.update();
 	const window = parts.activePart, source = window.activeGroup, copy = source.model.activeTab;
 	assert.ok(copy?.kind === 'lua_program' && copy !== original && copy.id !== original.id && copy.workingCopy === model);
 	let disposed = 0;

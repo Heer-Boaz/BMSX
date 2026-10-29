@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { inputFocus } from '../../ide/input/focus';
@@ -222,7 +223,7 @@ test('host diagnostic input has no move action and cannot create a destination t
 
 
 for (const command of ['window.moveEditor', 'window.copyEditor'] as const)
-	test(`${command} opens an actual Main Source editor in an explicit new floating host`, t => {
+	test(`${command} opens an actual Main Source editor in an explicit new floating host`, async t => {
 		const f = createActualSourcePanes(t), parts = f.editor.editorParts, main = parts.main.activeGroup;
 		const input = new CodeEditorInput(f.firstInput.workingCopy); main.openEditor(input); f.update();
 		const pane = main.panes.activePane!; pane.focus();
@@ -234,6 +235,7 @@ for (const command of ['window.moveEditor', 'window.copyEditor'] as const)
 			assert.equal(parts.documents.length, count);
 			selectDestination(f, 'new'); f.key('Enter');
 		}
+		await setImmediate();
 		f.update();
 		const destination = parts.activePart, moved = destination.activeGroup.model.activeTab;
 		assert.equal(parts.documents.length, count + 1); assert.equal(destination.kind, 'document');

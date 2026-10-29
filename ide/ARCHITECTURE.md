@@ -442,7 +442,10 @@ and admits only explicitly exported semantic commands from the declared action
 context. Focus-return parents do not provide command inheritance; borrowing an
 action context does not grant its widget's keyboard capabilities. Native field
 commands and semantic source commands remain distinct. A source command can use
-its explicit client context without borrowing the active document group. Command
+its explicit client context without borrowing the active document group. Routing
+resolves optional document authority independently of an opening destination;
+workspace commands consume that retained subject rather than infer one from the
+receiving group. Named Main clients expose their own document capabilities. Command
 descriptors declare native-control addressing for physical view actions; Palette
 enablement and execution retain that same invoker independently of the captured
 semantic editor target. Contribution-owned command capture retains invocation

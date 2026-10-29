@@ -32,7 +32,7 @@ async function fixture(t: TestContext, source: string, optLevel: 0 | 3, cartSour
 	const program = await buildFixtureProgram({ systemRom: media.systemRom, cartridgeSlots: [media.cartRom, null], sourceSelection: { kind: 'packaged' }, sourceContexts: [TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS[1], null], machineModel: PSX_MACHINE_SPEC, optLevel: optLevel }, { sourcePath: PATH, source });
 	const target = new OffscreenMachine(media.systemRom, [program.layer.bytes, null], PSX_MACHINE_SPEC, new TestInput());
 	const results = new ScenarioResultService();
-	const item: ScenarioTestItem = { kind: 'test', id: 'scenario:1:debug-probe', parentId: 'scenario-module:1:debug', label: 'probe', caseName: 'probe',
+	const item: ScenarioTestItem = { kind: 'test', membership: Symbol(), id: 'scenario:1:debug-probe', parentId: 'scenario-module:1:debug', label: 'probe', caseName: 'probe',
 		assetId: 'probe', sourceTimestamp: 0, resource: { contextId: TEST_CARTRIDGE_CONTEXT_IDS[1], path: PATH }, range: program.suite.tests[0].range };
 	const run = results.beginRun(item.id, [{ test: item, source, sourceRevision: 0 }]), result = results.startItem(run, 0, 0);
 	const execution = new TestExecution(target, program, results, result,

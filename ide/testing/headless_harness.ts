@@ -1,4 +1,5 @@
-import { performHotResume, performReboot } from '../commands/actions';
+import { captureEditorActionPresentation, performHotResume, performReboot } from '../commands/actions';
+import { inputFocus } from '../input/focus';
 import type { BootOperation } from '../workbench/services/execution/boot';
 import type { Runtime } from '../../machine/ts/machine/runtime/runtime';
 import { openLuaCodeTab } from '../workbench/ui/code_tab/io';
@@ -119,7 +120,7 @@ export function createHeadlessIdeHarness(
 		},
 		performHotResume: () => performHotResume(
 			ide.hotResumes, ide.editor, ide.execution, ide.overlayRenderer, logOutput,
-			ide.runTargets, { action: 'hot-resume', presentation: { group: ide.editor.editorParts.activeGroup, generation: ide.editor.editorParts.activeGroup.panes.openGeneration } },
+			ide.runTargets, { action: 'hot-resume', presentation: captureEditorActionPresentation(inputFocus.target) },
 		),
 		toggleLuaBreakpoint: (path: string, line: number) => {
 			const resource = (ide.sources.catalog.resolveResource({ contextId: ide.sources.activeContextId, path })
@@ -129,7 +130,7 @@ export function createHeadlessIdeHarness(
 		isDebuggerStopped: () => ide.debugger.source.stop !== undefined,
 		reboot: () => performReboot(
 			ide.boots, ide.editor, ide.execution, ide.overlayRenderer, logOutput,
-			ide.runTargets, { action: 'reboot', presentation: { group: ide.editor.editorParts.activeGroup, generation: ide.editor.editorParts.activeGroup.panes.openGeneration } },
+			ide.runTargets, { action: 'reboot', presentation: captureEditorActionPresentation(inputFocus.target) },
 		),
 		executeCommand: command => ide.editor.commands.execute(command),
 		openLuaSource: (path: string) => {

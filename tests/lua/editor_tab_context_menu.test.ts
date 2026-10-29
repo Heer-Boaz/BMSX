@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { inputFocus } from '../../ide/input/focus';
@@ -116,12 +117,12 @@ test('Move Editor retains the inactive clicked Source throughout the chooser and
 	assert.equal(model.buffer.getText(), `-- retained move\n${source}`); assert.equal(model.canUndo, true); assert.equal(model.dirty, true);
 });
 
-test('Open in New Window creates a view of the inactive clicked Source rather than the active sibling model', t => {
+test('Open in New Window creates a view of the inactive clicked Source rather than the active sibling model', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, group = f.firstGroup, input = f.firstInput;
 	const active = new CodeEditorInput(f.secondInput.workingCopy); group.openEditor(active);
 	const pane = group.panes.activePane, previous = [...parts.documents], model = input.workingCopy;
 	const source = model.buffer.getText(); model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared Undo\n' }]);
-	secondary(f, group, input); accept(f, 'window.copyEditor');
+	secondary(f, group, input); accept(f, 'window.copyEditor'); await setImmediate(); f.update();
 	const host = parts.documents.find(part => !previous.includes(part)); assert.ok(host !== undefined);
 	const view = host.activeGroup.model.activeTab;
 	assert.ok(view instanceof CodeEditorInput && view !== input && view.workingCopy === model);

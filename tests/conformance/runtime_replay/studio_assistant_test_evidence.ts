@@ -29,7 +29,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	document.pushEditOperations([{ offset: 0, deleteLength: document.buffer.length, text: source }]);
 	await runPaletteCommand('Scenario Lab: Open');
 	await press('Home'); await press('ArrowDown');
-	check(lab.view.testPane.selectedNodeId === module.id, 'test evidence: module selected by keyboard');
+	check(lab.view.testPane.selection.nodeId === module.id, 'test evidence: module selected by keyboard');
 	await runPaletteCommand('Scenario Lab: Run Scenarios');
 	await until(() => !ide.scenarioRuns.active, 'test evidence: real batch completes');
 	const run = ide.scenarioRuns.results.runs[0];

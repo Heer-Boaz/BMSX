@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { CodeEditorInputSerializer } from '../../ide/workbench/contrib/code_editor/editor_serializer';
@@ -35,10 +36,10 @@ for (const placement of ['split', 'window', 'group'] as const) test(`moving Sour
 	assert.equal(model.version, version); assert.equal(model.dirty, false); assert.equal(model.canUndo, false);
 });
 
-test('Open Editor in New Window copies initial wrapping then retains independent view preferences', t => {
+test('Open Editor in New Window copies initial wrapping then retains independent view preferences', async t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, commands = f.editor.commands;
 	f.first.focus(); commands.execute('wrap', f.first.commandTarget);
-	commands.execute('window.copyEditor', f.first.commandTarget);
+	commands.execute('window.copyEditor', f.first.commandTarget); await setImmediate(); f.update();
 	const group = parts.activeGroup, input = group.model.activeTab, pane = group.panes.activePane!;
 	assert.ok(input instanceof CodeEditorInput && input !== f.firstInput && input.workingCopy === f.firstInput.workingCopy);
 	assert.equal(commands.isActive('wrap', pane.commandTarget), false);

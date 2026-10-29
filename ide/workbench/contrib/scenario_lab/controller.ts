@@ -1,7 +1,7 @@
 import { RuntimeDebuggerResumeMode as Mode } from '../../../runtime/source_debugger';
 import { openCompiledDebugSources } from '../debugger/compiled_sources';
 import type { PlayController } from '../play/controller';
-import type { ScenarioTestModule, ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
+import type { ScenarioTestModule, ScenarioTestNodeId, ScenarioTestRoot } from '../../../testing/scenario/test_collection';
 import { LuaSyntaxError } from '../../../../toolchain/ts/lua/errors';
 import { subscribeToLuaModelChanges } from '../../../editor/contrib/intellisense/model_lifetime';
 import { createBehaviorQuickPickItem } from '../behavior_lens/quick_access';
@@ -27,6 +27,23 @@ import type { ScenarioRun, ScenarioSourceLocation } from '../../../testing/scena
 import type { BehaviorRegistrationIndex } from '../behavior_lens/registration_index';
 import { ScenarioLabInput } from './editor_input';
 import type { QuickInputController } from '../../services/quick_input/controller';
+
+export type ScenarioLabExecutionCommand = Extract<EditorScenarioLabCommandId,
+	| 'scenarioLab.run' | 'scenarioLab.debug' | 'scenarioLab.rerun' | 'scenarioLab.play'
+	| 'scenarioLab.runWithCompanion' | 'scenarioLab.debugWithCompanion' | 'scenarioLab.playWithCompanion'>;
+type ScenarioLabControlCommand = Exclude<EditorScenarioLabCommandId, ScenarioLabExecutionCommand>;
+
+/** Native catalog identity and the retained user intent that requested its execution. */
+export type ScenarioLabExecutionIntent = {
+	readonly command: ScenarioLabExecutionCommand;
+	readonly input: ScenarioLabInput;
+	readonly scopeId: ScenarioTestNodeId;
+	readonly selectionRevision: number | undefined;
+	readonly testMembership: symbol | undefined;
+	readonly previous: ScenarioRun | undefined;
+	readonly withCompanion: boolean;
+} & ({ readonly kind: 'play'; readonly membership: ScenarioTestModule }
+	| { readonly kind: 'run'; readonly membership: ScenarioTestModule | ScenarioTestRoot; readonly mode: 'run' | 'debug' });
 
 /** Workbench contribution that projects tests/results and invokes the run owner. */
 export class ScenarioLabController {
@@ -76,7 +93,7 @@ export class ScenarioLabController {
 		}
 	}
 
-	public executeCommand(command: EditorScenarioLabCommandId, input: ScenarioLabInput | undefined,
+	public executeCommand(command: ScenarioLabControlCommand, input: ScenarioLabInput | undefined,
 		group: EditorGroupView, picker: QuickInputController): void {
 		if (!this.isCommandEnabled(command, input)) return;
 		if (command === 'scenarioLab.revealRun') {
@@ -89,23 +106,6 @@ export class ScenarioLabController {
 		}
 		const view = input!.view;
 		switch (command) {
-			case 'scenarioLab.play': this.refreshSources(); this.play.start(this.selectedModule(view)!, group); return;
-			case 'scenarioLab.playWithCompanion': this.refreshSources(); this.play.startWithCompanion(this.selectedModule(view)!, group, picker); return;
-			case 'scenarioLab.debug':
-			case 'scenarioLab.run':
-			case 'scenarioLab.debugWithCompanion':
-			case 'scenarioLab.runWithCompanion':
-			case 'scenarioLab.rerun':
-				try {
-					if (command !== 'scenarioLab.rerun') this.runSelected(view, group, picker,
-						command === 'scenarioLab.debug' || command === 'scenarioLab.debugWithCompanion' ? 'debug' : 'run',
-						command === 'scenarioLab.debugWithCompanion' || command === 'scenarioLab.runWithCompanion');
-					else this.rerunLast(view, group);
-				} catch (error) {
-					if (!(error instanceof LuaSyntaxError) && !(error instanceof ScenarioRunAdmissionError)) throw error;
-					this.editor.handleRuntimeTaskError(error, 'Invalid test declaration');
-				}
-				return;
 			case 'scenarioLab.continue': this.runs.debugger!.resume(Mode.Continue); return;
 			case 'scenarioLab.stepInto': this.runs.debugger!.resume(Mode.StepInto); return;
 			case 'scenarioLab.stepOver': this.runs.debugger!.resume(Mode.StepOver); return;
@@ -197,47 +197,96 @@ export class ScenarioLabController {
 		this.revealRun(this.runs.start(scopeId, mode, companionContextId), group);
 	}
 
-	private startWithCompanion(scopeId: ScenarioTestNodeId, group: EditorGroupView, picker: QuickInputController, mode: 'run' | 'debug'): void {
-		const catalog = this.runs.collection.catalog;
-		const scope = this.runs.collection.getNode(scopeId)!;
-		const primaryContextId = scope.kind === 'root' ? scope.contextId : scope.resource.contextId;
-		const choices: Array<{ label: string; description: string; detail: string; contextId: string | null }> = [
-			{ label: 'No companion cartridge', description: 'Primary project only', detail: '', contextId: null },
-		];
-		for (const context of catalog.contexts.values()) {
-			if (context.programDomain !== 'cart') continue;
-			choices.push({ label: context.projectRootPath, description: context.id === primaryContextId ? 'Primary project' : '',
-				detail: 'Use this project as the companion cartridge', contextId: context.id });
+	public captureExecution(command: ScenarioLabExecutionCommand, input: ScenarioLabInput): ScenarioLabExecutionIntent | undefined {
+		if (!this.isCommandEnabled(command, input)) return;
+		const previous = command === 'scenarioLab.rerun' ? this.runs.results.runs[0] : undefined;
+		const scopeId = previous === undefined ? input.view.testPane.selection.nodeId! : previous.scopeId;
+		const scope = this.runs.collection.getNode(scopeId);
+		if (scope === undefined) return;
+		const membership = scope.kind === 'test' ? this.runs.collection.getNode(scope.parentId) as ScenarioTestModule : scope;
+		const selectionRevision = previous === undefined ? input.view.testPane.selection.revision : undefined;
+		const testMembership = scope.kind === 'test' ? scope.membership : undefined;
+		const withCompanion = command === 'scenarioLab.runWithCompanion' || command === 'scenarioLab.debugWithCompanion'
+			|| command === 'scenarioLab.playWithCompanion';
+		return command === 'scenarioLab.play' || command === 'scenarioLab.playWithCompanion'
+			? { command, input, scopeId, previous, selectionRevision, testMembership, withCompanion, kind: 'play', membership: this.selectedModule(input.view)! }
+			: { command, input, scopeId, previous, selectionRevision, testMembership, withCompanion, kind: 'run', membership,
+				mode: previous?.mode ?? (command === 'scenarioLab.debug' || command === 'scenarioLab.debugWithCompanion' ? 'debug' : 'run') };
+	}
+
+	public isExecutionCurrent(intent: ScenarioLabExecutionIntent): boolean {
+		if (intent.input !== this.current || this.runs.collection.getNode(intent.membership.id) !== intent.membership) return false;
+		if (intent.testMembership !== undefined) {
+			const test = this.runs.collection.getNode(intent.scopeId);
+			if (test?.kind !== 'test' || test.membership !== intent.testMembership) return false;
 		}
-		picker.pick('SCENARIO FIXTURE', 'Choose a companion project', (_origin, lifetime) => {
-			lifetime.add({ dispose: catalog.onDidChange(() => picker.hide()) });
-			return new TextQuickPickProvider(choices);
-		}, choice => {
-			try { this.start(scopeId, group, mode, choice.contextId); }
-			catch (error) {
-				if (!(error instanceof LuaSyntaxError) && !(error instanceof ScenarioRunAdmissionError)) throw error;
-				this.editor.handleRuntimeTaskError(error, 'Invalid test declaration');
-			}
-		});
+		if (intent.previous !== undefined) return this.runs.results.runs.includes(intent.previous);
+		const selection = intent.input.view.testPane.selection;
+		return selection.revision === intent.selectionRevision && selection.nodeId === intent.scopeId;
 	}
 
-	private runSelected(view: ScenarioLabViewState, group: EditorGroupView, picker: QuickInputController,
-		mode: 'run' | 'debug', withCompanion: boolean): void {
+	/** Discovery maps the captured catalog identity; it never chooses a replacement row. */
+	public isExecutionEnabled(intent: ScenarioLabExecutionIntent): boolean {
+		if (!this.isExecutionCurrent(intent)) return false;
 		this.refreshSources();
-		const node = selectedScenarioTestNode(view)!;
-		if (withCompanion) this.startWithCompanion(node.id, group, picker, mode);
-		else this.start(node.id, group, mode);
+		return this.isExecutionCurrent(intent) && this.runs.collection.getNode(intent.scopeId) !== undefined
+			&& this.isCommandEnabled(intent.command, intent.input);
 	}
 
-	private rerunLast(view: ScenarioLabViewState, group: EditorGroupView): void {
-		const previous = this.runs.results.runs[0];
-		this.refreshSources();
-		const scope = this.runs.collection.getNode(previous.scopeId);
-		if (scope === undefined) {
-			view.status.info = 'THE PREVIOUS TEST SELECTION NO LONGER EXISTS';
+	public executeExecution(intent: ScenarioLabExecutionIntent, group: EditorGroupView, picker: QuickInputController,
+		isCurrent: () => boolean): void {
+		if (intent.withCompanion) {
+			this.startWithCompanion(intent, group, picker, isCurrent);
 			return;
 		}
-		this.revealRun(this.runs.start(scope.id, previous.mode, previous.companionContextId), group);
+		this.startExecution(intent, group, null);
+	}
+
+	private startExecution(intent: ScenarioLabExecutionIntent, group: EditorGroupView, companionContextId: string | null): void {
+		try {
+			if (intent.kind === 'play') {
+				this.play.start(intent.membership, group, companionContextId);
+			} else {
+				this.start(intent.scopeId, group, intent.mode, intent.previous === undefined ? companionContextId : intent.previous.companionContextId);
+			}
+		} catch (error) {
+			if (!(error instanceof LuaSyntaxError) && !(error instanceof ScenarioRunAdmissionError)) throw error;
+			this.editor.handleRuntimeTaskError(error, 'Invalid test declaration');
+		}
+	}
+
+	private startWithCompanion(intent: ScenarioLabExecutionIntent, group: EditorGroupView, picker: QuickInputController,
+		isCurrent: () => boolean): void {
+		const catalog = this.runs.collection.catalog;
+		const membership = intent.membership;
+		const primaryContextId = membership.kind === 'root' ? membership.contextId : membership.resource.contextId;
+		let active = false;
+		picker.pick(intent.kind === 'play' ? 'PLAY FIXTURE' : 'SCENARIO FIXTURE',
+			intent.kind === 'play' ? `Primary: ${intent.membership.resource.path}; choose a companion project` : 'Choose a companion project', (_origin, lifetime) => {
+			const choices: Array<{ label: string; description: string; detail: string; contextId: string | null }> = [
+				{ label: 'No companion cartridge', description: 'Primary project only', detail: '', contextId: null },
+			];
+			if (!isCurrent() || !this.isExecutionEnabled(intent) || !isCurrent()) {
+				picker.hide();
+				return new TextQuickPickProvider(choices);
+			}
+			lifetime.add({ dispose: catalog.onDidChange(() => picker.hide()) });
+			for (const context of catalog.contexts.values()) {
+				if (context.programDomain !== 'cart') continue;
+				choices.push({ label: context.projectRootPath, description: context.id === primaryContextId ? 'Primary project' : '',
+					detail: 'Use this project as the companion cartridge', contextId: context.id });
+			}
+			return new TextQuickPickProvider(choices);
+		}, choice => {
+			if (!isCurrent() || !this.isExecutionEnabled(intent) || !isCurrent()) return;
+			this.startExecution(intent, group, choice.contextId);
+		}, lifetime => {
+			active = true;
+			lifetime.add({ dispose: () => { active = false; } });
+		});
+		// Blur can supersede focus before QuickInput prepares its provider. Retire
+		// only this still-owned prompt, never a replacement opened by that callback.
+		if (active && !isCurrent()) picker.hide();
 	}
 
 	private handleRunChange(event: ScenarioRunEvent): void {

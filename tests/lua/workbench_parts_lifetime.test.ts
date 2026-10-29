@@ -41,7 +41,7 @@ import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../h
 import { parseLuaChunk } from './cpu_test_harness';
 import { RuntimeDebuggerResumeMode, RuntimeDebuggerStopReason } from '../../ide/runtime/source_debugger';
 import { presentRuntimeDebuggerStop } from '../../ide/workbench/contrib/debugger/controller';
-import { updateSelectedScenarioNode } from '../../ide/workbench/contrib/scenario_lab/projection';
+import { selectScenarioLabTestRow } from '../../ide/workbench/contrib/scenario_lab/navigation';
 import { INSTRUCTION_BYTES } from '../../machine/ts/spec/blua32/instruction_format';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 
@@ -1167,9 +1167,9 @@ for (const mode of ['run', 'debug', 'play'] as const) {
 		const view = f.editor.scenarioLab.resolveInput().view;
 		const selected = f.editor.scenarioLab.runs.collection.findModuleBySourcePath(primary.id, 'fixture_assert.lua');
 		const originalScope = selected.children[0].id;
-		view.testPane.selectionIndex = view.testPane.rows.findIndex(row => row.id === originalScope);
-		assert.ok(view.testPane.selectionIndex >= 0);
-		updateSelectedScenarioNode(view);
+		const selectedIndex = view.testPane.rows.findIndex(row => row.id === originalScope);
+		assert.ok(selectedIndex >= 0);
+		selectScenarioLabTestRow(view, selectedIndex);
 		const admitted = new Error('fixture admission reached');
 		const start = mode === 'play'
 			? t.mock.method(f.editor.play.service, 'start', () => { throw admitted; })
@@ -1191,9 +1191,6 @@ for (const mode of ['run', 'debug', 'play'] as const) {
 		assert.equal(picker.visible, true);
 		assert.equal(f.editor.quickInput.visible, false);
 		assert.equal(start.mock.callCount(), 0);
-		// A later UI selection cannot retarget the original logical scope/module.
-		view.testPane.selectionIndex = 0;
-		updateSelectedScenarioNode(view);
 		picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => 'contextId' in row.item && row.item.contextId === primary.id);
 		assert.ok(picker.model.list.selectionIndex >= 0);
 		assert.throws(() => picker.accept(), error => error === admitted);
@@ -1202,5 +1199,16 @@ for (const mode of ['run', 'debug', 'play'] as const) {
 		assert.equal(chosen[0], mode === 'play' ? selected : originalScope);
 		assert.equal(chosen[mode === 'play' ? 1 : 2], primary.id);
 		assert.equal(f.editor.quickInput.visible, false);
+		start.mock.resetCalls();
+		f.editor.commands.execute(explicit);
+		assert.equal(picker.visible, true);
+		// An explicit newer test selection revokes the request, rather than
+		// admitting either the old case/module or the newly selected root.
+		selectScenarioLabTestRow(view, view.testPane.rows.findIndex(row => row.kind === 'root'));
+		picker.model.list.selectionIndex = picker.model.list.rows.findIndex(row => 'contextId' in row.item && row.item.contextId === primary.id);
+		assert.ok(picker.model.list.selectionIndex >= 0);
+		assert.doesNotThrow(() => picker.accept());
+		assert.equal(start.mock.callCount(), 0);
+		assert.equal(picker.visible, false);
 	});
 }

@@ -396,3 +396,23 @@ test('scenario failure retains authored fault navigation', () => {
 	});
 	assert.equal(result.fault, fault);
 });
+
+test('test discovery retains named membership while replacing source snapshots and retires removed or invalid cases', () => {
+	const source = "return {kind='unit',tests={first=function() end,second=function() end}}";
+	const collection = new ScenarioTestCollection(createScenarioTestSourceState([
+		createScenarioTestSourceRecord('tests/membership_assert.lua', 0, source),
+	]).catalog);
+	const module = collection.roots[0].children[0], first = module.children[0], second = module.children[1];
+	collection.updateSource(module, `-- source shift\n${source}`, 1);
+	assert.notEqual(module.children[0], first); assert.equal(module.children[0].membership, first.membership);
+	assert.notEqual(module.children[0].range.start.line, first.range.start.line);
+	assert.equal(first.sourceTimestamp, 0, 'retained result snapshots keep their accepted source metadata');
+	collection.updateSource(module, "return {kind='unit',tests={second=function() end}}", 2);
+	assert.equal(collection.getNode(first.id), undefined); assert.equal(module.children[0].membership, second.membership);
+	collection.updateSource(module, source, 3);
+	assert.equal(module.children[0].id, first.id); assert.notEqual(module.children[0].membership, first.membership);
+	assert.equal(module.children[1].membership, second.membership);
+	const restored = module.children[0];
+	collection.updateSource(module, '(', 4); assert.equal(collection.getNode(first.id), undefined);
+	collection.updateSource(module, source, 5); assert.notEqual(module.children[0].membership, restored.membership);
+});

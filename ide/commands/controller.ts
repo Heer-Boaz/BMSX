@@ -21,9 +21,8 @@ import { editorViewState } from '../editor/ui/view/state';
 import type { EditorActionRequest } from './action_request';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
 import { executeEditorViewCommand, isEditorViewCommand } from './view';
-import { executeEditorWorkspaceCommand, isEditorWorkspaceCommand } from './workspace';
+import { captureEditorWorkspaceCommand, isEditorWorkspaceCommand, isEditorWorkspaceCommandEnabled } from './workspace';
 import { performEditorAction } from './actions';
-import { TextEditorInput } from '../workbench/common/editor_input';
 import { editorTextModelService } from '../editor/model/model_service';
 import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
 import { saveTextFileFromCommand } from './source_save';
@@ -36,7 +35,7 @@ import {
 	type RuntimeDebuggerState,
 } from '../runtime/debugger_state';
 import { deactivateEditor } from '../workbench/overlay_modes';
-import { inputFocus, type InputFocusTarget } from '../input/focus';
+import { inputFocus, type FocusCommandInvocation, type InputFocusTarget } from '../input/focus';
 import { showServerConnection } from '../workbench/contrib/server/connection';
 import { openObservedConversation } from '../workbench/contrib/conversations/quick_access';
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, type ResourceDomain } from '../common/resource';
@@ -53,10 +52,7 @@ import { WORKBENCH_VIEW_RESIZE_COMMANDS, canResizeWorkbenchView, resizeWorkbench
 // Source-consuming commands accept the concrete control's value before dirty
 // model selection, prompts or asynchronous source capture (Godot EditorData).
 const SOURCE_COMMANDS = new Set<EditorCommandId>([
-	'window.copyEditor', 'window.moveEditor', 'group.move',
-	'save', 'hot-resume', 'reboot', 'runCurrentFile', 'runProject', 'scenarioLab.run', 'scenarioLab.rerun', 'scenarioLab.debug',
-	'scenarioLab.play', 'play.reset', 'play.source',
-	'scenarioLab.runWithCompanion', 'scenarioLab.debugWithCompanion', 'scenarioLab.playWithCompanion',
+	'play.reset', 'play.source',
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
 	'animation',
@@ -99,9 +95,27 @@ export class IdeCommandController {
 		if (originGroup === null) return;
 		const originPart = this.editor.editorParts.partForTarget(invocationTarget);
 		if (originPart === null) return;
+		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
+		const part = this.editor.editorParts.partForGroup(group);
 		const implementation = input === undefined ? target?.resolveCommand(command) : undefined;
-		if (implementation !== undefined) {
-			const invocation = implementation.capture === undefined ? implementation : implementation.capture();
+		const workspaceCommand = isEditorWorkspaceCommand(command) ? command : undefined;
+		if (implementation !== undefined || workspaceCommand !== undefined) {
+			let invocation: FocusCommandInvocation | undefined;
+			if (implementation !== undefined) invocation = implementation.capture === undefined ? implementation : implementation.capture();
+			else {
+				const commandGroup = target === invocationTarget ? originGroup : findEditorGroup(target);
+				const commandPart = target === invocationTarget ? originPart : this.editor.editorParts.partForTarget(target);
+				if (commandGroup === null || commandPart === null) return;
+				const documentGroup = input !== undefined ? this.editor.editorParts.findGroup(input) : commandGroup
+					?? (this.editor.mainWorkspace.isPrimaryTarget(target) || this.editor.mainWorkspace.isActivityTarget(target)
+						? undefined : commandPart?.activeGroup ?? this.editor.editorParts.activeGroup);
+				if (input !== undefined && documentGroup === undefined) return;
+				const document = documentGroup === undefined ? undefined
+					: { group: documentGroup, input: input === undefined ? documentGroup.model.activeTab : input };
+				invocation = captureEditorWorkspaceCommand(this.editor, this.sources, this.hotResumes, this.boots, this.execution,
+						this.overlayRenderer, this.clock, this.logOutput, this.textFileSaves, workspaceCommand!, group, document,
+						this.runTargets, this.runtimeTasks, target);
+			}
 			if (invocation === undefined) return;
 			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
 				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
@@ -120,6 +134,7 @@ export class IdeCommandController {
 			invocation.run(originGroup?.focusTarget);
 			return;
 		}
+		if (input !== undefined && !group.model.contains(input)) return;
 		// Named regions settle only their own input at the Main owner; an unrelated document draft is not their subject.
 		const activityId = this.editor.mainWorkspace.activities.idForCommand(command);
 		if (activityId !== undefined) {
@@ -160,9 +175,7 @@ export class IdeCommandController {
 			void this.editor.navigation.openSource(group, { placement, target: invocationTarget ?? undefined });
 			return;
 		}
-		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
-		if (input !== undefined && !group.model.contains(input)) return;
-		const part = this.editor.editorParts.partForGroup(group);
+
 		const selected = this.runTargets.selected;
 		const runtimeContext = target?.scope.runtimeOwner?.runtime;
 		const local = runtimeContext?.interaction;
@@ -211,9 +224,7 @@ export class IdeCommandController {
 				return;
 			}
 			case 'window.copyEditor': {
-				if (editor?.createView === undefined || part.closing) return;
-				const view = editor.createView();
-				this.editor.editorParts.createDocument().activeGroup.openEditor(view, { pinned: true });
+				if (editor !== null) void this.editor.editorParts.copyEditor(group, editor);
 				return;
 			}
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
@@ -383,16 +394,9 @@ export class IdeCommandController {
 				if (local === undefined && transport === this.transport) openGameView(group);
 				transport.navigation.step(command === 'stepFrameBack' ? -1 : 1);
 				return;
-			case 'scenarioLab.debug':
-			case 'scenarioLab.play':
-			case 'scenarioLab.debugWithCompanion':
-			case 'scenarioLab.playWithCompanion':
-			case 'scenarioLab.runWithCompanion':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
-			case 'scenarioLab.run':
 			case 'scenarioLab.revealRun':
-			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel': {
 				const input = group.model.activeTab;
 				this.editor.scenarioLab.executeCommand(command, input?.kind === 'scenario_lab' ? input : undefined, group, part.quickInput);
@@ -416,24 +420,6 @@ export class IdeCommandController {
 		}
 		if (isEditorViewCommand(command)) {
 			executeEditorViewCommand(this.editor, this.sources, this.fault, command, group, input);
-			return;
-		}
-		if (isEditorWorkspaceCommand(command)) {
-			executeEditorWorkspaceCommand(
-				this.editor,
-				this.sources,
-				this.hotResumes,
-				this.boots,
-				this.execution,
-				this.overlayRenderer,
-				this.clock,
-				this.logOutput,
-				this.textFileSaves,
-				command,
-				group,
-				this.runTargets,
-				input,
-			);
 			return;
 		}
 	}
@@ -481,12 +467,21 @@ export class IdeCommandController {
 		if ((command === 'editor.source' || command === 'editor.sourceToSide') && input === undefined && (this.editor.mainWorkspace.isPrimaryTarget(focus) || this.editor.mainWorkspace.isActivityTarget(focus)))
 			return this.editor.mainWorkspace.canOpenSource(focus!);
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
-		if (input !== undefined && !group.model.contains(input)) return false;
 		const part = this.editor.editorParts.partForGroup(group);
 		const selected = this.runTargets.selected;
 		const local = focus?.scope.runtimeOwner?.runtime?.interaction;
 		const transport = local === undefined ? selected?.transport : local.transport;
 		const editor = input === undefined ? group.model.activeTab : input;
+		if (isEditorWorkspaceCommand(command)) {
+			const documentGroup = input !== undefined ? this.editor.editorParts.findGroup(input) : originGroup
+				?? (this.editor.mainWorkspace.isPrimaryTarget(focus) || this.editor.mainWorkspace.isActivityTarget(focus)
+					? undefined : originPart?.activeGroup ?? this.editor.editorParts.activeGroup);
+			if (input !== undefined && documentGroup === undefined) return false;
+			return isEditorWorkspaceCommandEnabled(command, documentGroup,
+				input === undefined ? documentGroup?.model.activeTab : input,
+				this.sources, this.textFileSaves, this.hotResumes, this.boots, this.execution, this.runtimeTasks);
+		}
+		if (input !== undefined && !group.model.contains(input)) return false;
 		switch (command) {
 			case 'editor.source': case 'editor.sourceToSide': {
 				const pane = group.panes.activePane;
@@ -517,7 +512,7 @@ export class IdeCommandController {
 			case 'window.moveEditor': {
 				return editor !== null && this.editor.editorParts.canMoveEditor(group, editor, { kind: 'window' });
 			}
-			case 'window.copyEditor': return !part.closing && editor?.createView !== undefined;
+			case 'window.copyEditor': return editor !== null && this.editor.editorParts.canCopyEditor(group, editor);
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
 				const window = originWindowSurface === undefined ? part.window : workbenchWindowForSurface(originWindowSurface);
@@ -536,20 +531,6 @@ export class IdeCommandController {
 			case 'copy': case 'cut': case 'paste':
 				return focus?.clipboard?.[command] !== undefined && (command === 'copy' || !focus.clipboard.readOnly)
 					&& (command !== 'paste' || this.editor.clipboard.canRead);
-			case 'hot-resume':
-				return this.hotResumes.acceptingRequests && !this.execution.launchPending;
-			case 'reboot':
-				return this.boots.acceptingRequests;
-			case 'runCurrentFile': {
-				const resource = group.model.activeTab?.resource;
-				if (!this.boots.acceptingRequests || !this.runtimeTasks.ready || resource === undefined
-					|| this.sources.catalog.getContext(resource.contextId).programDomain !== 'cart') return false;
-				const source = this.sources.catalog.resolveLuaSource(resource);
-				return source !== null && source.record.sourceKind !== 'source-only' && !source.record.generated;
-			}
-			case 'runProject':
-				return this.boots.acceptingRequests && this.runtimeTasks.ready
-					&& this.sources.cartridgeSlots.some(cart => cart !== null && this.sources.catalog.getContext(cart.contextId).luaSources.can_boot_from_source);
 			case 'keepEditor':
 				return group.model.previewTab !== null && group.model.previewTab === editor;
 			case 'navigateBack':
@@ -607,16 +588,9 @@ export class IdeCommandController {
 			}
 			case 'gameView.closePanel': return this.editor.gamePanel.enabled;
 			case 'runtime.playback': return transport?.playbackEnabled === true;
-			case 'scenarioLab.play':
-			case 'scenarioLab.debug':
-			case 'scenarioLab.debugWithCompanion':
-			case 'scenarioLab.playWithCompanion':
-			case 'scenarioLab.runWithCompanion':
 			case 'scenarioLab.continue': case 'scenarioLab.stepInto': case 'scenarioLab.stepOver':
 			case 'scenarioLab.stepOut': case 'scenarioLab.pause': case 'scenarioLab.breakpoints':
-			case 'scenarioLab.run':
 			case 'scenarioLab.revealRun':
-			case 'scenarioLab.rerun':
 			case 'scenarioLab.cancel': {
 				const input = group.model.activeTab;
 				return this.editor.scenarioLab.isCommandEnabled(command, input?.kind === 'scenario_lab' ? input : undefined);
@@ -628,10 +602,6 @@ export class IdeCommandController {
 			case 'debugStepOver':
 			case 'debugStepOut':
 				return selected?.debuggerExecution.canResume(command === 'debugStepInto' ? 'into' : command === 'debugStepOver' ? 'over' : 'out') === true;
-			case 'save': {
-				return this.textFileSaves.acceptingSaves && editor instanceof TextEditorInput
-					&& (editor.canSave() || !editor.readOnly && editor === group.model.activeTab && focus?.edit?.pending === true);
-			}
 			case 'aem.testEvent': {
 				const input = group.model.activeTab;
 				if (input?.kind !== 'aem_editor') return false;

@@ -300,6 +300,35 @@ export class EditorParts {
 		const part = this.owners.get(reference)!, generation = reference.panes.openGeneration, focusRevision = inputFocus.revision;
 		if (!source.isCurrent() || reference.panes.openGeneration !== generation || !this.canOpenAt(destination)) return;
 		if (!reference.commitPendingEdit() || !source.isCurrent() || reference.panes.openGeneration !== generation || !this.canOpenAt(destination)) return;
+		return this.openProspectiveAt(source, destination, part, focusRevision);
+	}
+
+	public canCopyEditor(source: EditorGroupView, input: EditorInput): boolean {
+		const part = this.owners.get(source);
+		return part !== undefined && !part.retired && !part.surface.retired && !source.surface.retired
+			&& source.openingAdmitted && part.operation === 'none' && source.model.contains(input)
+			&& (source.model.activeTab !== input || source.panes.activePane?.input === input)
+			&& !this.closeController.isPending(input) && input.createView !== undefined;
+	}
+
+	/** Copy the exact retained sender, accepting only its attached control before source-backed view capture. */
+	public async copyEditor(source: EditorGroupView, input: EditorInput): Promise<EditorInput | undefined> {
+		if (!this.canCopyEditor(source, input)) return;
+		const part = this.owners.get(source)!, pane = source.panes.activePane, active = source.model.activeTab;
+		const scope = pane?.commandTarget.scope, context = scope?.contextGeneration;
+		const generation = source.panes.openGeneration, focusRevision = inputFocus.revision;
+		const current = () => this.owners.get(source) === part && this.canCopyEditor(source, input)
+			&& source.model.activeTab === active && source.panes.activePane === pane && scope?.contextGeneration === context;
+		if (pane?.input === input && !source.commitPendingEdit()) return;
+		if (!current() || source.panes.openGeneration !== generation) return;
+		return this.openProspectiveAt({ kind: 'opening', isCurrent: current, findExisting: () => undefined,
+			resolve: () => ({ input: input.createView!() }) }, { kind: 'window', reference: source }, part, focusRevision);
+	}
+
+	/** One prospective receiver owns input admission and remains unpublished until its pane is attached. */
+	private async openProspectiveAt(source: ProspectiveEditorOpenSource, destination: EditorOpenDestination,
+		part: EditorPart, focusRevision: number): Promise<EditorInput | undefined> {
+		const reference = destination.kind === 'window' ? destination.reference : destination.group;
 		const current = () => source.isCurrent() && this.owners.get(reference) === part && !part.retired && !part.surface.retired
 			&& part.operation === 'none';
 		const opening = EditorOpeningRequest.begin(reference, { pinned: true, preserveFocus: true,

@@ -46,7 +46,7 @@ import { SuspendedGuestSession } from '../../ide/runtime/suspended_guest';
 import { RuntimeTransport } from '../../ide/runtime/transport';
 import { PlayHandle } from '../../ide/workbench/services/play/service';
 import { PlayEditorInput } from '../../ide/workbench/contrib/play/editor_input';
-import { performHotResume, performReboot } from '../../ide/commands/actions';
+import { captureEditorActionPresentation, performHotResume, performReboot } from '../../ide/commands/actions';
 import type { EditorActionRequest } from '../../ide/commands/action_request';
 import type { BootOperation, BootResult } from '../../ide/workbench/services/execution/boot';
 import type { HotResumeAdmissionResult, HotResumeOperation, HotResumeResult } from '../../ide/workbench/services/execution/hot_resume';
@@ -1423,7 +1423,8 @@ for (const action of ['run', 'reboot', 'hot-resume'] as const) for (const newer 
 		const { ide, editor, host, sources } = actorFixture(t), group = editor.editorParts.main.activeGroup;
 		host.presenter.initialize(new RenderPassLibrary(host.backend, host.presenter));
 		t.after(() => host.presenter.dispose());
-		const presentation = { group, generation: group.panes.openGeneration };
+		group.focus();
+		const presentation = captureEditorActionPresentation(inputFocus.target)!;
 		const request: Extract<EditorActionRequest, { action: 'run' | 'reboot' | 'hot-resume' }> = action === 'run'
 			? { action, entry: { domain: 0 }, expectedImage: sources.currentBlua32Media.system!,
 				selectionRequest: ide.runTargets.request(), presentation }
@@ -1444,8 +1445,8 @@ for (const action of ['run', 'reboot', 'hot-resume'] as const) for (const newer 
 			const prompt = editor.actionPrompt.show({ title: 'Source decision', message: '', primary: 'Apply',
 				secondary: 'Keep working', primaryEnabled: true, defaultChoice: 'primary' });
 			editor.actionPrompt.close('primary'); await prompt;
-			assert.equal(group.panes.openGeneration, presentation.generation,
-				'the command\'s own prompt changes keyboard focus, not editor attachment admission');
+			assert.equal(presentation.isCurrent(), true,
+				'the command\'s own prompt returns to its retained attachment');
 		}
 		if (request.action === 'hot-resume')
 			performHotResume(ide.hotResumes, editor, host.execution, ide.overlayRenderer, ide.logOutput, ide.runTargets, request);

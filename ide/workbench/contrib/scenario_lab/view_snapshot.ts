@@ -4,13 +4,13 @@ import type { ScenarioLabViewState } from './view_model';
 
 /** Test-side context survives a workspace restart; run results and tasks do not. */
 export type ScenarioLabTestViewSnapshot = {
-	readonly testId: ScenarioLabViewState['testPane']['selectedNodeId'];
+	readonly testId: ScenarioLabViewState['testPane']['selection']['nodeId'];
 	readonly scroll: number;
 	readonly collapsedNodes: readonly ScenarioTestNodeId[];
 };
 
 export function captureScenarioLabTestView(view: ScenarioLabViewState): ScenarioLabTestViewSnapshot {
-	return { testId: view.testPane.selectedNodeId, scroll: view.testPane.scroll, collapsedNodes: [...view.testPane.collapsedNodeIds] };
+	return { testId: view.testPane.selection.nodeId, scroll: view.testPane.scroll, collapsedNodes: [...view.testPane.collapsedNodeIds] };
 }
 
 export function restoreScenarioLabTestView(view: ScenarioLabViewState, snapshot: ScenarioLabTestViewSnapshot): void {

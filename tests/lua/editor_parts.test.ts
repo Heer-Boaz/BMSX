@@ -187,7 +187,7 @@ test('Open Editor in New Window copies Source view state while retaining one can
 	view.cursorRow = 1; view.cursorColumn = 7; view.selectionAnchor = { row: 1, column: 0 };
 	const selection = captureCodeEditorView(f.firstInput), draft = model.buffer.getText(), version = model.version;
 	assert.equal(f.editor.commands.isEnabled('window.copyEditor', f.first.commandTarget), true);
-	f.editor.commands.execute('window.copyEditor', f.first.commandTarget); f.update();
+	f.editor.commands.execute('window.copyEditor', f.first.commandTarget); await setImmediate(); f.update();
 	const document = parts.activePart, input = document.activeGroup.model.activeTab, pane = document.activeGroup.panes.activePane!;
 	assert.equal(parts.documents.length, 3); assert.ok(document !== f.firstPart && document !== f.secondPart && document !== parts.main);
 	assert.ok(input instanceof CodeEditorInput && input !== f.firstInput);

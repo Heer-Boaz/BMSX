@@ -2,6 +2,7 @@ import { testStudioScenarioExecution } from './studio_scenario_execution';
 import { testStudioScenarioOutput } from './studio_scenario_output';
 import { check, type StudioFixture } from './studio_fixture';
 import { ScenarioLabEditorPane } from '../../../ide/workbench/contrib/scenario_lab/editor_pane';
+import { selectScenarioLabTestRow } from '../../../ide/workbench/contrib/scenario_lab/navigation';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 
 /** Real Studio commands, source models and isolated physical execution targets. */
@@ -31,8 +32,7 @@ export async function runStudioTestRunner(test: StudioFixture) {
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: authored }]);
 	await runPaletteCommand('Scenario Lab: Open');
 	const moduleIndex = tab.view.testPane.rows.findIndex(row => row.id === moduleRow.id);
-	tab.view.testPane.selectionIndex = moduleIndex;
-	tab.view.testPane.selectedNodeId = moduleRow.id;
+	selectScenarioLabTestRow(tab.view, moduleIndex);
 	const authoringCycles = cycles();
 	const authoringMedia = ide.sources.currentBlua32Media;
 	await runPaletteCommand('Scenario Lab: Run Scenarios');

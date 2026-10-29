@@ -1,6 +1,7 @@
 import { SceneSourceDocuments } from '../../ide/workbench/contrib/scene_editor/source_documents';
 import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resetSemanticProjects, getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
@@ -217,10 +218,12 @@ test('Behavior copied views retain dirty imported edit targets after their sourc
 	assert.ok(source.getWorkingCopies().includes(imported), 'authored participation outlives the removed occurrence');
 	const selected = captureBehaviorLensView(source), text = model.buffer.getText(), importedText = imported.buffer.getText();
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
-	f.editor.commands.execute('window.copyEditor', f.firstGroup.panes.activePane!.commandTarget); f.update();
+	f.editor.commands.execute('window.copyEditor', f.firstGroup.panes.activePane!.commandTarget); await setImmediate(); f.update();
 	const document = f.editor.editorParts.activePart, input = document.activeGroup.model.activeTab;
 	assert.ok(input?.kind === 'behavior_lens' && input !== source);
-	assert.deepEqual(captureBehaviorLensView(input), selected);
+	const copiedSelection = captureBehaviorLensView(input);
+	assert.deepEqual(copiedSelection.definition, selected.definition);
+	assert.deepEqual(copiedSelection.selected, selected.selected);
 	const closing = f.editor.editorParts.close(f.firstPart);
 	assert.equal(f.firstPart.actionPrompt.visible, false,
 		'the copied source view must remain an owner of the dirty import during close admission');

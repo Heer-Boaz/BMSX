@@ -4,7 +4,7 @@ import { LogLevel, type LogOutput } from '../../hosts/common/log';
 import type { BootService, BootOperation } from '../workbench/services/execution/boot';
 import type { HotResumeService, HotResumeOperation } from '../workbench/services/execution/hot_resume';
 import { deactivateEditor } from '../workbench/overlay_modes';
-import type { EditorActionRequest } from './action_request';
+import type { EditorActionPresentation, EditorActionRequest } from './action_request';
 import * as constants from '../common/constants';
 import { setEditorCaseInsensitivity } from '../editor/render/text_renderer';
 import { persistWorkspaceSessionLocally } from '../workbench/workspace/storage';
@@ -12,7 +12,18 @@ import type { CartEditor } from '../cart_editor';
 import type { OverlayRenderer } from '../runtime/overlay_renderer';
 import { showEditorMessage } from '../common/feedback_state';
 import type { RunTargetSelection } from '../workbench/services/execution/run_target';
-import { navigationState } from '../navigation/navigation_history';
+import { inputFocus, type InputFocusTarget } from '../input/focus';
+import { findEditorGroup } from '../workbench/services/editor/editor_group';
+
+/** Runtime completion may present only the actual invoking attachment, including Main's named views. */
+export function captureEditorActionPresentation(target: InputFocusTarget | null): EditorActionPresentation | undefined {
+	if (target === null) return;
+	const scope = target.commandContext.scope, generation = scope.contextGeneration;
+	const group = findEditorGroup(target), opening = group?.panes.openGeneration;
+	return { isCurrent: () => scope.contextGeneration === generation && group !== null
+		&& (group === undefined || group.panes.openGeneration === opening)
+		&& inputFocus.target !== null && scope.contains(inputFocus.target.scope) };
+}
 
 export function performEditorAction(
 	editor: CartEditor,
@@ -62,8 +73,7 @@ export function performHotResume(
 		if (hotResumes.latestOperation !== operation || admission.status !== 'accepted'
 			|| operation.result !== null && operation.result.status !== 'completed') return;
 		const presentation = request.presentation;
-		if (selectionRevision !== runTargets.revision || presentation !== undefined
-			&& (navigationState.activeOwner !== presentation.group || presentation.generation !== presentation.group.panes.openGeneration)) return;
+		if (selectionRevision !== runTargets.revision || presentation?.isCurrent() === false) return;
 		execution.requestExecution(true);
 		if (presentation !== undefined) deactivateEditor(editor, overlayRenderer);
 	});
@@ -112,8 +122,7 @@ export function performReboot(
 					? primary !== undefined && runTargets.complete(request.selectionRequest, primary)
 					: selectionRevision === runTargets.revision;
 				const presentation = request.presentation;
-				if (admitted && (presentation === undefined || navigationState.activeOwner === presentation.group
-					&& presentation.generation === presentation.group.panes.openGeneration)) {
+				if (admitted && presentation?.isCurrent() !== false) {
 					execution.requestExecution(true);
 					if (presentation !== undefined) deactivateEditor(editor, overlayRenderer);
 				}

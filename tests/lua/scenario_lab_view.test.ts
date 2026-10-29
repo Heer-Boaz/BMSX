@@ -222,7 +222,7 @@ test('scenario workbench view retains lazy test projection and contextual action
 	assert.equal(tests.length, 2);
 	assert.deepEqual(testPane.rows.map(row => row.kind), ['root', 'module', 'test', 'module', 'test']);
 	assert.equal(testPane.selectionIndex, 2);
-	assert.equal(testPane.selectedNodeId, tests[0].id);
+	assert.equal(testPane.selection.nodeId, tests[0].id);
 	assert.equal(tests[0].label, 'sample');
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.run'), true);
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.rerun'), false);
@@ -233,15 +233,15 @@ test('scenario workbench view retains lazy test projection and contextual action
 	assert.match(testPane.rows[0].text, /NEMESIS_S \(2\)/);
 	executeScenarioLabNavigation(view, 'up');
 	executeScenarioLabNavigation(view, 'up');
-	assert.equal(testPane.selectedNodeId, root.id);
+	assert.equal(testPane.selection.nodeId, root.id);
 	assert.equal(scenarioLabCommandEnabled(view, 'scenarioLab.run'), true);
 	executeScenarioLabNavigation(view, 'down');
 
 	executeScenarioLabNavigation(view, 'down');
-	const selectedId = testPane.selectedNodeId;
+	const selectedId = testPane.selection.nodeId;
 	testPane.rowsDirty = true;
 	refreshScenarioLabProjection(view);
-	assert.equal(testPane.selectedNodeId, selectedId);
+	assert.equal(testPane.selection.nodeId, selectedId);
 	assert.equal(testPane.selectionIndex, 2);
 
 	view.runActive = true;
@@ -414,11 +414,11 @@ test('navigation restores a result by identity after log eviction and keeps the 
 	t.after(() => selected.dispose());
 	view.focus = 'tests';
 	executeScenarioLabNavigation(view, 'down');
-	assert.notEqual(view.testPane.selectedNodeId, item.id);
+	assert.notEqual(view.testPane.selection.nodeId, item.id);
 	results.appendLog(result, 999, 'shift visible ordinal');
 	selected.restore(view); prepareScenarioLabLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.equal(view.focus, 'results');
-	assert.equal(view.testPane.selectedNodeId, item.id);
+	assert.equal(view.testPane.selection.nodeId, item.id);
 	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex].id, id);
 	assert.equal(view.resultPane.selectionIndex, 3);
 	// Collapsed expansion state must not be mistaken for a newly selected run.
@@ -648,7 +648,7 @@ test('first explicit run reveal waits for an available local viewport and consum
 	assert.equal(view.testPane.scroll, 0); assert.equal(view.resultPane.scroll, 0);
 	const available = { ...collapsed, bottom: 151 };
 	prepareScenarioLabLayout(view, available);
-	assert.equal(view.testPane.selectedNodeId, item.id);
+	assert.equal(view.testPane.selection.nodeId, item.id);
 	assert.ok(view.resultPane.rows[view.resultPane.selectionIndex].run === target);
 	for (const pane of [view.testPane, view.resultPane]) {
 		assert.ok(pane.selectionIndex >= pane.layout.visibleRowCount, 'the retained selection requires a real reveal');
@@ -665,14 +665,14 @@ test('first explicit run reveal waits for an available local viewport and consum
 test('explicit run reveal expands ancestors; later results do not steal the selected test', t => {
 	const { collection, results, view } = createViewFixture(t);
 	const root = collection.roots[0], module = root.children[1], item = module.children[0];
-	const initial = view.testPane.selectedNodeId;
+	const initial = view.testPane.selection.nodeId;
 	const run = results.beginRun(item.id, [{ test: item, source: module.source, sourceRevision: 1 }]);
 	view.testPane.collapsedNodeIds.add(root.id); view.testPane.collapsedNodeIds.add(module.id);
 	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-	assert.equal(view.testPane.selectedNodeId, initial, 'background results do not navigate');
+	assert.equal(view.testPane.selection.nodeId, initial, 'background results do not navigate');
 	revealScenarioRun(view, run);
 	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-	assert.equal(view.testPane.selectedNodeId, item.id);
+	assert.equal(view.testPane.selection.nodeId, item.id);
 	assert.equal(view.resultPane.rows[view.resultPane.selectionIndex].run, run);
 	assert.equal(view.focus, 'results');
 	const beforeRows = view.testPane.rows.slice();
@@ -680,10 +680,10 @@ test('explicit run reveal expands ancestors; later results do not steal the sele
 	assert.equal(view.testPane.layout.contentRight, view.split.position);
 	assert.ok(view.testPane.rows.every((row, i) => row === beforeRows[i]), 'resize lays out retained rows');
 	view.focus = 'tests'; executeScenarioLabNavigation(view, 'home');
-	const selection = view.testPane.selectedNodeId;
+	const selection = view.testPane.selection.nodeId;
 	const result = results.startItem(run, 0, 0); results.complete(result, 1); results.completeRun(run);
 	prepareScenarioLabLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-	assert.equal(view.testPane.selectedNodeId, selection);
+	assert.equal(view.testPane.selection.nodeId, selection);
 });
 
 for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {

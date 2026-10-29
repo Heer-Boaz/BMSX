@@ -23,6 +23,7 @@ import { WorkbenchMenu } from '../../ui/menu/model';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { SCENARIO_LAB_TITLE_ACTIONS } from './menus';
 import type { TestDebugger } from '../../../testing/debugger';
+import { ScenarioLabTestSelection } from './test_selection';
 
 function createScenarioLabPaneState<Row>(): ScenarioLabPaneState<Row> {
 	return {
@@ -41,7 +42,7 @@ class ScenarioLabView implements ScenarioLabViewState {
 	public readonly testPane: ScenarioLabTestPaneState = {
 		...createScenarioLabPaneState<ScenarioLabTestRow>(),
 		collapsedNodeIds: new Set(),
-		selectedNodeId: null,
+		selection: new ScenarioLabTestSelection(),
 		rowsDirty: true,
 		projectedRevision: -1,
 	};

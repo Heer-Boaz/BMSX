@@ -1,4 +1,5 @@
 import type { WorkbenchSplitView } from '../../ui/split_view';
+import type { ScenarioLabTestSelection } from './test_selection';
 import type { TestDebugger } from '../../../testing/debugger';
 import type { EditorFont } from '../../../editor/ui/view/font';
 import type { WorkbenchActionBarState } from '../../ui/action_bar';
@@ -143,7 +144,7 @@ export type ScenarioLabPaneState<Row> = WorkbenchListState<Row, ScenarioLabPaneL
 
 export type ScenarioLabTestPaneState = ScenarioLabPaneState<ScenarioLabTestRow> & {
 	readonly collapsedNodeIds: Set<ScenarioTestNodeId>;
-	selectedNodeId: ScenarioTestNodeId | null;
+	readonly selection: ScenarioLabTestSelection;
 	rowsDirty: boolean;
 	projectedRevision: number;
 };

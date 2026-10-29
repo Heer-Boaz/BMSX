@@ -20,7 +20,7 @@ export function rebuildScenarioLabTestRows(state: ScenarioLabViewState): void {
 	const pane = state.testPane;
 	const selectedId = pane.selectionIndex >= 0
 		? pane.rows[pane.selectionIndex].id
-		: pane.selectedNodeId;
+		: pane.selection.nodeId;
 	pane.rows.length = 0;
 	const roots = state.collection.roots;
 	for (let rootIndex = 0; rootIndex < roots.length; rootIndex += 1) {
@@ -102,8 +102,7 @@ export function updateSelectedScenarioNode(state: ScenarioLabViewState): void {
 	const nextId = pane.selectionIndex < 0
 		? null
 		: pane.rows[pane.selectionIndex].id;
-	if (pane.selectedNodeId !== nextId) {
-		pane.selectedNodeId = nextId;
+	if (pane.selection.select(nextId)) {
 		state.resultPane.projectedNodeId = null;
 	}
 }
@@ -289,7 +288,7 @@ export function refreshScenarioLabProjection(state: ScenarioLabViewState): void 
 		rebuildScenarioLabTestRows(state);
 	}
 	if (resultPane.projectedRevision === resultService.revision
-		&& resultPane.projectedNodeId === testPane.selectedNodeId) {
+		&& resultPane.projectedNodeId === testPane.selection.nodeId) {
 		return;
 	}
 
@@ -299,7 +298,7 @@ export function refreshScenarioLabProjection(state: ScenarioLabViewState): void 
 	pruneExpandedScenarioResults(state);
 	resultPane.rows.length = 0;
 	let newestRunId: string | null = null;
-	const selectedNodeId = testPane.selectedNodeId;
+	const selectedNodeId = testPane.selection.nodeId;
 	const previousNewestRunId = resultPane.newestRunId;
 	if (selectedNodeId !== null) {
 		const runs = resultService.runs;

@@ -31,6 +31,13 @@ import { createHostFrameFixture } from '../helpers/host_frame';
 import { COROUTINE_FIRMWARE_MODULES } from '../helpers/firmware_modules';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { ValueInput } from '../../ide/editor/ui/inline/value_input';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
+import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { LuaSyntaxError } from '../../toolchain/ts/lua/errors';
+import type { ScenarioLabExecutionCommand } from '../../ide/workbench/contrib/scenario_lab/controller';
+import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
 
 let directory: string;
 let media: ScenarioMediaFixture;
@@ -89,6 +96,34 @@ async function fixture(t: TestContext) {
 		assert.ok(predicate(), 'the real isolated run reaches its requested boundary');
 	};
 	return { ide, editor, parts, controller, runs, host, sources, targets, firstPart, secondPart, input, module, update, key, select, until };
+}
+
+/** A real native value control publishes a source draft into the Scenario attachment's scope. */
+function sourceDraft(t: TestContext, f: Awaited<ReturnType<typeof fixture>>, text: string, accepted?: () => void) {
+	const pane = f.parts.findGroup(f.input)!.panes.activePane!, target = pane.commandTarget;
+	const model = resolveLuaCodeEditorInput(f.sources.catalog, f.sources.catalog.resolveResource(f.module.resource)!).workingCopy;
+	const source = model.buffer.getText();
+	let publishes = 0;
+	const control = new ValueInput(target, {
+		options: { allowSpace: true }, format: (value: string) => value, invalidBlurMessage: 'Invalid source draft cancelled.',
+		parse: value => {
+			try { parseLuaChunk(value, model.resource.path); return { value }; }
+			catch (error) { if (!(error instanceof LuaSyntaxError)) throw error; return { error: error.message }; }
+		},
+	}, value => {
+		publishes++;
+		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: value }]);
+		accepted?.();
+	});
+	control.setValue(source); control.layout({ left: 0, top: 32, right: 384, bottom: 64 });
+	control.field.focusTarget.focus();
+	assert.equal(control.field.replaceText(0, source.length, text), true);
+	t.after(() => { control.cancel(); control.field.focusTarget.release(); control.dispose(); });
+	const execute = (command: ScenarioLabExecutionCommand, application: boolean) => {
+		if (application) f.editor.commands.execute(command, target);
+		else inputFocus.executeCommand(command, target);
+	};
+	return { control, model, source, execute, publishes: () => publishes };
 }
 
 test('Scenario title follows the real run and source-step context without granting guest time', async t => {
@@ -192,7 +227,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} focus 
 	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 760, bottom: 290 });
 	f.select('passes');
 	const pane = f.firstPart.activeGroup.panes.activePane!, view = f.input.view, tests = pane.commandTarget;
-	const selected = view.testPane.selectedNodeId;
+	const selected = view.testPane.selection.nodeId;
 	assert.equal(view.split.resizable, true);
 	f.key('Tab'); const results = inputFocus.admittedTarget!;
 	assert.ok(results !== tests); assert.equal(view.focus, 'results');
@@ -219,13 +254,13 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} focus 
 	f.key('Tab'); assert.ok(inputFocus.admittedTarget === results);
 	f.key('Tab'); assert.ok(inputFocus.admittedTarget === sash);
 	assert.ok(pane.input === f.input && f.controller.resolveInput() === f.input);
-	assert.equal(view.testPane.selectedNodeId, selected); assert.equal(view.split.ratio, requestedRatio);
+	assert.equal(view.testPane.selection.nodeId, selected); assert.equal(view.split.ratio, requestedRatio);
 });
 
 for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} withholding a focused captured sash retires its gesture and returns to results`, async t => {
 	const f = await fixture(t); f.editor.setFontVariant(variant);
 	f.firstPart.window!.model.setRequestedBounds({ left: 0, top: 32, right: 760, bottom: 290 }); f.select('passes');
-	const pane = f.firstPart.activeGroup.panes.activePane!, view = f.input.view, selected = view.testPane.selectedNodeId;
+	const pane = f.firstPart.activeGroup.panes.activePane!, view = f.input.view, selected = view.testPane.selection.nodeId;
 	assert.equal(view.split.resizable, true);
 	f.key('Tab'); const results = inputFocus.admittedTarget!;
 	f.key('Tab'); const sash = inputFocus.admittedTarget!;
@@ -242,7 +277,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scenario ${variant} withho
 	control.apply([{ type: 'button', button: 'primary', down: false }]);
 	assert.equal(pointerCapture.draining, false);
 	f.key('Tab'); assert.equal(view.actionBar.hasFocus, true);
-	assert.ok(pane.input === f.input); assert.equal(view.testPane.selectedNodeId, selected); assert.equal(view.split.ratio, ratio);
+	assert.ok(pane.input === f.input); assert.equal(view.testPane.selection.nodeId, selected); assert.equal(view.split.ratio, ratio);
 });
 
 test('Scenario move retains actual results, selection and reading state after the former Part closes', async t => {
@@ -397,4 +432,180 @@ test('Scenario reveal cannot overwrite a newer model selection before attaching 
 	assert.ok(f.firstPart.activeGroup.panes.activePane!.input === replacement, 'the newer model selection owns the actual pane too');
 	assert.ok(f.parts.findGroup(f.input) === f.firstPart.activeGroup, 'superseding a reveal does not retire its retained input');
 	assert.ok(f.parts.activePart === f.secondPart && inputFocus.target === f.secondPart.activeGroup.focusTarget);
+});
+
+for (const application of [false, true]) for (const valid of [false, true])
+	for (const command of ['scenarioLab.run', 'scenarioLab.debug', 'scenarioLab.rerun', 'scenarioLab.play'] as const)
+		test(`${command} ${application ? 'application' : 'native'} consumes only its captured accepted source (${valid ? 'valid' : 'invalid'} draft)`, async t => {
+			const f = await fixture(t), item = f.select('passes');
+			if (command === 'scenarioLab.rerun') {
+				const previous = f.runs.results.beginRun(item.id, [{ test: item, source: f.module.source, sourceRevision: f.module.sourceTimestamp }], 'debug');
+				f.runs.results.cancelRun(previous); f.select('fails');
+			}
+			const source = f.module.source, accepted = `-- accepted source generation\n${source}`;
+			const draft = sourceDraft(t, f, valid ? accepted : '('), before = f.runs.results.runs.length;
+			draft.execute(command, application);
+			assert.equal(draft.publishes(), valid ? 1 : 0);
+			assert.equal(draft.control.pending, !valid, 'an immediate source consumer vetoes an invalid draft without cancelling it');
+			assert.equal(draft.model.buffer.getText(), valid ? accepted : source);
+			if (command === 'scenarioLab.play') {
+				const handle = f.editor.play.service.current;
+				assert.equal(handle !== undefined, valid);
+				if (handle !== undefined) {
+					assert.equal(handle.source, accepted); assert.equal(handle.sourceRevision, draft.model.version);
+					assert.deepEqual(handle.module, f.module.resource);
+				}
+			} else {
+				assert.equal(f.runs.results.runs.length, before + (valid ? 1 : 0));
+				if (valid) {
+					const run = f.runs.results.runs[0];
+					assert.equal(run.scopeId, item.id); assert.equal(run.mode, command === 'scenarioLab.run' ? 'run' : 'debug');
+					assert.equal(run.items[0].source, accepted); assert.equal(run.items[0].sourceRevision, draft.model.version);
+					assert.equal(run.items[0].test, f.runs.collection.getNode(item.id));
+					assert.notEqual(run.items[0].test, item, 'source refresh replaces projection objects, not semantic test intent');
+				}
+			}
+		});
+
+for (const application of [false, true]) for (const command of ['scenarioLab.run', 'scenarioLab.debug', 'scenarioLab.play'] as const)
+	test(`${command} ${application ? 'application' : 'native'} cannot revive a selection changed away and back during acceptance`, async t => {
+		const f = await fixture(t); f.select('passes');
+		const draft = sourceDraft(t, f, `-- accepted\n${f.module.source}`, () => { f.select('fails'); f.select('passes'); });
+		draft.execute(command, application);
+		assert.equal(draft.publishes(), 1); assert.equal(draft.control.pending, false);
+		assert.equal(f.runs.results.runs.length, 0); assert.equal(f.editor.play.service.current, undefined);
+	});
+
+for (const application of [false, true]) test(`Scenario ${application ? 'application' : 'native'} source execution rejects same-input reattachment during acceptance`, async t => {
+	const f = await fixture(t); f.select('passes');
+	const draft = sourceDraft(t, f, `-- accepted\n${f.module.source}`, () => {
+		f.firstPart.activeGroup.openEditor(new GameViewInput()); f.firstPart.activeGroup.activate(f.input.id);
+	});
+	draft.execute('scenarioLab.run', application);
+	assert.equal(draft.publishes(), 1); assert.equal(f.runs.results.runs.length, 0);
+	assert.equal(f.firstPart.activeGroup.panes.activePane!.input, f.input);
+});
+
+for (const application of [false, true]) test(`Scenario ${application ? 'application' : 'native'} source refresh permanently retires a missing test intent`, async t => {
+	const f = await fixture(t), item = f.select('passes'), source = f.module.source;
+	const draft = sourceDraft(t, f, `-- accepted\n${source}`, () => {
+		const model = editorTextModelService.get(f.module.resource)!;
+		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: "return {kind='integration',tests={other=function() end}}" }]);
+		f.controller.updateView(f.input.view);
+		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
+		f.controller.updateView(f.input.view); f.select(item.caseName);
+	});
+	draft.execute('scenarioLab.run', application);
+	assert.equal(draft.publishes(), 1); assert.equal(f.input.view.testPane.selection.nodeId, item.id);
+	assert.equal(f.runs.results.runs.length, 0);
+});
+
+for (const application of [false, true]) test(`Scenario ${application ? 'application' : 'native'} rerun retains the previous request captured before acceptance`, async t => {
+	const f = await fixture(t), first = f.select('passes');
+	const previous = f.runs.results.beginRun(first.id, [{ test: first, source: f.module.source, sourceRevision: f.module.sourceTimestamp }], 'debug');
+	f.runs.results.cancelRun(previous);
+	const draft = sourceDraft(t, f, `-- accepted\n${f.module.source}`, () => {
+		const second = f.select('fails');
+		const newer = f.runs.results.beginRun(second.id, [{ test: second, source: f.module.source, sourceRevision: f.module.sourceTimestamp }]);
+		f.runs.results.cancelRun(newer);
+	});
+	draft.execute('scenarioLab.rerun', application);
+	assert.equal(f.runs.results.runs.length, 3); assert.equal(f.runs.results.runs[0].scopeId, first.id);
+	assert.equal(f.runs.results.runs[0].mode, previous.mode); assert.equal(f.runs.results.runs[0].items[0].source, draft.model.buffer.getText());
+});
+
+for (const application of [false, true]) for (const valid of [false, true])
+	for (const command of ['scenarioLab.runWithCompanion', 'scenarioLab.debugWithCompanion', 'scenarioLab.playWithCompanion'] as const)
+		test(`${command} ${application ? 'application' : 'native'} chooses identity after normal ${valid ? 'valid' : 'invalid'} blur and consumes source only at acceptance`, async t => {
+			const f = await fixture(t), item = f.select('passes'), source = f.module.source;
+			const draft = sourceDraft(t, f, valid ? `-- accepted draft\n${source}` : '(');
+			draft.execute(command, application);
+			assert.equal(draft.publishes(), valid ? 1 : 0); assert.equal(draft.control.pending, false);
+			assert.equal(f.firstPart.quickInput.visible, true); assert.equal(f.runs.results.runs.length, 0);
+			assert.equal(f.editor.play.service.current, undefined);
+			const accepted = `-- source edited while choosing fixture\n${draft.model.buffer.getText()}`;
+			draft.model.pushEditOperations([{ offset: 0, deleteLength: draft.model.buffer.length, text: accepted }]);
+			f.key('Enter');
+			assert.equal(f.firstPart.quickInput.visible, false);
+			if (command === 'scenarioLab.playWithCompanion') {
+				const handle = f.editor.play.service.current!;
+				assert.equal(handle.source, accepted); assert.equal(handle.sourceRevision, draft.model.version);
+				assert.equal(handle.companionContextId, null);
+			} else {
+				const run = f.runs.results.runs[0];
+				assert.equal(run.scopeId, item.id); assert.equal(run.items[0].source, accepted);
+				assert.equal(run.items[0].sourceRevision, draft.model.version); assert.equal(run.companionContextId, null);
+				assert.equal(run.mode, command === 'scenarioLab.debugWithCompanion' ? 'debug' : 'run');
+			}
+		});
+
+for (const application of [false, true]) for (const phase of ['blur', 'picker'] as const)
+	test(`Scenario ${application ? 'application' : 'native'} companion intent cannot retarget during ${phase}`, async t => {
+		const f = await fixture(t); f.select('passes');
+		const replace = () => { f.select('fails'); f.select('passes'); };
+		const draft = sourceDraft(t, f, `-- accepted\n${f.module.source}`, phase === 'blur' ? replace : undefined);
+		draft.execute('scenarioLab.runWithCompanion', application);
+		if (phase === 'picker') { assert.equal(f.firstPart.quickInput.visible, true); replace(); f.key('Enter'); }
+		assert.equal(f.firstPart.quickInput.visible, false); assert.equal(f.runs.results.runs.length, 0);
+	});
+
+for (const application of [false, true]) for (const kind of ['module', 'root'] as const)
+	test(`Scenario ${application ? 'application' : 'native'} run preserves corresponding ${kind} intent across accepted discovery`, async t => {
+		const f = await fixture(t), pane = f.input.view.testPane;
+		const index = pane.rows.findIndex(row => row.kind === kind && (row.kind !== 'module' || row.module === f.module));
+		selectScenarioLabTestRow(f.input.view, index); const scopeId = pane.selection.nodeId, revision = pane.selection.revision;
+		const draft = sourceDraft(t, f, `-- accepted discovery\n${f.module.source}`);
+		draft.execute('scenarioLab.run', application);
+		const run = f.runs.results.runs[0];
+		assert.equal(run.scopeId, scopeId); assert.equal(pane.selection.revision, revision);
+		assert.equal(run.items.find(item => item.test.parentId === f.module.id)!.source, draft.model.buffer.getText());
+	});
+
+for (const application of [false, true]) test(`Scenario ${application ? 'application' : 'native'} companion blur cannot retire a newer picker`, async t => {
+	const f = await fixture(t); f.select('passes');
+	const choice = { label: 'new request', description: '', detail: '' }; let accepted = false;
+	const draft = sourceDraft(t, f, `-- accepted\n${f.module.source}`, () => {
+		f.select('fails');
+		f.firstPart.quickInput.pick('NEW REQUEST', '', () => new TextQuickPickProvider([choice]), item => { accepted = item === choice; });
+	});
+	draft.execute('scenarioLab.runWithCompanion', application);
+	assert.equal(f.firstPart.quickInput.visible, true); assert.equal(f.firstPart.quickInput.model.items[0], choice);
+	f.key('Enter'); assert.equal(accepted, true); assert.equal(f.runs.results.runs.length, 0);
+});
+
+for (const application of [false, true]) test(`Scenario ${application ? 'application' : 'native'} source execution does not accept another attachment's draft`, async t => {
+	const f = await fixture(t); f.select('passes');
+	const target = f.firstPart.activeGroup.panes.activePane!.commandTarget;
+	f.secondPart.activeGroup.openEditor(new GameViewInput());
+	let publishes = 0;
+	const foreign = new ValueInput(f.secondPart.activeGroup.panes.activePane!.commandTarget, {
+		options: { allowSpace: true }, format: (value: string) => value,
+		invalidBlurMessage: 'invalid', parse: value => ({ value }),
+	}, () => { publishes++; });
+	t.after(() => { foreign.cancel(); foreign.field.focusTarget.release(); foreign.dispose(); });
+	foreign.setValue('before'); foreign.layout({ left: 400, top: 32, right: 800, bottom: 64 });
+	foreign.field.focusTarget.focus(); foreign.field.replaceText(0, 6, 'pending');
+	let consumed = false;
+	t.after(f.runs.onDidChangeRun(event => {
+		if (event.type !== 'started') return;
+		consumed = true; assert.equal(foreign.pending, true); assert.equal(publishes, 0);
+	}));
+	if (application) f.editor.commands.execute('scenarioLab.run', target); else inputFocus.executeCommand('scenarioLab.run', target);
+	assert.equal(f.runs.results.runs.length, 1); assert.equal(consumed, true);
+});
+
+for (const application of [false, true]) test(`Scenario ${application ? 'application' : 'native'} execution rejects membership removed and re-admitted by independent discovery`, async t => {
+	const f = await fixture(t), item = f.select('passes'), source = f.module.source;
+	const draft = sourceDraft(t, f, `-- accepted\n${source}`, () => {
+		const model = editorTextModelService.get(f.module.resource)!;
+		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: "return {kind='integration',tests={other=function() end}}" }]);
+		f.runs.refreshSources();
+		model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
+		f.runs.refreshSources();
+	});
+	const revision = f.input.view.testPane.selection.revision;
+	draft.execute('scenarioLab.run', application);
+	assert.equal(f.input.view.testPane.selection.revision, revision, 'this discovery happened independently of the retained pane projection');
+	assert.equal(f.input.view.testPane.selection.nodeId, item.id);
+	assert.notEqual(f.runs.collection.getNode(item.id), item); assert.equal(f.runs.results.runs.length, 0);
 });

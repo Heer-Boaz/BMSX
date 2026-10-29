@@ -21,13 +21,13 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { ScenarioLabInput } from './editor_input';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
-import type { ScenarioLabController } from './controller';
+import type { ScenarioLabController, ScenarioLabExecutionCommand } from './controller';
 import {
 	handleScenarioLabGamepadInput,
 	handleScenarioLabKeyboardInput,
 } from './keyboard';
 import { drawScenarioLab } from './render';
-import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, type FocusCommandInvocation, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { handleScenarioLabPointerInput, ScenarioLabPointerResult } from './pointer';
@@ -44,8 +44,7 @@ import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 
 const RUN_COMMANDS = [
-	'scenarioLab.play', 'scenarioLab.playWithCompanion', 'scenarioLab.debug', 'scenarioLab.debugWithCompanion',
-	'scenarioLab.run', 'scenarioLab.runWithCompanion', 'scenarioLab.rerun', 'scenarioLab.revealRun', 'scenarioLab.cancel',
+	'scenarioLab.revealRun', 'scenarioLab.cancel',
 	'scenarioLab.continue', 'scenarioLab.stepInto', 'scenarioLab.stepOver', 'scenarioLab.stepOut', 'scenarioLab.pause', 'scenarioLab.breakpoints',
 ] as const satisfies readonly EditorScenarioLabCommandId[];
 
@@ -104,6 +103,18 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		scope: InputFocusScope,
 	) {
 		super(scope);
+		for (const command of [
+			'scenarioLab.play', 'scenarioLab.playWithCompanion', 'scenarioLab.debug', 'scenarioLab.debugWithCompanion',
+			'scenarioLab.run', 'scenarioLab.runWithCompanion', 'scenarioLab.rerun',
+		] as const) {
+			const implementation = {
+				isEnabled: () => this.hasInput && this.controller.isCommandEnabled(command, this.input),
+				capture: () => this.captureExecution(command),
+				run: () => inputFocus.executeCommand(command, this.focusTarget),
+			};
+			this.focusTarget.registerCommand(command, implementation);
+			this.resultsFocus.registerCommand(command, implementation);
+		}
 		for (const command of RUN_COMMANDS) {
 			const implementation = {
 				isEnabled: () => this.hasInput && this.controller.isCommandEnabled(command, this.input),
@@ -145,6 +156,22 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		this.split.focusTarget.next = this.actionBar.focusTarget;
 		this.actionBar.focusTarget.next = this.focusTarget;
 		this.focusTarget.previous = this.actionBar.focusTarget;
+	}
+
+	private captureExecution(command: ScenarioLabExecutionCommand): FocusCommandInvocation | undefined {
+		if (!this.hasInput) return;
+		const input = this.input, scope = this.focusTarget.scope, generation = scope.contextGeneration;
+		const intent = this.controller.captureExecution(command, input);
+		if (intent === undefined) return;
+		const isCurrent = () => this.hasInput && this.input === input && scope.contextGeneration === generation
+			&& this.controller.isExecutionCurrent(intent);
+		return {
+			// Choosing fixture identity is presentation; only immediate execution consumes a draft now.
+			editScope: intent.withCompanion ? undefined : scope,
+			isEnabled: () => isCurrent() && (intent.withCompanion
+				? this.controller.isCommandEnabled(command, input) : this.controller.isExecutionEnabled(intent)) && isCurrent(),
+			run: () => { if (isCurrent()) this.controller.executeExecution(intent, this.group, this.quickInput, isCurrent); },
+		};
 	}
 
 	protected override activate(): void {

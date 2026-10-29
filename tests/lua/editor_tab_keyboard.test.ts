@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { setImmediate } from 'node:timers/promises';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { inputFocus } from '../../ide/input/focus';
 import type { EditorCommandId } from '../../ide/common/commands';
@@ -120,10 +121,10 @@ test('Ctrl+S saves only the inactive focused Source and its canonical Undo remai
 	assert.equal(f.secondSource.workingCopy.buffer.getText(), f.otherSource); assert.equal(f.secondSource.workingCopy.canRedo, true);
 });
 
-test('Palette view-copy and move commands retain the strip focused editor rather than borrowing its active sibling', t => {
+test('Palette view-copy and move commands retain the strip focused editor rather than borrowing its active sibling', async t => {
 	const f = threeSources(t), parts = f.editor.editorParts, pane = f.group.panes.activePane;
 	f.editor.commands.execute('group.focusTabs', f.group.tabFocusTarget); f.key('ArrowRight');
-	const windows = [...parts.documents]; palette(f, 'window.copyEditor');
+	const windows = [...parts.documents]; palette(f, 'window.copyEditor'); await setImmediate(); f.update();
 	const created = parts.documents.find(part => !windows.includes(part)); assert.ok(created !== undefined);
 	const view = created.activeGroup.model.activeTab;
 	assert.ok(view instanceof CodeEditorInput && view !== f.secondSource && view.workingCopy === f.secondSource.workingCopy);

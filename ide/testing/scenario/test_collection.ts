@@ -14,6 +14,8 @@ export type ScenarioTestNodeId = ScenarioTestRootId | ScenarioTestModuleId | Sce
 type TestResource = { readonly contextId: string; readonly path: string };
 export type ScenarioTestItem = {
 	readonly kind: 'test';
+	/** Named-case membership survives corresponding discovery, not removal and re-admission. */
+	readonly membership: symbol;
 	readonly caseName: string;
 	readonly id: ScenarioTestId;
 	readonly parentId: ScenarioTestModuleId;
@@ -125,7 +127,7 @@ export class ScenarioTestCollection {
 	}
 
 	private discover(module: ScenarioTestModule): void {
-		for (const test of module.children) this.nodes.delete(test.id);
+		const previous = module.children;
 		module.children = [];
 		module.suite = null;
 		module.diagnostic = null;
@@ -135,17 +137,21 @@ export class ScenarioTestCollection {
 		} catch (error) {
 			if (!(error instanceof LuaSyntaxError)) throw error;
 			module.diagnostic = error;
+			for (const test of previous) this.nodes.delete(test.id);
 			return;
 		}
 		module.children = module.suite.tests.map(test => {
+			const id = scenarioTestId(module.resource.contextId, module.assetId, test.name);
+			const existing = this.nodes.get(id) as ScenarioTestItem | undefined;
 			const item: ScenarioTestItem = {
-				kind: 'test', caseName: test.name, id: scenarioTestId(module.resource.contextId, module.assetId, test.name),
+				kind: 'test', caseName: test.name, id, membership: existing === undefined ? Symbol() : existing.membership,
 				parentId: module.id, label: test.name, resource: module.resource, assetId: module.assetId,
 				sourceTimestamp: module.sourceTimestamp, range: test.range,
 			};
 			this.nodes.set(item.id, item);
 			return item;
 		});
+		for (const test of previous) if (this.nodes.get(test.id) === test) this.nodes.delete(test.id);
 	}
 
 	public updateSource(module: ScenarioTestModule, source: string, revision: number): void {
