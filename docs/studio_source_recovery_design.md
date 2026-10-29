@@ -68,7 +68,14 @@ can preserve an acknowledged generation while its configured remote provider
 is unavailable; it never selects another file authority.
 
 Restoration recreates dirty working copies and their baselines independently
-of view creation. A subsequent Save uses the ordinary admitted file address and
+of view creation. The manifest retains the last saved source and the acknowledged
+persisted baseline, including an absent file. Current file timestamps and the
+compiler's source choice do not discard or rebase that working copy. The model
+owner admits the complete recovered generation before notifying source clients;
+each model is already dirty and contains its final draft and Save authority.
+Source retirement ends that publication and subsequent view restoration without
+undoing newer admitted work.
+A subsequent Save uses the ordinary admitted file address and
 expected-source boundary. Only successful canonical persistence advances that
 model's saved baseline. Source navigation, cursor movement and metadata capture
 do not add Undo entries or make clean text dirty.
@@ -82,6 +89,9 @@ working copy. Editor-part and document identity follow the
 
 VS Code separates [workspace-scoped backups](https://github.com/microsoft/vscode/blob/818341a41f15dd781888645df4915cbac604c5f6/src/vs/workbench/services/workingCopy/browser/workingCopyBackupService.ts)
 from [resource/group editor mementos](https://github.com/microsoft/vscode/blob/ada39222f5f2fb65f3aea23d95496629a8bbf697/src/vs/workbench/browser/parts/editor/editorPane.ts#L243-L270).
+Its [text-file model](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/textfile/common/textFileEditorModel.ts)
+restores backup content with its saved file metadata and retains conflict
+admission separately from dirty text.
 BMSX's per-frontend recovery lease uses the Web Locks
 [document-editor ownership primitive](https://github.com/w3c/web-locks/blob/main/EXPLAINER.md#use-case-examples),
 not a heartbeat, stale-process probe or compatibility fallback.

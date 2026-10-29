@@ -56,10 +56,22 @@ export class EditorTextModelService {
 		if (model === undefined) {
 			model = new EditorTextModel(resource, mode, source, this.history, savedSource, persistedBaseline);
 			this.register(model);
+			for (const listener of this.modelAddedListeners) listener(model);
 		} else {
 			model.refreshResource(resource);
 		}
 		return model;
+	}
+
+	/** Admit the complete recovered generation before observers can resolve another recovered resource. */
+	public restore(models: readonly EditorTextModel[]): boolean {
+		const generation = this.generation;
+		for (const model of models) this.register(model);
+		for (const model of models) for (const listener of this.modelAddedListeners) {
+			if (this.generation !== generation) return false;
+			listener(model);
+		}
+		return this.generation === generation;
 	}
 
 	/** Coalesce asynchronous source reads without creating an editor input or tab. */
@@ -98,7 +110,6 @@ export class EditorTextModelService {
 				listener(model, event);
 			}
 		});
-		for (const listener of this.modelAddedListeners) listener(model);
 	}
 
 	public onDidAddModel(listener: ModelListener): () => void {

@@ -130,7 +130,7 @@ test('coalesced typing emits only the new replacements, while history emits the 
 	assert.deepEqual(events[3].changes, [...events[0].changes, ...events[1].changes]);
 });
 
-test('revert and restored workspace bytes publish a whole-document replacement', () => {
+test('whole-document edits and Revert publish their replacement and retire tracked ranges', () => {
 	const model = new EditorTextModel(resource, 'lua', 'aaa target zzz');
 	const range = { start: 4, end: 10 };
 	const events: EditorTextModelContentChangeEvent[] = [];
@@ -138,7 +138,7 @@ test('revert and restored workspace bytes publish a whole-document replacement',
 		mapTrackedTextRange(range, event.changes);
 		events.push(event);
 	});
-	model.restoreDirtySource('different');
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'different' }]);
 	assert.deepEqual(events[0].changes, [{ offset: 0, deletedLength: 14, insertedLength: 9 }]);
 	assert.equal(range.start, range.end);
 	range.start = 0;

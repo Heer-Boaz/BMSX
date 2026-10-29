@@ -39,7 +39,7 @@ test('external model edits track an unattached code cursor, oriented selection a
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'x' }]);
 	assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, 0);
 	assert.equal(getSingleCursorSelectionRange(view), null);
-	model.restoreDirtySource('');
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: '' }]);
 	assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, 0);
 	model.revert();
 	assert.equal(view.cursorRow, 0); assert.equal(view.cursorColumn, 0);

@@ -234,7 +234,7 @@ test('browser-only autosave reuses dirty recovery and document/Main generations 
 		setItem: (key, value) => { values.set(key, value); }, removeItem: key => { values.delete(key); } };
 	const context = f.sources.catalog.getContext(f.sources.systemContextId).admission;
 	await initializeWorkspaceStorage(storage, f.host.clock, context, 'browser-checkpoint', f.sources.catalog, new MemoryWorkspaceFiles(), { log() {} });
-	await restoreWorkspaceStorageSession(f.editor, f.sources.catalog, f.ide.debugger, null, new Set());
+	await restoreWorkspaceStorageSession(f.editor, f.sources.catalog, f.ide.debugger, null);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated dirty canonical work\n' }]); panel.refresh();
 	requestWorkspaceAutosave(WorkspaceAutosaveChange.All); await runWorkspaceAutosaveTick();
 	let before = workspaceState.localGeneration!;

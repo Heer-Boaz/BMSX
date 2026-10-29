@@ -50,7 +50,8 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	await test.press('ControlRight', 'ShiftRight');
 	await test.runPaletteCommand('Run: Pause');
 	ide.editor.setFontVariant('tiny');
-	test.harness.openLuaSource('cart.lua');
+	// This cold-reload workflow runs against the dedicated hot_resume_test cartridge.
+	test.harness.openLuaSource('entry.lua');
 	const model = sourcePane(test).code.model!;
 	// Persist a baseline distinct from both the ROM and the later recovery draft.
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- canonical session save\n' }]);
@@ -82,10 +83,12 @@ async function prepare(test: StudioFixture): Promise<SessionExpectation> {
 	ide.editor.scenarioLab.open(ide.editor.editorParts.main.activeGroup); await test.frame();
 	const scenario = ide.editor.editorParts.activeGroup.model.activeTab!;
 	if (scenario.kind !== 'scenario_lab') throw new Error('session: Scenario Lab input required');
-	selectScenarioLabTestRow(scenario.view, 0);
-	toggleScenarioLabTestRow(scenario.view, 0);
+	const scenarioRoot = scenario.view.testPane.rows.findIndex(row => row.kind === 'root' && row.root.contextId === model.resource.contextId);
+	check(scenarioRoot >= 0, 'session: the isolated Scenario fixture belongs to the admitted test project');
+	selectScenarioLabTestRow(scenario.view, scenarioRoot);
+	toggleScenarioLabTestRow(scenario.view, scenarioRoot);
 	// An explicit source viewer and clean preview exercise non-working-copy and clean state.
-	const resource = ide.sources.catalog.resolveResource(ide.sources.catalog.resolveModule(ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, 'constants')!)!;
+	const resource = ide.sources.catalog.resolveResource(ide.sources.catalog.resolveModule(ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, 'value')!)!;
 	const viewer = await ide.editor.resourceEditors.resolveEditorInput(resource, WORKBENCH_RESOURCE_VIEWER_ID);
 	sourceGroup.openEditor(viewer); await test.frame();
 	if (viewer.kind !== 'resource_view') throw new Error('session: source viewer required');
@@ -122,6 +125,7 @@ async function restore(test: StudioFixture, expected: SessionExpectation): Promi
 	const model = active.workingCopy;
 	check(model.buffer.getText() === expected.source && model.dirty && !model.canUndo, 'session: exact dirty bytes, fresh working copy, no fabricated Undo history');
 	check(model.lastSavedSource === expected.savedSource, 'session: dirty recovery retains the actual saved Lua baseline, not its draft or packaged ROM source');
+	check(model.persistedBaseline === expected.savedSource, 'session: recovered Save authority retains the acknowledged canonical bytes');
 	const siblings = ide.editor.editorParts.groups.flatMap(group => [...group.model.tabs]).filter(tab =>
 		(tab.kind === 'behavior_lens' || tab.kind === 'scene_editor' || tab.kind === 'code_editor')
 		&& tab.workingCopy.resource.contextId === model.resource.contextId && tab.workingCopy.resource.path === model.resource.path);

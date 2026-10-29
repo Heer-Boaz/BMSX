@@ -26,7 +26,7 @@ export type EditorModelEdit = {
 	readonly computeAfterEditState?: (changes: readonly EditorTextChange[]) => EditorEditState;
 };
 
-export type EditorTextModelChangeKind = 'edit' | 'undo' | 'redo' | 'restore' | 'revert';
+export type EditorTextModelChangeKind = 'edit' | 'undo' | 'redo' | 'revert';
 
 /** Post-apply delta. Internal owners track/invalidate here; never query semantic projects or mutate models. */
 export type EditorTextModelAppliedChanges = {
@@ -100,7 +100,7 @@ export class EditorTextModel {
 	public readonly identity: ResourceIdentity;
 
 	public constructor(resource: RuntimeResource, mode: EditorDocumentMode, source: string, public readonly history = new EditorUndoRedoService(),
-		savedSource = source, persistedBaseline: string | null = savedSource) {
+		savedSource = source, persistedBaseline: string | null = savedSource, dirty = source !== savedSource) {
 		this.history.register(this);
 		this.resourceValue = resource;
 		this.identity = { contextId: resource.contextId, path: resource.path };
@@ -109,7 +109,7 @@ export class EditorTextModel {
 		this.pieceTree = new PieceTreeBuffer(source);
 		this.lastSavedSourceValue = savedSource;
 		this.persistedBaselineValue = persistedBaseline;
-		if (source !== savedSource) {
+		if (dirty) {
 			this.currentStateId = this.nextStateId;
 			this.nextStateId += 1;
 		}
@@ -449,18 +449,6 @@ export class EditorTextModel {
 
 	public recordContentEdit(timestamp: number): void {
 		this.lastContentEditAtMsValue = timestamp;
-	}
-
-	public restoreDirtySource(source: string): void {
-		this.emitBeforeContentChange();
-		const wasDirty = this.dirty;
-		const deletedLength = this.pieceTree.length;
-		this.replaceContents(source);
-		this.currentStateId = this.nextStateId;
-		this.nextStateId += 1;
-		const applied = this.emitAppliedChanges(0, [{ offset: 0, deletedLength, insertedLength: source.length }]);
-		this.emitContentChange('restore', applied, null);
-		this.emitDirtyChange(wasDirty);
 	}
 
 	public revert(): void {

@@ -11,6 +11,10 @@ import type { EditorInputSerializers, SerializedEditorGroup, SerializedEditorInp
 import './test_setup';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { DiskWorkspaceRecordProvider } from '../../ide/node/workspace_records';
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import {
 	SYSTEM_RESOURCE_DOMAIN,
@@ -55,10 +59,8 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { buildCodeTabId } from '../../ide/workbench/ui/tab/id';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
-import {
-	applyWorkspaceAutosavePayload,
-	hydrateDirtyFiles,
-} from '../../ide/workbench/workspace/restore';
+import { applyWorkspaceAutosavePayload } from '../../ide/workbench/workspace/restore';
+import { restoreWorkspaceDirtyModels } from '../../ide/workbench/services/working_copy/source_recovery';
 import {
 	cancelWorkspaceAutosave,
 	initializeWorkspaceStorage,
@@ -348,8 +350,8 @@ function testResource(
 }
 
 function installDirtyModel(path: string, source: string, contextId: string = TEST_CONTEXT_ID): EditorTextModel {
-	const model = editorTextModelService.retain(testResource(path, contextId), 'lua', '');
-	model.restoreDirtySource(source);
+	const model = new EditorTextModel(testResource(path, contextId), 'lua', source, editorTextModelService.history, '', '', true);
+	editorTextModelService.restore([model]);
 	return model;
 }
 
@@ -497,7 +499,6 @@ async function startAutosaveSession(t: TestContext, storage: MockStorage, contex
 		sources.catalog,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
-		new Set(),
 	);
 	t.after(() => resetSemanticProjects(editorTextModelService));
 	return { sources, editor };
@@ -579,6 +580,7 @@ test('workspace restore preserves explicit tab order and an active dirty system 
 				contextId: TEST_SYSTEM_CONTEXT_ID,
 				path: systemPath,
 				updatedAt: 80,
+				savedSource: '-- system source', persistedBaseline: null,
 			}],
 			{ inputs: [
 				codeInputSnapshot(cartridgePath, '-- cartridge source', TEST_CARTRIDGE_CONTEXT_IDS[0]),
@@ -776,7 +778,7 @@ for (const isolatedBy of ['source-context', 'frontend-session'] as const) {
 		const secondIdentity = joinWorkspacePaths(secondContext.id, secondSession);
 		const legacyStatePath = 'offline-cart/.bmsx/session.json';
 		const legacyDirtyPath = buildWorkspaceDirtyRecordPath(buildWorkspaceDirtyEntryPath('offline-cart', TEST_CONTEXT_ID, 'entry.lua'), 5000);
-		const legacyState = { contents: JSON.stringify(payload([{ contextId: TEST_CONTEXT_ID, path: 'entry.lua', updatedAt: 5000 }])), updatedAt: 5001 };
+		const legacyState = { contents: JSON.stringify(payload([{ contextId: TEST_CONTEXT_ID, path: 'entry.lua', updatedAt: 5000, savedSource: '-- cart source', persistedBaseline: null }])), updatedAt: 5001 };
 		const legacyDraft = { contents: '-- unadmitted legacy draft', updatedAt: 5000 };
 		writeLocalWorkspaceRecord(storage, 'offline-cart', legacyStatePath, legacyState);
 		writeLocalWorkspaceRecord(storage, 'offline-cart', legacyDirtyPath, legacyDraft);
@@ -870,6 +872,7 @@ test('incomplete recovery is reported and leaves the local generation intact', a
 		contextId: TEST_CONTEXT_ID,
 		path: 'entry.lua',
 		updatedAt: 10,
+		savedSource: '-- cart source', persistedBaseline: null,
 	}]);
 	const remotePayload = payload([{
 		...localPayload.dirtyFiles[0],
@@ -930,6 +933,7 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 		contextId: TEST_CONTEXT_ID,
 		path: 'entry.lua',
 		updatedAt: 80,
+		savedSource: '-- saved source', persistedBaseline: '-- saved source',
 	}]);
 	writeRecord(
 		storage,
@@ -955,7 +959,6 @@ test('cold boot uses one manifest-indexed dirty snapshot for source arbitration 
 		sources.catalog,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
-		rejected,
 	);
 	const model = editorTextModelService.get({ contextId: TEST_CONTEXT_ID, path: 'entry.lua' })!;
 	assert.equal(getTextSnapshot(model.buffer), '-- dirty edit');
@@ -1002,6 +1005,7 @@ test('an uncommitted record cannot satisfy a different manifest version', async 
 		contextId: TEST_CONTEXT_ID,
 		path: 'entry.lua',
 		updatedAt: 80,
+		savedSource: '-- saved source', persistedBaseline: '-- saved source',
 	}]);
 	const uncommittedPath = workspaceRecoveryRecordPath(sources.catalog, { contextId: TEST_CONTEXT_ID, path: 'entry.lua', updatedAt: 81 }, TEST_RECOVERY_IDENTITY);
 	writeRecord(storage, 'offline-cart', uncommittedPath, '-- uncommitted edit', 81);
@@ -1012,7 +1016,7 @@ test('an uncommitted record cannot satisfy a different manifest version', async 
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', workspaceStatePath(TEST_SOURCE_CONTEXT))!.updatedAt, 90);
 });
 
-test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => {
+test('a newer ROM may win compilation without discarding a recovered authoring draft', async (t) => {
 	const storage = new MockStorage();
 	installBrowserWorkspace(t, storage);
 	const registry = sourceRegistry('-- newer rom source');
@@ -1028,6 +1032,7 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 		contextId: TEST_CONTEXT_ID,
 		path: 'entry.lua',
 		updatedAt: 50,
+		savedSource: '-- original source', persistedBaseline: null,
 	}]);
 	session.editorParts = payload([], { inputs: [codeInputSnapshot('entry.lua', '-- stale dirty edit', TEST_CONTEXT_ID, 9)], active: 0, preview: null }).editorParts;
 	const dirtyRecordPath = workspaceRecoveryRecordPath(sources.catalog, { contextId: TEST_CONTEXT_ID, path: 'entry.lua', updatedAt: 50 }, TEST_RECOVERY_IDENTITY);
@@ -1044,11 +1049,14 @@ test('manifest dirty entry rejected by newer ROM is not hydrated', async (t) => 
 		sources.catalog,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restored,
-		rejected,
 	);
 	assert.equal(registry.records[0].src, '-- newer rom source');
-	assert.equal(editor.editorParts.main.activeGroup.model.findById(buildCodeTabId({ contextId: TEST_CONTEXT_ID, path: 'entry.lua' }))!.context.model.dirty, false);
-	assert.equal(editor.editorParts.main.activeGroup.model.findById(buildCodeTabId({ contextId: TEST_CONTEXT_ID, path: 'entry.lua' }))!.context.view.cursorColumn, 0);
+	const input = editor.editorParts.main.activeGroup.model.findById(buildCodeTabId({ contextId: TEST_CONTEXT_ID, path: 'entry.lua' }))!;
+	assert.equal(input.context.model.buffer.getText(), '-- stale dirty edit');
+	assert.equal(input.context.model.lastSavedSource, '-- original source');
+	assert.equal(input.context.model.persistedBaseline, null);
+	assert.equal(input.context.model.dirty, true);
+	assert.equal(input.context.view.cursorColumn, 9);
 	assert.equal(readLocalWorkspaceRecord(storage, 'offline-cart', dirtyRecordPath)!.contents, '-- stale dirty edit');
 });
 
@@ -1074,6 +1082,7 @@ test('dirty records follow the physical project root owned by each resource cont
 		contextId: entry.contextId,
 		path: entry.path,
 		updatedAt: 70 + index,
+		savedSource: sources.catalog.resolveLuaSource(entry)!.record.base_src, persistedBaseline: null,
 	})));
 	for (let index = 0; index < entries.length; index += 1) {
 		const entry = entries[index];
@@ -1348,7 +1357,7 @@ test('a dirty working copy can acquire its first code view after the content bac
 	installWorkspaceRestoreView();
 	const restoredEditor = editorStub(sources, t);
 	await restoreWorkspaceStorageSession(restoredEditor as any, sources.catalog,
-		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, restored, new Set());
+		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, restored);
 	const restoredContext = restoredEditor.editorParts.main.activeGroup.model.findById(buildCodeTabId(resource))!.context;
 	assert.notStrictEqual(restoredContext.model, model);
 	assert.equal(restoredContext.model.buffer.getText(), '-- cart source\n-- visual edit');
@@ -1784,26 +1793,30 @@ test('workspace reconfiguration commits a pending debounced edit locally', async
 	assert.equal(JSON.parse(sessionRecord.contents).dirtyFiles[0].updatedAt, dirtyRecord.updatedAt);
 });
 
-test('dirty restore consumes retained snapshot content without a second transport read', async (t) => {
+test('dirty recovery admits its captured authority without reading canonical source or opening a view', async t => {
 	const storage = new MockStorage();
 	const { server } = installWorkspaceServer(t, storage);
-	const sources = createTestRuntimeSourceState(
-		sourceRegistry('-- system source'),
-		[sourceRegistry('-- cart source'), null],
-		TEST_DOMAIN,
-	);
-	await initializeWorkspaceStorage(workspaceEnvironment.storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput);
-	const model = installDirtyModel('src/foo.lua', '-- clean source');
-	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', TEST_CONTEXT_ID, 'src/foo.lua');
-	workspaceDirtyRecords.set(dirtyPath, { contents: '-- restored dirty edit', updatedAt: 1 });
+	const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [sourceRegistry('-- current source'), null], TEST_DOMAIN);
+	await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput);
+	const resource = sources.catalog.resolveResource({ contextId: TEST_CONTEXT_ID, path: 'entry.lua' })!;
+	const dirtyPath = buildWorkspaceDirtyEntryPath('offline-cart', resource.contextId, resource.path);
 	const requests = server.requests.length;
-	hydrateDirtyFiles(sources.catalog, [{
-		contextId: TEST_CONTEXT_ID,
-		path: 'src/foo.lua',
-		updatedAt: 1,
-	}]);
+	const admitted: unknown[] = [];
+	const release = editorTextModelService.onDidAddModel(model => admitted.push({
+		source: model.buffer.getText(), savedSource: model.lastSavedSource, persistedBaseline: model.persistedBaseline, dirty: model.dirty,
+	}));
+	t.after(release);
+	restoreWorkspaceDirtyModels(editorTextModelService, sources.catalog, [{
+		contextId: resource.contextId, path: resource.path, updatedAt: 1,
+		savedSource: '-- acknowledged source', persistedBaseline: '-- acknowledged source',
+	}], new Map([[dirtyPath, { contents: '-- restored dirty edit', updatedAt: 1 }]]));
+	const model = editorTextModelService.get(resource)!;
 	assert.equal(server.requests.length, requests);
+	assert.deepEqual(admitted, [{ source: '-- restored dirty edit', savedSource: '-- acknowledged source',
+		persistedBaseline: '-- acknowledged source', dirty: true }]);
 	assert.equal(getTextSnapshot(model.buffer), '-- restored dirty edit');
+	assert.equal(model.lastSavedSource, '-- acknowledged source');
+	assert.equal(model.persistedBaseline, '-- acknowledged source');
 	assert.equal(model.dirty, true);
 });
 
@@ -1827,6 +1840,7 @@ test('workspace restore resolves persisted identity to the retained runtime reso
 		contextId: TEST_CONTEXT_ID,
 		path: retained.path,
 		updatedAt: 1,
+		savedSource: '-- cart source', persistedBaseline: null,
 	}]);
 	restoredPayload.breakpoints = [
 		{ contextId: TEST_SYSTEM_CONTEXT_ID, path: 'base.lua', lines: [4] },
@@ -1871,6 +1885,7 @@ test('workspace recovery hydrates a dirty working copy without creating an edito
 			contextId: resource.contextId,
 			path: resource.path,
 			updatedAt: 1,
+			savedSource: '{ "events": {} }', persistedBaseline: '{ "events": {} }',
 		}]),
 	);
 
@@ -1916,7 +1931,6 @@ test('YAML session recovery preserves exact Save bytes and baseline at its admit
 		sources.catalog,
 		{ breakpoints: new RuntimeBreakpoints(sources, () => {}) },
 		restoredPayload,
-		new Set(),
 	);
 
 	const restored = editorTextModelService.get(resource)!;
@@ -1950,40 +1964,90 @@ test('YAML session recovery preserves exact Save bytes and baseline at its admit
 	assert.deepEqual(workspaceState.localGeneration!.payload.dirtyFiles, []);
 });
 
-for (const type of ['data', 'aem'] as const) for (const savedAt of [10, 20, 30, null]) {
-	test(`${type} recovery compares its checkpoint with the saved source at its admitted address (${savedAt})`, async t => {
-		const storage = new MockStorage();
-		installBrowserWorkspace(t, storage);
-		const sources = createTestRuntimeSourceState(sourceRegistry('-- system'), [sourceRegistry('-- cart'), null], TEST_DOMAIN);
-		const resource = testResource(type === 'data' ? 'res/stage.yaml' : 'res/events.aem.yaml', TEST_CONTEXT_ID, type);
-		resource.sourceFilePath = `shared/authoring/${resource.path}`;
-		resource.location = { kind: 'workspace', path: resource.sourceFilePath };
-		resource.source.sourcemeta = { text: 'value: packaged\n' };
-		sources.catalog.resourceByIdentity.set(resourceIdentityKey(resource), resource);
-		const draft = 'value: recovered\n', saved = 'value: saved\n';
-		const checkpoint = payload([{ contextId: resource.contextId, path: resource.path, updatedAt: 20 }]);
-		writeRecord(storage, 'offline-cart', workspaceRecoveryRecordPath(sources.catalog, { contextId: resource.contextId, path: resource.path, updatedAt: 20 }, TEST_RECOVERY_IDENTITY), draft, 20);
-		writeRecord(storage, 'offline-cart', workspaceStatePath(TEST_SOURCE_CONTEXT), JSON.stringify(checkpoint), 21);
-		const canonicalPath = resource.sourceFilePath;
-		if (savedAt !== null) await workspaceFiles.write(canonicalPath, { contents: saved, updatedAt: savedAt }, true);
-		const restoredPayload = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION, sources.catalog, workspaceFiles, testLogOutput);
-		installWorkspaceRestoreView();
-		const editor = editorStub(sources, t);
-		await restoreWorkspaceStorageSession(editor as any, sources.catalog,
-			{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, restoredPayload, new Set());
-		const restored = await resolveTextFileModel(editorTextModelService, sources.catalog, resource);
-		const keepDraft = savedAt === null || savedAt <= 20;
-		assert.equal(restored.buffer.getText(), keepDraft ? draft : saved);
-		assert.equal(restored.dirty, keepDraft);
-		assert.equal(restored.lastSavedSource, savedAt === null ? 'value: packaged\n' : saved);
-		// Recovery must also retire superseded backup references, not merely skip a buffer write.
-		persistWorkspaceSessionLocally();
-		assert.equal(workspaceState.localGeneration!.payload.dirtyFiles.length, keepDraft ? 1 : 0);
-		assert.deepEqual(await workspaceRecords.read(canonicalPath), savedAt === null ? null : { contents: saved, updatedAt: savedAt });
-		restored.revert();
-		assert.equal(restored.buffer.getText(), savedAt === null ? 'value: packaged\n' : saved);
-		assert.equal(restored.dirty, false);
-	});
+for (const type of ['lua', 'data', 'aem'] as const) for (const recoveryAuthority of ['local', 'workspace'] as const) {
+	for (const externalChange of ['newer', 'older', 'removed', 'null-baseline-collision'] as const) {
+		test(`${type} ${recoveryAuthority} recovery preserves acknowledged source authority after ${externalChange}`, async t => {
+			const storage = new MockStorage();
+			installBrowserWorkspace(t, storage);
+			const root = await mkdtemp(join(tmpdir(), 'bmsx-frontend-recovery-'));
+			workspaceFiles = new DiskWorkspaceRecordProvider(root);
+			t.after(() => rm(root, { recursive: true, force: true }));
+			const path = type === 'lua' ? 'src/recovery.lua' : type === 'data' ? 'res/recovery.yaml' : 'res/recovery.aem.yaml';
+			const original = type === 'lua' ? 'return "original"' : 'value: original\n';
+			const draft = type === 'lua' ? '-- unsaved\n' + original : '# unsaved\n' + original;
+			const external = type === 'lua' ? 'return "external"' : 'value: external\n';
+			const canonicalPath = resolveWorkspacePath(path, TEST_SOURCE_CONTEXT.projectRoot);
+			const createSources = () => {
+				const registry = sourceRegistry(type === 'lua' ? original : '-- cart source', 'offline-cart', type === 'lua' ? path : 'entry.lua');
+				const sources = createTestRuntimeSourceState(sourceRegistry('-- system source'), [registry, null], TEST_DOMAIN);
+				if (type !== 'lua') sources.catalog.registerTextSources(TEST_CONTEXT_ID, [{
+					...testResource(path, TEST_CONTEXT_ID, type).source, type, source_path: path, sourcemeta: { text: original },
+				}]);
+				return sources;
+			};
+			const firstSources = createSources();
+			await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION,
+				firstSources.catalog, workspaceFiles, testLogOutput);
+			if (externalChange !== 'null-baseline-collision') await workspaceRecords.write(canonicalPath, { contents: original, updatedAt: 1 });
+			await applyAllWorkspaceSourceOverrides(firstSources.catalog, workspaceDirtyRecords, await discoverWorkspaceSources(firstSources.catalog));
+			const firstEditor = editorStub(firstSources, t);
+			await restoreWorkspaceStorageSession(firstEditor as any, firstSources.catalog,
+				{ breakpoints: new RuntimeBreakpoints(firstSources, () => {}) }, null);
+			const resource = firstSources.catalog.resolveResource({ contextId: TEST_CONTEXT_ID, path })!;
+			const firstModel = await resolveTextFileModel(editorTextModelService, firstSources.catalog, resource);
+			firstModel.pushEditOperations([{ offset: 0, deleteLength: 0, text: type === 'lua' ? '-- unsaved\n' : '# unsaved\n' }]);
+			persistWorkspaceSessionLocally();
+			const generation = workspaceState.localGeneration!, entry = generation.payload.dirtyFiles[0];
+			const baseline = externalChange === 'null-baseline-collision' ? null : original;
+			assert.equal(entry.savedSource, original);
+			assert.equal(entry.persistedBaseline, baseline);
+			assert.equal(firstEditor.editorParts.main.activeGroup.model.tabs.length, 0);
+			await shutdownWorkspaceStorage();
+			editorTextModelService.clear();
+			if (recoveryAuthority === 'workspace') storage.clear();
+			else {
+				await workspaceFiles.delete(workspaceStatePath(TEST_SOURCE_CONTEXT));
+				await workspaceFiles.delete(workspaceRecoveryRecordPath(firstSources.catalog, entry, TEST_RECOVERY_IDENTITY));
+			}
+			if (externalChange === 'removed') await workspaceFiles.delete(canonicalPath);
+			else await workspaceFiles.write(canonicalPath, { contents: external,
+				updatedAt: externalChange === 'older' ? entry.updatedAt - 1 : entry.updatedAt + 100 }, true);
+			const sources = createSources();
+			const checkpoint = await initializeWorkspaceStorage(storage, workspaceEnvironment.clock, TEST_SOURCE_CONTEXT, TEST_RECOVERY_SESSION,
+				sources.catalog, workspaceFiles, testLogOutput);
+			assert.ok(checkpoint);
+			const rejected = await applyAllWorkspaceSourceOverrides(sources.catalog, workspaceDirtyRecords, await discoverWorkspaceSources(sources.catalog));
+			if (type === 'lua' && (externalChange === 'newer' || externalChange === 'null-baseline-collision')) {
+				assert.equal(rejected.size, 1);
+				assert.equal(sources.catalog.resolveLuaSource(resource)!.record.src, external);
+			}
+			const editor = editorStub(sources, t);
+			await restoreWorkspaceStorageSession(editor as any, sources.catalog,
+				{ breakpoints: new RuntimeBreakpoints(sources, () => {}) }, checkpoint);
+			const recovered = editorTextModelService.get(resource)!;
+			assert.equal(recovered.buffer.getText(), draft);
+			assert.equal(recovered.lastSavedSource, original);
+			assert.equal(recovered.persistedBaseline, baseline);
+			assert.equal(recovered.dirty, true);
+			assert.equal(editor.editorParts.main.activeGroup.model.tabs.length, 0);
+			assert.equal(await resolveTextFileModel(editorTextModelService, sources.catalog, sources.catalog.resolveResource(resource)!), recovered);
+			const saves = new TextFileSaveService(editorTextModelService, workspaceEnvironment.clock, sources.catalog);
+			t.after(() => saves.shutdown());
+			const result = await saves.save(recovered).completion;
+			assert.ok(result.status === 'failed');
+			assert.equal((result.error as NodeJS.ErrnoException).code, 'ESTALE');
+			assert.equal(recovered.buffer.getText(), draft);
+			assert.equal(recovered.lastSavedSource, original);
+			assert.equal(recovered.persistedBaseline, baseline);
+			assert.equal(recovered.dirty, true);
+			assert.equal((await workspaceFiles.read(canonicalPath))?.contents ?? null, externalChange === 'removed' ? null : external);
+			persistWorkspaceSessionLocally();
+			assert.equal(workspaceState.localGeneration!.payload.dirtyFiles.length, 1);
+			recovered.revert();
+			assert.equal(recovered.buffer.getText(), original);
+			assert.equal(recovered.dirty, false);
+		});
+	}
 }
 
 test('workspace override arbitration keeps dirty and canonical namespaces separate', async (t) => {

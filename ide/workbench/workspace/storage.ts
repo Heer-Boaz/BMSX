@@ -7,7 +7,6 @@ import type { WorkspaceRecordProvider } from '../../workspace/record_provider';
 import { clearWorkspaceSourceCaches } from '../../workspace/cache';
 import {
 	buildWorkspaceDirtyEntryPath,
-	loadWorkspaceSourceFile,
 } from '../../workspace/files';
 import {
 	WORKSPACE_METADATA_DIR,
@@ -221,39 +220,13 @@ export async function restoreWorkspaceStorageSession(
 	sourceCatalog: WorkspaceSourceCatalog,
 	runtimeDebuggerState: RuntimeBreakpointState,
 	payload: WorkspaceAutosavePayload | null,
-	rejectedDirtyPaths: ReadonlySet<string>,
 ): Promise<void> {
-	let restorePayload = payload;
-	if (payload && payload.dirtyFiles.length !== 0) {
-		const dirtyFiles = [];
-		for (const entry of payload.dirtyFiles) {
-			const root = sourceCatalog.getContext(entry.contextId).projectRootPath;
-			const dirtyPath = buildWorkspaceDirtyEntryPath(
-				root,
-				entry.contextId,
-				entry.path,
-			);
-			if (!rejectedDirtyPaths.has(dirtyPath)) {
-				// Lua already chose ROM/file/draft before compilation; reuse that decision.
-				if (sourceCatalog.resolveLuaSource(entry) !== null) {
-					dirtyFiles.push(entry);
-					continue;
-				}
-				// Save can complete before recovery cleanup. Admit the checkpoint only
-				// against the same canonical record used to initialize its working copy.
-				const canonical = await loadWorkspaceSourceFile(sourceCatalog.resolveResource(entry)!.sourceFilePath!);
-				if (canonical === null || entry.updatedAt >= canonical.updatedAt) dirtyFiles.push(entry);
-			}
-		}
-
-		if (dirtyFiles.length !== payload.dirtyFiles.length) restorePayload = { ...payload, dirtyFiles };
-	}
-	if (restorePayload) {
+	if (payload) {
 		await applyWorkspaceAutosavePayload(
 			workspaceEditor,
 			sourceCatalog,
 			runtimeDebuggerState,
-			restorePayload,
+			payload,
 		);
 	}
 	editor = workspaceEditor;
@@ -263,9 +236,6 @@ export async function restoreWorkspaceStorageSession(
 	unsubscribeMainWorkspace = editor.mainWorkspace.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession));
 	unsubscribeFilesBrowser = editor.resourcePanel.onDidChange(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.FilesBrowser));
 	unsubscribeModelSaved = editorTextModelService.onDidSaveModel(() => requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles));
-	if (restorePayload !== payload) {
-		requestWorkspaceAutosave(WorkspaceAutosaveChange.DirtyFiles);
-	}
 	if (workspaceState.requestedRevision !== workspaceState.localRevision
 		|| workspaceState.remoteRevision !== workspaceState.localRevision) {
 		scheduleWorkspaceAutosave();

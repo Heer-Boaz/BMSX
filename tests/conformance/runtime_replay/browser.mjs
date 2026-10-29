@@ -63,7 +63,7 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 		if (studio) {
 			await copyFile('dist/graph-layout.worker.js', join(directory, 'graph-layout.worker.js'));
 			const cartFolder = mapCart !== null ? mapCart : sceneCart !== null ? sceneCart : navigation === null ? 'nemesis_s' : navigation;
-			const sourceRoots = mainAuthoring || activity || buildOutput ? ['carts/hot_resume_test', 'cartlib', 'testlib', 'machine/bios']
+			const sourceRoots = mainAuthoring || activity || buildOutput || session ? ['carts/hot_resume_test', 'cartlib', 'testlib', 'machine/bios']
 				: preload ? ['cartlib', 'testlib', 'machine/bios']
 				: [`carts/${cartFolder}`, `tests/carts/${cartFolder}`, 'cartlib', 'testlib', 'machine/bios'];
 			for (const root of sourceRoots) {
@@ -71,6 +71,8 @@ for (const backend of requestedBackend === undefined ? backends : [requestedBack
 					filter: async path => (await stat(path)).isDirectory() || path.endsWith('.lua') || /\.ya?ml$/.test(path) });
 			}
 		}
+		if (session) await writeFile(join(directory, 'carts/hot_resume_test/session_assert.lua'),
+			"return { kind = 'unit', tests = { session = function() end } }\n");
 		if (bootOperations) {
 			const path = join(directory, 'carts/nemesis_s/title_screen.lua');
 			await writeFile(path, (await readFile(path, 'utf8')) + '\nend end -- rejected startup source\n');

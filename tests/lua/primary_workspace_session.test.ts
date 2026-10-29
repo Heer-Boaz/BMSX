@@ -255,7 +255,7 @@ test('final shutdown persists primary state and its canonical dirty source befor
 	const storage: KeyValueStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value); }, removeItem: key => { values.delete(key); } };
 	const files = new MemoryWorkspaceFiles(), context = f.sources.catalog.getContext(f.sources.systemContextId).admission;
 	await initializeWorkspaceStorage(storage, f.host.clock, context, 'primary-checkpoint', f.sources.catalog, files, { log() {} });
-	await restoreWorkspaceStorageSession(f.editor, f.sources.catalog, f.ide.debugger, null, new Set());
+	await restoreWorkspaceStorageSession(f.editor, f.sources.catalog, f.ide.debugger, null);
 	assert.equal(await f.open(1), true);
 	f.model().pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- final unsaved edit\n' }]);
 	const expected = f.editor.mainWorkspace.serialize(), source = f.model().buffer.getText();

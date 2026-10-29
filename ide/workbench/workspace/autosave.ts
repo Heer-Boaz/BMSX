@@ -1,7 +1,7 @@
 import type { WorkspaceSourceCatalog } from '../../workspace/source_catalog';
 import type { RuntimeBreakpointState } from '../../runtime/debugger_state';
 import { editorTextModelService } from '../../editor/model/model_service';
-import { captureWorkspaceDirtySources } from '../services/working_copy/source_recovery';
+import { captureWorkspaceDirtySources, type WorkingCopyRecoveryEntry } from '../services/working_copy/source_recovery';
 import { publishWorkspaceDirtySources, pruneWorkspaceDirtySources, workspaceRecoveryRecordPath } from '../../workspace/source_recovery_store';
 import {
 	buildWorkspaceDirtyEntryPath,
@@ -21,7 +21,6 @@ import {
 	workspaceState,
 } from './state';
 import {
-	type PersistedDirtyEntry,
 	WorkspaceAutosaveChange,
 	type WorkspaceAutosavePayload,
 	type WorkspaceSessionGeneration,
@@ -45,7 +44,7 @@ export function commitWorkspaceSessionLocally(
 	const mainWorkspace = !previousGeneration || rebuildDirtyFiles || (changes & WorkspaceAutosaveChange.EditorSession)
 		? editor.mainWorkspace.serialize(previousGeneration?.payload.mainWorkspace)
 		: previousGeneration.payload.mainWorkspace;
-	let dirtyFiles: PersistedDirtyEntry[];
+	let dirtyFiles: WorkingCopyRecoveryEntry[];
 	let generationDirtyRecords: ReadonlyMap<string, WorkspaceRecord>;
 	if (rebuildDirtyFiles) {
 		const generation = captureWorkspaceDirtySources(editorTextModelService, catalog, clock, workspaceDirtyRecords,

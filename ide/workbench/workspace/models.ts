@@ -5,11 +5,10 @@ import type { SerializedEditorParts } from '../services/editor/editor_parts_seri
 import type { SerializedMainWorkspace } from '../common/main_workspace_serialization';
 import type { SerializedResourcePanel } from '../contrib/resources/panel/session';
 
-import type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
-export type { PersistedDirtyEntry } from '../../workspace/source_recovery_store';
+import type { WorkingCopyRecoveryEntry } from '../services/working_copy/source_recovery';
 
 export type WorkspaceAutosavePayload = {
-	dirtyFiles: PersistedDirtyEntry[];
+	dirtyFiles: WorkingCopyRecoveryEntry[];
 	editorParts: SerializedEditorParts;
 	mainWorkspace: SerializedMainWorkspace;
 	filesBrowser: SerializedResourcePanel;

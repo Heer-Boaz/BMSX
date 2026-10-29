@@ -582,7 +582,7 @@ test('public listeners registered before a lazy semantic project observe current
 	model.applyUndoableReplace(7, 2, '333');
 	model.commitEdit(state, null);
 	model.undo(); model.redo();
-	model.restoreDirtySource('return 4444');
+	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return 4444' }]);
 	model.revert();
 	assert.equal(observed, 8);
 	assert.equal(project.getFileData(model.resource)!.source, 'return 1');

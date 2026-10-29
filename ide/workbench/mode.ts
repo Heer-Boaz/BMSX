@@ -95,11 +95,11 @@ export async function initializeIdeFeatures(
 	} else {
 		await shutdownWorkspaceStorage();
 	}
-	const rejectedDirtyPaths = editorAvailable ? await applyAllWorkspaceSourceOverrides(
+	if (editorAvailable) await applyAllWorkspaceSourceOverrides(
 		sources.catalog,
 		workspaceDirtyRecords,
 		observedSources,
-	) : new Set<string>();
+	);
 	const state = new RuntimeIdeState(
 		runtime,
 		presenter,
@@ -134,7 +134,6 @@ export async function initializeIdeFeatures(
 		sources.catalog,
 		state.debugger,
 		workspacePayload,
-		rejectedDirtyPaths,
 	);
 	if (state.editor.editorParts.main.groups.every(group => group.model.tabs.length === 0)) openHome(state.editor.editorParts.main.activeGroup, workspaceState.context);
 	registerRuntimeShortcuts(state, runtime, input);

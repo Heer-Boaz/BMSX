@@ -1,13 +1,14 @@
 import type { HostClock, TimerHandle } from '../../../../hosts/common/clock';
 import { LogLevel, type LogOutput } from '../../../../hosts/common/log';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
+import { EditorTextModel } from '../../../editor/model/text_model';
 import { getTextSnapshot } from '../../../editor/text/source_text';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { buildWorkspaceDirtyEntryPath } from '../../../workspace/files';
 import { joinWorkspacePaths } from '../../../workspace/path';
 import { createWorkspaceRecord, WORKSPACE_METADATA_DIR, workspaceRecords, type WorkspaceRecord } from '../../../workspace/records';
 import { loadWorkspaceDirtySources, publishWorkspaceDirtySources, pruneWorkspaceDirtySources, type PersistedDirtyEntry } from '../../../workspace/source_recovery_store';
-import { resolveTextFileModel, textFileMode } from './text_file_model';
+import { textFileMode } from './text_file_model';
 
 export type WorkingCopyRecoveryEntry = PersistedDirtyEntry & { savedSource: string; persistedBaseline: string | null };
 
@@ -33,15 +34,19 @@ export function captureWorkspaceDirtySources(models: EditorTextModelService, cat
 	return { dirtyFiles, dirtyRecords };
 }
 
-export async function restoreWorkspaceDirtyModels(models: EditorTextModelService, catalog: WorkspaceSourceCatalog,
-	entries: readonly PersistedDirtyEntry[], records: ReadonlyMap<string, WorkspaceRecord>): Promise<void> {
+export function restoreWorkspaceDirtyModels(models: EditorTextModelService, catalog: WorkspaceSourceCatalog,
+	entries: readonly WorkingCopyRecoveryEntry[], records: ReadonlyMap<string, WorkspaceRecord>): boolean {
+	const recovered: EditorTextModel[] = [];
 	for (const entry of entries) {
 		const resource = catalog.resolveResource(entry);
 		if (!resource) throw new Error(`Recovered source '${entry.path}' is not admitted in source context '${entry.contextId}'.`);
-		const model = await resolveTextFileModel(models, catalog, resource);
+		const mode = textFileMode(resource);
+		if (mode === undefined) throw new Error(`Recovered resource '${entry.path}' has no text model.`);
 		const path = buildWorkspaceDirtyEntryPath(catalog.getContext(entry.contextId).projectRootPath, entry.contextId, entry.path);
-		model.restoreDirtySource(records.get(path)!.contents);
+		recovered.push(new EditorTextModel(resource, mode, records.get(path)!.contents, models.history,
+			entry.savedSource, entry.persistedBaseline, true));
 	}
+	return models.restore(recovered);
 }
 
 type RecoveryOptions = {
@@ -80,17 +85,8 @@ export class WorkspaceSourceRecovery {
 		}
 		return this.records;
 	}
-	public async restoreModels(): Promise<void> {
-		const { models, catalog } = this.options;
-		for (const entry of this.entries) {
-			const resource = catalog.resolveResource(entry);
-			if (!resource) throw new Error(`Recovered source '${entry.path}' is not admitted in source context '${entry.contextId}'.`);
-			const mode = textFileMode(resource);
-			if (mode === undefined) throw new Error(`Recovered resource '${entry.path}' has no text model.`);
-			const model = models.retain(resource, mode, entry.savedSource, entry.savedSource, entry.persistedBaseline);
-			const path = buildWorkspaceDirtyEntryPath(catalog.getContext(entry.contextId).projectRootPath, entry.contextId, entry.path);
-			model.restoreDirtySource(this.records.get(path)!.contents);
-		}
+	public restoreModels(): boolean {
+		return restoreWorkspaceDirtyModels(this.options.models, this.options.catalog, this.entries, this.records);
 	}
 	public start(): void {
 		const change = () => {

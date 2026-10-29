@@ -87,7 +87,7 @@ class HeadlessStudioRuntime {
 		const workspaceDirtyRecords = await this.recovery.initialize();
 		const observed = await discoverWorkspaceSources(catalog);
 		await applyAllWorkspaceSourceOverrides(catalog, workspaceDirtyRecords, observed);
-		await this.recovery.restoreModels();
+		if (!this.recovery.restoreModels()) throw new Error('Source recovery was cancelled by workspace retirement.');
 		this.workbench = new StudioWorkbench({ runtime: this.runtime, input: this.input, audioOutput: this.audioOutput,
 			runtimeTasks: this.tasks, execution: this.execution, rewind: this.rewind, clock: this.clock,
 			microtasks: new IdeMicrotaskQueue(), logOutput: this.log, sources, models: editorTextModelService,
