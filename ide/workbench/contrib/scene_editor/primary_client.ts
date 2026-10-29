@@ -3,7 +3,7 @@ import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { DisposableStore } from '../../../common/lifecycle';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
+import { inputFocus, type FocusCommand, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { MainWorkspace } from '../../main_workspace';
 import type { MainWorkspaceClient, MainWorkspaceRegionId, MainWorkspaceRegionSurfaces } from '../../common/main_workspace_client';
@@ -41,6 +41,7 @@ export type ScenePrimaryClientOptions = {
 	readonly focusReturn: InputFocusTarget;
 	readonly main: MainWorkspace;
 	readonly restoreNavigation: RestoreScenePrimaryBookmark;
+	createProjectRunCommand(model: EditorTextModel, target: InputFocusTarget, isRetained: () => boolean): FocusCommand;
 	save(model: EditorTextModel): void;
 };
 const PRIMARY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'editor.source' }];
@@ -77,6 +78,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 			this.hierarchy.control.update(); this.hierarchy.control.revealSelection();
 		});
 		this.authoringCommands.bind(consumer);
+		this.commandTarget.registerCommand('runProject', options.createProjectRunCommand(consumer.workingCopy, this.commandTarget, () => !this.disposed));
 		this.commandTarget.registerCommand('save', {
 			contextual: true,
 			isEnabled: () => !this.disposed && options.saves.canSave(consumer.workingCopy),

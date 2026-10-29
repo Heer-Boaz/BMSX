@@ -45,6 +45,18 @@ import { findWorkbenchWindowSurface, minimizedWorkbenchWindowCount, workbenchWin
 import { showGroupOpenEditors } from '../workbench/services/editor/open_editors';
 import { workspaceState } from '../workbench/workspace/state';
 import { WORKBENCH_VIEW_RESIZE_COMMANDS, canResizeWorkbenchView, resizeWorkbenchView } from './layout';
+import type { ActionPromptRequest } from '../workbench/contrib/modal/action_prompt_view';
+
+const ACTION_PROMPTS: Readonly<Record<Exclude<EditorActionRequest['action'], 'theme-toggle'>, ActionPromptRequest>> = {
+	'hot-resume': { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE HOT-RESUME?',
+		primary: 'SAVE & RESUME', secondary: 'RESUME WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
+	reboot: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE REBOOT?',
+		primary: 'SAVE & REBOOT', secondary: 'REBOOT WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
+	run: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE RUNNING?',
+		primary: 'SAVE & RUN', secondary: 'RUN WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
+	close: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE BEFORE HIDING THE EDITOR?',
+		primary: 'SAVE & HIDE', secondary: 'HIDE WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
+};
 
 export class IdeCommandController {
 	private readonly editorConstraints: EditorPaneConstraints = { minimumWidth: 0, minimumHeight: 0, companionWidth: undefined };
@@ -89,7 +101,7 @@ export class IdeCommandController {
 			if (implementation !== undefined) invocation = implementation.capture === undefined ? implementation : implementation.capture();
 			else {
 				invocation = captureEditorWorkspaceCommand(this.editor, this.sources, this.hotResumes, this.boots, this.execution,
-						this.overlayRenderer, this.clock, this.logOutput, this.textFileSaves, workspaceCommand!, group, documentGroup === undefined ? undefined
+						this.clock, this.textFileSaves, workspaceCommand!, group, documentGroup === undefined ? undefined
 							: { group: documentGroup, input: input === undefined ? documentGroup.model.activeTab : input },
 						this.runTargets, this.runtimeTasks, target);
 			}
@@ -338,6 +350,17 @@ export class IdeCommandController {
 			executeEditorSearchCommand(this.editor, this.sources, command, group, invocationTarget, this.clock);
 			return;
 		}
+	}
+
+	/** One unconfirmed source action owns its unsaved decision before execution admission. */
+	public requestAction(request: EditorActionRequest): void {
+		if (request.action !== 'theme-toggle' && editorTextModelService.dirtyWorkingCopies.length !== 0) {
+			void this.editor.actionPrompt.show(ACTION_PROMPTS[request.action]).then(choice => {
+				if (choice !== 'cancel') return this.executeConfirmedAction(request, choice === 'primary');
+			}).catch(error => this.editor.handleRuntimeTaskError(error, 'Source action failed'));
+			return;
+		}
+		void this.executeConfirmedAction(request, false).catch(error => this.editor.handleRuntimeTaskError(error, 'Source action failed'));
 	}
 
 	public async executeConfirmedAction(

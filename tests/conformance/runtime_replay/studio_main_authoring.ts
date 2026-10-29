@@ -13,6 +13,13 @@ import { inputFocus } from '../../../ide/input/focus';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { testProjectBrowserSession } from './studio_browser_session';
 import { testStudioBehaviorIntent } from './studio_behavior_intent';
+import { registerLuaSourceRecord } from '../../../ide/runtime/source_registry';
+import type { Blua32SourceImage } from '../../../ide/runtime/sources';
+import type { CommandQuickPickItem } from '../../../ide/workbench/contrib/commands/quick_pick_provider';
+import type { ResourceQuickPickItem } from '../../../ide/workbench/contrib/resources/quick_access';
+import type { QuickPickItem } from '../../../ide/workbench/services/quick_input/provider';
+import { SCENE_AUTHORING_SOURCE } from '../../fixtures/studio/scene_authoring';
+import { createTestSourceOnlyLuaRecord } from '../../helpers/runtime_sources';
 
 /** Standalone renderer workflow over a dedicated test cartridge and independent source fixtures. */
 export async function runStudioMainAuthoring(test: StudioFixture) {
@@ -20,6 +27,7 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 	await test.press('ControlRight', 'ShiftRight');
 	await test.runMenuCommand('pause');
 	await testMainSceneAuthoring(test);
+	await testMainProjectRun(test);
 	await testStudioBehaviorIntent(test);
 	await testProjectBrowserSession(test);
 	return { hostFrames: test.observations.hostFrames, cycles: test.cycles(), mainAuthoring: 'pass', filesBrowserRecovery: 'hybrid-pass' };
@@ -92,6 +100,11 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	const accepted = original.replace('x = 1,', 'x = 12,');
 	check(model.buffer.getText() === accepted && !field.pending && model.dirty,
 		'main: acceptance publishes one canonical coordinate edit');
+	await press('ControlLeft', 'ShiftLeft', 'KeyP');
+	check(editor.quickInput.visible && (editor.quickInput.model.items as readonly CommandQuickPickItem[])
+		.every(item => item.command !== 'runProject' && item.command !== 'runCurrentFile'),
+		'main: an independent source-only project cannot borrow the installed cartridge or a background document to Run');
+	await press('Escape');
 	const selected = { ...client.consumer.selectionRange };
 	await press('ContextMenu'); await test.clickContextCommand('editor.source');
 	await test.until(() => {
@@ -197,6 +210,91 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'main: source-only authoring never executes or installs a cartridge');
+}
+
+/** A newly authored source-only Scene still belongs to its actual installed project's existing entry program. */
+async function testMainProjectRun(test: StudioFixture): Promise<void> {
+	const { ide } = test;
+	const editor = ide.editor, catalog = ide.sources.catalog, image = ide.sources.currentBlua32Media.cartridgeSlots[0]!;
+	const context = catalog.getContext(image.sourceContextId), path = 'studio_main_project_run.lua';
+	check(context.programDomain === 'cart' && context.luaSources.can_boot_from_source,
+		'main run: the dedicated test cartridge already owns a source-bootable installed program');
+	const record = createTestSourceOnlyLuaRecord(path, SCENE_AUTHORING_SOURCE, `${context.projectRootPath}/${path}`);
+	registerLuaSourceRecord(context.luaSources, record);
+	const resource = catalog.registerLuaResource(context.id, record);
+	// Workspace opening already admits the actual cartlib dependency independently of packed ROM membership.
+	const before = test.cycles(), media = ide.sources.currentBlua32Media, boot = ide.boots.latestOperation;
+	const target = ide.runTargets.selected, panel = editor.resourcePanel, panelWasVisible = panel.isVisible();
+	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
+	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
+	await test.clickContextCommand('resources.editInMain');
+	const client = editor.mainWorkspace.primary;
+	check(client instanceof ScenePrimaryClient && client.consumer.workingCopy.resource === resource,
+		'main run: Files admits the newly authored Scene in the actual installed project');
+	if (!(client instanceof ScenePrimaryClient)) throw new Error('main run: actual primary Scene required');
+	await test.press('ControlLeft', 'KeyB');
+	await test.press('ArrowDown'); await test.press('Enter'); await test.press('Home');
+	check(client.consumer.selection?.kind === 'member' && client.consumer.selection.index === 0,
+		'main run: ordinary hierarchy navigation selects the first authored member');
+
+	// Keep a genuinely unrelated document visible: it must never supply the Run project subject.
+	await test.runPaletteCommand('Go: Go to File');
+	await test.clipboard.writeText('scene.lua'); await test.press('ControlLeft', 'KeyV');
+	const filePicker = editor.quickInput, fileRows = filePicker.model.list.rows;
+	const independentIndex = fileRows.findIndex(row => {
+		const resource = (row.item as ResourceQuickPickItem).resource;
+		return resource.contextId === 'fixture-studio-scene-main' && resource.path === 'scene.lua';
+	});
+	check(independentIndex >= 0, 'main run: the previous independent source fixture is an ordinary file choice');
+	for (let index = 0; index < independentIndex; index++) await test.press('ArrowDown');
+	await test.press('Enter');
+	await test.until(() => editor.editorParts.main.activeGroup.model.activeTab?.resource?.contextId === 'fixture-studio-scene-main',
+		'main run: Go to File presents the independent document without changing Main');
+	const group = editor.editorParts.main.activeGroup, independent = group.model.activeTab;
+	const model = client.consumer.workingCopy, original = model.buffer.getText(), accepted = original.replace('x = 1,', 'x = 12,');
+	const field = client.details.control.controls[0];
+	for (let font = 0; font < 2; font++) {
+		for (let theme = 0; theme < 2; theme++) {
+			await test.runPaletteCommand('Workspace: Focus Details');
+			await test.click(client.view.details.properties[0].bounds); await test.press('Digit1'); await test.press('Digit2');
+			check(field.pending && field.field.text === '12' && model.buffer.getText() === original,
+				'main run: the actual Main field owns its pending draft before Palette blur');
+			await test.press('ControlLeft', 'ShiftLeft', 'KeyP');
+			const actions = editor.quickInput.model.items as readonly CommandQuickPickItem[];
+			check(editor.quickInput.visible && actions.some(item => item.command === 'runProject')
+				&& actions.every(item => item.command !== 'runCurrentFile'),
+				'main run: the native Palette offers the installed project operation, never Run Current File for an authored Scene');
+			await test.clipboard.writeText('Run: Run Project'); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
+			const picker = editor.editorParts.main.quickInput;
+			const choices = picker.model.items as readonly (QuickPickItem & { domain: 0 | 1; image: Blua32SourceImage })[];
+			check(picker.visible && !picker.inputBox && choices.length === 1 && choices[0].domain === 0 && choices[0].image === image,
+				'main run: Palette offers only the exact installed attachment owned by Main, never the visible independent document');
+			check(!field.pending && model.buffer.getText() === accepted && model.dirty,
+				'main run: ordinary outgoing field blur publishes the accepted draft before project selection');
+			await test.capture?.(`main-run-${editor.fontVariant}-theme-${theme}-attachment`);
+			await test.press('Enter');
+			check(editor.actionPrompt.visible && model.buffer.getText() === accepted && model.dirty && !field.pending,
+				'main run: choosing the installed project reaches the real unsaved-source decision with the accepted Main edit');
+			await test.capture?.(`main-run-${editor.fontVariant}-theme-${theme}-unsaved`);
+			await test.press('Escape');
+			check(!editor.actionPrompt.visible && ide.boots.latestOperation === boot && ide.sources.currentBlua32Media === media
+				&& ide.runTargets.selected === target && test.cycles() === before && group.model.activeTab === independent
+				&& editor.mainWorkspace.primary === client,
+				'main run: cancelling never starts Boot, installs media, executes guest input, changes targets or replaces either authored subject');
+			await test.runPaletteCommand('Workspace: Focus Hierarchy'); await test.press('ControlLeft', 'KeyZ');
+			check(model.buffer.getText() === original && !model.dirty, 'main run: native primary Undo cleans the accepted test edit');
+			await test.press('ControlLeft', 'AltLeft', 'KeyT');
+		}
+		await test.press('ControlLeft', 'ShiftLeft', 'KeyT');
+	}
+	await test.runPaletteCommand('Workspace: Clear Primary Authoring');
+	check(editor.mainWorkspace.primary === undefined && group.model.activeTab === independent,
+		'main run: explicit clear releases Main without replacing the independent document');
+	await test.press('ControlLeft', 'KeyW');
+	if (panelWasVisible !== panel.isVisible()) await test.press('ControlLeft', 'KeyB');
+	check(model.buffer.getText() === original && !model.dirty && ide.boots.latestOperation === boot
+		&& ide.sources.currentBlua32Media === media && ide.runTargets.selected === target && test.cycles() === before,
+		'main run: the complete visible workflow leaves only a clean source-only fixture and never boots or saves it');
 }
 
 /** Palette sizing addresses the captured native region and retains its independent authoring and Source reading. */

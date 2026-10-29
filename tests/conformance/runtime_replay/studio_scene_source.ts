@@ -2,8 +2,7 @@ import { createLuaSourceRegistry, registerLuaSourceRecord } from '../../../ide/r
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
-import { createTestToolingPackage } from '../../helpers/runtime_sources';
-import { createScenarioTestSourceRecord } from '../../helpers/scenario_sources';
+import { createTestSourceOnlyLuaRecord, createTestToolingPackage } from '../../helpers/runtime_sources';
 import { SCENE_AUTHORING_SOURCE } from '../../fixtures/studio/scene_authoring';
 import { check, type StudioFixture } from './studio_fixture';
 
@@ -16,9 +15,7 @@ export async function openSceneFixture(test: StudioFixture, name: string, additi
 		['readonly.lua', SCENE_AUTHORING_SOURCE, true],
 		['cartlib/world/scene_library.lua', 'return {}', false],
 		...additionalSources.map(([path, source]) => [path, source, false] as const),
-	] as const) registerLuaSourceRecord(registry, {
-		...createScenarioTestSourceRecord(path, 1, source, `${root}/${path}`), generated,
-	});
+	] as const) registerLuaSourceRecord(registry, createTestSourceOnlyLuaRecord(path, source, `${root}/${path}`, generated));
 	const catalog = test.ide.sources.catalog;
 	const context = catalog.admitContext({ admission: { id: `fixture-studio-scene-${name}`, projectRoot: root },
 		programDomain: 'cart', systemContextId: null, luaSources: registry,

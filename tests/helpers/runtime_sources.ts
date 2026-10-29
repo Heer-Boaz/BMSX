@@ -10,7 +10,7 @@ import {
 	enterSystemSources,
 	type RuntimeSourceState,
 } from '../../ide/runtime/sources';
-import type { LuaSourceRegistry, LuaSourceRoot } from '../../ide/runtime/source_registry';
+import type { LuaSourceRecord, LuaSourceRegistry, LuaSourceRoot } from '../../ide/runtime/source_registry';
 import { WorkspaceSourceCatalog } from '../../ide/workspace/source_catalog';
 import { PSX_MACHINE_SPEC } from '../../machine/ts/spec/bmsx/model';
 import type { InputControllerInputSource } from '../../machine/ts/machine/devices/input/contracts';
@@ -30,6 +30,7 @@ import type { RomToolingLayer } from '../../toolchain/ts/rompack/loader';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import { cartridgeSlots } from './cartridge';
 import { decodeRomToc } from '../../machine/ts/rompack/toc';
+import { toLuaModulePath } from '../../toolchain/ts/lua/module_path';
 
 class TestInputSource implements InputControllerInputSource {
 	public sampleInputControllerSnapshot(): void {
@@ -66,6 +67,13 @@ export function createTestToolingPackage(projectRootPath: string): RomToolingPac
 		project_root_path: projectRootPath,
 		cart_manifest: null,
 	};
+}
+
+/** Ordinary authored data, without the asset identity that admits a Scenario test suite. */
+export function createTestSourceOnlyLuaRecord(path: string, source: string, normalizedSourcePath: string, generated = false): LuaSourceRecord {
+	return { resid: path, type: 'lua', src: source, base_src: source, source_path: path, normalized_source_path: normalizedSourcePath,
+		module_path: toLuaModulePath(path), update_timestamp: 1, base_update_timestamp: 1, generated,
+		sourceKind: 'source-only', program_module: false };
 }
 
 function cartridgeIndex(projectRootPath: string): PackedCartridgeIndex {

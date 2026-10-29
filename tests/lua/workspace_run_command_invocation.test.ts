@@ -140,7 +140,7 @@ for (const command of ['runCurrentFile', 'runProject'] as const) {
 		assert.ok(f.group.model.activeTab === f.first); assert.equal(draft.control.pending, false);
 	});
 
-	test(`${command} Main implicit origin cannot borrow its runnable document while explicit retained input remains authoritative`, async t => {
+	test(`${command} Main ${command === 'runProject' ? 'uses its own project namespace' : 'cannot borrow a runnable document'} while explicit retained input remains authoritative`, async t => {
 		const f = await fixture(t), parts = f.editor.editorParts, group = parts.main.activeGroup;
 		assert.equal(parts.moveEditor(f.group, f.first, { kind: 'group', group }), true);
 		const explicit = f.second.createView();
@@ -155,19 +155,31 @@ for (const command of ['runCurrentFile', 'runProject'] as const) {
 		assert.equal(control.field.replaceText(0, control.field.text.length, '17'), true);
 		const version = model.version, text = model.buffer.getText(), target = primary.commandTarget;
 		assert.equal(f.editor.commands.isEnabled(command, documentTarget), true);
-		assert.equal(f.editor.commands.isEnabled(command, target), false);
-		f.editor.commands.execute(command, target);
-		f.editor.commands.execute(command, target, undefined, documentTarget); f.update();
-		assert.equal(parts.main.quickInput.visible, false); assert.equal(f.part.quickInput.visible, false);
-		assert.equal(f.editor.actionPrompt.visible, false); assert.equal(f.requests.length, 0);
-		assert.equal(model.version, version); assert.equal(model.buffer.getText(), text); assert.equal(control.pending, true);
-		assert.ok(group.model.activeTab === f.first && inputFocus.target === control.field.focusTarget);
+		assert.equal(f.editor.commands.isEnabled(command, target), command === 'runProject');
+		f.editor.commands.execute(command, target); f.update();
+		if (command === 'runProject') {
+			assert.equal(parts.main.quickInput.visible, true); assert.equal(parts.main.quickInput.model.items.length, 1);
+			assert.equal(model.version, version + 1); assert.equal(model.buffer.getText(), text.replace('x = 11', 'x = 17'));
+			assert.equal(control.pending, false); assert.equal(f.part.quickInput.visible, false);
+			await parts.main.quickInput.accept(); assert.equal(f.editor.actionPrompt.visible, true);
+			f.editor.actionPrompt.close('secondary'); await setImmediate();
+			assert.equal(f.requests.length, 1); const own = f.requests[0]; assert.ok(own.action === 'run');
+			assert.ok(own.expectedImage === f.sources.currentBlua32Media.cartridgeSlots[0]); assert.deepEqual(own.entry, { domain: 0 });
+		} else {
+			f.editor.commands.execute(command, target, undefined, documentTarget); f.update();
+			assert.equal(parts.main.quickInput.visible, false); assert.equal(f.part.quickInput.visible, false);
+			assert.equal(f.editor.actionPrompt.visible, false); assert.equal(f.requests.length, 0);
+			assert.equal(model.version, version); assert.equal(model.buffer.getText(), text); assert.equal(control.pending, true);
+			assert.ok(inputFocus.target === control.field.focusTarget);
+		}
+		assert.ok(group.model.activeTab === f.first);
+		const previous = f.requests.length;
 		assert.equal(f.editor.commands.isEnabled(command, target, explicit), true);
 		f.editor.commands.execute(command, target, explicit); f.update();
 		assert.equal(parts.main.quickInput.visible, true); assert.equal(parts.main.quickInput.model.items.length, 1);
 		f.key('Enter'); await setImmediate(); assert.equal(f.editor.actionPrompt.visible, true);
 		f.editor.actionPrompt.close('secondary'); await setImmediate();
-		assert.equal(f.requests.length, 1); const request = f.requests[0]; assert.ok(request.action === 'run');
+		assert.equal(f.requests.length, previous + 1); const request = f.requests[previous]; assert.ok(request.action === 'run');
 		assert.ok(request.expectedImage === f.sources.currentBlua32Media.cartridgeSlots[1]);
 		assert.deepEqual(request.entry, command === 'runCurrentFile' ? { domain: 1, sourcePath: explicit.resource.path } : { domain: 1 });
 	});

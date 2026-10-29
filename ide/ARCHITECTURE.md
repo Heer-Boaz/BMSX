@@ -454,7 +454,15 @@ its explicit client context without borrowing the active document group.
 `commands/context.ts` resolves optional document authority independently of an
 opening destination;
 workspace commands consume that retained subject rather than infer one from the
-receiving group. Named Main clients expose their own document capabilities. Command
+receiving group. Named Main clients expose their own document capabilities.
+`commands/run_source.ts` owns installed-source attachment eligibility and explicit
+physical attachment choice. Native project commands bind a retained canonical
+model and capture their own invocation scope; their source context is independent
+of Scene availability and the active document. Source-location and working-copy
+enumeration capabilities do not grant launch authority. Project and file launches
+remain distinct requests. `IdeCommandController` owns the unsaved-source decision
+and confirmed action admission; accepted execution belongs to the existing Boot
+and run-target owners, independently of completion presentation. Command
 descriptors declare native-control addressing for physical view actions; Palette
 enablement and execution retain that same invoker independently of the captured
 semantic editor target. Contribution-owned command capture retains invocation

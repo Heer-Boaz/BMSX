@@ -106,6 +106,7 @@ import type { RestoreScenePrimaryBookmark } from './workbench/contrib/scene_edit
 import type { EditorTextModel } from './editor/model/text_model';
 import type { InputFocusTarget } from './input/focus';
 import { saveTextFileFromCommand } from './commands/source_save';
+import { createProjectRunCommand } from './commands/run_source';
 import { QuickInputController } from './workbench/services/quick_input/controller';
 import { SceneEditorPane } from './workbench/contrib/scene_editor/editor_pane';
 import type { Input } from '../hosts/common/input/manager';
@@ -649,6 +650,7 @@ export class RuntimeCartEditor implements CartEditor {
 			workArea: getWorkbenchWorkArea(), main: this.mainWorkspace,
 			focusReturn: this.editorParts.main.focusTarget,
 			restoreNavigation: this.restoreSceneNavigation,
+			createProjectRunCommand: (model, target, isRetained) => createProjectRunCommand(this, sources, boots, runtimeTasks, workbench.runTargets, model, target, isRetained),
 			save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
 		};
 		this.crossFileRename = new CrossFileRenameManager(this.sources.catalog);

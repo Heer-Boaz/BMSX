@@ -44,6 +44,7 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 		this.scope = options.scope; this.copies = model === undefined ? [] : [model];
 		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
 		this.commandTarget.canFocus = () => false;
+		if (model !== undefined) this.commandTarget.registerCommand('runProject', options.createProjectRunCommand(model, this.commandTarget, () => !this.disposed));
 		if (model !== undefined) this.commandTarget.registerCommand('save', {
 			contextual: true, isEnabled: () => !this.disposed && options.saves.canSave(model),
 			run: () => options.save(model),

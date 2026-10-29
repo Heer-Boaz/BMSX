@@ -6,35 +6,18 @@ import { openCreateResourcePrompt } from '../workbench/contrib/resources/create/
 import { TextEditorInput } from '../workbench/common/editor_input';
 import type { TextFileSaveService } from '../workbench/services/working_copy/text_file_save';
 import { saveTextFileFromCommand } from './source_save';
-import { editorTextModelService } from '../editor/model/model_service';
-import { captureEditorActionPresentation, performEditorAction } from './actions';
+import { captureEditorActionPresentation } from './actions';
 import type { BootService } from '../workbench/services/execution/boot';
 import type { HotResumeService } from '../workbench/services/execution/hot_resume';
 import type { HostClock } from '../../hosts/common/clock';
-import type { LogOutput } from '../../hosts/common/log';
 import type { EditorCommandId, EditorResourceCreationCommandId, EditorWorkspaceCommandId } from '../common/commands';
 import type { NewSourceKind } from '../workbench/contrib/resources/create/source_templates';
 import type { CartEditor } from '../cart_editor';
-import type { Blua32SourceImage, RuntimeSourceState } from '../runtime/sources';
-import type { OverlayRenderer } from '../runtime/overlay_renderer';
-import type { EditorActionRequest } from './action_request';
-import { CARTRIDGE_RESOURCE_DOMAINS } from '../common/resource';
-import { TextQuickPickProvider } from '../workbench/services/quick_input/text_provider';
-import type { ActionPromptRequest } from '../workbench/contrib/modal/action_prompt_view';
+import type { RuntimeSourceState } from '../runtime/sources';
+import { canRunSource, showSourceRunPicker } from './run_source';
 import type { RunTargetSelection } from '../workbench/services/execution/run_target';
 import type { RuntimeTaskQueue } from '../../hosts/common/runtime_task_queue';
 import { inputFocus, type FocusCommandInvocation, type InputFocusTarget } from '../input/focus';
-
-const ACTION_PROMPTS: Readonly<Record<Exclude<EditorActionRequest['action'], 'theme-toggle'>, ActionPromptRequest>> = {
-	'hot-resume': { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE HOT-RESUME?',
-		primary: 'SAVE & RESUME', secondary: 'RESUME WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
-	reboot: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE REBOOT?',
-		primary: 'SAVE & REBOOT', secondary: 'REBOOT WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
-	run: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE CHANGES BEFORE RUNNING?',
-		primary: 'SAVE & RUN', secondary: 'RUN WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
-	close: { title: 'UNSAVED CHANGES DETECTED.', message: 'SAVE BEFORE HIDING THE EDITOR?',
-		primary: 'SAVE & HIDE', secondary: 'HIDE WITHOUT SAVING', primaryEnabled: true, defaultChoice: 'primary' },
-};
 
 const RESOURCE_CREATION_KINDS: Readonly<Record<EditorResourceCreationCommandId, NewSourceKind>> = {
 	createResource: 'empty', 'aem.create': 'aem', 'animation.create': 'animation', 'animation.createSprite': 'sprite_animation',
@@ -73,13 +56,13 @@ export function isEditorWorkspaceCommandEnabled(command: EditorWorkspaceCommandI
 		case 'runCurrentFile': {
 			if (group === undefined) return false;
 			const resource = input?.resource;
-			if (!boots.acceptingRequests || !tasks.ready || resource === undefined
+			if (resource === undefined
 				|| sources.catalog.getContext(resource.contextId).programDomain !== 'cart') return false;
 			const source = sources.catalog.resolveLuaSource(resource);
-			return source !== null && source.record.sourceKind !== 'source-only' && !source.record.generated;
+			return source !== null && source.record.sourceKind !== 'source-only' && !source.record.generated
+				&& canRunSource(sources, boots, tasks, 'file', resource.contextId);
 		}
-		case 'runProject': return group !== undefined && boots.acceptingRequests && tasks.ready
-			&& sources.cartridgeSlots.some(cart => cart !== null && sources.catalog.getContext(cart.contextId).luaSources.can_boot_from_source);
+		case 'runProject': return group !== undefined && canRunSource(sources, boots, tasks, 'project', input?.resource?.contextId);
 		case 'createResource': case 'aem.create': case 'animation.create': case 'animation.createSprite':
 		case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect':
 		case 'theme-toggle': return true;
@@ -93,9 +76,7 @@ export function captureEditorWorkspaceCommand(
 	hotResumes: HotResumeService,
 	boots: BootService,
 	execution: HostExecutionControl,
-	overlayRenderer: OverlayRenderer,
 	clock: HostClock,
-	logOutput: LogOutput,
 	textFileSaves: TextFileSaveService,
 	command: EditorWorkspaceCommandId,
 	destination: EditorGroupView,
@@ -106,15 +87,6 @@ export function captureEditorWorkspaceCommand(
 ): FocusCommandInvocation | undefined {
 	const enabled = () => isEditorWorkspaceCommandEnabled(command, document?.group, document?.input,
 		sources, textFileSaves, hotResumes, boots, execution, tasks);
-	const requestAction = (request: EditorActionRequest): void => {
-		if (request.action !== 'theme-toggle' && editorTextModelService.dirtyWorkingCopies.length !== 0) {
-			void editor.actionPrompt.show(ACTION_PROMPTS[request.action]).then(choice => {
-				if (choice !== 'cancel') return editor.commands.executeConfirmedAction(request, choice === 'primary');
-			}).catch(error => editor.handleRuntimeTaskError(error, 'Source action failed'));
-			return;
-		}
-		performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, logOutput, request, runTargets);
-	};
 	switch (command) {
 		case 'save':
 			if (!enabled()) return;
@@ -123,21 +95,23 @@ export function captureEditorWorkspaceCommand(
 		case 'progression.createProgram': case 'input.createBindings': case 'behaviorLens.createEffect':
 			return { isEnabled: enabled,
 				run: () => openCreateResourcePrompt(editor, destination, sources.catalog, clock, document?.input?.resource, RESOURCE_CREATION_KINDS[command]) };
-		case 'theme-toggle': return { isEnabled: enabled, run: () => requestAction({ action: command }) };
+		case 'theme-toggle': return { isEnabled: enabled, run: () => editor.commands.requestAction({ action: command }) };
 		case 'hot-resume': case 'reboot': {
 			const presentation = captureEditorActionPresentation(target);
 			return { editScope: target?.commandContext.scope, isEnabled: enabled,
-				run: () => requestAction({ action: command, presentation }) };
+				run: () => editor.commands.requestAction({ action: command, presentation }) };
 		}
 	}
 	if (document === undefined) return;
 	const { group, input: subject } = document;
 	const part = editor.editorParts.partForGroup(group);
+	const membership = subject === null ? undefined : group.model.captureMembership(subject);
+	if (subject !== null && membership === undefined) return;
 	const resource = subject?.resource;
 	const pane = group.panes.activePane, attachment = group.panes.openGeneration;
 	const attached = pane !== null && pane.input === subject;
 	const current = () => !part.retired && !group.surface.retired && editor.editorParts.partForGroup(group) === part
-		&& (subject === null || group.model.contains(subject))
+		&& (subject === null || membership!())
 		&& (!attached || group.panes.openGeneration === attachment && group.panes.activePane === pane);
 	const presentation = command === 'save' ? undefined : captureEditorActionPresentation(target);
 	const editScope = command === 'save' ? attached ? pane.inputScope : undefined
@@ -156,24 +130,11 @@ export function captureEditorWorkspaceCommand(
 				}
 				case 'runCurrentFile':
 				case 'runProject': {
-					const projects: Array<{ domain: 0 | 1; image: Blua32SourceImage; label: string; description: string; detail: string }> = [];
-					for (const domain of CARTRIDGE_RESOURCE_DOMAINS) {
-						const image = sources.currentBlua32Media.cartridgeSlots[domain];
-						if (image === null || resource !== undefined && image.sourceContextId !== resource.contextId) continue;
-						const context = sources.catalog.getContext(image.sourceContextId);
-						if (command === 'runProject' && !context.luaSources.can_boot_from_source) continue;
-						projects.push({ domain, image, label: context.projectRootPath, description: `Physical ${domain}`,
-							detail: command === 'runCurrentFile' ? resource!.path : 'Run this installed source context' });
-					}
-					part.quickInput.pick(command === 'runCurrentFile' ? 'RUN CURRENT FILE' : 'RUN PROJECT', 'Choose the actual installed execution attachment', (_origin, lifetime) => {
+					showSourceRunPicker(editor, sources, boots, tasks, runTargets, part.quickInput,
+						command === 'runCurrentFile' ? { kind: 'file', resource: resource! } : { kind: 'project', contextId: resource?.contextId },
+						current, presentation, lifetime => {
 						lifetime.add({ dispose: group.onWillDispose(() => part.quickInput.hide()) });
 						if (subject !== null) lifetime.add({ dispose: subject.onWillDispose(() => part.quickInput.hide()) });
-						return new TextQuickPickProvider(projects);
-					}, project => {
-						if (!current() || sources.currentBlua32Media.cartridgeSlots[project.domain] !== project.image) return;
-						requestAction({ action: 'run', expectedImage: project.image, selectionRequest: runTargets.request(), entry: command === 'runCurrentFile'
-							? { domain: project.domain, sourcePath: resource!.path } : { domain: project.domain },
-							presentation });
 					});
 					return;
 				}
