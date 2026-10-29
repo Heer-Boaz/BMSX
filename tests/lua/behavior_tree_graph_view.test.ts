@@ -174,7 +174,7 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);
 	installBehaviorLensDocument(view, f.project());
 	prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-	assert.equal(view.selection, null);
+	assert.equal(view.selectionState.selected, null);
 	assert.equal(viewport.selection, null);
 	const secondDefinition = view.document.definitions[1];
 	selectBehaviorLensDefinition(view, secondDefinition.rowKey);

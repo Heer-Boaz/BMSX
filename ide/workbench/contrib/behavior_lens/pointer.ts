@@ -59,7 +59,7 @@ export class BehaviorLensPointer implements PointerHoverTarget {
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 			this.cancel();
 			if (rowIndex >= 0) selectBehaviorLensRow(state, outline, rowIndex);
-			else state.selection = null;
+			else state.selectionState.select(null);
 			return BehaviorLensPointerResult.ContextMenu;
 		}
 		if (!justPressed || rowIndex < 0) {

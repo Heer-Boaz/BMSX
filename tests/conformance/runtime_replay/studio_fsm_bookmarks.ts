@@ -9,7 +9,7 @@ import { chooseBehavior } from './studio_behavior_picker';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 function selectedOutcome(view: BehaviorLensViewState) {
-	const selection = view.selection;
+	const selection = view.selectionState.selected;
 	if (selection?.kind !== 'state-outcome') throw new Error('FSM bookmark: exact outcome selection required');
 	return selection;
 }
@@ -71,7 +71,7 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 		const restored = selectedOutcome(view);
 		check(restored.outcome.target.kind === 'path' && restored.outcome.target.text === '../other'
 			&& restored.outcome === restored.transition.outcomes[outcomeIndex]
-			&& view.definitionRowKey === view.document.definitions[1].rowKey,
+			&& view.selectionState.definitionRowKey === view.document.definitions[1].rowKey,
 			'FSM bookmark: retarget keeps the selected registration and exact return, not an equal path');
 		check(graph.viewport.selection?.kind === 'edge' && graph.viewport.selection.link.target.source.label === 'other',
 			'FSM bookmark: the new geometry highlights the retargeted evidence');
@@ -111,7 +111,7 @@ async function runBookmarks(test: StudioFixture, imported: boolean): Promise<voi
 			&& graph.viewport.selection.link.target.source.label === 'other', 'FSM bookmark: graph palette Redo restores result text and selection together');
 		const retained = graph.viewport.model;
 		for (let index = 0; index < 20; index += 1) await frame();
-		check(graph.viewport.model === retained && view.selectionBookmark === undefined, 'FSM bookmark: stable frames never replay history');
+		check(graph.viewport.model === retained && view.selectionState.pendingBookmark === undefined, 'FSM bookmark: stable frames never replay history');
 		await runPaletteCommand('Edit: Undo'); await ready();
 	}
 	await test.clickTab(code.id);

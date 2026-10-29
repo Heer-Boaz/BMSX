@@ -51,7 +51,7 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	transferBehaviorFixtureSelection(model, view, selected.member, target);
 	await frame();
 	const after = viewport.selection;
-	check(model.version === version + 1 && view.definitionRowKey === view.document.definitions[1].rowKey
+	check(model.version === version + 1 && view.selectionState.definitionRowKey === view.document.definitions[1].rowKey
 		&& after?.kind === 'node' && after.member!.index === 1 && after.parent!.member!.index === 2,
 		'bookmark: one edit selects the new parent, correct registration and second shared destination use');
 	if (after?.kind !== 'node') throw new Error('bookmark: selected result missing');
@@ -84,14 +84,14 @@ export async function testStudioSourceBookmarks(test: StudioFixture): Promise<vo
 	check(model.buffer.getText() === BT_TRANSFER_SOURCE && view.document === hiddenDocument, 'bookmark: code Undo delivers selection without rebuilding a hidden lens');
 	await test.clickTab(lens.id);
 	check(viewport.selection?.kind === 'node' && viewport.selection.parent!.member!.index === 0
-		&& view.definitionRowKey === view.document.definitions[1].rowKey, 'bookmark: source projection resolves the recorded original parent when reopened');
+		&& view.selectionState.definitionRowKey === view.document.definitions[1].rowKey, 'bookmark: source projection resolves the recorded original parent when reopened');
 	await runPaletteCommand('Edit: Redo');
 	check(model.buffer.getText() === transferred && viewport.selection?.kind === 'node' && viewport.selection.parent!.member!.index === 2,
 		'bookmark: palette Redo restores the recorded result, without another selection history');
 	const retained = view.document;
 	const geometry = viewport.model;
 	for (let index = 0; index < 20; index += 1) await frame();
-	check(view.document === retained && viewport.model === geometry && view.selectionBookmark === undefined,
+	check(view.document === retained && viewport.model === geometry && view.selectionState.pendingBookmark === undefined,
 		'bookmark: stable frames retain the same source and geometry; no pending bookmark is replayed');
 	await runPaletteCommand('Edit: Undo');
 	await test.clickTab(code.id);

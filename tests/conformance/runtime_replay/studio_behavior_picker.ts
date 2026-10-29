@@ -35,7 +35,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 			}
 			if (index > 0 && node.collapsed) await test.press('ArrowRight');
 		}
-		check(view.selection?.rowKey === key, 'property navigation selects the original source occurrence, not its category');
+		check(view.selectionState.selected?.rowKey === key, 'property navigation selects the original source occurrence, not its category');
 		return;
 	}
 	if (view.presentation.kind === 'state-graph') {
@@ -50,7 +50,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		await test.press('Home');
 		const ownerIndex = graph.viewport.model.nodes.indexOf(graph.viewport.model.nodesBySource.get(owner)!);
 		for (let step = 0; step < ownerIndex; step += 1) await test.press('ArrowDown');
-		check(view.selection!.rowKey === owner, 'FSM navigation: traversal reaches the owning state');
+		check(view.selectionState.selected!.rowKey === owner, 'FSM navigation: traversal reaches the owning state');
 		if (owner === key) return;
 		await test.runPaletteCommand('Behavior Lens: Open Source Details');
 		const inspector = (test.ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane).inspector;
@@ -62,7 +62,7 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 		for (let step = 0; step < index; step += 1) await test.press('ArrowDown');
 		await test.press('Enter');
 		await test.clickTab(lens.id);
-		check(view.selection!.rowKey === key, 'FSM navigation: Details preserves field source selection on returning to the graph');
+		check(view.selectionState.selected!.rowKey === key, 'FSM navigation: Details preserves field source selection on returning to the graph');
 		check(graph.viewport.selection === null, 'FSM navigation: a source-only field does not leave an unrelated card highlighted');
 		return;
 	}
@@ -75,14 +75,14 @@ export async function revealLensOccurrence(test: StudioFixture, view: BehaviorLe
 	if (view.presentation.kind === 'graph') {
 		const path = new Set([...ancestors, key]);
 		await test.press('Home');
-		while (view.selection?.rowKey !== key) {
-			const before = view.selection?.rowKey;
+		while (view.selectionState.selected?.rowKey !== key) {
+			const before = view.selectionState.selected?.rowKey;
 			await test.press('ArrowDown');
-			check(view.selection?.rowKey !== before, 'navigation: graph child navigation makes progress');
-			while (!path.has(view.selection!.rowKey)) {
-				const sibling = view.selection?.rowKey;
+			check(view.selectionState.selected?.rowKey !== before, 'navigation: graph child navigation makes progress');
+			while (!path.has(view.selectionState.selected!.rowKey)) {
+				const sibling = view.selectionState.selected?.rowKey;
 				await test.press('ArrowRight');
-				check(view.selection?.rowKey !== sibling, 'navigation: graph sibling navigation reaches the authored path');
+				check(view.selectionState.selected?.rowKey !== sibling, 'navigation: graph sibling navigation reaches the authored path');
 			}
 		}
 		return;
@@ -124,7 +124,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	if (lens.kind !== 'behavior_lens') throw new Error('behavior picker: selected lens missing');
 	check(lens.workingCopy === model,
 		'behavior picker: selects the second registration, not the first definition or the current code cursor');
-	const secondKey = lens.view.source.nodesByRowKey.get(lens.view.selection!.rowKey)!.rowKey;
+	const secondKey = lens.view.source.nodesByRowKey.get(lens.view.selectionState.selected!.rowKey)!.rowKey;
 	await click(lens.view.presentation.actionBar.items[0].bounds);
 	check(harness.getActiveEditorDocument().model === model && harness.getActiveEditorDocument().view.cursorRow === secondLine
 		&& harness.getActiveEditorDocument().view.cursorColumn === lines[secondLine].indexOf('picker_shared'),
@@ -133,7 +133,7 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	await chooseBehavior(test, 'FSM picker.first');
 	const first = ide.editor.editorParts.activeGroup.model.activeTab;
 	check(first.kind === 'behavior_lens' && first !== lens && first.workingCopy === model
-		&& lens.view.definitionRowKey === secondKey,
+		&& lens.view.selectionState.definitionRowKey === secondKey,
 		'behavior picker: separate FSM inputs share one model without overwriting the earlier definition');
 	await runPaletteCommand('Scenario Lab: Open');
 	await runPaletteCommand('Behavior Lens: Open');
@@ -150,14 +150,14 @@ export async function testStudioBehaviorPicker(test: StudioFixture): Promise<voi
 	const duplicate = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (duplicate.kind !== 'behavior_lens') throw new Error('behavior picker: duplicate input missing');
 	check(duplicate !== lens && duplicate.workingCopy === model, 'behavior picker: pointer selection opens a distinct definition view');
-	const selected = duplicate.view.source.nodesByRowKey.get(duplicate.view.selection!.rowKey)!;
+	const selected = duplicate.view.source.nodesByRowKey.get(duplicate.view.selectionState.selected!.rowKey)!;
 	check(selected.referenceRange!.start.line === lastLine + 1,
 		'behavior picker: exact duplicate occurrence is selected and revealed');
 	const focus = inputFocus.target;
 	await runPaletteCommand('Behavior Lens: Open');
 	await press('Escape');
 	check(inputFocus.target === focus && ide.editor.editorParts.activeGroup.model.activeTab === duplicate
-		&& duplicate.view.source.nodesByRowKey.get(duplicate.view.selection!.rowKey)! === selected,
+		&& duplicate.view.source.nodesByRowKey.get(duplicate.view.selectionState.selected!.rowKey)! === selected,
 		'behavior picker: cancellation preserves invoking focus and selection');
 	await click(duplicate.view.presentation.actionBar.items[0].bounds);
 	check(harness.getActiveEditorDocument().view.cursorRow === lastLine, 'behavior picker: duplicate Source goes to its own call');

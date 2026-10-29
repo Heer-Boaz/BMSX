@@ -21,9 +21,9 @@ export type BehaviorLensViewSnapshot = {
 
 export function captureBehaviorLensView(input: BehaviorLensInput): BehaviorLensViewSnapshot {
 	const view = input.view;
-	const definition = view.definitionRowKey === null ? undefined : captureBehaviorSourceBookmark(view, { kind: 'node', rowKey: view.definitionRowKey });
-	const selected = view.selectionBookmark !== undefined ? copyBehaviorSourceBookmark(view.selectionBookmark)
-		: view.selection === null ? undefined : captureBehaviorSourceBookmark(view, view.selection);
+	const definition = view.selectionState.definitionRowKey === null ? undefined : captureBehaviorSourceBookmark(view, { kind: 'node', rowKey: view.selectionState.definitionRowKey });
+	const selected = view.selectionState.pendingBookmark !== undefined ? copyBehaviorSourceBookmark(view.selectionState.pendingBookmark)
+		: view.selectionState.selected === null ? undefined : captureBehaviorSourceBookmark(view, view.selectionState.selected);
 	const presentation = view.presentation;
 	const collapsed: BehaviorSourceBookmark[] = [];
 	const collapsedGroups: BehaviorLensEffectProperties['selectedGroup'][] = [];
@@ -54,13 +54,12 @@ export function restoreBehaviorLensView(input: BehaviorLensInput, snapshot: Beha
 	const view = input.view; // The pane has refreshed the canonical source generation, not its geometry.
 	const definition = snapshot.definition === undefined ? undefined : resolveBehaviorSourceBookmark(snapshot.definition, view);
 	if (definition === undefined) {
-		view.definitionRowKey = null;
-		view.selection = null;
+		view.selectionState.restore(null, null);
 		input.invalidatePresentation();
 	} else {
-		if (view.definitionRowKey !== definition[0].rowKey) input.invalidatePresentation();
+		if (view.selectionState.definitionRowKey !== definition[0].rowKey) input.invalidatePresentation();
 		selectBehaviorLensDefinition(view, definition[0].rowKey);
-		if (snapshot.selected === undefined) view.selection = null;
+		if (snapshot.selected === undefined) view.selectionState.restore(definition[0].rowKey, null);
 		else restoreBehaviorSourceBookmark(view, snapshot.selected);
 	}
 	view.headerDirty = true;
@@ -82,12 +81,12 @@ export function restoreBehaviorLensView(input: BehaviorLensInput, snapshot: Beha
 	} else {
 		presentation.position = { scrollX: snapshot.scrollX, scrollY: snapshot.scrollY, zoom: snapshot.zoom };
 		const viewport = presentation.viewport;
-		if (presentation.kind === 'state-graph') viewport.selection = stateGraphSelection(presentation.viewport.model, view.selection);
+		if (presentation.kind === 'state-graph') viewport.selection = stateGraphSelection(presentation.viewport.model, view.selectionState.selected);
 		else {
 			viewport.selection = null;
-			if (view.selection !== null) {
+			if (view.selectionState.selected !== null) {
 				const model = presentation.viewport.model;
-				const selected = view.selection.kind === 'node' ? model.nodesBySource.get(view.selection.rowKey) : model.edgesBySource.get(view.selection.rowKey);
+				const selected = view.selectionState.selected.kind === 'node' ? model.nodesBySource.get(view.selectionState.selected.rowKey) : model.edgesBySource.get(view.selectionState.selected.rowKey);
 				if (selected !== undefined) viewport.selection = selected;
 			}
 		}

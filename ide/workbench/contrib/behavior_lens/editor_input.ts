@@ -32,8 +32,8 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 	public override matches(other: AbstractEditorInput<string, string>): boolean {
 		if (this === other) return true;
 		if (!(other instanceof BehaviorLensInput) || !resourceIdentityEquals(this.workingCopy.resource, other.workingCopy.resource)
-			|| this.view.definitionRowKey === null || other.view.definitionRowKey === null) return false;
-		const key = this.view.definitionRowKey, candidate = other.view.definitionRowKey;
+			|| this.view.selectionState.definitionRowKey === null || other.view.selectionState.definitionRowKey === null) return false;
+		const key = this.view.selectionState.definitionRowKey, candidate = other.view.selectionState.definitionRowKey;
 		const range = this.view.source.ranges.get(key)!, candidateRange = other.view.source.ranges.get(candidate)!;
 		return range.start !== range.end && range.start === candidateRange.start && range.end === candidateRange.end
 			&& this.view.source.nodesByRowKey.get(key)!.behaviorKind === other.view.source.nodesByRowKey.get(candidate)!.behaviorKind;
@@ -64,6 +64,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 	}
 
 	public override dispose(): void {
+		this.view.selectionState.retire();
 		super.dispose();
 		this.view.source.release();
 	}
@@ -71,7 +72,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 	/** Publish this source generation's represented documents and input label together. */
 	public updateDefinition(): void {
 		const view = this.view;
-		const definition = view.definitionRowKey === null ? undefined : view.source.nodesByRowKey.get(view.definitionRowKey)!;
+		const definition = view.selectionState.definitionRowKey === null ? undefined : view.source.nodesByRowKey.get(view.selectionState.definitionRowKey)!;
 		if (definition !== this.ownedDefinition) {
 			this.ownedDefinition = definition;
 			// Source participation has input lifetime, not syntax-node lifetime:
@@ -131,7 +132,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 		if (presentation.kind === 'properties') {
 			if (presentation.dirty) {
 				const definition = view.document.definitions.find((node): node is ActionEffectSourceDefinition =>
-					node.behaviorKind === 'action_effect' && node.rowKey === view.definitionRowKey);
+					node.behaviorKind === 'action_effect' && node.rowKey === view.selectionState.definitionRowKey);
 				projectActionEffectProperties(view, presentation, definition);
 				presentation.dirty = false;
 			}
@@ -142,7 +143,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 		const viewport = presentation.viewport;
 		if (presentation.dirty || viewport.model.font !== font) {
 			if (presentation.emptyModel.font !== font) presentation.emptyModel = emptyStateGraph(font);
-			const definition = view.document.definitions.find(node => node.rowKey === view.definitionRowKey);
+			const definition = view.document.definitions.find(node => node.rowKey === view.selectionState.definitionRowKey);
 			if (definition === undefined) this.graphLayout.invalidate();
 			else if (definition.behaviorKind === 'state_machine') {
 				const references = view.stateMachines.references;
@@ -154,7 +155,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 		const state = this.graphLayout.state;
 		presentation.layoutState = state;
 		if (state.kind === 'ready' && viewport.model !== state.model) {
-			viewport.setModel(state.model, stateGraphSelection(state.model, view.selection));
+			viewport.setModel(state.model, stateGraphSelection(state.model, view.selectionState.selected));
 			if (presentation.position === 'preserve' && viewport.selection !== null) viewport.reveal(viewport.selection);
 			updateBehaviorLensStatus(view);
 		}

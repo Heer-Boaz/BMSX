@@ -50,16 +50,17 @@ export function createBehaviorTreeTransferEdit(model: EditorTextModel, view: Beh
 	const { target, table } = check;
 	const destination = insertion === target.entries.length ? table.fields.length : table.fields.indexOf(target.entries[insertion].field);
 	const transfer = createLuaTableFieldTransfer(model.buffer, member.file.chunk, field, table, destination);
-	const before = captureBehaviorSourceBookmark(view, view.selection!);
+	const before = captureBehaviorSourceBookmark(view, view.selectionState.selected!);
 	const after = captureBehaviorSourceBookmark(view, { kind: before.kind === 'tree-edge' ? 'tree-edge' : 'node', rowKey: target.source.rowKey });
 	const fieldStart = model.buffer.offsetAt(member.file.chunk.locations.range(field.span).start.line - 1, member.file.chunk.locations.range(field.span).start.column - 1);
 	let prefixLength = before.path.length;
-	for (let key = view.selection!.rowKey; key !== member.branch.source.rowKey; key = view.source.parentByRowKey.get(key)!) prefixLength -= 1;
+	for (let key = view.selectionState.selected!.rowKey; key !== member.branch.source.rowKey; key = view.source.parentByRowKey.get(key)!) prefixLength -= 1;
 	const movedPath = before.path.slice(prefixLength).map(step => ({ ...step,
 		start: transfer.fieldRange.start + step.start - fieldStart, end: transfer.fieldRange.start + step.end - fieldStart }));
 	const resource = model.identity;
-	return { version: model.version, edits: transfer.edits, beforeEditState: behaviorSourceEditState.of(before, view.editSource), computeAfterEditState: changes => {
+	const originIntent = view.selectionState.selectionRevision;
+	return { version: model.version, edits: transfer.edits, beforeEditState: behaviorSourceEditState.of({ bookmark: before, originIntent }, view.editSource), computeAfterEditState: changes => {
 		mapBehaviorSourceBookmark(after, resource, changes);
-		return behaviorSourceEditState.of({ ...after, path: [...after.path, ...movedPath] }, view.editSource);
+		return behaviorSourceEditState.of({ bookmark: { ...after, path: [...after.path, ...movedPath] }, originIntent }, view.editSource);
 	} };
 }

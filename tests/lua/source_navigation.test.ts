@@ -31,17 +31,56 @@ function fixture(t: TestContext) {
 	return { ...f, resource, model, location };
 }
 
+test('an already-revoked semantic Source request cannot publish the sender draft', async t => {
+	const f = fixture(t); let accepted = 0, reads = 0;
+	const field = new ValueInput(f.first.commandTarget, INTEGER_INPUT_FORMAT, value => { accepted = value; });
+	t.after(() => field.dispose()); field.setValue(1);
+	field.field.focusTarget.focus(); setFieldText(field.field, '2', true);
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { placement: 'side', source: {
+		isCurrent: () => false, readLocation: () => { reads++; return f.location(); },
+	} }), undefined);
+	assert.equal(accepted, 0); assert.equal(reads, 0); assert.equal(field.pending, true);
+	assert.equal(inputFocus.target, field.field.focusTarget); assert.equal(f.firstPart.groups.length, 1);
+});
+
+for (const reattach of [false, true]) test(`source capture cannot borrow a replacement${reattach ? ' or its same-input reattachment' : ''}`, async t => {
+	const f = fixture(t), replacement = new HostErrorInput('replacement'); f.firstGroup.model.pin(f.firstInput);
+	let reads = 0;
+	t.mock.method(f.first, 'captureSourceLocation', () => {
+		f.firstGroup.openEditor(replacement);
+		if (reattach) f.firstGroup.openEditor(f.firstInput);
+		return { readLocation: () => { reads++; return f.location(); } };
+	});
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { placement: 'side' }), undefined);
+	assert.equal(reads, 0); assert.equal(f.firstPart.groups.length, 1);
+	assert.equal(f.firstGroup.model.activeTab, reattach ? f.firstInput : replacement);
+});
+
+test('a newer Source request started during contribution capture keeps its own navigation admission', async t => {
+	const f = fixture(t); let newer: Promise<number | undefined> | undefined;
+	t.mock.method(f.first, 'captureSourceLocation', () => {
+		newer = f.editor.navigation.openSource(f.firstGroup, { placement: 'side', source: { readLocation: f.location } });
+		return { readLocation: () => assert.fail('superseded Source capture cannot read its location') };
+	});
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { placement: 'side' }), undefined);
+	assert.ok(await newer !== undefined);
+	assert.equal(f.firstPart.groups.length, 2);
+	const receiving = f.firstPart.groups.find(group => group !== f.firstGroup)!;
+	assert.ok(receiving.model.activeTab instanceof CodeEditorInput && receiving.model.activeTab.workingCopy === f.model);
+	assert.equal(f.firstGroup.model.activeTab, f.firstInput);
+});
+
 test('Source navigation produces its location before opening and preserves canonical text and departure history', async t => {
 	const f = fixture(t), generation = f.firstGroup.panes.openGeneration;
 	resetNavigationHistoryState(); t.after(resetNavigationHistoryState);
 	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '-- retained draft\n' }]);
 	const text = f.model.buffer.getText(), version = f.model.version, pane = f.firstGroup.panes.activePane;
 	let read = false;
-	const result = await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => {
+	const result = await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => {
 		read = true; assert.ok(f.firstGroup.panes.activePane === pane && pane.input === f.firstInput);
 		assert.equal(f.firstGroup.panes.openGeneration, generation, 'producing source does not start an input opening');
 		return f.location();
-	} });
+	} } });
 	assert.equal(read, true); assert.ok(result !== undefined);
 	const code = f.firstGroup.model.activeTab;
 	assert.ok(code instanceof CodeEditorInput && code.workingCopy === f.model && f.firstGroup.model.previewTab !== code);
@@ -53,10 +92,10 @@ test('Source navigation produces its location before opening and preserves canon
 
 test('ordinary Source follows an existing foreign text view while explicit side ignores its affinity', async t => {
 	const f = fixture(t), foreign = new CodeEditorInput(f.model); f.secondGroup.openEditor(foreign); f.first.focus();
-	await f.editor.navigation.openSource(f.firstGroup, { readLocation: f.location });
+	await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: f.location } });
 	assert.ok(f.editor.editorParts.activeGroup === f.secondGroup && f.secondGroup.model.activeTab === foreign);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
-	f.first.focus(); await f.editor.navigation.openSource(f.firstGroup, { readLocation: f.location, placement: 'side' });
+	f.first.focus(); await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: f.location }, placement: 'side' });
 	const side = f.firstPart.groups.find(group => group !== f.firstGroup)!;
 	assert.ok(side.model.activeTab instanceof CodeEditorInput && side.model.activeTab !== foreign && side.model.activeTab.workingCopy === f.model);
 	assert.ok(f.editor.editorParts.activeGroup === side && f.secondGroup.model.activeTab === foreign);
@@ -74,8 +113,8 @@ for (const placement of ['default', 'side'] as const) test(`${placement} Source 
 	const model = visual.workingCopy; model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '# canonical draft\n' }]);
 	const text = model.buffer.getText(), version = model.version, foreign = new CodeEditorInput(model);
 	f.secondGroup.openEditor(foreign); f.firstGroup.focus();
-	await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => ({ model, modelVersion: model.version,
-		selection: { row: 1, startColumn: 0, endColumn: 0 } }), placement: placement });
+	await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => ({ model, modelVersion: model.version,
+		selection: { row: 1, startColumn: 0, endColumn: 0 } }) }, placement: placement });
 	const destination = f.editor.editorParts.activeGroup, code = destination.model.activeTab;
 	assert.ok(code instanceof CodeEditorInput && code.workingCopy === model && destination.model.previewTab !== code);
 	assert.ok(placement === 'default' ? destination === f.secondGroup && code === foreign
@@ -88,7 +127,7 @@ for (const placement of ['default', 'side'] as const) test(`${placement} Source 
 test('side Source restores the maximized arrangement and reuses the actual same-part neighbor', async t => {
 	const f = fixture(t), side = f.firstPart.splitGroup(f.firstGroup, 'right');
 	f.firstPart.arrangement.toggleMaximize(f.firstGroup); f.firstPart.layout(f.firstPart.clientBounds);
-	await f.editor.navigation.openSource(f.firstGroup, { readLocation: f.location, placement: 'side' });
+	await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: f.location }, placement: 'side' });
 	assert.equal(f.firstPart.groups.length, 2); assert.equal(f.firstPart.arrangement.maximized, undefined);
 	assert.ok(f.editor.editorParts.activeGroup === side && side.model.activeTab instanceof CodeEditorInput);
 	assert.ok(side.model.activeTab.workingCopy === f.model && f.firstGroup.model.activeTab === f.firstInput);
@@ -99,7 +138,7 @@ test('an invalid sender draft prevents location production and side topology', a
 	t.after(() => { control.cancel(); control.dispose(); });
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, 'invalid', true);
 	let reads = 0;
-	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => { reads++; return f.location(); }, placement: 'side' }), undefined);
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => { reads++; return f.location(); } }, placement: 'side' }), undefined);
 	assert.equal(reads, 0); assert.equal(f.firstPart.groups.length, 1); assert.equal(control.pending, true);
 	assert.ok(inputFocus.admittedTarget === control.field.focusTarget && f.firstGroup.model.activeTab === f.firstInput);
 });
@@ -111,7 +150,7 @@ test('a committed sender may release to its own Source parent before the locatio
 	}); t.after(() => control.dispose());
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	let version = -1;
-	await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => { version = f.model.version; return f.location(); }, placement: 'side' });
+	await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => { version = f.model.version; return f.location(); } }, placement: 'side' });
 	assert.equal(control.pending, false); assert.equal(version, f.model.version); assert.equal(f.firstPart.groups.length, 2);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 });
@@ -121,7 +160,7 @@ test('sender draft reentrancy replaces the pane before the lazy producer can run
 		() => { f.firstGroup.openEditor(newer); }); t.after(() => control.dispose());
 	control.setValue(1); control.layout(f.firstGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	let reads = 0;
-	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => { reads++; return f.location(); }, placement: 'side' }), undefined);
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => { reads++; return f.location(); } }, placement: 'side' }), undefined);
 	assert.equal(reads, 0); assert.equal(f.firstPart.groups.length, 1);
 	assert.ok(f.firstGroup.model.activeTab === newer && f.firstGroup.panes.activePane?.input === newer);
 });
@@ -129,7 +168,7 @@ test('sender draft reentrancy replaces the pane before the lazy producer can run
 for (const change of ['undefined', 'foreignFocus', 'rebind', 'clearModels', 'staleVersion', 'catalogReplacement'] as const)
 	test(`source producer ${change} cannot mutate side topology or attach its earlier source`, async t => {
 		const f = fixture(t), location = f.location(), newer = new HostErrorInput('newer sender');
-		const result = await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => {
+		const result = await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => {
 			if (change === 'undefined') return undefined;
 			if (change === 'foreignFocus') f.second.focus();
 			else if (change === 'rebind') f.firstGroup.openEditor(newer);
@@ -141,7 +180,7 @@ for (const change of ['undefined', 'foreignFocus', 'rebind', 'clearModels', 'sta
 				f.sources.catalog.rebuildResources(); registerLuaSourceRecord(registry, { ...record, update_timestamp: record.update_timestamp + 1 });
 			}
 			return location;
-		}, placement: 'side' });
+		} }, placement: 'side' });
 		assert.equal(result, undefined); assert.equal(f.firstPart.groups.length, 1);
 		assert.ok(f.firstGroup.model.activeTab === (change === 'rebind' ? newer : f.firstInput));
 		if (change === 'foreignFocus') assert.ok(inputFocus.admittedTarget === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
@@ -152,7 +191,7 @@ test('source edits during accepted side publication invalidate the caret but kee
 	const unbind = f.firstPart.onDidChangeGroups(() => {
 		unbind(); f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- publication changed source\n' }]);
 	}); t.after(unbind);
-	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => location, placement: 'side' }), undefined);
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => location }, placement: 'side' }), undefined);
 	assert.equal(f.firstPart.groups.length, 2);
 	assert.ok(f.firstPart.groups.find(group => group !== f.firstGroup)!.model.activeTab === null);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
@@ -160,7 +199,7 @@ test('source edits during accepted side publication invalidate the caret but kee
 
 test('source edits while the text opener yields cannot admit the earlier caret generation', async t => {
 	const f = fixture(t), location = f.location();
-	const pending = f.editor.navigation.openSource(f.firstGroup, { readLocation: () => location, placement: 'side' });
+	const pending = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => location }, placement: 'side' });
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer than the requested caret\n' }]);
 	assert.equal(await pending, undefined);
 	assert.equal(f.firstPart.groups.length, 2);
@@ -175,7 +214,7 @@ test('the receiver draft cannot apply an obsolete Source caret after accepting i
 	}); t.after(() => control.dispose());
 	control.setValue(1); control.layout(f.secondGroup.panes.contentBounds); control.field.focusTarget.focus(); setFieldText(control.field, '2', true);
 	const location = f.location();
-	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => location }), undefined);
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => location } }), undefined);
 	assert.equal(control.pending, false); assert.ok(f.model.version > location.modelVersion);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === foreign);
 	assert.equal(f.firstPart.groups.length, 1);
@@ -188,13 +227,13 @@ test('retiring the exact sender while Source resolution yields disposes the late
 		const input = resolve(resource, editorId); assert.ok(input instanceof CodeEditorInput);
 		input.onWillDispose(() => { disposed++; }); return input;
 	});
-	const pending = f.editor.navigation.openSource(f.firstGroup, { readLocation: f.location, placement: 'side' }); f.firstGroup.clear();
+	const pending = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: f.location }, placement: 'side' }); f.firstGroup.clear();
 	assert.equal(await pending, undefined); assert.equal(disposed, 1);
 	assert.ok(f.firstPart.groups.find(group => group !== f.firstGroup)!.model.activeTab === null);
 });
 
 test('an admitted pending Source may attach in the background without taking a newer pane focus', async t => {
-	const f = fixture(t), pending = f.editor.navigation.openSource(f.firstGroup, { readLocation: f.location, placement: 'side' }); f.second.focus();
+	const f = fixture(t), pending = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: f.location }, placement: 'side' }); f.second.focus();
 	assert.ok(await pending !== undefined);
 	const side = f.firstPart.groups.find(group => group !== f.firstGroup)!;
 	assert.ok(side.model.activeTab instanceof CodeEditorInput && side.model.activeTab.workingCopy === f.model);
@@ -236,7 +275,7 @@ for (const publication of ['clear', 'membership'] as const) test(`${publication}
 	const unbind = publication === 'clear' ? f.firstGroup.panes.onDidClearEditor(edit)
 		: f.firstGroup.model.onDidChange(() => { if (f.firstGroup.model.contains(candidate!)) edit(); });
 	t.after(unbind);
-	await f.editor.navigation.openSource(f.firstGroup, { readLocation: f.location });
+	await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: f.location } });
 	assert.equal(edited, true); assert.ok(candidate !== undefined && cursorAfterEdit !== undefined);
 	assert.ok(f.firstGroup.model.activeTab === candidate);
 	assert.equal(captureCodeEditorView(candidate).cursor, cursorAfterEdit, 'a stale Source caret cannot overwrite the input cursor after an admitted publication');
@@ -244,9 +283,9 @@ for (const publication of ['clear', 'membership'] as const) test(`${publication}
 
 test('retired or empty reference groups never invoke source production', async t => {
 	const f = fixture(t); f.firstGroup.clear(); let reads = 0;
-	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => { reads++; return f.location(); }, placement: 'side' }), undefined);
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => { reads++; return f.location(); } }, placement: 'side' }), undefined);
 	await f.editor.editorParts.close(f.firstPart);
-	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { readLocation: () => { reads++; return f.location(); }, placement: 'side' }), undefined);
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => { reads++; return f.location(); } }, placement: 'side' }), undefined);
 	assert.equal(reads, 0); assert.equal(f.secondPart.groups.length, 1);
 });
 

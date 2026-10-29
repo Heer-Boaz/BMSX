@@ -33,7 +33,6 @@ import { TAB_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_PADDING_X, TAB_CLOSE_BUTTON_SYMB
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { EditorOpeningRequest, type PreparedEditorInput } from './editor_opening';
 import type { SourceNavigationCaptureOptions, SourceNavigationOrigin } from './source_navigation';
-import type { EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 
 /** The container supplies ancestry and allowable popup extent before controls are constructed. */
 export type EditorGroupPresentation = {
@@ -90,16 +89,18 @@ export class EditorGroupView {
 	public captureSourceNavigation(options: SourceNavigationCaptureOptions = {}): SourceNavigationOrigin | undefined {
 		const pane = this.panes.activePane;
 		if (!this.openingAdmitted || this.surface.retired || pane === null) return;
-		const source: EditorSourceLocationRequest | undefined = options.readLocation === undefined ? pane.captureSourceLocation() : { readLocation: options.readLocation };
-		if (source === undefined) return;
+		if (options.source?.isCurrent?.() === false) return;
 		const input = pane.input;
 		const commandTarget = pane.commandTarget, scope = commandTarget.scope, context = scope.contextGeneration;
 		const request = ++this.sourceOpeningRevision;
 		let generation = this.panes.openGeneration;
+		const source = options.source ?? pane.captureSourceLocation();
+		if (source === undefined) return;
 		const current = (receiver?: EditorGroupView) => this.openingAdmitted && !this.surface.retired
 			&& this.sourceOpeningRevision === request && this.panes.activePane === pane && pane.input === input
 			&& (receiver === this || this.panes.openGeneration === generation)
 			&& scope.contextGeneration === context && source.isCurrent?.() !== false;
+		if (!current()) return;
 		return { commandTarget, anchor: this, readLocation: source.readLocation, isCurrent: current,
 			// Same-group admission intentionally retires its producing control; the new receiver receipt and request intent remain authoritative.
 			isCurrentAfterHandoff: receiver => receiver === this

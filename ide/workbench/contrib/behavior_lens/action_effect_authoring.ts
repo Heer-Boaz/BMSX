@@ -18,7 +18,7 @@ const INITIAL_VALUES: Readonly<Record<string, string>> = {
 
 export function editableActionEffect(view: BehaviorLensViewState): ActionEffectSourceDefinition | undefined {
 	if (!view.source.isCurrent || !view.document.syntaxComplete || view.presentation.kind !== 'properties') return;
-	const definition = view.document.definitions.find(node => node.rowKey === view.definitionRowKey);
+	const definition = view.document.definitions.find(node => node.rowKey === view.selectionState.definitionRowKey);
 	if (definition?.behaviorKind !== 'action_effect' || definition.body === null || definition.body.issues !== SourceTableIssue.None) return;
 	return view.source.models.get(definition.body.file.file)!.readOnly ? undefined : definition;
 }
@@ -50,6 +50,6 @@ export function addActionEffectProperty(view: BehaviorLensViewState, quickInput:
 export function removeActionEffectProperty(view: BehaviorLensViewState): void {
 	const write = selectedActionEffectProperty(view)!;
 	const model = view.source.models.get(write.file.file)!;
-	view.selection = null;
+	view.selectionState.select(null);
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, write.file.chunk.locations, write.file.chunk.tokens, write.field));
 }

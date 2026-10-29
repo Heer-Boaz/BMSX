@@ -5,23 +5,20 @@ import { BehaviorSourceIndex } from './source_index';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
 import type { BehaviorSourceSelection } from './source_selection';
-import { mapStateMachineSourceSelection, reconcileStateMachineSourceSelection } from './state_machine_selection';
-import { behaviorSourceEditState, copyBehaviorSourceBookmark, mapBehaviorSourceBookmark } from './source_bookmark';
+import { copyStateMachineSourceBookmark, reconcileStateMachineSourceSelection } from './state_machine_selection';
+import { indexStateMachineSource } from './state_machine_index';
+import { behaviorSourceEditState, resolveBehaviorSourceBookmark } from './source_bookmark';
+import { indexBehaviorTreeSource } from './behavior_tree_index';
 
 /** Tracks the existing generation even while another pane edits its document. */
 export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, resource: ResourceIdentity, event: EditorTextModelContentChangeEvent): void {
-	const { changes, editState } = event;
-	const definition = state.definitionRowKey === null ? undefined : state.source.ranges.get(state.definitionRowKey);
-	// A document's undo state belongs to the edited registration, not all its views.
+	const { changes, editState } = event, owner = state.selectionState;
+	const definition = owner.definitionRowKey === null ? undefined : state.source.ranges.get(owner.definitionRowKey);
+	owner.mapSourceChange(resource, changes);
+	// A document's typed history belongs to its originating definition and selected intent.
 	if (editState !== null && editState.is(behaviorSourceEditState) && event.editSource === state.editSource && definition !== undefined
-		&& definition.start !== definition.end && trackedTextLocationsEqual(definition, editState.value.path[0])) {
-		state.selectionBookmark = copyBehaviorSourceBookmark(editState.value);
-	} else if (state.selectionBookmark !== undefined) {
-		mapBehaviorSourceBookmark(state.selectionBookmark, resource, changes);
-	}
-	const selection = state.selection;
-	if (selection !== null && (selection.kind === 'state-outcome' || selection.kind === 'state-entry')) {
-		mapStateMachineSourceSelection(selection, resource, changes);
+		&& definition.start !== definition.end && trackedTextLocationsEqual(definition, editState.value.bookmark.path[0])) {
+		owner.applySourceBookmark(editState.value.bookmark, editState.value.originIntent, event.kind !== 'edit');
 	}
 	if (state.presentation.kind === 'outline') state.presentation.hoverIndex = -1;
 	else if (state.presentation.kind === 'properties') state.presentation.tree.hoverIndex = -1;
@@ -34,22 +31,26 @@ export function mapBehaviorLensSourceRanges(state: BehaviorLensViewState, resour
 export function reconcileBehaviorLensSource(
 	state: BehaviorLensViewState,
 	document: BehaviorSourceDocument,
-): BehaviorSourceSelection | null {
-	const selection = state.selection;
+): boolean {
+	const owner = state.selectionState, selectionRevision = owner.selectionRevision, definitionRevision = owner.definitionRevision;
+	const selection = owner.selected;
 	const selectedKey = selection?.rowKey;
-	const oldDefinitionKey = state.definitionRowKey;
+	const oldDefinitionKey = owner.definitionRowKey;
 	const oldRanges = state.source.ranges;
 	const presentation = state.presentation;
-	const collapsed = presentation.kind === 'outline' || presentation.kind === 'properties' ? presentation.collapsedRowKeys : undefined;
-	const oldCollapsed = collapsed === undefined ? undefined : new Set(collapsed);
+	const oldCollapsedRows = presentation.kind === 'outline' || presentation.kind === 'properties' ? presentation.collapsedRowKeys : undefined;
+	const oldCollapsed = oldCollapsedRows === undefined ? undefined : new Set(oldCollapsedRows);
+	const collapsed = oldCollapsed === undefined ? undefined : new Set<BehaviorSourceRowKey>();
+	const matches = new Set<BehaviorSourceRowKey>();
 	const oldMatches = new Set(state.sourceMatchRowKeys);
 	const oldDefinitions = state.document.definitions;
 	const previousSource = state.source;
+	const stateMachines = indexStateMachineSource(document);
 	const source = BehaviorSourceIndex.acquire(document, previousSource.model, previousSource.resolveModel);
+	if (state.source !== previousSource || owner.selectionRevision !== selectionRevision || owner.definitionRevision !== definitionRevision
+		|| !owner.available || !source.isCurrent) { source.release(); return false; }
+	let definition: BehaviorSourceRowKey | null = null;
 	let selected: BehaviorSourceRowKey | null = null;
-	state.definitionRowKey = null;
-	collapsed?.clear();
-	state.sourceMatchRowKeys.clear();
 
 	function visit(nodes: readonly BehaviorSourceNode[], previous: readonly BehaviorSourceNode[], depth: number): void {
 		const previousByResource = new Map<string, Map<number, BehaviorSourceNode>>();
@@ -68,9 +69,9 @@ export function reconcileBehaviorLensSource(
 				&& candidate.kind === node.kind && candidate.behaviorKind === node.behaviorKind ? candidate : undefined;
 			if (prior !== undefined) {
 				if (prior.rowKey === selectedKey) selected = node.rowKey;
-				if (prior.rowKey === oldDefinitionKey) state.definitionRowKey = node.rowKey;
+				if (prior.rowKey === oldDefinitionKey) definition = node.rowKey;
 				if (oldCollapsed?.has(prior.rowKey)) collapsed!.add(node.rowKey);
-				if (oldMatches.has(prior.rowKey)) state.sourceMatchRowKeys.add(node.rowKey);
+				if (oldMatches.has(prior.rowKey)) matches.add(node.rowKey);
 			} else if (collapsed !== undefined && node.children.length > 0 && depth > 1) {
 				collapsed.add(node.rowKey);
 			}
@@ -79,12 +80,44 @@ export function reconcileBehaviorLensSource(
 	}
 
 	visit(document.definitions, oldDefinitions, 0);
+	let nextSelection: BehaviorSourceSelection | null = null;
+	if (selected !== null) {
+		const previousSelection = selection!;
+		nextSelection = previousSelection.kind === 'node' || previousSelection.kind === 'tree-edge'
+			? { kind: previousSelection.kind, rowKey: selected }
+			: reconcileStateMachineSourceSelection(previousSelection, stateMachines.references.get(selected), source.models);
+	}
+	const bookmark = owner.takeSourceBookmark();
+	if (bookmark !== undefined) {
+		const path = resolveBehaviorSourceBookmark(bookmark, { document, source });
+		nextSelection = null;
+		if (path !== undefined) {
+			definition = path[0].rowKey;
+			const rowKey = path[path.length - 1].rowKey;
+			nextSelection = bookmark.kind === 'node' || bookmark.kind === 'tree-edge' ? { kind: bookmark.kind, rowKey }
+				: reconcileStateMachineSourceSelection(copyStateMachineSourceBookmark(bookmark), stateMachines.references.get(rowKey), source.models);
+			for (let index = 0; index < path.length - 1; index++) collapsed?.delete(path[index].rowKey);
+		}
+	}
+	if (nextSelection?.kind === 'tree-edge' && definition !== null) {
+		const root = document.definitions.find(node => node.rowKey === definition)!;
+		if (root.behaviorKind === 'behavior_tree') {
+			const topology = indexBehaviorTreeSource(root);
+			if (!topology.edges.has(nextSelection.rowKey)) nextSelection = null;
+		}
+	}
+	// Publish all source facts and the corresponding semantic pair before invalidation callbacks.
 	state.document = document;
-	if (previousSource !== source) previousSource.invalidate();
 	state.source = source;
+	state.stateMachines = stateMachines;
+	owner.reconcile(definition, nextSelection);
+	state.sourceMatchRowKeys.clear();
+	for (const key of matches) state.sourceMatchRowKeys.add(key);
+	if (oldCollapsedRows !== undefined) {
+		oldCollapsedRows.clear();
+		for (const key of collapsed!) oldCollapsedRows.add(key);
+	}
+	if (previousSource !== source) previousSource.invalidate();
 	previousSource.release();
-	if (selected === null) return null;
-	const previousSelection = selection!;
-	if (previousSelection.kind === 'node' || previousSelection.kind === 'tree-edge') return { kind: previousSelection.kind, rowKey: selected };
-	return reconcileStateMachineSourceSelection(previousSelection, state.stateMachines.references.get(selected), source.models);
+	return true;
 }

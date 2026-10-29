@@ -41,7 +41,7 @@ export type StateMachineDetail = {
 
 /** Compose inspector captions before joining semantic names with expression/chrome text. */
 export function buildStateMachineDetails(view: BehaviorLensViewState): readonly StateMachineDetail[] {
-	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
+	const selected = view.source.nodesByRowKey.get(view.selectionState.selected!.rowKey)!;
 	const details: StateMachineDetail[] = [];
 	const statesSource = view.stateMachines.bodies.get(selected.rowKey)?.states?.source;
 	function append(node: BehaviorSourceNode, prefix: string): void {

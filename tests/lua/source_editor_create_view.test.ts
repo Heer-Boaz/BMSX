@@ -172,7 +172,7 @@ test('Behavior fresh views acquire their own source lease and graph state withou
 	const group = createTestEditorGroup(); group.openEditor(source); t.after(() => group.dispose());
 	selectBehaviorLensDefinition(source.view, source.view.document.definitions[0].rowKey); source.updateDefinition();
 	assert.ok(source.view.presentation.kind === 'graph');
-	source.view.selection = { kind: 'node', rowKey: source.view.source.nodes.at(-1)!.rowKey };
+	source.view.selectionState.select({ kind: 'node', rowKey: source.view.source.nodes.at(-1)!.rowKey });
 	source.view.presentation.position = { scrollX: 23, scrollY: 41, zoom: 1.5 };
 	const runtime = createTestRuntime(createTestRuntimeRomPayload()), guest = new SuspendedGuestSession(runtime);
 	const rewind = new HostRewind(runtime, null!, null!, null!, null!, null!);
@@ -185,7 +185,7 @@ test('Behavior fresh views acquire their own source lease and graph state withou
 	assert.ok(input.graphLayout !== source.graphLayout && input.view.presentation !== source.view.presentation);
 	assert.deepEqual(captureBehaviorLensView(input), before);
 	assert.equal(input.runtimeInspection, undefined); assert.ok(source.runtimeInspection === inspection);
-	const index = input.view.source, span = index.ranges.get(input.view.selection!.rowKey)!;
+	const index = input.view.source, span = index.ranges.get(input.view.selectionState.selected!.rowKey)!;
 	const start = span.start;
 	group.removeEditor(source);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shared\n' }]);

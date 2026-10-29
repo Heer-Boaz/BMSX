@@ -90,7 +90,7 @@ for (const font of ['tiny', 'msx'] as const) for (const [command, kind] of BEHAV
 		const input = f.firstGroup.model.activeTab;
 		assert.ok(input instanceof BehaviorLensInput && input.workingCopy === editorTextModelService.get(f.resource));
 		assert.ok(input.resource === f.resource && f.firstGroup.model.contains(f.home) && parts.activeGroup === f.firstGroup);
-		assert.equal(input.view.source.nodesByRowKey.get(input.view.definitionRowKey!)!.behaviorKind, kind);
+		assert.equal(input.view.source.nodesByRowKey.get(input.view.selectionState.definitionRowKey!)!.behaviorKind, kind);
 		assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
 		assert.equal(input.workingCopy.dirty, false); assert.equal(input.workingCopy.canUndo, false);
 		assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);

@@ -22,7 +22,7 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	const properties = lens.view.presentation;
 	if (properties.kind !== 'properties') throw new Error('behavior kinds: ActionEffect must open its property presentation');
 	check(model.resource.path === 'player/actioneffects.lua'
-		&& lens.view.source.nodesByRowKey.get(lens.view.definitionRowKey!)!.behaviorKind === 'action_effect',
+		&& lens.view.source.nodesByRowKey.get(lens.view.selectionState.definitionRowKey!)!.behaviorKind === 'action_effect',
 		'behavior kinds: effect selection reveals the actual definition in its resource-owned model');
 	const period = properties.tree.rows.find(row => row.element.kind === 'property' && row.element.source.label.startsWith('period_ms ='))!;
 	if (period.element.kind !== 'property') throw new Error('behavior kinds: period must retain its authored field');
@@ -47,19 +47,19 @@ export async function testStudioBehaviorKinds(test: StudioFixture): Promise<void
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT fire_salvo');
 	const focus = inputFocus.target;
-	const selected = lens.view.selection;
+	const selected = lens.view.selectionState.selected;
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await clipboard.writeText('EFFECT fire_salvo');
 	await press('ControlLeft', 'KeyV');
 	await press('Enter');
 	check(picker.visible && picker.model.list.selectionIndex === -1, 'behavior kinds: an effect query cannot bypass the FSM kind');
 	await press('Escape');
-	check(inputFocus.target === focus && ide.editor.editorParts.activeGroup.model.activeTab === lens && lens.view.selection === selected,
+	check(inputFocus.target === focus && ide.editor.editorParts.activeGroup.model.activeTab === lens && lens.view.selectionState.selected === selected,
 		'behavior kinds: cancellation preserves the actual ActionEffect view, focus and selection');
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	const fsm = ide.editor.editorParts.activeGroup.model.activeTab;
-	check(fsm.kind === 'behavior_lens' && fsm.view.source.nodesByRowKey.get(fsm.view.selection!.rowKey)!.behaviorKind === 'state_machine',
+	check(fsm.kind === 'behavior_lens' && fsm.view.source.nodesByRowKey.get(fsm.view.selectionState.selected!.rowKey)!.behaviorKind === 'state_machine',
 		'behavior kinds: typed FSM selection reaches its definition from the effect lens');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');
 	await chooseBehavior(test, 'BT moon_tree.id');

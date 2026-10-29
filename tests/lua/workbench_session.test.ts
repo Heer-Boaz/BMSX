@@ -174,7 +174,7 @@ test('changed canonical bytes retain topology but cannot adopt a same-length nam
 	await f.group.model.deserialize(value, f.serializers);
 	const restored = f.group.model.activeTab;
 	assert.ok(restored?.kind === 'behavior_lens');
-	assert.equal(restored.view.definitionRowKey, null); assert.equal(restored.view.selection, null);
+	assert.equal(restored.view.selectionState.definitionRowKey, null); assert.equal(restored.view.selectionState.selected, null);
 	assert.equal(restored.workingCopy.dirty, false); assert.equal(f.group.model.tabs.length, 1);
 });
 
@@ -208,9 +208,9 @@ for (const changeProvider of [false, true]) test(`behavior mementos fingerprint 
 	assert.equal(restored.workingCopy.buffer.getText(), SOURCE);
 	assert.equal(restored.workingCopy.dirty, false);
 	if (changeProvider) {
-		assert.equal(restored.view.definitionRowKey, null);
-		assert.equal(restored.view.selection, null, 'equal primary bytes cannot authenticate a foreign source bookmark');
-	} else assert.equal(restored.view.definitionRowKey, document.definitions[1].rowKey);
+		assert.equal(restored.view.selectionState.definitionRowKey, null);
+		assert.equal(restored.view.selectionState.selected, null, 'equal primary bytes cannot authenticate a foreign source bookmark');
+	} else assert.equal(restored.view.selectionState.definitionRowKey, document.definitions[1].rowKey);
 	assert.equal(editorTextModelService.get(provider.identity)!.buffer.getText(), changeProvider ? '-- test two' : '-- test one');
 });
 
@@ -311,7 +311,7 @@ test('a persisted behavior snapshot is immutable across later model edits', t =>
 	assert.notEqual(now.definition!.path[0].start, captured.definition!.path[0].start);
 	f.behavior.updateView(input);
 	restoreBehaviorLensView(input, now);
-	assert.equal(input.view.definitionRowKey, input.view.document.definitions[1].rowKey);
+	assert.equal(input.view.selectionState.definitionRowKey, input.view.document.definitions[1].rowKey);
 });
 
 test('resource refresh replaces content, not the retained viewport or group membership', t => {

@@ -160,7 +160,7 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	assert.equal(view.document, hidden);
 	const refresh = () => { installBehaviorLensDocument(view, f.project()); prepareBehaviorLensLayout(view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom }); };
 	refresh();
-	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
+	assert.equal(view.selectionState.definitionRowKey, view.document.definitions[1].rowKey);
 	assert.ok(viewport.selection?.kind === 'edge');
 	assert.equal(viewport.selection.child.member?.index, 2);
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(view)!), 'nested');
@@ -174,11 +174,11 @@ test('nested membership warnings, shared occurrences, hidden edits and Undo use 
 	const table = f.model.buffer.getText().indexOf('{ leaf, make_node(), nested, make_node() }');
 	f.model.pushEditOperations([{ offset: table + 1, deleteLength: 0, text: ' [slot] = leaf,' }]);
 	refresh();
-	assert.equal(view.selection, null, 'unknown membership revokes the selected ordered edge');
+	assert.equal(view.selectionState.selected, null, 'unknown membership revokes the selected ordered edge');
 	assert.equal(viewport.model.nodes[0].children[0].children.length, 1);
 	f.model.undo();
 	refresh();
-	assert.equal(view.selection, null, 'Undo does not invent revoked source selection');
+	assert.equal(view.selectionState.selected, null, 'Undo does not invent revoked source selection');
 	assert.equal(viewport.model.nodes[0].children[0].children.length, 4);
 	assert.equal(f.model.buffer.getText(), BT_MEMBERSHIP_SOURCE);
 });

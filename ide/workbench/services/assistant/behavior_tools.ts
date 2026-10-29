@@ -10,7 +10,7 @@ import type { BehaviorSourceDocuments } from '../../contrib/behavior_lens/source
 import type { BehaviorRegistrationSource, BehaviorSourceNode } from '../../contrib/behavior_lens/model';
 import { indexStateMachineSource } from '../../contrib/behavior_lens/state_machine_index';
 import { createStateMachineInitialEdits, type StateMachineInitialTarget } from '../../contrib/behavior_lens/state_machine_initial';
-import { indexBehaviorTreeMembers } from '../../contrib/behavior_lens/behavior_tree_index';
+import { indexBehaviorTreeSource } from '../../contrib/behavior_lens/behavior_tree_index';
 import type { BehaviorTreeSourceMember } from '../../contrib/behavior_lens/behavior_tree_model';
 import { createBehaviorTreeChildDuplicateEdits, createBehaviorTreeChildMoveEdits, createBehaviorTreeChildRemovalEdits } from '../../contrib/behavior_lens/behavior_tree_edit';
 import { indexActionEffectWrites, type EffectPropertyWrite } from '../../contrib/behavior_lens/action_effect_index';
@@ -125,7 +125,7 @@ export class WorkspaceBehaviorTools {
 		}
 		collect(definition);
 		const initialTargets = indexStateMachineSource(document).initialTargets;
-		const members = definition.behaviorKind === 'behavior_tree' ? indexBehaviorTreeMembers(definition) : undefined;
+		const members = definition.behaviorKind === 'behavior_tree' ? indexBehaviorTreeSource(definition).members : undefined;
 		const writes = definition.behaviorKind === 'action_effect' ? indexActionEffectWrites(definition) : undefined;
 		const nodes: ToolBehaviorNode[] = ordered.map(source => {
 			const actions: string[] = [];

@@ -116,7 +116,7 @@ fx.register_effect('other', require('other'))`;
 	assert.equal(selectedBehaviorLensSourceRange(f.view)!.path, resourceIdentityKey(tags.resource));
 	assert.equal(readLuaSourceRange(tags.buffer, selectedBehaviorLensSourceRange(f.view)!), "'Busy Changed'",
 		'a requirement entry retains only its written expression, not the registration or parent list');
-	assert.equal(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label, "'Busy Changed'");
+	assert.equal(f.view.source.nodesByRowKey.get(f.view.selectionState.selected!.rowKey)!.label, "'Busy Changed'");
 	other.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated\n' }]);
 	for (const expected of [tags, provider]) {
 		const owner = f.service.history.findModel(f.input.getWorkingCopies(), 'undo')!;
@@ -193,13 +193,13 @@ test('property drafts edit written expressions and retain ordinary source histor
 		assert.equal(edit.control.commit(), true);
 		assert.equal(edit.active, false);
 		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE.replace(name + ' = ' + originalValue, name + ' = ' + value));
-		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
-		assert.ok(f.view.selection, `selection after editing ${name}`);
-		assert.ok(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label.startsWith(name));
+		assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[1].rowKey);
+		assert.ok(f.view.selectionState.selected, `selection after editing ${name}`);
+		assert.ok(f.view.source.nodesByRowKey.get(f.view.selectionState.selected!.rowKey)!.label.startsWith(name));
 		f.model.undo(f.view.editSource); f.refresh();
 		assert.equal(f.model.buffer.getText(), ACTIONEFFECT_SOURCE);
 		assert.equal(f.model.canUndo, false);
-		assert.ok(f.view.source.nodesByRowKey.get(f.view.selection!.rowKey)!.label.startsWith(name));
+		assert.ok(f.view.source.nodesByRowKey.get(f.view.selectionState.selected!.rowKey)!.label.startsWith(name));
 	}
 });
 
@@ -236,7 +236,7 @@ test('ActionEffect property groups project one chosen registration and retain ea
 		const { view, properties } = f;
 		const definition = view.document.definitions[1];
 		assert.ok(definition.behaviorKind === 'action_effect' && definition.body !== null);
-		assert.equal(view.definitionRowKey, definition.rowKey);
+		assert.equal(view.selectionState.definitionRowKey, definition.rowKey);
 		assert.equal(properties.nodesBySource.size, 16, 'twelve fields plus four requirement values, no fake source groups');
 		for (const field of definition.body.fields) {
 			const node = properties.nodesBySource.get(field.source.rowKey)!;
@@ -251,7 +251,7 @@ test('ActionEffect property groups project one chosen registration and retain ea
 		for (const field of view.document.definitions[0].children) assert.equal(properties.nodesBySource.has(field.rowKey), false);
 		assert.equal(properties.tree.rows.length, 21);
 		assert.equal(f.move('home'), BehaviorLensNavigationResult.Changed);
-		assert.equal(view.selection, null, 'a category is not a Lua node');
+		assert.equal(view.selectionState.selected, null, 'a category is not a Lua node');
 		assert.equal(selectedBehaviorLensSourceRange(view), null, 'Source must use the chosen registration, not a fake category range');
 		const row = properties.tree.rows[properties.tree.selectionIndex];
 		assert.equal(row.element.kind, 'group');
@@ -351,7 +351,7 @@ test('property selection and fold preferences survive hidden source edits/Undo o
 		const node = f.properties.tree.rows[f.properties.tree.selectionIndex];
 		const focus = new InputFocusService(), target = focus.createTarget(); target.bindKeyboard(() => {});
 		const pointer = new WorkbenchPropertyTreePointer(focus, new PointerHoverService(), target);
-		pointer.setInput(f.properties.tree, f.view.definitionRowKey);
+		pointer.setInput(f.properties.tree, f.view.selectionState.definitionRowKey);
 		const point = { valid: true, insideViewport: true, pressedButtons: PointerButton.Primary, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 200,
 			viewportY: f.properties.tree.layout.contentTop + (f.properties.tree.selectionIndex - f.properties.tree.scroll) * f.properties.tree.layout.rowHeight + 3 };
 		assert.equal(pointer.handle(point, true, 10), WorkbenchPropertyPointerResult.Selection);
@@ -364,12 +364,12 @@ test('property selection and fold preferences survive hidden source edits/Undo o
 		const selected = f.properties.tree.rows[f.properties.tree.selectionIndex];
 		assert.notEqual(selected, node);
 		assert.equal(selected.element.value, '35');
-		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
+		assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[1].rowKey);
 		assert.ok(selected.element.kind === 'property');
 		assert.equal(selectedBehaviorLensSourceRange(f.view), selected.element.source.authoredRange);
 		assert.equal(f.properties.tree.roots[0].collapsed, true);
 		assert.equal(f.properties.collapsedRowKeys.size, 1);
-		pointer.setInput(f.properties.tree, f.view.definitionRowKey);
+		pointer.setInput(f.properties.tree, f.view.selectionState.definitionRowKey);
 		assert.equal(pointer.handle(point, true, 20), WorkbenchPropertyPointerResult.Selection, 'new generation cannot complete the old double-click');
 		f.model.undo(f.view.editSource); f.refresh();
 		assert.equal(f.properties.tree.rows[f.properties.tree.selectionIndex].element.value, '20');
@@ -393,12 +393,12 @@ test('property groups and real source folds remain separate; deletion never swit
 		f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- prefix\n' }]);
 		f.refresh();
 		assert.equal(f.properties.selectedGroup, 'grant');
-		assert.equal(f.view.selection, null);
+		assert.equal(f.view.selectionState.selected, null);
 		const call = "effects.register_effect('fixture.second', blueprint)";
 		f.model.pushEditOperations([{ offset: f.model.buffer.getText().indexOf(call), deleteLength: call.length, text: '' }]);
 		f.refresh();
-		assert.equal(f.view.definitionRowKey, null);
-		assert.equal(f.view.selection, null);
+		assert.equal(f.view.selectionState.definitionRowKey, null);
+		assert.equal(f.view.selectionState.selected, null);
 		assert.equal(f.properties.tree.rows.length, 0);
 		assert.equal(f.properties.nodesBySource.size, 0);
 		assert.equal(f.properties.collapsedGroups.size, 0);
@@ -424,11 +424,11 @@ test('collapse selection is accepted from the generic tree, without a parallel l
 	const f = fixture();
 	try {
 		f.move('home'); f.move('down');
-		assert.notEqual(f.view.selection, null);
+		assert.notEqual(f.view.selectionState.selected, null);
 		setWorkbenchTreeCollapsed(f.properties.tree, 0, true);
 		acceptEffectPropertySelection(f.view, f.properties, true);
 		assert.equal(f.properties.tree.selectionIndex, 0);
-		assert.equal(f.view.selection, null, 'collapsing a selected descendant selects its actual group');
+		assert.equal(f.view.selectionState.selected, null, 'collapsing a selected descendant selects its actual group');
 		assert.deepEqual([...f.properties.collapsedGroups], ['grant']);
 	} finally { f.input.dispose(); }
 });

@@ -11,8 +11,7 @@ import { createWorkbenchGraphModel } from '../../ui/graph/model';
 import type { BehaviorGraphModel } from './graph_model';
 import { createBehaviorLensLayout, installBehaviorLensDocument } from './layout';
 import type { BehaviorSourceDocument, BehaviorSourceNode, BehaviorSourceRowKey } from './model';
-import type { BehaviorSourceSelection } from './source_selection';
-import type { BehaviorSourceBookmark } from './source_bookmark';
+import { BehaviorSourceSelectionState } from './source_selection';
 import type { StateMachineSourceIndex } from './state_machine_index';
 import type { AsyncGraphLayoutState } from '../../services/graph_layout/async_layout';
 import type { StateGraphModel } from './state_graph_model';
@@ -71,10 +70,7 @@ export type BehaviorLensViewState = {
 	readonly editSource: EditorEditSource;
 	readonly resource: BehaviorSourceDocument['resource'];
 	document: BehaviorSourceDocument;
-	definitionRowKey: BehaviorSourceRowKey | null;
-	selection: BehaviorSourceSelection | null;
-	/** One edit-associated selection waiting for the next source projection, not history. */
-	selectionBookmark: BehaviorSourceBookmark | undefined;
+	readonly selectionState: BehaviorSourceSelectionState;
 	stateMachines: StateMachineSourceIndex;
 	source: BehaviorSourceIndex;
 	readonly sourceMatchRowKeys: Set<BehaviorSourceRowKey>;
@@ -111,9 +107,7 @@ export function createBehaviorLensViewState(document: BehaviorSourceDocument, mo
 		editSource: Symbol('behavior-view'),
 		resource: document.resource,
 		document: { ...document, definitions: [] },
-		definitionRowKey: null,
-		selection: null,
-		selectionBookmark: undefined,
+		selectionState: new BehaviorSourceSelectionState(),
 		stateMachines: { bodies: new Map(), references: new Map(), initialTargets: new Map(), scopes: new Map(), retargetLiterals: new Map() },
 		source: BehaviorSourceIndex.acquire({ ...document, definitions: [] }, model, resolveModel),
 		sourceMatchRowKeys: new Set(),

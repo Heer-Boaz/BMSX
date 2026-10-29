@@ -44,7 +44,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, imports: Readonly
 	const transition = definition.transitions.find(item => item.origin === branch.children.get('idle')! && item.slot.kind === 'update')!;
 	const edge = byOutcome.get(transition.outcomes[1])!;
 	graph.viewport.selection = edge;
-	view.selection = selectStateMachineSource(edge.link.reference, view.source.models);
+	view.selectionState.select(selectStateMachineSource(edge.link.reference, view.source.models));
 	const drops: Parameters<StateMachineRetargetDrop>[] = [];
 	const begin = () => beginStateMachineDrag(view, { kind: 'connection', edge, end: 'target' }, (...drop) => drops.push(drop))!;
 	const hover = (session: ReturnType<typeof begin>, name: string) => {

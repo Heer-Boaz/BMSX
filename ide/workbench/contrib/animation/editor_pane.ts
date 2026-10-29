@@ -38,7 +38,7 @@ import { layoutAnimationEditor } from './layout';
 import { drawAnimationEditor } from './render';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import type { EditorGroupView } from '../../services/editor/editor_group';
-import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import type { EditorNavigationController } from '../resources/navigation';
 
 const TRACK_NAVIGATION = [['ArrowUp', -1], ['ArrowDown', 1]] as const;
@@ -54,6 +54,9 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 	public override getSourceLocation(): EditorSourceLocation | undefined {
 		const input = this.input;
 		return this.controller.getSourceLocation(input);
+	}
+	public override captureSourceLocation(): EditorSourceLocationRequest | undefined {
+		return this.captureAnimationSource('written');
 	}
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly clients: WorkbenchActionBarControl;
@@ -128,13 +131,16 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 		this.focusTarget.registerCommand('animation.fit', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.fit(); this.input.keys.curve.bind(this.input.keys); } });
 		this.focusTarget.registerCommand('animation.snap', { isEnabled: () => this.hasInput && this.input.keys.unit !== undefined, run: () => { this.input.keys.snap = !this.input.keys.snap; this.input.status = this.input.keys.snap ? 'Snap on' : 'Snap off'; } });
 		this.focusTarget.registerCommand('animation.remove', this.authoringCommand('selectedEntry', input => this.controller.authoring.canRemove(input), input => this.controller.authoring.remove(input)));
-		for (const [command, placement] of [['animation.producerSource', 'default'], ['animation.producerSourceToSide', 'side']] as const) this.focusTarget.registerCommand(command, {
-			isEnabled: () => this.hasInput && this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined,
-			run: () => {
-				const input = this.input;
-				void this.navigation.openSource(this.group, { readLocation: () => this.controller.getProducerSourceLocation(input), placement });
-			},
-		});
+		for (const [command, placement] of [['animation.producerSource', 'default'], ['animation.producerSourceToSide', 'side']] as const) {
+			const enabled = () => this.hasInput && this.input.details.rows[this.input.details.selectionIndex]?.element.producer !== undefined;
+			const capture = () => {
+				const source = this.captureAnimationSource('producer');
+				if (source === undefined) return;
+				return { isEnabled: () => source.isCurrent() && enabled() && source.isCurrent(),
+					run: () => { void this.navigation.openSource(this.group, { source, placement }); } };
+			};
+			this.focusTarget.registerCommand(command, { isEnabled: enabled, run: () => capture()?.run(), capture });
+		}
 		this.focusTarget.registerCommand('animation.edit', this.authoringCommand('property', input => {
 			const property = input.details.rows[input.details.selectionIndex]?.element;
 			if (property === undefined || !property.source.structural || !input.document!.syntaxComplete) return false;
@@ -185,29 +191,42 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 			this.columnSash.focusTarget, this.rowSash.focusTarget, this.actions.focusTarget, this.clients.focusTarget];
 	}
 	/** Source selections retain their identity while reparsing maps their authored ranges. */
+	private captureSubject(subject: AnimationCommandSubject): { readonly input: AnimationEditorInput; isCurrent(): boolean } | undefined {
+		if (!this.hasInput) return;
+		const input = this.input, scope = this.focusTarget.scope, generation = scope.contextGeneration;
+		const trackSelection = input.trackSelection, keySelection = input.keySelection, detailSelection = input.detailSelection;
+		const frames = input.framesSelected, track = input.trackIndex >= 0, key = input.keyIndex >= 0, clip = input.clipIndex >= 0, cursor = input.keys.cursor;
+		return { input, isCurrent: () => {
+			if (!this.hasInput || this.input !== input || scope.contextGeneration !== generation) return false;
+			if (subject === 'definition') return true;
+			if (subject === 'keyInsertion') return input.trackSelection === trackSelection && input.trackIndex >= 0 && input.keys.cursor === cursor;
+			if (subject === 'frameInsertion') return input.framesSelected === frames
+				&& (!frames || input.trackSelection === trackSelection && input.detailSelection === detailSelection);
+			if (subject === 'clip') return input.clipIndex >= 0 && input.trackSelection === trackSelection;
+			if (input.trackSelection !== trackSelection || input.keySelection !== keySelection || input.framesSelected !== frames
+				|| (input.trackIndex >= 0) !== track || (input.keyIndex >= 0) !== key || (input.clipIndex >= 0) !== clip) return false;
+			return subject === 'selectedSource' || subject === 'selectedEntry' && !frames || input.detailSelection === detailSelection;
+		} };
+	}
+	private captureAnimationSource(kind: 'written' | 'producer') {
+		const intent = this.captureSubject('property');
+		if (intent === undefined) return;
+		return { isCurrent: intent.isCurrent, readLocation: () => {
+			if (!intent.isCurrent()) return;
+			const location = kind === 'written' ? this.controller.getSourceLocation(intent.input) : this.controller.getProducerSourceLocation(intent.input);
+			return intent.isCurrent() ? location : undefined;
+		} };
+	}
 	private authoringCommand(subject: AnimationCommandSubject, canRun: (input: AnimationEditorInput) => boolean,
 		run: (input: AnimationEditorInput) => void): FocusCommand {
 		return { isEnabled: () => this.hasInput && canRun(this.input), run: () => run(this.input), capture: () => {
-			if (!this.hasInput) return;
-			const input = this.input, scope = this.focusTarget.scope, generation = scope.contextGeneration;
-			const trackSelection = input.trackSelection, keySelection = input.keySelection, detailSelection = input.detailSelection;
-			const frames = input.framesSelected, track = input.trackIndex >= 0, key = input.keyIndex >= 0, clip = input.clipIndex >= 0, cursor = input.keys.cursor;
-			const current = (): boolean => {
-				if (!this.hasInput || this.input !== input || scope.contextGeneration !== generation) return false;
-				if (subject === 'definition') return true;
-				if (subject === 'keyInsertion') return input.trackSelection === trackSelection && input.trackIndex >= 0 && input.keys.cursor === cursor;
-				if (subject === 'frameInsertion') return input.framesSelected === frames
-					&& (!frames || input.trackSelection === trackSelection && input.detailSelection === detailSelection);
-				if (subject === 'clip') return input.clipIndex >= 0 && input.trackSelection === trackSelection;
-				if (input.trackSelection !== trackSelection || input.keySelection !== keySelection || input.framesSelected !== frames
-					|| (input.trackIndex >= 0) !== track || (input.keyIndex >= 0) !== key || (input.clipIndex >= 0) !== clip) return false;
-				return subject === 'selectedSource' || subject === 'selectedEntry' && !frames || input.detailSelection === detailSelection;
-			};
-			return { editScope: scope, isEnabled: () => {
-				if (!current()) return false;
-				this.controller.refresh(input);
-				return current() && canRun(input) && current();
-			}, run: () => run(input) };
+			const intent = this.captureSubject(subject);
+			if (intent === undefined) return;
+			return { editScope: this.focusTarget.scope, isEnabled: () => {
+				if (!intent.isCurrent()) return false;
+				this.controller.refresh(intent.input);
+				return intent.isCurrent() && canRun(intent.input) && intent.isCurrent();
+			}, run: () => run(intent.input) };
 		} };
 	}
 	protected override activate(): void {

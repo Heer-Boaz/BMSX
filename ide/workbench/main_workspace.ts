@@ -286,14 +286,16 @@ export class MainWorkspace {
 	public captureSourceNavigation(options: SourceNavigationCaptureOptions = {}): SourceNavigationOrigin | undefined {
 		const target = options.target ?? this.primaryValue?.commandTarget;
 		if (target === undefined || !this.canOpenSource(target)) return;
+		if (options.source?.isCurrent?.() === false) return;
 		const client = this.sourceClient(target)!;
-		const source = client.captureSourceLocation?.();
-		if (source === undefined) return;
 		const commandTarget = client.commandTarget, scope = target.scope, context = scope.contextGeneration;
 		const generation = ++this.sourceOpeningRevision;
+		const source = options.source ?? client.captureSourceLocation?.();
+		if (source === undefined) return;
 		const current = () => this.presented && !this.surface.retired && !this.resetting && this.sourceClient(target) === client
 			&& this.sourceOpeningRevision === generation && scope.contextGeneration === context && source.isCurrent?.() !== false;
-		return { commandTarget, anchor: this.documentAnchor(), readLocation: options.readLocation ?? source.readLocation,
+		if (!current()) return;
+		return { commandTarget, anchor: this.documentAnchor(), readLocation: source.readLocation,
 			isCurrent: current, isCurrentAfterHandoff: current, beginResolution: current };
 	}
 

@@ -73,8 +73,8 @@ test('equal declaration names keep their exact occurrence and do not borrow anot
 	assert.ok(secondInput instanceof BehaviorLensInput && secondInput !== firstInput);
 	assert.ok(secondInput.workingCopy === firstInput.workingCopy);
 	assert.ok(first.kind === 'action_effect' && second.kind === 'action_effect');
-	assert.equal(firstInput.view.definitionRowKey, first.registration.rowKey);
-	assert.equal(secondInput.view.definitionRowKey, second.registration.rowKey);
+	assert.equal(firstInput.view.selectionState.definitionRowKey, first.registration.rowKey);
+	assert.equal(secondInput.view.selectionState.definitionRowKey, second.registration.rowKey);
 });
 
 test('declaration Source opens the canonical authored owner at its current tracked offset without copying source', async t => {
@@ -174,7 +174,7 @@ test('destination draft admission may return its accepted transient within the o
 	assert.equal(draft.pending, false);
 	const input = f.firstGroup.model.activeTab;
 	assert.ok(input instanceof BehaviorLensInput && input.workingCopy === model);
-	const selected = input.view.source.ranges.get(input.view.definitionRowKey!)!;
+	const selected = input.view.source.ranges.get(input.view.selectionState.definitionRowKey!)!;
 	assert.deepEqual({ start: selected.start, end: selected.end }, entry.range);
 });
 

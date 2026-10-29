@@ -6,6 +6,7 @@ import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
 import type { BehaviorSourceSelection } from './source_selection';
 import { copyStateMachineSourceBookmark, mapStateMachineSourceSelection, stateMachineSourceBookmarksEqual, type StateMachineSourceBookmark } from './state_machine_selection';
+import { indexBehaviorTreeSource } from './behavior_tree_index';
 
 export type BehaviorSourceBookmarkStep = TrackedTextLocation & Pick<BehaviorSourceNode, 'kind' | 'behaviorKind'>;
 
@@ -14,7 +15,7 @@ export type BehaviorSourceBookmark = ({ readonly kind: 'node' } | { readonly kin
 	readonly path: readonly BehaviorSourceBookmarkStep[];
 };
 
-export const behaviorSourceEditState = new EditorEditStateType<BehaviorSourceBookmark>();
+export const behaviorSourceEditState = new EditorEditStateType<{ readonly bookmark: BehaviorSourceBookmark; readonly originIntent: number }>();
 
 export function captureBehaviorSourceBookmark<S extends BehaviorSourceSelection>(
 	view: BehaviorLensViewState, selection: S,
@@ -49,7 +50,7 @@ export function mapBehaviorSourceBookmark(bookmark: BehaviorSourceBookmark, reso
 }
 
 export function resolveBehaviorSourceBookmark(
-	bookmark: BehaviorSourceBookmark, view: BehaviorLensViewState,
+	bookmark: BehaviorSourceBookmark, view: Pick<BehaviorLensViewState, 'document' | 'source'>,
 ): BehaviorSourceNode[] | undefined {
 	const path: BehaviorSourceNode[] = [];
 	let candidates: readonly BehaviorSourceNode[] = view.document.definitions;
@@ -62,6 +63,10 @@ export function resolveBehaviorSourceBookmark(
 		if (node === undefined) return undefined; // A later source edit can delete the selected occurrence.
 		path.push(node);
 		candidates = node.children;
+	}
+	if (bookmark.kind === 'tree-edge') {
+		const definition = view.document.definitions.find(node => node.rowKey === path[0].rowKey)!;
+		if (definition.behaviorKind !== 'behavior_tree' || !indexBehaviorTreeSource(definition).edges.has(path[path.length - 1].rowKey)) return undefined;
 	}
 	return path;
 }

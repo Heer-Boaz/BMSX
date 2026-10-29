@@ -52,7 +52,7 @@ test('FSM graph retains containment, concurrent entry and separate edges for ide
 		assert.equal(f.graph.viewport.model.nodes.length, 0);
 		await f.settle();
 		const model = f.graph.viewport.model;
-		const root = model.nodesBySource.get(f.view.definitionRowKey!)!;
+		const root = model.nodesBySource.get(f.view.selectionState.definitionRowKey!)!;
 		assert.deepEqual(root.children.filter(child => child.role === 'source').map(child => child.source.label), ['left', 'right']);
 		const updates = model.edges.filter(edge => edge.link.reference.kind === 'state-outcome' && edge.link.reference.transition.slot.kind === 'update');
 		assert.equal(updates.length, 4);
@@ -74,7 +74,7 @@ test('FSM graph retains containment, concurrent entry and separate edges for ide
 		}
 		f.graph.viewport.selection = updates[3];
 		acceptStateGraphSelection(f.view, f.graph);
-		assert.equal(stateGraphSelection(model, f.view.selection), updates[3]);
+		assert.equal(stateGraphSelection(model, f.view.selectionState.selected), updates[3]);
 		const retained = f.graph.viewport.model;
 		for (let index = 0; index < 100; index += 1) f.input.updatePresentation(font);
 		assert.equal(f.graph.viewport.model, retained, 'idle frames do not project, measure or reroute');
@@ -92,9 +92,9 @@ test('FSM graph shows unknown/no-path evidence without endpoints and preserves s
 		f.model.pushEditOperations([{ offset: at, deleteLength: "'../active'".length, text: 'nil' }]);
 		assert.equal(f.graph.viewport.model.nodes.length, 0, 'source edit immediately revokes old hit geometry, even while hidden');
 		f.refresh(); await f.settle();
-		assert.equal(f.view.selection?.kind, 'state-outcome');
-		if (f.view.selection?.kind !== 'state-outcome') throw new Error('Selected proof missing');
-		assert.equal(f.view.selection.outcome.target.kind, 'no-path');
+		assert.equal(f.view.selectionState.selected?.kind, 'state-outcome');
+		if (f.view.selectionState.selected?.kind !== 'state-outcome') throw new Error('Selected proof missing');
+		assert.equal(f.view.selectionState.selected.outcome.target.kind, 'no-path');
 		assert.equal(f.graph.viewport.selection, null, 'no invented self-loop or parent edge for return nil');
 		f.model.undo(f.view.editSource); f.refresh(); await f.settle();
 		assert.equal(f.graph.viewport.selection?.kind, 'edge');
@@ -110,7 +110,7 @@ fsm.register('cyclic', { initial = 'a', on = { parent = '/a' }, states = {
 	try {
 		f.input.updatePresentation(font); await f.settle();
 		const model = f.graph.viewport.model;
-		const root = model.nodesBySource.get(f.view.definitionRowKey!)!;
+		const root = model.nodesBySource.get(f.view.selectionState.definitionRowKey!)!;
 		for (const node of model.nodes) for (const coordinate of Object.values(node.bounds)) assert.equal(coordinate, Math.round(coordinate));
 		for (const edge of model.edges) {
 			for (const coordinate of edge.points) assert.equal(coordinate, Math.round(coordinate));
@@ -151,7 +151,7 @@ test('FSM initial command updates real graph entry edges and retains selected st
 		assert.equal(f.graph.viewport.model.nodes.length, 0, 'source edit immediately revokes old geometry and hits');
 		assert.equal(stateMachineInitialTarget(f.view), undefined);
 		f.refresh(); await f.settle();
-		assert.equal(f.view.selection?.rowKey, node.source.rowKey);
+		assert.equal(f.view.selectionState.selected?.rowKey, node.source.rowKey);
 		assert.equal(f.graph.viewport.selection?.kind, 'node');
 		assert.equal(stateMachineInitialTarget(f.view), undefined, 'selected state is now initial');
 		const entries = f.graph.viewport.model.edges.filter(edge => edge.link.reference.kind === 'state-entry');
@@ -182,7 +182,7 @@ test('retarget edit history republishes the exact selected graph proof after wor
 			const index = slot === 'update' ? 1 : 0;
 			f.graph.viewport.selection = f.graph.viewport.model.edgesByOutcome.get(transition.outcomes[index])!;
 			acceptStateGraphSelection(f.view, f.graph);
-			const selection = f.view.selection;
+			const selection = f.view.selectionState.selected;
 			assert.ok(selection?.kind === 'state-outcome');
 			const target = new StateMachineRetargetAnalysis(f.view.document, selection.transition, selection.outcome)
 				.checkTarget(scope.children.get('other')!);
@@ -232,7 +232,7 @@ test('concrete input coalesces edits, hides stale geometry, publishes no obsolet
 		latest.resolve(await real.layout(latest.graph));
 		await f.settle();
 		const reference = f.graph.viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!.link.reference;
-		f.view.selection = selectStateMachineSource(reference, f.view.source.models);
+		f.view.selectionState.select(selectStateMachineSource(reference, f.view.source.models));
 		assert.ok(reference.kind === 'state-outcome' && reference.outcome.proof.kind === 'return' && reference.outcome.proof.callbackFile.chunk.locations.range(reference.outcome.proof.statement.span).start.line >= 6);
 		f.input.updatePresentation(new Font({ variant: 'msx' }));
 		assert.equal(f.graph.layoutState.kind, 'pending', 'font measurement starts a new unpublished generation');
@@ -289,8 +289,8 @@ test('authored initial and concurrent entries have their own in-scope marker and
 				marker.bounds.top - f.graph.viewport.scrollY + 2), marker);
 			f.graph.viewport.selection = marker;
 			acceptStateGraphSelection(f.view, f.graph);
-			assert.equal(f.view.selection?.kind, 'state-entry');
-			assert.equal(stateGraphSelection(model, f.view.selection), marker, 'source restoration selects the canonical entry marker');
+			assert.equal(f.view.selectionState.selected?.kind, 'state-entry');
+			assert.equal(stateGraphSelection(model, f.view.selectionState.selected), marker, 'source restoration selects the canonical entry marker');
 			assert.equal(stateMachineInitialTarget(f.view), undefined, 'entry marker is not a candidate child state');
 			const edge = model.edgesByEntry.get(entry);
 			if (entry.target.kind === 'state') {
@@ -315,7 +315,7 @@ machines.register('implicit.initial', { states = { idle = {}, run = {} } })`);
 		assert.equal(model.edges.length, 0);
 		f.graph.viewport.selection = marker;
 		acceptStateGraphSelection(f.view, f.graph);
-		assert.equal(f.view.selection?.kind, 'state-entry');
+		assert.equal(f.view.selectionState.selected?.kind, 'state-entry');
 		selectBehaviorLensDefinition(f.view, f.view.document.definitions[1].rowKey);
 		f.input.updatePresentation(font); await f.settle();
 		assert.equal(f.graph.viewport.model.nodesByEntry.size, 0);

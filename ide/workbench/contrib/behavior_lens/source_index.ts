@@ -18,12 +18,9 @@ export class BehaviorSourceIndex {
 	private current = true;
 
 	private constructor(private readonly document: BehaviorSourceDocument, public readonly model: EditorTextModel,
-		public readonly resolveModel: (path: string) => EditorTextModel) {
-		const models = new Map<string, EditorTextModel>();
+		public readonly resolveModel: (path: string) => EditorTextModel, models: ReadonlyMap<string, EditorTextModel>) {
 		const rangesByModel = new Map<EditorTextModel, Map<BehaviorSourceRowKey, TrackedTextLocation>>();
-		for (const file of document.files) {
-			const owner = file.file === resourceIdentityKey(model.resource) ? model : resolveModel(file.file);
-			models.set(file.file, owner);
+		for (const owner of models.values()) {
 			rangesByModel.set(owner, new Map());
 			this.subscriptions.push(owner.onWillChangeContent(() => this.invalidate()));
 		}
@@ -52,7 +49,14 @@ export class BehaviorSourceIndex {
 		let generations = this.indices.get(model);
 		if (generations === undefined) { generations = new Map(); this.indices.set(model, generations); }
 		let index = generations.get(document);
-		if (index === undefined || !index.isCurrent) { index = new BehaviorSourceIndex(document, model, resolveModel); generations.set(document, index); }
+		if (index === undefined || !index.isCurrent) {
+			const models = new Map<string, EditorTextModel>(), primary = resourceIdentityKey(model.resource);
+			for (const file of document.files) models.set(file.file, file.file === primary ? model : resolveModel(file.file));
+			// Model admission can reenter acquisition and publish this generation first.
+			const admitted = generations.get(document);
+			if (admitted !== undefined && admitted.isCurrent) index = admitted;
+			else { index = new BehaviorSourceIndex(document, model, resolveModel, models); generations.set(document, index); }
+		}
 		index.references += 1;
 		return index;
 	}

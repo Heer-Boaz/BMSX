@@ -60,7 +60,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await press('AltLeft', 'ArrowLeft');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens, 'A03: the second Back returns to the concrete visual input');
 	await lens.graphLayout.settled; await frame();
-	check(view.definitionRowKey === view.document.definitions[0].rowKey && view.selection?.kind === 'state-outcome'
+	check(view.selectionState.definitionRowKey === view.document.definitions[0].rowKey && view.selectionState.selected?.kind === 'state-outcome'
 		&& selectedBehaviorLensSourceRange(view)!.start.line === source.start.line + 1,
 		'A03: the mapped registration and second return survive source reprojection');
 	check(graph.viewport.scrollX === scrollX && graph.viewport.scrollY === scrollY,
@@ -76,7 +76,7 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await runPaletteCommand('Behavior Lens: Open State Machine (FSM)');
 	await chooseBehavior(test, 'FSM navigation.fsm.two');
 	await press('AltLeft', 'ArrowLeft');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && view.definitionRowKey === view.document.definitions[0].rowKey && view.selection?.kind === 'state-outcome',
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && view.selectionState.definitionRowKey === view.document.definitions[0].rowKey && view.selectionState.selected?.kind === 'state-outcome',
 		'A03/A04: Back from another definition restores the original input and its exact selection');
 	await lens.graphLayout.settled; await frame();
 	check(graph.viewport.scrollX === scrollX && graph.viewport.scrollY === scrollY, 'A03: repeated definition switching keeps the saved viewport');
@@ -90,11 +90,11 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	if (treeView.presentation.kind !== 'graph') throw new Error('A03: BT presentation missing');
 	const tree = treeView.presentation;
 	await press('Home'); await press('ArrowDown'); await press('ArrowDown'); await press('ArrowRight');
-	const occurrence = treeView.selection!.rowKey;
+	const occurrence = treeView.selectionState.selected!.rowKey;
 	const treeSource = selectedBehaviorLensSourceRange(treeView)!;
 	await click(tree.actionBar.items[0].bounds);
 	await press('AltLeft', 'ArrowLeft');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === treeInput && treeView.selection!.rowKey === occurrence && treeView.presentation.kind === 'graph', 'A03: Back restores the second shared BT occurrence');
+	check(ide.editor.editorParts.activeGroup.model.activeTab === treeInput && treeView.selectionState.selected!.rowKey === occurrence && treeView.presentation.kind === 'graph', 'A03: Back restores the second shared BT occurrence');
 	await runPaletteCommand('Behavior Lens: Open ActionEffect');
 	await chooseBehavior(test, 'EFFECT navigation.effect');
 	const effectInput = ide.editor.editorParts.activeGroup.model.activeTab;
@@ -105,14 +105,14 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await revealLensOccurrence(test, effectInput.view, period.rowKey);
 	await click(effectInput.view.presentation.actionBar.items[0].bounds);
 	await press('AltLeft', 'ArrowLeft');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === effectInput && effectInput.view.presentation.kind === 'properties' && effectInput.view.selection!.rowKey === period.rowKey,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === effectInput && effectInput.view.presentation.kind === 'properties' && effectInput.view.selectionState.selected!.rowKey === period.rowKey,
 		'A03: ActionEffect Source returns to its exact authored property');
 	// Cross-kind restoration must rebind reusable graph/property controls, not just change their data.
 	await press('AltLeft', 'ArrowLeft');
-	check(treeView.presentation.kind === 'graph' && treeView.selection!.rowKey === occurrence
+	check(treeView.presentation.kind === 'graph' && treeView.selectionState.selected!.rowKey === occurrence
 		&& selectedBehaviorLensSourceRange(treeView)!.start.line === treeSource.start.line, 'A03: Back across presentation kinds restores the BT');
 	await press('ArrowLeft');
-	check(treeView.selection!.rowKey !== occurrence, 'A03: the restored graph receives physical keyboard navigation');
+	check(treeView.selectionState.selected!.rowKey !== occurrence, 'A03: the restored graph receives physical keyboard navigation');
 	await press('Home'); await press('ArrowDown'); await press('ArrowDown');
 	const removedSource = selectedBehaviorLensSourceRange(treeView)!;
 	const removedOffset = model.buffer.offsetAt(removedSource.start.line - 1, removedSource.start.column - 1);
@@ -120,12 +120,12 @@ export async function testStudioNavigationHistory(test: StudioFixture): Promise<
 	await click(treeView.presentation.actionBar.items[0].bounds);
 	model.pushEditOperations([{ offset: removedOffset, deleteLength: 4, text: '' }]);
 	await press('AltLeft', 'ArrowLeft');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === treeInput && treeView.selection === null && treeView.presentation.viewport.selection === null,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === treeInput && treeView.selectionState.selected === null && treeView.presentation.viewport.selection === null,
 		'A03: a deleted history occurrence cannot select the remaining identical leaf');
 	await press('AltLeft', 'ArrowRight');
 	await press('ControlLeft', 'KeyZ');
 	await press('AltLeft', 'ArrowLeft');
-	check(treeView.selection === null && model.buffer.getText() === prefix + NAVIGATION_SOURCE,
+	check(treeView.selectionState.selected === null && model.buffer.getText() === prefix + NAVIGATION_SOURCE,
 		'A03: Undo restores source bytes, not a deleted navigation selection');
 
 	await click(treeView.presentation.actionBar.items[0].bounds);

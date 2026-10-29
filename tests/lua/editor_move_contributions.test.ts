@@ -139,7 +139,7 @@ test('Behavior live inspection vetoes transfer, then its same authored graph and
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'tree.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), input = f.editor.behaviorLens.createInput(model, 'graph');
 	f.firstGroup.openEditor(input); selectBehaviorLensDefinition(input.view, input.view.document.definitions[0].rowKey); input.updateDefinition();
-	input.view.selection = { kind: 'node', rowKey: input.view.source.nodes.at(-1)!.rowKey }; f.update();
+	input.view.selectionState.select({ kind: 'node', rowKey: input.view.source.nodes.at(-1)!.rowKey }); f.update();
 	const view = captureBehaviorLensView(input), cycles = f.host.runtime.machine.scheduler.nowCycles;
 	const inspection = new BehaviorRuntimeInspection(f.sources, f.editor.luaPrograms.guest, f.host.rewind, -1,
 		f.sources.currentBlua32Media.system!, undefined, f.editor.commands.transport);

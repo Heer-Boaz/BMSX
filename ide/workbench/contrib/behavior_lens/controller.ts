@@ -7,7 +7,7 @@ import { resolveLuaTextFileModel } from '../../services/working_copy/text_file_m
 import type { Blua32SourceImage, RuntimeSourceState } from '../../../runtime/sources';
 import { CARTRIDGE_RESOURCE_DOMAINS, SYSTEM_RESOURCE_DOMAIN, resourceIdentityEquals, resourceIdentityKey, type ResourceDomain, type ResourceIdentity } from '../../../common/resource';
 import { luaSourceLocation } from '../../../language/lua/source_location';
-import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorNavigationController } from '../resources/navigation';
 import type { EditorGroupView, EditorTabOpenOptions } from '../../services/editor/editor_group';
@@ -108,11 +108,11 @@ export class BehaviorLensController {
 
 	public findDefinition(group: EditorGroupView, resource: ResourceIdentity, kind: BehaviorKind, range: Readonly<TrackedTextRange>): BehaviorLensInput | undefined {
 		for (const candidate of group.model.tabs) {
-			if (candidate.kind !== 'behavior_lens' || !resourceIdentityEquals(candidate.workingCopy.resource, resource) || candidate.view.definitionRowKey === null) continue;
+			if (candidate.kind !== 'behavior_lens' || !resourceIdentityEquals(candidate.workingCopy.resource, resource) || candidate.view.selectionState.definitionRowKey === null) continue;
 			const view = candidate.view;
-			const span = view.source.ranges.get(view.definitionRowKey)!;
+			const span = view.source.ranges.get(view.selectionState.definitionRowKey)!;
 			if (span.start !== span.end && span.start === range.start && span.end === range.end
-				&& view.source.nodesByRowKey.get(view.definitionRowKey)!.behaviorKind === kind) {
+				&& view.source.nodesByRowKey.get(view.selectionState.definitionRowKey)!.behaviorKind === kind) {
 				return candidate;
 			}
 		}
@@ -201,11 +201,22 @@ export class BehaviorLensController {
 		group.openEditor(new WorkspaceEditReviewInput(proposal, evidence));
 	}
 
+	public captureSourceLocation(input: BehaviorLensInput, subject: 'selected' | 'definition' = 'selected'): EditorSourceLocationRequest {
+		const owner = input.view.selectionState, selection = owner.selectionRevision, definition = owner.definitionRevision;
+		const isCurrent = () => owner.available && owner.definitionRevision === definition
+			&& (subject === 'definition' || owner.selectionRevision === selection);
+		return { isCurrent, readLocation: () => {
+			if (!isCurrent()) return undefined;
+			const location = this.getSourceLocation(input, subject);
+			return isCurrent() ? location : undefined;
+		} };
+	}
+
 	public getSourceLocation(input: BehaviorLensInput, subject: 'selected' | 'definition' = 'selected'): EditorSourceLocation | undefined {
 		this.updateView(input);
 		const view = input.view;
 		const selected = subject === 'selected' ? selectedBehaviorLensSourceRange(view) : null;
-		const range = selected ?? (view.definitionRowKey === null ? undefined : view.source.nodesByRowKey.get(view.definitionRowKey)!.occurrenceRange);
+		const range = selected ?? (view.selectionState.definitionRowKey === null ? undefined : view.source.nodesByRowKey.get(view.selectionState.definitionRowKey)!.occurrenceRange);
 		const model = range === undefined ? input.workingCopy : view.source.models.get(range.path)!;
 		const path = resourceIdentityKey(model.identity), file = view.document.files.find(file => file.file === path)!;
 		const project = getOrCreateSemanticProject(editorTextModelService, input.workingCopy.resource.contextId);
@@ -340,11 +351,11 @@ export class BehaviorLensController {
 		const view = input.view;
 		const source = detail.source!;
 		if (source.stateSelection !== undefined) {
-			view.selection = source.stateSelection.kind === 'node' ? source.stateSelection
-				: selectStateMachineSource(source.stateSelection, view.source.models);
+			view.selectionState.select(source.stateSelection.kind === 'node' ? source.stateSelection
+				: selectStateMachineSource(source.stateSelection, view.source.models));
 			if (view.presentation.kind === 'state-graph') {
 				const viewport = view.presentation.viewport;
-				viewport.selection = stateGraphSelection(viewport.model, view.selection);
+				viewport.selection = stateGraphSelection(viewport.model, view.selectionState.selected);
 			}
 			finishBehaviorLensNavigation(view);
 		}
@@ -436,11 +447,11 @@ export class BehaviorLensController {
 		const view = input.view;
 		const result = executeBehaviorLensNavigation(view, command);
 		if (result === BehaviorLensNavigationResult.Activate) {
-			void this.navigation.openSource(group, { readLocation: () => this.getSourceLocation(input) });
+			void this.navigation.openSource(group, { source: this.captureSourceLocation(input) });
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Back) {
-			void this.navigation.openSource(group, { readLocation: () => this.getSourceLocation(input, 'definition') });
+			void this.navigation.openSource(group, { source: this.captureSourceLocation(input, 'definition') });
 			return true;
 		}
 		if (result === BehaviorLensNavigationResult.Changed) {

@@ -27,22 +27,22 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, definitionIndex =
 		transition, outcome: transition.outcomes[outcomeIndex] }, view.source.models);
 	assert.ok(selection.kind === 'state-outcome');
 	selectBehaviorLensDefinition(view, definition.rowKey);
-	view.selection = selection;
+	view.selectionState.select(selection);
 	const target = new StateMachineRetargetAnalysis(view.document, selection.transition, selection.outcome)
 		.checkTarget(scope.children.get('other')!);
 	assert.ok(target.kind === 'available');
 	const checkSelection = (text: string, outcome = outcomeIndex) => {
-		const selected = view.selection;
+		const selected = view.selectionState.selected;
 		assert.ok(selected?.kind === 'state-outcome');
 		const current = view.document.definitions[definitionIndex];
 		assert.ok(current.behaviorKind === 'state_machine');
-		assert.equal(view.definitionRowKey, current.rowKey);
+		assert.equal(view.selectionState.definitionRowKey, current.rowKey);
 		assert.equal(selected.transition.origin.rowKey, current.scopes[0].children.get(branch)!.children.get('idle')!.rowKey);
 		assert.equal(selected.transition.slot.source.label, transition.slot.source.label);
 		assert.equal(selected.outcome, selected.transition.outcomes[outcome], 'exact return syntax, not text or edge ordinal');
 		assert.ok(selected.outcome.target.kind === 'path');
 		assert.equal(selected.outcome.target.text, text);
-		assert.equal(view.selectionBookmark, undefined);
+		assert.equal(view.selectionState.pendingBookmark, undefined);
 		return selected;
 	};
 	const model = view.source.models.get(target.file.chunk.locations.range(target.literal.span).path)!;
@@ -57,10 +57,11 @@ test('retarget preparation captures exact source and typed proof before Source n
 	assert.equal(f.model.buffer.getText(), original); assert.equal(f.model.version, version);
 	assert.equal(f.model.canUndo, false); assert.equal(f.model.dirty, false);
 	assert.equal(plan.version, version); assert.ok(plan.beforeEditState!.is(behaviorSourceEditState));
-	assert.deepEqual(plan.beforeEditState!.value, before);
+	assert.deepEqual(plan.beforeEditState!.value.bookmark, before);
 	const [edit] = plan.edits, expected = original.slice(0, edit.offset) + edit.text + original.slice(edit.offset + edit.deleteLength);
-	f.view.selection = null;
-	f.model.history.applyEdits(new Map([[f.model, plan]])); f.refresh(); f.checkSelection('../other');
+	f.view.selectionState.select(null);
+	f.model.history.applyEdits(new Map([[f.model, plan]])); f.refresh();
+	assert.equal(f.view.selectionState.selected, null, 'the prepared source edit cannot reacquire a superseded selection');
 	assert.equal(f.model.buffer.getText(), expected); assert.equal(f.model.version, version + 1);
 	f.model.undo(f.view.editSource); f.refresh(); f.checkSelection('../active');
 	assert.equal(f.model.buffer.getText(), original); assert.equal(f.model.canUndo, false);
@@ -152,7 +153,7 @@ test('hidden edits map proof coordinates, not history values; identical inserted
 	const f = fixture(t, FSM_RETARGET_SOURCE, 1, 'left', 'update', 1);
 	const document = f.view.document;
 	f.edit();
-	const pending = JSON.stringify(f.view.selectionBookmark);
+	const pending = JSON.stringify(f.view.selectionState.pendingBookmark);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 hidden\r\n' }]);
 	const offset = f.model.buffer.getText().indexOf('\treturn (');
 	f.model.pushEditOperations([{ offset, deleteLength: 0, text: "\tif actor.extra then return '../other' end\n" }]);
@@ -161,10 +162,11 @@ test('hidden edits map proof coordinates, not history values; identical inserted
 	f.model.undo(f.view.editSource); f.model.undo(f.view.editSource); f.refresh(); f.checkSelection('../other');
 	const record = f.model.undo(f.view.editSource)!;
 	assert.ok(record.afterEditState!.is(behaviorSourceEditState));
-	assert.ok(record.afterEditState.value.kind === 'state-outcome');
-	assert.equal(JSON.stringify(record.afterEditState.value), pending, 'mapped live coordinates did not alias history');
-	assert.deepEqual(Object.keys(record.afterEditState.value).sort(), ['kind', 'path', 'tracked']);
-	assert.deepEqual(Object.keys(record.afterEditState.value.tracked).sort(), ['binding', 'bindingKind', 'callback', 'kind', 'slotKind', 'statementStart']);
+	const bookmark = record.afterEditState.value.bookmark;
+	assert.ok(bookmark.kind === 'state-outcome');
+	assert.equal(JSON.stringify(bookmark), pending, 'mapped live coordinates did not alias history');
+	assert.deepEqual(Object.keys(bookmark).sort(), ['kind', 'path', 'tracked']);
+	assert.deepEqual(Object.keys(bookmark.tracked).sort(), ['binding', 'bindingKind', 'callback', 'kind', 'slotKind', 'statementStart']);
 	f.model.redo(f.view.editSource); f.model.undo(f.view.editSource); f.refresh(); f.checkSelection('../active');
 });
 
@@ -173,11 +175,11 @@ test('shared FSM source Undo does not retarget another definition view', t => {
 	f.edit(); f.refresh();
 	selectBehaviorLensDefinition(f.view, f.view.document.definitions[0].rowKey);
 	f.model.undo(f.view.editSource); f.refresh();
-	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
-	assert.equal(f.view.selection!.rowKey, f.view.definitionRowKey);
+	assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[0].rowKey);
+	assert.equal(f.view.selectionState.selected!.rowKey, f.view.selectionState.definitionRowKey);
 	f.model.redo(f.view.editSource); f.refresh();
-	assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
-	assert.equal(f.view.selection!.rowKey, f.view.definitionRowKey);
+	assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[0].rowKey);
+	assert.equal(f.view.selectionState.selected!.rowKey, f.view.selectionState.definitionRowKey);
 });
 
 test('ordinary replacement of binding, return, callback or parent still deletes pending correspondence, even with hidden Undo', t => {
@@ -185,7 +187,7 @@ test('ordinary replacement of binding, return, callback or parent still deletes 
 		const f = fixture(t, FSM_RETARGET_SOURCE, 0, 'right', part === 'binding' ? 'direct' : 'update', part === 'binding' ? 0 : 1);
 		f.edit(); f.refresh();
 		f.model.undo(f.view.editSource); f.model.redo(f.view.editSource); // Deliver a new pending history value without projection.
-		const selected = f.view.selection!;
+		const selected = f.view.selectionState.selected!;
 		assert.ok(selected.kind === 'state-outcome');
 		const proof = selected.outcome.proof;
 		const range = part === 'parent' ? selected.transition.slot.source.occurrenceRange
@@ -194,8 +196,8 @@ test('ordinary replacement of binding, return, callback or parent still deletes 
 		const text = readLuaSourceRange(f.model.buffer, range);
 		f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text }]);
 		if (hiddenUndo) f.model.undo(f.view.editSource);
-		f.refresh(); assert.equal(f.view.selection, null, `${part}, hidden Undo ${hiddenUndo}`);
-		if (!hiddenUndo) { f.model.undo(f.view.editSource); f.refresh(); assert.equal(f.view.selection, null); }
+		f.refresh(); assert.equal(f.view.selectionState.selected, null, `${part}, hidden Undo ${hiddenUndo}`);
+		if (!hiddenUndo) { f.model.undo(f.view.editSource); f.refresh(); assert.equal(f.view.selectionState.selected, null); }
 		f.model.undo(f.view.editSource); f.refresh(); f.checkSelection('../active');
 	}
 });
@@ -203,8 +205,8 @@ test('ordinary replacement of binding, return, callback or parent still deletes 
 test('unannotated literal replacement never gains the explicit retarget selection policy', t => {
 	const f = fixture(t);
 	f.model.pushEditOperations([createLuaStringValueEdit(f.model.buffer, f.target.file.chunk.locations, f.target.literal, f.target.text)]);
-	f.refresh(); assert.equal(f.view.selection, null);
-	f.model.undo(f.view.editSource); f.refresh(); assert.equal(f.view.selection, null);
+	f.refresh(); assert.equal(f.view.selectionState.selected, null);
+	f.model.undo(f.view.editSource); f.refresh(); assert.equal(f.view.selectionState.selected, null);
 });
 
 test('entry bookmarks use the same typed history and distinguish shared initial declarations', t => {
@@ -212,21 +214,22 @@ test('entry bookmarks use the same typed history and distinguish shared initial 
 	const refs = [...f.view.stateMachines.references.values()].flat();
 	const reference = refs.filter(item => item.kind === 'state-entry' && item.entry.kind === 'initial')[2];
 	assert.ok(reference.kind === 'state-entry');
-	f.view.selection = selectStateMachineSource(reference, f.view.source.models);
-	const before = captureBehaviorSourceBookmark(f.view, f.view.selection);
+	f.view.selectionState.select(selectStateMachineSource(reference, f.view.source.models));
+	const before = captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected);
 	const after = copyBehaviorSourceBookmark(before);
 	const prefix = '-- history probe\n';
-	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }], behaviorSourceEditState.of(before, f.view.editSource), changes => {
+	const originIntent = f.view.selectionState.selectionRevision;
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: prefix }], behaviorSourceEditState.of({ bookmark: before, originIntent }, f.view.editSource), changes => {
 		mapBehaviorSourceBookmark(after, f.model.resource, changes);
-		return behaviorSourceEditState.of(after, f.view.editSource);
+		return behaviorSourceEditState.of({ bookmark: after, originIntent }, f.view.editSource);
 	});
 	for (const action of ['edit', 'undo', 'redo']) {
 		if (action === 'undo') f.model.undo(f.view.editSource);
 		if (action === 'redo') f.model.redo(f.view.editSource);
 		f.refresh();
-		assert.equal(f.view.selection?.kind, 'state-entry');
+		assert.equal(f.view.selectionState.selected?.kind, 'state-entry');
 		assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), "initial = 'idle'");
-		const path = captureBehaviorSourceBookmark(f.view, f.view.selection!).path;
+		const path = captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected!).path;
 		assert.equal(path[path.length - 1].start, before.path[before.path.length - 1].start + (action === 'undo' ? 0 : prefix.length));
 	}
 });

@@ -148,7 +148,7 @@ for (const kind of KINDS) for (const edit of ['move', 'remove'] as const)
 		else if (input instanceof LuaProgramInput) assert.deepEqual(input.occurrenceRange, f.entry.range);
 		else if (input instanceof AnimationEditorInput) assert.deepEqual(input.definitionRange, f.entry.range);
 		else {
-			const selected = input.view.source.ranges.get(input.view.definitionRowKey!)!;
+			const selected = input.view.source.ranges.get(input.view.selectionState.definitionRowKey!)!;
 			assert.deepEqual({ start: selected.start, end: selected.end }, f.entry.range);
 		}
 	});

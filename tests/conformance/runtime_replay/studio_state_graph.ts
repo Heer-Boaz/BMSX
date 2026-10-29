@@ -39,7 +39,7 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 		right: viewport.bounds.left + marker.bounds.right - viewport.scrollX,
 		top: viewport.bounds.top + marker.bounds.top - viewport.scrollY,
 		bottom: viewport.bounds.top + marker.bounds.top + marker.headerHeight - viewport.scrollY }, 1, 'pointer_secondary');
-	check(view.selection?.kind === 'state-entry' && ide.editor.contextMenu.visible
+	check(view.selectionState.selected?.kind === 'state-entry' && ide.editor.contextMenu.visible
 		&& !ide.editor.commands.isEnabled('behaviorLens.setInitialState'),
 		'FSM entry: marker selects authored initial, not a fictitious child state');
 	await press('Home'); await press('Enter');
@@ -62,7 +62,7 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 	// The diagram's traversal includes edges, unlike the BT's tree relationships.
 	await press('Home');
 	for (let index = 0; index < generation.nodes.length + generation.edges.indexOf(parallel[1]); index += 1) await press('ArrowDown');
-	check(view.selection?.kind === 'state-outcome' && parallel[1].link.reference.kind === 'state-outcome' && view.selection.outcome === parallel[1].link.reference.outcome,
+	check(view.selectionState.selected?.kind === 'state-outcome' && parallel[1].link.reference.kind === 'state-outcome' && view.selectionState.selected.outcome === parallel[1].link.reference.outcome,
 		'FSM diagram: Tab visits the second exact proof');
 	const focused = inputFocus.target;
 	for (let index = 0; index < 30; index += 1) await frame();
@@ -116,7 +116,7 @@ export async function testStudioStateGraph(test: StudioFixture): Promise<void> {
 	check(model.buffer.getText() === original, 'FSM diagram: canonical Undo removes the independent authored fixture');
 	await test.clickTab(lens.id);
 	await frame();
-	check(view.definitionRowKey === null && graph.viewport.model.nodes.length === 0, 'FSM diagram: removed registration does not display an old or neighboring machine');
+	check(view.selectionState.definitionRowKey === null && graph.viewport.model.nodes.length === 0, 'FSM diagram: removed registration does not display an old or neighboring machine');
 	harness.openLuaSource('cart.lua');
 	check(cycles() === position && ide.sources.currentBlua32Media === media, 'FSM diagram performs no guest work or media installation');
 }

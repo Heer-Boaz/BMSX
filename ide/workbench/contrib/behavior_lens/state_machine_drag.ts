@@ -27,7 +27,7 @@ export function beginStateMachineDrag(view: BehaviorLensViewState,
 	start: WorkbenchGraphDragStart, accept: StateMachineRetargetDrop): WorkbenchGraphDragSession | undefined {
 	if (start.kind !== 'connection' || start.end !== 'target' || !view.source.isCurrent) return undefined;
 	const presentation = view.presentation;
-	const selection = view.selection;
+	const selection = view.selectionState.selected;
 	if (presentation.kind !== 'state-graph' || selection?.kind !== 'state-outcome') return undefined;
 	const selected = presentation.viewport.selection;
 	if (selected === null || selected.kind !== 'edge' || selected !== start.edge || selected.link.reference.kind !== 'state-outcome'

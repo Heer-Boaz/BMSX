@@ -1,9 +1,9 @@
-import type { EditorSourceLocationReader } from '../../../editor/navigation/source_location';
+import type { EditorSourceLocationReader, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import type { InputFocusTarget } from '../../../input/focus';
 import type { EditorGroupView } from './editor_group';
 
 export type SourceNavigationCaptureOptions = {
-	readonly readLocation?: EditorSourceLocationReader;
+	readonly source?: EditorSourceLocationRequest;
 	readonly target?: InputFocusTarget;
 };
 

@@ -32,14 +32,14 @@ function fixture() {
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: undefined, location: { kind: 'generated' as const, path: 'source_owned.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source_owned.lua', source: { type: 'lua', resid: 'independent', generated: true } }, 'lua', SOURCE);
 	const document = buildBehaviorSourceDocument(model.resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(SOURCE, model.resource)], API_MODULES)));
 	const view = createBehaviorLensViewState(document, model, 'state-graph', assert.fail);
-	view.definitionRowKey = document.definitions[0].rowKey;
+	view.selectionState.restore(document.definitions[0].rowKey, view.selectionState.selected);
 	return { model, view };
 }
 
 test('FSM inspection keeps guards, full callback/return evidence and actual file ranges off the cards', () => {
 	const { model, view } = fixture();
 	const idle = view.source.nodes.find(node => node.kind === 'state' && node.label === 'idle')!;
-	view.selection = { kind: 'node', rowKey: idle.rowKey };
+	view.selectionState.select({ kind: 'node', rowKey: idle.rowKey });
 	const items = buildBehaviorInspection(view);
 	for (const item of items) if (item.source !== undefined) {
 		assert.equal(item.source!.range.path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'source_owned.lua' }));
@@ -51,7 +51,7 @@ test('FSM inspection keeps guards, full callback/return evidence and actual file
 
 test('implicit entry inspection does not invent a source target or modify the document', () => {
 	const { model, view } = fixture();
-	view.selection = { kind: 'node', rowKey: view.definitionRowKey! };
+	view.selectionState.select({ kind: 'node', rowKey: view.selectionState.definitionRowKey! });
 	const implicit = buildBehaviorInspection(view).find(item => item.label === 'INITIAL ENTRY')!;
 	assert.equal(implicit.source, undefined); assert.equal(implicit.warning, false);
 	assert.equal(model.version, 1);

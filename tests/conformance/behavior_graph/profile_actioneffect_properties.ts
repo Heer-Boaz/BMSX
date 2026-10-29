@@ -51,7 +51,7 @@ for (const requirements of [1, 256, 4096]) {
 		const rows = properties.tree.rows;
 		const focus = new InputFocusService(), target = focus.createTarget(); target.bindKeyboard(() => {});
 		const pointer = new WorkbenchPropertyTreePointer(focus, new PointerHoverService(), target);
-		pointer.setInput(properties.tree, view.definitionRowKey);
+		pointer.setInput(properties.tree, view.selectionState.definitionRowKey);
 		const snapshot = { valid: true, insideViewport: true, pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, viewportX: 200, viewportY: 50 };
 		const { presenter, renderer, queue } = createHostOverlayFixture(384, 288);
 		const stream = new HostOverlayQuadStream();

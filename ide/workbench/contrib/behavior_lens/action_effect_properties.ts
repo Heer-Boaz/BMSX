@@ -112,7 +112,7 @@ export function projectActionEffectProperties(
 		if (group !== undefined) tree.roots.push(group);
 	}
 	const selected = properties.selectedGroup === undefined
-		? view.selection === null ? undefined : properties.nodesBySource.get(view.selection.rowKey)
+		? view.selectionState.selected === null ? undefined : properties.nodesBySource.get(view.selectionState.selected.rowKey)
 		: groups.get(properties.selectedGroup);
 	rebuildWorkbenchTreeRows(tree, selected === undefined ? null : selected);
 }
@@ -120,7 +120,7 @@ export function projectActionEffectProperties(
 export function acceptEffectPropertySelection(view: BehaviorLensViewState, properties: BehaviorLensEffectProperties, collapse: boolean): void {
 	const node = properties.tree.rows[properties.tree.selectionIndex];
 	const element = node.element;
-	view.selection = element.kind === 'group' ? null : { kind: 'node', rowKey: element.source.rowKey };
+	view.selectionState.select(element.kind === 'group' ? null : { kind: 'node', rowKey: element.source.rowKey });
 	properties.selectedGroup = element.kind === 'group' ? element.group : undefined;
 	if (collapse) {
 		if (element.kind === 'group') {

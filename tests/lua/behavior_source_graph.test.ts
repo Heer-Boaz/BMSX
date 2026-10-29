@@ -147,7 +147,8 @@ test('deep reused subtrees retain separate occurrence chains through source edit
 	select(f, leaves[1]);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- shifted deep source\n' }]);
 	f.refresh();
-	assert.equal(f.outline.rows[f.outline.selectionIndex].node, f.view.source.nodes.filter(node => node.label === 'wait')[1]);
+	assert.ok(f.outline.rows[f.outline.selectionIndex].node === f.view.source.nodes.filter(node => node.label === 'wait')[1],
+		'the deep selected occurrence retains identity through source mapping');
 });
 
 test('hidden-pane edits preserve selected reused descendants, independent collapse and the chosen duplicate registration', () => {
@@ -157,7 +158,7 @@ test('hidden-pane edits preserve selected reused descendants, independent collap
 	const nested = childEntries(entries[1].node)[0].node;
 	select(f, nested);
 	f.outline.collapsedRowKeys.add(entries[0].node.rowKey);
-	f.view.definitionRowKey = definition.rowKey;
+	f.view.selectionState.restore(definition.rowKey, f.view.selectionState.selected);
 	f.view.sourceMatchRowKeys.add(definition.rowKey);
 	const oldDocument = f.view.document;
 	const oldSelectedKey = nested.rowKey;
@@ -170,10 +171,11 @@ test('hidden-pane edits preserve selected reused descendants, independent collap
 	const nextEntries = childEntries(tree(f).root!);
 	const nextSelected = childEntries(nextEntries[2].node)[0].node;
 	assert.notEqual(nextSelected.rowKey, oldSelectedKey, 'the source use survived while its array-derived row key changed');
-	assert.equal(f.outline.rows[f.outline.selectionIndex].node, nextSelected);
+	assert.ok(f.outline.rows[f.outline.selectionIndex].node === nextSelected,
+		'the selected descendant belongs to the corresponding reused occurrence');
 	assert.ok(f.outline.collapsedRowKeys.has(nextEntries[1].node.rowKey));
 	assert.ok(!f.outline.collapsedRowKeys.has(nextEntries[2].node.rowKey));
-	assert.equal(f.view.definitionRowKey, tree(f).rowKey);
+	assert.equal(f.view.selectionState.definitionRowKey, tree(f).rowKey);
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), 'leaf');
 });
 
@@ -200,14 +202,14 @@ test('inserting a same-id registration preserves the original registration rathe
 	const f = fixture();
 	const definition = tree(f, 1);
 	select(f, definition);
-	f.view.definitionRowKey = definition.rowKey;
+	f.view.selectionState.restore(definition.rowKey, f.view.selectionState.selected);
 	const first = luaSourceRangeToTextRange(f.model.buffer, tree(f).occurrenceRange);
 	f.model.pushEditOperations([{ offset: first.start, deleteLength: 0,
 		text: "trees.register('fixture.tree', { root = { type = 'wait' } })\n" }]);
 	f.refresh();
 	assert.equal(f.outline.rows[f.outline.selectionIndex].node, tree(f, 2));
-	assert.equal(f.view.definitionRowKey, tree(f, 2).rowKey);
-	assert.notEqual(f.view.definitionRowKey, definition.rowKey);
+	assert.equal(f.view.selectionState.definitionRowKey, tree(f, 2).rowKey);
+	assert.notEqual(f.view.selectionState.definitionRowKey, definition.rowKey);
 });
 
 test('reordering source preserves untouched occurrences but does not infer cut/paste identity', () => {
@@ -260,12 +262,12 @@ test('a source replacement cannot reattach selection or collapse to a same-named
 	const f = fixture();
 	const definition = tree(f);
 	select(f, definition);
-	f.view.definitionRowKey = definition.rowKey;
+	f.view.selectionState.restore(definition.rowKey, f.view.selectionState.selected);
 	f.outline.collapsedRowKeys.add(definition.rowKey);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.length, text: BEHAVIOR_SOURCE_FIXTURE }]);
 	f.refresh();
 	assert.equal(f.outline.selectionIndex, -1);
-	assert.equal(f.view.definitionRowKey, null);
+	assert.equal(f.view.selectionState.definitionRowKey, null);
 	assert.ok(!f.outline.collapsedRowKeys.has(tree(f).rowKey));
 });
 

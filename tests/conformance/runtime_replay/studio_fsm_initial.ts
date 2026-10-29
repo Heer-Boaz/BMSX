@@ -50,7 +50,7 @@ async function runInitial(test: StudioFixture, imported: boolean): Promise<void>
 	await lens.graphLayout.settled; await frame();
 	const changed = source.replace("'idle'),", "'active'),");
 	check(model.version === version + 1 && model.buffer.getText() === changed && (!imported || main.version === mainVersion), 'initial: held action-bar press is exactly one token edit');
-	check(lens.view.selection?.rowKey === node.source.rowKey && !ide.editor.commands.isEnabled('behaviorLens.setInitialState'),
+	check(lens.view.selectionState.selected?.rowKey === node.source.rowKey && !ide.editor.commands.isEnabled('behaviorLens.setInitialState'),
 		'initial: selected card survives and now-explicit initial cannot create empty history');
 	check(graph.viewport.model.edges.some(edge => edge.link.reference.kind === 'state-entry' && edge.link.target.source.label === 'active'),
 		'initial: real worker reroutes the entry to the new state');

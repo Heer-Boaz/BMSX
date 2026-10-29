@@ -42,7 +42,7 @@ export async function testStudioBtDuplicate(test: StudioFixture): Promise<void> 
 	check(model.version === version + 1 && model.buffer.getText() === duplicated && children().length === 4
 		&& viewport.selection === children()[2] && children()[2].children.length === 2 && children()[1].children.length === 2,
 		'BT duplicate: held action makes one copy, retains the second occurrence and its expanded subtree');
-	check(lens.view.definitionRowKey === lens.view.document.definitions[0].rowKey,
+	check(lens.view.selectionState.definitionRowKey === lens.view.document.definitions[0].rowKey,
 		'BT duplicate: the chosen registration remains selected');
 	console.info('STUDIO: BT duplicated child ready for visual inspection');
 	const range = children()[2].source.occurrenceRange;

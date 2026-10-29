@@ -133,7 +133,7 @@ test('Behavior matching follows the selected registration and its mapped occurre
 	const source = new EditorTabGroupModel(), target = new EditorTabGroupModel(); source.add(copy); target.add(original); target.add(other);
 	t.after(() => { source.clear(); target.clear(); });
 	assert.ok(source.planTransferTo(target).entries[0].receiver === original); assert.equal(target.tabs.length, 2);
-	const range = original.view.source.ranges.get(original.view.definitionRowKey!)!, start = range.start;
+	const range = original.view.source.ranges.get(original.view.selectionState.definitionRowKey!)!, start = range.start;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- mapped\n' }]);
 	assert.equal(range.start, start + 10); assert.equal(original.matches(copy), true);
 	assert.ok(original.getWorkingCopies().some(workingCopy => resourceIdentityKey(workingCopy.resource) === resourceIdentityKey(resource)));

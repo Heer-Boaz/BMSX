@@ -174,7 +174,7 @@ const reopenedTab = t.activeWorkbenchTab();
 t.assert(reopenedTab === lensTab && reopenedTab.view === view, 'reopening duplicated the Behavior Lens input or its view state');
 t.assert(t.workbenchTabs().filter(tab => tab.kind === 'behavior_lens').length === 1, 'source owns more than one Behavior Lens input');
 
-const selectedRowKey = view.selection.rowKey;
+const selectedRowKey = view.selectionState.selected.rowKey;
 const selectedAuthoredLine = view.source.nodesByRowKey.get(selectedRowKey).authoredRange.start.line;
 await pressKey('Escape');
 t.assert(t.activeWorkbenchTab().kind === 'code_editor', 'Escape did not return to source');
@@ -195,7 +195,7 @@ t.assert(refreshedTab === lensTab && refreshedTab.view === view, 'source refresh
 t.assert(view.document !== retainedDocument, 'source edit did not install a new immutable topology generation');
 t.assert(view.presentation.viewport === viewport && view.layout === retainedLayout, 'source refresh replaced retained view containers');
 t.assert(
-	view.source.nodesByRowKey.get(view.selection.rowKey).authoredRange.start.line === selectedAuthoredLine + 1,
+	view.source.nodesByRowKey.get(view.selectionState.selected.rowKey).authoredRange.start.line === selectedAuthoredLine + 1,
 	'explicitly reopening the registration did not select the new source generation',
 );
 

@@ -19,8 +19,8 @@ export function stateGraphSelection(model: StateGraphModel, selection: BehaviorS
 
 export function acceptStateGraphSelection(view: BehaviorLensViewState, graph: BehaviorLensStateGraph): void {
 	const item = graph.viewport.selection;
-	view.selection = item === null ? null : item.kind === 'node' && item.role === 'source' ? { kind: 'node', rowKey: item.source.rowKey }
-		: selectStateMachineSource(item.kind === 'node' ? item.reference : item.link.reference, view.source.models);
+	view.selectionState.select(item === null ? null : item.kind === 'node' && item.role === 'source' ? { kind: 'node', rowKey: item.source.rowKey }
+		: selectStateMachineSource(item.kind === 'node' ? item.reference : item.link.reference, view.source.models));
 	updateBehaviorLensStatus(view);
 }
 
@@ -28,7 +28,7 @@ export function acceptStateGraphSelection(view: BehaviorLensViewState, graph: Be
 export function executeStateGraphNavigation(view: BehaviorLensViewState, graph: BehaviorLensStateGraph, command: BehaviorLensNavigationCommand): BehaviorLensNavigationResult {
 	const viewport = graph.viewport;
 	if (command === 'back') return BehaviorLensNavigationResult.Back;
-	if (command === 'activate') return view.selection === null ? BehaviorLensNavigationResult.None : BehaviorLensNavigationResult.Activate;
+	if (command === 'activate') return view.selectionState.selected === null ? BehaviorLensNavigationResult.None : BehaviorLensNavigationResult.Activate;
 	if (graph.layoutState.kind !== 'ready') return BehaviorLensNavigationResult.None;
 	if (command === 'next' || command === 'previous') {
 		viewport.selectRelative(command === 'next' ? 1 : -1);

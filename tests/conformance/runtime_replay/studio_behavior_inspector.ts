@@ -32,7 +32,7 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 	const hadProblems = ide.editor.mainWorkspace.regionLayout.activityVisible;
 	if (!hadProblems) await runPaletteCommand('View: Problems Panel');
 	const version = model.version, dirty = model.dirty, geometry = viewport.model, x = viewport.scrollX, y = viewport.scrollY;
-	const sourceSelection = lens.view.selection;
+	const sourceSelection = lens.view.selectionState.selected;
 	ide.editor.commands.execute('behaviorLens.details');
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane as BehaviorLensEditorPane;
 	pane.update();
@@ -55,7 +55,7 @@ export async function testStudioBehaviorInspector(test: StudioFixture): Promise<
 		'inspection: idle/read/scroll keeps source, guest clock and measured content unchanged');
 	console.info('STUDIO: complete behavior inspector with Problems ready for visual inspection');
 	await press('Escape');
-	check(!inspector.visible && viewport.model === geometry && viewport.selection === selected && lens.view.selection === sourceSelection
+	check(!inspector.visible && viewport.model === geometry && viewport.selection === selected && lens.view.selectionState.selected === sourceSelection
 		&& viewport.scrollX === x && viewport.scrollY === y, 'inspection: Back retains the exact graph selection and pan');
 	await runPaletteCommand('Behavior Lens: Open Source Details');
 	for (let n = 0; n < targetIndex; n += 1) await press('ArrowDown');

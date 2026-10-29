@@ -45,7 +45,7 @@ const acceptBehavior = async (command, presentation, pointer = false) => {
 	t.assert(t.activeWorkbenchTab() === home, 'opening a definition chooser replaced Home prematurely');
 	await press('ControlLeft', 'Home'); await press('Enter'); await t.frames(8);
 	const input = t.activeWorkbenchTab();
-	t.assert(input.kind === 'behavior_lens' && input.view.presentation.kind === presentation && input.view.definitionRowKey !== null,
+	t.assert(input.kind === 'behavior_lens' && input.view.presentation.kind === presentation && input.view.selectionState.definitionRowKey !== null,
 		'the typed Home route did not select its real source-backed behavior kind');
 	retain(input); return input;
 };
@@ -59,7 +59,7 @@ for (const font of ['tiny', 'msx']) {
 		await press('Enter'); await capture(`home-authoring-${font}-${theme}-fsm-chooser`);
 		await press('ControlLeft', 'Home'); await press('Enter'); await t.frames(8);
 		const machine = t.activeWorkbenchTab();
-		t.assert(machine.kind === 'behavior_lens' && machine.view.presentation.kind === 'state-graph' && machine.view.definitionRowKey !== null,
+		t.assert(machine.kind === 'behavior_lens' && machine.view.presentation.kind === 'state-graph' && machine.view.selectionState.definitionRowKey !== null,
 			'the FSM entrypoint opened another editor or an unselected catalog');
 		await machine.graphLayout.settled; await t.frames(2);
 		t.assert(machine.view.presentation.layoutState.kind === 'ready', 'the actual FSM graph has not settled');

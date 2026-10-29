@@ -94,8 +94,8 @@ test('the real project tree activates all authored kinds and reveals each retain
 		switch (entry.kind) {
 			case 'behavior_tree': case 'state_machine': case 'action_effect': {
 				assert.ok(input instanceof BehaviorLensInput);
-				assert.equal(input.view.definitionRowKey, entry.registration.rowKey);
-				const range = input.view.source.ranges.get(input.view.definitionRowKey!)!;
+				assert.equal(input.view.selectionState.definitionRowKey, entry.registration.rowKey);
+				const range = input.view.source.ranges.get(input.view.selectionState.definitionRowKey!)!;
 				assert.deepEqual({ start: range.start, end: range.end }, entry.range);
 				assert.equal(resourceIdentityKey(range.resource), resourceIdentityKey(entry.ownerResource));
 				assert.equal(input.view.presentation.kind, entry.kind === 'behavior_tree' ? 'graph' : entry.kind === 'state_machine' ? 'state-graph' : 'properties');

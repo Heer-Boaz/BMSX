@@ -137,7 +137,7 @@ test('an imported effect owns its list and scalar fields; source edit and Undo r
 	assert.equal(definition.body.issues, SourceTableIssue.None);
 	const duration = definition.body.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
 	assert.equal(definition.body.file.chunk.locations.range(duration.field.span).path, resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'definition.lua' }));
-	view.selection = { kind: 'node', rowKey: duration.source.rowKey };
+	view.selectionState.select({ kind: 'node', rowKey: duration.source.rowKey });
 	assert.ok(buildBehaviorInspection(view).some(item => item.value.includes('40')));
 	assert.equal(mainModel.dirty, false); assert.equal(sourceModel.dirty, false);
 	assert.equal(mainModel.canUndo, false); assert.equal(sourceModel.canUndo, false);

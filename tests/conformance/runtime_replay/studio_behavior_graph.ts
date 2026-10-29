@@ -88,7 +88,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 	await press('ArrowDown');
 	await press('ArrowRight');
 	await press('ArrowRight');
-	const weightedKey = view.selection!.rowKey;
+	const weightedKey = view.selectionState.selected!.rowKey;
 	await press('ArrowDown');
 	check(viewport.selection?.kind === 'node',
 		'BT controls: entering the weighted branch selects its already-visible first choice');
@@ -106,7 +106,7 @@ export async function testStudioBehaviorGraphControls(test: StudioFixture, view:
 		'BT controls: choice detail opens the actual weight expression');
 	await test.clickTab(lens.id);
 	await press('ArrowUp');
-	check(view.selection?.rowKey === weightedKey, 'BT controls: child returns to its weighted parent');
+	check(view.selectionState.selected?.rowKey === weightedKey, 'BT controls: child returns to its weighted parent');
 	await press('Space');
 	await press('Home');
 	input.disconnectInputDevice('gamepad:0');

@@ -84,7 +84,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	await until(() => !model.dirty, 'effect: Save captures the accepted value');
 	check(!editor.active && model.version === version + 1 && model.lastSavedSource === changed && model.buffer.getText() === changed,
 		'effect: Save commits once and persists exactly the accepted source');
-	check(view.definitionRowKey === view.document.definitions[1].rowKey && view.source.nodesByRowKey.get(view.selection!.rowKey)!.label.startsWith('period_ms'),
+	check(view.selectionState.definitionRowKey === view.document.definitions[1].rowKey && view.source.nodesByRowKey.get(view.selectionState.selected!.rowKey)!.label.startsWith('period_ms'),
 		'effect: the source operation keeps the selected property in the chosen shared-definition use');
 	await press('Enter');
 	check(sourcePane(test).code.model === model, 'effect: Source returns to the same edited text model');
@@ -100,7 +100,7 @@ export async function testStudioActionEffectEdit(test: StudioFixture): Promise<v
 	check(editor.active, 'effect: palette opens the selected requirement value');
 	await paste("'Changed Tag'"); await press('Enter');
 	check(model.buffer.getText() === ACTIONEFFECT_SOURCE.replace("{ 'blocked' }", "{ 'Changed Tag' }")
-		&& view.source.nodesByRowKey.get(view.selection!.rowKey)!.label === "'Changed Tag'", 'effect: tag editing preserves literal case and selects its written occurrence');
+		&& view.source.nodesByRowKey.get(view.selectionState.selected!.rowKey)!.label === "'Changed Tag'", 'effect: tag editing preserves literal case and selects its written occurrence');
 	await press('ControlLeft', 'KeyZ');
 	await select('required_tags'); await open(); await paste("{ 'one', 'two' }");
 	await press('Tab');

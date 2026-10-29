@@ -62,7 +62,7 @@ export async function runStudioFsmDragLive(test: StudioFixture, imported = false
 		await press('Home');
 		for (let index = 0; index < viewport.model.nodes.length + viewport.model.edges.indexOf(edge); index += 1) await press('ArrowDown');
 		const input = ide.editor.editorParts.activeGroup.model.activeTab;
-		check(input.kind === 'behavior_lens' && viewport.selection === edge && input.view.selection?.kind === 'state-outcome', 'FSM drag: exact edge selected by keyboard');
+		check(input.kind === 'behavior_lens' && viewport.selection === edge && input.view.selectionState.selected?.kind === 'state-outcome', 'FSM drag: exact edge selected by keyboard');
 		const points = edge.points;
 		movePointer(point(viewport.graphToViewportX(points[points.length - 2]), viewport.graphToViewportY(points[points.length - 1])));
 		await frame(); setPointerButton('pointer_primary', true); await frame();

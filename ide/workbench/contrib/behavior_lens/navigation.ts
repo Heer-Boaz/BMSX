@@ -49,7 +49,7 @@ export function executeBehaviorLensNavigation(
 				acceptEffectPropertySelection(state, outline, true);
 				return BehaviorLensNavigationResult.Changed;
 			}
-			return state.selection === null ? BehaviorLensNavigationResult.None : BehaviorLensNavigationResult.Activate;
+			return state.selectionState.selected === null ? BehaviorLensNavigationResult.None : BehaviorLensNavigationResult.Activate;
 		}
 		const result = navigateWorkbenchTree(outline.tree, command === 'next' ? 'down' : command === 'previous' ? 'up' : command);
 		if (result === WorkbenchTreeNavigationResult.None) return BehaviorLensNavigationResult.None;
@@ -91,7 +91,7 @@ function selectRow(
 		return BehaviorLensNavigationResult.None;
 	}
 	outline.selectionIndex = nextIndex;
-	state.selection = { kind: 'node', rowKey: outline.rows[nextIndex].node.rowKey };
+	state.selectionState.select({ kind: 'node', rowKey: outline.rows[nextIndex].node.rowKey });
 	outline.hoverIndex = -1;
 	return BehaviorLensNavigationResult.Changed;
 }
@@ -137,7 +137,7 @@ function expandOrSelectChild(
 }
 
 export function selectBehaviorLensRow(state: BehaviorLensViewState, outline: BehaviorLensOutline, rowIndex: number): void {
-	state.selection = rowIndex < 0 ? null : { kind: 'node', rowKey: outline.rows[rowIndex].node.rowKey };
+	state.selectionState.select(rowIndex < 0 ? null : { kind: 'node', rowKey: outline.rows[rowIndex].node.rowKey });
 	outline.selectionIndex = rowIndex;
 	outline.hoverIndex = -1;
 	updateBehaviorLensStatus(state);
@@ -150,7 +150,7 @@ export function toggleBehaviorLensRow(state: BehaviorLensViewState, outline: Beh
 	} else {
 		outline.collapsedRowKeys.delete(row.node.rowKey);
 	}
-	state.selection = { kind: 'node', rowKey: outline.rows[rowIndex].node.rowKey };
+	state.selectionState.select({ kind: 'node', rowKey: outline.rows[rowIndex].node.rowKey });
 	outline.selectionIndex = rowIndex;
 	outline.rowsDirty = true;
 	rebuildBehaviorLensRows(state, outline);
@@ -160,7 +160,7 @@ export function toggleBehaviorLensRow(state: BehaviorLensViewState, outline: Beh
 }
 
 export function selectedBehaviorLensSourceRange(state: BehaviorLensViewState): LuaSourceRange | null {
-	const selection = state.selection;
+	const selection = state.selectionState.selected;
 	if (selection === null) return null;
 	if (selection.kind === 'state-outcome' || selection.kind === 'state-entry') return stateMachineSourceRange(selection);
 	const node = state.source.nodesByRowKey.get(selection.rowKey)!;
@@ -182,7 +182,7 @@ export function updateBehaviorLensStatus(state: BehaviorLensViewState): void {
 		: `${state.document.definitions.length} DEF  ${state.source.nodes.length} SOURCE NODES`;
 	const range = selectedBehaviorLensSourceRange(state);
 	if (range === null) { state.status.detail = ''; return; }
-	const selection = state.selection!;
+	const selection = state.selectionState.selected!;
 	const node = state.source.nodesByRowKey.get(selection.rowKey)!;
 	const kind = selection.kind === 'state-outcome' ? selection.outcome.proof.kind
 		: selection.kind === 'state-entry' ? selection.entry.kind : selection.kind === 'tree-edge' ? 'edge' : node.kind;

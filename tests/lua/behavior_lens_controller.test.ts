@@ -102,7 +102,7 @@ test('shared Behavior Lens operations and pane commands consume their concrete v
 	acceptBehaviorGraphSelection(first.view, first.view.presentation);
 	assert.equal(f.controller.canEditSelectedChild(first), true);
 	assert.equal(f.controller.canEditSelectedChild(second), false, 'the sibling still selects its definition root');
-	const siblingSelection = second.view.selection;
+	const siblingSelection = second.view.selectionState.selected;
 	f.first.panes.activePane!.focus();
 	const firstTarget = inputFocus.target!;
 	f.second.panes.activePane!.focus();
@@ -120,8 +120,8 @@ test('shared Behavior Lens operations and pane commands consume their concrete v
 	remove.run();
 	assert.equal(inputFocus.target, firstTarget, 'the invoking pane owns focus for its mutation');
 	f.controller.updateView(second);
-	assert.equal(first.view.selection, null, 'removed source does not adopt its former neighbour');
-	assert.deepEqual(second.view.selection, siblingSelection);
+	assert.equal(first.view.selectionState.selected, null, 'removed source does not adopt its former neighbour');
+	assert.deepEqual(second.view.selectionState.selected, siblingSelection);
 	assert.equal(first.workingCopy.dirty, true);
 	assert.equal(first.workingCopy.canUndo, true);
 	assert.equal(first.workingCopy.buffer.getText().includes('duration_ticks = 1'), false);

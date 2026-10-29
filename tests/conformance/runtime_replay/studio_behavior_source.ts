@@ -84,7 +84,7 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	check(viewport.model.nodesBySource.get(nextEntries[1].node.rowKey)!.children.length === 2
 		&& viewport.model.nodesBySource.get(nextEntries[2].node.rowKey)!.children.length === 2,
 		'source graph: all occurrences stay expanded while selection follows its actual source');
-	check(view.definitionRowKey === view.document.definitions[0].rowKey, 'source graph: the chosen registration survives hidden edits');
+	check(view.selectionState.definitionRowKey === view.document.definitions[0].rowKey, 'source graph: the chosen registration survives hidden edits');
 	const currentDocument = view.document;
 	const retainedCard = viewport.selection;
 	for (let index = 0; index < 30; index += 1) await frame();
@@ -96,15 +96,15 @@ export async function testStudioBehaviorSourceGraph(test: StudioFixture): Promis
 	const parsed = getOrCreateSemanticProject(editorTextModelService, model.resource.contextId).getFileData(model.resource)!.chunk;
 	model.pushEditOperations(createLuaTableFieldRemovalEdits(model.buffer, parsed.locations, parsed.tokens, nextEntries[2].field));
 	await test.clickTab(lens.id);
-	check(view.selection === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');
+	check(view.selectionState.selected === null && viewport.selection === null, 'source graph: deleting the selected occurrence does not choose its namesake');
 	await press('Enter');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens, 'source graph: an absent selection has no stale source action');
 	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');
 	await test.clickTab(lens.id);
-	check(view.selection === null && viewport.selection === null, 'source graph: ordinary Undo does not invent correspondence for a removed selection');
+	check(view.selectionState.selected === null && viewport.selection === null, 'source graph: ordinary Undo does not invent correspondence for a removed selection');
 	await press('ArrowDown');
-	check(view.selection?.rowKey === view.definitionRowKey, 'source graph: explicit keyboard navigation starts at the root card after removal');
+	check(view.selectionState.selected?.rowKey === view.selectionState.definitionRowKey, 'source graph: explicit keyboard navigation starts at the root card after removal');
 	await test.clickTab(code.id);
 	for (let index = 0; index < 3; index += 1) await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original, 'source graph: ordinary source Undo removes all fixture edits');

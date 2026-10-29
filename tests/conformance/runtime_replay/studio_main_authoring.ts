@@ -12,6 +12,7 @@ import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor
 import { inputFocus } from '../../../ide/input/focus';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { testProjectBrowserSession } from './studio_browser_session';
+import { testStudioBehaviorIntent } from './studio_behavior_intent';
 
 /** Standalone renderer workflow over a dedicated test cartridge and independent source fixtures. */
 export async function runStudioMainAuthoring(test: StudioFixture) {
@@ -19,6 +20,7 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 	await test.press('ControlRight', 'ShiftRight');
 	await test.runMenuCommand('pause');
 	await testMainSceneAuthoring(test);
+	await testStudioBehaviorIntent(test);
 	await testProjectBrowserSession(test);
 	return { hostFrames: test.observations.hostFrames, cycles: test.cycles(), mainAuthoring: 'pass', filesBrowserRecovery: 'hybrid-pass' };
 }

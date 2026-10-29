@@ -37,7 +37,7 @@ test('moves preserve the selected occurrence, fully expanded subtrees, source li
 	for (const operation of [() => {}, () => f.model.undo(), () => f.model.undo(), () => f.model.undo(),
 		() => f.model.redo(), () => f.model.redo(), () => f.model.redo()]) {
 		operation(); f.refresh();
-		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey, 'shared initializer does not select the first registration');
+		assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[1].rowKey, 'shared initializer does not select the first registration');
 		assert.ok(f.viewport.selection?.kind === 'node' && f.viewport.selection.children.length === 2);
 		assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), 'nested');
 	}

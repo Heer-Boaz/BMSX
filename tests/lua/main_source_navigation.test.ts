@@ -43,6 +43,42 @@ async function fixture(t: TestContext) {
 	return { ...f, model, resource, primary, main, parts, open, origin: primary.hierarchy.control.focusTarget };
 }
 
+test('Main consumes an explicit source request intact without capturing another selection predicate', async t => {
+	const f = await fixture(t), model = f.firstInput.workingCopy, selected = f.primary.consumer.selection;
+	t.mock.method(f.primary, 'captureSourceLocation', () => assert.fail('the supplied request is the actual source authority'));
+	let reads = 0;
+	const result = await f.editor.navigation.openSource(f.main, { target: f.origin, source: {
+		isCurrent: () => true, readLocation: () => { reads++; return { model, modelVersion: model.version }; },
+	} });
+	assert.ok(result !== undefined); assert.equal(reads, 1);
+	assert.equal(f.firstGroup.model.activeTab, f.firstInput); assert.equal(f.main.primary, f.primary);
+	assert.equal(f.primary.consumer.selection, selected); assert.equal(f.model.buffer.getText(), SOURCE);
+});
+
+test('a revoked explicit Main source request cannot accept its still-focused Details draft', async t => {
+	const f = await fixture(t), field = f.primary.details.control.controls[0], version = f.model.version;
+	field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+	t.mock.method(f.primary, 'captureSourceLocation', () => assert.fail('the supplied request cannot borrow primary selection authority'));
+	const groups = [...f.parts.groups]; let reads = 0;
+	assert.equal(await f.editor.navigation.openSource(f.main, { target: f.origin, placement: 'side', source: {
+		isCurrent: () => false, readLocation: () => { reads++; return { model: f.model, modelVersion: f.model.version }; },
+	} }), undefined);
+	assert.equal(reads, 0); assert.equal(field.pending, true); assert.equal(inputFocus.target, field.field.focusTarget);
+	assert.equal(f.model.version, version); assert.equal(f.model.buffer.getText(), SOURCE); assert.deepEqual(f.parts.groups, groups);
+});
+
+test('a revoked supplied Main receipt cannot cancel the actual primary selection pending discovery', async t => {
+	const f = await fixture(t), ready = Promise.withResolvers<void>(), request = f.primary.captureSourceLocation()!;
+	t.mock.method(f.primary, 'captureSourceLocation', () => ({ ...request, readLocation: async () => { await ready.promise; return request.readLocation(); } }));
+	const pending = f.editor.navigation.openSource(f.main, { target: f.origin, placement: 'side' });
+	assert.equal(await f.editor.navigation.openSource(f.main, { target: f.origin, source: {
+		isCurrent: () => false, readLocation: () => assert.fail('revoked Main receipt cannot replace active discovery'),
+	} }), undefined);
+	ready.resolve(); assert.ok(await pending !== undefined);
+	const input = f.parts.activeGroup.model.activeTab;
+	assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model); assert.equal(f.main.primary, f.primary);
+});
+
 for (const visible of [false, true]) test(`Main Source reuses floating canonical text without changing Files or its authored subject (Files visible: ${visible})`, async t => {
 	const f = await fixture(t), panel = f.editor.resourcePanel;
 	await f.editor.navigation.openResource(f.secondGroup, f.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });

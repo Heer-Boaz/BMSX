@@ -50,7 +50,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import { addActionEffectProperty, editableActionEffect, removeActionEffectProperty } from './action_effect_authoring';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { BehaviorSourceIndex } from './source_index';
-import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 
 export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLensInput> {
 	public readonly statusItems: readonly WorkbenchStatusItem[] = [
@@ -61,6 +61,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		const input = this.input;
 		return this.controller.getSourceLocation(input);
 	}
+	public override captureSourceLocation(): EditorSourceLocationRequest { return this.controller.captureSourceLocation(this.input); }
 
 	public override getSelection(): BehaviorLensNavigationSelection {
 		this.controller.updateView(this.input);
@@ -137,7 +138,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 			run: () => this.editProperty(),
 		});
 		for (const target of [this.focusTarget, this.graph.focusTarget]) target.registerCommand('behaviorLens.details', {
-			isEnabled: () => this.input.view.selection !== null && !this.inspector.visible,
+			isEnabled: () => this.input.view.selectionState.selected !== null && !this.inspector.visible,
 			run: () => this.openDetails(),
 		});
 		this.focusTarget.registerCommand('behaviorLens.inspectRuntimeEffect', {
@@ -219,7 +220,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		const presentation = this.input.view.presentation;
 		if (presentation.kind === 'graph') this.graph.setInput(presentation.viewport, this.graphDragSource);
 		else if (presentation.kind === 'state-graph') this.graph.setInput(presentation.viewport, this.stateMachineDragSource);
-		else if (presentation.kind === 'properties') this.properties.setInput(presentation.tree, this.input.view.definitionRowKey);
+		else if (presentation.kind === 'properties') this.properties.setInput(presentation.tree, this.input.view.selectionState.definitionRowKey);
 		const content = presentation.kind === 'graph' || presentation.kind === 'state-graph' ? this.graph.focusTarget : this.focusTarget;
 		this.actionBar.setInput(presentation.actionBar, content);
 		content.next = this.actionBar.focusTarget;
@@ -244,7 +245,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		prepareBehaviorLensLayout(this.input.view, bounds);
 		this.input.updatePresentation(editorViewState.font.renderFont());
 		const presentation = this.input.view.presentation;
-		if (presentation.kind === 'properties') this.properties.setInput(presentation.tree, this.input.view.definitionRowKey);
+		if (presentation.kind === 'properties') this.properties.setInput(presentation.tree, this.input.view.selectionState.definitionRowKey);
 		else this.properties.clear();
 		if (this.presentedSource !== this.input.view.source) {
 			this.presentedSource = this.input.view.source;
@@ -335,7 +336,7 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 			if (result === WorkbenchPropertyPointerResult.Rejected) return true;
 			if (result === WorkbenchPropertyPointerResult.ContextMenu) {
 				if (view.presentation.tree.selectionIndex >= 0) acceptEffectPropertySelection(view, view.presentation, false);
-				else view.selection = null;
+				else view.selectionState.select(null);
 				finishBehaviorLensNavigation(view);
 				this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
 				return true;
@@ -370,8 +371,8 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		const view = input.view;
 		const presentation = view.presentation;
 		let menu: WorkbenchContextMenuId;
-		if (view.selection === null) menu = 'behaviorLens.canvas.context';
-		else if (view.selection.kind === 'state-entry') menu = 'behaviorLens.edge.context';
+		if (view.selectionState.selected === null) menu = 'behaviorLens.canvas.context';
+		else if (view.selectionState.selected.kind === 'state-entry') menu = 'behaviorLens.edge.context';
 		else if (presentation.kind === 'graph' || presentation.kind === 'state-graph') {
 			menu = presentation.viewport.selection?.kind === 'edge' ? 'behaviorLens.edge.context'
 				: presentation.kind === 'graph' ? 'behaviorLens.node.context' : 'behaviorLens.state.context';
@@ -391,8 +392,8 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		prepareBehaviorLensLayout(input.view, this.contentBounds);
 		input.updatePresentation(editorViewState.font.renderFont());
 		if (target.scope.contextGeneration !== generation || inputFocus.revision !== focusRevision || inputFocus.admittedTarget !== target
-			|| input.view.selection === null) return;
-		const source = input.view.source, selected = source.nodesByRowKey.get(input.view.selection.rowKey)!;
+			|| input.view.selectionState.selected === null) return;
+		const source = input.view.source, selected = source.nodesByRowKey.get(input.view.selectionState.selected.rowKey)!;
 		const lifetime = this.inspector.show({ title: selected.label,
 			items: buildBehaviorInspection(input.view),
 			canOpenSource: item => item.source !== undefined,

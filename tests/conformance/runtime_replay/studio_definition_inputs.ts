@@ -27,7 +27,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	const first = ide.editor.editorParts.activeGroup.model.activeTab;
 	if (first.kind !== 'behavior_lens' || first.view.presentation.kind !== 'state-graph') throw new Error('A04: first FSM input missing');
 	await first.graphLayout.settled; await frame(); await press('Home'); await press('ArrowDown');
-	const selection = first.view.selection!.rowKey;
+	const selection = first.view.selectionState.selected!.rowKey;
 	const topology = first.view.document;
 	const index = first.view.stateMachines;
 	await runPaletteCommand('Behavior Lens: Open'); await chooseBehavior(test, 'FSM navigation.fsm.two');
@@ -39,7 +39,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 		'A04: two views share one text model, immutable topology and FSM index');
 	const count = ide.editor.editorParts.activeGroup.model.tabs.length;
 	await runPaletteCommand('Behavior Lens: Open'); await chooseBehavior(test, 'FSM navigation.fsm.one');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === first && first.view.selection!.rowKey === selection && ide.editor.editorParts.activeGroup.model.tabs.length === count,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === first && first.view.selectionState.selected!.rowKey === selection && ide.editor.editorParts.activeGroup.model.tabs.length === count,
 		'A04: reopening keeps the exact input, selection and tab count');
 	check(first.view.document === topology && first.view.stateMachines === index, 'A04: reopening does not rebuild unchanged source generations');
 
@@ -71,7 +71,7 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	check(ide.editor.editorParts.activeGroup.model.previewTab === null && model.dirty, 'A04: a real visual source edit promotes the shared working-copy preview');
 	await runPaletteCommand('Behavior Lens: Open'); await chooseBehavior(test, 'FSM navigation.fsm.two');
 	await runPaletteCommand('Edit: Undo');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === second && second.view.definitionRowKey === topology.definitions[1].rowKey,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === second && second.view.selectionState.definitionRowKey === topology.definitions[1].rowKey,
 		'A04: document Undo from a sibling view does not retarget it to the edited BT');
 	check(model.buffer.getText() === source && !model.dirty && ide.editor.editorParts.activeGroup.model.previewTab === null,
 		'A04: Undo restores exact bytes but does not unpin the view');
@@ -140,11 +140,11 @@ export async function testStudioDefinitionInputs(test: StudioFixture): Promise<v
 	model.pushEditOperations([{ offset: renameOffset, deleteLength: 'navigation.fsm.one'.length, text: 'navigation.renamed' }]);
 	await runPaletteCommand('Behavior Lens: Open'); await chooseBehavior(test, 'FSM navigation.renamed');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === first, 'A04: prefix insertion and authored id rename retain the registration input');
-	const definitionKey = first.view.definitionRowKey!;
+	const definitionKey = first.view.selectionState.definitionRowKey!;
 	const span = first.view.source.ranges.get(definitionKey)!;
 	model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: '' }]);
 	await frame();
-	check(first.view.definitionRowKey === null, 'A04: deleting a registration makes its own view unavailable, not a namesake');
+	check(first.view.selectionState.definitionRowKey === null, 'A04: deleting a registration makes its own view unavailable, not a namesake');
 	await runPaletteCommand('Edit: Undo');
 	await runPaletteCommand('Behavior Lens: Open'); await chooseBehavior(test, 'FSM navigation.renamed');
 	check(ide.editor.editorParts.activeGroup.model.activeTab !== first, 'A04: opening newly inserted source does not reuse the deleted occurrence');

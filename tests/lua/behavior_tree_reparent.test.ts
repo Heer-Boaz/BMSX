@@ -24,18 +24,20 @@ test('transfer preparation retains exact edits and typed selection without chang
 	const drag = beginBehaviorTreeDrag(f.model, f.view, (...result) => { drop = result; })!;
 	drag.dragOver(...targetPoint(f, root().children[2], 'inside')); drag.drop();
 	const [analysis, insertion, check] = drop!, version = f.model.version;
-	const before = captureBehaviorSourceBookmark(f.view, f.view.selection!);
+	const before = captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected!);
 	const plan = createBehaviorTreeTransferEdit(f.model, f.view, analysis.member, check, insertion);
 	assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE);
 	assert.equal(f.model.version, version); assert.equal(f.model.canUndo, false); assert.equal(f.model.dirty, false);
 	assert.equal(plan.version, version); assert.ok(plan.beforeEditState!.is(behaviorSourceEditState));
-	assert.deepEqual(plan.beforeEditState!.value, before);
+	assert.deepEqual(plan.beforeEditState!.value.bookmark, before);
 	const expected = plan.edits.reduceRight((source, edit) => source.slice(0, edit.offset) + edit.text
 		+ source.slice(edit.offset + edit.deleteLength), BT_REPARENT_SOURCE);
 	f.select(1);
+	const intent = f.view.selectionState.selectionRevision;
 	f.model.history.applyEdits(new Map([[f.model, plan]])); f.refresh();
 	assert.equal(f.model.buffer.getText(), expected); assert.equal(f.model.version, version + 1);
-	assert.ok(f.viewport.selection === root().children[1].children.at(-1));
+	assert.equal(f.view.selectionState.selectionRevision, intent);
+	assert.ok(f.viewport.selection === root().children[0], 'the later selected sibling keeps its source correspondence after the old plan moves another child');
 	f.model.undo(f.view.editSource); f.refresh();
 	assert.equal(f.model.buffer.getText(), BT_REPARENT_SOURCE); assert.equal(f.model.canUndo, false);
 	assert.ok(f.viewport.selection === root().children[0]);

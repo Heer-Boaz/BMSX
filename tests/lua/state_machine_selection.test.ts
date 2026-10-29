@@ -24,7 +24,7 @@ function fixture(source = FSM_PROOF_SOURCE) {
 	return { model, view, refresh() {
 		installBehaviorLensDocument(view, project());
 	}, choose(reference: StateMachineSourceReference) {
-		view.selection = selectStateMachineSource(reference, view.source.models);
+		view.selectionState.select(selectStateMachineSource(reference, view.source.models));
 		assert.ok(view.presentation.kind === 'outline');
 		view.presentation.collapsedRowKeys.clear();
 		rebuildBehaviorLensRows(view, view.presentation);
@@ -40,7 +40,7 @@ function outcomes(f: ReturnType<typeof fixture>, slot = 'update', use = 0) {
 }
 
 function selectedOutcome(f: ReturnType<typeof fixture>) {
-	const selection = f.view.selection;
+	const selection = f.view.selectionState.selected;
 	assert.ok(selection?.kind === 'state-outcome');
 	return selection;
 }
@@ -74,13 +74,13 @@ test('navigation equality compares actual return evidence and the containing reg
 	const f = fixture();
 	const left = outcomes(f);
 	f.choose(left[1]);
-	const selected = captureBehaviorSourceBookmark(f.view, f.view.selection!);
+	const selected = captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected!);
 	for (const reference of [left[0], outcomes(f, 'update', 1)[1], outcomes(f, 'update', 2)[1]]) {
 		f.choose(reference);
-		assert.equal(behaviorSourceBookmarksEqual(selected, captureBehaviorSourceBookmark(f.view, f.view.selection!)), false);
+		assert.equal(behaviorSourceBookmarksEqual(selected, captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected!)), false);
 	}
 	f.choose(left[1]);
-	assert.equal(behaviorSourceBookmarksEqual(selected, captureBehaviorSourceBookmark(f.view, f.view.selection!)), true);
+	assert.equal(behaviorSourceBookmarksEqual(selected, captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected!)), true);
 });
 
 test('hidden UTF-16 edits and inserting an equal return preserve the actual proof, not its outcome index', () => {
@@ -161,8 +161,8 @@ test('partial edits inside a return preserve its syntax occurrence, complete rep
 		fresh.replace(selectedBehaviorLensSourceRange(fresh.view)!, 'return next_path');
 		if (undoBeforeRefresh) fresh.model.undo();
 		fresh.refresh();
-		assert.equal(fresh.view.selection, null);
-		if (!undoBeforeRefresh) { fresh.model.undo(); fresh.refresh(); assert.equal(fresh.view.selection, null); }
+		assert.equal(fresh.view.selectionState.selected, null);
+		if (!undoBeforeRefresh) { fresh.model.undo(); fresh.refresh(); assert.equal(fresh.view.selectionState.selected, null); }
 	}
 });
 
@@ -179,8 +179,8 @@ test('deleting the selected proof, binding, callback or parent use clears select
 			f.replace(range, '');
 			if (undoBeforeRefresh) f.model.undo();
 			f.refresh();
-			assert.equal(f.view.selection, null, `${part} removed (hidden Undo = ${undoBeforeRefresh})`);
-			if (!undoBeforeRefresh) { f.model.undo(); f.refresh(); assert.equal(f.view.selection, null); }
+			assert.equal(f.view.selectionState.selected, null, `${part} removed (hidden Undo = ${undoBeforeRefresh})`);
+			if (!undoBeforeRefresh) { f.model.undo(); f.refresh(); assert.equal(f.view.selectionState.selected, null); }
 		}
 	}
 });
@@ -192,7 +192,7 @@ test('inserting a new same-named callback cannot transfer selection to its ident
 	f.model.pushEditOperations([{ offset, deleteLength: 0,
 		text: 'local step<const> = function(owner) if owner.first then return next_path end return next_path end\n' }]);
 	f.refresh();
-	assert.equal(f.view.selection, null, 'the new binder-proven callback is not the previously selected callback');
+	assert.equal(f.view.selectionState.selected, null, 'the new binder-proven callback is not the previously selected callback');
 	assert.equal(outcomes(f).length, 2, 'both new returns are still described as new source evidence');
 });
 
@@ -204,7 +204,7 @@ test('moving a return into a nested function removes that callback outcome inste
 		{ offset: span.end, deleteLength: 0, text: ' end' }]);
 	f.refresh();
 	assert.equal(outcomes(f).length, 2);
-	assert.equal(f.view.selection, null);
+	assert.equal(f.view.selectionState.selected, null);
 });
 
 test('a new duplicate registration and deleting an unrelated use do not change the selected occurrence', () => {
@@ -233,7 +233,7 @@ test('direct evidence points at the binding use, not its const initializer, and 
 	const offset = f.model.buffer.getText().indexOf("'../active'");
 	f.model.pushEditOperations([{ offset, deleteLength: "'../active'".length, text: "function() return '../active' end" }]);
 	f.refresh();
-	assert.equal(f.view.selection, null, 'the source use survived, but a direct-expression proof is not a return proof');
+	assert.equal(f.view.selectionState.selected, null, 'the source use survived, but a direct-expression proof is not a return proof');
 });
 
 test('explicit entry identity uses its declaring owner and role, not the parent origin or child label', () => {
@@ -246,15 +246,15 @@ test('explicit entry identity uses its declaring owner and role, not the parent 
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), 'is_concurrent = true');
 	f.replace(concurrent.entry.file.chunk.locations.range(concurrent.field.value.span), '0'); // Lua truth, not a host boolean validator.
 	f.refresh();
-	assert.ok(f.view.selection?.kind === 'state-entry');
-	assert.equal(f.view.selection.entry.kind, 'concurrent');
+	assert.ok(f.view.selectionState.selected?.kind === 'state-entry');
+	assert.equal(f.view.selectionState.selected.entry.kind, 'concurrent');
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(f.view)!), 'is_concurrent = 0');
-	f.replace(f.view.selection.entry.file.chunk.locations.range(f.view.selection.field.value.span), 'false');
+	f.replace(f.view.selectionState.selected.entry.file.chunk.locations.range(f.view.selectionState.selected.field.value.span), 'false');
 	f.refresh();
-	assert.equal(f.view.selection, null, 'the concurrent entry relation no longer exists');
+	assert.equal(f.view.selectionState.selected, null, 'the concurrent entry relation no longer exists');
 	f.model.undo();
 	f.refresh();
-	assert.equal(f.view.selection, null, 'the remaining initial relation is not a replacement selection');
+	assert.equal(f.view.selectionState.selected, null, 'the remaining initial relation is not a replacement selection');
 });
 
 test('an explicit initial field keeps its own evidence when a longer target is edited and undone', () => {
@@ -265,12 +265,12 @@ test('an explicit initial field keeps its own evidence when a longer target is e
 	f.choose(initial);
 	f.replace(initial.entry.file.chunk.locations.range(initial.field.value.span), "'active'");
 	f.refresh();
-	let selection = f.view.selection;
+	let selection = f.view.selectionState.selected;
 	assert.ok(selection?.kind === 'state-entry' && selection.entry.target.kind === 'state');
 	assert.equal(f.view.source.nodesByRowKey.get(selection.entry.target.rowKey)!.label, 'active');
 	f.model.undo();
 	f.refresh();
-	selection = f.view.selection;
+	selection = f.view.selectionState.selected;
 	assert.ok(selection?.kind === 'state-entry' && selection.entry.target.kind === 'state');
 	assert.equal(f.view.source.nodesByRowKey.get(selection.entry.target.rowKey)!.label, 'idle');
 });

@@ -20,7 +20,7 @@ export type BehaviorInspectionProperty = InspectedProperty & {
 /** Source-owned excerpts of this document generation, not the active code tab or a runtime DTO. */
 export function buildBehaviorInspection(view: BehaviorLensViewState): readonly BehaviorInspectionProperty[] {
 	const result: BehaviorInspectionProperty[] = [];
-	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
+	const selected = view.source.nodesByRowKey.get(view.selectionState.selected!.rowKey)!;
 	function source(label: string, description: string, range: LuaSourceRange, stateSelection?: StateMachineDetail['source']): void {
 		const model = view.source.models.get(range.path)!;
 		const location = `${model.resource.path}:${range.start.line}:${range.start.column}`;
@@ -38,7 +38,7 @@ export function buildBehaviorInspection(view: BehaviorLensViewState): readonly B
 			} else range = stateMachineSourceRange(reference);
 			source(detail.label, detail.detail, range, reference);
 		}
-		const definition = view.document.definitions.find(item => item.rowKey === view.definitionRowKey)!;
+		const definition = view.document.definitions.find(item => item.rowKey === view.selectionState.definitionRowKey)!;
 		if (definition.behaviorKind === 'state_machine') for (const entry of definition.entries) {
 			if (entry.owner !== selected.rowKey || entry.field !== null) continue;
 			result.push({ label: 'INITIAL ENTRY', value: 'NO EXPLICIT INITIAL FIELD',

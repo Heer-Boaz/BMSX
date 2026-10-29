@@ -10,7 +10,7 @@ import { revealLensOccurrence } from './studio_behavior_picker';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 
 function selectedProof(view: BehaviorLensViewState) {
-	const selection = view.selection;
+	const selection = view.selectionState.selected;
 	if (selection?.kind !== 'state-outcome') throw new Error('FSM proof: expected a selected outcome');
 	return selection;
 }
@@ -92,7 +92,7 @@ export async function testStudioFsmSelection(test: StudioFixture): Promise<void>
 	model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: '' }]);
 	model.undo();
 	await test.clickTab(lens.id);
-	check(view.selection === null && view.presentation.kind === 'state-graph' && view.presentation.viewport.selection === null,
+	check(view.selectionState.selected === null && view.presentation.kind === 'state-graph' && view.presentation.viewport.selection === null,
 		'FSM proof: deleting and undoing the selected return while hidden cannot select its namesake');
 	await test.clickTab(code.id);
 	await press('ControlLeft', 'KeyZ');

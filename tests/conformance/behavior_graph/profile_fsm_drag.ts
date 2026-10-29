@@ -50,7 +50,7 @@ ${Array.from({ length: registrations }, (_, index) => `machines.register('fixtur
 			viewport.layout(0, 0, 384, 288);
 			const edge = viewport.model.edges.find(edge => edge.link.reference.kind === 'state-outcome')!;
 			viewport.selection = edge;
-			view.selection = selectStateMachineSource(edge.link.reference, view.source.models);
+			view.selectionState.select(selectStateMachineSource(edge.link.reference, view.source.models));
 			const node = Array.from(viewport.model.nodesBySource.values()).find(node => node.source.label === 'active')!;
 			const x = (node.bounds.left + node.bounds.right) / 2;
 			const y = node.bounds.top + node.headerHeight / 2;

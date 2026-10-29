@@ -7,7 +7,7 @@ import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorGraphDetail, BehaviorGraphProjection, BehaviorGraphNode } from './graph_model';
 import { appendBehaviorGraphFields, appendBehaviorGraphSourceDetails } from './graph_details';
 import { describeExpression, SourceTableIssue } from './source';
-import { indexBehaviorTreeMembers } from './behavior_tree_index';
+import { indexBehaviorTreeSource } from './behavior_tree_index';
 
 /** Cold projection from typed source relationships. No label parsing or execution inference. */
 export function projectBehaviorTreeGraph(
@@ -70,7 +70,7 @@ export function projectBehaviorTreeGraph(
 	}
 
 	if (definition !== null) {
-		const members = indexBehaviorTreeMembers(definition);
+		const members = indexBehaviorTreeSource(definition).members;
 		const details: BehaviorGraphDetail[] = [];
 		if (definition.blackboard !== null) appendBehaviorGraphSourceDetails(details, definition.blackboard, 'BLACKBOARD');
 		const root = card(definition, (definition.preserveLabelCase ? definition.label : uppercaseOutsideStrings(definition.label))

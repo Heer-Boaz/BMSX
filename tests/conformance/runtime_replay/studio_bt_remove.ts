@@ -104,9 +104,9 @@ export async function testStudioBtRemove(test: StudioFixture): Promise<void> {
 	await test.clickContextCommand(remove, 6);
 	const removed = BT_ORDER_SOURCE.replace('\tnested; -- nested inline', '\t -- nested inline');
 	check(model.version === version + 1 && model.buffer.getText() === removed && children().length === 2
-		&& viewport.selection === null && lens.view.selection === null && !ide.editor.commands.isEnabled(remove),
+		&& viewport.selection === null && lens.view.selectionState.selected === null && !ide.editor.commands.isEnabled(remove),
 		'BT removal: held Remove performs one field edit, keeps exterior comments and clears deleted selection');
-	check(lens.view.definitionRowKey === lens.view.document.definitions[0].rowKey,
+	check(lens.view.selectionState.definitionRowKey === lens.view.document.definitions[0].rowKey,
 		'BT removal: the chosen registration survives without selecting another definition');
 	console.info('STUDIO: BT removed child ready for visual inspection');
 	await click(sourceButton.bounds);

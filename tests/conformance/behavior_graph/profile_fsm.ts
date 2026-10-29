@@ -34,7 +34,7 @@ machines.register('profile', { initial = 'lane0', states = { ${Array.from({ leng
 	const view = createBehaviorLensViewState(document, model, 'outline', assert.fail);
 	const references = [...view.stateMachines.references.values()];
 	const selected = selectStateMachineSource(references.findLast(items => items[0].kind === 'state-outcome' && items[0].outcome.proof.kind === 'return')![0], view.source.models);
-	view.selection = selected;
+	view.selectionState.select(selected);
 	const inputRefreshMs = medianMilliseconds(() => { installBehaviorLensDocument(view, document); });
 	const roundtrip = [{ offset: 0, deletedLength: 0, insertedLength: 1 }, { offset: 0, deletedLength: 1, insertedLength: 0 }];
 	const selectedProofMapMs = medianMilliseconds(() => {

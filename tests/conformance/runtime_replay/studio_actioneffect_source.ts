@@ -26,7 +26,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	if (properties.kind !== 'properties') throw new Error('ActionEffects must open the concrete property inspector');
 	const second = view.document.definitions[1];
 	if (second.behaviorKind !== 'action_effect') throw new Error('ActionEffect source: expected the second fixture registration');
-	check(view.definitionRowKey === second.rowKey && second.body!.fields.length === 12,
+	check(view.selectionState.definitionRowKey === second.rowKey && second.body!.fields.length === 12,
 		'ActionEffect source: picker selects the second effect, not its file or shared initializer');
 	for (let index = 0; index < second.body!.fields.length; index += 1) {
 		check(second.body!.fields[index].source === second.children[index], 'ActionEffect source: typed fields and property inspector share one source occurrence');
@@ -60,7 +60,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	test.setKey('Enter', true);
 	for (let index = 0; index < 6; index += 1) await frame();
 	test.setKey('Enter', false); await frame();
-	check(grant.collapsed && view.selection === null && ide.editor.editorParts.activeGroup.model.activeTab === lens, 'ActionEffect controls: held Enter folds once without opening fake group source');
+	check(grant.collapsed && view.selectionState.selected === null && ide.editor.editorParts.activeGroup.model.activeTab === lens, 'ActionEffect controls: held Enter folds once without opening fake group source');
 	await press('Enter');
 	const groupBounds = { left: properties.tree.layout.valueLeft, right: properties.tree.layout.contentRight,
 		top: properties.tree.layout.contentTop, bottom: properties.tree.layout.contentTop + properties.tree.layout.rowHeight };
@@ -109,7 +109,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 		'ActionEffect source: held Source click opens the selected field without dragging code');
 	await test.clickTab(lens.id);
 	await click(propertyBounds, 1, 'pointer_secondary');
-	check(ide.editor.contextMenu.visible && view.selection?.rowKey === period.source.rowKey,
+	check(ide.editor.contextMenu.visible && view.selectionState.selected?.rowKey === period.source.rowKey,
 		'ActionEffect context: right click targets the property without expanding or activating it');
 	await test.clickContextCommand('editor.source');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === code && sourcePane(test).code.view.cursorRow === row && !hasSelection(sourcePane(test).code),
@@ -138,7 +138,7 @@ export async function testStudioActionEffectSource(test: StudioFixture): Promise
 	if (chosen2.kind !== 'behavior_lens' || chosen2.view.presentation.kind !== 'properties') throw new Error('ActionEffect: selected definition input missing');
 	check(chosen2 !== lens && chosen2.workingCopy === model, 'ActionEffect: distinct definition input shares the text owner');
 	lens = chosen2; view = lens.view; properties = chosen2.view.presentation; tree = properties.tree;
-	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && view.definitionRowKey === view.document.definitions[0].rowKey,
+	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && view.selectionState.definitionRowKey === view.document.definitions[0].rowKey,
 		'ActionEffect source: both registrations remain independently selectable with their own retained inputs');
 	await click(properties.actionBar.items[0].bounds);
 	check(sourcePane(test).code.view.cursorRow === ACTIONEFFECT_SOURCE.split('\n').findIndex(line => line.startsWith("effects.register_effect('fixture.first'")),

@@ -242,7 +242,7 @@ for (const kind of ['behavior_tree', 'state_machine', 'action_effect', 'progress
 		assert.ok(input !== undefined && (input.kind === 'behavior_lens' || input.kind === 'lua_program' || input.kind === 'animation'));
 		assert.ok(f.secondGroup.model.activeTab === input && input.workingCopy === editorTextModelService.get(entry.ownerResource));
 		if (input.kind === 'behavior_lens') {
-			const range = input.view.source.ranges.get(input.view.definitionRowKey!)!;
+			const range = input.view.source.ranges.get(input.view.selectionState.definitionRowKey!)!;
 			assert.ok(range.start === entry.range.start && range.end === entry.range.end);
 		} else if (input.kind === 'lua_program') assert.ok(input.occurrenceRange.start === entry.range.start && input.occurrenceRange.end === entry.range.end);
 		else assert.ok(input.kind === 'animation' && input.definitionRange?.start === entry.range.start && input.definitionRange.end === entry.range.end);

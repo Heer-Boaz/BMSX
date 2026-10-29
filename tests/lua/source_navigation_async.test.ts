@@ -18,12 +18,35 @@ function fixture(t: TestContext) {
 	return { ...f, model, location };
 }
 
+for (const phase of ['query', 'await', 'resolution'] as const) for (const placement of ['default', 'side'] as const)
+	test(`semantic Source receipt revocation during ${phase} prevents ${placement} admission without source or attachment changes`, async t => {
+		const f = fixture(t), ready = Promise.withResolvers<EditorSourceLocation | undefined>();
+		const input = f.firstGroup.model.activeTab, context = f.first.commandTarget.scope.contextGeneration;
+		let current = true, reads = 0;
+		if (phase === 'resolution') {
+			const resolve = f.editor.resourceEditors.resolveEditorInput.bind(f.editor.resourceEditors);
+			t.mock.method(f.editor.resourceEditors, 'resolveEditorInput', (resource, editorId) => {
+				const candidate = resolve(resource, editorId); current = false; return candidate;
+			});
+		}
+		const pending = f.editor.navigation.openSource(f.firstGroup, { placement, source: {
+			isCurrent: () => current,
+			readLocation: () => { reads++; if (phase === 'query') current = false; return phase === 'await' ? ready.promise : f.location(); },
+		} });
+		if (phase === 'await') { current = false; ready.resolve(f.location()); }
+		assert.equal(await pending, undefined); assert.equal(reads, 1);
+		assert.equal(f.firstGroup.model.activeTab, input); assert.equal(f.first.commandTarget.scope.contextGeneration, context);
+		assert.equal(f.firstPart.groups.length, phase === 'resolution' && placement === 'side' ? 2 : 1);
+		assert.equal(navigationState.back.length, 0); assert.equal(f.model.dirty, false);
+		if (phase === 'resolution' && placement === 'side') assert.equal(f.firstPart.groups.find(group => group !== f.firstGroup)!.model.activeTab, null);
+	});
+
 test('asynchronous source discovery retains its sender without creating topology, history or focus before admission', async t => {
 	const f = fixture(t), read = Promise.withResolvers<EditorSourceLocation | undefined>();
 	const generation = f.firstGroup.panes.openGeneration, focused = inputFocus.admittedTarget;
-	const pending = f.editor.navigation.openSource(f.firstGroup, { readLocation: () => {
+	const pending = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => {
 		assert.equal(f.firstGroup.panes.openGeneration, generation); return read.promise;
-	}, placement: 'side' });
+	} }, placement: 'side' });
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.firstGroup.panes.activePane === f.first);
 	assert.ok(inputFocus.admittedTarget === focused); assert.equal(f.firstPart.groups.length, 1);
 	assert.equal(navigationState.back.length, 0); assert.equal(navigationState.forward.length, 0);
@@ -33,10 +56,22 @@ test('asynchronous source discovery retains its sender without creating topology
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput);
 });
 
+test('an already-revoked supplied request cannot supersede an admitted pending Source discovery', async t => {
+	const f = fixture(t), ready = Promise.withResolvers<EditorSourceLocation | undefined>();
+	const pending = f.editor.navigation.openSource(f.firstGroup, { placement: 'side', source: { readLocation: () => ready.promise } });
+	assert.equal(await f.editor.navigation.openSource(f.firstGroup, { source: {
+		isCurrent: () => false, readLocation: () => assert.fail('revoked source intent has no query authority'),
+	} }), undefined);
+	ready.resolve(f.location()); assert.ok(await pending !== undefined);
+	assert.equal(f.firstPart.groups.length, 2);
+	const receiving = f.firstPart.groups.find(group => group !== f.firstGroup)!;
+	assert.ok(receiving.model.activeTab instanceof CodeEditorInput && receiving.model.activeTab.workingCopy === f.model);
+});
+
 test('a later asynchronous Source request from the same retained sender owns admission', async t => {
 	const f = fixture(t), first = Promise.withResolvers<EditorSourceLocation | undefined>(), second = Promise.withResolvers<EditorSourceLocation | undefined>();
-	const earlier = f.editor.navigation.openSource(f.firstGroup, { readLocation: () => first.promise, placement: 'side' });
-	const newer = f.editor.navigation.openSource(f.firstGroup, { readLocation: () => second.promise, placement: 'side' });
+	const earlier = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => first.promise }, placement: 'side' });
+	const newer = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => second.promise }, placement: 'side' });
 	first.resolve(f.location()); assert.equal(await earlier, undefined);
 	assert.equal(f.firstPart.groups.length, 1);
 	second.resolve(f.location()); assert.ok(await newer !== undefined);
@@ -51,8 +86,8 @@ test('a newer synchronous Source supersedes pending discovery before its foreign
 	t.mock.method(f.editor.resourceEditors, 'resolveEditorInput', (resource, editorId) => {
 		const input = resolve(resource, editorId); assert.ok(input instanceof CodeEditorInput); offered = input; return receiver.promise;
 	});
-	const earlier = f.editor.navigation.openSource(f.firstGroup, { readLocation: () => read.promise });
-	const newer = f.editor.navigation.openSource(f.firstGroup, { readLocation: f.location });
+	const earlier = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => read.promise } });
+	const newer = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: f.location } });
 	assert.ok(offered !== undefined && f.secondGroup.model.activeTab === foreign);
 	const focus = inputFocus.admittedTarget;
 	read.resolve(f.location()); assert.equal(await earlier, undefined);
@@ -65,7 +100,7 @@ test('a newer synchronous Source supersedes pending discovery before its foreign
 for (const change of ['clear', 'rebind', 'reselect', 'foreignFocus', 'sourceEdit', 'closePart'] as const)
 	test(`pending source discovery cannot acquire a destination after ${change}`, async t => {
 		const f = fixture(t), read = Promise.withResolvers<EditorSourceLocation | undefined>(), location = f.location();
-		const pending = f.editor.navigation.openSource(f.firstGroup, { readLocation: () => read.promise, placement: 'side' });
+		const pending = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => read.promise }, placement: 'side' });
 		const newer = new HostErrorInput('new source attachment');
 		if (change === 'clear') f.firstGroup.clear();
 		else if (change === 'rebind') f.firstGroup.openEditor(newer);
@@ -83,7 +118,7 @@ for (const change of ['clear', 'rebind', 'reselect', 'foreignFocus', 'sourceEdit
 test('a newer opening published during the async sender receipt cannot be adopted by that older request', async t => {
 	const f = fixture(t), read = Promise.withResolvers<EditorSourceLocation | undefined>(), newer = new HostErrorInput('reentrant source');
 	const unbind = f.firstGroup.panes.onDidBeginOpen(() => { unbind(); f.firstGroup.openEditor(newer); }); t.after(unbind);
-	const pending = f.editor.navigation.openSource(f.firstGroup, { readLocation: () => read.promise, placement: 'side' });
+	const pending = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => read.promise }, placement: 'side' });
 	read.resolve(f.location()); assert.equal(await pending, undefined);
 	assert.equal(f.firstPart.groups.length, 1);
 	assert.ok(f.firstGroup.model.activeTab === newer && f.firstGroup.panes.activePane?.input === newer);
@@ -91,7 +126,7 @@ test('a newer opening published during the async sender receipt cannot be adopte
 
 test('asynchronous source failure propagates without opening a destination or consuming history', async t => {
 	const f = fixture(t), failure = new Error('source observation failed');
-	const pending = f.editor.navigation.openSource(f.firstGroup, { readLocation: () => Promise.reject(failure), placement: 'side' });
+	const pending = f.editor.navigation.openSource(f.firstGroup, { source: { readLocation: () => Promise.reject(failure) }, placement: 'side' });
 	await assert.rejects(pending!, error => error === failure);
 	assert.equal(f.firstPart.groups.length, 1); assert.equal(navigationState.back.length, 0);
 	assert.ok(f.firstGroup.model.activeTab === f.firstInput && inputFocus.admittedTarget === f.first.commandTarget);

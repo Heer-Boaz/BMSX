@@ -15,7 +15,8 @@ export function createStateMachineRetargetEdit(
 	const after = copyBehaviorSourceBookmark(before);
 	const edit = createLuaStringValueEdit(model.buffer, target.file.chunk.locations, target.literal, target.text);
 	const resource = model.identity, bindingStart = edit.offset, bindingEnd = edit.offset + edit.text.length;
-	return { version: model.version, edits: [edit], beforeEditState: behaviorSourceEditState.of(before, view.editSource), computeAfterEditState: changes => {
+	const originIntent = view.selectionState.selectionRevision;
+	return { version: model.version, edits: [edit], beforeEditState: behaviorSourceEditState.of({ bookmark: before, originIntent }, view.editSource), computeAfterEditState: changes => {
 		mapBehaviorSourceBookmark(after, resource, changes);
 		if (after.tracked.kind === 'direct') {
 			// This command replaces precisely the selected binding token. Ordinary
@@ -23,6 +24,6 @@ export function createStateMachineRetargetEdit(
 			after.tracked.binding.start = bindingStart;
 			after.tracked.binding.end = bindingEnd;
 		}
-		return behaviorSourceEditState.of(after, view.editSource);
+		return behaviorSourceEditState.of({ bookmark: after, originIntent }, view.editSource);
 	} };
 }

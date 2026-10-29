@@ -72,7 +72,7 @@ export async function testStudioBtMoves(test: StudioFixture): Promise<void> {
 	await press('ArrowRight');
 	await runPaletteCommand('Behavior Lens: Move BT Child Earlier');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && lens.workingCopy === model && model.buffer.getText() === moved
-		&& view.definitionRowKey === view.document.definitions[1].rowKey, 'BT moves: shared initializer is edited once in its chosen definition input');
+		&& view.selectionState.definitionRowKey === view.document.definitions[1].rowKey, 'BT moves: shared initializer is edited once in its chosen definition input');
 	await runPaletteCommand('Edit: Undo');
 	check(model.buffer.getText() === BT_ORDER_SOURCE, 'BT moves: no separate graph history');
 	await runPaletteCommand('Behavior Lens: Open Behavior Tree (BT)');

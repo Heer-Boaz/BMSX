@@ -125,19 +125,19 @@ test('effect fields in a reused initializer follow their own registration throug
 	const second = view.document.definitions[1];
 	assert.ok(second.behaviorKind === 'action_effect' && second.body !== null);
 	const period = second.body.fields.find(field => field.kind === 'value' && field.name === 'period_ms')!;
-	view.selection = { kind: 'node', rowKey: period.source.rowKey };
+	view.selectionState.select({ kind: 'node', rowKey: period.source.rowKey });
 	const previous = view.document;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- 🐉 prefix\n' }]);
 	const offset = model.buffer.getText().indexOf('period_ms = 20') + 'period_ms = '.length;
 	model.pushEditOperations([{ offset, deleteLength: 2, text: '35' }]);
 	assert.equal(view.document, previous, 'hidden mapping does not parse or project');
 	installBehaviorLensDocument(view, document(model.buffer.getText()));
-	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
-	const selected = view.source.nodesByRowKey.get(view.selection!.rowKey)!;
+	assert.equal(view.selectionState.definitionRowKey, view.document.definitions[1].rowKey);
+	const selected = view.source.nodesByRowKey.get(view.selectionState.selected!.rowKey)!;
 	assert.equal(selected.authoredRange.start.line, period.source.authoredRange.start.line + 1);
 	model.undo();
 	installBehaviorLensDocument(view, document(model.buffer.getText()));
-	assert.equal(view.definitionRowKey, view.document.definitions[1].rowKey);
+	assert.equal(view.selectionState.definitionRowKey, view.document.definitions[1].rowKey);
 });
 
 test('recoverable incomplete effect source remains partial instead of becoming an executable definition', () => {

@@ -58,11 +58,11 @@ function fixture() {
 	const view = createBehaviorLensViewState(project(), main, 'outline', path => models.get(path)!);
 	const input = new BehaviorLensInput(main, view, new Set([main.resource.contextId]), assert.fail);
 	for (const model of models.values()) model.onDidChangeContent(event => mapBehaviorLensSourceRanges(view, model.identity, event));
-	view.definitionRowKey = view.document.definitions[0].rowKey;
+	view.selectionState.restore(view.document.definitions[0].rowKey, view.selectionState.selected);
 	function chooseReturn() {
 		const reference = [...view.stateMachines.references.values()].find(items => items[0].kind === 'state-outcome')![0];
-		view.selection = selectStateMachineSource(reference, view.source.models);
-		return view.selection;
+		view.selectionState.select(selectStateMachineSource(reference, view.source.models));
+		return view.selectionState.selected;
 	}
 	return { main, provider, models, view, input, project, chooseReturn,
 		refresh() { installBehaviorLensDocument(view, project()); },
@@ -80,21 +80,21 @@ test('binding and callback markers use their own resource, buffer and UTF-16 coo
 		...luaSourceRangeToTextRange(f.provider.buffer, selected.outcome.proof.callbackFile.chunk.locations.range(selected.outcome.proof.callback.span)) });
 	const own = { ...selected.tracked.binding };
 	const callbackStart = selected.tracked.callback.start;
-	const rootStart = f.view.source.ranges.get(f.view.definitionRowKey!)!.start;
+	const rootStart = f.view.source.ranges.get(f.view.selectionState.definitionRowKey!)!.start;
 	const foreignStart = f.view.source.ranges.get('provider-return')!.start;
 	f.provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- provider edit\n' }]);
 	assert.equal(f.view.source.isCurrent, false);
 	assert.deepEqual(selected.tracked.binding, own);
 	assert.equal(selected.tracked.callback.start, callbackStart + 17);
-	assert.equal(f.view.source.ranges.get(f.view.definitionRowKey!)!.start, rootStart);
+	assert.equal(f.view.source.ranges.get(f.view.selectionState.definitionRowKey!)!.start, rootStart);
 	assert.equal(f.view.source.ranges.get('provider-return')!.start, foreignStart + 17);
 	f.refresh();
 	assert.equal(f.view.source.isCurrent, true);
-	assert.ok(f.view.selection?.kind === 'state-outcome');
-	assert.equal(readLuaSourceRange(f.provider.buffer, stateMachineSourceRange(f.view.selection)), "return '../active'");
+	assert.ok(f.view.selectionState.selected?.kind === 'state-outcome');
+	assert.equal(readLuaSourceRange(f.provider.buffer, stateMachineSourceRange(f.view.selectionState.selected)), "return '../active'");
 	f.provider.undo(); f.refresh();
-	assert.ok(f.view.selection?.kind === 'state-outcome' && f.view.selection.tracked.kind === 'return');
-	assert.equal(f.view.selection.tracked.callback.start, callbackStart);
+	assert.ok(f.view.selectionState.selected?.kind === 'state-outcome' && f.view.selectionState.selected.tracked.kind === 'return');
+	assert.equal(f.view.selectionState.selected.tracked.callback.start, callbackStart);
 	assert.equal(f.main.dirty, false); assert.equal(f.provider.dirty, false);
 });
 
@@ -117,9 +117,9 @@ test('navigation copies map provider edits while hidden and release those subscr
 	f.provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- hidden\n' }]);
 	assert.equal(captured.tracked.callback.start, before + 10);
 	f.refresh(); history.restore(f.input);
-	assert.ok(f.view.selection?.kind === 'state-outcome');
-	assert.equal(stateMachineSourceRange(f.view.selection).start.line, 4);
-	assert.equal(behaviorSourceBookmarksEqual(captured, captureBehaviorSourceBookmark(f.view, f.view.selection)), true);
+	assert.ok(f.view.selectionState.selected?.kind === 'state-outcome');
+	assert.equal(stateMachineSourceRange(f.view.selectionState.selected).start.line, 4);
+	assert.equal(behaviorSourceBookmarksEqual(captured, captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected)), true);
 	history.dispose();
 	f.provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- after release\n' }]);
 	assert.equal(captured.tracked.callback.start, before + 10, 'disposed navigation owns no live markers');
@@ -128,8 +128,8 @@ test('navigation copies map provider edits while hidden and release those subscr
 
 test('equal coordinates in another file or socket do not identify the same source', t => {
 	const f = fixture(); t.after(() => f.dispose());
-	f.view.selection = { kind: 'node', rowKey: 'provider-return' };
-	const bookmark = captureBehaviorSourceBookmark(f.view, f.view.selection);
+	f.view.selectionState.select({ kind: 'node', rowKey: 'provider-return' });
+	const bookmark = captureBehaviorSourceBookmark(f.view, f.view.selectionState.selected);
 	const otherFile = { ...bookmark, path: bookmark.path.map(step => ({ ...step })) };
 	const last = otherFile.path.length - 1;
 	otherFile.path[last] = { ...otherFile.path[last], resource: f.main.identity };
@@ -144,7 +144,7 @@ test('equal coordinates in another file or socket do not identify the same sourc
 
 test('source correspondence does not transfer a selection to an equal-offset foreign replacement', t => {
 	const f = fixture(); t.after(() => f.dispose());
-	f.view.selection = { kind: 'node', rowKey: 'provider-return' };
+	f.view.selectionState.select({ kind: 'node', rowKey: 'provider-return' });
 	const old = f.view.source.ranges.get('provider-return')!;
 	const document = f.project();
 	const definition = document.definitions[0];
@@ -155,15 +155,15 @@ test('source correspondence does not transfer a selection to an equal-offset for
 	const range = { path: resourceIdentityKey(f.main.resource), start: { line: start.row + 1, column: start.column + 1 }, end: { line: end.row + 1, column: end.column + 1 } };
 	const replacement = { ...providerNode, authoredRange: range, occurrenceRange: range };
 	installBehaviorLensDocument(f.view, { ...document, definitions: [{ ...definition, children: [...definition.children.slice(0, -1), replacement] }] });
-	assert.equal(f.view.selection, null);
+	assert.equal(f.view.selectionState.selected, null);
 });
 
 test('a same-path source from another resource domain cannot inherit the previous occurrence', t => {
 	const f = fixture(); t.after(() => f.dispose());
-	f.view.selection = { kind: 'node', rowKey: 'provider-return' };
+	f.view.selectionState.select({ kind: 'node', rowKey: 'provider-return' });
 	const systemProvider = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: f.provider.identity.path, location: { kind: 'workspace' as const, path: f.provider.identity.path }, contextId: TEST_SYSTEM_CONTEXT_ID, path: f.provider.identity.path,
 		source: { type: 'lua', resid: 'system-provider' } }, 'lua', PROVIDER);
 	f.models.set(resourceIdentityKey(systemProvider.resource), systemProvider);
 	installBehaviorLensDocument(f.view, f.project(systemProvider));
-	assert.equal(f.view.selection, null);
+	assert.equal(f.view.selectionState.selected, null);
 });

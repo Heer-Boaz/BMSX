@@ -60,7 +60,6 @@ const SOURCE_COMMANDS = new Set<EditorCommandId>([
 	'behaviorLens.moveChildEarlier', 'behaviorLens.moveChildLater', 'behaviorLens.removeChild', 'behaviorLens.duplicateChild',
 	'behaviorLens.setInitialState', 'behaviorLens.editProperty',
 	'animation',
-	'animation.producerSource', 'animation.producerSourceToSide',
 	'aem.edit', 'aem.add', 'aem.remove', 'aem.apply', 'aem.testEvent',
 	'luaProgram.edit', 'luaProgram.add', 'luaProgram.remove',
 	'luaProgram.testInput', 'input.testActionString',

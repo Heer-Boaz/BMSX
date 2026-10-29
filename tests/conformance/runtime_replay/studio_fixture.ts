@@ -1,5 +1,6 @@
 import { mapDisplayPointToViewport } from '../../../machine/ts/render/video_output';
 import { CodeEditorPane } from '../../../ide/workbench/contrib/code_editor/editor_pane';
+import type { EditorGroupView } from '../../../ide/workbench/services/editor/editor_group';
 import { HostAudioDevice } from '../../../hosts/common/audio_device';
 import { BrowserInputHub } from '../../../hosts/browser/input';
 import { BrowserTextInput } from '../../../hosts/browser/text_input';
@@ -136,6 +137,12 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		check(ide.fault.hostFrameFailure === undefined, 'workbench host frame failed');
 		check(runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) <= observations.expectedFaultSequence, 'unexpected guest fault');
 	};
+	// Model admission can complete after the preceding host frame. A screenshot
+	// observes the next ordinary presented frame, never merely that admission.
+	// This active checkpoint advances the host and, unless paused, the guest.
+	const captureCheckpoint = capture === undefined ? undefined : async (name: string) => {
+		await frame(); await capture(name);
+	};
 	const until = async (predicate: () => boolean, message: string) => {
 		console.info(`STUDIO: ${message}`);
 		for (let index = 0; index < 8000 && !predicate(); index += 1) await frame();
@@ -211,12 +218,17 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		setPointerButton(button, false);
 		await frame();
 	};
-	/** Reach an offscreen tab through the real wheel route, then click its visible label. */
-	const clickTab = async (id: EditorTabId, heldFrames = 1) => {
+	/** Reach a real tab strip; independent same-resource views require their exact group. */
+	const clickTab = async (id: EditorTabId, heldFrames = 1, owner?: EditorGroupView) => {
 		await frame();
-		const groups = ide.editor.editorParts.groups.filter(group => group.model.findById(id) !== undefined);
-		check(groups.length === 1, `tab ${id} has one concrete owning group`);
-		const group = groups[0], part = ide.editor.editorParts.partForGroup(group);
+		let group = owner;
+		if (group === undefined) {
+			const groups = ide.editor.editorParts.groups.filter(group => group.model.findById(id) !== undefined);
+			check(groups.length === 1, `tab ${id} has one concrete owning group`);
+			group = groups[0];
+		}
+		check(group.model.findById(id) !== undefined, `tab ${id} belongs to its explicitly addressed group`);
+		const part = ide.editor.editorParts.partForGroup(group);
 		if (part.window !== undefined) {
 			const model = part.window.model, header = model.header;
 			let titlePoint: RectBounds | undefined;
@@ -297,7 +309,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	audio.device.select(audio);
 	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, remote, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, title, capture };
+		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, title, capture: captureCheckpoint };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

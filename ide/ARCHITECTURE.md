@@ -325,6 +325,11 @@ intent while detached, and binds native controls only to supplied bounds/scope.
 Diagnostic navigation and Source share the canonical-model/version proof at the
 diagnostic navigation owner. Application Source/Palette routing retains the
 actual primary or activity producer rather than borrowing the document behind it.
+Behavior Lens retains definition and selected-source intent in its input-owned
+`BehaviorSourceSelectionState`, independently of graph geometry and pane attachment.
+Source correspondence publishes the current index and semantic selection together;
+explicit selection and history replace intent, while corresponding reparses retain it.
+Typed edit state carries inert source correspondence and its originating intent.
 Scene source documents are generation-cached at `contrib/scene_editor/source_documents.ts`
 and shared with project-content discovery. `SceneAuthoringContext` retains source
 correspondence, semantic selection and member editing independently of outline
@@ -447,6 +452,11 @@ pending edit before execution enablement. Native execution and application
 routing share that acceptance boundary, independently of the receiving editor
 arrangement. Pure presentation commands use ordinary focus/blur behavior.
 UI enablement does not construct invocations or publish drafts.
+Source navigation carries a contribution's location reader and semantic-intent
+receipt together. The producer attachment is captured before contribution code
+runs; both authorities remain current through draft acceptance, source discovery
+and receiver admission. The receiving editor then owns its opening lifetime;
+generation-bound coordinates separately admit the caret.
 
 ## Workbench Quick Input
 

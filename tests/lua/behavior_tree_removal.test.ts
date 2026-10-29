@@ -13,15 +13,15 @@ import { createBehaviorTreeEditFixture as fixture } from '../helpers/behavior_tr
 test('syntax recovery blocks deletion without discarding recognized weighted topology or its selection', t => {
 	const f = fixture(t, BT_ORDER_SOURCE, 2);
 	f.select(1, true);
-	const selected = f.view.selection!.rowKey;
+	const selected = f.view.selectionState.selected!.rowKey;
 	f.model.pushEditOperations([{ offset: f.model.buffer.length, deleteLength: 0, text: '\n@' }]);
 	f.refresh();
 	assert.equal(f.view.document.syntaxComplete, false);
 	assert.equal(behaviorTreeEditTarget(f.view), null);
-	assert.equal(f.view.selection?.rowKey, selected);
+	assert.equal(f.view.selectionState.selected?.rowKey, selected);
 	assert.equal(f.viewport.selection?.kind, 'edge');
 	f.model.undo(); f.refresh();
-	assert.equal(f.view.selection?.rowKey, selected);
+	assert.equal(f.view.selectionState.selected?.rowKey, selected);
 	assert.equal(f.viewport.selection?.kind, 'edge');
 	const member = behaviorTreeEditTarget(f.view)!;
 	assert.equal(readLuaSourceRange(f.model.buffer, member.file.chunk.locations.range(member.branch.entries[member.index].field.span)), '{ weight = 9, child = nested }');
@@ -47,8 +47,8 @@ test('BT removal deletes the selected source field, preserving initializers, met
 		f.refresh();
 		assert.equal(f.view.document.syntaxComplete, true);
 		assert.equal(f.viewport.model.nodes[0].children[0].children.length, 2);
-		assert.equal(f.view.definitionRowKey, f.view.document.definitions[0].rowKey);
-		assert.equal(f.view.selection, null);
+		assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[0].rowKey);
+		assert.equal(f.view.selectionState.selected, null);
 		assert.equal(f.viewport.selection, null);
 		assert.equal(selectedBehaviorLensSourceRange(f.view), null);
 		assert.equal(behaviorTreeEditTarget(f.view), null, 'a held Delete cannot consume the next child');
@@ -59,7 +59,7 @@ test('BT removal deletes the selected source field, preserving initializers, met
 		assert.equal(f.viewport.selection, null, 'Undo is not a second graph-selection history');
 		f.model.redo(); f.refresh();
 		assert.equal(f.model.buffer.getText(), expected);
-		assert.equal(f.view.selection, null);
+		assert.equal(f.view.selectionState.selected, null);
 	}
 });
 
@@ -85,7 +85,7 @@ test('shared list edits update all occurrences but keep the chosen registration;
 	f.select(1);
 	f.model.pushEditOperations(createBehaviorTreeChildRemovalEdits(f.model.buffer, behaviorTreeEditTarget(f.view)!));
 	f.refresh();
-	assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
+	assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[1].rowKey);
 	assert.equal(f.viewport.selection, null);
 	const survivor = f.viewport.model.nodes[0].children[0].children[1];
 	assert.equal(readLuaSourceRange(f.model.buffer, survivor.source.occurrenceRange), 'nested');
@@ -98,7 +98,7 @@ test('shared list edits update all occurrences but keep the chosen registration;
 	assert.equal(f.viewport.model.nodes[0].children[0].children.length, 3, 'referenced nested initializer remains available to the weighted tree');
 	f.model.undo(); f.refresh();
 	assert.equal(f.model.buffer.getText(), source);
-	assert.equal(f.view.definitionRowKey, f.view.document.definitions[2].rowKey, 'Undo does not reopen the formerly selected registration');
+	assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[2].rowKey, 'Undo does not reopen the formerly selected registration');
 });
 
 test('deleting a child inside a shared initializer edits that one constructor, not an occurrence copy', t => {
@@ -142,7 +142,7 @@ trees.register('sole', { root = { type = '${nodeType}', ${fields} } })`;
 		f.refresh();
 		assert.equal(f.view.document.syntaxComplete, true);
 		assert.equal(f.viewport.model.nodes[0].children[0].children.length, 0);
-		assert.equal(f.view.selection, null);
+		assert.equal(f.view.selectionState.selected, null);
 		f.model.undo(); f.refresh();
 		assert.equal(f.model.buffer.getText(), source);
 	}

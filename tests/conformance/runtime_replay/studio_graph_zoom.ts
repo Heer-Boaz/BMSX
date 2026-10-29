@@ -12,7 +12,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	const graph = lens.view.presentation;
 	const viewport = graph.viewport;
 	const selected = viewport.selection!;
-	const source = lens.view.selection!;
+	const source = lens.view.selectionState.selected!;
 	const model = viewport.model;
 	const version = lens.workingCopy.version;
 	const dirty = lens.workingCopy.dirty;
@@ -50,7 +50,7 @@ export async function testStudioGraphZoom(test: StudioFixture): Promise<void> {
 	await runPaletteCommand('Go: Back');
 	check(ide.editor.editorParts.activeGroup.model.activeTab === lens && viewport.zoom === zoom && viewport.scrollX === x && viewport.scrollY === y,
 		'zoom: Back restores the source occurrence and the entire view transform');
-	check(viewport.model === model && viewport.selection === selected && lens.view.selection!.rowKey === source.rowKey,
+	check(viewport.model === model && viewport.selection === selected && lens.view.selectionState.selected!.rowKey === source.rowKey,
 		'zoom: navigation preserves selection and does not run layout');
 	await press('ShiftLeft', 'F10');
 	const menu = ide.editor.contextMenu;

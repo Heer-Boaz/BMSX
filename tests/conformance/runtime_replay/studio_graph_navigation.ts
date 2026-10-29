@@ -7,7 +7,7 @@ export async function testStudioGraphNavigation(test: StudioFixture): Promise<vo
 	const lens = test.ide.editor.editorParts.activeGroup.model.activeTab;
 	if (lens.kind !== 'behavior_lens' || (lens.view.presentation.kind !== 'graph' && lens.view.presentation.kind !== 'state-graph')) throw new Error('navigation probe requires a real behavior diagram');
 	const view = lens.view.presentation.viewport;
-	const sourceSelection = lens.view.selection;
+	const sourceSelection = lens.view.selectionState.selected;
 	const selected = view.selection;
 	if (selected?.kind !== 'node') throw new Error('navigation probe starts on a visible selected card');
 	const model = view.model;
@@ -68,7 +68,7 @@ export async function testStudioGraphNavigation(test: StudioFixture): Promise<vo
 	setKey('ShiftLeft', false); await frame();
 	check(view.scrollX !== x && view.scrollY === y, 'graph navigation: Shift-wheel pans horizontally');
 	view.scrollX = x; view.scrollY = y;
-	check(view.selection === selected && lens.view.selection === sourceSelection, 'graph navigation: all pan routes preserve exact source selection');
+	check(view.selection === selected && lens.view.selectionState.selected === sourceSelection, 'graph navigation: all pan routes preserve exact source selection');
 	check(view.model === model && lens.workingCopy.version === version && lens.workingCopy.dirty === dirty
 		&& lens.workingCopy.canUndo === undo && lens.workingCopy.canRedo === redo, 'graph navigation: no geometry rebuild, dirtying or source history');
 	await frame();

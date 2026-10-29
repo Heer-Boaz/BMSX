@@ -19,9 +19,10 @@ export function selectedActionEffectProperty(view: BehaviorLensViewState): Effec
 export function applyActionEffectPropertyEdit(input: BehaviorLensInput, write: EffectPropertyWrite, value: LuaFieldValueEdit): void {
 	const model = input.view.source.models.get(write.file.file)!;
 	const selectedRange = write.sourceSelection === 'field' ? value.fieldRange : value.expressionRange;
-	const before = captureBehaviorSourceBookmark(input.view, input.view.selection!);
+	const before = captureBehaviorSourceBookmark(input.view, input.view.selectionState.selected!);
 	const after = copyBehaviorSourceBookmark(before);
-	model.pushEditOperations([value.edit], behaviorSourceEditState.of(before, input.view.editSource), changes => {
+	const originIntent = input.view.selectionState.selectionRevision;
+	model.pushEditOperations([value.edit], behaviorSourceEditState.of({ bookmark: before, originIntent }, input.view.editSource), changes => {
 		// Explicit replacement selects the new expression; ordinary text markers
 		// deliberately collapse when their original source occurrence disappears.
 		for (const step of after.path) if (resourceIdentityEquals(step.resource, model.resource)) {
@@ -29,6 +30,6 @@ export function applyActionEffectPropertyEdit(input: BehaviorLensInput, write: E
 			step.end = mapTextOffset(step.end, changes, -1);
 		}
 		Object.assign(after.path[after.path.length - 1], luaSourceRangeToTextRange(model.buffer, selectedRange));
-		return behaviorSourceEditState.of(after, input.view.editSource);
+		return behaviorSourceEditState.of({ bookmark: after, originIntent }, input.view.editSource);
 	});
 }

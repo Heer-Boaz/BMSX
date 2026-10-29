@@ -71,7 +71,7 @@ test('repeated copies remain fully expanded through hidden history, without grap
 	for (let count = 1; count <= 2; count += 1) {
 		f.model.pushEditOperations(createBehaviorTreeChildDuplicateEdits(f.model.buffer, behaviorTreeEditTarget(f.view)!));
 		f.refresh();
-		assert.equal(f.view.definitionRowKey, f.view.document.definitions[1].rowKey);
+		assert.equal(f.view.selectionState.definitionRowKey, f.view.document.definitions[1].rowKey);
 		const children = f.viewport.model.nodes[0].children[0].children;
 		assert.equal(f.viewport.selection, children[count + 1]);
 		assert.equal(children[count + 1].children.length, 2, 'retained bytes keep the selected expanded subtree');
