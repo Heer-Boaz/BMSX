@@ -238,7 +238,7 @@ export class WorkbenchActionBarControl implements PointerCaptureTarget, PointerH
 				&& this.commands.isEnabled(command, this.focusTarget.commandContext);
 	}
 	private invoke(command: WorkbenchActionBarAction, context: InputFocusTarget): void {
-		if (command !== WORKBENCH_ACTION_BAR_OVERFLOW) { this.commands.execute(command, context); return; }
+		if (command !== WORKBENCH_ACTION_BAR_OVERFLOW) { this.commands.execute(command, context, undefined, this.focusTarget); return; }
 		this.openOverflow();
 	}
 	/** Named pane commands and physical More activation share the same owned popup. */

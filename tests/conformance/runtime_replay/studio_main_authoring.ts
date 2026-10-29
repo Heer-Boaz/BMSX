@@ -10,6 +10,7 @@ import { WorkspaceSearchInput } from '../../../ide/workbench/contrib/workspace_s
 import { WorkspaceSearchPane } from '../../../ide/workbench/contrib/workspace_search/editor_pane';
 import type { CodeEditorInput } from '../../../ide/workbench/contrib/code_editor/editor_input';
 import { inputFocus } from '../../../ide/input/focus';
+import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 
 /** Standalone renderer workflow over a dedicated test cartridge and independent source fixtures. */
 export async function runStudioMainAuthoring(test: StudioFixture) {
@@ -52,7 +53,9 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	await press('ArrowDown'); await press('Enter'); await press('Home');
 	check(client.consumer.selection?.kind === 'member' && client.consumer.selection.index === 0,
 		'main: hierarchy navigation selects an actual authored member');
-	const field = client.control.details.controls[0];
+	check(client.hierarchy.attached && client.details.attached,
+		'main: independent hierarchy and Details presentations share one retained authored context');
+	const field = client.details.control.controls[0];
 	await click(client.view.details.properties[0].bounds); await press('Digit1'); await press('Digit2');
 	check(field.pending && field.field.text === '12' && model.buffer.getText() === original,
 		'main: the actual field owns its draft before source publication');
@@ -79,6 +82,11 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		'main: acceptance publishes one canonical coordinate edit');
 	const selected = { ...client.consumer.selectionRange };
 	await press('ContextMenu'); await test.clickContextCommand('editor.source');
+	await test.until(() => {
+		const group = editor.editorParts.main.activeGroup, input = group.model.activeTab;
+		return input?.kind === 'code_editor' && input.workingCopy === model
+			&& inputFocus.admittedTarget === group.panes.activePane?.commandTarget;
+	}, 'main: asynchronous Source admission presents the canonical document between the retained regions');
 	const input = editor.editorParts.main.activeGroup.model.activeTab;
 	check(input?.kind === 'code_editor' && input.workingCopy === model,
 		'main: Source opens the canonical working copy in the ordinary document arrangement');
@@ -87,15 +95,25 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		&& client.consumer.selectionRange.end === selected.end,
 		'main: independent document caret navigation cannot replace primary selection');
 	await test.runPaletteCommand('Go: Back');
+	await test.until(() => {
+		const primary = editor.mainWorkspace.primary, target = inputFocus.admittedTarget;
+		return primary instanceof ScenePrimaryClient && primary !== client && target !== null
+			&& (primary.hierarchy.scope.contains(target.scope) || primary.details.scope.contains(target.scope));
+	}, 'main: asynchronous Back admits the exact primary bookmark through a fresh native attachment');
 	const restored = editor.mainWorkspace.primary;
 	check(restored instanceof ScenePrimaryClient && restored !== client && restored.consumer.workingCopy === model
 		&& restored.consumer.selectionRange.start === selected.start && restored.consumer.selectionRange.end === selected.end,
 		'main: Back restores the exact authored location through a fresh primary attachment');
 	await test.runPaletteCommand('Go: Forward');
+	await test.until(() => editor.editorParts.main.activeGroup.model.activeTab === input
+		&& inputFocus.admittedTarget === editor.editorParts.main.activeGroup.panes.activePane?.commandTarget,
+		'main: Forward presents the retained independent Source');
 	check(editor.editorParts.main.activeGroup.model.activeTab === input,
 		'main: Forward returns to the independent retained Source view');
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {
+			if (!(restored instanceof ScenePrimaryClient) || input?.kind !== 'code_editor') throw new Error('main: actual primary and Source required');
+			await testPrimaryRegionVisibility(test, restored, input, theme);
 			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-source`);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
 		}
@@ -109,10 +127,15 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	check(editor.mainWorkspace.primary === restored && model.buffer.getText() === accepted && model.dirty && !editor.actionPrompt.visible,
 		'main: closing Source neither prompts for nor discards the working copy retained by Main');
 	if (!(restored instanceof ScenePrimaryClient)) throw new Error('main: restored Scene client required');
-	await click(restored.view.layout.sourceBounds); await press('ControlLeft', 'KeyZ');
+	await test.runPaletteCommand('Workspace: Focus Hierarchy'); await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty,
 		'main: the retained authoring control consumes the same canonical source history after document close');
 	await press('ContextMenu'); await test.clickContextCommand('editor.source');
+	await test.until(() => {
+		const group = editor.editorParts.main.activeGroup, input = group.model.activeTab;
+		return input?.kind === 'code_editor' && input.workingCopy === model
+			&& inputFocus.admittedTarget === group.panes.activePane?.commandTarget;
+	}, 'main: Source is actually admitted before subsequent native editing commands');
 	await press('ControlLeft', 'KeyA'); await press('Backspace');
 	check(model.buffer.getText() === '' && restored.consumer.availability === 'unavailable',
 		'main: deleting the exact authored declaration leaves its retained reference unavailable');
@@ -120,8 +143,8 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	// Exercise initial-recovery attachment explicitly; UI input above produced the missing subject.
 	const recovery = editor.mainWorkspace.beginRestore();
 	try {
-		check(await recovery.restore(editor.mainWorkspace.serialize(), (record, surface, scope, isCurrent) =>
-			editor.restorePrimaryClient(record, surface, scope, isCurrent)), 'main: unavailable reference admits its own recovery presentation');
+		check(await recovery.restore(editor.mainWorkspace.serialize(), (record, regions, scope, isCurrent) =>
+			editor.restorePrimaryClient(record, regions, scope, isCurrent)), 'main: unavailable reference admits its own recovery presentation');
 	} finally { recovery.dispose(); }
 	const unavailable = editor.mainWorkspace.primary;
 	check(unavailable instanceof UnavailableScenePrimaryClient && unavailable.getWorkingCopies()[0] === model,
@@ -135,18 +158,72 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		await press('ControlLeft', 'ShiftLeft', 'KeyT');
 	}
 	await press('Tab'); await press('Enter');
+	await test.until(() => {
+		const group = editor.editorParts.main.activeGroup, input = group.model.activeTab;
+		return input?.kind === 'code_editor' && input.workingCopy === model
+			&& inputFocus.admittedTarget === group.panes.activePane?.commandTarget;
+	}, 'main: unavailable Source action completes through ordinary asynchronous native document admission');
 	check(editor.editorParts.main.activeGroup.model.activeTab?.kind === 'code_editor',
 		'main: unavailable presentation exposes Source through its actual keyboard action control');
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty && editor.mainWorkspace.primary === unavailable,
 		'main: Source Undo cannot silently rebind the unavailable persisted subject');
 	await test.runPaletteCommand('Workspace: Clear Primary Authoring');
-	check(editor.mainWorkspace.primary === undefined && !restored.control.hasView && !restored.consumer.isCurrent,
+	await test.until(() => editor.mainWorkspace.primary === undefined, 'main: clear retires the admitted authored context');
+	check(editor.mainWorkspace.primary === undefined && !unavailable.hierarchy.attached && !unavailable.details.attached && !unavailable.isCurrent(),
 		'main: explicit clear releases its actual controls and domain context');
 	await close();
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'main: source-only authoring never executes or installs a cartridge');
+}
+
+/** Native panel menus and the Window menu change attachments, never the authored or document subjects. */
+async function testPrimaryRegionVisibility(test: StudioFixture, client: ScenePrimaryClient, source: CodeEditorInput, theme: number): Promise<void> {
+	const editor = test.ide.editor, main = editor.mainWorkspace, group = editor.editorParts.findGroup(source)!;
+	const selected = { ...client.consumer.selectionRange }, text = source.workingCopy.buffer.getText();
+	const row = source.context.view.cursorRow, column = source.context.view.cursorColumn;
+	for (const region of ['details', 'hierarchy'] as const) {
+		const panel = client[region], sibling = client[region === 'details' ? 'hierarchy' : 'details'];
+		const generation = panel.scope.contextGeneration;
+		if (!editor.menubar.expanded) await test.click(editorChromeState.menuButtonBounds);
+		test.movePointer(editorChromeState.menuEntryBounds.window); await test.frame();
+		await test.clickContextCommand(region === 'details' ? 'workspace.details.focus' : 'workspace.hierarchy.focus');
+		check(inputFocus.admittedTarget !== null && panel.scope.contains(inputFocus.admittedTarget.scope),
+			'main: explicit region focus reveals and admits its actual native control');
+		const point = test.movePointer(panel.layoutState.header);
+		const hit = editor.surfaces.hitTest(point.viewportX, point.viewportY);
+		test.setPointerButton('pointer_secondary', true); await test.frame();
+		test.setPointerButton('pointer_secondary', false); await test.frame();
+		const toggle = region === 'details' ? 'workspace.details.toggle' : 'workspace.hierarchy.toggle';
+		if (!editor.contextMenu.visible || !editor.contextMenu.model.rows.some(row => row.command === toggle && row.enabled)) {
+			const hovered = panel.actionBar.tooltipItem;
+			console.info('MAIN_REGION_HEADER_ROUTE', JSON.stringify({ font: editor.fontVariant, region, point,
+				header: panel.layoutState.header, title: panel.layoutState.titleBounds,
+				hitRegion: hit === editor.surfaces.findByScope(panel.scope.surfaceScope), hitRole: hit?.role,
+				hovered: hovered === undefined ? undefined : { command: String(hovered.command), bounds: hovered.bounds },
+				menuVisible: editor.contextMenu.visible,
+				menu: editor.contextMenu.model.rows.map(row => ({ command: row.command, enabled: row.enabled })) }));
+			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-${region}-header-routing-failure`);
+		}
+		await test.clickContextCommand(toggle);
+		check(main.primary === client && !panel.attached && sibling.attached && panel.scope.contextGeneration !== generation,
+			'main: hiding one named region retires only its native attachment');
+		check(group.model.activeTab === source && editor.editorParts.activeGroup === group
+			&& inputFocus.target !== null && group.focusScope.contains(inputFocus.target.scope),
+			'main: hiding a focused region returns input to the actual permanent document client');
+		await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-${region}-hidden`);
+		const focused = inputFocus.admittedTarget;
+		if (!editor.menubar.expanded) await test.click(editorChromeState.menuButtonBounds);
+		test.movePointer(editorChromeState.menuEntryBounds.window); await test.frame();
+		await test.clickContextCommand(region === 'details' ? 'workspace.details.toggle' : 'workspace.hierarchy.toggle');
+		check(panel.attached && sibling.attached && main.primary === client && inputFocus.admittedTarget === focused,
+			'main: showing a region restores its presentation without stealing the document focus');
+		check(client.consumer.selectionRange.start === selected.start && client.consumer.selectionRange.end === selected.end
+			&& source.context.view.cursorRow === row && source.context.view.cursorColumn === column
+			&& source.workingCopy.buffer.getText() === text,
+			'main: panel visibility preserves exact authored selection, independent Source caret and canonical bytes');
+	}
 }
 
 /** Main is the source producer; document placement uses ordinary affinity and explicit side intent. */

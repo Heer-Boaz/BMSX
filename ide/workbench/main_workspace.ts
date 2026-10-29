@@ -1,54 +1,29 @@
-import { copy_rect_bounds, create_rect_bounds, clear_rect_bounds, write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
+import { create_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { COLOR_FRAME, SCROLLBAR_WIDTH, SCROLLBAR_THUMB_COLOR } from '../common/constants';
 import type { EditorCommandRunner } from '../common/commands';
-import type { PointerInputSnapshot, WheelInputSnapshot } from '../common/models';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../input/focus';
 import { pointerCapture } from '../input/pointer/capture';
 import { pointerHover } from '../input/pointer/hover';
 import { api } from '../runtime/overlay_api';
 import { ActionPrompt } from './contrib/modal/action_prompt';
 import type { EditorCloseController, WorkingCopyConsumer } from './services/editor/editor_close';
-import { editorGroupChromeMinimumWidth } from './services/editor/editor_group';
 import type { WorkbenchSurface } from './services/windows/model';
 import type { WorkbenchSurfaceService } from './services/windows/service';
-import { WorkbenchSplitView, WORKBENCH_SPLIT_SIZE } from './ui/split_view';
 import { WorkbenchSplitControl } from './ui/split_control';
 import { drawWorkbenchSplit } from './render/split_view';
 import { Scrollbar } from './ui/scrollbar';
 import { ScrollbarController } from './ui/scrollbar_controller';
-import { beginNavigationCapture, completeNavigation, NavigationHistoryEntry, navigationState, type PrimaryNavigationLocation } from '../navigation/navigation_history';
+import { beginNavigationCapture, completeNavigation, NavigationHistoryEntry, navigationState } from '../navigation/navigation_history';
 import type { SerializedMainWorkspace, SerializedPrimaryClient } from './common/main_workspace_serialization';
-import type { EditorSourceLocationRequest } from '../editor/navigation/source_location';
 import type { SourceNavigationCaptureOptions, SourceNavigationOrigin } from './services/editor/source_navigation';
 import type { EditorGroupView } from './services/editor/editor_group';
+import { editorViewState } from '../editor/ui/view/state';
+import type { WorkbenchViewSizeConstraints } from './common/layout';
+import { WorkbenchMainWorkspaceLayout } from './common/main_workspace_layout';
+import type { MainWorkspaceClient, MainWorkspaceClientFactory, MainWorkspaceRegionId, MainWorkspaceRegionSurfaces } from './common/main_workspace_client';
 
-/** A contribution owns its subject, editing context and concrete controls, not a document tab. */
-export interface MainWorkspaceClient {
-	readonly consumer: WorkingCopyConsumer;
-	readonly scope: InputFocusScope;
-	readonly commandTarget: InputFocusTarget;
-	readonly minimumWidth: number;
-	readonly canOpenSource?: boolean;
-	captureSourceLocation?(): EditorSourceLocationRequest | undefined;
-	serialize(): SerializedPrimaryClient;
-	onDidChange(listener: () => void): () => void;
-	captureNavigationLocation(): PrimaryNavigationLocation | undefined;
-	isCurrent(): boolean;
-	attach(bounds: Readonly<RectBounds>): void;
-	detach(): void;
-	layout(bounds: Readonly<RectBounds>): void;
-	update(): void;
-	draw(): void;
-	focus(): void;
-	handlePointer(snapshot: PointerInputSnapshot): void;
-	handleWheel(event: WheelInputSnapshot): void;
-	drawStatusBar(bounds: Readonly<RectBounds>, color: number): void;
-	dispose(): void;
-}
-
-export type MainWorkspaceClientFactory = (surface: WorkbenchSurface, scope: InputFocusScope) => MainWorkspaceClient | undefined;
 export type MainWorkspaceOpenOptions = { readonly recordNavigation?: boolean; readonly preserveFocus?: boolean; readonly isCurrent?: () => boolean };
-export type MainWorkspaceRestoreFactory = (record: SerializedPrimaryClient, surface: WorkbenchSurface, scope: InputFocusScope,
+export type MainWorkspaceRestoreFactory = (record: SerializedPrimaryClient, surfaces: MainWorkspaceRegionSurfaces, scope: InputFocusScope,
 	isCurrent: () => boolean) => Promise<MainWorkspaceClient | undefined>;
 export type MainWorkspaceRestoreRequest = {
 	isCurrent(): boolean;
@@ -69,21 +44,27 @@ type PrimaryRequest = {
 	preserveFocus: boolean;
 };
 
-/** Permanent frontend composition; primary authoring and document arrangement are real siblings. */
+const REGIONS = ['hierarchy', 'details'] as const;
+
+/** Permanent named work area; two authored presentations surround the actual document part. */
 export class MainWorkspace {
-	public readonly bounds = create_rect_bounds();
-	public readonly documentBounds = create_rect_bounds();
+	public readonly regionLayout = new WorkbenchMainWorkspaceLayout();
+	public readonly bounds = this.regionLayout.bounds;
+	public readonly documentBounds = this.regionLayout.documentBounds;
 	public readonly scope: InputFocusScope;
 	public readonly surface: WorkbenchSurface;
-	private readonly primaryBounds = create_rect_bounds();
-	private readonly viewport = create_rect_bounds();
-	private readonly sashBounds = create_rect_bounds();
+	public readonly focusTarget: InputFocusTarget;
+	private readonly familyBounds = create_rect_bounds();
 	private readonly primaryScope: InputFocusScope;
 	private readonly primarySurface: WorkbenchSurface;
-	private readonly split = new WorkbenchSplitView(0.45);
-	private readonly sash: WorkbenchSplitControl;
+	private readonly regionSurfaces: MainWorkspaceRegionSurfaces;
+	private readonly sashes: Readonly<Record<MainWorkspaceRegionId, WorkbenchSplitControl>>;
+	private readonly regionBounds = { hierarchy: this.regionLayout.hierarchyBounds, details: this.regionLayout.detailsBounds };
+	private readonly regionConstraints: Record<MainWorkspaceRegionId, WorkbenchViewSizeConstraints> = {
+		hierarchy: { minimumWidth: 0, preferredWidth: 0 }, details: { minimumWidth: 0, preferredWidth: 0 },
+	};
+	private readonly sashAttached = { hierarchy: false, details: false };
 	private readonly scrollbar = new Scrollbar('horizontal');
-	private readonly scrollTrack = create_rect_bounds();
 	private readonly scrollbars = { horizontal: this.scrollbar };
 	private readonly scrollControl: ScrollbarController<'horizontal'>;
 	private readonly prompt: ActionPrompt;
@@ -95,12 +76,12 @@ export class MainWorkspace {
 	private readonly disposalListeners = new Set<() => void>();
 	private releasePrimaryChanges: (() => void) | undefined;
 	private activeClient: 'primary' | 'documents' = 'documents';
+	private activeRegion: MainWorkspaceRegionId = 'hierarchy';
 	private restoredScroll: number | undefined;
-	private readonly focusTarget: InputFocusTarget;
 	private primaryValue: MainWorkspaceClient | undefined;
-	private attached: MainWorkspaceClient | undefined;
 	private request: PrimaryRequest | undefined;
 	private requestRevision = 0;
+	private visibilityRevision = 0;
 	private presented = true;
 	private resetting = false;
 	private sourceOpeningRevision = 0;
@@ -112,12 +93,16 @@ export class MainWorkspace {
 		private readonly onDocumentsActivate: (focus: boolean) => void, private readonly documentAnchor: () => EditorGroupView) {
 		this.scope = new InputFocusScope(Symbol('main workspace'), parent);
 		this.scope.commands = commands;
-		this.primaryScope = new InputFocusScope(Symbol('main authored client'), this.scope);
+		this.primaryScope = new InputFocusScope(Symbol('main authored context'), this.scope);
 		this.focusTarget = inputFocus.createTarget(null, this.scope);
 		this.focusTarget.canFocus = () => this.primaryValue !== undefined;
 		this.unbindFocus = this.focusTarget.onDidFocus(() => this.focusPrimary());
-		this.sash = new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
-			new InputFocusScope(Symbol('main workspace sash'), this.scope));
+		this.sashes = {
+			hierarchy: new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
+				new InputFocusScope(Symbol('main hierarchy sash'), this.scope)),
+			details: new WorkbenchSplitControl(inputFocus, pointerCapture, pointerHover, this.focusTarget,
+				new InputFocusScope(Symbol('main details sash'), this.scope)),
+		};
 		this.scrollControl = new ScrollbarController(this.scrollbars, (_kind, scroll) => {
 			this.scrollbar.setScroll(scroll); this.requestLayout(); this.surfaces.changed();
 		}, pointerCapture);
@@ -127,20 +112,38 @@ export class MainWorkspace {
 			draw: () => api.fill_rect(this.bounds.left, this.bounds.top, this.bounds.right, this.bounds.bottom, 0, COLOR_FRAME),
 			onRetire: () => this.retire(),
 		});
+		// This non-hittable family groups primary modality without masking the center documents.
 		this.primarySurface = surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
 			captureScope: this.primaryScope.surfaceScope, isVisible: () => this.primaryValue !== undefined,
-			getBounds: () => this.primaryBounds, getClip: () => this.viewport,
-			draw: () => this.primaryValue!.draw(), handlePointer: snapshot => this.primaryValue!.handlePointer(snapshot),
-			handleWheel: event => { this.primaryValue!.handleWheel(event); return true; },
-			onRetire: () => pointerCapture.cancelScope(this.primaryScope.surfaceScope),
+			getBounds: () => this.familyBounds, getClip: () => this.regionLayout.viewport, draw() {},
 		});
-		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
-			captureScope: this.sash.focusTarget.scope.surfaceScope, isVisible: () => this.primaryValue !== undefined,
-			getBounds: () => this.sashBounds, getClip: () => this.viewport,
-			draw: () => drawWorkbenchSplit(this.split, this.sash.hovered || this.sash.focusTarget.hasFocus),
-			handlePointer: snapshot => { this.sash.handlePointer(snapshot); }, handleWheel: () => true,
-			onRetire: () => { pointerCapture.cancelScope(this.sash.focusTarget.scope.surfaceScope); this.sash.clearInput(); },
+		const hierarchySurface = surfaces.attach({ role: 'content', lifetimeOwner: this.primarySurface, presentationParent: this.primarySurface,
+			captureScope: Symbol('main hierarchy'), isVisible: () => this.primaryValue?.hierarchy.attached === true,
+			getBounds: () => this.regionLayout.hierarchyBounds, getClip: () => this.regionLayout.viewport,
+			draw: () => this.primaryValue!.hierarchy.draw(), handlePointer: snapshot => this.primaryValue!.hierarchy.handlePointer(snapshot),
+			handleWheel: event => { this.primaryValue!.hierarchy.handleWheel(event); return true; },
+			onRetire: () => pointerCapture.cancelScope(hierarchySurface.captureScope),
 		});
+		const detailsSurface = surfaces.attach({ role: 'content', lifetimeOwner: this.primarySurface, presentationParent: this.primarySurface,
+			captureScope: Symbol('main details'), isVisible: () => this.primaryValue?.details.attached === true,
+			getBounds: () => this.regionLayout.detailsBounds, getClip: () => this.regionLayout.viewport,
+			draw: () => this.primaryValue!.details.draw(), handlePointer: snapshot => this.primaryValue!.details.handlePointer(snapshot),
+			handleWheel: event => { this.primaryValue!.details.handleWheel(event); return true; },
+			onRetire: () => pointerCapture.cancelScope(detailsSurface.captureScope),
+		});
+		this.regionSurfaces = { hierarchy: hierarchySurface, details: detailsSurface };
+		for (const region of REGIONS) {
+			const sash = this.sashes[region], model = region === 'hierarchy' ? this.regionLayout.hierarchySash : this.regionLayout.detailsSash;
+			surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
+				captureScope: sash.focusTarget.scope.surfaceScope,
+				isVisible: () => region === 'hierarchy' ? this.regionLayout.hierarchyPresented : this.regionLayout.detailsPresented,
+				getBounds: () => region === 'hierarchy' ? this.regionLayout.hierarchySashBounds : this.regionLayout.detailsSashBounds,
+				getClip: () => this.regionLayout.viewport,
+				draw: () => drawWorkbenchSplit(model, sash.hovered || sash.focusTarget.hasFocus),
+				handlePointer: snapshot => { sash.handlePointer(snapshot); }, handleWheel: () => true,
+				onRetire: () => { this.sashAttached[region] = false; pointerCapture.cancelScope(sash.focusTarget.scope.surfaceScope); sash.clearInput(); },
+			});
+		}
 		surfaces.attach({ role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface,
 			captureScope: Symbol('main workspace horizontal scroll'), isVisible: () => this.scrollbar.isVisible(),
 			getBounds: () => this.scrollbar.getTrack(), getClip: () => this.bounds,
@@ -150,24 +153,27 @@ export class MainWorkspace {
 		});
 		this.prompt = new ActionPrompt(inputFocus, pointerCapture, () => surfaces.changed(),
 			next => next !== null && surfaces.isInContext(next.scope.surfaceScope, this.prompt.pointerScope),
-			{ kind: 'part', scope: this.primaryScope, bounds: this.primaryBounds, reveal: () => this.reveal(this.primaryBounds) });
+			{ kind: 'part', scope: this.primaryScope, bounds: this.regionLayout.viewport, reveal: () => this.surfaces.raise(this.surface) });
 		this.promptSurface = surfaces.attach({ role: 'modal', blockedScope: this.primarySurface, presentationParent: this.surface,
 			lifetimeOwner: this.primarySurface, captureScope: this.prompt.pointerScope,
-			isVisible: () => this.prompt.visible, getBounds: () => this.prompt.view.bounds, getClip: () => this.viewport,
-			draw: () => this.prompt.draw(), handlePointer: snapshot => this.prompt.handlePointer(snapshot),
+			isVisible: () => this.prompt.visible, getBounds: () => this.prompt.view.bounds, getClip: () => this.regionLayout.viewport,
+			draw: () => this.prompt.draw(), handlePointer: snapshot => this.prompt.handlePointer(snapshot), handleWheel: () => true,
 			onRetire: () => this.prompt.close('cancel', false),
 		});
 		this.unbindInteraction = inputFocus.onDidActivateInteraction(target => {
-			if (this.primaryScope.contains(target.scope)) {
-				this.reveal(this.primaryBounds);
-				this.onPrimaryActivate();
-				if (this.activeClient !== 'primary') { this.activeClient = 'primary'; this.changed(); }
-			} else if (this.scope.contains(target.scope) && target !== this.sash.focusTarget) {
+			const region = this.regionForTarget(target);
+			if (region !== undefined) {
+				this.reveal(this.regionBounds[region]); this.onPrimaryActivate();
+				if (this.activeClient !== 'primary' || this.activeRegion !== region) {
+					this.activeClient = 'primary'; this.activeRegion = region; this.changed();
+				}
+			} else if (this.scope.contains(target.scope) && !this.primaryScope.contains(target.scope)
+				&& target !== this.sashes.hierarchy.focusTarget && target !== this.sashes.details.focusTarget) {
 				this.reveal(this.documentBounds);
 				if (this.activeClient !== 'documents') { this.activeClient = 'documents'; this.changed(); }
 			}
 		});
-		this.releaseLayoutChanges = [this.scrollbar.onDidScroll(() => this.changed()), this.split.onDidChangeRatio(() => this.changed())];
+		this.releaseLayoutChanges = [this.scrollbar.onDidScroll(() => this.changed()), this.regionLayout.onDidChange(() => this.changed())];
 	}
 
 	public onDidChange(listener: () => void): () => void { this.changeListeners.add(listener); return () => this.changeListeners.delete(listener); }
@@ -175,19 +181,26 @@ export class MainWorkspace {
 	public isPrimaryTarget(target: InputFocusTarget | null): boolean {
 		return target !== null && this.primaryScope.contains(target.commandContext.scope);
 	}
+	private regionForTarget(target: InputFocusTarget, client = this.primaryValue): MainWorkspaceRegionId | undefined {
+		if (client === undefined) return;
+		for (const region of REGIONS) if (client[region].attached && client[region].scope.contains(target.scope)) return region;
+	}
 	public canOpenSource(target: InputFocusTarget): boolean {
 		const client = this.primaryValue;
-		return this.presented && !this.surface.retired && !this.resetting && client !== undefined && this.attached === client
-			&& client.scope.contains(target.commandContext.scope) && client.canOpenSource === true;
+		return this.presented && !this.surface.retired && !this.resetting && client !== undefined
+			&& client.scope.contains(target.commandContext.scope) && client.canOpenSource === true
+			&& (target === client.commandTarget || this.regionForTarget(target, client) !== undefined);
 	}
 	public captureSourceNavigation(options: SourceNavigationCaptureOptions = {}): SourceNavigationOrigin | undefined {
 		const client = this.primaryValue;
-		if (client === undefined || !this.canOpenSource(options.target ?? client.commandTarget)) return;
+		if (client === undefined) return;
+		const target = options.target ?? client.commandTarget;
+		if (!this.canOpenSource(target)) return;
 		const source = client.captureSourceLocation?.();
 		if (source === undefined) return;
-		const commandTarget = client.commandTarget, scope = commandTarget.scope, context = scope.contextGeneration;
+		const commandTarget = client.commandTarget, scope = target.scope, context = scope.contextGeneration;
 		const generation = ++this.sourceOpeningRevision;
-		const current = () => this.presented && !this.surface.retired && !this.resetting && this.primaryValue === client && this.attached === client
+		const current = () => this.presented && !this.surface.retired && !this.resetting && this.primaryValue === client
 			&& this.sourceOpeningRevision === generation && scope.contextGeneration === context && source.isCurrent?.() !== false;
 		return { commandTarget, anchor: this.documentAnchor(), readLocation: options.readLocation ?? source.readLocation,
 			isCurrent: current, isCurrentAfterHandoff: current, beginResolution: current };
@@ -202,14 +215,17 @@ export class MainWorkspace {
 	}
 
 	public serialize(previous?: SerializedMainWorkspace): SerializedMainWorkspace {
-		const primary = this.primaryValue?.serialize() ?? null;
-		if (previous !== undefined && previous.splitRatio === this.split.ratio && previous.scrollX === this.scrollbar.getScroll()
-			&& previous.activeClient === this.activeClient && (primary === null ? previous.primary === null
-				: previous.primary?.kind === primary.kind && previous.primary.value === primary.value)) return previous;
-		return { primary, splitRatio: this.split.ratio, scrollX: this.scrollbar.getScroll(), activeClient: this.activeClient };
+		const primary = this.primaryValue?.serialize() ?? null, layout = this.regionLayout;
+		if (previous !== undefined && previous.hierarchyVisible === layout.hierarchyVisible && previous.detailsVisible === layout.detailsVisible
+			&& previous.hierarchyWidth === layout.hierarchyWidth && previous.detailsWidth === layout.detailsWidth
+			&& previous.scrollX === this.scrollbar.getScroll() && previous.activeClient === this.activeClient && previous.activeRegion === this.activeRegion
+			&& (primary === null ? previous.primary === null : previous.primary?.kind === primary.kind && previous.primary.value === primary.value)) return previous;
+		return { primary, hierarchyVisible: layout.hierarchyVisible, detailsVisible: layout.detailsVisible,
+			hierarchyWidth: layout.hierarchyWidth, detailsWidth: layout.detailsWidth, scrollX: this.scrollbar.getScroll(),
+			activeClient: this.activeClient, activeRegion: this.activeRegion };
 	}
 
-	/** Initial recovery owns a request before any canonical-source admission can await. */
+	/** Initial recovery publishes placement before source admission; later user placement wins. */
 	public beginRestore(): MainWorkspaceRestoreRequest {
 		this.cancelRequest();
 		const generation = this.requestRevision, interaction = inputFocus.interactionRevision;
@@ -221,19 +237,22 @@ export class MainWorkspace {
 			restore: async (snapshot, factory) => {
 				if (!current()) return false;
 				state = snapshot;
+				this.restoredScroll = snapshot.scrollX;
+				if (inputFocus.interactionRevision === interaction) {
+					this.activeClient = snapshot.activeClient; this.activeRegion = snapshot.activeRegion;
+				}
+				this.regionLayout.setState(snapshot);
+				if (!current()) return false;
+				this.requestLayout();
+				if (!current()) return false;
 				const scope = new InputFocusScope(this.primaryScope.surfaceScope, this.primaryScope);
 				let candidate: MainWorkspaceClient | undefined;
 				let transferred = false;
 				try {
-					if (snapshot.primary !== null) candidate = await factory(snapshot.primary, this.primarySurface, scope, current);
+					if (snapshot.primary !== null) candidate = await factory(snapshot.primary, this.regionSurfaces, scope, current);
 					if (!current() || snapshot.primary !== null && candidate === undefined) return false;
-					if (inputFocus.interactionRevision === interaction) this.activeClient = snapshot.activeClient;
-					this.split.ratio = snapshot.splitRatio;
-					if (!current()) return false;
-					this.restoredScroll = snapshot.scrollX;
 					const client = candidate;
-					candidate = undefined;
-					transferred = client !== undefined;
+					candidate = undefined; transferred = client !== undefined;
 					this.installPrimary(client);
 					restored = this.primaryValue === client && current();
 					return restored;
@@ -262,7 +281,7 @@ export class MainWorkspace {
 		let unowned = true;
 		try {
 			if (this.request !== request) return false;
-			const candidate = factory(this.primarySurface, scope);
+			const candidate = factory(this.regionSurfaces, scope);
 			unowned = candidate === undefined;
 			request.candidate = candidate;
 			if (candidate === undefined || !this.current(request)) return false;
@@ -342,7 +361,7 @@ export class MainWorkspace {
 		this.installPrimary(candidate);
 		stopObservingInteraction();
 		if (this.primaryValue === candidate && this.requestRevision === revision && !request.preserveFocus) {
-			if (candidate === undefined) this.onDocumentsActivate(true); else candidate.focus();
+			if (candidate === undefined) this.onDocumentsActivate(true); else this.focusPrimary(candidate.preferredRegion);
 		}
 	}
 
@@ -350,22 +369,23 @@ export class MainWorkspace {
 	private installPrimary(candidate: MainWorkspaceClient | undefined): void {
 		const previous = this.primaryValue;
 		this.releasePrimaryChanges?.();
-		this.primaryValue = candidate; this.attached = undefined;
+		this.primaryValue = candidate;
 		if (candidate === undefined) this.activeClient = 'documents';
 		this.releasePrimaryChanges = candidate?.onDidChange(() => this.changed());
 		if (candidate !== undefined) this.prompt.focusTarget.commandContext = candidate.commandTarget;
-		if (previous !== undefined) { previous.scope.retireContext(); previous.dispose(); }
+		if (previous !== undefined) {
+			const focused = inputFocus.target;
+			// Admitted replacement owns the handoff; retiring a widget must not activate its return destination.
+			if (focused !== null && previous.scope.contains(focused.scope)) inputFocus.setTarget(null);
+			previous.scope.retireContext(); previous.dispose();
+		}
 		if (this.surface.retired || !this.presented || this.primaryValue !== candidate) return;
 		if (candidate === undefined && navigationState.activeOwner === this) {
 			this.onDocumentsActivate(false);
 			if (this.surface.retired || !this.presented || this.primaryValue !== candidate) return;
 		}
-		if (candidate === undefined) this.sash.clearInput(); else this.sash.setInput(this.split);
 		this.requestLayout();
 		if (this.surface.retired || !this.presented || this.primaryValue !== candidate) return;
-		if (candidate !== undefined) {
-			this.attached = candidate; candidate.attach(this.primaryBounds);
-		}
 		this.surfaces.changed();
 		this.changed();
 	}
@@ -376,58 +396,85 @@ export class MainWorkspace {
 		if (candidate !== undefined) { candidate.scope.retireContext(); candidate.dispose(); }
 	}
 
-	public layout(bounds: Readonly<RectBounds>): boolean {
-		let changed = this.bounds.left !== bounds.left || this.bounds.top !== bounds.top || this.bounds.right !== bounds.right || this.bounds.bottom !== bounds.bottom;
-		copy_rect_bounds(this.bounds, bounds);
-		const client = this.primaryValue, available = bounds.right - bounds.left;
-		const primaryMinimum = client === undefined ? 0 : client.minimumWidth, documentMinimum = editorGroupChromeMinimumWidth();
-		const minimumWidth = client === undefined ? 0 : primaryMinimum + WORKBENCH_SPLIT_SIZE + documentMinimum;
-		const contentWidth = Math.max(available, minimumWidth), overflow = contentWidth > available;
-		const bottom = Math.max(bounds.top, bounds.bottom - (overflow ? SCROLLBAR_WIDTH : 0));
-		write_rect_bounds(this.viewport, bounds.left, bounds.top, bounds.right, bottom);
-		write_rect_bounds(this.scrollTrack, bounds.left, bottom, bounds.right, bounds.bottom);
-		this.scrollbar.layout(this.scrollTrack, contentWidth, available, this.restoredScroll ?? this.scrollbar.getScroll());
+	/** Measure contributions and arrange the named geometry; clients attach after the final document pass. */
+	public layout(bounds: Readonly<RectBounds>, documentMinimumWidth: number): boolean {
+		const client = this.primaryValue;
+		if (client !== undefined) for (const region of REGIONS) client[region].measure(editorViewState.font, this.regionConstraints[region]);
+		const layout = this.regionLayout;
+		const changed = layout.layout(bounds, documentMinimumWidth, client === undefined ? undefined : this.regionConstraints.hierarchy,
+			client === undefined ? undefined : this.regionConstraints.details, SCROLLBAR_WIDTH, this.restoredScroll ?? this.scrollbar.getScroll());
+		this.scrollbar.layout(layout.scrollTrack, layout.contentWidth, layout.viewport.right - layout.viewport.left, layout.scrollX);
 		this.restoredScroll = undefined;
-		const document = this.documentBounds, primary = this.primaryBounds;
-		const oldLeft = primary.left, oldTop = primary.top, oldRight = primary.right, oldBottom = primary.bottom;
-		const documentLeft = document.left, documentTop = document.top, documentRight = document.right, documentBottom = document.bottom;
-		if (client === undefined) {
-			clear_rect_bounds(primary); clear_rect_bounds(this.sashBounds); copy_rect_bounds(document, bounds);
-		} else {
-			const left = bounds.left - this.scrollbar.getScroll();
-			this.split.minimumFirstSize = primaryMinimum + WORKBENCH_SPLIT_SIZE / 2;
-			this.split.minimumSecondSize = documentMinimum + WORKBENCH_SPLIT_SIZE / 2;
-			this.split.layout(left, bounds.top, left + contentWidth, bottom);
-			const position = this.split.position;
-			write_rect_bounds(primary, left, bounds.top, position - WORKBENCH_SPLIT_SIZE / 2, bottom);
-			write_rect_bounds(this.sashBounds, primary.right, bounds.top, position + WORKBENCH_SPLIT_SIZE / 2, bottom);
-			write_rect_bounds(document, this.sashBounds.right, bounds.top, left + contentWidth, bottom);
-		}
-		const primaryChanged = primary.left !== oldLeft || primary.top !== oldTop || primary.right !== oldRight || primary.bottom !== oldBottom;
-		changed = changed || primaryChanged || document.left !== documentLeft || document.top !== documentTop || document.right !== documentRight || document.bottom !== documentBottom;
-		if (primaryChanged && client !== undefined && this.attached === client) client.layout(primary);
 		return changed;
+	}
+
+	/** The composition root calls this after arranging the real central document part. */
+	public layoutClients(): void {
+		if (!this.presented || this.surface.retired) return;
+		const client = this.primaryValue;
+		for (const region of REGIONS) {
+			const presented = region === 'hierarchy' ? this.regionLayout.hierarchyPresented : this.regionLayout.detailsPresented;
+			if (presented !== this.sashAttached[region]) {
+				this.sashAttached[region] = presented;
+				if (presented) this.sashes[region].setInput(region === 'hierarchy' ? this.regionLayout.hierarchySash : this.regionLayout.detailsSash);
+				else this.sashes[region].clearInput();
+			}
+			if (this.primaryValue !== client || !this.presented || this.surface.retired) return;
+			if (client === undefined) continue;
+			const view = client[region];
+			if (presented) {
+				if (view.attached) view.layout(this.regionBounds[region]); else view.attach(this.regionBounds[region]);
+			} else if (view.attached) view.detach();
+			if (this.primaryValue !== client || !this.presented || this.surface.retired) return;
+		}
 	}
 
 	public update(): void {
 		if (!this.presented || this.surface.retired) return;
 		this.prompt.update();
 		const client = this.primaryValue;
-		if (client !== undefined) {
-			if (this.attached !== client) {
-				this.attached = client; client.attach(this.primaryBounds);
-			}
-			if (this.primaryValue === client && !this.surface.retired) client.update();
+		if (client === undefined) return;
+		client.update();
+		for (const region of REGIONS) {
+			if (this.primaryValue !== client || !this.presented || this.surface.retired) return;
+			if (client[region].attached) client[region].update();
 		}
 	}
 
-	public focusPrimary(): void {
+	/** Visibility changes one native attachment, never the retained semantic context or sibling draft. */
+	public setRegionVisible(region: MainWorkspaceRegionId, visible: boolean): boolean {
+		const layout = this.regionLayout, revision = ++this.visibilityRevision;
+		if (layout[`${region}Visible`] === visible) return true;
+		if (!this.presented || this.surface.retired || this.resetting) return false;
+		const client = this.primaryValue;
+		const focused = inputFocus.target, focusRevision = inputFocus.revision;
+		if (!visible && client !== undefined && focused !== null && client[region].scope.contains(focused.scope)) {
+			if (focused.edit?.commit() === false) return false;
+			if (this.primaryValue !== client || this.visibilityRevision !== revision || inputFocus.revision !== focusRevision) return false;
+			this.onDocumentsActivate(true);
+			if (this.primaryValue !== client || this.visibilityRevision !== revision || this.surface.retired || !this.presented) return false;
+		}
+		layout[`${region}Visible`] = visible;
+		this.requestLayout();
+		if (this.primaryValue !== client || this.visibilityRevision !== revision || this.surface.retired || !this.presented) return false;
+		this.surfaces.changed();
+		return true;
+	}
+	public toggleRegion(region: MainWorkspaceRegionId): boolean { return this.setRegionVisible(region, !this.regionLayout[`${region}Visible`]); }
+
+	public focusPrimary(region?: MainWorkspaceRegionId): void {
 		const client = this.primaryValue;
 		if (client === undefined || this.surface.retired || !this.presented || this.resetting) return;
-		this.reveal(this.primaryBounds);
-		if (this.primaryValue !== client) return;
-		if (this.prompt.visible) { this.surfaces.raise(this.promptSurface); this.prompt.focusTarget.focus(); }
-		else client.focus();
+		if (this.prompt.visible) { this.surfaces.raise(this.promptSurface); this.prompt.focusTarget.focus(); return; }
+		const destination = region ?? (this.regionLayout[`${this.activeRegion}Visible`] ? this.activeRegion
+			: this.regionLayout.hierarchyVisible ? 'hierarchy' : this.regionLayout.detailsVisible ? 'details' : this.activeRegion);
+		const focused = inputFocus.target, focusRevision = inputFocus.revision, generation = client.scope.contextGeneration;
+		if (focused !== null && client.scope.contains(focused.scope) && !client[destination].scope.contains(focused.scope)
+			&& focused.edit?.commit() === false) return;
+		if (this.primaryValue !== client || client.scope.contextGeneration !== generation || inputFocus.revision !== focusRevision) return;
+		if (!this.setRegionVisible(destination, true) || this.primaryValue !== client) return;
+		this.reveal(this.regionBounds[destination]);
+		if (this.primaryValue === client && this.presented && !this.surface.retired) client.focus(destination);
 	}
 
 	public revealDocuments(): void { this.reveal(this.documentBounds); }
@@ -443,9 +490,11 @@ export class MainWorkspace {
 		this.presented = false;
 		this.cancelRequest();
 		this.primaryScope.retireContext();
-		const client = this.attached;
-		this.attached = undefined;
-		client?.detach(); this.prompt.close('cancel', false); this.sash.clearInput(); this.scrollControl.cancel();
+		const client = this.primaryValue;
+		for (const region of REGIONS) {
+			client?.[region].detach(); this.sashAttached[region] = false; this.sashes[region].clearInput();
+		}
+		this.prompt.close('cancel', false); this.scrollControl.cancel();
 		pointerCapture.cancelScope(this.primaryScope.surfaceScope);
 		this.surfaces.changed();
 	}
@@ -454,7 +503,6 @@ export class MainWorkspace {
 		if (this.presented || this.surface.retired || this.resetting) return;
 		this.presented = true;
 		this.requestLayout();
-		if (this.primaryValue !== undefined) this.sash.setInput(this.split);
 		this.update(); this.surfaces.changed();
 	}
 
@@ -475,10 +523,11 @@ export class MainWorkspace {
 		this.cancelRequest();
 		const client = this.primaryValue;
 		this.releasePrimaryChanges?.(); this.releasePrimaryChanges = undefined;
-		this.primaryValue = this.attached = undefined;
+		this.primaryValue = undefined;
 		this.activeClient = 'documents';
 		if (client !== undefined) { client.scope.retireContext(); client.dispose(); }
-		this.primaryScope.retireContext(); this.prompt.close('cancel', false); this.sash.clearInput();
+		this.primaryScope.retireContext(); this.prompt.close('cancel', false);
+		for (const region of REGIONS) { this.sashAttached[region] = false; this.sashes[region].clearInput(); }
 		this.resetting = false;
 		if (!this.surface.retired) { this.requestLayout(); this.surfaces.changed(); }
 		this.changed();
@@ -489,7 +538,9 @@ export class MainWorkspace {
 		this.reset();
 		this.unbindInteraction(); this.unbindFocus();
 		for (const release of this.releaseLayoutChanges) release();
-		this.changeListeners.clear(); this.prompt.dispose(); this.sash.dispose(); this.scrollControl.cancel();
+		this.changeListeners.clear(); this.prompt.dispose();
+		for (const region of REGIONS) this.sashes[region].dispose();
+		this.scrollControl.cancel();
 		pointerCapture.cancelScope(this.scope.surfaceScope); this.scope.retireContext();
 	}
 

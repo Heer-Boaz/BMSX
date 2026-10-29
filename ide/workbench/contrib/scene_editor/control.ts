@@ -2,7 +2,6 @@ import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/re
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
@@ -17,6 +16,7 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { SceneDetailsControl } from './details_control';
+import { SceneAuthoringCommands } from './authoring_commands';
 import { SceneHierarchyControl } from './hierarchy_control';
 import { layoutSceneEditor } from './layout';
 import { SceneEditorNavigationSelection } from './navigation_selection';
@@ -30,6 +30,7 @@ export class SceneEditorControl {
 	public readonly hierarchy: SceneHierarchyControl;
 	public readonly details: SceneDetailsControl;
 	private readonly actionBar: WorkbenchActionBarControl;
+	private readonly authoringCommands: SceneAuthoringCommands;
 	private readonly tooltip = new WorkbenchTooltip();
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindFocus: () => void;
@@ -82,37 +83,9 @@ export class SceneEditorControl {
 			lifetime.add({ dispose: view.authoring.onDidChangeSelection(() => contextMenu.hide()) });
 		};
 		this.tooltip.attach(surfaces, owner, workArea);
-		this.focusTarget.registerCommand('sceneEditor.removeMember', {
-			contextual: true,
-			isEnabled: () => this.hasView && this.view.authoring.canRemoveSelectedMember(),
-			run: () => this.view.authoring.removeSelectedMember(),
-			capture: () => {
-				if (!this.hasView) return;
-				const view = this.view, intent = view.authoring.selectionRevision, generation = this.inputScope.contextGeneration;
-				const current = () => this.viewValue === view && this.inputScope.contextGeneration === generation && view.authoring.selectionRevision === intent;
-				return { isEnabled: () => current() && view.authoring.canRemoveSelectedMember(),
-					run: () => { if (current()) view.authoring.removeSelectedMember(); } };
-			},
-		});
-		for (const [command, direction] of [['sceneEditor.moveMemberUp', -1], ['sceneEditor.moveMemberDown', 1]] as const) {
-			this.focusTarget.registerCommand(command, {
-				contextual: true,
-				isEnabled: () => this.hasView && this.view.authoring.canMoveSelectedMember(direction),
-				run: () => this.moveSelectedMember(direction),
-				capture: () => {
-					if (!this.hasView) return;
-					const view = this.view, intent = view.authoring.selectionRevision, generation = this.inputScope.contextGeneration;
-					const current = () => this.viewValue === view && this.inputScope.contextGeneration === generation && view.authoring.selectionRevision === intent;
-					return { isEnabled: () => current() && view.authoring.canMoveSelectedMember(direction),
-						run: () => { if (current()) this.moveSelectedMember(direction); } };
-				},
-			});
-		}
-		for (const direction of ['undo', 'redo'] as const) this.focusTarget.registerCommand(direction, {
-			contextual: true,
-			isEnabled: () => this.hasView && !this.view.authoring.workingCopy.readOnly
-				&& (direction === 'undo' ? this.view.authoring.workingCopy.canUndo : this.view.authoring.workingCopy.canRedo),
-			run: () => { executeTextHistoryCommand(this.view.authoring.workingCopy, direction); },
+		this.authoringCommands = new SceneAuthoringCommands(this.focusTarget, context => {
+			if (this.viewValue?.authoring !== context) return;
+			this.hierarchy.update(); this.hierarchy.revealSelection();
 		});
 	}
 
@@ -120,7 +93,7 @@ export class SceneEditorControl {
 		const revision = ++this.attachmentRevision;
 		this.detach();
 		if (revision !== this.attachmentRevision) return;
-		this.viewValue = view; this.bounds = bounds; this.measuredRevision = -1; this.focusRegions = -1;
+		this.viewValue = view; this.authoringCommands.bind(view.authoring); this.bounds = bounds; this.measuredRevision = -1; this.focusRegions = -1;
 		layoutSceneEditor(view, true, false, bounds);
 		this.actionBar.setInput(view.actionBar, this.focusTarget);
 		this.subscriptions = [view.authoring.workingCopy.onWillDispose(() => {
@@ -198,10 +171,6 @@ export class SceneEditorControl {
 		selection.restore(view);
 		if (revision === this.attachmentRevision) this.update();
 	}
-	private moveSelectedMember(direction: -1 | 1): void {
-		if (!this.view.authoring.moveSelectedMember(direction)) return;
-		this.hierarchy.update(); this.hierarchy.revealSelection();
-	}
 	public handleKeyboard(event: KeyInputEvent): void { this.hierarchy.handleKeyboard(event); }
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean, _secondary: boolean, _now: number, _goto: boolean): void {
 		if (!this.hasView) return;
@@ -225,7 +194,7 @@ export class SceneEditorControl {
 	private detach(): void {
 		if (!this.hasView) return;
 		const revision = this.attachmentRevision;
-		this.viewValue = undefined;
+		this.viewValue = undefined; this.authoringCommands.clear();
 		const subscriptions = this.subscriptions; this.subscriptions = [];
 		for (const unbind of subscriptions) unbind();
 		this.tooltip.hide(); this.sourceHovered = false; pointerHover.release(this);
@@ -241,7 +210,7 @@ export class SceneEditorControl {
 	}
 	public dispose(): void {
 		this.clearView(); this.hierarchy.dispose(); this.details.dispose();
-		this.actionBar.dispose(); this.tooltip.detach(); this.unbindKeyboard(); this.unbindFocus(); pointerHover.release(this);
+		this.authoringCommands.dispose(); this.actionBar.dispose(); this.tooltip.detach(); this.unbindKeyboard(); this.unbindFocus(); pointerHover.release(this);
 	}
 }
 

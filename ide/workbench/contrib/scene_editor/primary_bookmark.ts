@@ -4,19 +4,18 @@ import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { luaSourceRangeMatchesTextRange } from '../../../language/lua/source_edits';
 import type { SceneAuthoredSubject, SceneAuthoringContext } from './authoring_context';
 import type { SceneSourceDocuments } from './source_documents';
-import type { SceneEditorViewState } from './view_state';
-import type { SceneEditorViewSnapshot } from './view_snapshot';
-import { captureScenePrimary } from './primary_snapshot';
+import type { ScenePrimaryViewState } from './primary_view';
+import { captureScenePrimary, type ScenePrimaryViewSnapshot } from './primary_snapshot';
 
 /** An independently tracked navigation destination, never an authoring consumer or retained old control. */
 export class ScenePrimaryBookmark {
 	public readonly model: EditorTextModel;
 	private readonly subject: TrackedTextRange;
-	private viewValue: SceneEditorViewSnapshot;
+	private viewValue: ScenePrimaryViewSnapshot;
 	private readonly lifetime = new DisposableStore();
 	private readonly retirementListeners = new Set<() => void>();
 
-	public constructor(context: SceneAuthoringContext, view: SceneEditorViewState) {
+	public constructor(context: SceneAuthoringContext, view: ScenePrimaryViewState) {
 		this.model = context.workingCopy;
 		const snapshot = captureScenePrimary(view);
 		this.subject = snapshot.subject.range;
@@ -30,7 +29,7 @@ export class ScenePrimaryBookmark {
 	}
 
 	public get isDisposed(): boolean { return this.lifetime.isDisposed; }
-	public get view(): SceneEditorViewSnapshot { this.admitMappedRanges(); return this.viewValue; }
+	public get view(): ScenePrimaryViewSnapshot { this.admitMappedRanges(); return this.viewValue; }
 
 	public onDidRetire(listener: () => void): () => void {
 		if (this.isDisposed) listener();
@@ -68,7 +67,7 @@ export class ScenePrimaryBookmark {
 		if (selected !== undefined && (selected.span.start === selected.span.end || selected.root.start === selected.root.end)) this.clearSelection();
 	}
 
-	private clearSelection(): void { this.viewValue = { ...this.viewValue, selected: undefined, section: 'outline' }; }
+	private clearSelection(): void { this.viewValue = { ...this.viewValue, selected: undefined }; }
 
 	private retire(): void {
 		if (this.isDisposed) return;

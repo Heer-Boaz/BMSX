@@ -1,7 +1,8 @@
 import { EditorPaneSelection } from '../../services/editor/editor_selection';
 import type { SceneEditorViewState } from './view_state';
 import type { SceneSelectionRequest } from './authoring_context';
-import { captureSceneEditorView, mapSceneEditorView, restoreSceneEditorView, type SceneEditorViewSnapshot } from './view_snapshot';
+import { captureSceneEditorView, restoreSceneEditorView, type SceneEditorViewSnapshot } from './view_snapshot';
+import { mapSceneReading } from './reading_snapshot';
 
 /** Track the member's containing registration as well as its authored field. */
 export class SceneEditorNavigationSelection extends EditorPaneSelection {
@@ -10,7 +11,7 @@ export class SceneEditorNavigationSelection extends EditorPaneSelection {
 	public constructor(input: SceneEditorViewState, snapshot = captureSceneEditorView(input), private readonly request?: SceneSelectionRequest) {
 		super();
 		this.snapshot = snapshot;
-		this.add({ dispose: input.authoring.workingCopy.onDidChangeContent(event => mapSceneEditorView(this.snapshot, event.changes)) });
+		this.add({ dispose: input.authoring.workingCopy.onDidChangeContent(event => mapSceneReading(this.snapshot, event.changes)) });
 	}
 
 	public matches(other: SceneEditorNavigationSelection): boolean {

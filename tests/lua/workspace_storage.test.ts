@@ -400,7 +400,8 @@ function payload(
 	return {
 		dirtyFiles,
 		editorParts: { main: { layout: { kind: 'group', group: editorGroup }, active: 0, mru: [0], scrollX: 0, scrollY: 0 }, documents: [], active: 0, mru: [0] },
-		mainWorkspace: { primary: null, splitRatio: 0.5, scrollX: 0, activeClient: 'documents' },
+		mainWorkspace: { primary: null, hierarchyVisible: true, detailsVisible: true,
+			scrollX: 0, activeClient: 'documents', activeRegion: 'hierarchy' },
 		breakpoints: [],
 		fontVariant: DEFAULT_FONT_VARIANT,
 	};

@@ -98,15 +98,25 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	const presentation = createTestGroupPresentation(), surfaces = presentation.surfaces;
 	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
 	const commands = { isEnabled: () => false, execute() {} };
+	function layoutMain(): void {
+		const part = parts.main, bounds = presentation.workArea;
+		part.prepareLayout();
+		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
+		main.layout(bounds, minimum);
+		const finalMinimum = part.minimumClientWidth(main.regionLayout.viewport.bottom - main.regionLayout.viewport.top);
+		if (finalMinimum !== minimum) main.layout(bounds, finalMinimum);
+		part.layoutPrepared(main.documentBounds); main.layoutClients();
+	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
-		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main, main),
-		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup); main.layout(presentation.workArea);
+		layoutMain, () => parts.activate(parts.main, main),
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup);
 	const parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
 		mainPresentation: main,
 		commands, contextMenu, renderContext: presentation.renderContext,
 		contributions: createTestEditorPaneContributions(commands, contextMenu), focusReturn: inputFocus.createTarget(null, presentation.focusScope),
 		...createTestEditorCloseDependencies(t, presentation),
-		layoutMain: () => parts.main.layout(presentation.workArea) });
+		layoutMain });
+	layoutMain();
 	const group = parts.main.activeGroup;
 	const controller = new ActorLabController(sources, f.guest, runtime.machine.cpu,
 		parts, undefined!, f.actorExecution, f.rewind, sources,

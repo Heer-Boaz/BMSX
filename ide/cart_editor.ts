@@ -1,11 +1,12 @@
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
-import { MainWorkspace, type MainWorkspaceClient } from './workbench/main_workspace';
+import { MainWorkspace } from './workbench/main_workspace';
+import type { MainWorkspaceClient, MainWorkspaceRegionSurfaces } from './workbench/common/main_workspace_client';
 import type { SerializedPrimaryClient } from './workbench/common/main_workspace_serialization';
-import type { WorkbenchSurface } from './workbench/services/windows/model';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { HomeInput } from './workbench/contrib/home/editor_input';
 import { HomeEditorPane } from './workbench/contrib/home/editor_pane';
+import { measureHomeEditor } from './workbench/contrib/home/layout';
 import { measureUnconstrainedEditor } from './workbench/services/editor/editor_pane';
 import { measureSourceEditor } from './workbench/contrib/code_editor/constraints';
 import { measureAnimationEditorConstraints } from './workbench/contrib/animation/layout';
@@ -228,7 +229,7 @@ export type CartEditor = TextInputHost & {
 	readonly cartMaps: CartMapController;
 	readonly sceneEditor: SceneEditorController;
 	openSceneInMain(model: EditorTextModel, subject: SceneAuthoredSubject, origin: InputFocusTarget): Promise<boolean>;
-	restorePrimaryClient(record: SerializedPrimaryClient, surface: WorkbenchSurface, scope: InputFocusScope, isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined>;
+	restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceRegionSurfaces, scope: InputFocusScope, isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined>;
 	readonly animations: AnimationEditorController;
 	readonly actorLab: ActorLabController;
 	readonly actionPrompt: ActionPrompt;
@@ -285,7 +286,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
 	public readonly mainWorkspace: MainWorkspace;
-	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'owner' | 'scope'>;
+	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'regions' | 'scope'>;
 	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly surfaces: WorkbenchSurfaceService;
 	private readonly chromeScope = Symbol('workbench chrome');
@@ -469,7 +470,7 @@ export class RuntimeCartEditor implements CartEditor {
 			commands: this.commands, contextMenu: this.contextMenu, renderContext: this.chromeRenderContext,
 			layoutMain: () => this.layoutMainEditor(),
 			focusReturn: this.resourcePanel.focusTarget, contributions: {
-			home: { create: group => new HomeEditorPane(this.commands, group.focusScope), measure: measureUnconstrainedEditor },
+			home: { create: group => new HomeEditorPane(this.commands, group.focusScope), measure: measureHomeEditor },
 			play_session: { create: group => new PlayEditorPane(this.commands, this.play, this.contextMenu, this.navigation, group,
 				this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
 			animation: { create: group => new AnimationEditorPane(this.animations, this.commands, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group, group.focusScope, this.editorParts.partForGroup(group).quickInput, this.navigation), measure: measureAnimationEditorConstraints },
@@ -629,6 +630,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.scenePrimaryOptions = {
 			commands: this.commands, sources: this.sources, contextMenu: this.contextMenu, surfaces: this.surfaces,
 			workArea: getWorkbenchWorkArea(), main: this.mainWorkspace,
+			focusReturn: this.editorParts.main.focusTarget,
 			restoreNavigation: this.restoreSceneNavigation,
 			save: copy => { void saveTextFileFromCommand(this.workbench.textFileSaves, copy, this, this.sources); },
 		};
@@ -727,22 +729,22 @@ export class RuntimeCartEditor implements CartEditor {
 	public get fontVariant(): FontVariant { return editorViewState.fontVariant; }
 
 	public openSceneInMain(model: EditorTextModel, subject: SceneAuthoredSubject, origin: InputFocusTarget): Promise<boolean> {
-		return this.mainWorkspace.openPrimary((owner, scope) => createScenePrimaryClient(model, this.workbench.sceneSources,
-			subject, { ...this.scenePrimaryOptions, owner, scope }), this.editorParts.closeController, origin);
+		return this.mainWorkspace.openPrimary((regions, scope) => createScenePrimaryClient(model, this.workbench.sceneSources,
+			subject, { ...this.scenePrimaryOptions, regions, scope }), this.editorParts.closeController, origin);
 	}
 
 	private readonly restoreSceneNavigation: RestoreScenePrimaryBookmark = (bookmark, options) =>
-		this.mainWorkspace.openPrimary((owner, scope) => {
+		this.mainWorkspace.openPrimary((regions, scope) => {
 			const subject = bookmark.resolve(this.workbench.sceneSources);
 			return subject === undefined ? undefined : createScenePrimaryClient(bookmark.model, this.workbench.sceneSources,
-				subject, { ...this.scenePrimaryOptions, owner, scope }, bookmark.view);
+				subject, { ...this.scenePrimaryOptions, regions, scope }, bookmark.view);
 		}, this.editorParts.closeController, inputFocus.target, { ...options, recordNavigation: false });
 
-	public restorePrimaryClient(record: SerializedPrimaryClient, owner: WorkbenchSurface, scope: InputFocusScope,
+	public restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceRegionSurfaces, scope: InputFocusScope,
 		isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined> {
 		switch (record.kind) {
 			case 'scene': return restoreScenePrimaryClient(record.value, editorTextModelService, this.sources.catalog,
-				this.workbench.sceneSources, { ...this.scenePrimaryOptions, owner, scope }, isCurrent);
+				this.workbench.sceneSources, { ...this.scenePrimaryOptions, regions, scope }, isCurrent);
 		}
 	}
 
@@ -831,20 +833,20 @@ export class RuntimeCartEditor implements CartEditor {
 		inputFocus.handleGamepad(playerInput);
 	}
 
-	private layoutMainPart(): boolean { return this.editorParts.main.layout(this.mainWorkspace.documentBounds); }
-
-	private prepareWorkbenchLayout(): boolean {
+	private layoutMainEditor(): void {
 		let layoutChanged = refreshWorkbenchLayout();
 		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
-		layoutChanged = this.mainWorkspace.layout(getWorkbenchEditorBounds()) || layoutChanged;
+		const part = this.editorParts.main, bounds = getWorkbenchEditorBounds();
+		part.prepareLayout();
+		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
+		layoutChanged = this.mainWorkspace.layout(bounds, minimum) || layoutChanged;
+		const finalMinimum = part.minimumClientWidth(this.mainWorkspace.regionLayout.viewport.bottom - this.mainWorkspace.regionLayout.viewport.top);
+		if (finalMinimum !== minimum) layoutChanged = this.mainWorkspace.layout(bounds, finalMinimum) || layoutChanged;
 		this.gamePanel.prepareLayout(this.mainWorkspace.documentBounds);
-		return layoutChanged;
-	}
-
-	private layoutMainEditor(): void {
-		const chromeChanged = this.prepareWorkbenchLayout(), clientsChanged = this.layoutMainPart();
+		layoutChanged = part.layoutPrepared(this.mainWorkspace.documentBounds) || layoutChanged;
+		this.mainWorkspace.layoutClients();
 		this.gamePanel.update();
-		if (chromeChanged || clientsChanged) this.surfaces.changed();
+		if (layoutChanged) this.surfaces.changed();
 	}
 
 	public update(deltaSeconds: number): void {

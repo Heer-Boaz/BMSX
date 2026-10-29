@@ -93,6 +93,7 @@ export type EditorCommandId =
 	| 'resources.import'
 	| 'resources.open' | 'resources.openToSide' | 'resources.source' | 'resources.sourceToSide' | 'resources.disclosure' | 'resources.editInMain'
 	| 'workspace.focusPrimary' | 'workspace.clearPrimary'
+	| 'workspace.hierarchy.focus' | 'workspace.details.focus' | 'workspace.hierarchy.toggle' | 'workspace.details.toggle'
 	| 'projects.createCartridge'
 	| 'conversations.history' | 'conversations.older'
 	| 'assistant.signIn'

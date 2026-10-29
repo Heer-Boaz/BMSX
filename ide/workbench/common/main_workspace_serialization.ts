@@ -1,10 +1,12 @@
+import type { WorkbenchMainWorkspaceState } from './main_workspace_layout';
+
 /** Contributions persist their authored subject and reading state, never live control authority. */
 export type SerializedPrimaryClient = { readonly kind: 'scene'; readonly value: string };
 
 /** Main's primary work is separate from the document-part topology and source recovery. */
-export type SerializedMainWorkspace = {
+export type SerializedMainWorkspace = WorkbenchMainWorkspaceState & {
 	readonly primary: SerializedPrimaryClient | null;
-	readonly splitRatio: number;
 	readonly scrollX: number;
 	readonly activeClient: 'primary' | 'documents';
+	readonly activeRegion: 'hierarchy' | 'details';
 };

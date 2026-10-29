@@ -249,10 +249,14 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.field.focusTarget.commandContext = options.commandTarget === undefined ? this.field.focusTarget : options.commandTarget;
 		this.field.focusTarget.scope.interactionOrigin = interactionOrigin;
 		const originScope = origin === null ? this.presentation.scope : origin.commandContext.scope;
-		session.unbindOrigin = originScope.onDidRetireContext(() => {
+		const retireOrigin = () => {
 			session.contextAdmitted = false;
 			if (this.session === session) this.hide(false);
-		});
+		};
+		const unbindSemantic = originScope.onDidRetireContext(retireOrigin);
+		const unbindNative = origin !== null && origin.scope !== originScope ? origin.scope.onDidRetireContext(retireOrigin) : undefined;
+		// Resource disposal is part of acceptance; neither origin lease ends before those callbacks finish.
+		session.unbindOrigin = unbindNative === undefined ? unbindSemantic : () => { unbindSemantic(); unbindNative(); };
 		if (!this.presentation.scope.contains(originScope)) session.disposables.add({ dispose: this.presentation.scope.onDidRetireContext(() => this.hide(false)) });
 		this.clearPresentation();
 		onWillShow?.(session.disposables);

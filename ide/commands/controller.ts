@@ -100,6 +100,7 @@ export class IdeCommandController {
 		const targetScope = target?.scope, targetGeneration = targetScope?.contextGeneration;
 		const commandScope = target?.commandContext.scope, contextGeneration = commandScope?.contextGeneration;
 		const editorScope = editorContext?.commandContext.scope, editorGeneration = editorScope?.contextGeneration;
+		const invocationScope = editorContext?.scope, invocationGeneration = invocationScope?.contextGeneration;
 		const invocationTarget = editorContext === undefined ? target : editorContext;
 		const originWindow = findWorkbenchWindow(target);
 		if (originWindow === null) return;
@@ -124,16 +125,23 @@ export class IdeCommandController {
 				}
 			}
 			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
-				|| editorScope?.contextGeneration !== editorGeneration) return;
+				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
 			if (!invocation.isEnabled()) return;
 			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
-				|| editorScope?.contextGeneration !== editorGeneration) return;
+				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
 			invocation.run(originGroup?.focusTarget);
 			return;
 		}
+		// Named regions settle only their own input at the Main owner; an unrelated document draft is not their subject.
+		switch (command) {
+			case 'workspace.hierarchy.focus': this.editor.mainWorkspace.focusPrimary('hierarchy'); return;
+			case 'workspace.details.focus': this.editor.mainWorkspace.focusPrimary('details'); return;
+			case 'workspace.hierarchy.toggle': this.editor.mainWorkspace.toggleRegion('hierarchy'); return;
+			case 'workspace.details.toggle': this.editor.mainWorkspace.toggleRegion('details'); return;
+		}
 		if (command === 'editor.source' || command === 'editor.sourceToSide') {
 			if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration
-				|| editorScope?.contextGeneration !== editorGeneration) return;
+				|| editorScope?.contextGeneration !== editorGeneration || invocationScope?.contextGeneration !== invocationGeneration) return;
 			const placement = command === 'editor.sourceToSide' ? 'side' : 'default';
 			const main = this.editor.mainWorkspace;
 			if (input === undefined && main.isPrimaryTarget(invocationTarget)) {
@@ -164,7 +172,7 @@ export class IdeCommandController {
 			}
 		}
 		if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration
-			|| input !== undefined && !group.model.contains(input)) return;
+			|| invocationScope?.contextGeneration !== invocationGeneration || input !== undefined && !group.model.contains(input)) return;
 		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
 			case 'window.restoreMinimized': showOpenWindows(this.editor.editorParts, this.editor.quickInput, true); return;
@@ -395,7 +403,7 @@ export class IdeCommandController {
 				return;
 		}
 		if (isEditorSearchCommand(command)) {
-			executeEditorSearchCommand(this.editor, this.sources, command, group, target, this.clock);
+			executeEditorSearchCommand(this.editor, this.sources, command, group, invocationTarget, this.clock);
 			return;
 		}
 		if (isEditorViewCommand(command)) {
@@ -475,7 +483,9 @@ export class IdeCommandController {
 			}
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'findGlobal': return workspaceState.context !== null;
-			case 'workspace.focusPrimary': case 'workspace.clearPrimary': return this.editor.mainWorkspace.primary !== undefined;
+			case 'workspace.focusPrimary': case 'workspace.clearPrimary':
+			case 'workspace.hierarchy.focus': case 'workspace.details.focus':
+			case 'workspace.hierarchy.toggle': case 'workspace.details.toggle': return this.editor.mainWorkspace.primary !== undefined;
 			case 'window.restoreMinimized': return this.editor.editorParts.minimizedCount > 0;
 			case 'group.close': return this.editor.editorParts.canCloseGroup(group);
 			case 'group.move': return this.editor.editorParts.canMoveGroup(group, { kind: 'window' })
@@ -657,6 +667,8 @@ export class IdeCommandController {
 				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
 			}
 			case 'group.maximize': return part.arrangement.maximized === group;
+			case 'workspace.hierarchy.toggle': return this.editor.mainWorkspace.regionLayout.hierarchyVisible;
+			case 'workspace.details.toggle': return this.editor.mainWorkspace.regionLayout.detailsVisible;
 			case 'runtime.toggleTimeline': return group.timeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
 			case 'romInspector.hold': {

@@ -24,7 +24,8 @@ import { InputFocusScope } from '../../ide/input/focus';
 import type { EditorCommandRunner } from '../../ide/common/commands';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { captureSceneEditorView, mapSceneEditorView, restoreSceneEditorView } from '../../ide/workbench/contrib/scene_editor/view_snapshot';
+import { captureSceneEditorView, restoreSceneEditorView } from '../../ide/workbench/contrib/scene_editor/view_snapshot';
+import { mapSceneReading } from '../../ide/workbench/contrib/scene_editor/reading_snapshot';
 import * as colors from '../../ide/common/constants';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
@@ -178,7 +179,7 @@ test('replacing selected Scene source with the same member name retires the Deta
 	const replacement = source.slice(selected.span.start, selected.span.end).replace('x = 11', 'x = 12');
 	const changes = [{ offset: selected.span.start, deletedLength: selected.span.end - selected.span.start, insertedLength: replacement.length }];
 	input.workingCopy.pushEditOperations([{ offset: selected.span.start, deleteLength: replacement.length, text: replacement }]);
-	mapSceneEditorView(snapshot, changes);
+	mapSceneReading(snapshot, changes);
 	installSceneOutline(input.view.hierarchy);
 	restoreSceneEditorView(input.view, snapshot);
 	assert.equal(selected.span.start, selected.span.end, 'a complete replacement retires the tracked source occurrence');

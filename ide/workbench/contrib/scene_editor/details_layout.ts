@@ -3,10 +3,18 @@ import * as constants from '../../../common/constants';
 import { uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
 import { measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import type { EditorFont } from '../../../editor/ui/view/font';
+import { updateFullWidthWorkbenchLayout, type WorkbenchViewSizeConstraints } from '../../common/layout';
 import type { SceneDetailsViewState } from './details_view';
 
 const PADDING = 4;
+
+/** Inspector fields keep an editing column alongside their axis label and their own scroll lane. */
+export function measureSceneDetails(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
+	const chrome = PADDING * 3 + font.advance('X') + constants.SCROLLBAR_WIDTH;
+	target.minimumWidth = chrome + font.charAdvance * 16;
+	target.preferredWidth = chrome + font.charAdvance * 24;
+}
 
 /** Measure this inspector's descriptors once; scrolling only projects its retained field rectangles. */
 export function layoutSceneDetails(view: SceneDetailsViewState, contentChanged: boolean, bounds: Readonly<RectBounds>): boolean {

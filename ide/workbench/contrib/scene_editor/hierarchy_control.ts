@@ -91,6 +91,10 @@ export class SceneHierarchyControl {
 	}
 	public draw(): void { if (this.hasView) drawSceneHierarchy(this.view, this.focusTarget.hasFocus); }
 	public focus(): boolean { return this.focusTarget.focus(); }
+	public setFocusNeighbors(previous: InputFocusTarget, next: InputFocusTarget): void {
+		this.focusTarget.previous = previous; this.focusTarget.next = next;
+		previous.next = this.focusTarget; next.previous = this.focusTarget;
+	}
 	public revealSelection(): void {
 		const view = this.view, scroll = view.outline.scroll;
 		revealWorkbenchListSelection(view.outline);

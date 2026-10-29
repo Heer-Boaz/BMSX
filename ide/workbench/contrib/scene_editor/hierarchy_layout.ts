@@ -2,12 +2,20 @@ import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { uppercaseOutsideStrings } from '../../../common/text';
 import { truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { updateFullWidthWorkbenchLayout } from '../../common/layout';
+import type { EditorFont } from '../../../editor/ui/view/font';
+import { updateFullWidthWorkbenchLayout, type WorkbenchViewSizeConstraints } from '../../common/layout';
 import { clampWorkbenchListScroll, layoutWorkbenchList } from '../../ui/list_view';
 import type { WorkbenchTreeLayout, WorkbenchTreeNode } from '../../ui/tree_view';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import type { SceneHierarchyViewState } from './hierarchy_view';
 import type { SceneOutlineElement } from './outline';
+
+/** A member needs its two disclosure levels plus a usable caption, not its complete source path. */
+export function measureSceneHierarchy(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
+	const disclosure = Math.max(font.advance(' ') * 2, WORKBENCH_ICON_SIZE + 2) * 2 + 8;
+	target.minimumWidth = disclosure + font.charAdvance * 12;
+	target.preferredWidth = disclosure + font.charAdvance * 24;
+}
 
 export function layoutSceneHierarchy(view: SceneHierarchyViewState, bounds: Readonly<RectBounds>, contentChanged: boolean): boolean {
 	const changed = updateFullWidthWorkbenchLayout(view.layout, bounds);

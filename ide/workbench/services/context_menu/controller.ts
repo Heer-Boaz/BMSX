@@ -107,10 +107,16 @@ export class ContextMenuController implements PointerCaptureTarget {
 			presentation: new DisposableStore(), menu, menuRevision: menu?.revision, contextAdmitted: true, unbindOrigin: undefined };
 		this.session = session;
 		this.focusTarget.scope.interactionOrigin = invocationOrigin?.scope;
-		session.unbindOrigin = commandOrigin?.commandContext.scope.onDidRetireContext(() => {
+		const retireOrigin = () => {
 			session.contextAdmitted = false;
 			if (this.session === session) this.hide(false);
-		});
+		};
+		const semanticScope = commandOrigin?.commandContext.scope;
+		const unbindSemantic = semanticScope?.onDidRetireContext(retireOrigin);
+		const unbindNative = invocationOrigin !== null && invocationOrigin.scope !== semanticScope
+			? invocationOrigin.scope.onDidRetireContext(retireOrigin) : undefined;
+		// Both authorities outlive acceptance resource disposal, including its reentrant callbacks.
+		session.unbindOrigin = unbindNative === undefined ? unbindSemantic : () => { unbindSemantic?.(); unbindNative(); };
 		this.focusTarget.commandContext = commandOrigin === null ? this.focusTarget : commandOrigin;
 		this.model.setItems(items, x, y, options.shortTitles, options.placement);
 		this.pointerX = x;
@@ -208,7 +214,8 @@ export class ContextMenuController implements PointerCaptureTarget {
 		try {
 			this.retireSession(true, true);
 			session.disposables.dispose();
-			if (session.contextAdmitted) commands.execute(command, commandOrigin, session.options.editor);
+			if (session.contextAdmitted) commands.execute(command, commandOrigin, session.options.editor,
+				session.invocationOrigin === null ? undefined : session.invocationOrigin);
 		} finally {
 			session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
 			if (this.retiringSession === session) this.retiringSession = undefined;

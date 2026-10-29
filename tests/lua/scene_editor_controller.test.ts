@@ -89,9 +89,18 @@ test('Scene pane source production and member commands retain their input when a
 	};
 	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
 	const bounds = { left: 0, top: 0, right: 384, bottom: 288 }, presentation = createTestGroupPresentation(surfaces, bounds);
+	function layoutMain(): void {
+		const part = parts.main;
+		part.prepareLayout();
+		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
+		main.layout(bounds, minimum);
+		const finalMinimum = part.minimumClientWidth(main.regionLayout.viewport.bottom - main.regionLayout.viewport.top);
+		if (finalMinimum !== minimum) main.layout(bounds, finalMinimum);
+		part.layoutPrepared(main.documentBounds); main.layoutClients();
+	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
-		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main, main),
-		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup); main.layout(bounds);
+		layoutMain, () => parts.activate(parts.main, main),
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup);
 	let parts: EditorParts;
 	const contributions = createTestEditorPaneContributions(commands, menu);
 	contributions.scene_editor = { create: group => new SceneEditorPane(commands as IdeCommandController, sources, menu,
@@ -99,11 +108,11 @@ test('Scene pane source production and member commands retain their input when a
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds, mainPresentation: main,
 		commands, contextMenu: menu, renderContext: presentation.renderContext, contributions,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
-		layoutMain: () => parts.main.layout(bounds),
+		layoutMain,
 		...createTestEditorCloseDependencies(t, presentation),
 	});
+	layoutMain();
 	const first = parts.main.activeGroup, second = parts.createDocument({ requestedBounds: bounds }).activeGroup;
-	first.panes.layout(bounds);
 	controller.openResource(first, resource); controller.openResource(second, resource);
 	const left = first.model.activeTab, right = second.model.activeTab;
 	assert.ok(left instanceof SceneEditorInput); assert.ok(right instanceof SceneEditorInput);
@@ -146,9 +155,18 @@ scenes.register('incomplete', {})
 	};
 	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
 	const bounds = { left: 0, top: 0, right: 384, bottom: height }, presentation = createTestGroupPresentation(surfaces, bounds);
+	function layoutMain(): void {
+		const part = parts.main;
+		part.prepareLayout();
+		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
+		main.layout(bounds, minimum);
+		const finalMinimum = part.minimumClientWidth(main.regionLayout.viewport.bottom - main.regionLayout.viewport.top);
+		if (finalMinimum !== minimum) main.layout(bounds, finalMinimum);
+		part.layoutPrepared(main.documentBounds); main.layoutClients();
+	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
-		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main, main),
-		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup); main.layout(bounds);
+		layoutMain, () => parts.activate(parts.main, main),
+		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup);
 	let parts: EditorParts;
 	const contributions = createTestEditorPaneContributions(commands, menu);
 	contributions.scene_editor = { create: group => new SceneEditorPane(commands as IdeCommandController, sources, menu,
@@ -156,11 +174,11 @@ scenes.register('incomplete', {})
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds, mainPresentation: main,
 		commands, contextMenu: menu, renderContext: presentation.renderContext, contributions,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
-		layoutMain: () => parts.main.layout(bounds),
+		layoutMain,
 		...createTestEditorCloseDependencies(t, presentation),
 	});
+	layoutMain();
 	const group = parts.main.activeGroup;
-	group.panes.layout(bounds);
 	const resource = sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'scene.lua' })!;
 	const unopened = sources.catalog.resolveResource({ contextId: resource.contextId, path: 'unopened.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, sources.catalog, resource);

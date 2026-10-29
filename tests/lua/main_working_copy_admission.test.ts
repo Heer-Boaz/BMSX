@@ -26,7 +26,7 @@ test('a pending Main replacement cannot retain another dirty Source view through
 	b.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retain this Source decision\n' }]); f.update();
 	const aText = a.buffer.getText(), bText = b.buffer.getText(), replacing = open(b);
 	assert.equal(main.primary, current);
-	assert.deepEqual([...main.workingCopyConsumers()], [current.consumer]);
+	const consumers = [...main.workingCopyConsumers()]; assert.equal(consumers.length, 1); assert.ok(consumers[0] === current.consumer);
 	const closing = group.close(source.id);
 	assert.equal(part.actionPrompt.visible, true, 'the unadmitted Main candidate cannot suppress the actual last Source decision');
 	f.key('Escape');
@@ -35,7 +35,7 @@ test('a pending Main replacement cannot retain another dirty Source view through
 	assert.equal(b.buffer.getText(), bText); assert.equal(b.dirty, true);
 	main.focusPrimary(); f.key('Escape');
 	assert.equal(await replacing, false);
-	assert.equal(main.primary, current); assert.equal(current.control.hasView, true);
+	assert.equal(main.primary, current); assert.equal(current.hierarchy.control.hasView && current.details.control.hasView, true);
 	assert.equal(a.buffer.getText(), aText); assert.equal(a.dirty, true);
 	assert.equal(b.buffer.getText(), bText); assert.equal(b.dirty, true);
 	assert.equal(group.model.contains(source), true);

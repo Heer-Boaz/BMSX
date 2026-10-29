@@ -104,13 +104,15 @@ test('captured retired group destinations cannot admit a split or retained-input
 // Geometry publication is the contract here: a reveal may already have resolved
 // arrangement overflow before the host projects it into real control surfaces.
 test('revealing and maximizing real Source groups publishes every resolved arrangement generation to their controls', t => {
-	const f = createActualSourcePanes(t), parts = f.editor.editorParts, main = parts.main;
-	const first = main.activeGroup;
+	const f = createActualSourcePanes(t), parts = f.editor.editorParts, part = f.firstPart;
+	// A floating host independently constrains this arrangement. Main now preserves
+	// the measured center minimum and owns any surrounding work-area overflow.
+	const first = part.activeGroup;
 	first.openEditor(new CodeEditorInput(f.firstInput.workingCopy));
 	const second = parts.splitGroup(first, 'right'); assert.ok(second);
 	second.openEditor(new CodeEditorInput(f.secondInput.workingCopy));
 	// The layout regression programs the child contribution's declared floor, not an attached pane cache.
-	for (const group of main.groups) {
+	for (const group of part.groups) {
 		const measure = group.panes.measure.bind(group.panes);
 		t.mock.method(group.panes, 'measure', (input, font, requested, target) => {
 			measure(input, font, requested, target); target.minimumWidth = 500;
@@ -118,19 +120,19 @@ test('revealing and maximizing real Source groups publishes every resolved arran
 	}
 	f.update();
 	const published = () => {
-		for (const leaf of main.arrangement.leaves) if (leaf.visible) {
+		for (const leaf of part.arrangement.leaves) if (leaf.visible) {
 			assert.deepEqual(leaf.group.bounds, leaf.bounds, 'the actual group consumes the resolved leaf extent');
 			assert.deepEqual(leaf.group.clip, leaf.clip, 'the actual group consumes the resolved presentation clip');
 		}
 	};
 	first.focus(); published();
-	const before = main.arrangement.scrollX;
+	const before = part.arrangement.scrollX;
 	second.focus();
-	assert.ok(main.arrangement.scrollX > before);
+	assert.ok(part.arrangement.scrollX > before);
 	published(); f.update(); published();
-	main.arrangement.toggleMaximize(second); second.focus(); published();
+	part.arrangement.toggleMaximize(second); second.focus(); published();
 	assert.equal(first.presented, false);
-	main.arrangement.toggleMaximize(second); second.focus(); published();
+	part.arrangement.toggleMaximize(second); second.focus(); published();
 	assert.equal(first.presented, true);
 });
 

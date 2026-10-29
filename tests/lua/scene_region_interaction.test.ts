@@ -8,7 +8,6 @@ import { inputFocus } from '../../ide/input/focus';
 import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
-import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { SceneEditorNavigationSelection } from '../../ide/workbench/contrib/scene_editor/navigation_selection';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
@@ -21,18 +20,15 @@ scenes.register('room', { objects = {
 return {}
 `;
 
-async function fixture(t: TestContext, placement: 'Main' | 'document', source = SOURCE) {
+async function fixture(t: TestContext, source = SOURCE) {
 	const f = createActualSourcePanes(t, false, [['scene.lua', source], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny'); f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
-	if (placement === 'Main') {
-		const document = f.ide.sceneSources.get(model);
-		assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, f.first.commandTarget), true);
-	} else f.editor.sceneEditor.openResource(f.firstGroup, resource);
+	f.editor.sceneEditor.openResource(f.firstGroup, resource);
 	f.update();
-	const client = placement === 'Main' ? f.editor.mainWorkspace.primary : f.firstGroup.panes.activePane;
-	assert.ok(client instanceof ScenePrimaryClient || client instanceof SceneEditorPane);
+	const client = f.firstGroup.panes.activePane;
+	assert.ok(client instanceof SceneEditorPane);
 	const control = client.control, view = control.view;
 	assert.equal(control.hierarchy.focus(), true); f.key('ArrowDown');
 	const selected = view.authoring.selection;
@@ -40,9 +36,9 @@ async function fixture(t: TestContext, placement: 'Main' | 'document', source = 
 	return { ...f, client, control, view, model };
 }
 
-for (const placement of ['Main', 'document'] as const) for (const compact of [false, true])
-	test(`${placement} Scene Tab traverses its actual ${compact ? 'Details-only' : 'hierarchy and Details'} regions and returns through the action bar`, async t => {
-		const f = await fixture(t, placement), { control, view } = f;
+for (const compact of [false, true])
+	test(`document Scene Tab traverses its actual ${compact ? 'Details-only' : 'hierarchy and Details'} regions and returns through the action bar`, async t => {
+		const f = await fixture(t), { control, view } = f;
 		if (compact) {
 			assert.equal(control.details.focus(), true);
 			f.firstBounds.right = 300;
@@ -79,7 +75,7 @@ for (const placement of ['Main', 'document'] as const) for (const compact of [fa
 
 for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (const kind of ['position', 'option'] as const)
 	test(`document Scene ${command} observes its canonical ${kind} only after the actual Details draft settles`, async t => {
-		const f = await fixture(t, 'document'), { control, view, model } = f;
+		const f = await fixture(t), { control, view, model } = f;
 		const field = kind === 'position' ? control.details.controls[0] : control.details.options.controls[0];
 		assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '31', true);
 		assert.ok(control.details.inputScope.contains(field.field.focusTarget.scope)
@@ -109,7 +105,7 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (co
 
 for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (const kind of ['position', 'option'] as const)
 	test(`document Scene ${command} cannot replace a newer selection published by its ${kind} draft`, async t => {
-		const f = await fixture(t, 'document'), { control, view, model } = f;
+		const f = await fixture(t), { control, view, model } = f;
 		const field = kind === 'position' ? control.details.controls[0] : control.details.options.controls[0];
 		assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '31', true);
 		const release = model.onDidChangeContent(() => {
@@ -131,9 +127,9 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (co
 			? SOURCE.replace('x = 1,', 'x = 31,') : SOURCE.replace('strength = 5', 'strength = 31'));
 	});
 
-for (const placement of ['Main', 'document'] as const) for (const retirement of ['detach', 'zero extent'] as const)
-	test(`${placement} hierarchy ${retirement} retires its armed popup without retiring sibling Details or its context`, async t => {
-		const f = await fixture(t, placement), { control, view } = f, menu = f.editor.contextMenu;
+for (const retirement of ['detach', 'zero extent'] as const)
+	test(`document hierarchy ${retirement} retires its armed popup without retiring sibling Details or its context`, async t => {
+		const f = await fixture(t), { control, view } = f, menu = f.editor.contextMenu;
 		assert.equal(control.hierarchy.focus(), true);
 		f.editor.commands.execute('contextMenu', control.hierarchy.focusTarget);
 		assert.equal(menu.visible, true);
@@ -158,28 +154,27 @@ for (const placement of ['Main', 'document'] as const) for (const retirement of 
 		assert.equal(f.model.buffer.getText(), SOURCE); assert.ok(control.view === view);
 	});
 
-for (const placement of ['Main', 'document'] as const)
-	test(`${placement} hierarchy detachment preserves the exact live Details draft through composition updates`, async t => {
-		const f = await fixture(t, placement), { control, view } = f, field = control.details.controls[0];
-		assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '31', true);
-		const selection = view.authoring.selection, rootGeneration = control.inputScope.contextGeneration;
-		const detailsGeneration = control.details.inputScope.contextGeneration;
-		control.hierarchy.clearView(); f.update();
-		assert.equal(control.hierarchy.hasView, false);
-		assert.ok(control.details.hasView && control.details.controls[0] === field && view.authoring.selection === selection);
-		assert.equal(control.inputScope.contextGeneration, rootGeneration);
-		assert.equal(control.details.inputScope.contextGeneration, detailsGeneration);
-		assert.ok(inputFocus.admittedTarget === field.field.focusTarget);
-		assert.equal(field.pending, true); assert.equal(field.field.text, '31'); assert.equal(f.model.buffer.getText(), SOURCE);
-		f.key('Enter');
-		assert.equal(field.pending, false); assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 31,'));
-		assert.equal(control.hierarchy.hasView, false); assert.equal(control.details.inputScope.contextGeneration, detailsGeneration);
-		const selected = view.authoring.selection;
-		assert.ok(selected?.kind === 'member' && selected.entry === view.authoring.document!.scenes[0].objects[0]);
-	});
+test('document hierarchy detachment preserves the exact live Details draft through composition updates', async t => {
+	const f = await fixture(t), { control, view } = f, field = control.details.controls[0];
+	assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '31', true);
+	const selection = view.authoring.selection, rootGeneration = control.inputScope.contextGeneration;
+	const detailsGeneration = control.details.inputScope.contextGeneration;
+	control.hierarchy.clearView(); f.update();
+	assert.equal(control.hierarchy.hasView, false);
+	assert.ok(control.details.hasView && control.details.controls[0] === field && view.authoring.selection === selection);
+	assert.equal(control.inputScope.contextGeneration, rootGeneration);
+	assert.equal(control.details.inputScope.contextGeneration, detailsGeneration);
+	assert.ok(inputFocus.admittedTarget === field.field.focusTarget);
+	assert.equal(field.pending, true); assert.equal(field.field.text, '31'); assert.equal(f.model.buffer.getText(), SOURCE);
+	f.key('Enter');
+	assert.equal(field.pending, false); assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(control.hierarchy.hasView, false); assert.equal(control.details.inputScope.contextGeneration, detailsGeneration);
+	const selected = view.authoring.selection;
+	assert.ok(selected?.kind === 'member' && selected.entry === view.authoring.document!.scenes[0].objects[0]);
+});
 
 test('attached Scene restoration cannot clear a newer member selected by source-retirement publication', async t => {
-	const f = await fixture(t, 'document'), { control, view, model } = f, context = view.authoring;
+	const f = await fixture(t), { control, view, model } = f, context = view.authoring;
 	const navigation = new SceneEditorNavigationSelection(view); t.after(() => navigation.dispose());
 	let published = false;
 	const release = context.onDidChangeSelection(() => {
@@ -198,7 +193,7 @@ test('attached Scene restoration cannot clear a newer member selected by source-
 });
 
 test('Scene restoration cannot replace the active region chosen by its selection-publication callback', async t => {
-	const f = await fixture(t, 'document'), { control, view, model } = f, context = view.authoring;
+	const f = await fixture(t), { control, view, model } = f, context = view.authoring;
 	const navigation = new SceneEditorNavigationSelection(view); t.after(() => navigation.dispose());
 	f.key('ArrowDown'); assert.equal(control.details.focus(), true);
 	let published = false;
@@ -221,7 +216,7 @@ test('Scene restoration cannot replace the active region chosen by its selection
 
 test('explicit Scene definition admission preserves a newer Scene selected by its source producer', async t => {
 	const source = SOURCE.replace('return {}', "scenes.register('other', { objects = { { member_id = 'third', definition_id = 'actor.third' } } })\nreturn {}");
-	const f = await fixture(t, 'document', source), { control, view, model } = f, context = view.authoring;
+	const f = await fixture(t, source), { control, view, model } = f, context = view.authoring;
 	const root = context.captureSourceReference().selected!.root;
 	const untrack = model.trackRanges(new Map([['requested Scene', root]])); t.after(untrack);
 	let published = false;
@@ -245,7 +240,7 @@ test('a prepared Scene definition cannot replace a newer member or its Details r
 	const options = Array.from({ length: 24 }, (_, index) => `option_${index} = ${index}`).join(', ');
 	const source = SOURCE.replace('strength = 8', `strength = 8, ${options}`)
 		.replace('return {}', "scenes.register('other', { objects = { { member_id = 'third', definition_id = 'actor.third' } } })\nreturn {}");
-	const f = await fixture(t, 'document', source), { control, view, model } = f, context = view.authoring;
+	const f = await fixture(t, source), { control, view, model } = f, context = view.authoring;
 	const document = context.document!, range = luaSourceRangeToTextRange(model.buffer, document.scenes[1].range);
 	const prepared = f.editor.sceneEditor.prepareDefinition(f.firstGroup, model, range);
 	assert.ok(prepared !== undefined && prepared.options?.navigationSelection !== undefined);

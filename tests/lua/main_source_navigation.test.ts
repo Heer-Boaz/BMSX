@@ -38,9 +38,9 @@ async function fixture(t: TestContext) {
 	};
 	f.first.focus(); assert.equal(await open(0), true); f.update();
 	const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 2), true); primary.control.update();
+	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 2), true); primary.hierarchy.update(); primary.details.update();
 	main.focusPrimary(); resetNavigationHistoryState();
-	return { ...f, model, resource, primary, main, parts, open };
+	return { ...f, model, resource, primary, main, parts, open, origin: primary.hierarchy.control.focusTarget };
 }
 
 for (const visible of [false, true]) test(`Main Source reuses floating canonical text without changing Files or its authored subject (Files visible: ${visible})`, async t => {
@@ -60,7 +60,7 @@ for (const visible of [false, true]) test(`Main Source reuses floating canonical
 	const groups = [...f.parts.groups], execution = f.host.execution.revision;
 	const expected = { row: 0, column: 0 }; f.model.buffer.positionAt(f.primary.consumer.selectionRange.start, expected);
 	const request = t.mock.method(f.editor.navigation, 'openSource');
-	f.editor.commands.execute('editor.source', f.primary.commandTarget);
+	f.editor.commands.execute('editor.source', f.origin);
 	assert.equal(request.mock.callCount(), 1); assert.ok(await request.mock.calls[0].result !== undefined);
 	assert.ok(f.secondGroup.model.activeTab === existing && f.secondGroup.panes.activePane === pane);
 	assert.ok(inputFocus.admittedTarget !== null && f.secondGroup.focusScope.contains(inputFocus.admittedTarget.scope));
@@ -82,12 +82,12 @@ test('Main Source to Side retains its exact document neighbor across draft settl
 	await f.editor.navigation.openResource(f.secondGroup, f.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });
 	const floating = f.secondGroup.model.activeTab;
 	assert.equal(f.parts.main.activateGroup(origin), true); f.main.focusPrimary();
-	const field = f.primary.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+	const field = f.primary.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	const release = f.model.onDidChangeContent(() => { release(); assert.equal(f.parts.main.activateGroup(side), true); }); t.after(release);
 	const groups = [...f.parts.groups];
 	const expected = { row: 0, column: 0 }; f.model.buffer.positionAt(f.primary.consumer.selectionRange.start, expected);
 	const request = t.mock.method(f.editor.navigation, 'openSource');
-	f.editor.commands.execute('editor.sourceToSide', f.primary.commandTarget);
+	f.editor.commands.execute('editor.sourceToSide', field.field.focusTarget);
 	assert.equal(request.mock.callCount(), 1); assert.ok(await request.mock.calls[0].result !== undefined);
 	const input = side.model.activeTab; assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);
 	assert.ok(f.secondGroup.model.activeTab === floating);
@@ -107,21 +107,21 @@ test('Main Source enablement observes its attached capability without producing 
 	const synchronize = t.mock.method(project, 'synchronizeSources');
 	const snapshot = t.mock.method(project, 'getSnapshot'), file = t.mock.method(project, 'getFileData');
 	for (let index = 0; index < 8; index++) {
-		assert.equal(f.editor.commands.isEnabled('editor.source', f.primary.commandTarget), true);
-		assert.equal(f.editor.commands.isEnabled('editor.sourceToSide', f.primary.commandTarget), true);
+		assert.equal(f.editor.commands.isEnabled('editor.source', f.origin), true);
+		assert.equal(f.editor.commands.isEnabled('editor.sourceToSide', f.origin), true);
 	}
 	assert.equal(location.mock.callCount(), 0); assert.equal(document.mock.callCount(), 0);
 	assert.equal(synchronize.mock.callCount(), 0); assert.equal(snapshot.mock.callCount(), 0); assert.equal(file.mock.callCount(), 0);
 	f.main.suspend();
-	assert.equal(f.editor.commands.isEnabled('editor.source', f.primary.commandTarget), false);
+	assert.equal(f.editor.commands.isEnabled('editor.source', f.origin), false);
 	assert.equal(location.mock.callCount(), 0); assert.equal(document.mock.callCount(), 0);
 });
 
 test('Main Source accepts the invoking member draft before computing its exact updated canonical range', async t => {
-	const f = await fixture(t), field = f.primary.control.details.controls[0];
+	const f = await fixture(t), field = f.primary.details.control.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	const request = t.mock.method(f.editor.navigation, 'openSource');
-	f.editor.commands.execute('editor.source', f.primary.commandTarget);
+	f.editor.commands.execute('editor.source', field.field.focusTarget);
 	assert.equal(request.mock.callCount(), 1); assert.ok(await request.mock.calls[0].result !== undefined);
 	assert.equal(field.pending, false); assert.ok(f.model.buffer.getText().includes('x = 123'));
 	const selected = f.primary.consumer.selection;
@@ -142,7 +142,7 @@ for (const change of ['selection', 'selected occurrence deletion', 'Main replace
 		});
 		const request = t.mock.method(f.editor.navigation, 'openSource'), opening = t.mock.method(f.editor.navigation, 'openResource');
 		const groups = [...f.parts.groups];
-		f.editor.commands.execute('editor.sourceToSide', f.primary.commandTarget);
+		f.editor.commands.execute('editor.sourceToSide', f.origin);
 		assert.equal(request.mock.callCount(), 1); assert.equal(opening.mock.callCount(), 0);
 		assert.equal(f.parts.groups.length, groups.length); assert.equal(navigationState.back.length, 0);
 		if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view.hierarchy, 1), true);
@@ -167,8 +167,8 @@ test('a newer actual Main Source discovery owns admission without replacing its 
 		return { ...lease, readLocation: async () => { await ready.promise; return lease.readLocation(); } };
 	});
 	const request = t.mock.method(f.editor.navigation, 'openSource'), opening = t.mock.method(f.editor.navigation, 'openResource');
-	f.editor.commands.execute('editor.sourceToSide', f.primary.commandTarget);
-	f.editor.commands.execute('editor.sourceToSide', f.primary.commandTarget);
+	f.editor.commands.execute('editor.sourceToSide', f.origin);
+	f.editor.commands.execute('editor.sourceToSide', f.origin);
 	assert.equal(request.mock.callCount(), 2); assert.equal(captures, 2);
 	first.resolve(); assert.equal(await request.mock.calls[0].result, undefined); assert.equal(opening.mock.callCount(), 0);
 	assert.equal(f.parts.main.groups.length, 1);
@@ -198,8 +198,8 @@ test('a newer synchronous Main Source owns intent while its floating affinity re
 	});
 	const request = t.mock.method(f.editor.navigation, 'openSource'), opening = t.mock.method(f.editor.navigation, 'openResource');
 	const selected = f.primary.consumer.selection, focused = inputFocus.admittedTarget;
-	f.editor.commands.execute('editor.source', f.primary.commandTarget);
-	f.editor.commands.execute('editor.source', f.primary.commandTarget);
+	f.editor.commands.execute('editor.source', f.origin);
+	f.editor.commands.execute('editor.source', f.origin);
 	assert.equal(captures, 2); assert.equal(receivers, 1); assert.equal(request.mock.callCount(), 2); assert.equal(opening.mock.callCount(), 1);
 	assert.ok(inputFocus.admittedTarget === focused && f.primary.consumer.selection === selected);
 	read.resolve(); assert.equal(await request.mock.calls[0].result, undefined);
@@ -223,8 +223,8 @@ for (const publication of ['opening', 'model activation', 'attachment'] as const
 			return captures++ === 0 ? lease : { ...lease, readLocation: async () => { await read.promise; return lease.readLocation(); } };
 		});
 		const request = t.mock.method(f.editor.navigation, 'openSource');
-		f.editor.commands.execute('editor.source', f.primary.commandTarget);
-		const invoke = () => { release(); f.editor.commands.execute('editor.source', f.primary.commandTarget); };
+		f.editor.commands.execute('editor.source', f.origin);
+		const invoke = () => { release(); f.editor.commands.execute('editor.source', f.origin); };
 		const release = publication === 'opening' ? f.secondGroup.panes.onDidBeginOpen(invoke)
 			: publication === 'model activation' ? f.secondGroup.model.onDidChange(change => { if (change === 'active') invoke(); })
 				: f.secondGroup.panes.onWillShowEditor(invoke);
@@ -254,7 +254,7 @@ for (const change of ['source edit', 'source model replacement', 'selected occur
 			admitted = true; return ready.promise.then(() => input);
 		});
 		const request = t.mock.method(f.editor.navigation, 'openSource');
-		f.editor.commands.execute('editor.source', f.primary.commandTarget);
+		f.editor.commands.execute('editor.source', f.origin);
 		assert.equal(request.mock.callCount(), 1); assert.equal(admitted, true);
 		assert.equal(f.parts.main.activeGroup.model.tabs.length, 0);
 		if (change === 'source edit') f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer canonical generation\n' }]);
@@ -283,12 +283,14 @@ for (const change of ['source edit', 'source model replacement', 'selected occur
 		} else if (change === 'selected occurrence deletion') {
 			assert.equal(f.primary.consumer.selection, undefined);
 			assert.equal(f.primary.consumer.subject!.objects.length, 1);
-		} else if (change === 'suspension') assert.equal(f.primary.control.hasView, false);
+		} else if (change === 'suspension') {
+			assert.equal(f.primary.hierarchy.control.hasView, false); assert.equal(f.primary.details.control.hasView, false);
+		}
 	});
 
 for (const change of ['selection', 'selected occurrence deletion', 'foreign focus'] as const)
 	test(`Main Source captures its invoking member before draft publication changes ${change}`, async t => {
-		const f = await fixture(t), field = f.primary.control.details.controls[0];
+		const f = await fixture(t), field = f.primary.details.control.controls[0];
 		field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 		let published = false;
 		const release = f.model.onDidChangeContent(() => {
@@ -298,7 +300,7 @@ for (const change of ['selection', 'selected occurrence deletion', 'foreign focu
 			else f.second.focus();
 		}); t.after(release);
 		const opening = t.mock.method(f.editor.navigation, 'openResource');
-		f.editor.commands.execute('editor.source', f.primary.commandTarget);
+		f.editor.commands.execute('editor.source', field.field.focusTarget);
 		assert.equal(published, true); assert.equal(field.pending, false); assert.equal(opening.mock.callCount(), 0);
 		assert.equal(f.parts.main.activeGroup.model.tabs.length, 0); assert.ok(f.main.primary === f.primary);
 		if (change === 'selection') {
@@ -311,7 +313,7 @@ for (const change of ['selection', 'selected occurrence deletion', 'foreign focu
 for (const change of ['selection', 'selected occurrence deletion', 'Main replacement', 'suspension'] as const)
 	test(`an armed Main Source popup cannot acquire a new subject after ${change}`, async t => {
 		const f = await fixture(t), menu = f.editor.contextMenu;
-		f.editor.commands.execute('contextMenu', f.primary.commandTarget); assert.equal(menu.visible, true);
+		f.editor.commands.execute('contextMenu', f.origin); assert.equal(menu.visible, true);
 		menu.model.selectedIndex = menu.model.rows.findIndex(row => row.command === 'editor.source');
 		assert.ok(menu.model.selectedIndex >= 0 && menu.model.rows[menu.model.selectedIndex].enabled);
 		f.editor.dispatchKey(new KeyInputEvent('Enter', KeyModifier.none));
@@ -330,11 +332,11 @@ for (const change of ['selection', 'selected occurrence deletion', 'Main replace
 for (const change of ['selection', 'selected occurrence deletion'] as const)
 	test(`Main popup Source cannot retarget after its return-focus callback changes ${change}`, async t => {
 		const f = await fixture(t), menu = f.editor.contextMenu;
-		f.editor.commands.execute('contextMenu', f.primary.commandTarget); assert.equal(menu.visible, true);
+		f.editor.commands.execute('contextMenu', f.origin); assert.equal(menu.visible, true);
 		menu.model.selectedIndex = menu.model.rows.findIndex(row => row.command === 'editor.source');
 		assert.ok(menu.model.selectedIndex >= 0 && menu.model.rows[menu.model.selectedIndex].enabled);
 		let published = false;
-		const release = f.primary.control.commandTarget.onDidFocus(() => {
+		const release = f.primary.hierarchy.control.focusTarget.onDidFocus(() => {
 			release(); published = true;
 			if (change === 'selection') assert.equal(selectSceneOutlineRow(f.primary.view.hierarchy, 1), true);
 			else assert.equal(f.primary.consumer.removeSelectedMember(), true);
@@ -359,13 +361,13 @@ test('unavailable retained Main Source opens only its admitted current canonical
 		restore.focusPrimary(); f.update();
 	} finally { restore.dispose(); }
 	const unavailable = f.main.primary; assert.ok(unavailable instanceof UnavailableScenePrimaryClient);
-	assert.deepEqual(unavailable.getWorkingCopies(), [f.model]);
+	const copies = unavailable.getWorkingCopies(); assert.equal(copies.length, 1); assert.ok(copies[0] === f.model);
 	await f.editor.navigation.openResource(f.secondGroup, f.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });
 	const input = f.secondGroup.model.activeTab; assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);
 	input.context.view.cursorRow = 1; input.context.view.cursorColumn = 3;
 	f.main.focusPrimary(); resetNavigationHistoryState();
 	const request = t.mock.method(f.editor.navigation, 'openSource');
-	f.editor.commands.execute('editor.source', unavailable.commandTarget);
+	f.editor.commands.execute('editor.source', unavailable.hierarchy.commandTarget);
 	assert.equal(request.mock.callCount(), 1); assert.ok(await request.mock.calls[0].result !== undefined);
 	assert.ok(f.secondGroup.model.activeTab === input && f.main.primary === unavailable);
 	assert.equal(input.context.view.cursorRow, 1); assert.equal(input.context.view.cursorColumn, 3);

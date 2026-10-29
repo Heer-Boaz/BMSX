@@ -7,6 +7,9 @@ import { PROBLEMS_PANEL_DIVIDER_DRAG_MARGIN, RESOURCE_PANEL_DIVIDER_DRAG_MARGIN 
 import { editorChromeState } from '../ui/chrome_state';
 import type { EditorFont } from '../../editor/ui/view/font';
 
+/** A view supplies readable content constraints; its container owns placement and overflow. */
+export type WorkbenchViewSizeConstraints = { minimumWidth: number; preferredWidth: number };
+
 const editorBounds = create_rect_bounds();
 const workArea = create_rect_bounds();
 const statusBounds = create_rect_bounds();

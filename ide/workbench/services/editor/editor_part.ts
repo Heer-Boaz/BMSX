@@ -390,7 +390,12 @@ export class EditorPart {
 		}
 	}
 	public layout(bounds: Readonly<RectBounds>): boolean {
-		this.prepareConstraints();
+		this.prepareLayout();
+		return this.layoutPrepared(bounds);
+	}
+
+	/** Parent allocation consumes measured groups before arranging this existing document part. */
+	public layoutPrepared(bounds: Readonly<RectBounds>): boolean {
 		let changed = false;
 		if (this.options.kind === 'main') {
 			const area = this.options.mainArea;
@@ -451,7 +456,7 @@ export class EditorPart {
 		copy_rect_bounds(target, projection.layout(bounds, colors.SCROLLBAR_WIDTH, readable));
 	}
 
-	private prepareConstraints(): void {
+	public prepareLayout(): void {
 		const requested = this.options.kind === 'main' && this.options.mainArea.enabled;
 		this.activeGroup.measureConstraints(requested);
 		const activeWidth = this.activeGroup.companionWidth;
@@ -463,6 +468,10 @@ export class EditorPart {
 			const reading = group.companionWidth;
 			this.arrangement.setMinimum(group, width, height, reading === undefined ? width : Math.max(width, reading));
 		}
+	}
+
+	public minimumClientWidth(height: number): number {
+		return this.arrangement.minimumClientWidth(height, colors.SCROLLBAR_WIDTH);
 	}
 
 	private arrange(bounds: Readonly<RectBounds>, notify = true): boolean {

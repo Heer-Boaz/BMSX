@@ -58,9 +58,9 @@ for (const clearSelection of [false, true]) test(`primary recovery shares one di
 	copy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained draft\n' }]);
 	original.view.refresh();
 	if (clearSelection) assert.equal(selectSceneOutlineRow(original.view.hierarchy, -1), true);
-	else original.view.section = 'details';
+
 	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(copy));
-	f.editor.mainWorkspace.focusPrimary();
+	f.editor.mainWorkspace.focusPrimary(clearSelection ? 'hierarchy' : 'details');
 	const payload = f.checkpoint(), source = copy.buffer.getText();
 	assert.equal(payload.dirtyFiles.length, 1); assert.equal(workspaceDirtyRecords.size, 1);
 	const snapshot: ScenePrimarySnapshot = JSON.parse(payload.mainWorkspace.primary!.value);
@@ -74,7 +74,7 @@ for (const clearSelection of [false, true]) test(`primary recovery shares one di
 	if (!clearSelection) {
 		const selection = restored.consumer.selection; assert.ok(selection?.kind === 'member');
 		assert.ok(selection.entry === restored.consumer.subject!.objects[0]);
-		assert.equal(restored.view.section, 'details');
+		assert.equal(restored.view.preferredRegion, 'details');
 	}
 	const code = f.editor.editorParts.main.activeGroup.model.activeTab; assert.ok(code?.kind === 'code_editor');
 	assert.ok(code.workingCopy === restored.consumer.workingCopy);
@@ -110,9 +110,12 @@ test('Main-primary foreground recovery restores persisted MRU and stacking witho
 	const order: string[] = [];
 	t.mock.method(parts.documents[0].activeGroup.panes.activePane!, 'draw', () => { order.push('first'); });
 	t.mock.method(parts.documents[1].activeGroup.panes.activePane!, 'draw', () => { order.push('second'); });
-	t.mock.method(primary, 'draw', () => { order.push('primary'); });
+	t.mock.method(primary.hierarchy, 'draw', () => { order.push('primary hierarchy'); });
+	t.mock.method(primary.details, 'draw', () => { order.push('primary Details'); });
 	f.paint();
-	assert.deepEqual(order, ['first', 'second', 'primary']);
+	assert.ok(order.indexOf('first') < order.indexOf('second'));
+	assert.ok(order.indexOf('second') < order.indexOf('primary hierarchy'));
+	assert.ok(order.indexOf('second') < order.indexOf('primary Details'));
 });
 
 test('clearing primary with a Main Source view persists unbound document foreground and restores its focus', async t => {

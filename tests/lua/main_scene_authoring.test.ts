@@ -38,14 +38,15 @@ test('Main retains an exact authored Scene beside independent document groups wi
 	assert.equal(client.consumer.subject, client.consumer.document!.scenes[1]);
 	assert.equal(client.view.hierarchy.outline.roots.length, 1);
 	assert.ok(f.editor.editorParts.groups.every(group => group.model.tabs.every(input => input.kind !== 'scene_editor')));
-	selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
 	const selected = client.consumer.selection;
 	f.first.focus(); f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
 	f.second.focus(); f.update();
 	assert.equal(main.primary, client);
 	assert.equal(client.consumer.selection, selected);
 	assert.equal(client.consumer.subject, client.consumer.document!.scenes[1]);
-	assert.equal(f.editor.surfaces.isAdmitted(f.editor.surfaces.findByScope(client.scope.surfaceScope)!), true);
+	assert.equal(f.editor.surfaces.isAdmitted(f.editor.surfaces.findByScope(client.hierarchy.scope.surfaceScope)!), true);
+	assert.equal(f.editor.surfaces.isAdmitted(f.editor.surfaces.findByScope(client.details.scope.surfaceScope)!), true);
 	f.editor.commands.execute('workspace.focusPrimary', f.second.commandTarget);
 	assert.ok(client.scope.contains(inputFocus.admittedTarget!.scope));
 	assert.equal(f.editor.editorParts.activePart, f.editor.editorParts.main);
@@ -54,8 +55,8 @@ test('Main retains an exact authored Scene beside independent document groups wi
 test('closing Source cannot prompt or discard the dirty working copy retained by actual Main authoring', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
-	const field = client.control.details.controls[0];
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
+	const field = client.details.control.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '123', true); assert.equal(field.commit(), true);
 	const source = f.model.buffer.getText(); assert.ok(source !== SOURCE);
 	const group = f.editor.editorParts.main.activeGroup, input = new CodeEditorInput(f.model);
@@ -64,7 +65,7 @@ test('closing Source cannot prompt or discard the dirty working copy retained by
 	assert.equal(f.model.buffer.getText(), source);
 	assert.equal(f.model.dirty, true);
 	assert.equal(client.consumer.isCurrent, true);
-	assert.deepEqual(client.consumer.getWorkingCopies(), [f.model]);
+	const copies = client.consumer.getWorkingCopies(); assert.equal(copies.length, 1); assert.ok(copies[0] === f.model);
 	assert.ok(group.model.tabs.every(tab => tab !== input));
 });
 
@@ -76,7 +77,7 @@ test('same-file primary replacement retains canonical edits through its actual r
 	assert.equal(await f.open(1), true); f.update();
 	const second = f.editor.mainWorkspace.primary; assert.ok(second instanceof ScenePrimaryClient);
 	assert.ok(second !== first);
-	assert.equal(first.control.hasView, false);
+	assert.equal(first.hierarchy.control.hasView, false); assert.equal(first.details.control.hasView, false);
 	assert.equal(first.consumer.isCurrent, false);
 	assert.equal(second.consumer.subject, second.consumer.document!.scenes[1]);
 	assert.equal(f.model.buffer.getText(), source);
@@ -96,7 +97,7 @@ test('Cancel of final Main release keeps its actual context and canonical edits,
 	group.openEditor(new CodeEditorInput(f.model)); f.update();
 	assert.equal(await main.clearPrimary(f.editor.editorParts.closeController, group.focusTarget), true);
 	assert.equal(main.primary, undefined);
-	assert.equal(client.control.hasView, false);
+	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false);
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.dirty, true);
 });
 
@@ -104,8 +105,8 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const)
 	test(`Main ${command} preserves a newer selection published by its departing field instead of navigating it`, async t => {
 		const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 		const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-		selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
-		const field = client.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+		selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
+		const field = client.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 		const release = f.model.onDidChangeContent(() => { release(); client.view.refresh(); selectSceneOutlineRow(client.view.hierarchy, 2); });
 		t.after(release);
 		const navigation = t.mock.method(f.editor.navigation, 'openResource');
@@ -120,16 +121,16 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const)
 test('hiding Studio detaches Main control authority while retaining its exact subject for a new attachment', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
-	selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
 	const selected = client.consumer.selection;
-	const invocation = client.control.focusTarget.getCommand('sceneEditor.removeMember')!.capture!()!;
-	const field = client.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+	const invocation = client.commandTarget.getCommand('sceneEditor.removeMember')!.capture!()!;
+	const field = client.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	f.editor.deactivate();
-	assert.equal(client.control.hasView, false); assert.equal(field.pending, false);
+	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false); assert.equal(field.pending, false);
 	assert.equal(main.primary, client); assert.equal(client.consumer.selection, selected);
 	assert.equal(invocation.isEnabled(), false); assert.equal(f.model.buffer.getText(), SOURCE);
 	f.editor.activate(); f.update();
-	assert.equal(main.primary, client); assert.equal(client.control.hasView, true);
+	assert.equal(main.primary, client); assert.equal(client.hierarchy.control.hasView && client.details.control.hasView, true);
 	assert.equal(client.consumer.selection, selected);
 	assert.equal(invocation.isEnabled(), false, 'the old attachment is never revived by showing Studio again');
 });
@@ -139,7 +140,7 @@ test('canonical workspace retirement clears Main rather than retaining disposed 
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
 	editorTextModelService.clear();
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
-	assert.equal(client.control.hasView, false);
+	assert.equal(client.hierarchy.control.hasView, false); assert.equal(client.details.control.hasView, false);
 	assert.equal(client.consumer.isCurrent, false);
 	assert.deepEqual([...f.editor.mainWorkspace.workingCopyConsumers()], []);
 });
@@ -149,8 +150,8 @@ test('Main Ctrl+S accepts its concrete pending field and saves its own canonical
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
-	selectSceneOutlineRow(client.view.hierarchy, 1); client.control.update();
-	const field = client.control.details.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
+	selectSceneOutlineRow(client.view.hierarchy, 1); client.hierarchy.update(); client.details.update();
+	const field = client.details.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '123', true);
 	f.key('KeyS', KeyModifier.ctrl);
 	const operation = f.ide.textFileSaves.latestOperation(f.model);
 	assert.ok(operation !== undefined, 'Save addresses the actual Main working-copy consumer');

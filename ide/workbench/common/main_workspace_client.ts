@@ -1,0 +1,51 @@
+import type { RectBounds } from '../../../machine/ts/common/rect';
+import type { EditorSourceLocationRequest } from '../../editor/navigation/source_location';
+import type { EditorFont } from '../../editor/ui/view/font';
+import type { PointerInputSnapshot, WheelInputSnapshot } from '../../common/models';
+import type { InputFocusScope, InputFocusTarget } from '../../input/focus';
+import type { PrimaryNavigationLocation } from '../../navigation/navigation_history';
+import type { WorkingCopyConsumer } from '../services/editor/editor_close';
+import type { WorkbenchSurface } from '../services/windows/model';
+import type { WorkbenchViewSizeConstraints } from './layout';
+import type { SerializedPrimaryClient } from './main_workspace_serialization';
+
+export type MainWorkspaceRegionId = 'hierarchy' | 'details';
+export type MainWorkspaceRegionSurfaces = Readonly<Record<MainWorkspaceRegionId, WorkbenchSurface>>;
+
+/** A real region presentation over a retained contribution view, not another document input. */
+export interface MainWorkspaceRegionClient {
+	readonly scope: InputFocusScope;
+	readonly commandTarget: InputFocusTarget;
+	readonly attached: boolean;
+	measure(font: EditorFont, target: WorkbenchViewSizeConstraints): void;
+	attach(bounds: Readonly<RectBounds>): void;
+	detach(): void;
+	layout(bounds: Readonly<RectBounds>): void;
+	update(): void;
+	draw(): void;
+	focus(): void;
+	handlePointer(snapshot: PointerInputSnapshot): void;
+	handleWheel(event: WheelInputSnapshot): void;
+}
+
+/** One semantic subject and working-copy consumer, with independently attached named presentations. */
+export interface MainWorkspaceClient {
+	readonly consumer: WorkingCopyConsumer;
+	readonly scope: InputFocusScope;
+	readonly commandTarget: InputFocusTarget;
+	readonly hierarchy: MainWorkspaceRegionClient;
+	readonly details: MainWorkspaceRegionClient;
+	readonly preferredRegion: MainWorkspaceRegionId;
+	readonly canOpenSource?: boolean;
+	captureSourceLocation?(): EditorSourceLocationRequest | undefined;
+	serialize(): SerializedPrimaryClient;
+	onDidChange(listener: () => void): () => void;
+	captureNavigationLocation(): PrimaryNavigationLocation | undefined;
+	isCurrent(): boolean;
+	update(): void;
+	focus(region?: MainWorkspaceRegionId): void;
+	drawStatusBar(bounds: Readonly<RectBounds>, color: number): void;
+	dispose(): void;
+}
+
+export type MainWorkspaceClientFactory = (surfaces: MainWorkspaceRegionSurfaces, scope: InputFocusScope) => MainWorkspaceClient | undefined;

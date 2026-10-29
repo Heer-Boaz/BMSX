@@ -3,7 +3,7 @@ import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { ScenePrimaryBookmark } from '../../ide/workbench/contrib/scene_editor/primary_bookmark';
 import { captureScenePrimary } from '../../ide/workbench/contrib/scene_editor/primary_snapshot';
-import { SceneEditorViewState } from '../../ide/workbench/contrib/scene_editor/view_state';
+import { ScenePrimaryViewState } from '../../ide/workbench/contrib/scene_editor/primary_view';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { getTextSnapshotFingerprint } from '../../ide/editor/text/source_text';
@@ -26,7 +26,7 @@ function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [s
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, imports);
 	const document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	const view = new SceneEditorViewState(context); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
+	const view = new ScenePrimaryViewState(context); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	t.after(() => { view.dispose(); context.dispose(); });
 	const bookmark = () => {
 		const location = new ScenePrimaryBookmark(context, view); t.after(() => location.dispose()); return location;
@@ -47,7 +47,7 @@ test('primary snapshots keep declaration identity independently from a cleared m
 });
 
 test('primary capture observes a newer domain selection published by semantic retirement', t => {
-	const f = fixture(t); f.view.section = 'details';
+	const f = fixture(t); f.view.preferredRegion = 'details';
 	let selected = false;
 	const release = f.context.onDidChangeSelection(() => {
 		if (selected || f.context.selection !== undefined) return;
@@ -213,7 +213,7 @@ test('member removal clears only bookmarked sub-selection and leaves its authore
 
 test('bookmark matching identifies source subjects and selection, not reading sections or scroll', t => {
 	const f = fixture(t), first = f.bookmark();
-	f.view.section = 'details'; f.view.hierarchy.position = 23; f.view.details.position = 51;
+	f.view.preferredRegion = 'details'; f.view.hierarchy.position = 23; f.view.details.position = 51;
 	const same = f.bookmark();
 	assert.equal(first.matches(same), true);
 	selectSceneOutlineRow(f.view.hierarchy, 2);

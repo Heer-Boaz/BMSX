@@ -35,7 +35,7 @@ function fixture(t: TestContext) {
 test('Main and Source share Back/Forward without moving the retained primary into a document tab', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const first = f.main.primary; assert.ok(first instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(first.view.hierarchy, 2), true); first.control.update();
+	assert.equal(selectSceneOutlineRow(first.view.hierarchy, 2), true); first.hierarchy.update(); first.details.update();
 	resetNavigationHistoryState();
 	const group = f.parts.main.activeGroup;
 	await f.editor.navigation.openResource(group, f.copy.resource, { editorId: WORKBENCH_TEXT_EDITOR_ID });
@@ -47,7 +47,7 @@ test('Main and Source share Back/Forward without moving the retained primary int
 	assert.ok(inputFocus.admittedTarget !== null && restored.scope.contains(inputFocus.admittedTarget.scope));
 	const selected = restored.consumer.selection; assert.ok(selected?.kind === 'member');
 	assert.ok(selected.scene === restored.consumer.document!.scenes[0] && selected.entry === selected.scene.objects[1]);
-	assert.equal(first.consumer.isCurrent, false); assert.equal(first.control.hasView, false);
+	assert.equal(first.consumer.isCurrent, false); assert.equal(first.hierarchy.control.hasView, false); assert.equal(first.details.control.hasView, false);
 	assert.equal(navigationState.back.length, 0); assert.equal(navigationState.forward.length, 1);
 	await f.editor.navigation.goForward();
 	assert.ok(navigationState.activeOwner === group && f.main.primary === restored);
@@ -60,7 +60,7 @@ test('Main and Source share Back/Forward without moving the retained primary int
 test('Main history restores exact same-named declarations and member selections after canonical movement', async t => {
 	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
 	const first = f.main.primary; assert.ok(first instanceof ScenePrimaryClient);
-	assert.equal(selectSceneOutlineRow(first.view.hierarchy, 2), true); first.control.update();
+	assert.equal(selectSceneOutlineRow(first.view.hierarchy, 2), true); first.hierarchy.update(); first.details.update();
 	resetNavigationHistoryState();
 	assert.equal(await f.open(1), true); f.update();
 	const second = f.main.primary; assert.ok(second instanceof ScenePrimaryClient && second !== first);
@@ -104,7 +104,7 @@ test('Cancel of a dirty cross-file primary history replacement leaves its destin
 	const pending = f.editor.navigation.goBackward();
 	assert.ok(f.main.primary === current);
 	f.key('Escape'); await pending;
-	assert.ok(f.main.primary === current && current.control.hasView && current.consumer.isCurrent);
+	assert.ok(f.main.primary === current && current.hierarchy.control.hasView && current.details.control.hasView && current.consumer.isCurrent);
 	assert.equal(navigationState.back.length, back.length);
 	assert.ok(navigationState.back.every((entry, index) => entry === back[index] && !entry.isDisposed));
 	assert.equal(navigationState.forward.length, forward.length);

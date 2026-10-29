@@ -16,11 +16,7 @@ import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pan
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { HOME_SECTIONS, type HomeInput, type HomeSection } from './editor_input';
-
-const PADDING = 8;
-const CARD_PADDING = 4;
-const GAP = 8;
-const ICON_GAP = 5;
+import { HOME_PADDING as PADDING, HOME_CARD_PADDING as CARD_PADDING, HOME_GAP as GAP, HOME_ICON_GAP as ICON_GAP, measureHomeMinimumCardWidth } from './layout';
 
 /** A retained action page: existing controls own command admission, focus and physical gestures. */
 export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
@@ -94,15 +90,13 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 	}
 
 	public override update(): void {
-		const input = this.input, font = editorViewState.font;
-		const fontChanged = input.layout.font !== font || this.attachedInput !== input;
+		const input = this.input;
 		let changed = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds) || this.attachedInput !== input;
 		this.attachedInput = input;
 		for (const section of input.sections) {
 			let count = 0;
 			for (const item of section.actions.items) {
 				const visible = this.commands.isEnabled(item.command, this.focusTarget);
-				if (visible && (fontChanged || !item.visible)) item.width = font.measure(item.label);
 				changed ||= item.visible !== visible;
 				item.visible = visible;
 				if (visible) count++;
@@ -130,9 +124,7 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 		this.sectionHeadingHeight = font.lineHeight + 8;
 		this.headingHeight = PADDING + font.lineHeight + (this.input.workspaceContext === null ? 0 : font.lineHeight + 4) + GAP;
 		const width = Math.max(0, layout.right - layout.left - colors.SCROLLBAR_WIDTH - PADDING * 2);
-		let minimumCardWidth = 0;
-		for (const section of sections) for (const item of section.actions.items)
-			if (item.visible) minimumCardWidth = Math.max(minimumCardWidth, item.width + CARD_PADDING * 2 + WORKBENCH_ICON_SIZE + ICON_GAP + 4);
+		const minimumCardWidth = measureHomeMinimumCardWidth(this.input, font);
 		const columns = width >= minimumCardWidth * 2 + GAP ? 2 : 1;
 		const cardWidth = Math.trunc((width - (columns - 1) * GAP) / columns);
 		this.caption = this.input.workspaceContext === null ? '' : truncateTextToWidth(this.input.workspaceContext.projectRoot, width);

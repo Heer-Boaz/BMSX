@@ -2,7 +2,7 @@ import type { EditorTextModelService } from '../../../editor/model/model_service
 import { luaSourceRangeMatchesTextRange } from '../../../language/lua/source_edits';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import { resolveTextFileModelSnapshot } from '../../services/working_copy/text_file_model';
-import type { MainWorkspaceClient } from '../../main_workspace';
+import type { MainWorkspaceClient } from '../../common/main_workspace_client';
 import { createScenePrimaryClient, type ScenePrimaryClientOptions } from './primary_client';
 import type { ScenePrimarySnapshot } from './primary_snapshot';
 import type { SceneSourceDocuments } from './source_documents';

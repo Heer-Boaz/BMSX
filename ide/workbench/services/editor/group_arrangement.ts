@@ -138,6 +138,10 @@ export class EditorGroupArrangement<T> {
 		const node = this.layoutRoot;
 		return node.readingWidth + (node.minimumHeight > height ? scrollbarSize : 0);
 	}
+	public minimumClientWidth(height: number, scrollbarSize: number): number {
+		const node = this.layoutRoot;
+		return node.minimumWidth + (node.minimumHeight > height ? scrollbarSize : 0);
+	}
 	public get maxScrollX(): number { return Math.max(0, this.contentWidth - (this.bounds.right - this.bounds.left)); }
 	public get maxScrollY(): number { return Math.max(0, this.contentHeight - (this.bounds.bottom - this.bounds.top)); }
 

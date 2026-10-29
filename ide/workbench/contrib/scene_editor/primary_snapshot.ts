@@ -1,16 +1,23 @@
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import type { TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
-import type { SceneEditorViewState } from './view_state';
-import { captureSceneEditorView, type SceneEditorViewSnapshot } from './view_snapshot';
+import type { MainWorkspaceRegionId } from '../../common/main_workspace_client';
+import type { SceneSelectionRequest } from './authoring_context';
+import type { ScenePrimaryViewState } from './primary_view';
+import { captureSceneReading, restoreSceneReading, type SceneReadingSnapshot } from './reading_snapshot';
 
-/** Plain contribution state; the workspace stores no Scene controls, AST or duplicate source bytes. */
+export type ScenePrimaryViewSnapshot = SceneReadingSnapshot & { readonly preferredRegion: MainWorkspaceRegionId };
+/** Plain source identity and independent region reading state; no native controls or document placement. */
 export type ScenePrimarySnapshot = {
 	readonly source: TextFileModelSnapshot;
 	readonly subject: { readonly range: TrackedTextRange; readonly availability: 'available' | 'unavailable' };
-	readonly view: SceneEditorViewSnapshot;
+	readonly view: ScenePrimaryViewSnapshot;
 };
-
-export function captureScenePrimary(view: SceneEditorViewState): ScenePrimarySnapshot {
+export function captureScenePrimary(view: ScenePrimaryViewState): ScenePrimarySnapshot {
 	const reference = view.authoring.captureSourceReference();
-	return { source: reference.source, subject: reference.subject!, view: captureSceneEditorView(view, reference) };
+	return { source: reference.source, subject: reference.subject!,
+		view: { ...captureSceneReading(view, reference), preferredRegion: view.preferredRegion } };
+}
+export function restoreScenePrimaryView(view: ScenePrimaryViewState, snapshot: ScenePrimaryViewSnapshot,
+	request: SceneSelectionRequest = view.authoring.captureSelectionRequest()): void {
+	if (restoreSceneReading(view, snapshot, request)) view.preferredRegion = snapshot.preferredRegion;
 }

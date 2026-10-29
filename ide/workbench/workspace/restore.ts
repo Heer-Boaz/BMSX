@@ -23,8 +23,8 @@ export async function applyWorkspaceAutosavePayload(
 	try {
 		editor.setFontVariant(payload.fontVariant);
 		await restoreWorkspaceDirtyModels(editorTextModelService, catalog, payload.dirtyFiles, workspaceDirtyRecords);
-		const primaryRestored = primary.restore(payload.mainWorkspace, (record, surface, scope, isCurrent) =>
-			editor.restorePrimaryClient(record, surface, scope, isCurrent));
+		const primaryRestored = primary.restore(payload.mainWorkspace, (record, regions, scope, isCurrent) =>
+			editor.restorePrimaryClient(record, regions, scope, isCurrent));
 		const documentsRestored = documents.restore(payload.editorParts, editor.editorInputSerializers,
 			{ preserveFocus: payload.editorParts.active === 0 && payload.mainWorkspace.activeClient === 'primary' });
 		const [restoredPrimary, restoredDocuments] = await Promise.all([primaryRestored, documentsRestored]);

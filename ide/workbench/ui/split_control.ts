@@ -5,13 +5,13 @@ import { consumeIdeKey, isKeyDown } from '../../input/keyboard/key_input';
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
 import type { PointerCaptureService, PointerCaptureTarget } from '../../input/pointer/capture';
 import type { PointerHoverService, PointerHoverTarget } from '../../input/pointer/hover';
-import type { WorkbenchSplitView } from './split_view';
+import type { WorkbenchSashView } from './split_view';
 
 /** One captured sash gesture, with equivalent focused keyboard resizing. */
 export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHoverTarget {
 	public readonly focusTarget: InputFocusTarget;
 	public hovered = false;
-	private input: WorkbenchSplitView | undefined;
+	private input: WorkbenchSashView | undefined;
 	private pointerOffset = 0;
 	private readonly unbindKeyboard: () => void;
 	private unbindPressBlur: (() => void) | undefined;
@@ -21,7 +21,7 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 		this.focusTarget.canFocus = () => this.input?.resizable === true;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(player => this.handleKeyboard(player));
 	}
-	public setInput(input: WorkbenchSplitView): void {
+	public setInput(input: WorkbenchSashView): void {
 		this.capture.cancelTarget(this); this.cancelPointer(); this.hover.release(this);
 		this.input = input;
 		if (!input.resizable) this.focusTarget.release();
@@ -62,7 +62,11 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 		for (const key of keys) {
 			if (!isKeyDown(key, player)) continue;
 			consumeIdeKey(key, player);
-			input.resize(key === 'Home' ? input.defaultRatio : input.ratio + (key === keys[0] ? -0.05 : 0.05));
+			if (key === 'Home') input.reset();
+			else {
+				const extent = input.orientation === 'horizontal' ? input.bounds.right - input.bounds.left : input.bounds.bottom - input.bounds.top;
+				input.moveTo(input.position + extent * (key === keys[0] ? -0.05 : 0.05));
+			}
 			return;
 		}
 	}

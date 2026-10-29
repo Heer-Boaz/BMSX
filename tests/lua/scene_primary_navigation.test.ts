@@ -4,7 +4,8 @@ import { NavigationHistoryEntry, navigationState, resetNavigationHistoryState } 
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { ScenePrimaryBookmark } from '../../ide/workbench/contrib/scene_editor/primary_bookmark';
 import { ScenePrimaryNavigationLocation } from '../../ide/workbench/contrib/scene_editor/primary_location';
-import { SceneEditorViewState } from '../../ide/workbench/contrib/scene_editor/view_state';
+import { ScenePrimaryViewState } from '../../ide/workbench/contrib/scene_editor/primary_view';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { createTestEditorWorkspace } from '../helpers/editor_panes';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
@@ -16,10 +17,11 @@ scenes.register('same', { objects = {
 } })`;
 
 function fixture(t: TestContext) {
+	configureFontVariant('tiny');
 	const f = createSceneSourceFixture(t, SOURCE), workspace = createTestEditorWorkspace(t);
 	const document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	const view = new SceneEditorViewState(context); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
+	const view = new ScenePrimaryViewState(context); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	t.after(() => { view.dispose(); context.dispose(); resetNavigationHistoryState(); });
 	return { ...f, ...workspace, context, view, bookmark: () => new ScenePrimaryBookmark(context, view) };
 }

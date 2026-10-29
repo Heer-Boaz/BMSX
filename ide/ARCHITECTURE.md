@@ -248,13 +248,22 @@ address an exact input alongside their concrete control origin; popup projection
 does not change group selection to manufacture that subject.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
-`workbench/main_workspace.ts` owns Main's permanent presentation family and the
-allocation between a retained primary authored client and the document region.
+`workbench/main_workspace.ts` owns Main's permanent presentation family and its
+named Hierarchy, document and Details regions. `common/main_workspace_layout.ts`
+allocates their measured constraints, requested side widths/visibility and
+overflow. The frontend composition measures the document part, allocates Main,
+then arranges its actual clients before publishing input routing. The composition
+root retains concrete clients; layout owners exchange constraints and extents.
 `EditorParts.main` is its document child; the Game companion is nested with that
 child, not painted or routed through shell chrome. Parent reveal precedes child
 focus admission when the composition overflows. Main is unbound until an explicit
 contribution action supplies a primary subject. Ordinary document navigation does
-not replace it. Hiding Studio detaches its controls, not its retained work context.
+not replace it. `common/main_workspace_client.ts` separates the contribution's
+single semantic consumer from its independently attached region presentations.
+`ui/view_panel/` owns shared region chrome, client bounds and native focus order;
+contributions supply the content controls and measurements. Hiding a region
+retires that attachment, not its sibling or retained work context. The logical
+primary surface groups modality without covering the document region.
 Scene source documents are generation-cached at `contrib/scene_editor/source_documents.ts`
 and shared with project-content discovery. `SceneAuthoringContext` retains source
 correspondence, semantic selection and member editing independently of outline

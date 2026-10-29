@@ -1,103 +1,91 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
-import { editorViewState } from '../../../editor/ui/view/state';
-import * as colors from '../../../common/constants';
-import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { inputFocus } from '../../../input/focus';
-import { pointerCapture } from '../../../input/pointer/capture';
-import { pointerHover } from '../../../input/pointer/hover';
-import { api } from '../../../runtime/overlay_api';
-import type { MainWorkspaceClient } from '../../main_workspace';
-import { updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../common/layout';
-import { renderWorkbenchActionBar } from '../../render/action_bar';
-import { createWorkbenchActionBar, layoutWorkbenchActionBar } from '../../ui/action_bar';
-import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
-import { WorkbenchMenu, type WorkbenchMenuCommandDefinition } from '../../ui/menu/model';
-import { measureSceneEditorMinimumWidth } from './layout';
+import type { MainWorkspaceClient, MainWorkspaceRegionId } from '../../common/main_workspace_client';
+import { createWorkbenchActionBar } from '../../ui/action_bar';
+import { WorkbenchMenu, type WorkbenchMenuDefinition } from '../../ui/menu/model';
+import { WorkbenchViewPanel } from '../../ui/view_panel/control';
+import { WorkbenchViewMessageControl, type WorkbenchViewMessage } from '../../ui/view_panel/message';
+import { measureSceneHierarchy } from './hierarchy_layout';
+import { measureSceneDetails } from './details_layout';
 import type { ScenePrimaryClientOptions } from './primary_client';
 import type { ScenePrimarySnapshot } from './primary_snapshot';
 
-const ACTIONS: readonly WorkbenchMenuCommandDefinition<EditorTextModel | undefined>[] = [
+const SOURCE_PRIMARY: WorkbenchMenuDefinition<EditorTextModel | undefined> = [
 	{ type: 'command', command: 'editor.source', when: model => model !== undefined },
 ];
+const SOURCE_ACTIONS: WorkbenchMenuDefinition<EditorTextModel | undefined> = [
+	...SOURCE_PRIMARY,
+	{ type: 'command', command: 'editor.sourceToSide', when: model => model !== undefined },
+];
+const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_ACTIONS,
+	{ type: 'separator' }, { type: 'command', command: 'workspace.details.focus' }, { type: 'command', command: 'workspace.hierarchy.toggle' }];
+const DETAILS_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_ACTIONS,
+	{ type: 'separator' }, { type: 'command', command: 'workspace.hierarchy.focus' }, { type: 'command', command: 'workspace.details.toggle' }];
 
-/** An unresolved persisted reference remains visible, without inventing an authored context. */
+/** Unavailable keeps the exact reference and both honest region presentations, without an editable Scene context. */
 export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 	public readonly scope;
 	public readonly commandTarget;
 	public readonly consumer = this;
+	public readonly hierarchy: WorkbenchViewPanel<WorkbenchViewMessage, WorkbenchViewMessageControl>;
+	public readonly details: WorkbenchViewPanel<WorkbenchViewMessage, WorkbenchViewMessageControl>;
 	private readonly copies: readonly EditorTextModel[];
-	private readonly bounds: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
-	private caption = '';
-	private readonly actions;
-	private readonly actionControl;
 	private readonly snapshot: ScenePrimarySnapshot;
-	private readonly unbindKeyboard: () => void;
-	private attached = false;
+	private preferred: MainWorkspaceRegionId;
+	private readonly listeners = new Set<() => void>();
+	private readonly unbindInteraction: () => void;
 	private disposed = false;
 
 	public constructor(snapshot: ScenePrimarySnapshot, private readonly model: EditorTextModel | undefined, options: ScenePrimaryClientOptions) {
 		this.snapshot = { ...snapshot, subject: { ...snapshot.subject, availability: 'unavailable' } };
-		this.scope = options.scope;
-		this.copies = model === undefined ? [] : [model];
-		this.commandTarget = inputFocus.createTarget(null, this.scope);
-		this.commandTarget.canFocus = () => this.attached && !this.disposed;
-		this.unbindKeyboard = this.commandTarget.bindKeyboard(() => {});
-		if (model !== undefined) {
-			this.commandTarget.registerCommand('save', {
-				isEnabled: () => this.attached && !model.readOnly,
-				run: () => options.save(model),
-			});
-		}
-		this.actions = createWorkbenchActionBar(new WorkbenchMenu(ACTIONS, model));
-		this.actionControl = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, options.commands,
-			this.commandTarget, () => this.focus());
-		this.commandTarget.next = this.actionControl.focusTarget;
-		this.actionControl.focusTarget.next = this.commandTarget;
-		this.actionControl.focusTarget.previous = this.commandTarget;
+		this.preferred = snapshot.view.preferredRegion;
+		this.scope = options.scope; this.copies = model === undefined ? [] : [model];
+		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
+		this.commandTarget.canFocus = () => false;
+		if (model !== undefined) this.commandTarget.registerCommand('save', {
+			contextual: true, isEnabled: () => !this.disposed && !model.readOnly,
+			run: () => options.save(model),
+		});
+		const common = { commands: options.commands, contextMenu: options.contextMenu, surfaces: options.surfaces,
+			workArea: options.workArea, scope: this.scope, commandTarget: this.commandTarget, focusReturn: options.focusReturn,
+			description: snapshot.source.resource.path,
+			createControl: (_scope: typeof this.scope, target: typeof this.commandTarget) => new WorkbenchViewMessageControl(target) };
+		const hierarchyActions = new WorkbenchMenu(HIERARCHY_CONTEXT, model);
+		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', surface: options.regions.hierarchy,
+			view: { paragraphs: ['Scene unavailable', snapshot.source.resource.path], warning: true },
+			actions: createWorkbenchActionBar(new WorkbenchMenu(SOURCE_PRIMARY, model), true, hierarchyActions), contextActions: hierarchyActions, measureContent: measureSceneHierarchy });
+		const detailsActions = new WorkbenchMenu(DETAILS_CONTEXT, model);
+		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', surface: options.regions.details,
+			view: { paragraphs: ['No available Scene selection'], warning: true },
+			actions: createWorkbenchActionBar(new WorkbenchMenu(SOURCE_PRIMARY, model), true, detailsActions), contextActions: detailsActions, measureContent: measureSceneDetails });
+		this.unbindInteraction = inputFocus.onDidActivateInteraction(target => {
+			if (this.disposed) return;
+			let region: MainWorkspaceRegionId;
+			if (this.hierarchy.attached && this.hierarchy.scope.contains(target.scope)) region = 'hierarchy';
+			else if (this.details.attached && this.details.scope.contains(target.scope)) region = 'details';
+			else return;
+			if (region === this.preferred) return;
+			this.preferred = region; for (const listener of this.listeners) listener();
+		});
 	}
-
 	public getWorkingCopies(): readonly EditorTextModel[] { return this.copies; }
-	public get canOpenSource(): boolean { return this.attached && !this.disposed && this.model !== undefined; }
+	public get preferredRegion(): MainWorkspaceRegionId { return this.preferred; }
+	public get canOpenSource(): boolean { return !this.disposed && this.model !== undefined; }
 	public captureSourceLocation() {
 		const model = this.model;
-		return model === undefined ? undefined : { readLocation: () => ({ model, modelVersion: model.version }) };
+		return model === undefined ? undefined : { isCurrent: () => !this.disposed,
+			readLocation: () => ({ model, modelVersion: model.version }) };
 	}
-	public get minimumWidth(): number { return measureSceneEditorMinimumWidth(); }
-	public serialize() { return { kind: 'scene' as const, value: JSON.stringify(this.snapshot) }; }
-	public onDidChange(): () => void { return () => {}; }
+	public serialize() { return { kind: 'scene' as const, value: JSON.stringify({ ...this.snapshot,
+		view: { ...this.snapshot.view, preferredRegion: this.preferred } }) }; }
+	public onDidChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 	public captureNavigationLocation() { return undefined; }
 	public isCurrent(): boolean { return !this.disposed; }
-	public attach(bounds: Readonly<RectBounds>): void {
-		this.attached = true; this.actionControl.setInput(this.actions, this.commandTarget); this.layout(bounds);
-	}
-	public detach(): void { this.attached = false; this.actionControl.clearInput(); this.commandTarget.release(); }
-	public layout(bounds: Readonly<RectBounds>): void {
-		if (!updateFullWidthWorkbenchLayout(this.bounds, bounds)) return;
-		const font = editorViewState.font;
-		this.caption = truncateTextToWidth(this.snapshot.source.resource.path, bounds.right - bounds.left - 8);
-		layoutWorkbenchActionBar(this.actions, bounds.right - 4, bounds.top, Math.min(bounds.bottom, bounds.top + font.lineHeight + 4),
-			measureText, font.renderFont(), bounds.left + 4);
-	}
-	public update(): void { this.layout(this.bounds); this.actionControl.update(); }
-	public draw(): void {
-		const b = this.bounds, font = editorViewState.font, rowHeight = font.lineHeight + 4;
-		api.pushClipRect(b.left, b.top, b.right, b.bottom);
-		api.fill_rect(b.left, b.top, b.right, b.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
-		renderWorkbenchActionBar(this.actions, font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
-		api.blit_text_inline_with_font('SCENE UNAVAILABLE', b.left + 4, b.top + rowHeight + 2, 0, colors.COLOR_CONTENT_WARNING_TEXT, font.renderFont());
-		api.blit_text_inline_with_font(this.caption, b.left + 4, b.top + rowHeight * 2 + 2, 0, colors.COLOR_DESCRIPTION_TEXT, font.renderFont());
-		api.popClipRect();
-	}
-	public focus(): void { this.commandTarget.focus(); }
-	public handlePointer(snapshot: PointerInputSnapshot): void {
-		if (!this.actionControl.handlePointer(snapshot) && (snapshot.justPressedButtons & PointerButton.Primary) !== 0) this.commandTarget.activate();
-	}
-	public handleWheel(_event: WheelInputSnapshot): void {}
+	public update(): void {}
+	public focus(region: MainWorkspaceRegionId = this.preferredRegion): void { this[region].focus(); }
 	public drawStatusBar(_bounds: Readonly<RectBounds>, _color: number): void {}
 	public dispose(): void {
-		this.disposed = true; this.detach(); this.actionControl.dispose(); this.unbindKeyboard();
+		this.disposed = true; this.unbindInteraction(); this.hierarchy.dispose(); this.details.dispose(); this.listeners.clear();
 	}
 }

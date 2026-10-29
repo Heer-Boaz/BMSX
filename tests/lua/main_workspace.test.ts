@@ -8,44 +8,68 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 import { createTestEditorParts } from '../helpers/editor_panes';
 import type { RectBounds } from '../../machine/ts/common/rect';
 import { copy_rect_bounds, create_rect_bounds } from '../../machine/ts/common/rect';
-import type { InputFocusScope } from '../../ide/input/focus';
+import { InputFocusScope } from '../../ide/input/focus';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import type { EditorTextModel } from '../../ide/editor/model/text_model';
-import type { MainWorkspaceClient } from '../../ide/workbench/main_workspace';
+import type { MainWorkspaceClient, MainWorkspaceRegionClient, MainWorkspaceRegionSurfaces } from '../../ide/workbench/common/main_workspace_client';
+import type { WorkbenchViewSizeConstraints } from '../../ide/workbench/common/layout';
+import type { EditorFont } from '../../ide/editor/ui/view/font';
+import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { editorGroupChromeMinimumWidth } from '../../ide/workbench/services/editor/editor_group';
 
-/** Concrete fixture control over a canonical working copy; composition is the subject under test. */
+/** Concrete independently attached controls; composition and lifecycle are the subjects under test. */
+class FixtureMainRegion implements MainWorkspaceRegionClient {
+	public readonly commandTarget;
+	public readonly scope;
+	public readonly bounds = create_rect_bounds();
+	public readonly minimumWidth = 160;
+	public attached = false;
+	public attachCount = 0;
+	public detachCount = 0;
+	public constructor(parent: InputFocusScope, surface: WorkbenchSurface) {
+		this.scope = new InputFocusScope(surface.captureScope, parent);
+		this.commandTarget = inputFocus.createTarget(null, this.scope);
+		this.commandTarget.canFocus = () => this.attached;
+	}
+	public measure(_font: EditorFont, target: WorkbenchViewSizeConstraints): void {
+		target.minimumWidth = this.minimumWidth; target.preferredWidth = 180;
+	}
+	public attach(bounds: Readonly<RectBounds>): void { this.attachCount++; this.attached = true; copy_rect_bounds(this.bounds, bounds); }
+	public detach(): void { this.detachCount++; this.attached = false; this.scope.retireContext(); this.commandTarget.release(); }
+	public layout(bounds: Readonly<RectBounds>): void { copy_rect_bounds(this.bounds, bounds); }
+	public update(): void {}
+	public draw(): void {}
+	public focus(): void { this.commandTarget.focus(); }
+	public handlePointer(): void { this.focus(); }
+	public handleWheel(): void {}
+}
+
 class FixtureMainClient implements MainWorkspaceClient {
 	public readonly commandTarget;
 	public readonly consumer;
-	public readonly bounds = create_rect_bounds();
-	public readonly minimumWidth = 160;
-	public attached = 0;
-	public detached = 0;
+	public readonly hierarchy: FixtureMainRegion;
+	public readonly details: FixtureMainRegion;
+	public readonly preferredRegion = 'hierarchy' as const;
 	public disposed = 0;
 	public focused = 0;
 	public onDispose: (() => void) | undefined;
-	private visible = false;
-	public constructor(public readonly model: EditorTextModel, public readonly scope: InputFocusScope) {
+	public constructor(public readonly model: EditorTextModel, public readonly scope: InputFocusScope, surfaces: MainWorkspaceRegionSurfaces) {
 		const models = [model]; this.consumer = { getWorkingCopies: () => models };
 		this.commandTarget = inputFocus.createTarget(null, scope);
-		this.commandTarget.canFocus = () => this.visible && this.disposed === 0;
+		this.hierarchy = new FixtureMainRegion(scope, surfaces.hierarchy);
+		this.details = new FixtureMainRegion(scope, surfaces.details);
 	}
 	public isCurrent(): boolean { return this.disposed === 0 && editorTextModelService.get(this.model.resource) === this.model; }
 	public serialize() { return { kind: 'scene' as const, value: this.model.identity.path }; }
 	public onDidChange(): () => void { return () => {}; }
 	public captureNavigationLocation() { return undefined; }
-	public attach(bounds: Readonly<RectBounds>): void { this.attached++; this.visible = true; copy_rect_bounds(this.bounds, bounds); }
-	public detach(): void { this.detached++; this.visible = false; this.commandTarget.release(); }
-	public layout(bounds: Readonly<RectBounds>): void { copy_rect_bounds(this.bounds, bounds); }
 	public update(): void {}
-	public draw(): void {}
-	public focus(): void { this.focused++; this.commandTarget.focus(); }
-	public handlePointer(): void { this.focus(); }
-	public handleWheel(): void {}
+	public focus(region: 'hierarchy' | 'details' = this.preferredRegion): void { this.focused++; this[region].focus(); }
 	public drawStatusBar(): void {}
-	public dispose(): void { this.disposed++; this.visible = false; this.commandTarget.release(); this.onDispose?.(); }
+	public dispose(): void {
+		this.disposed++; this.hierarchy.detach(); this.details.detach(); this.commandTarget.release(); this.onDispose?.();
+	}
 }
 
 function primaryFixture(t: Parameters<typeof createActualSourcePanes>[0]) {
@@ -54,8 +78,8 @@ function primaryFixture(t: Parameters<typeof createActualSourcePanes>[0]) {
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!);
 	const primary = model('primary.lua'), incoming = model('incoming.lua'), main = f.editor.mainWorkspace;
 	const clients: FixtureMainClient[] = [];
-	const open = (copy: EditorTextModel) => main.openPrimary((_surface, scope) => {
-		const client = new FixtureMainClient(copy, scope); clients.push(client); return client;
+	const open = (copy: EditorTextModel) => main.openPrimary((surfaces, scope) => {
+		const client = new FixtureMainClient(copy, scope, surfaces); clients.push(client); return client;
 	}, f.editor.editorParts.closeController, inputFocus.target);
 	return { ...f, primary, incoming, main, clients, open };
 }
@@ -130,14 +154,14 @@ test('a newer Main request disposes an unadmitted candidate and retains same-mod
 	const first = f.clients[0];
 	f.primary.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- retained\n' }]);
 	const text = f.primary.buffer.getText(), pending = f.open(f.incoming), second = f.clients[1];
-	assert.equal(f.main.primary, first); assert.equal(second.attached, 0);
-	assert.deepEqual([...f.main.workingCopyConsumers()], [first.consumer]);
+	assert.equal(f.main.primary, first); assert.equal(second.hierarchy.attachCount, 0);
+	const firstConsumers = [...f.main.workingCopyConsumers()]; assert.equal(firstConsumers.length, 1); assert.ok(firstConsumers[0] === first.consumer);
 	assert.equal(await f.open(f.primary), true);
 	assert.equal(await pending, false);
 	const third = f.clients[2];
-	assert.equal(f.main.primary, third); assert.equal(third.attached, 1);
+	assert.equal(f.main.primary, third); assert.equal(third.hierarchy.attachCount, 1);
 	assert.equal(first.disposed, 1); assert.equal(second.disposed, 1);
-	assert.deepEqual([...f.main.workingCopyConsumers()], [third.consumer]);
+	const thirdConsumers = [...f.main.workingCopyConsumers()]; assert.equal(thirdConsumers.length, 1); assert.ok(thirdConsumers[0] === third.consumer);
 	assert.equal(f.primary.buffer.getText(), text); assert.equal(f.primary.dirty, true);
 });
 
@@ -149,8 +173,8 @@ test('retirement callbacks may admit a newer Main subject but cannot attach or f
 	assert.equal(await newer, true);
 	assert.equal(f.main.primary, f.clients[2]);
 	assert.equal(f.clients[0].disposed, 1); assert.equal(f.clients[1].disposed, 1);
-	assert.equal(f.clients[1].attached, 0); assert.equal(f.clients[1].focused, 0);
-	assert.equal(f.clients[2].attached, 1);
+	assert.equal(f.clients[1].hierarchy.attachCount, 0); assert.equal(f.clients[1].focused, 0);
+	assert.equal(f.clients[2].hierarchy.attachCount, 1);
 });
 
 test('Studio suspension cancels pending Main admission and detaches concrete authority while retaining its work context', async t => {
@@ -160,13 +184,13 @@ test('Studio suspension cancels pending Main admission and detaches concrete aut
 	const text = f.primary.buffer.getText(), pending = f.open(f.incoming), second = f.clients[1];
 	f.main.suspend();
 	assert.equal(await pending, false); f.main.update();
-	assert.equal(f.main.primary, first); assert.equal(first.disposed, 0); assert.equal(first.detached, 1);
-	assert.equal(first.attached, 1); assert.equal(second.disposed, 1);
+	assert.equal(f.main.primary, first); assert.equal(first.disposed, 0); assert.equal(first.hierarchy.detachCount, 1);
+	assert.equal(first.hierarchy.attachCount, 1); assert.equal(second.disposed, 1);
 	assert.ok(first.scope.contextGeneration > generation);
-	assert.deepEqual([...f.main.workingCopyConsumers()], [first.consumer]);
+	const firstConsumers = [...f.main.workingCopyConsumers()]; assert.equal(firstConsumers.length, 1); assert.ok(firstConsumers[0] === first.consumer);
 	assert.equal(f.primary.buffer.getText(), text); assert.equal(f.primary.dirty, true);
 	f.main.resume();
-	assert.equal(first.attached, 2); assert.equal(f.main.primary, first);
+	assert.equal(first.hierarchy.attachCount, 2); assert.equal(f.main.primary, first);
 });
 
 test('forced workspace reset retires current and pending Main contexts without source rollback or replacement admission', async t => {
@@ -191,26 +215,27 @@ test('a newer pending replacement leaves its actual outgoing Main client attache
 	};
 	assert.equal(await f.open(f.incoming), true);
 	const outgoing = f.clients[1];
-	assert.equal(f.main.primary, outgoing); assert.equal(outgoing.attached, 1); assert.equal(outgoing.focused, 0);
+	assert.equal(f.main.primary, outgoing); assert.equal(outgoing.hierarchy.attachCount, 1); assert.equal(outgoing.focused, 0);
 	f.main.focusPrimary(); f.key('Escape');
 	assert.equal(await newer, false);
-	assert.equal(f.main.primary, outgoing); assert.equal(outgoing.attached, 1);
+	assert.equal(f.main.primary, outgoing); assert.equal(outgoing.hierarchy.attachCount, 1);
 	assert.equal(f.clients[2].disposed, 1);
 });
 
-test('Main preserves both client minima below the combined width and reveals actual focused regions through shared overflow', async t => {
+test('Main preserves all region minima below the combined width and reveals actual focused regions through shared overflow', async t => {
 	const f = primaryFixture(t); assert.equal(await f.open(f.primary), true);
 	const client = f.clients[0], source = f.primary.buffer.getText();
-	// The two-child layout contract is under test: no contradictory sash interval,
+	// The three-region layout contract is under test: no contradictory sash interval,
 	// implicit client collapse, or replacement when the viewport is below its minima.
-	f.editor.updateViewport({ width: client.minimumWidth, height: 288 }); f.update();
-	assert.ok(client.bounds.right - client.bounds.left >= client.minimumWidth);
+	f.editor.updateViewport({ width: client.hierarchy.minimumWidth, height: 288 }); f.update();
+	assert.ok(client.hierarchy.bounds.right - client.hierarchy.bounds.left >= client.hierarchy.minimumWidth);
+	assert.ok(client.details.bounds.right - client.details.bounds.left >= client.details.minimumWidth);
 	assert.ok(f.main.documentBounds.right - f.main.documentBounds.left >= editorGroupChromeMinimumWidth());
 	f.editor.editorParts.main.activeGroup.focus(); f.update();
 	assert.ok(f.main.documentBounds.right <= f.main.bounds.right);
 	f.main.focusPrimary(); f.update();
-	assert.ok(client.bounds.left >= f.main.bounds.left);
-	assert.equal(client.attached, 1); assert.equal(f.main.primary, client);
+	assert.ok(client.hierarchy.bounds.left >= f.main.bounds.left);
+	assert.equal(client.hierarchy.attachCount, 1); assert.equal(f.main.primary, client);
 	assert.equal(f.primary.buffer.getText(), source); assert.equal(f.primary.dirty, false);
 });
 
@@ -221,13 +246,13 @@ test('restore transfers an admitted client lifetime even when its retirement cal
 	const request = f.main.beginRestore(), snapshot = f.main.serialize();
 	let replacement: Promise<boolean> | undefined, restored: FixtureMainClient | undefined, generation = -1;
 	first.onDispose = () => { replacement = f.open(f.incoming); };
-	const admitted = await request.restore(snapshot, async (_record, _surface, scope) => {
-		restored = new FixtureMainClient(f.primary, scope); generation = scope.contextGeneration; return restored;
+	const admitted = await request.restore(snapshot, async (_record, surfaces, scope) => {
+		restored = new FixtureMainClient(f.primary, scope, surfaces); generation = scope.contextGeneration; return restored;
 	});
 	assert.equal(admitted, false, 'newer request supersedes initial focus restoration');
 	assert.ok(f.main.primary === restored, 'publication owns the still-current outgoing client');
 	assert.equal(restored!.scope.contextGeneration, generation, 'supersession does not retire an admitted scope');
-	assert.equal(restored!.disposed, 0); assert.equal(restored!.attached, 1);
+	assert.equal(restored!.disposed, 0); assert.equal(restored!.hierarchy.attachCount, 1);
 	f.main.focusPrimary(); f.key('Escape');
 	assert.equal(await replacement, false);
 	assert.ok(f.main.primary === restored); request.dispose();
@@ -235,13 +260,13 @@ test('restore transfers an admitted client lifetime even when its retirement cal
 
 test('a newer Main request published by restored layout intent cannot be overwritten by the older candidate', async t => {
 	const f = primaryFixture(t); assert.equal(await f.open(f.primary), true);
-	const request = f.main.beginRestore(), snapshot = { ...f.main.serialize(), splitRatio: 0.7 };
+	const request = f.main.beginRestore(), snapshot = { ...f.main.serialize(), hierarchyWidth: 240 };
 	let restored: FixtureMainClient | undefined, replacement: Promise<boolean> | undefined;
 	const release = f.main.onDidChange(() => { release(); replacement = f.open(f.incoming); });
-	const admitted = await request.restore(snapshot, async (_record, _surface, scope) => {
-		restored = new FixtureMainClient(f.primary, scope); return restored;
+	const admitted = await request.restore(snapshot, async (_record, surfaces, scope) => {
+		restored = new FixtureMainClient(f.primary, scope, surfaces); return restored;
 	});
 	assert.equal(admitted, false); assert.equal(await replacement, true);
-	assert.ok(f.main.primary === f.clients[1]); assert.equal(restored!.disposed, 1);
-	assert.equal(restored!.attached, 0); request.dispose();
+	assert.ok(f.main.primary === f.clients[1]);
+	assert.equal(restored, undefined, 'newer layout-publication intent prevents older source factory admission'); request.dispose();
 });

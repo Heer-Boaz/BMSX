@@ -162,17 +162,25 @@ export function createTestEditorWorkspace(
 ) {
 	const surfaces = new WorkbenchSurfaceService(), presentation = createTestGroupPresentation(surfaces, workArea);
 	const contextMenu = presentation.contextMenu;
+	const layoutMain = () => {
+		const part = parts.main, bounds = presentation.workArea;
+		part.prepareLayout();
+		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
+		main.layout(bounds, minimum);
+		const constrained = part.minimumClientWidth(main.regionLayout.viewport.bottom - main.regionLayout.viewport.top);
+		if (constrained !== minimum) main.layout(bounds, constrained);
+		part.layoutPrepared(main.documentBounds); main.layoutClients();
+	};
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
-		() => parts.main.layout(main.documentBounds), () => parts.activate(parts.main, main),
+		layoutMain, () => parts.activate(parts.main, main),
 		focus => { if (focus) parts.main.focus(); else parts.activate(parts.main); }, () => parts.main.activeGroup);
-	main.layout(presentation.workArea);
 	const parts = new EditorParts({
 		surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: presentation.workArea,
 		mainPresentation: main,
 		commands, contextMenu, renderContext: presentation.renderContext, contributions: contributions ?? createTestEditorPaneContributions(commands, contextMenu), ...createTestEditorCloseDependencies(t, presentation),
-		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
-		layoutMain: () => { main.layout(presentation.workArea); parts.main.layout(main.documentBounds); },
+		focusReturn: inputFocus.createTarget(null, presentation.focusScope), layoutMain,
 	});
+	layoutMain();
 	t.after(() => { parts.dispose(); main.dispose(); contextMenu.dispose(); surfaces.dispose(); });
 	return { editorParts: parts, mainWorkspace: main };
 }
