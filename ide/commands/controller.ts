@@ -272,6 +272,11 @@ export class IdeCommandController {
 				else void group.close(editor.id, target);
 				return;
 			}
+			case 'tabs.closeOthers':
+				if (editor !== null) void this.editor.editorParts.closeEditors({ kind: 'others', group, input: editor }, target);
+				return;
+			case 'tabs.closeAll': void this.editor.editorParts.closeEditors({ kind: 'group', group }, target); return;
+			case 'editors.closeAll': void this.editor.editorParts.closeEditors({ kind: 'workspace' }, target); return;
 			case 'tabs.next': group.cycle(1); return;
 			case 'tabs.previous': group.cycle(-1); return;
 			case 'tabs.scrollLeft': case 'tabs.scrollRight':
@@ -502,6 +507,9 @@ export class IdeCommandController {
 			case 'tabs.close': {
 				return editor === null ? part.groups.length > 1 && this.editor.editorParts.canCloseGroup(group) : group.openingAdmitted && editor.closable;
 			}
+			case 'tabs.closeOthers': return editor !== null && this.editor.editorParts.canCloseEditors({ kind: 'others', group, input: editor });
+			case 'tabs.closeAll': return this.editor.editorParts.canCloseEditors({ kind: 'group', group });
+			case 'editors.closeAll': return this.editor.editorParts.canCloseEditors({ kind: 'workspace' });
 			case 'tabs.next': case 'tabs.previous': return group.model.tabs.length > 1;
 			case 'tabs.scrollLeft': return group.tabStrip.scrollbar.getScroll() > 0;
 			case 'tabs.scrollRight': return group.tabStrip.scrollbar.getScroll() < group.tabStrip.scrollbar.getMaximumScroll();

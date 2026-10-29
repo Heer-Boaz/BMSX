@@ -150,6 +150,7 @@ export class EditorGroupView {
 	private readonly unbindFocus: () => void;
 	private openingAdmittedValue = true;
 	private closing = false;
+	private closeSelection: { readonly inputs: readonly EditorInput[]; readonly generation: number } | undefined;
 	public get openingAdmitted(): boolean { return this.openingAdmittedValue && !this.closing; }
 	private readonly disposeListeners = new Set<() => void>();
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
@@ -472,23 +473,54 @@ export class EditorGroupView {
 	}
 
 	/** Commit an admitted close or explicit owner retirement for this known member. */
-	public removeEditor(input: EditorInput, closing?: ReadonlySet<EditorInput>): void {
+	public removeEditor(input: EditorInput, closing?: (input: EditorInput) => boolean): void {
 		if (this.tabStrip.drag.state?.source.kind === 'editor' && this.tabStrip.drag.state.source.input === input) this.tabStrip.cancelDrag();
 		const index = this.model.indexOf(input);
 		if (this.model.activeTab === input) {
 			const tabs = this.model.tabs;
 			// A bulk close selects a surviving view once, never a doomed lazy pane.
 			let successor: EditorInput | undefined;
-			for (let position = index - 1; position >= 0; position--) if (!closing?.has(tabs[position])) {
+			let deferred: EditorInput[] | undefined;
+			this.closeSelection = undefined;
+			for (let position = index - 1; position >= 0; position--) {
+				if (closing?.(tabs[position])) { (deferred ??= []).push(tabs[position]); continue; }
 				successor = tabs[position]; break;
 			}
-			if (successor === undefined) for (let position = index + 1; position < tabs.length; position++) if (!closing?.has(tabs[position])) {
+			if (successor === undefined) for (let position = index + 1; position < tabs.length; position++) {
+				if (closing?.(tabs[position])) { (deferred ??= []).push(tabs[position]); continue; }
 				successor = tabs[position]; break;
 			}
 			if (successor !== undefined) this.doActivate(successor, { preserveFocus: navigationState.activeOwner !== this || this.tabStrip.focusTarget.hasFocus });
-			else this.panes.clearEditor();
+			else {
+				const generation = this.panes.clearEditor();
+				if (deferred !== undefined) this.closeSelection = { inputs: deferred, generation };
+			}
 		}
 		this.model.removeAt(index);
+	}
+
+	/** Complete only the successor transition deferred by an admitted close. */
+	public finishClose(closing: (input: EditorInput) => boolean): void {
+		const selection = this.closeSelection;
+		if (selection === undefined) return;
+		if (this.panes.openGeneration !== selection.generation || this.model.activeTab !== null) {
+			this.closeSelection = undefined; return;
+		}
+		let successor: EditorInput | undefined, pending = false;
+		for (const input of selection.inputs) {
+			if (!this.model.contains(input)) continue;
+			if (closing(input)) { pending = true; continue; }
+			successor = input; break;
+		}
+		if (successor === undefined) {
+			if (!pending) this.closeSelection = undefined;
+			return;
+		}
+		this.closeSelection = undefined;
+		const focused = inputFocus.target;
+		const preserveFocus = this.tabStrip.focusTarget.hasFocus || (focused === null
+			? navigationState.activeOwner !== this : !this.containerScope.contains(focused.scope));
+		this.doActivate(successor, { preserveFocus });
 	}
 
 	public cycle(direction: number): void {

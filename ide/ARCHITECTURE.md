@@ -390,6 +390,11 @@ changes and retain their selected target/image through asynchronous work.
 Groups own final view retirement. Forced owner teardown is separate from user
 close admission. Opening and activation settle the attached focused control's
 draft before changing group membership or pane attachment.
+`EditorParts` expands explicit workspace/group/other-editor close scopes into
+captured document memberships. The close owner reserves newly admitted inputs
+through predecessor decisions; group-owned successor intent settles only the
+selection transition created by that close. Contents-close does not retire
+group, window or primary-context topology.
 The group's Source pane keeps plain reading mementos for ordinary reopening,
 separate from serialized view state and explicit navigation selections.
 Text history retains source selections and inert editing origins, not viewport

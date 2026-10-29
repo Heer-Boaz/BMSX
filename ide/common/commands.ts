@@ -156,7 +156,7 @@ export type EditorCommandId =
 	| 'window.systemMenu' | 'window.move' | 'window.resize'
 	| 'window.showAll' | 'window.restoreMinimized' | 'window.focusMain' | 'window.newEditor' | 'window.copyEditor' | 'window.moveEditor'
 	| 'luaProgram.edit' | 'luaProgram.add' | 'luaProgram.remove' | 'luaProgram.live' | 'luaProgram.authoring' | 'luaProgram.selectInstance' | 'luaProgram.more' | 'luaProgram.testInput'
-	| 'tabs.close' | 'tabs.next' | 'tabs.previous'
+	| 'tabs.close' | 'tabs.closeOthers' | 'tabs.closeAll' | 'editors.closeAll' | 'tabs.next' | 'tabs.previous'
 	| 'tabs.scrollLeft' | 'tabs.scrollRight'
 	| 'aem.edit' | 'aem.add' | 'aem.remove' | 'aem.apply' | 'aem.testEvent'
 	| 'animation.addTrack' | 'animation.addKey'

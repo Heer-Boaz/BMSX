@@ -77,6 +77,8 @@ const workbenchContribKeybindings: readonly EditorCommandKeybinding[] = [
 	{ code: 'KeyK', command: 'window.maximize', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowUp', modifiers: NO_MODIFIERS } },
 	{ code: 'KeyK', command: 'window.restore', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'ArrowDown', modifiers: NO_MODIFIERS } },
 	{ code: 'KeyW', command: 'tabs.close', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
+	{ code: 'KeyK', command: 'tabs.closeAll', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'KeyW', modifiers: NO_MODIFIERS } },
+	{ code: 'KeyK', command: 'editors.closeAll', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS }, chord: { code: 'KeyW', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } } },
 	{ code: 'Tab', command: 'tabs.next', modifiers: { any: PRIMARY_MODIFIER, forbidden: SHIFT_ALT_MODIFIERS } },
 	{ code: 'Tab', command: 'tabs.previous', modifiers: { any: PRIMARY_MODIFIER, required: KeyModifier.shift, forbidden: KeyModifier.alt } },
 	{ code: 'F10', command: 'menubar.focus', modifiers: NO_MODIFIERS },

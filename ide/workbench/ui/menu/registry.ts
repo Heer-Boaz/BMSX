@@ -137,6 +137,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'window.copyEditor' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'tabs.close' },
+		{ type: 'command', command: 'tabs.closeOthers' },
+		{ type: 'command', command: 'tabs.closeAll' },
 	],
 	'editorGroup.context': [
 		{ type: 'command', command: 'group.focusTabs' },
@@ -145,6 +147,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'group.move' },
 		{ type: 'command', command: 'group.maximize' },
 		{ type: 'separator' },
+		{ type: 'command', command: 'tabs.closeAll' },
 		{ type: 'command', command: 'group.close' },
 	],
 	'home.work': [
@@ -408,6 +411,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'save' },
 		{ type: 'command', command: 'keepEditor' },
 		{ type: 'command', command: 'tabs.close' },
+		{ type: 'command', command: 'editors.closeAll' },
 	],
 	'menubar.edit': [
 		{ type: 'command', command: 'undo' },

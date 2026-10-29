@@ -34,9 +34,11 @@ type CloseOperation = {
 	readonly targets: readonly EditorCloseTarget[];
 	readonly inputs: ReadonlySet<EditorInput>;
 	readonly consumers: ReadonlySet<WorkingCopyConsumer>;
+	readonly groups: ReadonlySet<EditorGroupView> | undefined;
 	readonly release: WorkingCopyReleaseTarget | undefined;
 	readonly origin: InputFocusTarget | null;
 	readonly decisionUI: ActionPrompt;
+	readonly predecessors: readonly Promise<boolean>[] | undefined;
 	readonly lifetime: DisposableStore;
 	readonly discards: Map<EditorTextModel, DiscardIntent>;
 	readonly result: PromiseWithResolvers<boolean>;
@@ -59,6 +61,10 @@ export class EditorCloseController {
 	}
 
 	public isPending(input: EditorInput): boolean { return this.pending.has(input); }
+	private readonly isClosing = (input: EditorInput): boolean => {
+		const operation = this.pending.get(input);
+		return operation !== undefined && operation !== TRANSFER;
+	};
 
 	/** Close and membership handoff share one input-operation admission boundary. */
 	public transfer<T>(inputs: readonly EditorInput[], operation: () => T): T | false {
@@ -76,14 +82,12 @@ export class EditorCloseController {
 		if (this.disposed) return Promise.resolve(false);
 		const distinct: EditorCloseTarget[] = [];
 		const inputs = new Set<EditorInput>();
-		const consumers = new Set<WorkingCopyConsumer>();
 		const waiting = new Set<CloseOperation>();
 		for (const target of targets) {
 			if (target.group.model.findById(target.input.id) !== target.input || !target.input.closable) return Promise.resolve(false);
 			if (inputs.has(target.input)) continue;
 			inputs.add(target.input);
 			distinct.push(target);
-			if (target.input instanceof TextEditorInput) consumers.add(target.input);
 			const pending = this.pending.get(target.input);
 			if (pending === TRANSFER) return Promise.resolve(false);
 			if (pending !== undefined) waiting.add(pending);
@@ -93,18 +97,23 @@ export class EditorCloseController {
 				const operation = waiting.values().next().value!;
 				if (distinct.every(target => operation.inputs.has(target.input))) return operation.result.promise;
 			}
-			return Promise.all(Array.from(waiting, operation => operation.result.promise)).then(results => {
-				if (results.some(closed => !closed)) return false;
-				return this.close(distinct.filter(target => target.group.model.findById(target.input.id) === target.input), origin, decisionUI);
-			});
 		}
-		const operation: CloseOperation = { targets: distinct, inputs, consumers, release: undefined, origin, decisionUI,
+		// Already admitted closes keep their inputs; this request owns every uncovered
+		// membership before waiting, rather than recapturing a later attachment.
+		const owned = waiting.size === 0 ? distinct : distinct.filter(target => !this.pending.has(target.input));
+		if (waiting.size !== 0) { inputs.clear(); for (const target of owned) inputs.add(target.input); }
+		const consumers = new Set<WorkingCopyConsumer>();
+		const groups = new Set<EditorGroupView>();
+		for (const target of owned) {
+			groups.add(target.group);
+			if (target.input instanceof TextEditorInput) consumers.add(target.input);
+		}
+		const operation: CloseOperation = { targets: owned, inputs, consumers, groups, release: undefined, origin, decisionUI,
+			predecessors: waiting.size === 0 ? undefined : Array.from(waiting, operation => operation.result.promise),
 			lifetime: new DisposableStore(), discards: new Map(), result: Promise.withResolvers<boolean>(),
 			cancelled: false, prompt: undefined };
-		for (const target of distinct) {
-			operation.lifetime.add({ dispose: target.group.onWillDispose(() => this.cancel(operation)) });
-			operation.lifetime.add({ dispose: target.input.onWillDispose(() => this.cancel(operation)) });
-		}
+		for (const group of groups) operation.lifetime.add({ dispose: group.onWillDispose(() => this.cancel(operation)) });
+		for (const target of owned) operation.lifetime.add({ dispose: target.input.onWillDispose(() => this.cancel(operation)) });
 		return this.start(operation);
 	};
 
@@ -115,8 +124,8 @@ export class EditorCloseController {
 		const pending = this.pending.get(target.consumer);
 		if (pending === TRANSFER) return Promise.resolve(false);
 		if (pending !== undefined) return pending.result.promise;
-		const operation: CloseOperation = { targets: [], inputs: new Set(), consumers: new Set([target.consumer]),
-			release: target, origin, decisionUI, lifetime: new DisposableStore(), discards: new Map(),
+		const operation: CloseOperation = { targets: [], inputs: new Set(), consumers: new Set([target.consumer]), groups: undefined,
+			release: target, origin, decisionUI, predecessors: undefined, lifetime: new DisposableStore(), discards: new Map(),
 			result: Promise.withResolvers<boolean>(), cancelled: false, prompt: undefined };
 		return this.start(operation);
 	}
@@ -163,6 +172,10 @@ export class EditorCloseController {
 	}
 
 	private async performClose(operation: CloseOperation): Promise<boolean> {
+		if (operation.predecessors !== undefined) {
+			const closed = await Promise.all(operation.predecessors);
+			if (operation.cancelled || closed.some(result => !result)) return false;
+		}
 		if (this.commitDraft(operation.targets, operation.origin, operation.release?.scope) === 'failed') return false;
 		if (operation.cancelled || operation.targets.some(target => target.group.model.findById(target.input.id) !== target.input)) return false;
 		while (!operation.cancelled) {
@@ -232,7 +245,7 @@ export class EditorCloseController {
 			operation.lifetime.dispose();
 			operation.release?.retire();
 			for (const { group, input } of operation.targets) {
-				if (group.model.findById(input.id) === input) group.removeEditor(input, operation.inputs);
+				if (group.model.findById(input.id) === input) group.removeEditor(input, this.isClosing);
 			}
 			return true;
 		}
@@ -262,5 +275,6 @@ export class EditorCloseController {
 		for (const input of operation.inputs) if (this.pending.get(input) === operation) this.pending.delete(input);
 		const consumer = operation.release?.consumer;
 		if (consumer !== undefined && this.pending.get(consumer) === operation) this.pending.delete(consumer);
+		if (operation.groups !== undefined) for (const group of operation.groups) group.finishClose(this.isClosing);
 	}
 }

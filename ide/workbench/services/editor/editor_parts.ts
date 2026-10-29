@@ -9,7 +9,7 @@ import type { WorkbenchSurfaceService } from '../windows/service';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
 import type { EditorPaneContributions } from './editor_panes';
 import { WorkbenchWindowModel, WINDOW_HEADER_VERTICAL_PADDING, WINDOW_RESIZE_MARGIN, type WindowPlacement } from '../../ui/window/model';
-import { EditorCloseController, type WorkingCopyConsumer } from './editor_close';
+import { EditorCloseController, type EditorCloseTarget, type WorkingCopyConsumer } from './editor_close';
 import type { TextFileSaveService } from '../working_copy/text_file_save';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
 import type { ActionPrompt } from '../../contrib/modal/action_prompt';
@@ -59,6 +59,12 @@ export type EditorDocumentOptions = {
 	readonly placement?: WindowPlacement;
 	readonly minimized?: boolean;
 };
+
+/** Document-content closure is independent of group, window and primary-context lifetime. */
+export type EditorCloseScope =
+	| { readonly kind: 'workspace' }
+	| { readonly kind: 'group'; readonly group: EditorGroupView }
+	| { readonly kind: 'others'; readonly group: EditorGroupView; readonly input: EditorInput };
 
 export type EditorPartsRestoreRequest = {
 	isCurrent(): boolean;
@@ -644,9 +650,39 @@ export class EditorParts {
 		if (this.activePart === part) { this.activePart = replacement; this.mru.splice(this.mru.indexOf(replacement), 1); this.mru.unshift(replacement); }
 	}
 
+	public canCloseEditors(scope: EditorCloseScope): boolean {
+		let found = false;
+		for (const group of this.groupList) {
+			if (scope.kind !== 'workspace' && scope.group !== group) continue;
+			const part = this.owners.get(group)!;
+			if (part.retired || part.surface.retired || part.operation !== 'none' || !group.openingAdmitted) return false;
+			if (scope.kind === 'others' && (!group.model.contains(scope.input) || this.closeController.isPending(scope.input))) return false;
+			for (const input of group.model.tabs) if (input.closable && (scope.kind !== 'others' || input !== scope.input)) found = true;
+		}
+		return found;
+	}
+
+	/** Capture exact document memberships before pin, draft or decision callbacks. */
+	public closeEditors(scope: EditorCloseScope, origin: InputFocusTarget | null = inputFocus.target): Promise<boolean> {
+		if (!this.canCloseEditors(scope)) return Promise.resolve(false);
+		const targets: EditorCloseTarget[] = [];
+		for (const group of this.groupList) {
+			if (scope.kind !== 'workspace' && scope.group !== group) continue;
+			for (const input of group.model.tabs) if (input.closable && (scope.kind !== 'others' || input !== scope.input)) targets.push({ group, input });
+		}
+		if (scope.kind === 'others') {
+			const membership = scope.group.model.captureMembership(scope.input)!;
+			const members = targets.map(target => target.group.model.captureMembership(target.input)!);
+			scope.group.model.pin(scope.input);
+			if (!membership() || this.closeController.isPending(scope.input) || members.some(current => !current())) return Promise.resolve(false);
+		}
+		return this.closeController.close(targets, origin, scope.kind === 'workspace' ? this.options.prompt : this.owners.get(scope.group)!.actionPrompt);
+	}
+
 	public canCloseGroup(group: EditorGroupView): boolean {
 		const part = this.owners.get(group);
 		return part !== undefined && !part.retired && !part.surface.retired && part.operation === 'none' && group.openingAdmitted
+			&& (part.groups.length > 1 || group.model.tabs.length > 0)
 			&& group.model.tabs.every(input => input.closable);
 	}
 
