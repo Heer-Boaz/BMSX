@@ -48,8 +48,9 @@ function createPicker(t: TestContext, onDidChangeVisibility?: () => void): Quick
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384;
 	editorViewState.viewportHeight = 288;
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu, onDidChangeVisibility, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
+	const picker = new QuickInputController(menu, onDidChangeVisibility, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return picker;
 }
@@ -184,11 +185,11 @@ for (const enabledAtAccept of [true, false]) test(`Palette retains the actual pr
 
 test('popup origins and cancellation belong to the containing scope after an inline edit ends on blur', t => {
 	const picker = createPicker(t);
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'value.lua', location: { kind: 'workspace' as const, path: 'value.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'value.lua', source: { type: 'lua', resid: 'value' } }, 'lua', 'return 20');
 	const parent = inputFocus.createTarget();
 	parent.registerCommand('undo', { isEnabled: () => model.history.canUndo(model), run: () => model.undo() });
 	const surfaces = new WorkbenchSurfaceService(), area = { left: 0, top: 24, right: 384, bottom: 274 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope, isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw() {} });
 	const edit = new WorkbenchPropertyEdit<string>(parent, value => value, surfaces, owner, area);
@@ -231,7 +232,7 @@ test('popup origins and cancellation belong to the containing scope after an inl
 
 test('a field context menu keeps its actual local history and clipboard despite a separate pane action context', t => {
 	const picker = createPicker(t), parent = inputFocus.createTarget(), field = new TextField(parent);
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, picker.presentation.bounds);
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'document.lua', location: { kind: 'workspace' as const, path: 'document.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'document.lua', source: { type: 'lua', resid: 'document' } }, 'lua', 'return 1');
 	model.pushEditOperations([{ offset: 7, deleteLength: 1, text: '2' }]);
 	parent.registerCommand('undo', { isEnabled: () => model.canUndo, run: () => model.undo() });
@@ -461,7 +462,8 @@ for (const phase of ['show', 'hide'] as const) test(`a visibility callback can r
 for (const kind of ['pick', 'input'] as const) test(`a ${kind} replacing a context menu retains its actual return client, not its action subject`, t => {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, area), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	const invoker = inputFocus.createTarget(), subject = inputFocus.createTarget(), client = inputFocus.createTarget();
 	invoker.focus();

@@ -70,7 +70,8 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', width = 384, 
 		},
 	};
 	const handler: EditorTabDragHandler = { update() {}, drop() {}, clear() {} };
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+	const menuArea = { left: 0, top: 0, right: left + width, bottom: top + 288 };
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea);
 	const strip = new EditorTabStrip(group, context, {
 		isEnabled: () => commandsEnabled,
 		execute: command => { commands.push(command); },

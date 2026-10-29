@@ -3,12 +3,7 @@ import test from 'node:test';
 import * as colors from '../../ide/common/constants';
 import { editorFeedbackState, showEditorMessage } from '../../ide/common/feedback_state';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
-import { editorViewState } from '../../ide/editor/ui/view/state';
-import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
-import { RuntimeLuaEvaluation } from '../../ide/runtime/lua_evaluation';
-import { renderStatusBar } from '../../ide/workbench/render/status_bar';
 import { api } from '../../ide/runtime/overlay_api';
-import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 import { resolveThemeTokenColor } from '../../ide/theme/tokens';
@@ -18,32 +13,21 @@ import { INTEGER_INPUT_FORMAT } from '../../ide/editor/ui/inline/integer_input';
 import { drawValueInput } from '../../ide/editor/ui/inline/value_input_render';
 import { applyInlineFieldEditing, setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
-import { inputFocus } from '../../ide/input/focus';
-
-const hiddenResources: Parameters<typeof renderStatusBar>[0] = {
-	focusTarget: inputFocus.createTarget(),
-	isVisible: () => false,
-	getFilterMode: () => 'all',
-};
+import { createActualSourcePanes } from '../helpers/source_panes';
 
 for (const variant of ['tiny', 'msx'] as const) for (const kind of ['info', 'success', 'warning', 'error'] as const) {
 	test(`${variant} retained ${kind} feedback resolves its actual status-surface ink after a theme change`, t => {
-		configureFontVariant(variant);
-		editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
+		const f = createActualSourcePanes(t); f.editor.setFontVariant(variant);
+		f.host.presenter.setFixedRenderTargetSize(800, 320);
 		const originalTheme = colors.getActiveIdeThemeVariant();
 		t.after(() => { editorFeedbackState.message.visible = false; colors.setIdeThemeVariant(originalTheme); });
-		const overlay = createHostOverlayFixture(384, 288), fault = createRuntimeFaultState();
-		// No guest operation is active; feedback rendering never enters these evaluation dependencies.
-		const evaluation = new RuntimeLuaEvaluation(null, null, null, null, fault, null, null, null);
 		colors.setIdeThemeVariant('light'); showEditorMessage('SEVERITY', kind, 4);
 		assert.equal(editorFeedbackState.message.kind, kind);
 		assert.equal(Object.hasOwn(editorFeedbackState.message, 'color'), false, 'feedback carries intent, not retained theme data');
 		const message = { ...editorFeedbackState.message }, ink: number[] = [];
 		for (const theme of ['light', 'dark']) {
 			colors.setIdeThemeVariant(theme);
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-			renderStatusBar(hiddenResources, fault, null, evaluation, 'standalone', null);
-			overlay.renderer.endFrame(); const frame = overlay.queue.consumeOverlayFrame();
+			const frame = f.paint();
 			let glyph: GlyphRenderSubmission | undefined;
 			for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs) {
 				const candidate = frame.commandRefs[index] as GlyphRenderSubmission;

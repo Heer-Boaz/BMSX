@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
@@ -15,7 +16,6 @@ import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keybo
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
-import { api } from '../../../runtime/overlay_api';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -50,6 +50,8 @@ const SORTS: { label: string; description: string; detail: string; sort: RomInsp
 
 /** Native workbench controls over one immutable packed-image input. */
 export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput> {
+	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
+	public readonly statusItems = [this.statusItem];
 
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigate(input));
@@ -257,11 +259,7 @@ export class RomInspectorPane extends WorkbenchViewEditorPane<RomInspectorInput>
 	public draw(): void {
 		drawRomInspector(this.input, this.presentation, this.filter, this.filterViewport, this.list.focusTarget.hasFocus);
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-		api.blit_text_inline_with_font(this.presentation.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
-		api.popClipRect();
-	}
+	public updateStatus(): void { this.statusItem.text = this.presentation.status; }
 	public override clearInput(): void {
 		this.key!.dispose(); this.key = undefined; this.reader!.dispose(); this.reader = undefined; this.actionTooltip.hide();
 		this.unbindFilterChange();

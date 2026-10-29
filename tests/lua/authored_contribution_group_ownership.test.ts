@@ -38,7 +38,8 @@ function fixture(t: TestContext, source = PROGRAM, dependencies = [createScenari
 	const first = createTestEditorGroup(), second = createTestEditorGroup();
 	first.openEditor(resolveLuaCodeEditorInput(sources.catalog, resource));
 	second.openEditor(resolveLuaCodeEditorInput(sources.catalog, resource));
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	const guest = new SuspendedGuestSession(createTestRuntime(createTestRuntimeRomPayload()));
 	const aem = new AemEditorController(sources, guest, null!, null!);
 	const programs = new LuaProgramController(sources, guest, null!, null!);

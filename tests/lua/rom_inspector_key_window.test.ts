@@ -60,7 +60,7 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	inputFocus.workbenchScope.commands = commands; origin.focus();
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, area);
 	let key = new RomMapKeyWindow(input, commands, contextMenu, surfaces, owner, origin, area);
 	const overlay = createHostOverlayFixture(384, 288);
 	const draw = () => {

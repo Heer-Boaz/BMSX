@@ -86,6 +86,11 @@ normalizes and retires an empty group; the final routing leaf remains present.
 Ordinary opening uses actual matching views and the invoking group,
 independently of editor kind; creating a floating part is explicit. Floating
 parts use the shared window container, not another Studio session or workspace.
+`common/status_bar.ts` defines retained, full-text status facts. The attached
+view is bound to its input scope; transient scopes borrow their actual interaction
+origin. `ui/status_bar/` owns measured entry allocation, native reading and copy
+disclosure, independently of document topology. Status painting consumes the
+prepared projection rather than querying or formatting domain state.
 Attached clients expose an optional source-location capability: the contribution
 captures its semantic subject before draft settlement, then selects the canonical
 text model, source generation and authored caret. Capability presentation is

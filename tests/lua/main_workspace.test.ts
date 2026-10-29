@@ -66,7 +66,8 @@ class FixtureMainClient implements MainWorkspaceClient {
 	public captureNavigationLocation() { return undefined; }
 	public update(): void {}
 	public focus(region: 'hierarchy' | 'details' = this.preferredRegion): void { this.focused++; this[region].focus(); }
-	public drawStatusBar(): void {}
+	public readonly statusItems = [];
+	public updateStatus(): void {}
 	public dispose(): void {
 		this.disposed++; this.hierarchy.detach(); this.details.detach(); this.commandTarget.release(); this.onDispose?.();
 	}

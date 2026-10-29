@@ -113,7 +113,8 @@ class RecordingEditorPane<TInput extends EditorInput> extends EditorPane<TInput>
 		this.wheelCount += 1;
 	}
 
-	public drawStatusBar(_bounds: Readonly<RectBounds>, _textColor: number): void {
+	public readonly statusItems = [];
+	public updateStatus(): void {
 		this.statusCount += 1;
 	}
 }
@@ -410,7 +411,7 @@ test('editor pane hot paths dispatch directly to the retained active pane', () =
 	activePane.handleKeyboard(new KeyInputEvent('KeyA', KeyModifier.none));
 	activePane.handlePointer({ ...snapshot, modifiers: KeyModifier.none, spaceDown: false }, true, false, 42, false);
 	activePane.handleWheel({ ...snapshot, deltaX: 0, deltaY: 3 });
-	activePane.drawStatusBar({ left: 14, top: 280, right: 384, bottom: 288 }, 0xffffffff);
+	activePane.updateStatus();
 
 	const pane = harness.resourcePane();
 	assert.equal(pane.updateCount, 1);

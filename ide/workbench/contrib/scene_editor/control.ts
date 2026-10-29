@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, STATUS_PRIORITY_ERROR, type WorkbenchStatusItem } from '../../common/status_bar';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { EditorCommandRunner } from '../../../common/commands';
@@ -8,7 +9,6 @@ import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../inp
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { RuntimeSourceState } from '../../../runtime/sources';
-import { api } from '../../../runtime/overlay_api';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import type { WorkbenchSurface } from '../../services/windows/model';
@@ -41,7 +41,8 @@ export class SceneEditorControl {
 	private focusRegions = -1;
 	private subscriptions: (() => void)[] = [];
 	private sourceHovered = false;
-	private status = '';
+	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
+	public readonly statusItems = [this.statusItem];
 	public get view(): SceneEditorViewState { return this.viewValue!; }
 	public get inputScope(): InputFocusScope { return this.focusTarget.scope; }
 	public get hasView(): boolean { return this.viewValue !== undefined; }
@@ -131,7 +132,6 @@ export class SceneEditorControl {
 		else if (this.sourceHovered) this.tooltip.show(view.authoring.workingCopy.resource.path, view.layout.sourceBounds,
 			editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
 		else this.tooltip.hide();
-		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.sources, view.authoring.workingCopy)];
 	}
 	private bindFocusOrder(): void {
 		const actions = this.actionBar.focusTarget;
@@ -187,8 +187,12 @@ export class SceneEditorControl {
 		if (!this.hasView) return;
 		drawSceneEditor(this.view); this.hierarchy.draw(); this.details.draw();
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		if (this.hasView) api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
+	public updateStatus(): void {
+		if (!this.hasView) { this.statusItem.text = ''; return; }
+		const status = getTextFileRuntimeSourceStatus(this.sources, this.view.authoring.workingCopy);
+		this.statusItem.text = SOURCE_STATUS[status];
+		this.statusItem.tone = status === 'failed' ? 'error' : 'normal';
+		this.statusItem.priority = status === 'failed' ? STATUS_PRIORITY_ERROR : STATUS_PRIORITY_CONTENT;
 	}
 	public clearView(): void { this.attachmentRevision++; this.detach(); }
 	private detach(): void {

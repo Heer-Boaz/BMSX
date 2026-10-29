@@ -62,25 +62,21 @@ export function updateScenarioLabStatus(state: ScenarioLabViewState): void {
 	if (state.actionBar.presentation.refresh()) state.actionsDirty = true;
 	if (debug !== undefined && (debug.status === 'stopped' || debug.status === 'running')) {
 		state.status.info = `TEST DEBUG / ${debug.status.toUpperCase()} / ${debug.phase.toUpperCase()}${debug.reason === undefined ? '' : ` / ${debug.reason.toUpperCase()}`}`;
-		state.status.dirty = true;
 		return;
 	}
 	if (state.focus === 'results') {
 		const row = selectedScenarioResultRow(state);
 		if (row !== null && row.kind === 'fsm_transition') {
 			state.status.info = `FSM ${row.trace.instanceId} / SOURCE UNAVAILABLE`;
-			state.status.dirty = true;
 			return;
 		}
 		if (row !== null && row.kind === 'actioneffect_fact') {
 			state.status.info = `ACTIONEFFECT ${row.fact.effectId} / OWNER ${row.trace.ownerId}`;
-			state.status.dirty = true;
 			return;
 		}
 	}
 	const node = selectedScenarioTestNode(state);
 	state.status.info = node === null ? 'NO SCENARIO SELECTED' : node.label.toUpperCase();
-	state.status.dirty = true;
 }
 
 function selectScenarioTestRow(state: ScenarioLabViewState, index: number): void {

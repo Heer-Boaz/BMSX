@@ -10,6 +10,7 @@ import type { Scrollbar } from '../../../ui/scrollbar';
 import { renderResourcePanel } from '../../../render/resource_panel';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import { showEditorMessage } from '../../../../common/feedback_state';
+import { STATUS_PRIORITY_CONTENT, STATUS_PRIORITY_HINT, type WorkbenchStatusItem } from '../../../common/status_bar';
 import { measureTextRange } from '../../../../editor/common/text/layout';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { EditorFont } from '../../../../editor/ui/view/font';
@@ -77,6 +78,11 @@ function createResourcePanelItemMetrics(): ResourcePanelItemMetrics {
 }
 
 export class ResourcePanelController implements PointerHoverTarget, PointerCaptureTarget {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+		{ text: 'CTRL+SHIFT+L TOGGLE FILTER', alignment: 'right', priority: STATUS_PRIORITY_HINT, overflow: 'hide', tone: 'normal' },
+	];
+	public updateStatus(): void { this.statusItems[0].text = this.getFilterMode() === 'lua_only' ? 'FILES (LUA)' : 'FILES (ALL)'; }
 	public onPointerLeave(): void { this.hoverIndex = -1; }
 	public visible = false;
 	public readonly focusTarget = inputFocus.createTarget();

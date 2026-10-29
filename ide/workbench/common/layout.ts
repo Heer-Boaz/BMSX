@@ -1,7 +1,6 @@
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
-import { measureText, writeWrappedOverlayLine } from '../../editor/common/text/layout';
+import { measureText } from '../../editor/common/text/layout';
 import { editorViewState } from '../../editor/ui/view/state';
-import { editorFeedbackState } from '../../common/feedback_state';
 import { RESOURCE_PANEL_DIVIDER_DRAG_MARGIN } from '../../common/constants';
 import { editorChromeState } from '../ui/chrome_state';
 import type { EditorFont } from '../../editor/ui/view/font';
@@ -20,7 +19,6 @@ const guestFocusHintWidths = [0, 0, 0];
 const statusLayout = {
 	bounds: statusBounds,
 	connection: connectionBounds,
-	message: create_rect_bounds(),
 	context: create_rect_bounds(),
 	hostFault: create_rect_bounds(),
 	guestHint: create_rect_bounds(),
@@ -29,12 +27,11 @@ const statusLayout = {
 };
 let statusLayoutFont: EditorFont | undefined;
 let statusLayoutGuestInput = false, statusLayoutHostFailed = false;
-let hostFailureWidth = 0, statusWindowWidth = 0;
+let hostFailureWidth = 0, statusWindowWidth = 0, statusLayoutWidth = -1, statusLayoutTop = -1;
 
 export type WorkbenchStatusLayout = {
 	readonly bounds: Readonly<RectBounds>;
 	readonly connection: Readonly<RectBounds>;
-	readonly message: Readonly<RectBounds>;
 	readonly context: Readonly<RectBounds>;
 	readonly hostFault: Readonly<RectBounds>;
 	readonly guestHint: Readonly<RectBounds>;
@@ -69,19 +66,19 @@ export function getWorkbenchConnectionBounds(): Readonly<RectBounds> {
 	return connectionBounds;
 }
 
-/** Feedback keeps its full-width rows; context and release guidance share the existing bottom row. */
+/** One shell row reserves navigation and safety guidance independently of the current status source. */
 export function getWorkbenchStatusLayout(guestInput: boolean, hostFailed: boolean, windowWidth = 0): WorkbenchStatusLayout {
 	const bounds = getWorkbenchStatusBounds(), rowTop = getWorkbenchConnectionBounds().top;
 	const font = editorViewState.font;
 	if (statusLayoutFont === font && statusLayoutGuestInput === guestInput && statusLayoutHostFailed === hostFailed && statusWindowWidth === windowWidth
-		&& statusLayout.message.left === bounds.left && statusLayout.message.right === bounds.right
-		&& statusLayout.message.top === bounds.top && statusLayout.context.top === rowTop
+		&& statusLayoutWidth === bounds.right && statusLayoutTop === rowTop
 		&& statusLayout.context.bottom === bounds.bottom) return statusLayout;
 	if (statusLayoutFont !== font) {
 		for (let index = 0; index < GUEST_FOCUS_HINTS.length; index++) guestFocusHintWidths[index] = measureText(GUEST_FOCUS_HINTS[index]) + 8;
 		hostFailureWidth = measureText(HOST_FAILURE_STATUS) + 8;
 		statusLayoutFont = font;
 	}
+	statusLayoutWidth = bounds.right; statusLayoutTop = rowTop;
 	statusLayoutGuestInput = guestInput; statusLayoutHostFailed = hostFailed; statusWindowWidth = windowWidth;
 	const windowLeft = hostFailed ? Math.min(bounds.right, bounds.left + hostFailureWidth) : bounds.left;
 	const contextLeft = Math.min(bounds.right, windowLeft + windowWidth);
@@ -97,7 +94,6 @@ export function getWorkbenchStatusLayout(guestInput: boolean, hostFailed: boolea
 			}
 		}
 	}
-	write_rect_bounds(statusLayout.message, bounds.left, bounds.top, bounds.right, rowTop);
 	write_rect_bounds(statusLayout.hostFault, bounds.left, rowTop, windowLeft, bounds.bottom);
 	write_rect_bounds(statusLayout.windowRestore, windowLeft, rowTop, contextLeft, bounds.bottom);
 	write_rect_bounds(statusLayout.context, contextLeft, rowTop, bounds.right - hintWidth, bounds.bottom);
@@ -130,71 +126,12 @@ export function updateFullWidthWorkbenchLayout(layout: FullWidthWorkbenchLayout,
 	return true;
 }
 
-const statusMessageLines: string[] = [];
-let statusMessageCachedVisible = false;
-let statusMessageCachedText = '';
-let statusMessageCachedMaxWidth = -1;
-let statusMessageCachedFont: EditorFont | undefined;
-
 export function topMargin(): number {
 	return Math.max(editorChromeState.menuBarHeight, editorChromeState.menuButtonBounds.bottom) + 2;
 }
 
-export function getStatusMessageLines(): string[] {
-	writeStatusMessageLines();
-	return statusMessageLines;
-}
-
-function writeStatusMessageLines(): void {
-	const message = editorFeedbackState.message;
-	const maxWidthCandidate = editorViewState.viewportWidth - STATUS_BAR_CONNECTION_WIDTH - 8;
-	const maxWidth = maxWidthCandidate > editorViewState.charAdvance ? maxWidthCandidate : editorViewState.charAdvance;
-	if (
-		message.visible === statusMessageCachedVisible
-		&& message.text === statusMessageCachedText
-		&& maxWidth === statusMessageCachedMaxWidth
-		&& editorViewState.font === statusMessageCachedFont
-	) {
-		return;
-	}
-
-	statusMessageCachedVisible = message.visible;
-	statusMessageCachedText = message.text;
-	statusMessageCachedMaxWidth = maxWidth;
-	statusMessageCachedFont = editorViewState.font;
-	statusMessageLines.length = 0;
-
-	if (!message.visible) {
-		return;
-	}
-
-	const text = message.text;
-	let lineStart = 0;
-	for (let index = 0; index <= text.length; index += 1) {
-		if (index !== text.length && text.charCodeAt(index) !== 10) {
-			continue;
-		}
-		let lineEnd = index;
-		if (lineEnd > lineStart && text.charCodeAt(lineEnd - 1) === 13) {
-			lineEnd -= 1;
-		}
-		writeWrappedOverlayLine(statusMessageLines, text.slice(lineStart, lineEnd), maxWidth);
-		lineStart = index + 1;
-	}
-
-	if (statusMessageLines.length === 0) {
-		statusMessageLines.push('');
-	}
-}
-
-export function statusAreaHeight(): number {
-	if (!editorFeedbackState.message.visible) {
-		return editorViewState.baseBottomMargin;
-	}
-	writeStatusMessageLines();
-	const lineCount = statusMessageLines.length > 1 ? statusMessageLines.length : 1;
-	return editorViewState.baseBottomMargin + lineCount * editorViewState.lineHeight + 4;
-}
+/** Transient feedback is status content, not another workbench inset. */
+export function statusAreaHeight(): number { return editorViewState.baseBottomMargin; }
 
 /** Root chrome excludes only permanent status; temporary clients allocate inside Main. */
 export function bottomMargin(): number { return statusAreaHeight(); }

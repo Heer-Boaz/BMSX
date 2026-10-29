@@ -11,7 +11,7 @@ export type WorkbenchDropdownMenuId =
 
 export type WorkbenchContextMenuId = 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
 
-export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'window.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.target' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
+export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'scenarioLab.target' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
 export type WorkbenchMenuCommandItem = {
 	readonly type: 'command';
@@ -41,6 +41,7 @@ type WorkbenchMenuContributions = Record<WorkbenchContextMenuId, readonly Workbe
 	readonly 'propertyInspector.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'problems.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'window.status': readonly WorkbenchMenuCommandItem[];
+	readonly 'status.context': readonly WorkbenchMenuCommandItem[];
 	readonly 'window.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.reader.title': readonly WorkbenchMenuCommandItem[];
 	readonly 'romInspector.title': readonly WorkbenchMenuCommandItem[];
@@ -434,6 +435,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'reboot' },
 	],
 	'menubar.view': [
+		{ type: 'command', command: 'status.focus' },
+		{ type: 'command', command: 'status.details' },
 		{ type: 'command', command: 'home' },
 		{ type: 'command', command: 'commandPalette' },
 		{ type: 'command', command: 'openEditors' },
@@ -539,6 +542,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'runtime.resume', icon: 'accept' },
 		{ type: 'command', command: 'runtime.present', icon: 'present' },
 	],
+	'status.context': [{ type: 'command', command: 'status.details', icon: 'more' }],
 	'editorTabs.title': [{ type: 'command', command: 'group.openEditors', icon: 'chevronDown' }],
 	'aem.context': [
 		{ type: 'command', command: 'aem.add' },

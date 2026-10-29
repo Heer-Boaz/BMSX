@@ -3,45 +3,51 @@ import type { AssistantConversation } from '../../services/assistant/conversatio
 
 /** Text deltas do not change context; retain the footer's measured rows independently. */
 export class AssistantFooter {
-	public lines: string[] = [];
+	public readonly lines: string[] = [];
+	public statusText = '';
+	private contextRevision = 0;
+	private renderedRevision = -1;
+	private prefix = '';
+	private details = '';
+	private name = '';
 	private width = -1;
 	private font: object | undefined;
-	private context: { configuration: AssistantConversation['configuration']; usage: AssistantConversation['usage'];
-		state: AssistantConversation['state']; refreshing: boolean; available: boolean; title: string | undefined; queued: number; queuePaused: boolean } | undefined;
-	public update(model: AssistantConversation, width: number, measure: TextRangeMeasure, font: object): void {
+	private readonly context: { configuration: AssistantConversation['configuration']; usage: AssistantConversation['usage'];
+		state: AssistantConversation['state'] | undefined; refreshing: boolean; available: boolean; title: string | undefined; queued: number; queuePaused: boolean } = {
+		configuration: undefined, usage: undefined, state: undefined, refreshing: false, available: false, title: undefined, queued: 0, queuePaused: false,
+	};
+	public updateStatus(model: AssistantConversation): void {
 		const last = this.context, title = model.thread?.title;
-		if (last && width === this.width && font === this.font && last.configuration === model.configuration && last.usage === model.usage
+		if (this.contextRevision !== 0 && last.configuration === model.configuration && last.usage === model.usage
 			&& last.state === model.state && last.refreshing === model.accountRefreshing && last.available === model.available
 			&& last.title === title && last.queued === model.queued.length && last.queuePaused === model.queuePaused) return;
-		this.width = width; this.font = font;
-		this.context = { configuration: model.configuration, usage: model.usage, state: model.state,
-			refreshing: model.accountRefreshing, available: model.available, title, queued: model.queued.length, queuePaused: model.queuePaused };
-		this.lines = assistantFooter(model, width, measure);
+		last.configuration = model.configuration; last.usage = model.usage; last.state = model.state;
+		last.refreshing = model.accountRefreshing; last.available = model.available; last.title = title;
+		last.queued = model.queued.length; last.queuePaused = model.queuePaused;
+		const state = !model.available ? 'unavailable' : model.accountRefreshing ? 'refreshing account' : model.state;
+		const configuration = model.configuration, tier = configuration?.serviceTier, quota = model.usage?.weeklyRemaining;
+		const fast = tier === 'fast' || tier === 'priority' ? ' | fast' : tier && tier !== 'default' ? ` | ${tier}` : '';
+		const weekly = quota == null ? 'weekly quota unavailable' : `week ${quota}% left`;
+		this.details = configuration === undefined ? 'settings not loaded'
+			: `${configuration.agent ?? 'Codex'} ${configuration.model ?? 'model unavailable'} | ${configuration.effort ?? 'effort default'}${fast} | ${weekly}`;
+		const queue = model.queued.length ? ` | ${model.queued.length} queued${model.queuePaused ? ' (paused)' : ''}` : '';
+		this.name = model.thread === undefined ? 'New conversation' : model.thread.title || 'Untitled conversation';
+		this.prefix = `${state}${queue}`;
+		this.statusText = `${this.prefix} | ${this.name} | ${this.details}`;
+		this.contextRevision++;
 	}
-}
-
-/** Observed session context. Narrow panes gain footer rows rather than silently losing quota/model. */
-export function assistantFooter(model: AssistantConversation, width: number, measure: TextRangeMeasure): string[] {
-	const state = !model.available ? 'unavailable' : model.accountRefreshing ? 'refreshing account' : model.state;
-	const configuration = model.configuration;
-	const agent = configuration?.agent ?? 'Codex';
-	const selected = configuration?.model ?? 'model unavailable';
-	const effort = configuration?.effort ?? 'effort default';
-	const tier = configuration?.serviceTier;
-	const fast = tier === 'fast' || tier === 'priority' ? ' | fast' : tier && tier !== 'default' ? ` | ${tier}` : '';
-	const quota = model.usage?.weeklyRemaining;
-	const weekly = quota == null ? 'weekly quota unavailable' : `week ${quota}% left`;
-	const queue = model.queued.length ? ` | ${model.queued.length} queued${model.queuePaused ? ' (paused)' : ''}` : '';
-	const details = configuration === undefined ? 'settings not loaded' : `${agent} ${selected} | ${effort}${fast} | ${weekly}`;
-	const prefix = `${state}${queue}`;
-	const title = model.thread === undefined ? 'New conversation' : model.thread.title || 'Untitled conversation';
-	const fixed = `${prefix} | ${details} | `;
-	const room = width - measure(fixed, 0, fixed.length);
-	const minimumTitle = title.slice(0, 12);
-	if (room >= measure(minimumTitle, 0, minimumTitle.length)) {
-		return [`${prefix} | ${truncateMeasuredText(title, room, measure)} | ${details}`];
+	public update(model: AssistantConversation, width: number, measure: TextRangeMeasure, font: object): void {
+		this.updateStatus(model);
+		if (width === this.width && font === this.font && this.contextRevision === this.renderedRevision) return;
+		this.width = width; this.font = font; this.renderedRevision = this.contextRevision;
+		this.lines.length = 0;
+		const fixed = `${this.prefix} | ${this.details} | `;
+		const room = width - measure(fixed, 0, fixed.length), minimumTitle = this.name.slice(0, 12);
+		if (room >= measure(minimumTitle, 0, minimumTitle.length))
+			this.lines.push(`${this.prefix} | ${truncateMeasuredText(this.name, room, measure)} | ${this.details}`);
+		else {
+			this.lines.push(truncateMeasuredText(`${this.prefix} | ${this.name}`, width, measure));
+			writeWrappedMeasuredLine(this.lines, this.details, width, measure);
+		}
 	}
-	const lines = [truncateMeasuredText(`${prefix} | ${title}`, width, measure)];
-	writeWrappedMeasuredLine(lines, details, width, measure);
-	return lines;
 }

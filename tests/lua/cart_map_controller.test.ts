@@ -19,7 +19,8 @@ beforeEach(() => configureFontVariant('tiny'));
 
 test('a map picker retains only its explicit destination group lifetime', t => {
 	const sources = createScenarioTestSourceState([]), destination = createTestEditorGroup(), sibling = createTestEditorGroup();
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	const controller = new CartMapController(sources.catalog);
 	t.after(() => { picker.dispose(); menu.dispose(); destination.dispose(); sibling.dispose(); inputFocus.setTarget(null); });
 	controller.open(destination, picker);
@@ -34,7 +35,8 @@ test('a map choice cannot reopen its destination when chrome return focus retire
 	const sources = createScenarioTestSourceState([]), destination = createTestEditorGroup();
 	sources.catalog.registerTextSources(TEST_CARTRIDGE_CONTEXT_IDS[0], [{ type: 'data', resid: 'stage',
 		source_path: 'res/data/nemesis_s_stage.yaml', sourcemeta: { text: 'map_rows: ["m "]\n' } }]);
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	const controller = new CartMapController(sources.catalog), chrome = inputFocus.createTarget();
 	const unbindKeyboard = chrome.bindKeyboard(() => {});
 	const open = t.mock.method(controller, 'openResource');

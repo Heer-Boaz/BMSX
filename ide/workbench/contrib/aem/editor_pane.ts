@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -16,7 +17,6 @@ import { pointerHover } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
-import { drawEditorText } from '../../../editor/render/text_renderer';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { createStructuredValueEdit } from '../../../language/yaml/structured_edits';
 import { aemDocumentFormat } from '../../../../toolchain/ts/rompack/aem';
@@ -42,6 +42,8 @@ import { api } from '../../../runtime/overlay_api';
 
 
 export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
+	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
+	public readonly statusItems = [this.statusItem];
 	public override getSourceLocation(): EditorSourceLocation | undefined {
 		const input = this.input;
 		return this.controller.getSourceLocation(input);
@@ -143,7 +145,7 @@ export class AemEditorPane extends WorkbenchViewEditorPane<AemEditorInput> {
 		renderWorkbenchActionBar(input.actionBar, editorViewState.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		drawWorkbenchPropertyTree(input.tree);
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status || this.input.applyStatus, bounds.left + 4, bounds.top + 2, 0, color); }
+	public updateStatus(): void { this.statusItem.text = this.input.status || this.input.applyStatus; }
 	public handleKeyboard(input: KeyInputEvent): void {
 		for (const [key, command] of NAVIGATION) if (isKeyDown(key, input)) {
 			consumeIdeKey(key, input); navigateWorkbenchTree(this.input.tree, command); this.pointer.keyboardSelection(); return;

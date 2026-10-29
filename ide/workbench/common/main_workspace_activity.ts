@@ -3,11 +3,12 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../common/mode
 import type { EditorSourceLocationRequest } from '../../editor/navigation/source_location';
 import type { EditorFont } from '../../editor/ui/view/font';
 import type { InputFocusScope, InputFocusTarget } from '../../input/focus';
+import type { WorkbenchStatusSource } from './status_bar';
 
 export type MainWorkspaceActivitySizeConstraints = { minimumHeight: number; preferredHeight: number };
 
 /** A retained activity presentation; the container owns placement and native attachment. */
-export interface MainWorkspaceActivityClient {
+export interface MainWorkspaceActivityClient extends WorkbenchStatusSource {
 	readonly scope: InputFocusScope;
 	readonly commandTarget: InputFocusTarget;
 	readonly attached: boolean;
@@ -19,7 +20,6 @@ export interface MainWorkspaceActivityClient {
 	detach(): void;
 	update(): void;
 	draw(): void;
-	drawStatusBar(bounds: Readonly<RectBounds>, color: number): void;
 	focus(): void;
 	handlePointer(snapshot: PointerInputSnapshot): void;
 	handleWheel(event: WheelInputSnapshot): void;

@@ -23,7 +23,8 @@ test('an admitted source-only image opens its information client without cooked 
 	const resource = catalog.resolveResource({ contextId: context.id, path: 'res/img/new.png' });
 	assert.ok(resource);
 	const input = new ResourceViewerInput(catalog, resource);
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const area = { left: 0, top: 0, right: 240, bottom: 160 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),

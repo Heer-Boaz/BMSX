@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { EditorCommandRunner } from '../../../common/commands';
@@ -13,7 +14,6 @@ import { inputFocus } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
-import { api } from '../../../runtime/overlay_api';
 import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { EditorGroupView } from '../../services/editor/editor_group';
@@ -30,13 +30,15 @@ import { WorkbenchTooltip } from '../../ui/tooltip';
 import type { CallHierarchyInput } from './editor_input';
 import { drawCallHierarchy } from './render';
 import { CallHierarchyNavigationSelection } from './view_snapshot';
-import type { CallHierarchyElement } from './tree';
 
 const TREE_KEYS = [['ArrowUp', 'up'], ['ArrowDown', 'down'], ['ArrowLeft', 'left'], ['ArrowRight', 'right'],
 	['PageUp', 'page-up'], ['PageDown', 'page-down'], ['Home', 'home'], ['End', 'end']] as const;
 
 /** A concrete result attachment; source admission remains with the shared editor navigation owner. */
 export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly tooltip = new WorkbenchTooltip();
@@ -45,10 +47,6 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 	private renderedRevision = -1;
 	private renderedWidth = -1;
 	private renderedFont: object | undefined;
-	private statusElement: CallHierarchyElement | undefined;
-	private statusWidth = -1;
-	private statusFont: object | undefined;
-	private statusText = '';
 	private unbindInput: (() => void) | undefined;
 	public onPointerLeave(): void { if (this.hasInput) this.input.tree.hoverIndex = -1; this.tooltip.hide(); }
 
@@ -166,16 +164,7 @@ export class CallHierarchyPane extends WorkbenchViewEditorPane<CallHierarchyInpu
 		if (workbenchListContainsPosition(tree, event.viewportX, event.viewportY)) { scrollWorkbenchList(tree, event.deltaY * 3); this.tooltip.hide(); }
 	}
 	public draw(): void { drawCallHierarchy(this.input, this.contentBounds, this.focusTarget.hasFocus); }
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		const selected = this.input.tree.rows[this.input.tree.selectionIndex]?.element;
-		if (selected === undefined) return;
-		const width = bounds.right - bounds.left - 8, font = editorViewState.font;
-		if (selected !== this.statusElement || width !== this.statusWidth || font !== this.statusFont) {
-			this.statusElement = selected; this.statusWidth = width; this.statusFont = font;
-			this.statusText = truncateTextToWidth(selected.status, width);
-		}
-		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-		api.blit_text_inline_with_font(this.statusText, bounds.left + 4, bounds.top + 2, 0, color, font.renderFont());
-		api.popClipRect();
+	public updateStatus(): void {
+		this.statusItems[0].text = this.input.tree.rows[this.input.tree.selectionIndex]?.element.status ?? '';
 	}
 }

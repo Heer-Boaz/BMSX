@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
@@ -10,13 +11,11 @@ import { showEditorMessage } from '../../../common/feedback_state';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
-import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
-import { api } from '../../../runtime/overlay_api';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchSurface } from '../../services/windows/model';
@@ -42,6 +41,9 @@ const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']
 
 /** History selection and shared transport; optional observation decoding belongs to Details. */
 export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly list = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event));
@@ -63,7 +65,6 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 	private selectedRevision = -1;
 	private following = false;
 	private reachable = false;
-	private status = '';
 	private emptyFiltered: boolean | undefined;
 	public constructor(private readonly quickInput: QuickInputController,
 		private readonly commands: IdeCommandController, private readonly navigation: RuntimeFrameNavigation,
@@ -187,18 +188,20 @@ export class GpuDebuggerPane extends WorkbenchViewEditorPane<GpuDebuggerInput> {
 			writeWrappedMeasuredLine(this.emptyLines, input.filter === '' ? 'No GPU operations observed.' : 'No matching operations.', width, measureTextRange);
 			writeWrappedMeasuredLine(this.emptyLines, input.filter === '' ? 'Play or step the existing runtime.' : 'Change or clear the filter.', width, measureTextRange);
 		}
-		const reachable = input.selected.sequence >= 0 && input.history.canSeek(input.selected);
-		if (layoutChanged || this.selectedRevision !== input.selectionRevision || this.historyRevision !== input.history.revision || this.following !== input.following || this.reachable !== reachable) {
-			const record = input.selected, expired = record.sequence >= 0 && (record.sequence < input.history.firstSequence || record.sequence >= input.history.endSequence);
-			this.status = truncateMeasuredText(`${input.following ? input.projection.rows.length === 0 ? 'Waiting' : 'Following' : 'Pinned'}${record.sequence < 0 ? '' : ` | ${gpuOperationName(record)} #${record.sequence} T${record.timeline} | tick ${record.completedTick} | observed ${record.cycles}`}${expired ? ' | Record expired' : ''}${record.sequence >= 0 && !reachable ? ' | Frame unavailable' : ''}`, layout.right - layout.left - 8, measureTextRange);
-			this.historyRevision = input.history.revision; this.following = input.following; this.reachable = reachable; this.selectedRevision = input.selectionRevision;
-		}
 		this.details!.update();
 		const item = this.actions.tooltipItem;
 		if (item !== undefined) this.tooltip.show(item.tooltip, item.bounds, layout.font!.renderFont(), measureTextRange, measureText, this.workArea); else this.tooltip.hide();
 	}
 	public draw(): void { drawGpuDebugger(this.input, this.rows, this.emptyLines); }
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
+	public updateStatus(): void {
+		const input = this.input;
+		const reachable = input.selected.sequence >= 0 && input.history.canSeek(input.selected);
+		if (this.selectedRevision !== input.selectionRevision || this.historyRevision !== input.history.revision || this.following !== input.following || this.reachable !== reachable) {
+			const record = input.selected, expired = record.sequence >= 0 && (record.sequence < input.history.firstSequence || record.sequence >= input.history.endSequence);
+			this.statusItems[0].text = `${input.following ? input.projection.rows.length === 0 ? 'Waiting' : 'Following' : 'Pinned'}${record.sequence < 0 ? '' : ` | ${gpuOperationName(record)} #${record.sequence} T${record.timeline} | tick ${record.completedTick} | observed ${record.cycles}`}${expired ? ' | Record expired' : ''}${record.sequence >= 0 && !reachable ? ' | Frame unavailable' : ''}`;
+			this.historyRevision = input.history.revision; this.following = input.following; this.reachable = reachable; this.selectedRevision = input.selectionRevision;
+		}
+	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input, secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;

@@ -253,7 +253,6 @@ export function prepareScenarioLabLayout(state: ScenarioLabViewState, bounds: Re
 		state.actionsDirty = true;
 		state.testPane.textDirty = true;
 		state.resultPane.textDirty = true;
-		state.status.dirty = true;
 	}
 	if (state.actionsDirty) {
 		layoutWorkbenchActionBar(

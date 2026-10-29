@@ -16,9 +16,10 @@ for (const kind of ['menu', 'picker'] as const) test(`${kind} retains its actual
 	origin.bindKeyboard(() => {}); semantic.bindKeyboard(() => {}); origin.focus();
 	const generation = nativeScope.contextGeneration;
 	const semanticGeneration = semantic.scope.contextGeneration;
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
 	const picker = new QuickInputController(menu, () => {}, () => false,
-		{ kind: 'workspace', scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: 384, bottom: 288 } });
+		{ kind: 'workspace', scope: inputFocus.workbenchScope, bounds: area });
 	let admitted = 0, laterDisposal = 0;
 	const commands: EditorCommandRunner = { isEnabled: () => true, execute: () => { admitted++; } };
 	const retireAndReadmit = () => {

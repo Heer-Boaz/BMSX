@@ -113,6 +113,7 @@ export class EditorPanes {
 			if (!current()) return;
 			pane = this.getOrCreatePane(input);
 			this.activePaneValue = pane;
+			this.focusScope.statusSource = pane;
 			pane.setInput(input, this.contentBounds, { ...options, isCurrent: current });
 		}
 		if (!current() || this.activePaneValue !== pane || pane.input !== input) return;
@@ -136,6 +137,7 @@ export class EditorPanes {
 			return generation;
 		}
 		pointerCapture.cancelScope(this.focusScope.surfaceScope);
+		if (this.focusScope.statusSource === activePane) this.focusScope.statusSource = undefined;
 		if (inputFocus.target?.scope.surfaceScope === this.focusScope.surfaceScope
 			|| activePane.inputScope !== undefined && inputFocus.target?.scope === activePane.inputScope) inputFocus.setTarget(null);
 		activePane.clearInput(reason);

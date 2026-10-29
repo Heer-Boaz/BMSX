@@ -1,9 +1,8 @@
-import type { RectBounds } from '../../../../machine/ts/common/rect';
+import { STATUS_PRIORITY_HINT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { forEachWrappedMeasuredRange } from '../../../common/text';
 import { measureTextRange } from '../../../editor/common/text/layout';
-import { drawEditorText } from '../../../editor/render/text_renderer';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -17,6 +16,7 @@ import type { HostErrorInput } from './editor_input';
 
 /** Read-only host text, with ordinary document scrolling and the original clipboard bytes. */
 export class HostErrorPane extends WorkbenchViewEditorPane<HostErrorInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [{ text: 'Ctrl+C: copy stack | Ctrl+W: close', alignment: 'left', priority: STATUS_PRIORITY_HINT, overflow: 'ellipsis', tone: 'normal' }];
 
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 
@@ -59,9 +59,7 @@ export class HostErrorPane extends WorkbenchViewEditorPane<HostErrorInput> {
 		api.popClipRect();
 		viewport.scrollbar.draw(colors.SCROLLBAR_TRACK_COLOR, colors.SCROLLBAR_THUMB_COLOR);
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		drawEditorText(editorViewState.font, 'Ctrl+C: copy stack | Ctrl+W: close', bounds.left + 4, bounds.top + 2, 0, color);
-	}
+	public updateStatus(): void {}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean { return this.scroll.handlePointer(snapshot); }
 	public handleKeyboard(): void {}
 	public handleWheel(event: WheelInputSnapshot): void {

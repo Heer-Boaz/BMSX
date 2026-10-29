@@ -20,9 +20,9 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 
 function fixture(t: TestContext, placement: WindowPlacement = 'normal', areaWidth = 600, minimumWidth = 120) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
-	const contextMenu = new ContextMenuController(focus, capture);
 	const surfaces = new WorkbenchSurfaceService(), font = new Font({ variant: 'tiny' });
 	const area = { left: 20, top: 30, right: 20 + areaWidth, bottom: 430 };
+	const contextMenu = new ContextMenuController(focus, capture, area);
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope,
 		isVisible: () => true, getBounds: () => area, getClip: () => area, draw() {} });

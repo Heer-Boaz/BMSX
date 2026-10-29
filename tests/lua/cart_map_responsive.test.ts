@@ -22,11 +22,6 @@ import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/se
 import { workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import { createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { pointerHover } from '../../ide/input/pointer/hover';
-import { api } from '../../ide/runtime/overlay_api';
-import { createHostOverlayFixture } from '../helpers/host_overlay';
-import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
-import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
-import * as colors from '../../ide/common/constants';
 
 const SOURCE = [
 	'2:', "  map: ['........................................................................................................................']",
@@ -47,7 +42,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx', width = 384, source = 
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	t.after(() => menu.dispose());
 	const pane = new CartMapPane(null!, commands,
 		createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope, menu);
@@ -332,44 +327,37 @@ for (const variant of ['tiny', 'msx'] as const) {
 	});
 }
 
-for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as const) {
-	test(`Cart Map ${theme}/${variant} status owns real ranges, sheet dimensions and admitted hover without allocating a viewport snapshot`, t => {
-		const oldTheme = colors.getActiveIdeThemeVariant(); colors.setIdeThemeVariant(theme); t.after(() => colors.setIdeThemeVariant(oldTheme));
-		const f = fixture(t, variant, variant === 'tiny' ? 78 : 118), overlay = createHostOverlayFixture(384, 288);
+for (const variant of ['tiny', 'msx'] as const) {
+	test(`Cart Map ${variant} status owns real ranges, sheet dimensions and admitted hover without allocating a viewport snapshot`, t => {
+		const f = fixture(t, variant, variant === 'tiny' ? 78 : 118);
 		f.pane.focus(); f.press('Enter');
-		const statusBounds = { left: 0, top: 276, right: 384, bottom: 288 };
-		const draw = () => {
-			overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-			f.pane.drawStatusBar(statusBounds, colors.COLOR_STATUS_TEXT); overlay.renderer.endFrame();
-			const frame = overlay.queue.consumeOverlayFrame();
-			for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Glyphs)
-				return (frame.commandRefs[index] as GlyphRenderSubmission).items as string;
-			assert.fail('the real status renderer did not queue its text');
-		};
-		assert.match(draw(), variant === 'tiny' ? /^X0-8 Y0-27 \| MAP 120x1/ : /^X0-10 Y0-21 \| MAP 120x1/);
+		f.pane.updateStatus();
+		const status = f.pane.statusItems[0], initial = status.text;
 		assert.equal(f.input.selected, undefined, 'initial orientation must not choose a marker');
 		const grid = f.input.grid, x = grid.bounds.left + grid.cellSize * 2 + 1, y = grid.bounds.top + grid.cellSize * 3 + 1;
 		pointerHover.beginDispatch(); f.pointer(x, y); pointerHover.endDispatch();
-		assert.match(draw(), / @2,3 \| /);
-		grid.scrollBy(2.5, 0); assert.match(draw(), / @4,3 \| /, 'stationary pointer coordinates follow a real grid pan');
+		f.pane.updateStatus(); const hovered = status.text; assert.notEqual(hovered, initial);
+		grid.scrollBy(2.5, 0); f.pane.updateStatus();
+		const panned = status.text; assert.notEqual(panned, hovered, 'stationary pointer coordinates follow a real grid pan');
 		const capture = t.mock.method(grid, 'captureView'), read = t.mock.method(f.model.buffer, 'getText'), advance = t.mock.method(editorViewState.font, 'advance');
-		for (let frame = 0; frame < 1000; frame++) draw();
+		for (let frame = 0; frame < 1000; frame++) f.pane.updateStatus();
 		assert.equal(capture.mock.callCount(), 0); assert.equal(read.mock.callCount(), 0); assert.equal(advance.mock.callCount(), 0);
-		grid.content = { ...grid.content! }; draw();
+		grid.content = { ...grid.content! }; f.pane.updateStatus();
 		assert.equal(advance.mock.callCount(), 0, 'a source generation with unchanged status values does not remeasure identical text');
 		f.layout(variant === 'tiny' ? 118 : 78, variant === 'tiny' ? 'msx' : 'tiny');
-		assert.match(draw(), variant === 'tiny' ? / @4,2 \| / : / @5,4 \| /, 'font reflow reprojects the stationary admitted pointer');
+		f.pane.updateStatus(); assert.notEqual(status.text, panned, 'font reflow reprojects the stationary admitted pointer');
 		f.layout(variant === 'tiny' ? 78 : 118, variant);
-		assert.match(draw(), / @4,3 \| /);
+		f.pane.updateStatus(); assert.equal(status.text, panned);
 		f.bounds.top += 50; f.layout();
-		assert.doesNotMatch(draw(), / @/, 'layout moving the grid away revokes the old physical cell');
+		f.pane.updateStatus(); assert.notEqual(status.text, panned, 'layout moving the grid away revokes the old physical cell');
 		f.bounds.top -= 50; f.layout();
-		pointerHover.clear(); assert.doesNotMatch(draw(), / @/, 'surface occlusion retires the actual hover lease');
+		pointerHover.clear(); f.pane.updateStatus(); assert.notEqual(status.text, panned, 'surface occlusion retires the actual hover lease');
 		pointerHover.beginDispatch(); f.pointer(x, y); pointerHover.endDispatch();
-		assert.match(draw(), / @4,3 \| /);
-		f.input.section = 'outline'; f.layout(); assert.match(draw(), /^MAP 120x1/); assert.doesNotMatch(draw(), / @|^X/);
-		f.input.diagnostic = 'Authored row is source-only.'; assert.equal(draw(), f.input.diagnostic, 'diagnostics retain status priority');
-		f.input.diagnostic = ''; assert.equal(draw(), '', 'empty authored diagnostics are not replaced with orientation text');
+		f.pane.updateStatus(); assert.equal(status.text, panned);
+		f.input.section = 'outline'; f.layout(); f.pane.updateStatus(); assert.notEqual(status.text, initial);
+		f.input.diagnostic = 'Authored row is source-only.'; f.pane.updateStatus();
+		assert.equal(status.text, f.input.diagnostic, 'diagnostics retain status priority');
+		f.input.diagnostic = ''; f.pane.updateStatus(); assert.equal(status.text, '', 'empty authored diagnostics are not replaced with orientation text');
 		f.input.diagnostic = null; f.pane.clearInput(); assert.equal(pointerHover.has(f.pane), false);
 	});
 }

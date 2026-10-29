@@ -1,9 +1,10 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { Clipboard } from '../../../../hosts/common/clipboard';
 import { create_rect_bounds, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandId } from '../../../common/commands';
 import * as colors from '../../../common/constants';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { writeClipboard } from '../../../input/clipboard';
@@ -27,6 +28,9 @@ const ACTIONS = ['buildLog.error', 'buildLog.output', 'buildLog.refresh', 'build
 
 /** Captured stdout/stderr and a failure diagnostic are separate documents of the same request. */
 export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 	private readonly reading = new WorkbenchTextViewControl(this.focusTarget);
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly tooltip = new WorkbenchTooltip();
@@ -35,9 +39,8 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 	private attachedInput: BuildLogInput | undefined;
 	private renderedRevision = -1;
 	private heading = '';
-	private status = '';
-	private statusWidth = -1;
-	private statusText = '';
+	private statusInput: BuildLogInput | undefined;
+	private statusRevision = -1;
 
 	public constructor(private readonly clipboard: Clipboard, contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
@@ -108,10 +111,6 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 				measureText, editorViewState.font.renderFont(), layout.left + 4);
 			const recipe = `${input.job.request.debug ? 'Debug' : 'Release'} -O${input.job.request.optLevel}`;
 			this.heading = measureText(recipe) <= input.actions.bounds.left - layout.left - 12 ? recipe : '';
-			this.statusText = input.readError === undefined
-				? `${input.channel === 'error' ? 'Failure diagnostic' : 'Captured output'} | ${input.loading ? 'Reading snapshot…' : input.job.state}`
-				: `Read failed: ${input.readError}`;
-			this.statusWidth = -1;
 			write_rect_bounds(this.bodyBounds, layout.left, Math.min(layout.bottom, layout.top + layout.rowHeight + 12), layout.right, layout.bottom);
 		}
 		this.reading.update(this.bodyBounds, editorViewState.font, layout.rowHeight);
@@ -135,10 +134,13 @@ export class BuildLogPane extends WorkbenchViewEditorPane<BuildLogInput> {
 			api.popClipRect();
 		}
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		const width = bounds.right - bounds.left - 8;
-		if (width !== this.statusWidth) { this.statusWidth = width; this.status = truncateTextToWidth(this.statusText, width); }
-		api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
+	public updateStatus(): void {
+		const input = this.input;
+		if (this.statusInput === input && this.statusRevision === input.revision) return;
+		this.statusInput = input; this.statusRevision = input.revision;
+		this.statusItems[0].text = input.readError === undefined
+			? `${input.channel === 'error' ? 'Failure diagnostic' : 'Captured output'} | ${input.loading ? 'Reading snapshot…' : input.job.state}`
+			: `Read failed: ${input.readError}`;
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
 		return this.actions.handlePointer(snapshot) || this.reading.handlePointer(snapshot);

@@ -1,6 +1,6 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { InputFocusScope } from '../../../input/focus';
 import type { EditorCommandRunner } from '../../../common/commands';
-import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { ImageDecoder } from '../../../../hosts/common/image';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -21,6 +21,9 @@ import type { ConversationObserverInput } from './editor_input';
 
 /** Deliberately no composer, account controls, stop button or agent-tool authority. */
 export class ConversationObserverPane extends WorkbenchViewEditorPane<ConversationObserverInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly transcriptView: AssistantTranscriptControl;
@@ -65,8 +68,9 @@ export class ConversationObserverPane extends WorkbenchViewEditorPane<Conversati
 		}
 		this.previews.beginFrame(); this.transcriptView.draw(); this.previews.endFrame();
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
+	public updateStatus(): void {
+		this.input.footer.updateStatus(this.input.conversation);
+		this.statusItems[0].text = this.input.footer.statusText;
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
 		return this.transcriptView.handleSelection(snapshot) || this.transcriptView.scroll.handlePointer(snapshot)

@@ -169,7 +169,7 @@ import { ScenarioLabController } from './workbench/contrib/scenario_lab/controll
 import { drawResourcePanel } from './workbench/render/resource_panel';
 import { WorkbenchWindowStatus } from './workbench/ui/window/status';
 import { EditorCommandKeybindingController } from './input/keyboard/global_bindings';
-import { renderStatusBar } from './workbench/render/status_bar';
+import { WorkbenchStatusBar } from './workbench/ui/status_bar/control';
 import { renderTopBar } from './workbench/render/top_bar';
 import { layoutTopBar } from './workbench/ui/top_bar/layout';
 import { MenubarController } from './workbench/ui/top_bar/controller';
@@ -223,6 +223,7 @@ export type CartEditor = TextInputHost & {
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorParts: EditorParts;
 	readonly mainWorkspace: MainWorkspace;
+	readonly statusBar: WorkbenchStatusBar;
 	readonly problems: ProblemsPanelController;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly editorInputSerializers: EditorInputSerializers;
@@ -287,6 +288,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
 	public readonly mainWorkspace: MainWorkspace;
+	public readonly statusBar: WorkbenchStatusBar;
 	public readonly problems: ProblemsPanelController;
 	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'regions' | 'scope'>;
 	private readonly windowStatus: WorkbenchWindowStatus;
@@ -442,7 +444,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.resourcePanel = this.initialize(resourcePanelWidthRatio, viewport, fontVariant,
 			new ProjectContentIndex(editorTextModelService, sources.catalog, behaviorSources.registrations, workbench.sceneSources));
 		this.surfaces = new WorkbenchSurfaceService(this.onSurfaceChange);
-		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.attachContextMenuSession);
+		this.contextMenu = new ContextMenuController(inputFocus, pointerCapture, this.rootSurfaceBounds, this.attachContextMenuSession);
 		this.menubar = new MenubarController(this.contextMenu, this.commands, this.chromeRenderContext);
 		this.quickInput = new QuickInputController(this.contextMenu, () => this.surfaces.changed(),
 			next => next !== null && this.surfaces.isInContext(next.scope.surfaceScope, this.quickInput.pointerScope),
@@ -517,6 +519,8 @@ export class RuntimeCartEditor implements CartEditor {
 		}, saves: textFileSaves, models: editorTextModelService, prompt: this.actionPrompt,
 		});
 		this.windowStatus = new WorkbenchWindowStatus(this.editorParts, this.commands, this.surfaces, chromeSurface, this.rootSurfaceBounds);
+		this.statusBar = new WorkbenchStatusBar(this.surfaces, chromeSurface, this.commands, this.quickInput, this.clipboard, workArea);
+		this.resourcePanel.focusTarget.scope.statusSource = this.resourcePanel;
 		this.unbindWorkspaceModels = editorTextModelService.onWillClear(() => this.mainWorkspace.reset());
 
 		this.surfaces.attach({
@@ -852,6 +856,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.editorParts.update(deltaSeconds);
 		this.mainWorkspace.update();
 		this.windowStatus.update(inputFocus.admittedTarget?.guestInput !== undefined, this.fault.hostFrameFailure !== undefined);
+		this.statusBar.update(this.fault, this.luaEvaluation, this.serverConnectionState, this.windowStatus.width, this.keybindings.pendingLabel);
 		this.quickInput.update();
 		this.actionPrompt.update();
 		this.contextMenu.update();
@@ -863,6 +868,8 @@ export class RuntimeCartEditor implements CartEditor {
 		layoutTopBar(this.chromeRenderContext, this.menubar.expanded);
 		this.menubar.update();
 		this.layoutMainEditor();
+		this.windowStatus.update(inputFocus.admittedTarget?.guestInput !== undefined, this.fault.hostFrameFailure !== undefined);
+		this.statusBar.update(this.fault, this.luaEvaluation, this.serverConnectionState, this.windowStatus.width, this.keybindings.pendingLabel);
 		this.surfaces.changed();
 	}
 
@@ -878,11 +885,13 @@ export class RuntimeCartEditor implements CartEditor {
 		// A control's declared scope must already have its real surface attached.
 		const owner = this.surfaces.findByScope(origin === null ? this.chromeScope : origin.scope.surfaceScope)!;
 		const presentationParent = this.surfaces.popupContext(owner);
+		const area = presentationParent === undefined ? this.rootSurfaceBounds : presentationParent.getClip();
+		this.contextMenu.layout(area);
 		lifetime.add(this.surfaces.attach({
 			role: 'transient', outsidePress: 'consume', captureScope: this.contextMenu.pointerScope,
 			lifetimeOwner: owner, presentationParent,
 			isVisible: () => this.contextMenu.visible, getBounds: () => this.contextMenu.model.bounds,
-			getClip: presentationParent === undefined ? () => this.rootSurfaceBounds : presentationParent.getClip,
+			getClip: () => area,
 			draw: () => drawContextMenu(this.contextMenu),
 			handlePointer: snapshot => { if (!this.menubar.handlePointer(snapshot)) this.contextMenu.handlePointer(snapshot); },
 			handleWheel: event => { this.contextMenu.handleWheel(event.deltaY); return true; },
@@ -899,16 +908,7 @@ export class RuntimeCartEditor implements CartEditor {
 		api.fill_rect(0, 0, editorViewState.viewportWidth, editorViewState.viewportHeight, 0, constants.COLOR_FRAME);
 		renderTopBar(this.chromeRenderContext, this.menubar);
 		drawResourcePanel(this.resourcePanel);
-		let contextTarget = inputFocus.target;
-		if (contextTarget === this.contextMenu.focusTarget) contextTarget = this.contextMenu.invocationOrigin;
-		if (contextTarget === this.quickInput.field.focusTarget) contextTarget = this.quickInput.invocationOrigin;
-		if (contextTarget === this.actionPrompt.focusTarget) contextTarget = this.actionPrompt.invocationOrigin;
-		const primary = this.mainWorkspace.primary, commandTarget = contextTarget?.commandContext;
-		const statusClient = this.mainWorkspace.isActivityTarget(contextTarget) ? this.mainWorkspace.activity!
-			: primary !== undefined && commandTarget !== undefined && primary.scope.contains(commandTarget.scope)
-				? primary : this.editorParts.activeGroup.panes.activePane;
-		renderStatusBar(this.resourcePanel, this.fault, statusClient, this.luaEvaluation, this.serverConnectionState,
-			contextTarget === null ? null : contextTarget.commandContext, this.windowStatus.width, this.keybindings.pendingLabel);
+		this.statusBar.draw();
 	}
 
 	public async shutdown(): Promise<void> {
@@ -919,6 +919,7 @@ export class RuntimeCartEditor implements CartEditor {
 		this.unbindHostInput();
 		this.unbindSurfaceAdmission();
 		this.unbindWorkspaceModels();
+		this.statusBar.dispose();
 		this.windowStatus.dispose();
 		try {
 			await this.workbench.shutdown();

@@ -9,7 +9,7 @@ import { drawWorkbenchSurfaceShadow } from '../../render/surface';
 export function layoutContextMenu(menu: ContextMenuController): void {
 	if (!menu.visible) return;
 	const view = editorViewState;
-	menu.model.layout(view.viewportWidth, view.viewportHeight, view.lineHeight, view.font, measureText);
+	menu.model.layout(menu.presentationBounds, view.lineHeight, view.font, measureText);
 }
 
 export function drawContextMenu(menu: ContextMenuController): void {

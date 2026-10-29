@@ -16,8 +16,9 @@ import { medianMilliseconds } from '../../helpers/performance';
 
 configureFontVariant('tiny');
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-const menu = new ContextMenuController(inputFocus, pointerCapture);
-const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+const area = { left: 0, top: 0, right: 384, bottom: 288 };
+const menu = new ContextMenuController(inputFocus, pointerCapture, area);
+const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 const accept = () => assert.fail('profiling must not accept a source choice');
 for (const fileCount of [1, 16, 128]) {
 	const project = new EditorLuaSemanticProject(TEST_CARTRIDGE_CONTEXT_IDS[0], new EditorTextModelService());

@@ -1,5 +1,6 @@
 import { inputFocus } from '../../../ide/input/focus';
 import { pointerCapture } from '../../../ide/input/pointer/capture';
+import { resourceIdentityKey } from '../../../ide/common/resource';
 import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
 import { check, sourcePane, type StudioFixture } from './studio_fixture';
 import { openSceneFixture } from './studio_scene_source';
@@ -131,7 +132,9 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 			const horizontal = main.regionLayout.scrollTrack, previousX = main.regionLayout.scrollX;
 			await click({ left: horizontal.right - 1, right: horizontal.right - 1, top: horizontal.top + 1, bottom: horizontal.top + 1 });
 			check(main.regionLayout.scrollX > previousX, 'activity: native Main horizontal scrolling reaches independent document and Details regions');
-			test.presenter.setFixedRenderTargetSize(180, 96);
+			// This constrained input is smaller than the measured row/activity minima,
+			// independently of whether transient feedback currently owns the status row.
+			test.presenter.setFixedRenderTargetSize(180, 80);
 			ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport'); editor.updateViewport(ide.overlayRenderer.viewportSize); await frame();
 			const vertical = main.regionLayout.verticalScrollTrack, previousY = main.regionLayout.scrollY;
 			await click({ left: vertical.left + 1, right: vertical.left + 1, top: vertical.bottom - 1, bottom: vertical.bottom - 1 });
@@ -146,8 +149,47 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 				'activity: constrained diagnostic activation re-reveals the real Source target');
 			check(main.primary === primary && model.buffer.getText() === authored && sceneModel.buffer.getText() === sceneText,
 				'activity: narrow interaction changes no canonical source or primary identity');
+			await test.until(() => editor.statusBar.itemsLayout.items.peek(0)?.item === sourcePane(test)?.statusItems[0],
+				'activity status: transient feedback expires into the real retained Source observation');
 			await frame(); await test.capture?.(`activity-${editor.fontVariant}-theme-${theme}-narrow-source`);
+			const sourceView = sourcePane(test)!.code.view;
+			const cursorRow = sourceView.cursorRow, cursorColumn = sourceView.cursorColumn;
+			await test.runPaletteCommand('View: Focus Files');
+			check(inputFocus.admittedTarget === files.focusTarget && editor.statusBar.itemsLayout.items.peek(0)?.item === files.statusItems[0],
+				'activity status: native Files focus selects its own observations rather than the Source behind it');
+			// New Lua File's queued reveal is admitted when the hidden browser opens.
+			const fileSelection = files.files.selectedNode?.element;
+			const fileIdentity = resourceIdentityKey(model.resource);
+			check(fileSelection?.kind === 'file' && resourceIdentityKey(fileSelection) === fileIdentity,
+				'activity status: native Files admission reveals the canonical file created by New Lua File');
+			await frame(); await test.capture?.(`activity-${editor.fontVariant}-theme-${theme}-narrow-files`);
+			const fileStatus = files.statusItems[0].text;
+			await test.runPaletteCommand('View: Status Details');
+			await test.until(() => editor.quickInput.visible && inputFocus.admittedTarget === editor.quickInput.field.focusTarget,
+				'activity status: the registered disclosure opens its native full-value picker');
+			check(editor.quickInput.invocationOrigin === files.focusTarget,
+				'activity status: a palette-invoked disclosure preserves the real Files origin');
+			await frame(); await test.capture?.(`activity-${editor.fontVariant}-theme-${theme}-files-status-details`);
+			await press('Enter');
+			await test.until(() => !editor.quickInput.visible && inputFocus.admittedTarget === files.focusTarget,
+				'activity status: choosing a complete status value returns to its actual native invoker');
+			check(await test.clipboard.readText() === fileStatus,
+				'activity status: native disclosure copies the exact untruncated producer value');
+			const afterSelection = files.files.selectedNode?.element;
+			check(afterSelection?.kind === 'file' && resourceIdentityKey(afterSelection) === fileIdentity,
+				'activity status: disclosure preserves the Files subject admitted by native Focus Files');
+			check(problems.selectedDiagnostic === selected, 'activity status: disclosure cannot replace the selected diagnostic observation');
+			check(sourceView.cursorRow === cursorRow && sourceView.cursorColumn === cursorColumn,
+				'activity status: disclosure cannot move the canonical Source caret');
+			check(model.buffer.getText() === authored, 'activity status: disclosure cannot change the diagnostic Source bytes');
+			check(sceneModel.buffer.getText() === sceneText, 'activity status: disclosure cannot change the independent Scene bytes');
+			check(main.primary === primary, 'activity status: disclosure cannot replace the independent Main subject');
+			await press('ControlLeft', 'KeyB');
 			await press('ControlLeft', 'ShiftLeft', 'KeyM'); await press('ControlLeft', 'ShiftLeft', 'KeyM');
+			check(inputFocus.admittedTarget === problems.focusTarget,
+				'activity status: the native Activity control owns its selected diagnostic status');
+			await test.until(() => editor.statusBar.itemsLayout.items.peek(0)?.item === problems.statusItems[0],
+				'activity status: copy feedback yields to the retained selected diagnostic without another status row');
 			await frame(); await test.capture?.(`activity-${editor.fontVariant}-theme-${theme}-narrow-problems`);
 			test.presenter.setFixedRenderTargetSize(640, 360);
 			ide.overlayRenderer.setRenderingViewportType(test.presenter, 'viewport'); editor.updateViewport(ide.overlayRenderer.viewportSize); await frame();

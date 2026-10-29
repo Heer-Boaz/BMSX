@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -11,13 +12,11 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import { truncateMeasuredText, writeWrappedMeasuredLine } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorTextModelService } from '../../../editor/model/model_service';
-import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyDown, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
-import { api } from '../../../runtime/overlay_api';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
 import type { ContextMenuController } from '../../services/context_menu/controller';
@@ -44,6 +43,9 @@ const NAVIGATION = ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']
 // Keep a command identity and sequence readable beside the observed scanout.
 
 export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, event => this.navigate(event));
@@ -56,13 +58,12 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 	private readonly unbindSource: () => void;
 	private readonly rows: GteCommandRow[] = [];
 	private readonly labels = new Map<number, string>();
-	private status = '';
 	private historyRevision = -1;
+	private statusSelectionRevision = -1;
 	private following = false;
 	private selectedReachable = false;
 	private sourceRevision = -1;
 	private readonly source: CapturedLuaSourceBinding;
-	private selectionRevision = -1;
 	private rowFirst = -1;
 	private rowLast = -1;
 	private listOffset: number | undefined;
@@ -202,8 +203,6 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 		layoutWorkbenchActionBar(input.actions, layout.right - 4, layout.top + 2, top - 4, measureText, layout.font!.renderFont(), layout.left + 4);
 		input.actions.items[0].checked = input.following; this.actions.update();
 		this.synchronizeSelection();
-		const selectedChanged = this.selectionRevision !== input.selectionRevision;
-		this.selectionRevision = input.selectionRevision;
 		this.source.update();
 		const hint = this.actions.tooltipItem;
 		if (hint === undefined) this.tooltip.hide();
@@ -238,16 +237,18 @@ export class GteDebuggerPane extends WorkbenchViewEditorPane<GteDebuggerInput> {
 			}
 			this.rows.length = count; this.rowFirst = firstSequence; this.rowLast = lastSequence; this.listOffset = list.offsetTop;
 		}
-		const selectedReachable = input.selected.sequence >= 0 && input.history.canSeek(input.selected);
-		if (layoutChanged || selectedChanged || this.historyRevision !== input.history.revision || this.following !== input.following || this.selectedReachable !== selectedReachable) {
-			const outsideList = input.selected.sequence >= 0 && (input.selected.sequence < input.history.firstSequence || input.selected.sequence >= input.history.endSequence);
-			this.status = truncateMeasuredText(`${input.following ? input.projection.rows.length === 0 ? 'WAITING' : 'FOLLOWING' : 'PINNED'} | ${input.history.observing ? 'Observing' : 'Stopped'}${input.selected.sequence < 0 ? '' : ` | #${input.selected.sequence} T${input.selected.timeline} | tick ${input.selected.completedTick} | cycle ${input.selected.cycles}`}${outsideList ? ' | Record expired' : ''}${input.selected.sequence >= 0 && !selectedReachable ? ' | Frame unavailable' : ''}`, layout.right - layout.left - 8, measureTextRange);
-			this.historyRevision = input.history.revision; this.following = input.following; this.selectedReachable = selectedReachable;
-		}
 		this.details!.update();
 	}
 	public draw(): void { drawGteDebugger(this.input, this.rows, this.emptyLines); }
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont()); }
+	public updateStatus(): void {
+		const input = this.input;
+		const selectedReachable = input.selected.sequence >= 0 && input.history.canSeek(input.selected);
+		if (this.statusSelectionRevision !== input.selectionRevision || this.historyRevision !== input.history.revision || this.following !== input.following || this.selectedReachable !== selectedReachable) {
+			const outsideList = input.selected.sequence >= 0 && (input.selected.sequence < input.history.firstSequence || input.selected.sequence >= input.history.endSequence);
+			this.statusItems[0].text = `${input.following ? input.projection.rows.length === 0 ? 'WAITING' : 'FOLLOWING' : 'PINNED'} | ${input.history.observing ? 'Observing' : 'Stopped'}${input.selected.sequence < 0 ? '' : ` | #${input.selected.sequence} T${input.selected.timeline} | tick ${input.selected.completedTick} | cycle ${input.selected.cycles}`}${outsideList ? ' | Record expired' : ''}${input.selected.sequence >= 0 && !selectedReachable ? ' | Frame unavailable' : ''}`;
+			this.statusSelectionRevision = input.selectionRevision; this.historyRevision = input.history.revision; this.following = input.following; this.selectedReachable = selectedReachable;
+		}
+	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (this.actions.handlePointer(snapshot)) return true;
 		const input = this.input, secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;

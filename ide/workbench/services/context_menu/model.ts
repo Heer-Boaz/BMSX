@@ -1,5 +1,5 @@
 import { clamp } from '../../../../machine/ts/common/clamp';
-import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
+import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { editorCommandTitle } from '../../../commands/catalog';
 import { EDITOR_COMMAND_KEYBINDING_LABELS } from '../../../input/keyboard/command_keybindings';
 import type { EditorCommandId } from '../../../common/commands';
@@ -36,6 +36,8 @@ export class ContextMenuModel {
 	private placement: ContextMenuPlacement = 'point';
 	private width = -1;
 	private height = -1;
+	private left = 0;
+	private top = 0;
 	private font: object | undefined;
 
 	public setItems(items: readonly WorkbenchMenuItem[], x: number, y: number, shortTitles = false, placement: ContextMenuPlacement = 'point'): void {
@@ -62,10 +64,13 @@ export class ContextMenuModel {
 		this.font = undefined;
 	}
 
-	public layout(width: number, height: number, lineHeight: number, font: object, measure: (text: string) => number): void {
-		if (this.width === width && this.height === height && this.rowHeight === lineHeight + 4 && this.font === font) return;
+	public layout(area: Readonly<RectBounds>, lineHeight: number, font: object, measure: (text: string) => number): void {
+		const width = area.right - area.left, height = area.bottom - area.top;
+		if (this.width === width && this.height === height && this.left === area.left && this.top === area.top
+			&& this.rowHeight === lineHeight + 4 && this.font === font) return;
 		this.width = width;
 		this.height = height;
+		this.left = area.left; this.top = area.top;
 		this.font = font;
 		this.rowHeight = lineHeight + 4;
 		let contentHeight = 0;
@@ -82,9 +87,10 @@ export class ContextMenuModel {
 			contentWidth = Math.max(contentWidth, row.labelWidth + (row.keybinding === undefined ? 0 : CONTEXT_MENU_PADDING * 2 + row.keybindingWidth));
 		}
 		const menuWidth = Math.min(width - 4, contentWidth + CONTEXT_MENU_PADDING * 3 + Math.max(lineHeight >> 1, 2) + SCROLLBAR_WIDTH + 2);
-		const menuHeight = Math.min(this.placement === 'below' ? height - this.anchorY - 2 : height - 4, contentHeight + 2);
-		const left = clamp(this.anchorX, 2, width - menuWidth - 2);
-		const top = clamp(this.anchorY, 2, height - menuHeight - 2);
+		const availableHeight = this.placement === 'below' ? Math.min(height - 4, area.bottom - this.anchorY - 2) : height - 4;
+		const menuHeight = Math.min(availableHeight, contentHeight + 2);
+		const left = clamp(this.anchorX, area.left + 2, area.right - menuWidth - 2);
+		const top = clamp(this.anchorY, area.top + 2, area.bottom - menuHeight - 2);
 		write_rect_bounds(this.bounds, left, top, left + menuWidth, top + menuHeight);
 		this.viewport.layout(left + 1, top + 1, left + menuWidth - 1, top + menuHeight - 1, contentHeight);
 		this.revealSelection();

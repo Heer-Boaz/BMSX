@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, STATUS_PRIORITY_DETAIL, STATUS_PRIORITY_ERROR, type WorkbenchStatusItem } from '../../common/status_bar';
 import { requestWorkspaceAutosave } from '../../workspace/storage';
 import { WorkspaceAutosaveChange } from '../../workspace/models';
 import { applyRuntimeErrorOverlay } from '../../../editor/render/error_overlay';
@@ -29,7 +30,6 @@ import { ensureCursorVisible } from '../../../editor/ui/view/caret/view';
 import { clearExecutionStopHighlight, clearRuntimeErrorOverlay } from '../../../editor/contrib/runtime_error/navigation';
 import { CodeEditorHoverController } from '../../../editor/contrib/hover/controller';
 import { renderCodeArea } from '../../../editor/render/code_area/area';
-import { drawEditorText } from '../../../editor/render/text_renderer';
 import { EMPTY_DIAGNOSTICS_BY_ROW } from '../../../editor/contrib/diagnostics/model';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover, type PointerHoverTarget } from '../../../input/pointer/hover';
@@ -42,7 +42,6 @@ import { updateCodeAreaPointerFeedback } from '../../../input/pointer/code/feedb
 import { handleCodeAreaPointerInput } from '../../../input/pointer/code/index';
 import { handleQuickInputPointer } from '../../../input/quick_input/pointer/dispatch';
 import { showEditorMessage, editorFeedbackState } from '../../../common/feedback_state';
-import * as constants from '../../../common/constants';
 import type { CodeEditorInput } from './editor_input';
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { EditorGroupView } from '../../services/editor/editor_group';
@@ -59,13 +58,16 @@ import { SourceInlineBars } from './inline_bar/source_inline_bars';
 import { renderSearchBar, renderRenameBar, renderLineJumpBar } from './render/inline_bar/bars';
 import { bindSourceCommands } from './commands';
 import { handleSourceInput } from './input/keyboard/text_input';
-import { buildStatusLeftInfo } from '../../render/status_bar_info';
-import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
+import { getTextFileRuntimeSourceStatus, type RuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 
 const CODE_SCROLLBARS = ['codeVertical', 'codeHorizontal'] as const;
 
 /** One group's retained Source widget and its concrete editor-bound contributions. */
 export class CodeEditorPane extends EditorPane<CodeEditorInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+		{ text: '', alignment: 'right', priority: STATUS_PRIORITY_DETAIL, overflow: 'ellipsis', tone: 'normal' },
+	];
 	public readonly code: CodeEditorControl;
 	public readonly completion: EditorCompletionController;
 	public readonly find: EditorSearchController;
@@ -87,6 +89,11 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 	private unsubscribeBeforeContentChange: () => void;
 	private unsubscribeReadOnlyChange: () => void;
 	private lastReportedSemanticError: string | null = null;
+	private statusModel: EditorTextModel | undefined;
+	private statusRow = -1;
+	private statusColumn = -1;
+	private statusLineCount = -1;
+	private statusSource: RuntimeSourceStatus | undefined;
 
 	public override get inputScope(): InputFocusScope { return this.code.focusTarget.scope; }
 	public override get commandTarget() { return this.code.focusTarget; }
@@ -304,43 +311,24 @@ export class CodeEditorPane extends EditorPane<CodeEditorInput> {
 		if (!horizontal) scrollRows(this.code, event.deltaY);
 		this.code.caret.cursorRevealSuspended = true;
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
-		const leftX = bounds.left + 4;
-		const statusLeftInfo = buildStatusLeftInfo(this.code);
-
-		if (statusLeftInfo && statusLeftInfo.length > 0) {
-			drawEditorText(this.code.font, statusLeftInfo, leftX, bounds.top + 2, 0, textColor);
+	public updateStatus(): void {
+		const model = this.code.model, view = this.code.view, count = model.buffer.getLineCount();
+		if (model !== this.statusModel || view.cursorRow !== this.statusRow || view.cursorColumn !== this.statusColumn || count !== this.statusLineCount) {
+			this.statusModel = model; this.statusRow = view.cursorRow; this.statusColumn = view.cursorColumn; this.statusLineCount = count;
+			this.statusItems[0].text = `LINE ${view.cursorRow + 1}/${count} COL ${view.cursorColumn + 1}`;
 		}
-		const context = this.input.context;
-		let detail = '';
-		let detailColor = textColor;
-		switch (getTextFileRuntimeSourceStatus(this.sources, context.model)) {
-			case 'applied':
-				detail = 'SOURCE APPLIED';
-				break;
-			case 'pending':
-				detail = 'SOURCE NOT APPLIED';
-				break;
-			case 'failed':
-				detail = 'ASSET APPLY FAILED';
-				detailColor = constants.STATUS_MESSAGE_TEXT_COLORS.error;
-				break;
-			case 'untracked':
-				detail = 'SOURCE NOT CHECKED';
-				break;
-			case 'source_only':
-				detail = 'SOURCE ONLY';
-				break;
-		}
-		if (detail.length > 0) {
-			drawEditorText(
-				this.code.font,
-				detail,
-				bounds.right - this.code.font.measure(detail) - 4,
-				bounds.top + 2,
-				0,
-				detailColor,
-			);
+		const status = getTextFileRuntimeSourceStatus(this.sources, model);
+		if (status !== this.statusSource) {
+			this.statusSource = status;
+			const item = this.statusItems[1];
+			item.text = SOURCE_STATUS[status];
+			item.tone = status === 'failed' ? 'error' : 'normal';
+			item.priority = status === 'failed' ? STATUS_PRIORITY_ERROR : STATUS_PRIORITY_DETAIL;
 		}
 	}
 }
+
+const SOURCE_STATUS = {
+	applied: 'SOURCE APPLIED', pending: 'SOURCE NOT APPLIED', failed: 'ASSET APPLY FAILED',
+	untracked: 'SOURCE NOT CHECKED', source_only: 'SOURCE ONLY',
+};

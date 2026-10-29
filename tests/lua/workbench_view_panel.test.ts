@@ -35,7 +35,7 @@ function fixture(t: TestContext) {
 	semantic.registerCommand('save', { contextual: true, isEnabled: () => true, run: () => { saved.push(f.model.buffer.getText()); } });
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('view panel region'), isVisible: () => true,
 		getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => target?.resolveCommand(command)?.isEnabled() === true,
 		execute: (command, target) => { const action = target?.resolveCommand(command); if (action?.isEnabled()) action.run(); } };
 	const actions = new WorkbenchMenu([{ type: 'command', command: 'save' }], undefined);

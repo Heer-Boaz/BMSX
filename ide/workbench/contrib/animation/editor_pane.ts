@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
@@ -11,7 +12,6 @@ import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { editorViewState } from '../../../editor/ui/view/state';
-import { drawEditorText } from '../../../editor/render/text_renderer';
 import { executeTextHistoryCommand } from '../../../editor/editing/history_commands';
 import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
 import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language/lua/source_edits';
@@ -48,6 +48,8 @@ const ANIMATION_AUTHORING_COMMANDS = ['animation.addTrack', 'animation.addKey', 
 	'animation.fit', 'animation.snap', 'animation.remove', 'animation.producerSource', 'animation.producerSourceToSide', 'animation.edit', 'animation.more'] as const;
 
 export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditorInput> {
+	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
+	public readonly statusItems = [this.statusItem];
 	public override getSourceLocation(): EditorSourceLocation | undefined {
 		const input = this.input;
 		return this.controller.getSourceLocation(input);
@@ -297,7 +299,7 @@ export class AnimationEditorPane extends WorkbenchViewEditorPane<AnimationEditor
 			drawWorkbenchSplit(this.input.rowSplit, this.rowSash.hovered || this.rowSash.focusTarget.hasFocus);
 		}
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { drawEditorText(editorViewState.font, this.input.status, bounds.left + 4, bounds.top + 2, 0, color); }
+	public updateStatus(): void { this.statusItem.text = this.input.status; }
 	public handleKeyboard(player: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', player)) { consumeIdeKey('Escape', player); this.lanes.cancelPointer(); return; }
 		for (const [key, delta] of TRACK_NAVIGATION) {

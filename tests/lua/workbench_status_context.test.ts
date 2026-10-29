@@ -1,173 +1,276 @@
-import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
-import { createTestCodeControl } from '../helpers/code_control';
-import { EditorFont } from '../../ide/editor/ui/view/font';
-import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { HeadlessClipboard } from '../../hosts/node/headless/clipboard';
-import { editorFeedbackState } from '../../ide/common/feedback_state';
-import { IdeMicrotaskQueue } from '../../ide/common/microtask_queue';
-import { resourceIdentityKey } from '../../ide/common/resource';
-import { editorRuntimeState } from '../../ide/editor/common/runtime_state';
-import { createCodeEditorViewState } from '../../ide/editor/ui/code_editor_state';
-import { editorViewState } from '../../ide/editor/ui/view/state';
-import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
-import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
+import { KeyModifier } from '../../hosts/common/input/text';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../../ide/common/feedback_state';
+import { editorTextModelService } from '../../ide/editor/model/model_service';
+import { setFieldText } from '../../ide/editor/ui/inline/text_field';
+import { inputFocus } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
-import { api } from '../../ide/runtime/overlay_api';
-import { createRuntimeFaultState } from '../../ide/runtime/fault_state';
-import { RuntimeLuaEvaluation } from '../../ide/runtime/lua_evaluation';
-import { refreshWorkbenchLayout } from '../../ide/workbench/common/layout';
-import { createProblemsPanelFixture } from '../helpers/problems_panel';
-import { renderStatusBar } from '../../ide/workbench/render/status_bar';
-import { buildStatusLeftInfo } from '../../ide/workbench/render/status_bar_info';
-import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
-import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
-import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import { LuaEvaluation } from '../../ide/runtime/lua_evaluation';
+import type { WorkbenchStatusSource } from '../../ide/workbench/common/status_bar';
+import { STATUS_BAR_CONNECTION_WIDTH } from '../../ide/workbench/common/layout';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
-import { RuntimeIdeState } from '../../ide/workbench/state';
-import { createTestCodeDocuments } from '../helpers/code_documents';
-import { createHostFrameFixture } from '../helpers/host_frame';
-import { createHostOverlayFixture } from '../helpers/host_overlay';
-import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { TextQuickPickProvider } from '../../ide/workbench/services/quick_input/text_provider';
+import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { createActualSourcePanes } from '../helpers/source_panes';
 
-const PROMPT_REQUEST: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
+const SCENE = `local scenes = require('cartlib/world/scene_library')
+scenes.register('room', { objects = {
+ { member_id = 'actor', definition_id = 'example', options = { pos = { x = 1, y = 2, z = 3 } } },
+} })
+return {}
+`;
+const REQUEST: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
 	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
 
+type Fixture = ReturnType<typeof createActualSourcePanes>;
+
+/** Inspect the actual composition's producer admission, not a rendered caption. */
+function assertStatusProjection(t: TestContext, f: Fixture, expected: WorkbenchStatusSource, excluded: readonly WorkbenchStatusSource[]) {
+	const selected = t.mock.method(expected, 'updateStatus');
+	const background = excluded.map(source => t.mock.method(source, 'updateStatus'));
+	try {
+		f.paint();
+		assert.ok(selected.mock.callCount() > 0, 'the one shell presentation reads the actual admitted context');
+		for (const source of background) assert.equal(source.mock.callCount(), 0, 'background presentations cannot replace the current status');
+		const projection = f.editor.statusBar.itemsLayout.items;
+		assert.equal(projection.length, expected.statusItems.length);
+		for (let index = 0; index < projection.length; index++) assert.ok(projection.peek(index).item === expected.statusItems[index]);
+	} finally { selected.mock.restore(); for (const source of background) source.mock.restore(); }
+}
+
 function fixture(t: TestContext, variant: 'tiny' | 'msx') {
-	const { models, documents, clock } = createTestCodeDocuments(t);
-	const problems = createProblemsPanelFixture(t, variant).controller;
-	configureFontVariant(variant);
-	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	editorFeedbackState.message.visible = false;
-	const record = createScenarioTestSourceRecord('status.lua', 1, 'return 1\nreturn 2\n');
-	const sources = createScenarioTestSourceState([record]);
-	const resource = sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'status.lua' }))!;
-	const model = models.retain(resource, 'lua', record.src);
-	const view = createCodeEditorViewState();
-	const code = createTestCodeControl(t, model, documents, clock, view, new EditorFont(variant));
-	code.focusTarget.focus();
-	const filesFocus = inputFocus.createTarget(), state = { visible: true };
-	const filter = t.mock.fn(() => 'lua_only' as const);
-	const resources: Parameters<typeof renderStatusBar>[0] = {
-		focusTarget: filesFocus, isVisible: () => state.visible, getFilterMode: filter,
-	};
-	const overlay = createHostOverlayFixture(384, 288), fault = createRuntimeFaultState();
-	const evaluation = new RuntimeLuaEvaluation(null, null, null, null, fault, null, null, null);
-	const status = t.mock.fn(() => { buildStatusLeftInfo(code); });
-	const pane: NonNullable<Parameters<typeof renderStatusBar>[2]> = { drawStatusBar: status };
-	const lineCount = t.mock.method(model.buffer, 'getLineCount');
-	const menu = new ContextMenuController(inputFocus, pointerCapture), quick = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
-	const paint = (owner: InputFocusTarget | null) => {
-		refreshWorkbenchLayout(); overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer);
-		renderStatusBar(resources, fault, owner === problems.focusTarget ? problems : pane, evaluation, 'standalone', owner);
-		overlay.renderer.endFrame(); overlay.queue.consumeOverlayFrame();
-	};
-	t.after(() => {
-		quick.dispose(); menu.dispose();
-		inputFocus.setTarget(null); pointerCapture.cancel();
-	});
-	return { problems, code, model, view, filesFocus, state, filter, status, lineCount, menu, quick, paint };
+	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	f.editor.setFontVariant(variant); editorFeedbackState.message.visible = false;
+	f.host.presenter.setFixedRenderTargetSize(800, 320);
+	f.editor.resourcePanel.show();
+	f.editor.mainWorkspace.setActivityVisible(true); f.update();
+	f.editor.problems.setDiagnostics([{ model: f.firstInput.workingCopy, version: f.firstInput.workingCopy.version,
+		row: 1, startColumn: 2, endColumn: 3, message: 'An exact observed diagnostic.', severity: 'error' }],
+		{ ready: 1, pending: 0, unsupported: 0, failed: 0 });
+	f.editor.problems.setSelectionIndex(0);
+	return f;
 }
 
 for (const variant of ['tiny', 'msx'] as const) {
-	test(`${variant} visible side panels do not replace the active source status owner`, t => {
-		const f = fixture(t, variant);
-
-		f.paint(f.code.focusTarget);
-		assert.equal(f.status.mock.callCount(), 1);
-		assert.equal(f.lineCount.mock.callCount(), 1, 'source status consumes the actual source document despite visible Problems');
-		 assert.equal(f.filter.mock.callCount(), 0);
-		assert.equal(f.code.model, f.model); assert.equal(f.code.view, f.view);
+	test(`${variant} one shell status follows actual floating, Files and Activity controls without borrowing source selection`, t => {
+		const f = fixture(t, variant), files = f.editor.resourcePanel, activity = f.editor.problems;
+		const text = f.firstInput.workingCopy.buffer.getText(), version = f.firstInput.workingCopy.version;
+		const view = f.first.code.view, marker = activity.selectedDiagnostic;
+		f.first.focus(); assertStatusProjection(t, f, f.first, [f.second, files, activity]);
+		f.second.focus(); assertStatusProjection(t, f, f.second, [f.first, files, activity]);
+		files.setFocused(true); assertStatusProjection(t, f, files, [f.first, f.second, activity]);
+		f.editor.mainWorkspace.focusActivity(); assertStatusProjection(t, f, activity, [f.first, f.second, files]);
+		activity.header.controls.focusTarget.focus(); assertStatusProjection(t, f, activity, [f.first, f.second, files]);
+		assert.ok(f.first.code.view === view && activity.selectedDiagnostic === marker);
+		assert.equal(f.firstInput.workingCopy.buffer.getText(), text); assert.equal(f.firstInput.workingCopy.version, version);
 	});
 
-	test(`${variant} the explicit Files or Problems owner selects that context without touching source status`, t => {
-		const f = fixture(t, variant);
-		f.filesFocus.focus(); f.paint(f.filesFocus);
-		assert.equal(f.status.mock.callCount(), 0); assert.equal(f.filter.mock.callCount(), 1);
-		 f.problems.setDiagnostics([{ model: f.model, version: f.model.version, row: 1,
-			startColumn: 2, endColumn: 3, message: 'diagnostic', severity: 'error' }], { ready: 1, pending: 0, unsupported: 0, failed: 0 });
-		f.problems.setSelectionIndex(0); f.problems.focus();
-		f.paint(f.problems.focusTarget);
-		assert.equal(f.status.mock.callCount(), 0);
-		assert.equal(f.lineCount.mock.callCount(), 0, 'a selected diagnostic is not the source cursor status');
+	test(`${variant} Main document and independent primary region controls publish their actual status owner`, async t => {
+		const f = fixture(t, variant), main = f.editor.mainWorkspace, group = f.editor.editorParts.main.activeGroup;
+		group.openEditor(new CodeEditorInput(f.secondInput.workingCopy)); f.update();
+		const documentPane = group.panes.activePane; assert.ok(documentPane instanceof CodeEditorPane);
+		const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
+		const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
+		assert.equal(await f.editor.openSceneInMain(model, { document, sourceVersion: model.version, scene: document.scenes[0] }, inputFocus.target!), true);
+		const primary = main.primary; assert.ok(primary instanceof ScenePrimaryClient);
+		main.focusPrimary('hierarchy'); f.update();
+		assertStatusProjection(t, f, primary, [documentPane, f.first, f.second, f.editor.problems]);
+		f.key('ArrowDown'); main.focusPrimary('details'); f.update();
+		const field = primary.details.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true);
+		setFieldText(field.field, '31', true);
+		const selection = primary.consumer.selection;
+		assertStatusProjection(t, f, primary, [documentPane, f.first, f.second, f.editor.problems]);
+		assert.equal(field.pending, true); assert.equal(field.field.text, '31'); assert.equal(model.buffer.getText(), SCENE);
+		assert.ok(primary.consumer.selection === selection);
+		field.cancel(); documentPane.focus();
+		assertStatusProjection(t, f, documentPane, [primary, f.first, f.second, f.editor.problems]);
 	});
 
-	test(`${variant} actual popup invocation ownership preserves source and Files context while popup fields have focus`, t => {
-		const f = fixture(t, variant);
-		f.quick.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
-		assert.equal(inputFocus.target, f.quick.field.focusTarget);
-		f.paint(f.quick.invocationOrigin!.commandContext);
-		assert.equal(f.status.mock.callCount(), 1);
-		f.quick.hide(); f.filesFocus.focus();
-		f.menu.show(30, 40, [], { isEnabled: () => false, execute: () => {} });
-		assert.equal(inputFocus.target, f.menu.focusTarget);
-		assert.equal(f.menu.invocationOrigin, f.filesFocus);
-		f.paint(f.menu.invocationOrigin!.commandContext);
-		assert.equal(f.status.mock.callCount(), 1);
-		assert.equal(f.filter.mock.callCount(), 1);
-	});
-
-	test(`${variant} hidden panels cannot claim status through a retained former target`, t => {
-		const f = fixture(t, variant); f.state.visible = false;
-		f.paint(f.filesFocus);
-		assert.equal(f.status.mock.callCount(), 1);
-	});
-
-	test(`${variant} actual workbench composition resolves nested popup origins before choosing the status owner`, async t => {
-		const host = createHostFrameFixture();
-		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord('status.lua', 1, 'return 1\nreturn 2\n')]);
-		const unused = (): never => { throw new Error('Status composition does not request domain execution.'); };
-		const ide = new RuntimeIdeState(host.runtime, host.presenter, { capture: unused }, unused,
-			{ measureDisplay: () => ({ left: 0, top: 0, width: 384, height: 288 }) },
-			host.input, host.audio, host.tasks, host.execution, host.rewind, host.clock, new HeadlessClipboard(),
-			new IdeMicrotaskQueue(), { log() {} }, 0.3, { width: 384, height: 288 }, sources, new Map(), unused, unused, unused);
-		const editor = ide.editor, problemsPanel = editor.problems;
-		t.after(async () => {
-			inputFocus.setTarget(null);
-			await editor.shutdown(); host.audio.dispose(); host.input.dispose();
-		});
-		editorRuntimeState.active = true; editorFeedbackState.message.visible = false;
-		await editor.navigation.openResource(editor.editorParts.main.activeGroup, sources.catalog.resourceByIdentity.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'status.lua' }))!);
-		editor.setFontVariant(variant);
-		const pane = editor.editorParts.main.activeGroup.panes.getPane('code_editor') as CodeEditorPane, status = t.mock.method(pane, 'drawStatusBar');
-		const model = pane.code.model, view = pane.code.view;
-		const draw = () => {
-			editor.update(0); ide.overlayRenderer.beginFrame(host.presenter); api.beginFrame(ide.overlayRenderer);
-			editor.draw(); ide.overlayRenderer.endFrame(); host.presenter.hostOverlayQueue.consumeOverlayFrame();
-		};
-		editor.resourcePanel.show(); pane.focus(); draw();
-		assert.equal(status.mock.callCount(), 1, 'visible Files does not own the source status');
+	test(`${variant} global and part-local popup chains retain the real invoking status owner`, async t => {
+		const f = fixture(t, variant), editor = f.editor;
+		for (const part of [f.firstPart, f.secondPart]) {
+			const pane = part.activeGroup.panes.activePane!; pane.focus();
+			part.quickInput.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
+			assert.ok(inputFocus.admittedTarget === part.quickInput.field.focusTarget);
+			assertStatusProjection(t, f, pane, [editor.resourcePanel, editor.problems]);
+			editor.contextMenu.show(part.quickInput.layout.bounds.left + 1, part.quickInput.layout.bounds.top + 1, [], editor.commands);
+			assert.ok(editor.contextMenu.invocationOrigin === part.quickInput.field.focusTarget);
+			assertStatusProjection(t, f, pane, [editor.resourcePanel, editor.problems]);
+			editor.contextMenu.hide(); part.quickInput.hide(); pane.focus();
+			const pending = part.actionPrompt.show(REQUEST);
+			try {
+				assert.ok(inputFocus.admittedTarget === part.actionPrompt.focusTarget);
+				assertStatusProjection(t, f, pane, [editor.resourcePanel, editor.problems]);
+				editor.contextMenu.show(part.actionPrompt.view.bounds.left + 1, part.actionPrompt.view.bounds.top + 1, [], editor.commands);
+				assertStatusProjection(t, f, pane, [editor.resourcePanel, editor.problems]);
+			} finally { editor.contextMenu.hide(); part.actionPrompt.close(); await pending; }
+		}
+		editor.mainWorkspace.focusActivity();
 		editor.quickInput.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
-		editor.contextMenu.show(30, 40, [], editor.commands);
-		assert.equal(inputFocus.target, editor.contextMenu.focusTarget);
-		assert.equal(editor.contextMenu.invocationOrigin, editor.quickInput.field.focusTarget);
-		assert.equal(editor.quickInput.invocationOrigin, pane.code.focusTarget);
-		draw(); assert.equal(status.mock.callCount(), 2);
+		editor.contextMenu.show(editor.quickInput.layout.bounds.left + 1, editor.quickInput.layout.bounds.top + 1, [], editor.commands);
+		assertStatusProjection(t, f, editor.problems, [f.first, f.second, editor.resourcePanel]);
 		editor.contextMenu.hide(); editor.quickInput.hide();
 		editor.resourcePanel.setFocused(true);
 		editor.quickInput.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
-		assert.equal(editor.quickInput.invocationOrigin, editor.resourcePanel.focusTarget);
-		draw(); assert.equal(status.mock.callCount(), 2, 'Files remains the context behind its own picker');
-		editor.quickInput.hide(); pane.focus();
-		const prompt = editor.actionPrompt.show(PROMPT_REQUEST);
-		editor.contextMenu.show(30, 40, [], editor.commands);
-		assert.equal(editor.contextMenu.invocationOrigin, editor.actionPrompt.focusTarget);
-		assert.equal(editor.actionPrompt.invocationOrigin, pane.code.focusTarget);
-		draw(); assert.equal(status.mock.callCount(), 3);
-		editor.contextMenu.hide(); editor.actionPrompt.close(); await prompt;
-		editor.mainWorkspace.setActivityVisible(true);
-		problemsPanel.setDiagnostics([{ model: model!, version: model!.version, row: 1, startColumn: 2, endColumn: 3,
-			message: 'diagnostic', severity: 'error' }], { ready: 1, pending: 0, unsupported: 0, failed: 0 });
-		problemsPanel.setSelectionIndex(0);
-		problemsPanel.focusTarget.getCommand('problems.coverage')!.run();
-		assert.notEqual(inputFocus.target, problemsPanel.focusTarget);
-		assert.equal(inputFocus.target!.commandContext, problemsPanel.focusTarget, 'the actual header action target declares its semantic panel');
-		draw(); assert.equal(status.mock.callCount(), 3);
-		editor.quickInput.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
-		assert.equal(editor.quickInput.invocationOrigin!.commandContext, problemsPanel.focusTarget);
-		draw(); assert.equal(status.mock.callCount(), 3, 'a picker invoked by the header keeps the selected diagnostic context');
+		assertStatusProjection(t, f, editor.resourcePanel, [f.first, f.second, editor.problems]);
 		editor.quickInput.hide();
-		assert.equal(pane.code.model, model); assert.equal(pane.code.view, view);
+	});
+
+	test(`${variant} retiring an invoking attachment cannot keep its status alive behind a newer foreground`, async t => {
+		const f = fixture(t, variant), editor = f.editor;
+		f.first.focus(); f.firstPart.quickInput.pick('choices', '', () => new TextQuickPickProvider([{ label: 'choice', description: '', detail: '' }]), () => {});
+		assert.equal(await editor.editorParts.close(f.firstPart), true); f.second.focus(); f.update();
+		assert.equal(f.firstPart.quickInput.visible, false);
+		assertStatusProjection(t, f, f.second, [f.first, editor.resourcePanel, editor.problems]);
+		editor.resourcePanel.setFocused(true); editor.resourcePanel.hide(); f.second.focus();
+		assertStatusProjection(t, f, f.second, [f.first, editor.resourcePanel, editor.problems]);
+		editor.mainWorkspace.focusActivity(); editor.mainWorkspace.setActivityVisible(false); f.second.focus();
+		assertStatusProjection(t, f, f.second, [f.first, editor.resourcePanel, editor.problems]);
+	});
+
+	test(`${variant} native status keyboard focus copies complete and withdrawn producer observations`, async t => {
+		const f = fixture(t, variant), editor = f.editor;
+		editor.updateViewport({ width: 118, height: 240 }); f.first.focus(); f.update();
+		const source = f.first.statusItems[0], raw = source.text;
+		assert.ok(editor.statusBar.itemsLayout.items.peek(0).item === source);
+		editor.commands.execute('status.focus', inputFocus.admittedTarget);
+		assert.ok(inputFocus.admittedTarget === editor.statusBar.focusTarget);
+		f.key('KeyC', KeyModifier.ctrl);
+		assert.equal(await editor.clipboard.readText(), raw, 'clipboard data remains the exact full producer value');
+		assert.equal(editor.statusBar.itemsLayout.items.peek(1).visible, false);
+		f.key('ArrowRight'); f.key('KeyC', KeyModifier.ctrl);
+		assert.equal(await editor.clipboard.readText(), f.first.statusItems[1].text,
+			'keyboard reading reaches lower-priority facts even when their native status slot is withdrawn');
+		f.key('Escape'); assert.ok(inputFocus.admittedTarget === f.first.commandTarget);
+		assert.equal(f.firstInput.workingCopy.buffer.getText(), f.source); assert.equal(f.firstInput.workingCopy.dirty, false);
+	});
+
+	test(`${variant} native status disclosure captures complete values while later facts in the same attachment change`, async t => {
+		const f = fixture(t, variant), editor = f.editor;
+		editor.updateViewport({ width: 118, height: 240 }); f.first.focus(); f.update();
+		const raw = f.first.statusItems[0].text, origin = inputFocus.admittedTarget;
+		editor.commands.execute('status.details', origin);
+		const picker = editor.quickInput;
+		assert.equal(picker.visible, true); assert.ok(picker.invocationOrigin === origin);
+		const entry = picker.model.list.rows[0].item;
+		assert.ok('text' in entry && entry.text === raw, 'disclosure captures the full observation, not a rendered label');
+		f.firstInput.workingCopy.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- a later canonical observation\n' }]);
+		f.update();
+		assert.equal(picker.visible, true); assert.notEqual(f.first.statusItems[0].text, raw);
+		assert.ok(picker.model.list.rows[0].item === entry);
+		f.key('Enter');
+		assert.equal(await editor.clipboard.readText(), raw); assert.equal(picker.visible, false);
+		assert.ok(inputFocus.admittedTarget === origin);
+	});
+
+	test(`${variant} replacing the concrete Source attachment retires a disclosed status snapshot before it can copy`, async t => {
+		const f = fixture(t, variant), editor = f.editor;
+		editor.updateViewport({ width: 118, height: 240 }); f.first.focus(); f.update(); await editor.clipboard.writeText('unchanged clipboard');
+		editor.commands.execute('status.details', inputFocus.admittedTarget);
+		assert.equal(editor.quickInput.visible, true);
+		f.firstGroup.openEditor(new CodeEditorInput(f.secondInput.workingCopy)); f.second.focus(); f.update();
+		assert.equal(editor.quickInput.visible, false);
+		assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+		assert.equal(await editor.clipboard.readText(), 'unchanged clipboard');
+		assertStatusProjection(t, f, f.second, [f.first, editor.resourcePanel, editor.problems]);
+	});
+
+	test(`${variant} native feedback disclosure copies complete multiline data without publishing or changing source`, async t => {
+		const f = fixture(t, variant), editor = f.editor;
+		f.first.focus();
+		const raw = 'A producer-owned multiline observation\r\nwith exact source/path and\ta second native value.';
+		showEditorMessage(raw, 'warning', 4); f.update();
+		editor.commands.execute('status.details', inputFocus.admittedTarget);
+		const picker = editor.quickInput;
+		assert.equal(picker.visible, true);
+		const item = picker.model.list.rows[0].item;
+		assert.ok('text' in item && item.text === raw);
+		f.key('Enter'); assert.equal(await editor.clipboard.readText(), raw);
+		assert.equal(f.firstInput.workingCopy.buffer.getText(), f.source); assert.equal(f.firstInput.workingCopy.dirty, false);
+	});
+
+	test(`${variant} the real status owner admits chord then evaluation then complete feedback before ordinary source facts`, t => {
+		const f = fixture(t, variant), status = f.editor.statusBar, evaluation = f.ide.luaEvaluation;
+		f.first.focus(); f.update();
+		const source = f.first.statusItems[0], read = t.mock.method(f.first, 'updateStatus');
+		const feedback = 'A complete transient observation\nwith retained second-line data.';
+		try {
+			showEditorMessage(feedback, 'warning', 4); f.update();
+			assert.equal(status.itemsLayout.items.peek(0).fullText, feedback); assert.equal(read.mock.callCount(), 0);
+			evaluation.active = new LuaEvaluation('return 1', 'session', 1, 0); f.update();
+			const running = status.itemsLayout.items.peek(0).fullText;
+			assert.notEqual(running, feedback); assert.ok(status.itemsLayout.items.peek(0).item !== source);
+			f.key('KeyK', KeyModifier.ctrl);
+			assert.notEqual(status.itemsLayout.items.peek(0).fullText, running);
+			assert.equal(read.mock.callCount(), 0);
+			f.key('Escape'); assert.equal(status.itemsLayout.items.peek(0).fullText, running);
+			evaluation.active = undefined; f.update();
+			assert.equal(status.itemsLayout.items.peek(0).fullText, feedback);
+			updateEditorMessage(4); f.update();
+			assert.ok(status.itemsLayout.items.peek(0).item === source); assert.ok(read.mock.callCount() > 0);
+			assert.equal(f.firstInput.workingCopy.buffer.getText(), f.source); assert.equal(f.firstInput.workingCopy.dirty, false);
+		} finally { evaluation.active = undefined; }
+	});
+
+	test(`${variant} hiding the actual status origin revokes a held disclosure without trapping subsequent native keyboard input`, t => {
+		const f = fixture(t, variant), editor = f.editor, files = editor.resourcePanel;
+		editor.updateViewport({ width: 118, height: 240 }); files.setFocused(true); f.update();
+		const bounds = editor.statusBar.itemsLayout.disclosureBounds;
+		assert.ok(bounds.left < bounds.right);
+		const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+		editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
+			releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
+		assert.equal(pointerCapture.active, true);
+		assert.ok(editor.statusBar.itemsLayout.items.peek(0).item === files.statusItems[0]);
+		files.hide(); f.update();
+		assert.equal(pointerCapture.active, false);
+		assert.ok(inputFocus.target === null || inputFocus.admittedTarget === inputFocus.target,
+			'the retired disclosure cannot leave a retained but inadmissible native target');
+		f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
+		assert.equal(editor.quickInput.visible, true); assert.ok(inputFocus.admittedTarget === editor.quickInput.field.focusTarget);
+		editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: PointerButton.Primary,
+			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
+		assert.equal(editor.quickInput.visible, true); assert.ok(inputFocus.admittedTarget === editor.quickInput.field.focusTarget);
+	});
+
+	for (const withdrawal of ['facts', 'geometry'] as const)
+		test(`${variant} ${withdrawal} withdrawal hands native status focus back without trapping Escape or retiring its attached provider`, t => {
+			const f = fixture(t, variant), editor = f.editor, activity = editor.problems;
+			editor.mainWorkspace.focusActivity(); f.update();
+			const generation = activity.scope.contextGeneration;
+			editor.commands.execute('status.focus', inputFocus.admittedTarget);
+			assert.ok(inputFocus.admittedTarget === editor.statusBar.focusTarget);
+			if (withdrawal === 'facts') activity.setDiagnostics([], { ready: 1, pending: 0, unsupported: 0, failed: 0 });
+			else editor.updateViewport({ width: STATUS_BAR_CONNECTION_WIDTH, height: 240 });
+			f.update();
+			assert.equal(editor.statusBar.canFocus, false);
+			assert.ok(inputFocus.admittedTarget === activity.focusTarget);
+			assert.equal(activity.scope.contextGeneration, generation);
+			const keyboard = t.mock.method(activity.focusTarget, 'handleKeyboard');
+			f.key('Escape'); assert.ok(keyboard.mock.callCount() > 0, 'the real keyboard route still reaches its admitted native owner');
+			f.key('KeyP', KeyModifier.ctrl | KeyModifier.shift);
+			assert.equal(editor.quickInput.visible, true); assert.ok(inputFocus.admittedTarget === editor.quickInput.field.focusTarget);
+			assert.equal(f.firstInput.workingCopy.buffer.getText(), f.source);
+		});
+
+	test(`${variant} a disclosed Activity snapshot survives same-provider empty facts and copies its captured value`, async t => {
+		const f = fixture(t, variant), editor = f.editor, activity = editor.problems;
+		editor.mainWorkspace.focusActivity(); f.update();
+		const generation = activity.scope.contextGeneration, raw = activity.statusItems[0].text;
+		editor.commands.execute('status.details', inputFocus.admittedTarget);
+		const picker = editor.quickInput;
+		assert.equal(picker.visible, true); assert.ok(inputFocus.admittedTarget === picker.field.focusTarget);
+		const item = picker.model.list.rows[0].item; assert.ok('text' in item && item.text === raw);
+		activity.setDiagnostics([], { ready: 1, pending: 0, unsupported: 0, failed: 0 }); f.update();
+		assert.equal(activity.statusItems[0].text, ''); assert.equal(activity.scope.contextGeneration, generation);
+		assert.equal(picker.visible, true); assert.ok(picker.model.list.rows[0].item === item);
+		assert.ok(inputFocus.admittedTarget === picker.field.focusTarget);
+		f.key('Enter'); assert.equal(await editor.clipboard.readText(), raw);
+		assert.equal(picker.visible, false); assert.ok(inputFocus.admittedTarget === activity.focusTarget);
 	});
 }

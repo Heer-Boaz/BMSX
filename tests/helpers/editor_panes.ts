@@ -66,7 +66,7 @@ export function createTestGroupPresentation(surfaces = new WorkbenchSurfaceServi
 		isVisible: () => true, getBounds: () => workArea, getClip: () => workArea, draw() {} });
 	return { surfaces, owner, focusScope, workArea, renderContext: TEST_EDITOR_TAB_RENDER_CONTEXT,
 		dropTarget: { update() {}, drop() {}, clear() {} },
-		contextMenu: new ContextMenuController(inputFocus, pointerCapture), layout: group => group.layout(group.bounds, group.clip, group.presented) };
+		contextMenu: new ContextMenuController(inputFocus, pointerCapture, workArea), layout: group => group.layout(group.bounds, group.clip, group.presented) };
 }
 
 class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
@@ -116,8 +116,8 @@ class TestEditorPane<TInput extends EditorInput> extends EditorPane<TInput> {
 	public handleWheel(_event: WheelInputSnapshot): void {
 	}
 
-	public drawStatusBar(_bounds: Readonly<RectBounds>, _textColor: number): void {
-	}
+	public readonly statusItems = [];
+	public updateStatus(): void {}
 }
 
 class TestCodeEditorPane extends TestEditorPane<CodeEditorInput> {

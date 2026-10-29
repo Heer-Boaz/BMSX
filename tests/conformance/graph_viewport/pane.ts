@@ -49,7 +49,8 @@ class GraphFixturePane extends EditorPane<CodeEditorInput> {
 	public handleWheel(event: WheelInputSnapshot): void {
 		this.graph.handleWheel(event);
 	}
-	public drawStatusBar(): void {}
+	public readonly statusItems = [];
+	public updateStatus(): void {}
 }
 
 export function createGraphFixturePanes(views: readonly GraphFixtureView[]) {

@@ -184,7 +184,7 @@ test('accepted map moves and focused history reveal the restored member in both 
 	const { model, input } = fixture(`map_rows: ["${cells.join('')}"]\n`, 'nemesis');
 	const bounds = { left: 0, top: 0, right: 320, bottom: 200 }, surfaces = new WorkbenchSurfaceService();
 	const surface = surfaces.attach({ role: 'content', captureScope: Symbol('map fixture'), getBounds: () => bounds, getClip: () => bounds, isVisible: () => true, draw() {} });
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	t.after(() => menu.dispose());
 	const pane = new CartMapPane(null!,
 		{ isEnabled: () => false, execute: () => assert.fail('unexpected action bar command') }, createScenarioTestSourceState([]), surfaces, surface, bounds, inputFocus.workbenchScope, menu);

@@ -28,7 +28,8 @@ function fixture(t: TestContext, attach = true, source = SOURCE, imports: readon
 	const view = new SceneDetailsViewState(context);
 	const scope = new InputFocusScope(Symbol('independent Details'), inputFocus.workbenchScope);
 	const parent = inputFocus.createTarget(null, scope);
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const bounds = { left: 0, top: 0, right: 260, bottom: 100 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => target?.getCommand(command)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
@@ -41,7 +42,6 @@ function fixture(t: TestContext, attach = true, source = SOURCE, imports: readon
 	parent.registerCommand('undo', { isEnabled: () => f.model.canUndo, run: () => f.model.undo() });
 	parent.registerCommand('redo', { isEnabled: () => f.model.canRedo, run: () => f.model.redo() });
 	control = new SceneDetailsControl(commands, menu, scope, parent, sections);
-	const bounds = { left: 0, top: 0, right: 260, bottom: 100 };
 	const select = (index: number) => {
 		context.refresh();
 		const document = context.document!, scene = document.scenes[0];

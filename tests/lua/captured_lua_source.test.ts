@@ -158,7 +158,7 @@ test('a real Source popup cannot execute an attempt retired by equal-text catalo
 	const f = fixture(t); f.binding.bind(f.captured, f.pc);
 	const focus = new InputFocusService(), capture = new PointerCaptureService();
 	const origin = focus.createTarget(); origin.focus();
-	const menu = new ContextMenuController(focus, capture);
+	const menu = new ContextMenuController(focus, capture, { left: 0, top: 0, right: 384, bottom: 288 });
 	t.after(() => menu.dispose());
 	let opened = 0;
 	menu.show(8, 8, [{ type: 'command', command: 'gte.source' }], {

@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -16,7 +17,6 @@ import { consumeIdeKey, isKeyJustPressed, isShiftDown, isKeyDown } from '../../.
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
-import { api } from '../../../runtime/overlay_api';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
@@ -33,13 +33,15 @@ import { CartMapNavigationSelection, restoreCartMapView } from './view_snapshot'
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
-import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
-import type { EditorFont } from '../../../editor/ui/view/font';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 
 /** Display seeds carry coordinates; an accepted draft carries a versioned source proposal. */
 export type CartMapCoordinateEdit = { readonly coordinate: number; readonly edit?: EditorModelEdit };
 
 export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 	public override getSourceLocation(): EditorSourceLocation | undefined {
 		const input = this.input;
 		return this.controller.getSourceLocation(input);
@@ -57,13 +59,10 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 	private gridHovered = false;
 	private gridPointerX = 0;
 	private gridPointerY = 0;
-	private statusText = '';
 	private statusMapWidth: number | undefined;
 	private statusMapHeight: number | undefined;
 	private statusDiagnostic: string | null | undefined;
 	private statusSource = '';
-	private statusFont: EditorFont | undefined;
-	private statusWidth = -1;
 	private readonly statusRange = create_rect_bounds();
 	private statusRangeVisible = false;
 	private statusColumn: number | undefined;
@@ -295,22 +294,22 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		}
 	}
 	public draw(): void { drawCartMap(this.input, this.controls, this.gridFocus.hasFocus, this.focusTarget.hasFocus); }
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
+	public updateStatus(): void {
 		const input = this.input, grid = input.grid, selected = input.tree.rows[input.tree.selectionIndex]?.element;
 		const diagnostic = input.diagnostic ?? selected?.diagnostic;
 		const source = ASSET_STATUS[getTextFileRuntimeSourceStatus(this.sources, input.workingCopy)];
-		const content = grid.content, font = editorViewState.font, width = bounds.right - bounds.left - 8;
+		const content = grid.content;
 		const mapWidth = content?.width, mapHeight = content?.rows.length;
 		const visible = input.layout.mode !== 'outline' && grid.bounds.right > grid.bounds.left && grid.bounds.bottom > grid.bounds.top;
 		const range = grid.visibleRange;
 		const hover = visible && this.gridHovered && pointerHover.has(this) && point_in_rect(this.gridPointerX, this.gridPointerY, grid.bounds);
 		const column = hover ? grid.columnAt(this.gridPointerX) : undefined, row = hover ? grid.rowAt(this.gridPointerY) : undefined;
 		if (mapWidth !== this.statusMapWidth || mapHeight !== this.statusMapHeight || diagnostic !== this.statusDiagnostic || source !== this.statusSource
-			|| font !== this.statusFont || width !== this.statusWidth || visible !== this.statusRangeVisible
+			|| visible !== this.statusRangeVisible
 			|| range.left !== this.statusRange.left || range.top !== this.statusRange.top || range.right !== this.statusRange.right || range.bottom !== this.statusRange.bottom
 			|| column !== this.statusColumn || row !== this.statusRow) {
 			this.statusMapWidth = mapWidth; this.statusMapHeight = mapHeight; this.statusDiagnostic = diagnostic; this.statusSource = source;
-			this.statusFont = font; this.statusWidth = width; this.statusRangeVisible = visible;
+			this.statusRangeVisible = visible;
 			write_rect_bounds(this.statusRange, range.left, range.top, range.right, range.bottom);
 			this.statusColumn = column; this.statusRow = row;
 			let text = source;
@@ -320,11 +319,8 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 				if (column !== undefined) text += ` @${column},${row}`;
 				text += ` | ${source}`;
 			}
-			this.statusText = truncateTextToWidth(diagnostic ?? text, width);
+			this.statusItems[0].text = diagnostic ?? text;
 		}
-		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-		api.blit_text_inline_with_font(this.statusText, bounds.left + 4, bounds.top + 2, 0, color, font.renderFont());
-		api.popClipRect();
 	}
 	public override clearInput(): void {
 		pointerHover.release(this);

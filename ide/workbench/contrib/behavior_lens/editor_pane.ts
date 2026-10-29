@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, STATUS_PRIORITY_DETAIL, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
@@ -15,7 +16,6 @@ import { acceptBehaviorGraphSelection } from './graph_navigation';
 import { acceptStateGraphSelection } from './state_graph_navigation';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { drawEditorText } from '../../../editor/render/text_renderer';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { editorRuntimeState } from '../../../editor/common/runtime_state';
@@ -53,6 +53,10 @@ import type { BehaviorSourceIndex } from './source_index';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 
 export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLensInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+		{ text: '', alignment: 'right', priority: STATUS_PRIORITY_DETAIL, overflow: 'ellipsis', tone: 'normal' },
+	];
 	public override getSourceLocation(): EditorSourceLocation | undefined {
 		const input = this.input;
 		return this.controller.getSourceLocation(input);
@@ -446,20 +450,9 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		else scrollWorkbenchList(view.presentation, event.deltaY * 3);
 	}
 
-	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
-		// Runtime inspection replaces the source graph; its selection is not the inspection source target.
-		if (this.inspector.visible) return;
+	public updateStatus(): void {
 		const status = this.input.view.status;
-		drawEditorText(editorViewState.font, status.info, bounds.left + 4, bounds.top + 2, 0, textColor);
-		if (status.detail.length > 0) {
-			drawEditorText(
-				editorViewState.font,
-				status.detail,
-				bounds.right - measureText(status.detail) - 4,
-				bounds.top + 2,
-				0,
-				textColor,
-			);
-		}
+		this.statusItems[0].text = this.inspector.visible ? '' : status.info;
+		this.statusItems[1].text = this.inspector.visible ? '' : status.detail;
 	}
 }

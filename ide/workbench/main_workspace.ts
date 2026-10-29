@@ -423,10 +423,12 @@ export class MainWorkspace {
 		const previous = this.primaryValue;
 		this.releasePrimaryChanges?.();
 		this.primaryValue = candidate;
+		if (candidate !== undefined) candidate.scope.statusSource = candidate;
 		if (candidate === undefined && this.activeClient === 'primary') this.activeClient = 'documents';
 		this.releasePrimaryChanges = candidate?.onDidChange(() => this.changed());
 		if (candidate !== undefined) this.prompt.focusTarget.commandContext = candidate.commandTarget;
 		if (previous !== undefined) {
+			previous.scope.statusSource = undefined;
 			const focused = inputFocus.target;
 			// Admitted replacement owns the handoff; retiring a widget must not activate its return destination.
 			if (focused !== null && previous.scope.contains(focused.scope)) inputFocus.setTarget(null);
@@ -454,6 +456,8 @@ export class MainWorkspace {
 		const previous = this.activityValue;
 		if (previous === client) return;
 		this.activityValue = client;
+		client.scope.statusSource = client;
+		if (previous !== undefined) previous.scope.statusSource = undefined;
 		previous?.detach();
 		if (this.activityValue !== client || !this.presented || this.surface.retired) return;
 		this.requestLayout(); this.surfaces.changed();
@@ -657,7 +661,7 @@ export class MainWorkspace {
 		this.releasePrimaryChanges?.(); this.releasePrimaryChanges = undefined;
 		this.primaryValue = undefined;
 		this.activeClient = 'documents';
-		if (client !== undefined) { client.scope.retireContext(); client.dispose(); }
+		if (client !== undefined) { client.scope.statusSource = undefined; client.scope.retireContext(); client.dispose(); }
 		this.primaryScope.retireContext(); this.prompt.close('cancel', false);
 		this.activityValue?.detach(); this.activitySashAttached = false; this.activitySash.clearInput();
 		for (const region of REGIONS) { this.sashAttached[region] = false; this.sashes[region].clearInput(); }

@@ -44,7 +44,8 @@ function fixture(t: TestContext, source = SOURCE) {
 		createScenarioTestSourceRecord('cartlib/behaviour_tree/library.lua', 1, ''),
 		createScenarioTestSourceRecord('cartlib/actioneffects.lua', 1, ''),
 	]);
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	const surfaces = new WorkbenchSurfaceService();
 	const navigation = new EditorNavigationController(sources.catalog, null!, null!);
 	const documents = new BehaviorSourceDocuments(editorTextModelService, sources.catalog);

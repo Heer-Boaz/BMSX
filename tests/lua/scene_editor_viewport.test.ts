@@ -53,7 +53,7 @@ function arrangeScene(view: SceneEditorViewState, contentChanged: boolean, selec
 function detailsControl(t: TestContext, view: SceneEditorViewState) {
 	const scope = new InputFocusScope(Symbol('layout inspector'), inputFocus.workbenchScope);
 	const parent = inputFocus.createTarget(null, scope);
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, view.layout);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),

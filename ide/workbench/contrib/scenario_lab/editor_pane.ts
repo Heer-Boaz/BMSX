@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { WorkbenchSplitControl } from '../../ui/split_control';
 import { scrollWorkbenchList, workbenchListContainsPosition } from '../../ui/list_view';
@@ -10,14 +11,12 @@ import { describeScenarioMessageDetails, describeScenarioTestResult, type Scenar
 import type { ScenarioLabInspectableRow } from './view_model';
 import { selectedScenarioResultRow } from './projection';
 import { prepareScenarioLabLayout } from './layout';
-import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
-import type { EditorFont } from '../../../editor/ui/view/font';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { EditorTextSelection } from '../../../editor/navigation/text_selection';
 import { ScenarioLabNavigationSelection } from './navigation_selection';
 import type { PlayerInput } from '../../../../hosts/common/input/player';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { drawEditorText } from '../../../editor/render/text_renderer';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { ScenarioLabInput } from './editor_input';
@@ -51,6 +50,9 @@ const RUN_COMMANDS = [
 ] as const satisfies readonly EditorScenarioLabCommandId[];
 
 export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 	public override getSelection(): ScenarioLabNavigationSelection {
 		this.controller.updateView(this.input.view);
 		prepareScenarioLabLayout(this.input.view, this.contentBounds);
@@ -88,8 +90,6 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	};
 	private readonly actionBar: WorkbenchActionBarControl;
 	private readonly actionTooltip = new WorkbenchTooltip();
-	private statusWidth = -1;
-	private statusFont: EditorFont | undefined;
 	private readonly rowFeedback: ScenarioLabRowFeedback;
 
 	public constructor(
@@ -148,7 +148,6 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 	}
 
 	protected override activate(): void {
-		this.statusWidth = -1;
 		this.actionBar.setInput(this.input.view.actionBar, this.resultsFocus);
 		this.split.setInput(this.input.view.split);
 	}
@@ -300,19 +299,7 @@ export class ScenarioLabEditorPane extends WorkbenchViewEditorPane<ScenarioLabIn
 		}
 	}
 
-	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
-		const status = this.input.view.status, width = bounds.right - bounds.left - 8, font = editorViewState.font;
-		if (status.dirty || this.statusWidth !== width || this.statusFont !== font) {
-			status.renderedInfo = truncateTextToWidth(status.info, width);
-			status.dirty = false; this.statusWidth = width; this.statusFont = font;
-		}
-		drawEditorText(
-			editorViewState.font,
-			this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : this.input.view.status.renderedInfo,
-			bounds.left + 4,
-			bounds.top + 2,
-			0,
-			textColor,
-		);
+	public updateStatus(): void {
+		this.statusItems[0].text = this.split.focusTarget.hasFocus ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : this.input.view.status.info;
 	}
 }

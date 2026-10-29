@@ -96,7 +96,7 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 	const inspection = f.inspection.open(), actors = inspection.lifetime.add(new ActorRuntimeInspection(inspection));
 	const transport = new RuntimeTransport(runtime, f.execution, f.rewind, f.frameNavigation, () => f.actorExecution.canExecute);
 	const presentation = createTestGroupPresentation(), surfaces = presentation.surfaces;
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture);
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, presentation.workArea);
 	const commands = { isEnabled: () => false, execute() {} };
 	function layoutMain(): void {
 		const part = parts.main, bounds = presentation.workArea;
@@ -127,7 +127,8 @@ function fixture(t: TestContext, entry = ENTRY, run = true, worldSource = WORLD_
 
 for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} stops at rejected focused draft admission`, t => {
 	configureFontVariant('tiny');
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	const f = fixture(t, ENTRY, true, WORLD_SOURCE, []);
 	const model = new EditorTextModel({ contextLabel: 'Fixture project', sourceFilePath: 'draft.lua', contextId: TEST_SYSTEM_CONTEXT_ID, path: 'draft.lua', location: { kind: 'workspace', path: 'draft.lua' },
 		source: { type: 'lua', resid: 'draft' } }, 'lua', 'return 1');
@@ -401,7 +402,8 @@ test('navigation retains the independent Details lock and subject, but never res
 });
 
 test('the actual floating pane retains locked pins while closed or detached without formatting the hidden client', t => {
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	t.after(() => { quickInput.dispose(); contextMenu.hide(); });
 	const f = fixture(t, ENTRY.replace('return world', `function remove_subject() world._objects = { world._objects[2] } end
 function replace_subject() world._objects[2] = { id = 1, definition_id = 'same', active = false, _components = {}, _components_by_class = {} } end
@@ -576,15 +578,13 @@ return world`), true, WORLD_SOURCE, []);
 	const popupFocus = inputFocus.createTarget(pane.inspector.focusTarget, popupScope);
 	popupFocus.bindKeyboard(() => {});
 	popupFocus.focus();
-	const statusText = t.mock.method(api, 'blit_text_inline_with_font', () => {});
-	pane.drawStatusBar(bounds, 0);
-	assert.equal(statusText.mock.calls.at(-1)!.arguments[0], details.title,
+	pane.updateStatus();
+	assert.equal(pane.statusItems[0].text, details.title,
 		'a promoted property popup keeps the locked Details subject, not the independently selected tree subject');
 	pane.focus();
-	pane.drawStatusBar(bounds, 0);
-	assert.notEqual(statusText.mock.calls.at(-1)!.arguments[0], details.title,
+	pane.updateStatus();
+	assert.notEqual(pane.statusItems[0].text, details.title,
 		'unrelated focus cannot keep the Details status active');
-	statusText.mock.restore();
 	popup.dispose();
 	pane.detailsWindow.hide();
 	const saved = pane.getSelection(); t.after(() => saved.dispose());

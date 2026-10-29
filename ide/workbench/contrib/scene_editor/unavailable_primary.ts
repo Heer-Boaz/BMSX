@@ -1,4 +1,4 @@
-import type { RectBounds } from '../../../../machine/ts/common/rect';
+import { EMPTY_STATUS_ITEMS } from '../../common/status_bar';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { inputFocus } from '../../../input/focus';
 import type { MainWorkspaceClient, MainWorkspaceRegionId } from '../../common/main_workspace_client';
@@ -25,6 +25,7 @@ const DETAILS_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [.
 
 /** Unavailable keeps the exact reference and both honest region presentations, without an editable Scene context. */
 export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
+	public readonly statusItems = EMPTY_STATUS_ITEMS;
 	public readonly scope;
 	public readonly commandTarget;
 	public readonly consumer = this;
@@ -84,7 +85,7 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 	public isCurrent(): boolean { return !this.disposed; }
 	public update(): void {}
 	public focus(region: MainWorkspaceRegionId = this.preferredRegion): void { this[region].focus(); }
-	public drawStatusBar(_bounds: Readonly<RectBounds>, _color: number): void {}
+	public updateStatus(): void {}
 	public dispose(): void {
 		this.disposed = true; this.unbindInteraction(); this.hierarchy.dispose(); this.details.dispose(); this.listeners.clear();
 	}

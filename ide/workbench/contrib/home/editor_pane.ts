@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_HINT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { clear_rect_bounds, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandRunner } from '../../../common/commands';
@@ -20,6 +21,7 @@ import { HOME_PADDING as PADDING, HOME_CARD_PADDING as CARD_PADDING, HOME_GAP as
 
 /** A retained action page: existing controls own command admission, focus and physical gestures. */
 export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [{ text: 'Tab: sections | Enter: open', alignment: 'left', priority: STATUS_PRIORITY_HINT, overflow: 'ellipsis', tone: 'normal' }];
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	private readonly actions: readonly WorkbenchActionBarControl[];
 	private attachedInput: HomeInput | undefined;
@@ -232,9 +234,5 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 	public handleWheel(event: WheelInputSnapshot): void {
 		this.scroll.handleWheel(event, event.deltaY * this.actionHeight);
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-		api.blit_text_inline_with_font('Tab: sections | Enter: open', bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
-		api.popClipRect();
-	}
+	public updateStatus(): void {}
 }

@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import type { EditorPaneClearReason } from '../../services/editor/editor_pane';
@@ -11,7 +12,6 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import { COLOR_TAB_BORDER } from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
-import { drawEditorText } from '../../../editor/render/text_renderer';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import type { EditorCommandRunner } from '../../../common/commands';
 import { measureText, measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
@@ -50,6 +50,9 @@ import { WorkbenchFloatingWindow } from '../../ui/window/control';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 
 export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 	public readonly actorActions: ActorLabEditorActions;
 	private gameInput!: GameInputControl;
 	private controller!: ActorLabController;
@@ -74,6 +77,11 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 	public detailsWindow!: WorkbenchFloatingWindow;
 	private readonly graph = new WorkbenchGraphControl(inputFocus, pointerCapture, pointerHover, player => this.handleGraphKeyboard(player), this.focusTarget);
 	private boundGraph: ActorStateGraph | undefined;
+	private statusInput: ActorLabInput | undefined;
+	private statusTopology = -1;
+	private statusTarget: ActorStateGraph['selectedTarget'];
+	private statusAvailable = false;
+	private statusSelectionLabel: string | undefined;
 	public constructor(private readonly commands: EditorCommandRunner,
 		private readonly contextMenu: ContextMenuController, private readonly surfaces: WorkbenchSurfaceService,
 		private readonly paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>, group: EditorGroupView, quickInput: QuickInputController, scope: InputFocusScope) {
@@ -392,11 +400,24 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		this.navigationSelection?.restoreViewport(input);
 		this.navigationSelection = undefined;
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		drawEditorText(editorViewState.font, this.detailsWindow.hasFocus ? this.input.details!.title
-			: this.split.focusTarget.hasFocus ? this.boundSplit!.orientation === 'horizontal' ? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : 'RESIZE PANES: UP/DOWN | HOME: RESET'
-			: this.viewportHit !== undefined ? this.viewportHit.label
-			: this.controller.selected(this.input)?.label ?? this.input.status, bounds.left + 4, bounds.top + 2, 0, color);
+	public updateStatus(): void {
+		const input = this.input;
+		if (this.detailsWindow.hasFocus) this.statusItems[0].text = input.details!.title;
+		else if (this.split.focusTarget.hasFocus) this.statusItems[0].text = this.boundSplit!.orientation === 'horizontal'
+			? 'RESIZE PANES: LEFT/RIGHT | HOME: RESET' : 'RESIZE PANES: UP/DOWN | HOME: RESET';
+		else if (this.viewportHit !== undefined) this.statusItems[0].text = this.viewportHit.label;
+		else if (input.presentation === 'outline') this.statusItems[0].text = !input.dirty && input.actorPresent
+			? input.outline.rows[input.outline.selectionIndex]?.element.node.label ?? input.status : input.status;
+		else {
+			const target = input.stateGraph!.selectedTarget, available = !input.dirty && input.actorPresent;
+			if (this.statusInput !== input || this.statusTopology !== input.runtime.topologyRevision
+				|| this.statusTarget !== target || this.statusAvailable !== available) {
+				this.statusInput = input; this.statusTopology = input.runtime.topologyRevision;
+				this.statusTarget = target; this.statusAvailable = available;
+				this.statusSelectionLabel = this.controller.selected(input)?.label;
+			}
+			this.statusItems[0].text = this.statusSelectionLabel ?? input.status;
+		}
 	}
 	public draw(): void {
 		drawActorLab(this.input, this.timelineSlider.focusTarget.hasFocus, this.graph.hover, this.graph.focusTarget.hasFocus, this.controller.viewport);

@@ -51,7 +51,8 @@ function fixture(t: TestContext) {
 		return resource;
 	});
 	const overlay = createHostOverlayFixture(240, 160);
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const area = { left: 0, top: 0, right: 240, bottom: 160 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),

@@ -26,7 +26,7 @@ function fixture(t: TestContext) {
 	const bounds = { left: 0, top: 0, right: 384, bottom: 288 };
 	const owner = surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, isVisible: () => true,
 		getBounds: () => bounds, getClip: () => bounds, draw() {} });
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),

@@ -124,7 +124,7 @@ function imageSnapshot(): RomInspectorSnapshot {
 test('ROM catalog commands dispatch from the actual focused list and after filter Enter', t => {
 	configureFontVariant('tiny');
 	const input = new RomInspectorInput(imageSnapshot()), surfaces = new WorkbenchSurfaceService();
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, area), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('ROM catalog command owner'), getBounds: () => area,
 		getClip: () => area, isVisible: () => true, draw() {} });
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
@@ -178,8 +178,9 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 	origin.bindKeyboard(() => {});
 	const owner = surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope, getBounds: () => input.layout,
 		getClip: () => input.layout, isVisible: () => true, draw() {} });
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, lifetime => {
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, area, lifetime => {
 		if (lifetime === undefined) return;
+		contextMenu.layout(area);
 		lifetime.add(surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: contextMenu.pointerScope,
 			lifetimeOwner: surfaces.findByScope(contextMenu.invocationOrigin!.scope.surfaceScope)!,
 			getBounds: () => contextMenu.model.bounds, getClip: () => area, isVisible: () => contextMenu.visible, draw() {},

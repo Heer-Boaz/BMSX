@@ -67,6 +67,9 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	// Font and theme changes exercise the real retained control, not regenerated test geometry.
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {
+			check(inputFocus.admittedTarget === field.field.focusTarget
+				&& editor.statusBar.itemsLayout.items.peek(0)?.item === client.statusItems[0],
+				'main status: the independent Details field retains the primary context while its native draft is active');
 			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-draft`);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
 			check(editor.mainWorkspace.primary === client && field.pending && model.buffer.getText() === original,

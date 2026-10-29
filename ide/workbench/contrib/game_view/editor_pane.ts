@@ -1,12 +1,11 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { InputFocusScope } from '../../../input/focus';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
-import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { Runtime } from '../../../../machine/ts/machine/runtime/runtime';
 import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
 import type { PointerInputSnapshot } from '../../../common/models';
 import type { IdeCommandController } from '../../../commands/controller';
 import * as colors from '../../../common/constants';
-import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
 import { layoutGameFrame } from '../../common/game_frame';
 import { updateFullWidthWorkbenchLayout } from '../../common/layout';
@@ -24,7 +23,8 @@ export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 	private readonly gameInput: GameInputControl;
 	private shownFrame = -1;
 	private shownHistory = false;
-	private frameLabel = '';
+	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
+	public readonly statusItems = [this.statusItem];
 	public constructor(private readonly commands: IdeCommandController,
 		private readonly contextMenu: ContextMenuController, private readonly runtime: Runtime, recipient: InputRecipient, presenter: VideoPresenter, scope: InputFocusScope) {
 		super(scope);
@@ -63,7 +63,7 @@ export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 		const history = this.commands.transport.rewind.active;
 		if (frame !== this.shownFrame || history !== this.shownHistory) {
 			this.shownFrame = frame; this.shownHistory = history;
-			this.frameLabel = `${history ? 'HISTORY REVIEW | ' : ''}FRAME ${frame}`;
+			this.statusItem.text = `${history ? 'HISTORY REVIEW | ' : ''}FRAME ${frame}`;
 		}
 	}
 	public draw(): void {
@@ -72,9 +72,7 @@ export class GameViewEditorPane extends WorkbenchViewEditorPane<GameViewInput> {
 		api.drawFrame(bounds.left, bounds.top, bounds.right, bounds.bottom);
 		this.gameInput.draw();
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.blit_text_inline_with_font(this.frameLabel, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
-	}
+	public updateStatus(): void {}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number,): boolean {
 		if (this.gameInput.handlePointer(snapshot)) return false;
 		if (snapshot.valid && snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Secondary) !== 0

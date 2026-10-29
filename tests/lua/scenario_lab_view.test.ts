@@ -802,10 +802,7 @@ test('Scenario controller refresh, wheel and status rendering retain the actual 
 	pane.getSelection!();
 	assert.deepEqual(geometry(), arranged, 'capturing navigation keeps the actual arranged viewport');
 	view.status.info = 'A retained result summary that is longer than the available local status rectangle.';
-	view.status.dirty = true;
-	const statusBounds = { left: 421, top: 161, right: 531, bottom: 171 };
-	t.mock.method(api, 'blit_text_inline_with_font', () => {});
-	pane.drawStatusBar(statusBounds, 0);
-	assert.ok(editorViewState.font.measure(view.status.renderedInfo) <= statusBounds.right - statusBounds.left - 8,
-		'the supplied status rectangle, not the frontend width, owns text truncation');
+	pane.updateStatus();
+	assert.equal(pane.statusItems[0].text, view.status.info,
+		'the contribution publishes the complete retained observation for shared status presentation');
 });

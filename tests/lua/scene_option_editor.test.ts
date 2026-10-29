@@ -35,14 +35,15 @@ function fixture(t: TestContext, source = SOURCE) {
 	const scene = authoring.document!.scenes[0];
 	assert.equal(authoring.select(authoring.document!, model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
 	const scope = new InputFocusScope(Symbol('option editor fixture'), inputFocus.workbenchScope), parent = inputFocus.createTarget(null, scope);
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const bounds = { left: 0, top: 24, right: 384, bottom: 276 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	const commands: EditorCommandRunner = {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const navigation = { isEnabled: () => true, run: () => assert.fail('source editing invoked view navigation') };
 	const details = new SceneDetailsControl(commands, menu, scope, parent, { outline: navigation, details: navigation });
-	details.setView(view, { left: 0, top: 24, right: 384, bottom: 276 });
+	details.setView(view, bounds);
 	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return { model, view, editor: details.options, refresh: () => details.update(),
 		control: (label: string) => details.options.controls[view.optionProperties.findIndex(property => property.descriptor.label === label)] };

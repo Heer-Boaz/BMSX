@@ -44,6 +44,7 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput> {
 	}
 	public onPointerLeave(): void { this.control.onPointerLeave(); }
 	public override handleWheel(event: WheelInputSnapshot): void { this.control.handleWheel(event); }
-	public override drawStatusBar(bounds: Readonly<RectBounds>, color: number): void { this.control.drawStatusBar(bounds, color); }
+	public override get statusItems() { return this.control.statusItems; }
+	public override updateStatus(): void { this.control.updateStatus(); }
 	public override dispose(): void { this.control.dispose(); }
 }

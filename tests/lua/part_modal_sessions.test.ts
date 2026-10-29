@@ -22,7 +22,7 @@ const ITEMS = [{ label: 'Source', description: 'Authored definition', detail: ''
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 800; editorViewState.viewportHeight = 400;
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, { left: 0, top: 0, right: 800, bottom: 400 });
 	const part = (left: number) => {
 		const scope = new InputFocusScope(Symbol('part'), inputFocus.workbenchScope);
 		const bounds = { left, top: 24, right: left + 320, bottom: 324 };

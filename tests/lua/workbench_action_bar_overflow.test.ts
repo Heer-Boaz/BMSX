@@ -81,7 +81,7 @@ function fixture(t: TestContext, menuId: WorkbenchActionMenuId = 'aem.title') {
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {});
 	const content = focus.createTarget(parent); content.bindKeyboard(() => {}); content.focus();
 	const unrelated = focus.createTarget(); unrelated.bindKeyboard(() => {});
-	const menu = new ContextMenuController(focus, capture);
+	const menu = new ContextMenuController(focus, capture, { left: 0, top: 0, right: 384, bottom: 288 });
 	const state = createWorkbenchActionBar(menuId, true), font = new Font({ variant: 'tiny' });
 	const measure = (text: string) => font.measure(text);
 	const calls: EditorCommandId[] = [];
@@ -212,8 +212,9 @@ for (const replacement of ['origin', 'other', 'none', 'menu'] as const) test(`va
 	const field = new ValueInput(content, INTEGER_INPUT_FORMAT, value => model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.getText().length, text: String(value) }]));
 	const surfaces = new WorkbenchSurfaceService(), area = { left: 0, top: 0, right: 384, bottom: 288 };
 	const root = surfaces.attach({ role: 'content', captureScope: content.scope.surfaceScope, getBounds: () => area, getClip: () => area, isVisible: () => true, draw() {} });
-	const menu = new ContextMenuController(inputFocus, capture, lifetime => {
+	const menu = new ContextMenuController(inputFocus, capture, area, lifetime => {
 		if (lifetime === undefined) return;
+		menu.layout(area);
 		lifetime.add(surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: menu.pointerScope, lifetimeOwner: root,
 			getBounds: () => menu.model.bounds, getClip: () => area, isVisible: () => menu.visible, draw() {},
 			onRetire: () => { if (!lifetime.isDisposed) { capture.cancelScope(menu.pointerScope); menu.hide(); } } }));

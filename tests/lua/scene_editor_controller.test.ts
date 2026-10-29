@@ -87,8 +87,9 @@ test('Scene pane source production and member commands retain their input when a
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
-	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
+	const surfaces = new WorkbenchSurfaceService();
 	const bounds = { left: 0, top: 0, right: 384, bottom: 288 }, presentation = createTestGroupPresentation(surfaces, bounds);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	function layoutMain(): void {
 		const part = parts.main;
 		part.prepareLayout();
@@ -153,8 +154,9 @@ scenes.register('incomplete', {})
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
-	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
+	const surfaces = new WorkbenchSurfaceService();
 	const bounds = { left: 0, top: 0, right: 384, bottom: height }, presentation = createTestGroupPresentation(surfaces, bounds);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	function layoutMain(): void {
 		const part = parts.main;
 		part.prepareLayout();

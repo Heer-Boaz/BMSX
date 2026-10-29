@@ -110,8 +110,9 @@ function toolbarFixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme 
 			api.fill_rect(input.layout.left, input.layout.top, input.layout.right, input.layout.bottom, 0, colors.COLOR_CODE_BACKGROUND);
 			renderWorkbenchActionBar(input.turnActions, editorViewState.font.renderFont(), colors.COLOR_RESOURCE_VIEWER_TEXT, colors.COLOR_DESCRIPTION_TEXT);
 		} });
-	const menu = new ContextMenuController(inputFocus, pointerCapture, lifetime => {
+	const menu = new ContextMenuController(inputFocus, pointerCapture, viewport, lifetime => {
 		if (lifetime === undefined) return;
+		menu.layout(viewport);
 		lifetime.add(surfaces.attach({ role: 'transient', outsidePress: 'consume', lifetimeOwner: owner, captureScope: menu.pointerScope,
 			getBounds: () => menu.model.bounds, getClip: () => viewport, isVisible: () => menu.visible, draw() {},
 			onRetire: () => { if (!lifetime.isDisposed) { pointerCapture.cancelScope(menu.pointerScope); menu.hide(); } } }));

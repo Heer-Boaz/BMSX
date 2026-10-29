@@ -1,10 +1,9 @@
+import { STATUS_PRIORITY_CONTENT, STATUS_PRIORITY_ERROR, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { DisposableStore } from '../../../common/lifecycle';
 import type { EditorTextModel } from '../../../editor/model/text_model';
-import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
-import { api } from '../../../runtime/overlay_api';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { MainWorkspace } from '../../main_workspace';
 import type { MainWorkspaceClient, MainWorkspaceRegionId, MainWorkspaceRegionSurfaces } from '../../common/main_workspace_client';
@@ -58,7 +57,8 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	private readonly authoringCommands: SceneAuthoringCommands;
 	private readonly unbindInteraction: () => void;
 	private disposed = false;
-	private status = '';
+	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
+	public readonly statusItems = [this.statusItem];
 
 	public constructor(public readonly consumer: SceneAuthoringContext, private readonly options: ScenePrimaryClientOptions) {
 		this.scope = options.scope; this.view = new ScenePrimaryViewState(consumer);
@@ -129,11 +129,13 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	public isCurrent(): boolean { return !this.disposed && this.consumer.isCurrent && this.consumer.availability === 'available'; }
 	public update(): void {
 		this.consumer.refresh();
-		this.status = SOURCE_STATUS[getTextFileRuntimeSourceStatus(this.options.sources, this.consumer.workingCopy)];
 	}
 	public focus(region: MainWorkspaceRegionId = this.preferredRegion): void { this[region].focus(); }
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
+	public updateStatus(): void {
+		const status = getTextFileRuntimeSourceStatus(this.options.sources, this.consumer.workingCopy);
+		this.statusItem.text = SOURCE_STATUS[status];
+		this.statusItem.tone = status === 'failed' ? 'error' : 'normal';
+		this.statusItem.priority = status === 'failed' ? STATUS_PRIORITY_ERROR : STATUS_PRIORITY_CONTENT;
 	}
 	public dispose(): void {
 		this.disposed = true; this.authoringCommands.dispose(); this.unbindInteraction();

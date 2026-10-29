@@ -35,12 +35,14 @@ test('Main and maximized floating hosts exchange only editor client order; shell
 test('one workspace status projects the actual active group rather than a background Main or duplicate floating row', t => {
 	const f = createActualSourcePanes(t, true), parts = f.editor.editorParts, main = parts.main.activeGroup;
 	main.openEditor(new CodeEditorInput(f.firstInput.workingCopy)); f.update();
-	const background = t.mock.method(main.panes.activePane!, 'drawStatusBar');
-	const foreground = t.mock.method(f.first, 'drawStatusBar');
-	f.firstPart.focus(); f.paint();
-	assert.equal(background.mock.callCount(), 0); assert.equal(foreground.mock.callCount(), 1);
-	parts.main.focus(); f.paint();
-	assert.equal(background.mock.callCount(), 1); assert.equal(foreground.mock.callCount(), 1);
+	const background = t.mock.method(main.panes.activePane!, 'updateStatus');
+	const foreground = t.mock.method(f.first, 'updateStatus');
+	f.firstPart.focus();
+	const floatingReads = foreground.mock.callCount(); f.paint();
+	assert.equal(background.mock.callCount(), 0); assert.equal(foreground.mock.callCount(), floatingReads + 1);
+	parts.main.focus();
+	const mainReads = background.mock.callCount(), retainedFloatingReads = foreground.mock.callCount(); f.paint();
+	assert.equal(background.mock.callCount(), mainReads + 1); assert.equal(foreground.mock.callCount(), retainedFloatingReads);
 });
 
 test('moving a retained Source into a sibling group changes control ownership without creating another document or floating host', t => {

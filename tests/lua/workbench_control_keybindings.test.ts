@@ -639,7 +639,7 @@ test('a parent or commandContext cannot lend list Find to a field, menu or toolb
 	let finds = 0;
 	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
 	const child = inputFocus.createTarget(f.parent), alias = inputFocus.createTarget(); alias.commandContext = f.parent;
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menu = new ContextMenuController(inputFocus, pointerCapture, { left: 0, top: 0, right: 384, bottom: 288 });
 	const toolbar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, f.commands, f.parent, () => f.parent.focus());
 	toolbar.setInput(createWorkbenchActionBar('events.title'), f.parent);
 	t.after(() => { toolbar.dispose(); menu.dispose(); });
@@ -677,7 +677,8 @@ test('a real QuickInput query cannot borrow its invoking list Find while retaini
 	applyViewportSize({ width: 384, height: 288 }); refreshWorkbenchLayout();
 	let finds = 0;
 	f.parent.registerCommand('list.find', { isEnabled: () => true, run: () => { finds++; } });
-	const menu = new ContextMenuController(inputFocus, pointerCapture), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, area), picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); });
 	f.parent.focus();
 	picker.input('Filter events', 'Query', 'probe', async text => text, () => assert.fail('Ctrl/Cmd F submitted the query'));

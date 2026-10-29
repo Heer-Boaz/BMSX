@@ -133,6 +133,8 @@ export class IdeCommandController {
 		}
 		// Named regions settle only their own input at the Main owner; an unrelated document draft is not their subject.
 		switch (command) {
+			case 'status.focus': this.editor.statusBar.focus(); return;
+			case 'status.details': this.editor.statusBar.showDetails(); return;
 			case 'problems': {
 				const main = this.editor.mainWorkspace;
 				if (main.activity === this.editor.problems && main.regionLayout.activityVisible) main.setActivityVisible(false);
@@ -487,6 +489,8 @@ export class IdeCommandController {
 				return group.openingAdmitted && pane !== null && pane.input === editor && pane.canOpenSource;
 			}
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
+			case 'status.focus': return this.editor.isActive && this.editor.statusBar.canFocus;
+			case 'status.details': return this.editor.isActive && this.editor.statusBar.hasDetails;
 			case 'problems': return this.editor.isActive;
 			case 'findGlobal': return workspaceState.context !== null;
 			case 'workspace.focusPrimary': case 'workspace.clearPrimary':

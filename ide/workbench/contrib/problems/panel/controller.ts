@@ -14,7 +14,6 @@ import { pointerCapture } from '../../../../input/pointer/capture';
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import type { MainWorkspaceActivityClient, MainWorkspaceActivitySizeConstraints } from '../../../common/main_workspace_activity';
 import { truncateMeasuredText } from '../../../../common/text';
-import { api } from '../../../../runtime/overlay_api';
 import type { DiagnosticsCoverage } from '../../../services/diagnostics/resource_diagnostics';
 import type { EditorParts } from '../../../services/editor/editor_parts';
 import type { WorkbenchSurface } from '../../../services/windows/model';
@@ -28,11 +27,17 @@ import { handleProblemsPanelKeyboardInput } from './keyboard';
 import { handleProblemsPanelNavigationCommand, type ProblemsPanelCommand } from './navigation';
 import { handleProblemsPanelPointerInput } from './pointer';
 import { drawProblemsPanelSurface } from './render';
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../../common/status_bar';
+import { sourceTabDescription } from '../../../ui/tab/titles';
 
 const EMPTY_DIAGNOSTICS: readonly EditorDiagnostic[] = [];
 
 /** Retained diagnostic reading, independently attached to Main's activity allocation. */
 export class ProblemsPanelController implements MainWorkspaceActivityClient, PointerHoverTarget {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
+	private statusDiagnostic: EditorDiagnostic | undefined;
 	public readonly focusTarget: InputFocusTarget;
 	public readonly commandTarget: InputFocusTarget;
 	public readonly header: ProblemsPanelHeader;
@@ -172,10 +177,12 @@ export class ProblemsPanelController implements MainWorkspaceActivityClient, Poi
 	public draw(): void {
 		if (this.attached) drawProblemsPanelSurface(this, this.bounds, this.layoutState);
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		if (this.selectionIndex < 0) return;
-		api.blit_text_inline_with_font(this.getItemLayout(this.selectionIndex).location, bounds.left + 4, bounds.top + 2,
-			0, color, this.font!.renderFont());
+	public updateStatus(): void {
+		const diagnostic = this.selectedDiagnostic;
+		if (diagnostic === this.statusDiagnostic) return;
+		this.statusDiagnostic = diagnostic;
+		this.statusItems[0].text = diagnostic === undefined ? ''
+			: `${sourceTabDescription(diagnostic.model.resource)}:${diagnostic.row + 1}:${diagnostic.startColumn + 1}`;
 	}
 	public update(): void {
 		if (!this.attached) return;

@@ -40,8 +40,8 @@ async function fixture(t: TestContext) {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
-	const menu = new ContextMenuController(inputFocus, pointerCapture), surfaces = new WorkbenchSurfaceService();
 	const workArea = { left: 0, top: 0, right: 384, bottom: 288 }, bounds = { ...workArea };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, workArea), surfaces = new WorkbenchSurfaceService();
 	const owner = surfaces.attach({ role: 'content', captureScope: content.scope.surfaceScope,
 		isVisible: () => true, getBounds: () => workArea, getClip: () => workArea, draw() {} });
 	let focusReturns = 0, layouts = 0;

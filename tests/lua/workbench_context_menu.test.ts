@@ -6,11 +6,13 @@ import { VirtualHeadlessClock } from '../../hosts/node/headless/clock';
 import { HeadlessInputHub } from '../../hosts/node/headless/input';
 import type { EditorCommandId, EditorCommandRunner } from '../../ide/common/commands';
 import type { PointerInputSnapshot } from '../../ide/common/models';
-import { InputFocusService } from '../../ide/input/focus';
+import { InputFocusScope, InputFocusService } from '../../ide/input/focus';
 import { applyViewportSize } from '../../ide/editor/ui/view/configuration';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { PointerCaptureService } from '../../ide/input/pointer/capture';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { ContextMenuModel } from '../../ide/workbench/services/context_menu/model';
+import { layoutContextMenu } from '../../ide/workbench/services/context_menu/render';
 import { WORKBENCH_MENUS, type WorkbenchMenuItem } from '../../ide/workbench/ui/menu/registry';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { WORKBENCH_POINTER_SCOPE } from '../../ide/input/pointer/capture';
@@ -28,7 +30,8 @@ function fixture(t: TestContext) {
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();
 	const origin = focus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
-	const menu = new ContextMenuController(focus, capture);
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const menu = new ContextMenuController(focus, capture, area);
 	const disabled = new Set<EditorCommandId>(['redo']);
 	const executed: EditorCommandId[] = [];
 	const commands: EditorCommandRunner = {
@@ -41,7 +44,7 @@ function fixture(t: TestContext) {
 	};
 	const show = (items = ITEMS, keyboard = false) => {
 		const lifetime = menu.show(200, 130, items, commands, { selectFirst: keyboard });
-		menu.model.layout(384, 288, 8, FONT, measure); menu.update();
+		menu.model.layout(area, 8, FONT, measure); menu.update();
 		return lifetime;
 	};
 	const event = (x: number, y: number, held = 0, down = 0, up = 0): PointerInputSnapshot => ({ modifiers: KeyModifier.none, spaceDown: false,
@@ -295,8 +298,9 @@ test('real popup surfaces distinguish owned disposal from external owner retirem
 	const root = surfaces.attach({ role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });
 	const origin = focus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
 	let surface = root, externalRetirements = 0;
-	const menu = new ContextMenuController(focus, capture, lifetime => {
+	const menu = new ContextMenuController(focus, capture, bounds, lifetime => {
 		if (lifetime === undefined) return;
+		menu.layout(bounds);
 		surface = surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: menu.pointerScope, lifetimeOwner: root,
 			isVisible: () => menu.visible, getBounds: () => menu.model.bounds, getClip: () => bounds, draw() {},
 			onRetire: () => {
@@ -365,10 +369,11 @@ test('menu geometry stays within tiny viewport, retains layout and scrolls every
 	f.show(items, true);
 	const model = f.menu.model; let measured = 0;
 	const counted = (text: string) => { measured += 1; return measure(text); };
-	model.layout(128, 80, 8, FONT, counted); f.menu.update();
+	const area = { left: 0, top: 0, right: 128, bottom: 80 };
+	model.layout(area, 8, FONT, counted); f.menu.update();
 	assert.ok(model.bounds.left >= 0 && model.bounds.top >= 0 && model.bounds.right <= 128 && model.bounds.bottom <= 80);
 	assert.equal(measured, 0, 'resizing reuses the row label measurements from the original layout');
-	for (let i = 0; i < 100; i += 1) model.layout(128, 80, 8, FONT, counted);
+	for (let i = 0; i < 100; i += 1) model.layout(area, 8, FONT, counted);
 	assert.equal(measured, 0, 'unchanged frames neither remeasure nor allocate row geometry');
 	f.press('End'); assert.equal(model.selectedIndex, 39);
 	const last = model.rows[39];
@@ -409,4 +414,63 @@ test('a readonly contribution keeps navigation accessible but cannot arm its mut
 	const definition = f.menu.model.rows.findIndex(row => row.command === 'goToDefinition');
 	f.pointer(f.row(definition)); f.press('Enter');
 	assert.deepEqual(f.executed, ['goToDefinition']);
+});
+
+for (const populated of [false, true])
+	test(`${populated ? 'a populated' : 'an empty'} nested menu is arranged in its retained modal area before surface admission`, t => {
+		const focus = new InputFocusService(), capture = new PointerCaptureService();
+		const surfaces = new WorkbenchSurfaceService();
+		const rootArea = { left: 0, top: 0, right: 384, bottom: 288 };
+		const area = { left: 80, top: 90, right: 300, bottom: 240 };
+		const root = surfaces.attach({ role: 'content', captureScope: WORKBENCH_POINTER_SCOPE, isVisible: () => true,
+			getBounds: () => rootArea, getClip: () => rootArea, draw() {} });
+		const scope = new InputFocusScope(Symbol('local modal'), focus.workbenchScope);
+		const parent = surfaces.attach({ role: 'modal', blockedScope: root, lifetimeOwner: root, presentationParent: root,
+			captureScope: scope.surfaceScope, isVisible: () => true, getBounds: () => area, getClip: () => area, draw() {},
+			onRetire: () => scope.retireContext() });
+		const origin = focus.createTarget(null, scope); origin.bindKeyboard(() => {});
+		const unbindAdmission = focus.bindScopeAdmission(current => {
+			const surface = surfaces.findByScope(current.surfaceScope);
+			return surface !== undefined && surfaces.isFocusAdmitted(surface);
+		});
+		let surface = parent;
+		const menu = new ContextMenuController(focus, capture, rootArea, lifetime => {
+			if (lifetime === undefined) { surfaces.changed(); return; }
+			menu.layout(parent.getClip());
+			lifetime.add(surface = surfaces.attach({ role: 'transient', outsidePress: 'consume', lifetimeOwner: parent,
+				presentationParent: parent, captureScope: menu.pointerScope, isVisible: () => menu.visible,
+				getBounds: () => menu.model.bounds, getClip: () => area, draw() {},
+				onRetire: () => { if (!lifetime.isDisposed) menu.hide(false); } }));
+		});
+		t.after(() => { menu.dispose(); unbindAdmission(); surfaces.dispose(); });
+		assert.equal(origin.focus(), true);
+		// An anchor outside the local clip is representable; placement belongs to the menu model.
+		menu.show(20, 30, populated ? ITEMS : [], { isEnabled: () => true, execute() {} });
+		assert.equal(menu.visible, true); assert.ok(focus.admittedTarget === menu.focusTarget);
+		assert.ok(menu.invocationOrigin === origin && parent.visible && !parent.retired);
+		assert.equal(surfaces.isAdmitted(surface), true);
+		// Bounds containment is this nonzero-origin placement algorithm's explicit contract.
+		assert.ok(menu.model.bounds.left >= area.left && menu.model.bounds.top >= area.top
+			&& menu.model.bounds.right <= area.right && menu.model.bounds.bottom <= area.bottom);
+		area.left += 30; area.right += 30; area.top += 10; area.bottom += 10;
+		layoutContextMenu(menu);
+		assert.equal(surfaces.isAdmitted(surface), true, 'reflow consumes the same retained owner area, not the root viewport');
+		assert.ok(menu.model.bounds.left >= area.left && menu.model.bounds.top >= area.top);
+		parent.dispose();
+		assert.equal(menu.visible, false); assert.equal(surface.retired, true);
+	});
+
+test('below placement budgets every command inside a nonzero owner even when its anchor precedes that area', () => {
+	const area = { left: 80, top: 90, right: 300, bottom: 240 }, model = new ContextMenuModel();
+	const items: WorkbenchMenuItem[] = Array.from({ length: 40 }, () => ({ type: 'command', command: 'save' }));
+	model.setItems(items, 20, 30, false, 'below'); model.layout(area, 8, FONT, measure);
+	// This geometry contract keeps the whole visible menu viewport, not merely an intersection, inside its owner.
+	assert.ok(model.bounds.left >= area.left && model.bounds.top >= area.top
+		&& model.bounds.right <= area.right && model.bounds.bottom <= area.bottom);
+	const first = model.rows[0];
+	assert.equal(model.hitTest(model.viewport.bounds.left + 1, model.viewport.offsetTop + first.top + 1), 0);
+	model.selectedIndex = model.rows.length - 1; model.revealSelection();
+	const last = model.rows[model.selectedIndex];
+	assert.ok(model.viewport.offsetTop + last.bottom <= model.viewport.bounds.bottom);
+	assert.equal(model.hitTest(model.viewport.bounds.left + 1, model.viewport.offsetTop + last.top + 1), model.selectedIndex);
 });

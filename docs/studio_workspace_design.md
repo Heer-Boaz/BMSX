@@ -192,7 +192,7 @@ not an editable asset schema or an isolated preview contract.
 | Project content browser | `contrib/resources/panel/files_model.ts` retains project/shared/generated file trees. `content_index.ts` projects recognized Scene, BT, FSM, ActionEffect, progression, input-binding and animation occurrences as file children, using existing source/semantic owners. File/declaration activation opens its default/exact document editor; Files drags use shared group/split/floating placement. | Files presents only project content; results and ordinary Source navigation do not replace its browser-local subject or disclosure. Restoring browser reading state across frontend sessions still needs a source-correspondence memento owned by that browser, independently of selecting a primary authored subject. Multiple selection, batch operations, thumbnails, richer filters, collections and cross-project migration are separate capabilities. Epic's [Content Browser](https://dev.epicgames.com/documentation/en-us/unreal-engine/content-browser-in-unreal-engine) distinguishes these operations from the level viewport. |
 | Constructive authoring | Source templates create animation, sprite-animation, ActionEffect, progression, input and AEM resources. Scene and Behavior Lens edit admitted existing declarations and list members, including duplicating written BT children. | Guided creation of Scene, prefab, BT and FSM declarations, adding Scene members/FSM states and inserting BT node kinds from templates or a palette, including into empty branches, are missing Studio operations over existing cartlib domains. These require source-preserving edits and occurrence identity, but need not wait for a spatial viewport or introduce another asset format. |
 | Query and output activities | Main owns an independent activity allocation; Problems retains resource/version-bound diagnostic selection and reading independently of native attachment. Build logs own request results; Call Hierarchy owns a nonpersistent captured-query input with independent direction, lazy topology, selection and reading state. Workspace Search retains its query, explicit project/shared scope and captured file results independently of its control; canonical working copies take precedence over unopened authored text. Existing editor groups supply presentation, not Files. | Search result navigation requires correspondence with its captured source. Project replacement retires its source authority, not just its window. Build-result observation still needs separation from its document input before an independent activity view can share the result without sharing reading state. A single activity registry or generic result DTO does not supply those domain lifetimes. |
-| Workspace status | One shell status presentation allocates connection, window navigation, messages and the active client's context. | Client status items need measured width allocation, priority and bounded text presentation. Clipping the whole context slot does not prevent left/right items from colliding within it at narrow widths. VS Code's [status bar](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/browser/parts/statusbar/statusbarPart.ts) separates item alignment and priority from the producing contribution. |
+| Workspace status | One shell status presentation allocates connection, window navigation, critical host/guest guidance and the actual client's retained semantic items. Shared measurement, admission priority and per-item clipping replace tool-owned status coordinates. Full values retain native reading/copy access independently of truncation. | User-customized visibility, ordering and persistent preferences belong to the later settings contract, not a new status plugin registry. |
 | Content lifecycle and dependencies | Resource navigation, new-source creation, file import, source-symbol references and canonical model editing exist. | Rename/move/duplicate/delete and folder operations need workspace file authority plus document, recovery and reference lifetimes. Asset dependencies/used-by and reference repair need domain-aware source relationships, not string replacement or an assumption that Lua symbol references cover asset IDs. These are more basic Studio gaps than collections or cross-project migration. VS Code's [file actions](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/files/browser/fileActions.contribution.ts) and Epic's [Reference Viewer](https://dev.epicgames.com/documentation/en-us/unreal-engine/reference-viewer-in-unreal-engine) expose these as distinct operations. |
 | Project/session entry | Project creation, Build Jobs, admitted source contexts and workspace recovery already have owners. | Selecting/opening/replacing a project in the frontend and starting without an execution target remain distinct lifecycle capabilities. Creating a cartridge or building it must not silently substitute for attaching its source workspace. The existing source-admission boundary, not an installed socket, owns that identity. |
 | BT, FSM and action effects | `cartlib/behaviour_tree/`, `cartlib/fsm/` and `cartlib/actioneffects.lua` provide domains; Behavior Lens has source-derived graphs, editing and runtime inspection. Project file children open their exact authored occurrences. | Constructive authoring remains separate from discovery. A missing operation is not a reason to introduce a competing behavior format. |
@@ -1064,10 +1064,25 @@ Switching focus leaves the presented clients visible. Empty document groups
 retain their ordinary focus/navigation boundary without becoming a primary
 subject or routing typing to a covered host.
 
-There is one workspace status presentation. Its interaction context comes from
-the admitted active client: the actual document group or primary/contextual
-authoring control, not a background Main pane or later active tab substituted
-for it. Persistent project/primary-subject information is distinct from that
+There is one fixed-height workspace status row. Its interaction context comes
+from the attached view bound to the actual input scope. Menus, part-local
+choosers and decisions borrow their real invoking scope; frontend chrome keeps
+the selected context until that attachment retires. No later active tab or
+background Main pane is substituted for it.
+
+Contributions retain full semantic text, alignment, admission importance and
+tone. The shared status owner measures the actual font, allocates disjoint slots
+and projects one-glyph ellipses or withdraws optional hints. Hover and native
+keyboard reading disclose full values; overflow has a keyboard-accessible
+status-details action, and copying preserves the full observation rather than
+the displayed truncation. Local status controls retain the source attachment's
+lease while they have focus.
+
+Connection and window discovery keep their own shell slots. Host failures and
+guest input-release guidance remain independent of context replacement. A
+pending key chord, active evaluation or transient feedback can temporarily
+replace ordinary context text, in that order; feedback length does not resize
+Main. Persistent project/primary-subject information is distinct from transient
 interaction status. Floating canvas parts do not duplicate the status row.
 A group's optional runtime timeline follows its actual runtime client and
 content bounds, not Main's authored selection.

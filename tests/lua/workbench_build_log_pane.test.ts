@@ -31,8 +31,8 @@ async function fixture(t: TestContext, failed = true) {
 	const builds: WorkspaceBuilds = { jobs: [job], pending: [], targets: async () => ['cpu_soak'], submit: async () => job,
 		get: async () => { reads++; return receipt; }, cancel: async () => job, forget() {}, log: async () => '' };
 	const input = new BuildLogInput(job, builds), clipboard = new HeadlessClipboard();
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
 	const bounds = { left: 13, top: 21, right: 333, bottom: 241 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
 	const surfaces = new WorkbenchSurfaceService();
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('build log pane'), getBounds: () => bounds,
 		getClip: () => bounds, isVisible: () => true, draw() {} });

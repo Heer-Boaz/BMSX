@@ -46,6 +46,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'window.hide': { category: 'Window', title: 'Close Window', shortTitle: 'Close' },
 	'window.showAll': { category: 'Window', title: 'Show Open Windows' },
 	'window.focusMain': { category: 'Window', title: 'Focus Main Workspace' },
+	'status.focus': { category: 'View', title: 'Focus Status Bar' },
+	'status.details': { category: 'View', title: 'Status Details', shortTitle: 'Status Details' },
 	'window.newEditor': { category: 'Window', title: 'New Editor Window' },
 	'window.moveEditor': { category: 'Window', title: 'Move Editor To…' },
 	'group.move': { category: 'Editor Groups', title: 'Move Group To…' },

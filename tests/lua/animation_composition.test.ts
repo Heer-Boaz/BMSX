@@ -361,7 +361,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 	const navigation = new EditorNavigationController(sources.catalog, null!, null!);
 	const controller = new AnimationEditorController(sources.catalog);
 	const group = createTestEditorGroup();
-	const input = new AnimationEditorInput(model, model.resource.contextId), menu = new ContextMenuController(inputFocus, pointerCapture);
+	const input = new AnimationEditorInput(model, model.resource.contextId);
 	const commands: EditorCommandRunner = { isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target) };
 	const measured = measureAnimationEditor(editorViewState.font);
@@ -369,6 +369,7 @@ function animationPane(t: TestContext, variant: 'tiny' | 'msx', source = "return
 		right: measured.expandedWidth + editorViewState.font.advance('M') * 10,
 		bottom: 24 + measured.expandedHeight + measured.rowHeight * 3 };
 	const root = { ...bounds, right: 384 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, root);
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('animation pane'), isVisible: () => true,
 		getBounds: () => bounds, getClip: () => bounds, draw() {} });
 	const picker = new QuickInputController(menu, undefined, undefined, { scope: group.focusScope, bounds, kind: 'part', reveal() {} });

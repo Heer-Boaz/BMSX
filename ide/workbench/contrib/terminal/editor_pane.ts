@@ -1,9 +1,9 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import { InputInteraction } from '../../../input/interaction';
 import type { RuntimeTransport } from '../../../runtime/transport';
 import type { InputFocusScope } from '../../../input/focus';
 import type { InputRecipient } from '../../../../hosts/common/input/channel';
 import type { VideoPresenter } from '../../../../machine/ts/render/video_presenter';
-import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { measureText } from '../../../editor/common/text/layout';
@@ -18,6 +18,7 @@ import type { TerminalInput } from './editor_input';
 
 /** The physical BIOS terminal, not a host REPL or a second line editor. */
 export class TerminalPane extends WorkbenchViewEditorPane<TerminalInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [{ text: 'BIOS', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' }];
 	private readonly gameInput: GameInputControl;
 	private readonly runtimeContext = new InputInteraction();
 	public constructor(private readonly terminal: BiosTerminal, recipient: InputRecipient, presenter: VideoPresenter, scope: InputFocusScope, private readonly transport: RuntimeTransport) {
@@ -57,9 +58,7 @@ export class TerminalPane extends WorkbenchViewEditorPane<TerminalInput> {
 				(layout.top + layout.bottom - layout.rowHeight) / 2, 0, colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_TEXT, editorViewState.font.renderFont());
 		}
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.blit_text_inline_with_font('BIOS', bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
-	}
+	public updateStatus(): void {}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number,): boolean {
 		if (this.gameInput.handlePointer(snapshot)) return false;
 		return super.handleViewPointer(snapshot, justPressed, now);

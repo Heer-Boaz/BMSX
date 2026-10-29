@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { editorCommandTitle } from '../../../commands/catalog';
 import type { EditorCommandId, EditorCommandRunner } from '../../../common/commands';
@@ -44,6 +44,7 @@ type ContextMenuSession = {
 	readonly presentation: DisposableStore;
 	readonly menu: WorkbenchMenuPresentation | undefined;
 	readonly menuRevision: number | undefined;
+	area: Readonly<RectBounds>;
 	contextAdmitted: boolean;
 	unbindOrigin: (() => void) | undefined;
 };
@@ -67,7 +68,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 	private readonly unbindBlur: () => void;
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		private readonly onDidChangeVisibility: (lifetime?: DisposableStore) => void = () => {}) {
+		private readonly rootArea: Readonly<RectBounds>, private readonly onDidChangeVisibility?: (lifetime?: DisposableStore) => void) {
 		this.focusTarget = focus.createTarget(null, new InputFocusScope(this.pointerScope));
 		this.focusTarget.canFocus = () => this.session !== undefined;
 		this.scroll = new WorkbenchScrollControl(focus, capture, this.focusTarget, undefined, this.focusTarget.scope);
@@ -79,6 +80,9 @@ export class ContextMenuController implements PointerCaptureTarget {
 	public get visible(): boolean { return this.session !== undefined; }
 	public get invocationOrigin(): InputFocusTarget | null { return this.session!.invocationOrigin; }
 	public get returnFocus(): InputFocusTarget | null { return this.session!.returnFocus; }
+	public get presentationBounds(): Readonly<RectBounds> { return this.session!.area; }
+	/** The presentation owner supplies its actual retained clip before publishing the popup surface. */
+	public layout(area: Readonly<RectBounds>): void { this.session!.area = area; layoutContextMenu(this); }
 
 	/** Domain invalidation belongs in onWillShow, before departing focus can publish source changes. */
 	public show(x: number, y: number, source: readonly WorkbenchMenuItem[] | WorkbenchMenuPresentation, commands: ContextMenuCommandRunner,
@@ -104,7 +108,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		menu?.refresh();
 		const items = 'visibleItems' in source ? source.visibleItems : source;
 		const session: ContextMenuSession = { commands, invocationOrigin, returnFocus: returnOrigin, commandOrigin, disposables, options,
-			presentation: new DisposableStore(), menu, menuRevision: menu?.revision, contextAdmitted: true, unbindOrigin: undefined };
+			presentation: new DisposableStore(), menu, menuRevision: menu?.revision, area: this.rootArea, contextAdmitted: true, unbindOrigin: undefined };
 		this.session = session;
 		this.focusTarget.scope.interactionOrigin = invocationOrigin?.scope;
 		const retireOrigin = () => {
@@ -122,10 +126,10 @@ export class ContextMenuController implements PointerCaptureTarget {
 		this.pointerX = x;
 		this.pointerY = y;
 		this.pointerKnown = !options.selectFirst;
-		layoutContextMenu(this);
 		// The source session publishes geometry and attaches its presentation before
 		// the focus owner evaluates the popup's physical surface admission.
-		this.onDidChangeVisibility(session.presentation);
+		if (this.onDidChangeVisibility === undefined) layoutContextMenu(this);
+		else this.onDidChangeVisibility(session.presentation);
 		if (this.session !== session) return disposables;
 		options.onWillShow?.(disposables);
 		if (this.session !== session) return disposables;
@@ -165,7 +169,7 @@ export class ContextMenuController implements PointerCaptureTarget {
 		if (restoreFocus && (this.focusTarget.hasFocus || this.focus.pendingTarget === this.focusTarget)) this.focus.setTarget(session.returnFocus);
 		if (request !== this.requestRevision) return;
 		this.focusTarget.commandContext = this.focusTarget;
-		this.onDidChangeVisibility();
+		this.onDidChangeVisibility?.();
 	}
 
 	public update(): void {

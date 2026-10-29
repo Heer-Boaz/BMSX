@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
 import { clamp } from '../../../../machine/ts/common/clamp';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
@@ -5,16 +6,12 @@ import type { EditorCommandId } from '../../../common/commands';
 import { showEditorMessage } from '../../../common/feedback_state';
 import type { IdeCommandController } from '../../../commands/controller';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { truncateMeasuredText } from '../../../common/text';
 import { measureText, measureTextRange } from '../../../editor/common/text/layout';
-import { editorViewState } from '../../../editor/ui/view/state';
-import type { EditorFont } from '../../../editor/ui/view/font';
 import { inputFocus, type InputFocusScope } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed, isKeyDown } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { pointerHover } from '../../../input/pointer/hover';
-import { api } from '../../../runtime/overlay_api';
 import { formatValueSnapshot } from '../../../runtime/value_snapshot';
 import type { RuntimeFrameNavigation } from '../../../runtime/frame_navigation';
 import { drawWorkbenchPropertyInspector } from '../../render/property_inspector';
@@ -41,6 +38,9 @@ const CLIENT_COMMANDS = [...COMMANDS, 'pause', 'stepFrameBack', 'stepFrame'] as 
 const NAVIGATION = ['ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'] as const;
 
 export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget, input => this.navigate(input));
@@ -56,11 +56,6 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 	private feedbackRecord: HistoricalEvent | undefined;
 	private feedbackText = '';
 	private generation = -1;
-	private status = '';
-	private statusText = '';
-	private statusWidth = -1;
-	private statusFont: EditorFont | undefined;
-	private statusDirty = true;
 	private historyRevision = -1;
 	private historyStatus = '';
 	private filter = '';
@@ -197,19 +192,6 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 		const filterAction = input.actions.items[0];
 		if (this.filter !== input.filter) filterAction.checked = input.filter !== '';
 		this.actions.update();
-		const historyStatus = history.status;
-		const selected = input.projection.rows[input.selected], selectedSequence = selected === undefined ? -1 : selected.sequence;
-		const selectedReachable = selected !== undefined && history.canSeek(selected);
-		if (changed || this.historyRevision !== history.revision || this.historyStatus !== historyStatus || this.filter !== input.filter
-			|| this.selectedSequence !== selectedSequence || this.selectedReachable !== selectedReachable) {
-			this.historyRevision = history.revision; this.historyStatus = historyStatus; this.filter = input.filter;
-			this.selectedSequence = selectedSequence; this.selectedReachable = selectedReachable;
-			const filter = input.filter === '' ? '' : ` | filter: ${input.filter}`;
-			const status = EVENT_HISTORY_LABEL[historyStatus];
-			const selection = selected === undefined ? '' : `${formatValueSnapshot(selected.event)} | #${selected.sequence} T${selected.timeline} | tick ${selected.completedTick}${selectedReachable ? '' : ' | Frame unavailable'} | `;
-			this.status = `${selection}${status} | ${input.projection.rows.length}/${history.count} events${history.expired === 0 ? '' : ` | ${history.expired} older expired`}${filter}`;
-			this.statusDirty = true;
-		}
 		this.presentation.update(input, changed, projected);
 		if (this.inspector.visible) {
 			this.tooltip.hide();
@@ -220,15 +202,20 @@ export class EventViewerPane extends WorkbenchViewEditorPane<EventViewerInput> {
 		if (this.inspector.visible) { drawWorkbenchPropertyInspector(this.inspector); return; }
 		drawEventViewer(this.input, this.presentation, this.scroll.focusTarget.hasFocus);
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		const width = bounds.right - bounds.left - 8, font = editorViewState.font;
-		if (this.statusDirty || this.statusWidth !== width || this.statusFont !== font) {
-			this.statusText = truncateMeasuredText(this.status, width, measureTextRange);
-			this.statusDirty = false; this.statusWidth = width; this.statusFont = font;
+	public updateStatus(): void {
+		const input = this.input, history = input.history;
+		const historyStatus = history.status;
+		const selected = input.projection.rows[input.selected], selectedSequence = selected === undefined ? -1 : selected.sequence;
+		const selectedReachable = selected !== undefined && history.canSeek(selected);
+		if (this.historyRevision !== history.revision || this.historyStatus !== historyStatus || this.filter !== input.filter
+			|| this.selectedSequence !== selectedSequence || this.selectedReachable !== selectedReachable) {
+			this.historyRevision = history.revision; this.historyStatus = historyStatus; this.filter = input.filter;
+			this.selectedSequence = selectedSequence; this.selectedReachable = selectedReachable;
+			const filter = input.filter === '' ? '' : ` | filter: ${input.filter}`;
+			const status = EVENT_HISTORY_LABEL[historyStatus];
+			const selection = selected === undefined ? '' : `${formatValueSnapshot(selected.event)} | #${selected.sequence} T${selected.timeline} | tick ${selected.completedTick}${selectedReachable ? '' : ' | Frame unavailable'} | `;
+			this.statusItems[0].text = `${selection}${status} | ${input.projection.rows.length}/${history.count} events${history.expired === 0 ? '' : ` | ${history.expired} older expired`}${filter}`;
 		}
-		api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
-		api.blit_text_inline_with_font(this.statusText, bounds.left + 4, bounds.top + 2, 0, color, font.renderFont());
-		api.popClipRect();
 	}
 	private updateFeedback(): void {
 		const input = this.input, { layout, viewport } = input, font = layout.font!.renderFont();

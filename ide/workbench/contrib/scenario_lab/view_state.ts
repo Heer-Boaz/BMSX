@@ -60,8 +60,6 @@ class ScenarioLabView implements ScenarioLabViewState {
 	public readonly actionBar = createWorkbenchActionBar(new WorkbenchMenu(SCENARIO_LAB_TITLE_ACTIONS, this), true, WORKBENCH_MENUS['scenarioLab.context']);
 	public readonly status = {
 		info: '',
-		renderedInfo: '',
-		dirty: true,
 	};
 	public lastPointerClickTimeMs = 0;
 	public lastPointerClickRowId: string | null = null;

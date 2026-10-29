@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_HINT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import { create_rect_bounds, point_in_rect, write_rect_bounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -37,6 +38,7 @@ import type { DisposableStore } from '../../../common/lifecycle';
 
 /** Source review shares the ordinary authoring pause, without borrowing guest state. */
 export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEditReviewInput> implements PointerHoverTarget {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [{ text: 'Tab: actions | Up/Down, Page Up/Down: scroll | Ctrl+W: close', alignment: 'left', priority: STATUS_PRIORITY_HINT, overflow: 'ellipsis', tone: 'normal' }];
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, this.focusTarget);
 	private readonly tooltip = new WorkbenchTooltip();
@@ -198,10 +200,7 @@ export class WorkspaceEditReviewPane extends WorkbenchViewEditorPane<WorkspaceEd
 		api.popClipRect();
 		viewport.scrollbar.draw(colors.COLOR_CODE_BACKGROUND, colors.COLOR_RESOURCE_VIEWER_TEXT);
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.blit_text_inline_with_font('Tab: actions | Up/Down, Page Up/Down: scroll | Ctrl+W: close',
-			bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
-	}
+	public updateStatus(): void {}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
 		if (this.actions.handlePointer(snapshot)) { pointerHover.release(this); return true; }
 		this.headingHovered = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.headingBounds);

@@ -163,7 +163,7 @@ test('a real popup borrows its actual invocation interaction rather than its unr
 	const f = fixture(t), interaction = new InputInteraction(f.primary.transport, true), invokingViewport = f.client(interaction), authoring = f.client(new InputInteraction());
 	invokingViewport.guestInput = { bounds: { left: 0, top: 0, right: 4, bottom: 3 }, recipient: f.primary.input,
 		presentation: { kind: 'direct', presenter: f.primary.presenter } };
-	const menu = new ContextMenuController(f.focus, new PointerCaptureService());
+	const menu = new ContextMenuController(f.focus, new PointerCaptureService(), { left: 0, top: 0, right: 384, bottom: 288 });
 	t.after(() => menu.dispose());
 	f.owner.setActive(true); authoring.focus();
 	assert.equal(f.primary.execution.paused, true);

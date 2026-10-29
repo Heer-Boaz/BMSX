@@ -1,6 +1,6 @@
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { WorkspaceToolService } from '../../ide/workbench/services/assistant/tool_service';
-import { assistantFooter, AssistantFooter } from '../../ide/workbench/contrib/assistant/footer';
+import { AssistantFooter } from '../../ide/workbench/contrib/assistant/footer';
 import { BehaviorSourceDocuments } from '../../ide/workbench/contrib/behavior_lens/source_documents';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -401,7 +401,8 @@ for (const command of ['assistant.commands', 'assistant.history', 'assistant.new
 		group.openEditor(current);
 		const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
 		control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
-		const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+		const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+		const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 		const commands = new AssistantChatCommands(c, new HeadlessClipboard());
 		t.after(() => {
 			control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose();
@@ -439,7 +440,8 @@ test('a rejected observer view neither disconnects the shared observer nor reque
 	group.openEditor(current);
 	const control = new ValueInput(inputFocus.target!, INTEGER_INPUT_FORMAT, () => assert.fail('invalid draft cannot publish'));
 	control.setValue(1); control.field.focusTarget.focus(); setFieldText(control.field, '-', false);
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, menuArea), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	t.after(() => {
 		control.cancel(); inputFocus.setTarget(null); control.dispose(); quickInput.dispose(); contextMenu.dispose(); group.dispose(); conversation.dispose();
 	});
@@ -672,12 +674,12 @@ test('footer layout is bounded, retained and command-free; activity follows the 
 	connection.emit({ type: 'thread', thread: { id: 'thread', title: 'Steering the mijter enemy', updatedAt: 1 } });
 	const measure = (_text: string, start: number, end: number) => end - start;
 	const commands = connection.commands.length;
+	const retained = new AssistantFooter(), font = {};
 	for (const width of [40, 60, 100]) {
-		const footer = assistantFooter(c, width, measure);
-		assert.ok(footer.every(line => line.length <= width));
+		retained.update(c, width, measure, font);
+		assert.ok(retained.lines.every(line => line.length <= width));
 	}
 	assert.equal(connection.commands.length, commands, 'layout never requests a model or polls quota');
-	const retained = new AssistantFooter(), font = {};
 	retained.update(c, 100, measure, font); const lines = retained.lines;
 	for (let frame = 0; frame < 1000; frame++) retained.update(c, 100, () => assert.fail('unchanged footer must not remeasure'), font);
 	assert.equal(retained.lines, lines);

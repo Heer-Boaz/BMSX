@@ -92,8 +92,9 @@ test('same-path files from two sockets retain distinct original resources throug
 		source: { resid: `module_${contextId}`, type: 'lua' } }));
 	const items = buildResourceQuickPickItems(resources);
 	const provider = new FileQuickPickProvider(items);
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const menuArea = { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea);
+	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: menuArea, kind: 'workspace' });
 	t.after(() => { picker.dispose(); menu.dispose(); });
 	let accepted: RuntimeResource | undefined;
 	picker.pick('FILES', 'query', () => provider, item => { accepted = item.resource; });

@@ -115,7 +115,7 @@ export class ScenarioLabController {
 				const debug = this.runs.debugger!;
 				openCompiledDebugSources(picker, debug.sources,
 					listener => debug.onDidChange(() => { if (debug.status === 'closed' || debug.status === 'finished') listener(); }),
-					text => { view.status.info = text; view.status.dirty = true; });
+					text => { view.status.info = text; });
 				return;
 			}
 		}
@@ -171,7 +171,6 @@ export class ScenarioLabController {
 		}
 		if (sources.length === 0) {
 			view.status.info = `ACTIONEFFECT ${effectId} / SOURCE UNRESOLVED`;
-			view.status.dirty = true;
 			return;
 		}
 		quickInput.pick('ACTIONEFFECT SOURCES', 'Choose a definition', (_origin, lifetime) => {
@@ -236,7 +235,6 @@ export class ScenarioLabController {
 		const scope = this.runs.collection.getNode(previous.scopeId);
 		if (scope === undefined) {
 			view.status.info = 'THE PREVIOUS TEST SELECTION NO LONGER EXISTS';
-			view.status.dirty = true;
 			return;
 		}
 		this.revealRun(this.runs.start(scope.id, previous.mode, previous.companionContextId), group);

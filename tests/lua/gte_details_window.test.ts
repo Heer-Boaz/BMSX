@@ -65,7 +65,7 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx', withSource = f
 	const owner = surfaces.attach({ role: 'content', captureScope: origin.scope.surfaceScope, isVisible: () => true,
 		getBounds: () => area, getClip: () => area, draw() {} });
 	const source = new CapturedLuaSourceBinding(models, sources.catalog);
-	const contextMenu = new ContextMenuController(inputFocus, pointerCapture), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const contextMenu = new ContextMenuController(inputFocus, pointerCapture, area), quickInput = new QuickInputController(contextMenu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
 	let formats = 0, sourceOpens = 0;
 	const synchronize = () => {
 		if (input.selected.sequence < 0) source.clear(); else source.bind(input.selected.image, input.selected.pc);

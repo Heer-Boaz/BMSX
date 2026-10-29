@@ -14,8 +14,9 @@ import { medianMilliseconds } from '../../helpers/performance';
 
 configureFontVariant('tiny');
 editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-const menu = new ContextMenuController(inputFocus, pointerCapture);
-const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+const area = { left: 0, top: 0, right: 384, bottom: 288 };
+const menu = new ContextMenuController(inputFocus, pointerCapture, area);
+const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 const names = ['source_controller', 'workspace_query', 'state_machine', 'action_effect', 'source_index', 'code_editor', 'entry_point', 'sprite_view'];
 for (const count of [128, 1024, 8192]) {
 	const resources: RuntimeResource[] = Array.from({ length: count }, (_, index) => ({ contextLabel: 'Profile project', sourceFilePath: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua`, location: { kind: 'workspace' as const, path: `src/feature_${index % 32}/${names[index % names.length]}_${index}.lua` }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0],

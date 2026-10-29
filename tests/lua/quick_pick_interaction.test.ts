@@ -23,8 +23,9 @@ function fixture(t: TestContext) {
 	const clock = new VirtualHeadlessClock(), input = new Input(clock, new HeadlessInputHub(), -1);
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
-	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: { left: 0, top: 0, right: editorViewState.viewportWidth, bottom: editorViewState.viewportHeight }, kind: 'workspace' });
+	const area = { left: 0, top: 0, right: 384, bottom: 288 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, area);
+	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds: area, kind: 'workspace' });
 	const items = Array.from({ length: 100 }, (_, id) => ({ id, label: `row_${id}`, description: 'independent catalog', detail: `${id}` }));
 	let accepted: typeof items[number] | undefined, acceptedModifiers: KeyModifier | undefined, pressId = 0;
 	const open = () => picker.pick('Choose', 'Filter', () => new TextQuickPickProvider(items), (item, modifiers) => { accepted = item; acceptedModifiers = modifiers; });

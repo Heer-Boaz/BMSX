@@ -1,5 +1,5 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { EditorGroupView } from '../../services/editor/editor_group';
-import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import * as colors from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -38,7 +38,8 @@ const COMMANDS = ['play.reveal', 'play.actors', 'play.stop', 'play.reset', 'play
 export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 	private session: PlaySession | undefined;
 	private gameInput: GameInputControl | undefined;
-	private status = '';
+	private readonly statusItem: WorkbenchStatusItem = { text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' };
+	public readonly statusItems = [this.statusItem];
 	private state = '';
 	private tick = -1;
 	private title = '';
@@ -126,7 +127,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 		const tick = session === undefined ? -1 : session.target.runtime.frameScheduler.lastTickSequence;
 		if (state !== this.state || tick !== this.tick) {
 			this.state = state; this.tick = tick;
-			this.status = `${state.toUpperCase()}${tick < 0 ? '' : ` | FRAME ${tick}`}`;
+			this.statusItem.text = `${state.toUpperCase()}${tick < 0 ? '' : ` | FRAME ${tick}`}`;
 		}
 	}
 	public draw(): void {
@@ -141,9 +142,7 @@ export class PlayEditorPane extends WorkbenchViewEditorPane<PlayEditorInput> {
 			colors.COLOR_RESOURCE_VIEWER_TEXT, editorViewState.font.renderFont());
 		this.gameInput?.draw();
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.blit_text_inline_with_font(this.status, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
-	}
+	public updateStatus(): void {}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean, now: number,): boolean {
 		if (this.details.visible) return this.details.handlePointer(snapshot);
 		if (snapshot.valid && snapshot.insideViewport && (snapshot.justPressedButtons & PointerButton.Secondary) !== 0

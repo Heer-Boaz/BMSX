@@ -162,7 +162,7 @@ for (const theme of ['dark', 'light']) {
 		test(`${theme}/${variant} actual disabled menu label, shortcut and active mark cannot adopt selection colors`, t => {
 			const f = fixture(t, theme, variant), focus = new InputFocusService(), capture = new PointerCaptureService();
 			const origin = focus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
-			const menu = new ContextMenuController(focus, capture); t.after(() => menu.dispose());
+			const menu = new ContextMenuController(focus, capture, { left: 0, top: 0, right: 384, bottom: 288 }); t.after(() => menu.dispose());
 			let undoEnabled = true;
 			menu.show(40, 40, [{ type: 'command', command: 'undo' }, { type: 'command', command: 'save' }], {
 				isEnabled: command => command !== 'undo' || undoEnabled, isActive: command => command === 'undo', execute() {},

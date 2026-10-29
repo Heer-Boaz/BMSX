@@ -168,8 +168,6 @@ export type ScenarioLabLayout = {
 
 export type ScenarioLabStatus = {
 	info: string;
-	renderedInfo: string;
-	dirty: boolean;
 };
 
 /** Retained projection and interaction state for the one Scenario Lab editor input. */

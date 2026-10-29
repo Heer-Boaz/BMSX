@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { InputFocusScope } from '../../../input/focus';
 import type { ImageDecoder } from '../../../../hosts/common/image';
 import { ImagePreviewCache } from '../../ui/image_preview';
@@ -40,6 +41,9 @@ const COMMANDS = ['assistant.queue', 'assistant.direct', 'assistant.send', 'assi
 
 /** Host-only conversation work continues under the ordinary workbench game pause. */
 export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 	private readonly previews: ImagePreviewCache;
 	private readonly preview: ImagePreviewOverlay;
 	private readonly attachments: AssistantAttachmentStrip;
@@ -245,8 +249,9 @@ export class AssistantPane extends WorkbenchViewEditorPane<AssistantInput> {
 		this.references.suggestions.draw();
 		this.previews.endFrame();
 	}
-	public drawStatusBar(bounds: Readonly<RectBounds>, color: number): void {
-		api.blit_text_inline_with_font(this.input.footer.lines.at(-1)!, bounds.left + 4, bounds.top + 2, 0, color, editorViewState.font.renderFont());
+	public updateStatus(): void {
+		this.input.footer.updateStatus(this.input.conversation);
+		this.statusItems[0].text = this.input.footer.statusText;
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot): boolean {
 		if (this.input.attachments.images.length > 0 && this.attachments.handlePointer(snapshot)) return true;

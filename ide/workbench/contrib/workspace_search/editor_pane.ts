@@ -1,3 +1,4 @@
+import { EMPTY_STATUS_ITEMS } from '../../common/status_bar';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
@@ -49,6 +50,7 @@ export function measureWorkspaceSearchInput(_input: WorkspaceSearchInput, font: 
 
 /** Query editing and result gestures are attached controls, not the lifetime of the search. */
 export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearchInput> {
+	public readonly statusItems = EMPTY_STATUS_ITEMS;
 	private readonly actions: WorkbenchActionBarControl;
 	private readonly scrollbar = new ScrollbarPointerControl(pointerCapture);
 	private readonly tooltip = new WorkbenchTooltip();
@@ -241,5 +243,5 @@ export class WorkspaceSearchPane extends WorkbenchViewEditorPane<WorkspaceSearch
 		if (workbenchListContainsPosition(tree, event.viewportX, event.viewportY)) { scrollWorkbenchList(tree, event.deltaY * 3); this.tooltip.hide(); }
 	}
 	public draw(): void { drawWorkspaceSearch(this.input, this.presentation, this.contentBounds, this.field, this.fieldViewport, this.fieldBounds, this.focusTarget.hasFocus); }
-	public drawStatusBar(): void {}
+	public updateStatus(): void {}
 }

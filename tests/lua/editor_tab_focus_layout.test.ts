@@ -33,7 +33,8 @@ function fixture(t: TestContext, count = 12, variant: 'tiny' | 'msx' = 'tiny') {
 		drawText(text: string, x: number, y: number, z: number, color: number) { drawEditorText(font, text, x, y, z, color); },
 	};
 	const parent = inputFocus.createTarget(null, new InputFocusScope(Symbol('focused tab layout')));
-	const menu = new ContextMenuController(inputFocus, pointerCapture);
+	const menuArea = { left: 0, top: 0, right: 384, bottom: 96 };
+	const menu = new ContextMenuController(inputFocus, pointerCapture, menuArea);
 	const inertDragHandler: EditorTabDragHandler = { update() {}, drop() {}, clear() {} };
 	const strip = new EditorTabStrip(model, context, { isEnabled: () => true, execute() {} }, parent,
 		id => { model.activate(model.findById(id)!); return true; }, id => model.removeAt(model.indexOf(model.findById(id)!)),

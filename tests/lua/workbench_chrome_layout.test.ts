@@ -6,7 +6,7 @@ import { editorFeedbackState, showEditorMessage, updateEditorMessage } from '../
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { api } from '../../ide/runtime/overlay_api';
-import { getWorkbenchEditorBounds, getWorkbenchWorkArea, getStatusMessageLines, topMargin, refreshWorkbenchLayout, updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
+import { getWorkbenchEditorBounds, getWorkbenchWorkArea, topMargin, refreshWorkbenchLayout, updateFullWidthWorkbenchLayout, type FullWidthWorkbenchLayout } from '../../ide/workbench/common/layout';
 import { renderTopBar } from '../../ide/workbench/render/top_bar';
 import { editorChromeState } from '../../ide/workbench/ui/chrome_state';
 import { layoutTopBar } from '../../ide/workbench/ui/top_bar/layout';
@@ -30,7 +30,8 @@ function fixture(t: TestContext) {
 	const overlay = createHostOverlayFixture(384, 288);
 	const focus = new InputFocusService(), capture = new PointerCaptureService();
 	const origin = focus.createTarget(); origin.bindKeyboard(() => {}); origin.focus();
-	const popup = new ContextMenuController(focus, capture);
+	const root = { left: 0, top: 0, right: 384, bottom: 288 };
+	const popup = new ContextMenuController(focus, capture, root);
 	let measurements = 0, queries = 0;
 	const active = new Set<EditorCommandId>(), disabled = new Set<EditorCommandId>();
 	const executed: EditorCommandId[] = [];
@@ -51,7 +52,6 @@ function fixture(t: TestContext) {
 	const group = createTestEditorGroup();
 	const menubar = new MenubarController(popup, commands, context);
 	const surfaces = new WorkbenchSurfaceService();
-	const root = { left: 0, top: 0, right: 384, bottom: 288 };
 	const owner = surfaces.attach({ role: 'content', captureScope: Symbol('chrome'), isVisible: () => true,
 		getBounds: () => root, getClip: () => root, draw() {} });
 	refreshWorkbenchLayout(); menubar.attach(surfaces, owner, getWorkbenchWorkArea());
@@ -59,7 +59,7 @@ function fixture(t: TestContext) {
 		root.right = editorViewState.viewportWidth; root.bottom = editorViewState.viewportHeight;
 		layoutTopBar(context, menubar.expanded);
 		refreshWorkbenchLayout(); group.layout(getWorkbenchEditorBounds(), getWorkbenchEditorBounds()); menubar.update(); popup.update();
-		if (popup.visible) popup.model.layout(editorViewState.viewportWidth, editorViewState.viewportHeight, context.lineHeight,
+		if (popup.visible) popup.model.layout(root, context.lineHeight,
 			editorViewState.font.renderFont(), context.measureText);
 	};
 	const paint = () => {
@@ -238,7 +238,7 @@ test('menu layout retires stale popup geometry on viewport/font changes without 
 	assert.equal(f.popup.visible, false); assert.equal(f.focus.target, f.origin);
 });
 
-test('feedback expiry and font wrapping publish parent bounds before full-width child layout', t => {
+test('transient feedback does not resize a retained child while font metrics still publish parent layout', t => {
 	fixture(t);
 	const child: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
@@ -247,18 +247,19 @@ test('feedback expiry and font wrapping publish parent bounds before full-width 
 	showEditorMessage('This authored status message must wrap differently when the font changes', 'info', 1);
 	refreshWorkbenchLayout();
 	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
-	const tinyLines = [...getStatusMessageLines()];
+	const tinyBottom = child.bottom;
+	assert.equal(tinyBottom, 288 - editorViewState.baseBottomMargin);
+	showEditorMessage('A replacement feedback observation does not reserve additional rows.', 'info', 1);
+	refreshWorkbenchLayout();
+	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), false);
 	configureFontVariant('msx');
 	refreshWorkbenchLayout();
 	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
-	const msxLines = [...getStatusMessageLines()];
-	assert.ok(msxLines.length > tinyLines.length, 'same text and viewport do not imply same wrapping');
-	assert.equal(child.bottom, 288 - editorViewState.baseBottomMargin - msxLines.length * editorViewState.lineHeight - 4);
+	assert.equal(child.bottom, 288 - editorViewState.baseBottomMargin);
 	updateEditorMessage(1);
 	refreshWorkbenchLayout();
-	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), true);
+	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), false);
 	assert.equal(child.bottom, 288 - editorViewState.baseBottomMargin);
-	assert.deepEqual(getStatusMessageLines(), []);
 	assert.equal(updateFullWidthWorkbenchLayout(child, getWorkbenchEditorBounds()), false, 'unchanged parent layout has no child rebuild');
 });
 
@@ -271,16 +272,16 @@ test('the root layout publishes viewport, font and status changes into one borro
 	f.layout();
 	assert.equal(getWorkbenchWorkArea(), area);
 	assert.equal(area.right, 128); assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
-	showEditorMessage('This actual status message changes the available root work area when it wraps across lines.', 'info', 1);
+	showEditorMessage('A long actual status observation must not withdraw any additional work-area rows.', 'info', 1);
 	f.layout();
-	assert.equal(getWorkbenchWorkArea(), area); assert.ok(getStatusMessageLines().length > 1);
-	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin - getStatusMessageLines().length * editorViewState.lineHeight - 4);
+	assert.equal(getWorkbenchWorkArea(), area);
+	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
 	const tinyBottom = area.bottom;
 	configureFontVariant('msx'); f.layout();
 	assert.equal(getWorkbenchWorkArea(), area);
 	assert.equal(area.top, topMargin()); assert.ok(area.top > tinyTop);
-	assert.ok(area.bottom < tinyBottom, 'the same borrowed object exposes the larger actual font/status budget');
-	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin - getStatusMessageLines().length * editorViewState.lineHeight - 4);
+	assert.ok(area.bottom < tinyBottom, 'the same borrowed object exposes the larger actual font row');
+	assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
 	updateEditorMessage(1); f.layout();
 	assert.equal(getWorkbenchWorkArea(), area); assert.equal(area.bottom, 240 - editorViewState.baseBottomMargin);
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;

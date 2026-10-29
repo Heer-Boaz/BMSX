@@ -8,6 +8,7 @@ import type { WorkingCopyConsumer } from '../services/editor/editor_close';
 import type { WorkbenchSurface } from '../services/windows/model';
 import type { WorkbenchViewSizeConstraints } from './layout';
 import type { SerializedPrimaryClient } from './main_workspace_serialization';
+import type { WorkbenchStatusSource } from './status_bar';
 
 export type MainWorkspaceRegionId = 'hierarchy' | 'details';
 export type MainWorkspaceRegionSurfaces = Readonly<Record<MainWorkspaceRegionId, WorkbenchSurface>>;
@@ -29,7 +30,7 @@ export interface MainWorkspaceRegionClient {
 }
 
 /** One semantic subject and working-copy consumer, with independently attached named presentations. */
-export interface MainWorkspaceClient {
+export interface MainWorkspaceClient extends WorkbenchStatusSource {
 	readonly consumer: WorkingCopyConsumer;
 	readonly scope: InputFocusScope;
 	readonly commandTarget: InputFocusTarget;
@@ -44,7 +45,6 @@ export interface MainWorkspaceClient {
 	isCurrent(): boolean;
 	update(): void;
 	focus(region?: MainWorkspaceRegionId): void;
-	drawStatusBar(bounds: Readonly<RectBounds>, color: number): void;
 	dispose(): void;
 }
 

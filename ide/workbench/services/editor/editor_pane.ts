@@ -8,6 +8,7 @@ import type { EditorInput } from '../../common/editor_inputs';
 import { inputFocus, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import type { EditorFont } from '../../../editor/ui/view/font';
+import type { WorkbenchStatusItem, WorkbenchStatusSource } from '../../common/status_bar';
 
 export type EditorPaneClearReason = 'deactivate' | 'move';
 
@@ -28,7 +29,7 @@ export function measureUnconstrainedEditor(_input: EditorInput, _font: EditorFon
 }
 
 /** Retained workbench control for one editor-input kind. */
-export abstract class EditorPane<TInput extends EditorInput> {
+export abstract class EditorPane<TInput extends EditorInput> implements WorkbenchStatusSource {
 	/** Root chrome addresses the attached client, independently of the last keyboard-focused leaf. */
 	public abstract get commandTarget(): InputFocusTarget;
 	/** Scope of a concrete control borrowed by this pane, when separate from its group scope. */
@@ -106,5 +107,6 @@ export abstract class EditorPane<TInput extends EditorInput> {
 
 	public abstract handleWheel(event: WheelInputSnapshot): void;
 
-	public abstract drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void;
+	public abstract readonly statusItems: readonly WorkbenchStatusItem[];
+	public abstract updateStatus(): void;
 }

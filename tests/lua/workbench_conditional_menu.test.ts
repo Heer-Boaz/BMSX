@@ -50,7 +50,7 @@ function fixture(t: TestContext, secondary?: readonly WorkbenchMenuItem[] | Work
 			focus.executeCommand(command, origin);
 		},
 	};
-	const popup = new ContextMenuController(focus, capture);
+	const popup = new ContextMenuController(focus, capture, { left: 0, top: 0, right: 384, bottom: 288 });
 	const bar = new WorkbenchActionBarControl(focus, capture, hover, commands, origin, () => origin.focus(), popup);
 	const font = new Font({ variant: 'tiny' });
 	let measurements = 0;

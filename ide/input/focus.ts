@@ -8,6 +8,7 @@ import type { VideoPresenter } from '../../machine/ts/render/video_presenter';
 import type { FrameBitmap } from '../../hosts/common/frame_bitmap';
 import { WORKBENCH_POINTER_SCOPE, type PointerCaptureScope } from './pointer/capture';
 import type { InputInteraction } from './interaction';
+import type { WorkbenchStatusSource } from '../workbench/common/status_bar';
 
 export type GuestInputPresentation =
 	| { readonly kind: 'direct'; readonly presenter: VideoPresenter }
@@ -54,6 +55,8 @@ export class InputFocusScope {
 	public interactionOrigin: InputFocusScope | undefined;
 	/** A declared local runtime can be unavailable without redirecting its commands. */
 	public runtime: InputRuntimeContext | undefined;
+	/** The attached presentation owns status facts; transients borrow their actual interaction origin. */
+	public statusSource: WorkbenchStatusSource | undefined;
 	private contextRetirementListeners: Set<() => void> | undefined;
 	private contextRetirements = 0;
 	/** Command ancestry is independent of presentation and the control's focus-return parent. */

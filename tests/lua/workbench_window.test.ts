@@ -27,9 +27,9 @@ const pointer = (x: number, y: number, buttons = 0, pressed = 0, released = 0): 
 
 function fixture() {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
-	const contextMenu = new ContextMenuController(focus, capture);
 	const surfaces = new WorkbenchSurfaceService();
 	const workArea = { left: 0, top: 20, right: 500, bottom: 380 };
+	const contextMenu = new ContextMenuController(focus, capture, workArea);
 	const parent = focus.createTarget(); parent.bindKeyboard(() => {}); parent.focus();
 	const owner = surfaces.attach({ role: 'content', captureScope: parent.scope.surfaceScope, isVisible: () => true,
 		getBounds: () => workArea, getClip: () => workArea, draw() {}, onRetire: () => contextMenu.dispose() });

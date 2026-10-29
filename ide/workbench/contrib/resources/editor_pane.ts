@@ -1,3 +1,4 @@
+import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import * as constants from '../../../common/constants';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { KeyModifier } from '../../../../hosts/common/input/text';
@@ -13,7 +14,7 @@ import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/m
 import type { EditorCommandRunner } from '../../../common/commands';
 import { editorViewState } from '../../../editor/ui/view/state';
 import { drawEditorText } from '../../../editor/render/text_renderer';
-import { measureText, truncateTextToWidth } from '../../../editor/common/text/layout';
+import { measureText } from '../../../editor/common/text/layout';
 import type { ResourceImagePreview, ResourceViewerInput } from './editor_input';
 import { WorkbenchViewEditorPane } from '../../ui/editor_pane/workbench_view_pane';
 import { Scrollbar } from '../../ui/scrollbar';
@@ -25,6 +26,9 @@ import type { ResourceViewerContent, ResourceViewerContentView } from './model';
 
 /** One resource view: full-client image interaction or its independently retained information reader. */
 export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceViewerInput> {
+	public readonly statusItems: readonly WorkbenchStatusItem[] = [
+		{ text: '', alignment: 'left', priority: STATUS_PRIORITY_CONTENT, overflow: 'ellipsis', tone: 'normal' },
+	];
 	private readonly scrollbar = new Scrollbar('vertical');
 	private readonly horizontal = new Scrollbar('horizontal');
 	private readonly scrollbarPointer: ScrollbarPointerControl;
@@ -38,6 +42,12 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 	private textCapacity = 0;
 	private textWidth = 0;
 	private attachedImage: ResourceImagePreview | undefined;
+	private statusType: string | undefined;
+	private statusImageWidth: number | undefined;
+	private statusImageHeight: number | undefined;
+	private statusScale: number | undefined;
+	private statusImageMode: ResourceImagePreview['view']['mode'] | undefined;
+	private statusImageAttached = false;
 	private readonly onDidScroll = (scroll: number): void => { this.input.view.scroll = scroll; };
 	private readonly onDidScrollLeft = (scroll: number): void => { this.input.view.scrollLeft = scroll; };
 
@@ -215,11 +225,16 @@ export class ResourceViewerEditorPane extends WorkbenchViewEditorPane<ResourceVi
 		this.input.view.scroll = this.scrollbar.getScroll(); this.input.view.scrollLeft = this.horizontal.getScroll();
 	}
 
-	public drawStatusBar(bounds: Readonly<RectBounds>, textColor: number): void {
+	public updateStatus(): void {
 		const preview = this.input.preview;
-		const info = preview === undefined ? this.input.resource.source.type.toUpperCase()
-			: `${preview.bitmap.image.width} x ${preview.bitmap.image.height} / ${this.attachedImage === undefined ? 'Info' : `${Math.round(preview.view.scale * 100)}%${preview.view.mode === 'fit' ? ' Fit' : ''}`}`;
-		drawEditorText(editorViewState.font, truncateTextToWidth(info, bounds.right - bounds.left - 8), bounds.left + 4, bounds.top + 2, 0, textColor);
+		const type = this.input.resource.source.type, width = preview?.bitmap.image.width, height = preview?.bitmap.image.height;
+		const scale = preview?.view.scale, mode = preview?.view.mode, attached = this.attachedImage !== undefined;
+		if (type === this.statusType && width === this.statusImageWidth && height === this.statusImageHeight
+			&& scale === this.statusScale && mode === this.statusImageMode && attached === this.statusImageAttached) return;
+		this.statusType = type; this.statusImageWidth = width; this.statusImageHeight = height;
+		this.statusScale = scale; this.statusImageMode = mode; this.statusImageAttached = attached;
+		this.statusItems[0].text = preview === undefined ? type.toUpperCase()
+			: `${width} x ${height} / ${!attached ? 'Info' : `${Math.round(scale! * 100)}%${mode === 'fit' ? ' Fit' : ''}`}`;
 	}
 }
 
