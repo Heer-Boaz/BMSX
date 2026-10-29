@@ -68,6 +68,21 @@ function setSource(model: EditorTextModel, source: string): void {
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: source }]);
 }
 
+test('Save admission belongs to the writable model independently of clean or dirty source', async t => {
+	const f = await fixture(t), model = f.yaml();
+	assert.equal(model.dirty, false);
+	assert.equal(f.saves.canSave(model), true);
+	const clean = await f.saves.save(model).completion;
+	assert.equal(clean.status, 'saved');
+	assert.equal(f.files.records.get(model.resource.sourceFilePath!)!.contents, model.buffer.getText());
+	setSource(model, 'value: dirty\n');
+	assert.equal(model.dirty, true);
+	assert.equal(f.saves.canSave(model), true);
+	assert.equal((await f.saves.save(model).completion).status, 'saved');
+	assert.equal(model.dirty, false);
+	assert.equal(f.saves.canSave(model), true);
+});
+
 for (const mode of ['yaml', 'aem'] as const) test(`${mode} Save writes its admitted file address rather than the cartridge root`, async t => {
 	const f = await fixture(t), sourceFilePath = `shared/authoring/save.${mode}`;
 	const model = f.models.retain({ contextLabel: 'Fixture project', contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'res/save.yaml', sourceFilePath,
@@ -106,6 +121,7 @@ test('Save captures and coalesces one revision, while newer edits remain dirty',
 	setSource(model, '# untouched\nvalue: 2\n');
 	f.files.delayed = true;
 	const first = f.saves.save(model);
+	assert.equal(f.saves.canSave(model), true);
 	assert.equal(f.saves.save(model), first);
 	setSource(model, '# untouched\nvalue: 3\n');
 	await setImmediate();
@@ -159,9 +175,12 @@ test('shutdown joins every accepted source save before its callers may tear down
 	const first = f.saves.save(model);
 	setSource(model, 'value: 3');
 	const second = f.saves.save(model);
+	assert.equal(f.saves.canSave(model), true);
+	assert.equal(f.saves.save(model), second);
 	let stopped = false;
 	const closing = f.saves.shutdown().then(() => { stopped = true; });
 	assert.equal(f.saves.acceptingSaves, false);
+	assert.equal(f.saves.canSave(model), false);
 	assert.throws(() => f.saves.save(model), /shutdown/);
 	await setImmediate();
 	assert.equal(stopped, false);
@@ -174,6 +193,8 @@ test('shutdown joins every accepted source save before its callers may tear down
 	await closing;
 	assert.equal(stopped, true);
 	assert.equal(model.dirty, false);
+	assert.equal(f.files.records.get(model.resource.sourceFilePath!)!.contents, 'value: 3');
+	assert.equal(f.saves.canSave(model), false);
 });
 
 test('queued Saves retain their admitted file address across retained resource metadata refresh', async t => {
@@ -393,19 +414,31 @@ test('source-only Lua uses its catalog owner and publishes one model-service sav
 test('read-only resources are rejected at save admission, before writes or snapshot completion', async t => {
 	const f = await fixture(t);
 	const model = f.yaml();
+	assert.equal(f.saves.canSave(model), true);
 	model.refreshResource({ ...model.resource, source: { ...model.resource.source, generated: true } });
+	assert.equal(model.readOnly, true);
+	assert.equal(f.saves.canSave(model), false);
 	assert.throws(() => f.saves.save(model), /read-only/);
 	assert.equal(f.files.writes.length, 0);
+	assert.equal(f.files.records.size, 0);
+	model.refreshResource({ ...model.resource, source: { ...model.resource.source, generated: false } });
+	assert.equal(f.saves.canSave(model), true);
+	assert.equal((await f.saves.save(model).completion).status, 'saved');
 });
 
 test('Save cannot reacquire a retired model through a reopened path and matching version', async t => {
 	const f = await fixture(t);
 	const retired = f.yaml();
 	setSource(retired, 'value: old-session');
+	assert.equal(f.saves.canSave(retired), true);
 	f.models.clear();
+	assert.equal(f.saves.canSave(retired), false);
 	const current = f.yaml();
 	setSource(current, 'value: current-session');
+	assert.deepEqual(current.identity, retired.identity);
 	assert.equal(current.version, retired.version);
+	assert.equal(f.saves.canSave(retired), false);
+	assert.equal(f.saves.canSave(current), true);
 	const capture = t.mock.method(retired, 'createSnapshot');
 	assert.throws(() => f.saves.save(retired), /no longer belongs to this workspace/);
 	assert.equal(capture.mock.callCount(), 0, 'retired admission cannot even break the model undo sequence');
@@ -423,6 +456,8 @@ test('Save admits only the session owner model, not a foreign copy of the same r
 	t.after(() => other.clear());
 	const foreign = other.retain(current.resource, current.mode, 'value: foreign');
 	assert.equal(current.version, foreign.version);
+	assert.equal(f.saves.canSave(current), true);
+	assert.equal(f.saves.canSave(foreign), false);
 	const capture = t.mock.method(foreign, 'createSnapshot');
 	assert.throws(() => f.saves.save(foreign), /no longer belongs to this workspace/);
 	assert.equal(capture.mock.callCount(), 0);

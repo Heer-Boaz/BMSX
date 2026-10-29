@@ -645,7 +645,7 @@ export class RuntimeCartEditor implements CartEditor {
 			resource_view: new ResourceViewerInputSerializer(sources.catalog),
 		};
 		this.scenePrimaryOptions = {
-			commands: this.commands, sources: this.sources, contextMenu: this.contextMenu, surfaces: this.surfaces,
+			commands: this.commands, sources: this.sources, saves: textFileSaves, contextMenu: this.contextMenu, surfaces: this.surfaces,
 			workArea: getWorkbenchWorkArea(), main: this.mainWorkspace,
 			focusReturn: this.editorParts.main.focusTarget,
 			restoreNavigation: this.restoreSceneNavigation,

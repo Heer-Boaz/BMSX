@@ -33,6 +33,10 @@ export class TextFileSaveService {
 	) {}
 
 	public get acceptingSaves(): boolean { return !this.closing; }
+	/** Live persistence admission, independent of dirty state or an attached control's draft. */
+	public canSave(model: EditorTextModel): boolean {
+		return this.acceptingSaves && this.models.get(model.identity) === model && !model.readOnly;
+	}
 	/** Historical acknowledgement of this model's latest Save, never inferred from connectivity. */
 	public latestOperation(model: EditorTextModel): TextFileSaveOperation | undefined { return this.latest.get(model); }
 

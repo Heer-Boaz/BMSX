@@ -1,6 +1,7 @@
 import type { EditorTextModel } from '../../editor/model/text_model';
 import { DisposableStore, type IDisposable } from '../../common/lifecycle';
 import type { ResourceIdentity } from '../../common/resource';
+import type { TextFileSaveService } from '../services/working_copy/text_file_save';
 
 export type ResourceEditorIdentity = {
 	readonly resource: ResourceIdentity;
@@ -92,8 +93,9 @@ export abstract class TextEditorInput<TId extends string, TKind extends string> 
 	public abstract get readOnly(): boolean;
 	/** Invoked by resource commands, not by rendering or source discovery. */
 	public abstract getWorkingCopies(): readonly EditorTextModel[];
-	public canSave(): boolean {
-		for (const model of this.getWorkingCopies()) if (model.dirty && !model.readOnly) return true;
+	/** An owning pending draft can require Save before its working copy becomes dirty. */
+	public canSave(saves: TextFileSaveService, includeClean = false): boolean {
+		for (const model of this.getWorkingCopies()) if ((includeClean || model.dirty) && saves.canSave(model)) return true;
 		return false;
 	}
 }
@@ -105,7 +107,9 @@ export abstract class WorkingCopyEditorInput<
 > extends TextEditorInput<TId, TKind> {
 	public get readOnly(): boolean { return this.workingCopy.readOnly; }
 	public getWorkingCopies(): readonly EditorTextModel[] { return [this.workingCopy]; }
-	public override canSave(): boolean { return this.workingCopy.dirty && !this.workingCopy.readOnly; }
+	public override canSave(saves: TextFileSaveService, includeClean = false): boolean {
+		return (includeClean || this.workingCopy.dirty) && saves.canSave(this.workingCopy);
+	}
 
 	public override onDidChangeDirty(listener: () => void): () => void {
 		return this.workingCopy.onDidChangeDirty(listener);

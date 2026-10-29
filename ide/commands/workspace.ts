@@ -55,10 +55,10 @@ export function isEditorWorkspaceCommandEnabled(command: EditorWorkspaceCommandI
 	boots: BootService, execution: HostExecutionControl, tasks: RuntimeTaskQueue): boolean {
 	switch (command) {
 		case 'save': {
-			if (group === undefined) return false;
+			if (group === undefined || !(input instanceof TextEditorInput) || !saves.acceptingSaves) return false;
 			const pane = group.panes.activePane, focused = inputFocus.target;
-			return saves.acceptingSaves && input instanceof TextEditorInput && (input.canSave()
-				|| !input.readOnly && pane?.input === input && focused?.edit?.pending === true && pane.inputScope.contains(focused.scope));
+			const pending = pane?.input === input && focused?.edit?.pending === true && pane.inputScope.contains(focused.scope);
+			return input.canSave(saves, pending);
 		}
 		case 'hot-resume': return hotResumes.acceptingRequests && !execution.launchPending;
 		case 'reboot': return boots.acceptingRequests;
@@ -106,6 +106,9 @@ export function captureEditorWorkspaceCommand(
 		performEditorAction(editor, hotResumes, boots, execution, overlayRenderer, logOutput, request, runTargets);
 	};
 	switch (command) {
+		case 'save':
+			if (!enabled()) return;
+			break;
 		case 'createResource': return { isEnabled: enabled, run: () => openCreateResourcePrompt(editor, destination, sources.catalog, clock) };
 		case 'theme-toggle': return { isEnabled: enabled, run: () => requestAction({ action: command }) };
 		case 'hot-resume': case 'reboot': {
@@ -133,7 +136,7 @@ export function captureEditorWorkspaceCommand(
 			switch (command) {
 				case 'save': {
 					if (subject instanceof TextEditorInput) for (const model of subject.getWorkingCopies()) {
-						if (!model.dirty || model.readOnly) continue;
+						if (!model.dirty || !textFileSaves.canSave(model)) continue;
 						void saveTextFileFromCommand(textFileSaves, model, editor, sources);
 					}
 					return;

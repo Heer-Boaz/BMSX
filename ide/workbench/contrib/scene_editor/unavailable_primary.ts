@@ -45,7 +45,7 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
 		this.commandTarget.canFocus = () => false;
 		if (model !== undefined) this.commandTarget.registerCommand('save', {
-			contextual: true, isEnabled: () => !this.disposed && !model.readOnly,
+			contextual: true, isEnabled: () => !this.disposed && options.saves.canSave(model),
 			run: () => options.save(model),
 		});
 		const common = { commands: options.commands, contextMenu: options.contextMenu, surfaces: options.surfaces,

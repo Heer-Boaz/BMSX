@@ -182,6 +182,13 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	await press('ControlLeft', 'KeyZ');
 	check(model.buffer.getText() === original && !model.dirty && editor.mainWorkspace.primary === unavailable,
 		'main: Source Undo cannot silently rebind the unavailable persisted subject');
+	await test.runPaletteCommand('Workspace: Focus Primary Authoring');
+	await press('ControlLeft', 'KeyS');
+	await test.until(() => ide.textFileSaves.latestOperation(model)?.result?.status === 'saved',
+		'main: unavailable authoring saves its retained file through the ordinary native keyboard action');
+	check(ide.textFileSaves.latestOperation(model)!.snapshot.source === original
+		&& model.persistedBaseline === original && !model.dirty && editor.mainWorkspace.primary === unavailable,
+		'main: Save acknowledges the exact retained source without inventing an available Scene or document subject');
 	await test.runPaletteCommand('Workspace: Clear Primary Authoring');
 	await test.until(() => editor.mainWorkspace.primary === undefined, 'main: clear retires the admitted authored context');
 	check(editor.mainWorkspace.primary === undefined && !unavailable.hierarchy.attached && !unavailable.details.attached && !unavailable.isCurrent(),

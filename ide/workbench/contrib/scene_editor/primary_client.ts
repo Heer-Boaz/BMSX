@@ -9,6 +9,7 @@ import type { MainWorkspace } from '../../main_workspace';
 import type { MainWorkspaceClient, MainWorkspaceRegionId, MainWorkspaceRegionSurfaces } from '../../common/main_workspace_client';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
+import type { TextFileSaveService } from '../../services/working_copy/text_file_save';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchMenu, type WorkbenchMenuCommandDefinition, type WorkbenchMenuDefinition } from '../../ui/menu/model';
@@ -31,6 +32,7 @@ import type { SceneDetailsViewState } from './details_view';
 export type ScenePrimaryClientOptions = {
 	readonly commands: EditorCommandRunner;
 	readonly sources: RuntimeSourceState;
+	readonly saves: TextFileSaveService;
 	readonly contextMenu: ContextMenuController;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly regions: MainWorkspaceRegionSurfaces;
@@ -77,11 +79,13 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		this.authoringCommands.bind(consumer);
 		this.commandTarget.registerCommand('save', {
 			contextual: true,
-			isEnabled: () => !this.disposed && !consumer.workingCopy.readOnly,
+			isEnabled: () => !this.disposed && options.saves.canSave(consumer.workingCopy),
 			run: () => options.save(consumer.workingCopy),
 			capture: () => {
+				if (this.disposed || !options.saves.canSave(consumer.workingCopy)) return;
 				const generation = this.scope.contextGeneration;
-				return { editScope: this.scope, isEnabled: () => !this.disposed && this.scope.contextGeneration === generation && !consumer.workingCopy.readOnly,
+				return { editScope: this.scope, isEnabled: () => !this.disposed && this.scope.contextGeneration === generation
+					&& options.saves.canSave(consumer.workingCopy),
 					run: () => { if (!this.disposed && this.scope.contextGeneration === generation) options.save(consumer.workingCopy); } };
 			},
 		});
