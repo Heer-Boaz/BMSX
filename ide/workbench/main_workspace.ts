@@ -708,7 +708,24 @@ export class MainWorkspace {
 	}
 	public focusActivity(): void {
 		const id = this.activities.selectedId;
-		if (id !== undefined) this.openActivity(id);
+		if (id === undefined) return;
+		if (!this.activityDisplayed) { this.openActivity(id); return; }
+		const activity = this.activity!;
+		if (!this.activities.attached || !activity.attached || this.resetting) return;
+		const target = activity.commandTarget, generation = target.scope.contextGeneration, selection = this.activities.revision;
+		const visibility = this.visibilityRevision, placement = this.activityPlacementRevision;
+		inputFocus.setTarget(target, () => {
+			const revision = inputFocus.revision;
+			const current = () => this.presented && !this.surface.retired && !this.resetting && this.activityDisplayed
+				&& this.activity === activity && activity.commandTarget === target && target.scope.contextGeneration === generation
+				&& this.activities.revision === selection
+				&& this.visibilityRevision === visibility && this.activityPlacementRevision === placement && inputFocus.revision === revision;
+			if (current() && this.activityPlacementValue === 'dockedMain') this.reveal(this.regionLayout.activityBounds);
+			if (current()) this.surfaces.raise(this.surface);
+			if (current() && this.activityPlacementValue === 'floatingWindow') this.surfaces.raise(this.activityWindow.surface!);
+			// A departing draft can replace this exact client without making another focus request.
+			if (!current() && inputFocus.revision === revision) inputFocus.setTarget(null);
+		});
 	}
 
 	/** Visibility changes one native attachment, never the retained semantic context or sibling draft. */
@@ -738,18 +755,19 @@ export class MainWorkspace {
 		if (this.prompt.visible) { this.surfaces.raise(this.promptSurface); this.prompt.focusTarget.focus(); return; }
 		const destination = region ?? (this.regionLayout[`${this.activeRegion}Visible`] ? this.activeRegion
 			: this.regionLayout.hierarchyVisible ? 'hierarchy' : this.regionLayout.detailsVisible ? 'details' : this.activeRegion);
-		const focused = inputFocus.target, focusRevision = inputFocus.revision, generation = client.scope.contextGeneration;
-		if (focused !== null && client.scope.contains(focused.scope) && !client[destination].scope.contains(focused.scope)
-			&& focused.edit?.commit() === false) return;
-		if (this.primaryValue !== client || client.scope.contextGeneration !== generation || inputFocus.revision !== focusRevision) return;
-		if (!this.setRegionVisible(destination, true) || this.primaryValue !== client || inputFocus.revision !== focusRevision
-			|| client.scope.contextGeneration !== generation) return;
-		this.reveal(this.regionBounds[destination]);
-		if (this.primaryValue !== client || !this.presented || this.surface.retired || inputFocus.revision !== focusRevision
-			|| client.scope.contextGeneration !== generation) return;
-		this.surfaces.raise(this.surface);
-		if (this.primaryValue === client && this.presented && !this.surface.retired && inputFocus.revision === focusRevision
-			&& client.scope.contextGeneration === generation) client.focus(destination);
+		const presentation = client[destination], generation = presentation.scope.contextGeneration;
+		if (!inputFocus.setTarget(presentation.commandTarget, () => {
+			const revision = inputFocus.revision;
+			const current = () => this.primaryValue === client && presentation.scope.contextGeneration === generation
+				&& this.presented && !this.surface.retired && !this.resetting && inputFocus.revision === revision;
+			const admitted = current() && this.setRegionVisible(destination, true) && current();
+			if (admitted) {
+				this.reveal(this.regionBounds[destination]);
+				if (current()) this.surfaces.raise(this.surface);
+			}
+			if ((!admitted || !current()) && inputFocus.revision === revision) inputFocus.setTarget(null);
+		})) return;
+		if (this.primaryValue === client && presentation.scope.contextGeneration === generation) client.focus(destination);
 	}
 
 	public revealDocuments(region: Readonly<RectBounds>): void { this.reveal(region); }

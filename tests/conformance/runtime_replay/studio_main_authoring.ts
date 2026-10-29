@@ -79,7 +79,12 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 		check(editor.mainWorkspace.primary === client && field.pending && model.buffer.getText() === original,
 			'main: font reflow retains the exact draft and context');
 	}
-	await press('Enter');
+	await press('ShiftLeft', 'F6');
+	check(inputFocus.admittedTarget !== null && editor.editorParts.main.scope.contains(inputFocus.admittedTarget.scope),
+		'main: reverse outer navigation leaves Details through the actual permanent document client');
+	await press('F6');
+	check(inputFocus.admittedTarget !== null && client.details.scope.contains(inputFocus.admittedTarget.scope),
+		'main: forward outer navigation returns to the same retained Details presentation');
 	const accepted = original.replace('x = 1,', 'x = 12,');
 	check(model.buffer.getText() === accepted && !field.pending && model.dirty,
 		'main: acceptance publishes one canonical coordinate edit');
@@ -116,6 +121,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {
 			if (!(restored instanceof ScenePrimaryClient) || input?.kind !== 'code_editor') throw new Error('main: actual primary and Source required');
+			await testPrimaryRegionNavigation(test, restored, input, theme);
 			await testPrimaryRegionVisibility(test, restored, input, theme);
 			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-source`);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
@@ -179,6 +185,61 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	if (panelWasVisible !== panel.isVisible()) await press('ControlLeft', 'KeyB');
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'main: source-only authoring never executes or installs a cartridge');
+}
+
+/** Actual outer-region keys preserve domain selection, independent Source reading and native local traversal. */
+async function testPrimaryRegionNavigation(test: StudioFixture, client: ScenePrimaryClient, source: CodeEditorInput, theme: number): Promise<void> {
+	const editor = test.ide.editor, main = editor.mainWorkspace, group = editor.editorParts.findGroup(source)!;
+	const selected = client.consumer.selection, text = source.workingCopy.buffer.getText(), version = source.workingCopy.version;
+	const row = source.context.view.cursorRow, column = source.context.view.cursorColumn;
+	const filesVisible = editor.resourcePanel.isVisible(), activityVisible = main.activityDisplayed;
+	if (!activityVisible) await test.runPaletteCommand('View: Problems Panel');
+	await test.runPaletteCommand('View: Focus Files');
+	const filesSelection = editor.resourcePanel.files.selectedNode, activity = main.activity!;
+	const generation = client.scope.contextGeneration;
+	const mainScopes = [client.hierarchy.scope, group.focusScope, client.details.scope, activity.scope];
+	for (const scope of mainScopes) {
+		await test.press('F6');
+		check(inputFocus.admittedTarget !== null && scope.contains(inputFocus.admittedTarget.scope),
+			'main: F6 admits the next concrete outer-region client in fixed workspace order');
+	}
+	check(activity === editor.problems && editor.problems.selectedDiagnostic === undefined && !editor.statusBar.canFocus,
+		'main: empty native Problems contributes no status-reading destination');
+	await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-region-empty-activity`);
+	await test.press('F6');
+	check(inputFocus.admittedTarget === editor.resourcePanel.focusTarget && editor.statusBar.canFocus,
+		'main: F6 skips unavailable status and admits Files, whose own status makes reading available again');
+	await test.press('ShiftLeft', 'F6');
+	check(inputFocus.admittedTarget === editor.statusBar.focusTarget,
+		'main: reverse outer navigation admits the actual available Files status reader');
+	await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-region-status`);
+	for (const scope of [...mainScopes].reverse().concat(editor.resourcePanel.focusTarget.scope)) {
+		await test.press('ShiftLeft', 'F6');
+		check(inputFocus.admittedTarget !== null && scope.contains(inputFocus.admittedTarget.scope),
+			'main: Shift+F6 admits the previous actual region rather than cycling documents or floating windows');
+	}
+	await test.press('F6'); await test.press('F6'); await test.press('F6');
+	check(inputFocus.admittedTarget === client.details.control.focusTarget,
+		'main: region navigation addresses the retained native Details control');
+	await test.press('Tab');
+	check(inputFocus.admittedTarget === client.details.control.controls[0].field.focusTarget,
+		'main: local Tab still enters the first actual Details field');
+	await test.press('Tab');
+	check(inputFocus.admittedTarget === client.details.control.controls[1].field.focusTarget,
+		'main: local Tab remains within the native property field order');
+	await test.press('ShiftLeft', 'Tab');
+	check(inputFocus.admittedTarget === client.details.control.controls[0].field.focusTarget,
+		'main: reverse Tab retains its local field route, independent of outer-region keys');
+	await test.press('F6');
+	check(inputFocus.admittedTarget !== null && activity.scope.contains(inputFocus.admittedTarget.scope),
+		'main: F6 leaves an inline field for the displayed docked activity without selecting another client');
+	check(main.primary === client && client.scope.contextGeneration === generation && client.consumer.selection === selected
+		&& editor.resourcePanel.files.selectedNode === filesSelection && group.model.activeTab === source
+		&& source.context.view.cursorRow === row && source.context.view.cursorColumn === column
+		&& source.workingCopy.buffer.getText() === text && source.workingCopy.version === version,
+		'main: both outer directions and local traversal preserve exact attachments, authored selection, Source reading and canonical bytes');
+	if (!activityVisible) await test.runPaletteCommand('Workspace: Hide Activity Area');
+	if (!filesVisible) await test.press('ControlLeft', 'KeyB');
 }
 
 /** Native panel menus and the Window menu change attachments, never the authored or document subjects. */

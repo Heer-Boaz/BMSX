@@ -1,6 +1,7 @@
 import { CodeDocumentProjections } from './editor/ui/code/document_projections';
 import { WorkbenchInteraction } from './workbench/services/execution/interaction';
 import { MainWorkspace } from './workbench/main_workspace';
+import { WorkbenchRegionNavigation } from './workbench/region_navigation';
 import type { MainWorkspaceClient, MainWorkspaceRegionSurfaces } from './workbench/common/main_workspace_client';
 import type { SerializedPrimaryClient } from './workbench/common/main_workspace_serialization';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
@@ -227,6 +228,7 @@ export type CartEditor = TextInputHost & {
 	readonly resourceEditors: ResourceEditorResolver;
 	readonly editorParts: EditorParts;
 	readonly mainWorkspace: MainWorkspace;
+	readonly regionNavigation: WorkbenchRegionNavigation;
 	readonly statusBar: WorkbenchStatusBar;
 	readonly problems: ProblemsPanelController;
 	readonly buildOutput: BuildOutputActivity;
@@ -293,6 +295,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly resourceEditors: ResourceEditorResolver;
 	public readonly editorParts: EditorParts;
 	public readonly mainWorkspace: MainWorkspace;
+	public readonly regionNavigation: WorkbenchRegionNavigation;
 	public readonly statusBar: WorkbenchStatusBar;
 	public readonly problems: ProblemsPanelController;
 	public readonly buildOutput: BuildOutputActivity;
@@ -537,6 +540,7 @@ export class RuntimeCartEditor implements CartEditor {
 		});
 		this.windowStatus = new WorkbenchWindowStatus(this.editorParts, this.commands, this.surfaces, chromeSurface, this.rootSurfaceBounds);
 		this.statusBar = new WorkbenchStatusBar(this.surfaces, chromeSurface, this.commands, this.quickInput, this.clipboard, workArea);
+		this.regionNavigation = new WorkbenchRegionNavigation(this.resourcePanel, this.mainWorkspace, this.editorParts.main, this.statusBar, this.surfaces);
 		this.resourcePanel.focusTarget.scope.statusSource = this.resourcePanel;
 		this.unbindWorkspaceModels = editorTextModelService.onWillClear(() => this.mainWorkspace.reset());
 

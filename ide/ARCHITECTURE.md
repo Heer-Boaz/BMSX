@@ -401,6 +401,14 @@ or mutable contribution-registration lifecycle.
 view or physical target happens to be active. Each frontend owns its central
 keybinding controller and pending chord lifetime. Binding metadata supplies
 resolution and shortcut presentation; pane handlers do not own chord state.
+`workbench/region_navigation.ts` owns the fixed outer work-area order over the
+real Files, Main hierarchy/document/Details/activity and status owners. Entry
+delegates reveal and focus to those owners; it neither stores another active
+region nor enumerates floating windows as workspace regions. Local Tab, editor
+group navigation and window discovery remain separate operations. Native
+attachment/modal admission determines eligibility, independently of scroll
+clipping. Pure focus entry uses native blur policy; source-consuming and
+topology-changing operations retain their explicit draft admission.
 Keyboard commands use the admitted application runner. Native capability lookup
 is control-local. Application command resolution gives local handlers precedence
 and admits only explicitly exported semantic commands from the declared action

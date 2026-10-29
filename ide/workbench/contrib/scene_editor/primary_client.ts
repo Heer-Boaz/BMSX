@@ -65,8 +65,8 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
 		this.commandTarget.canFocus = () => false;
 		const sections = {
-			outline: { isEnabled: () => !this.disposed, run: () => this.requestRegion('hierarchy') },
-			details: { isEnabled: () => !this.disposed && consumer.hasSelection, run: () => this.requestRegion('details') },
+			outline: { isEnabled: () => !this.disposed, run: () => options.main.focusPrimary('hierarchy') },
+			details: { isEnabled: () => !this.disposed && consumer.hasSelection, run: () => options.main.focusPrimary('details') },
 		};
 		this.commandTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.commandTarget.registerCommand('sceneEditor.details', sections.details);
@@ -108,13 +108,6 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 			if (this.hierarchy.attached && this.hierarchy.scope.contains(target.scope)) this.view.preferredRegion = 'hierarchy';
 			else if (this.details.attached && this.details.scope.contains(target.scope)) this.view.preferredRegion = 'details';
 		});
-	}
-	private requestRegion(region: MainWorkspaceRegionId): void {
-		const generation = this.scope.contextGeneration, revision = inputFocus.revision;
-		const focused = inputFocus.target;
-		if (focused !== null && this.scope.contains(focused.scope) && focused.edit?.commit() === false) return;
-		if (this.disposed || this.scope.contextGeneration !== generation || inputFocus.revision !== revision) return;
-		this.options.main.focusPrimary(region);
 	}
 	public get preferredRegion(): MainWorkspaceRegionId { return this.view.preferredRegion; }
 	public serialize() { return { kind: 'scene' as const, value: JSON.stringify(captureScenePrimary(this.view)) }; }

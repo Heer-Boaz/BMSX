@@ -141,6 +141,8 @@ export class IdeCommandController {
 			return;
 		}
 		switch (command) {
+			case 'workspace.focusNextRegion': this.editor.regionNavigation.focus(invocationTarget, 1); return;
+			case 'workspace.focusPreviousRegion': this.editor.regionNavigation.focus(invocationTarget, -1); return;
 			case 'status.focus': this.editor.statusBar.focus(); return;
 			case 'status.details': this.editor.statusBar.showDetails(); return;
 			case 'workspace.activity.hide': this.editor.mainWorkspace.setActivityVisible(false); return;
@@ -496,6 +498,8 @@ export class IdeCommandController {
 				return group.openingAdmitted && pane !== null && pane.input === editor && pane.canOpenSource;
 			}
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
+			case 'workspace.focusNextRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, 1);
+			case 'workspace.focusPreviousRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, -1);
 			case 'status.focus': return this.editor.isActive && this.editor.statusBar.canFocus;
 			case 'status.details': return this.editor.isActive && this.editor.statusBar.hasDetails;
 			case 'workspace.activity.hide': return this.editor.isActive && this.editor.mainWorkspace.regionLayout.activityVisible;

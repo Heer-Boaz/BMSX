@@ -33,6 +33,8 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'workspace.details.focus': { category: 'Workspace', title: 'Focus Details' },
 	'workspace.hierarchy.toggle': { category: 'Workspace', title: 'Show Hierarchy', activeTitle: 'Hide Hierarchy' },
 	'workspace.details.toggle': { category: 'Workspace', title: 'Show Details', activeTitle: 'Hide Details' },
+	'workspace.focusNextRegion': { category: 'Workspace', title: 'Focus Next Work Area' },
+	'workspace.focusPreviousRegion': { category: 'Workspace', title: 'Focus Previous Work Area' },
 	'resources.openToSide': { category: 'Files', title: 'Open to Side' },
 	'resources.source': { category: 'Files', title: 'Open Source' },
 	'resources.sourceToSide': { category: 'Files', title: 'Source to Side' },

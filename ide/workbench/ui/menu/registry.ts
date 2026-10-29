@@ -438,6 +438,9 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'reboot' },
 	],
 	'menubar.view': [
+		{ type: 'command', command: 'workspace.focusNextRegion' },
+		{ type: 'command', command: 'workspace.focusPreviousRegion' },
+		{ type: 'separator' },
 		{ type: 'command', command: 'status.focus' },
 		{ type: 'command', command: 'status.details' },
 		{ type: 'command', command: 'home' },

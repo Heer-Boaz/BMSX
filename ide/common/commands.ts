@@ -141,6 +141,7 @@ export type EditorCommandId =
 	| 'propertyInspector.close'
 	| 'problems.coverage'
 	| 'status.focus' | 'status.details'
+	| 'workspace.focusNextRegion' | 'workspace.focusPreviousRegion'
 	| 'group.focusTabs' | 'group.move' | 'group.close' | 'group.openEditors' | 'group.splitRight' | 'group.splitDown' | 'group.focusNext' | 'group.focusPrevious' | 'group.maximize'
 	| 'window.minimize' | 'window.maximize' | 'window.hide' | 'window.snapLeft' | 'window.snapRight' | 'window.restore'
 	| 'window.showAll' | 'window.restoreMinimized' | 'window.focusMain' | 'window.newEditor' | 'window.copyEditor' | 'window.moveEditor'
