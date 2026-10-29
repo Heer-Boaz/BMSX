@@ -123,7 +123,7 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 		if (presentation.kind !== 'state-graph') return;
 		presentation.dirty = true;
 		presentation.layoutState = this.graphLayout.state;
-		presentation.viewport.setModel(presentation.emptyModel, null);
+		presentation.viewport.setPendingModel(presentation.emptyModel);
 	}
 
 	public updatePresentation(font: BFont): void {
@@ -149,28 +149,14 @@ export class BehaviorLensInput extends CompositeTextEditorInput<BehaviorLensTabI
 				const references = view.stateMachines.references;
 				this.graphLayout.request(engine => layoutStateGraph(definition, references, font, engine));
 			}
-			viewport.setModel(presentation.emptyModel, null);
+			viewport.setPendingModel(presentation.emptyModel);
 			presentation.dirty = false;
 		}
 		const state = this.graphLayout.state;
 		presentation.layoutState = state;
 		if (state.kind === 'ready' && viewport.model !== state.model) {
 			viewport.setModel(state.model, stateGraphSelection(state.model, view.selectionState.selected));
-			if (presentation.position === 'preserve' && viewport.selection !== null) viewport.reveal(viewport.selection);
 			updateBehaviorLensStatus(view);
-		}
-		const position = presentation.position;
-		if (state.kind === 'ready' && position !== 'preserve') {
-			if (position === 'initial') {
-				viewport.scrollX = 0;
-				viewport.scrollY = 0;
-				if (viewport.selection !== null) viewport.reveal(viewport.selection);
-			} else {
-				viewport.setZoom(position.zoom);
-				viewport.scrollX = position.scrollX;
-				viewport.scrollY = position.scrollY;
-			}
-			presentation.position = 'preserve';
 		}
 	}
 }

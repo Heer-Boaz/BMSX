@@ -415,12 +415,11 @@ export class BehaviorLensEditorPane extends WorkbenchViewEditorPane<BehaviorLens
 		const view = input.view;
 		const presentation = view.presentation;
 		let menu: WorkbenchContextMenuId;
-		if (view.selectionState.selected === null) menu = 'behaviorLens.canvas.context';
-		else if (view.selectionState.selected.kind === 'state-entry') menu = 'behaviorLens.edge.context';
-		else if (presentation.kind === 'graph' || presentation.kind === 'state-graph') {
-			menu = presentation.viewport.selection?.kind === 'edge' ? 'behaviorLens.edge.context'
+		if (presentation.kind === 'graph' || presentation.kind === 'state-graph') {
+			menu = view.selectionState.selected === null ? 'behaviorLens.graphCanvas.context'
+				: view.selectionState.selected.kind === 'state-entry' || presentation.viewport.selection?.kind === 'edge' ? 'behaviorLens.edge.context'
 				: presentation.kind === 'graph' ? 'behaviorLens.node.context' : 'behaviorLens.state.context';
-		} else menu = 'behaviorLens.property.context';
+		} else menu = view.selectionState.selected === null ? 'behaviorLens.canvas.context' : 'behaviorLens.property.context';
 		this.contextMenu.show(x, y, WORKBENCH_MENUS[menu], this.commands, { selectFirst: keyboard,
 			commandTarget: presentation.kind === 'graph' || presentation.kind === 'state-graph' ? this.graph.focusTarget : this.focusTarget,
 			onWillShow: lifetime => { lifetime.add({ dispose: view.source.onDidInvalidate(() => this.contextMenu.hide()) }); },

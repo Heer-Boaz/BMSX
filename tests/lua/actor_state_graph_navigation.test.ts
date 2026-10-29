@@ -93,6 +93,7 @@ test('a wide root does not hide an offscreen active endpoint when following with
 	const f = fixture(WORLD.replace("localdef_id = 'main'", `localdef_id = '${'wide machine '.repeat(20)}'`)
 		.replace('is_concurrent = true', 'is_concurrent = false'));
 	const graph = f.graph, view = graph.viewport, nodes = view.model.nodes;
+	view.setZoom(1);
 	const inactive = nodes.find(node => node.name === 'alias')!, active = nodes.find(node => node.name === 'idle')!.children[0];
 	graph.selectTarget(inactive.target);
 	view.scrollX = nodes[0].bounds.left;
@@ -108,6 +109,7 @@ test('a wide root does not hide an offscreen active endpoint when following with
 
 test('parallel follow cannot settle in empty space between its active endpoints', () => {
 	const f = fixture(), graph = f.graph, view = graph.viewport;
+	view.setZoom(1);
 	const idle = view.model.nodes.find(node => node.name === 'idle')!, leaf = idle.children[0];
 	const parallel = view.model.nodes.find(node => node.name === 'parallel')!;
 	const alias = view.model.nodes.find(node => node.name === 'alias')!;
@@ -167,5 +169,19 @@ test('an absent descendant restores its node or edge selection unless explicit i
 			assert.ok(actorTargetsEqual(graph.selectedTarget!, replacement));
 			assert.equal(graph.viewport.selection!.kind, change === 'none' ? kind : 'node');
 		}
+	}
+});
+
+test('live activity-only refresh keeps admitted geometry and fit/manual camera ownership', () => {
+	for (const mode of ['fit', 'manual'] as const) {
+		const f = fixture(), viewport = f.graph.viewport, model = viewport.model;
+		if (mode === 'manual') { viewport.setZoom(2); viewport.pan(13, 19); }
+		const camera = viewport.captureViewState();
+		f.execute('change_activity');
+		assert.equal(viewport.model, model, 'activity is not a topology or font layout boundary');
+		assert.deepEqual(viewport.captureViewState(), camera);
+		assert.equal(viewport.cameraMode, mode);
+		assert.equal(model.nodes.find(node => node.name === 'idle')!.active, false);
+		assert.equal(model.nodes.find(node => node.name === 'alias')!.active, true);
 	}
 });

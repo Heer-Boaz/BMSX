@@ -174,7 +174,7 @@ test('Behavior fresh views acquire their own source lease and graph state withou
 	selectBehaviorLensDefinition(source.view, source.view.document.definitions[0].rowKey); source.updateDefinition();
 	assert.ok(source.view.presentation.kind === 'graph');
 	source.view.selectionState.select({ kind: 'node', rowKey: source.view.source.nodes.at(-1)!.rowKey });
-	source.view.presentation.position = { scrollX: 23, scrollY: 41, zoom: 1.5 };
+	source.view.presentation.viewport.restoreViewState({ centerX: 23, centerY: 41, scale: 1.5 });
 	const runtime = createTestRuntime(createTestRuntimeRomPayload()), guest = new SuspendedGuestSession(runtime);
 	const rewind = new HostRewind(runtime, null!, null!, null!, null!, null!);
 	const inspection = new BehaviorRuntimeInspection(sources, guest, rewind, 0, sources.currentBlua32Media.cartridgeSlots[0]!, undefined,

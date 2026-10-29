@@ -240,8 +240,9 @@ test('wheel and host-time edge scrolling refresh canvas position without changin
 		f.press('target');
 		const margin = { ...f.pointer(0, 160), viewportX: f.view.bounds.right - 1 };
 		f.capture.dispatch(margin, false, 20);
+		const initialScroll = f.view.scrollX;
 		for (let frame = 1; frame <= fps; frame += 1) f.control.advanceDrag(20 + frame * 1000 / fps);
-		assert.ok(Math.abs(f.view.scrollX - 110) < 1e-9);
+		assert.ok(Math.abs(f.view.scrollX - initialScroll - 110) < 1e-9);
 		assert.equal(f.interaction.starts.length, 1);
 		assert.deepEqual(f.interaction.feedback!.points.slice(0, 2), f.edge.points.slice(0, 2));
 		f.control.dispose();

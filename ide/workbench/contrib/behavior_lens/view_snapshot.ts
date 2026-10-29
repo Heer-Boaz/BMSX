@@ -1,3 +1,4 @@
+import type { WorkbenchGraphViewState } from '../../ui/graph/viewport';
 import type { BehaviorLensInput } from './editor_input';
 import { captureBehaviorSourceBookmark, copyBehaviorSourceBookmark, mapBehaviorSourceBookmark, resolveBehaviorSourceBookmark, type BehaviorSourceBookmark } from './source_bookmark';
 import { restoreBehaviorSourceBookmark, selectBehaviorLensDefinition } from './layout';
@@ -14,9 +15,8 @@ export type BehaviorLensViewSnapshot = {
 	readonly collapsed: readonly BehaviorSourceBookmark[];
 	readonly collapsedGroups: readonly BehaviorLensEffectProperties['selectedGroup'][];
 	readonly selectedGroup: BehaviorLensEffectProperties['selectedGroup'];
-	readonly scrollX: number;
-	readonly scrollY: number;
-	readonly zoom: number;
+	readonly reading: { readonly kind: 'graph'; readonly camera: WorkbenchGraphViewState }
+		| { readonly kind: 'list'; readonly scroll: number };
 };
 
 export function captureBehaviorLensView(input: BehaviorLensInput): BehaviorLensViewSnapshot {
@@ -28,19 +28,14 @@ export function captureBehaviorLensView(input: BehaviorLensInput): BehaviorLensV
 	const collapsed: BehaviorSourceBookmark[] = [];
 	const collapsedGroups: BehaviorLensEffectProperties['selectedGroup'][] = [];
 	const selectedGroup = presentation.kind === 'properties' ? presentation.selectedGroup : undefined;
-	let scrollX: number, scrollY: number, zoom: number;
-	if (presentation.kind === 'graph' || presentation.kind === 'state-graph') {
-		const position = presentation.position;
-		scrollX = position === 'initial' || position === 'preserve' ? presentation.viewport.scrollX : position.scrollX;
-		scrollY = position === 'initial' || position === 'preserve' ? presentation.viewport.scrollY : position.scrollY;
-		zoom = position === 'initial' || position === 'preserve' ? presentation.viewport.zoom : position.zoom;
-	} else {
-		zoom = 1; scrollX = 0;
-		scrollY = presentation.kind === 'outline' ? presentation.scroll : presentation.tree.scroll;
+	let reading: BehaviorLensViewSnapshot['reading'];
+	if (presentation.kind === 'graph' || presentation.kind === 'state-graph') reading = { kind: 'graph', camera: presentation.viewport.captureViewState() };
+	else {
+		reading = { kind: 'list', scroll: presentation.kind === 'outline' ? presentation.scroll : presentation.tree.scroll };
 		for (const rowKey of presentation.collapsedRowKeys) collapsed.push(captureBehaviorSourceBookmark(view, { kind: 'node', rowKey }));
 		if (presentation.kind === 'properties') collapsedGroups.push(...presentation.collapsedGroups);
 	}
-	return { definition, selected, collapsed, collapsedGroups, selectedGroup, scrollX, scrollY, zoom };
+	return { definition, selected, collapsed, collapsedGroups, selectedGroup, reading };
 }
 
 /** Only live navigation owns a mapped copy; persisted snapshots remain immutable. */
@@ -70,16 +65,21 @@ export function restoreBehaviorLensView(input: BehaviorLensInput, snapshot: Beha
 			const path = resolveBehaviorSourceBookmark(bookmark, view);
 			if (path !== undefined) presentation.collapsedRowKeys.add(path[path.length - 1].rowKey);
 		}
-		if (presentation.kind === 'outline') { presentation.rowsDirty = true; presentation.scroll = snapshot.scrollY; }
+		if (presentation.kind === 'outline') {
+			presentation.rowsDirty = true;
+			if (snapshot.reading.kind === 'list') presentation.scroll = snapshot.reading.scroll;
+		}
 		else {
 			presentation.collapsedGroups.clear();
 			for (const group of snapshot.collapsedGroups) presentation.collapsedGroups.add(group);
 			presentation.selectedGroup = definition === undefined ? undefined : snapshot.selectedGroup;
-			presentation.tree.scroll = snapshot.scrollY;
+			if (snapshot.reading.kind === 'list') presentation.tree.scroll = snapshot.reading.scroll;
 			presentation.dirty = true;
 		}
 	} else {
-		presentation.position = { scrollX: snapshot.scrollX, scrollY: snapshot.scrollY, zoom: snapshot.zoom };
+		// Restoring source intent can enter a different presentation. Only its
+		// actual reading capability transfers; a new diagram retains its own Fit.
+		if (snapshot.reading.kind === 'graph') presentation.viewport.restoreViewState(snapshot.reading.camera);
 		const viewport = presentation.viewport;
 		if (presentation.kind === 'state-graph') viewport.selection = stateGraphSelection(presentation.viewport.model, view.selectionState.selected);
 		else {

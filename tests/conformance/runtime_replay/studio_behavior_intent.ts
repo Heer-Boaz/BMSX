@@ -55,6 +55,7 @@ export async function testStudioBehaviorIntent(test: StudioFixture): Promise<voi
 		for (let font = 0; font < 2; font++) {
 			for (let theme = 0; theme < 2; theme++) {
 				await presentSourcePair(test, lens, receipt);
+				if (kind !== 'effect') await testGraphCameraIntent(test, lens);
 				check(lens.view.selectionState.selectionRevision === revision && receipt.isCurrent!(),
 					'behavior intent: font, theme and source-side topology retain the semantic occurrence, not a geometry item');
 				await test.capture?.(`behavior-${kind}-${editor.fontVariant}-theme-${theme}-source`);
@@ -74,6 +75,33 @@ export async function testStudioBehaviorIntent(test: StudioFixture): Promise<voi
 	check(cycles() === before && ide.sources.currentBlua32Media === media,
 		'behavior intent: source-only BT, FSM and Effect authoring never runs or installs guest code');
 	console.info('STUDIO: independent Behavior source intent PASS');
+}
+
+/** Framing is native viewport intent; it never changes the retained authored occurrence. */
+async function testGraphCameraIntent(test: StudioFixture, input: BehaviorLensInput): Promise<void> {
+	const editor = test.ide.editor, owner = editor.editorParts.findGroup(input)!;
+	await test.clickTab(input.id, 1, owner);
+	const presentation = input.view.presentation;
+	if (presentation.kind !== 'graph' && presentation.kind !== 'state-graph') throw new Error('graph camera: diagram required');
+	const viewport = presentation.viewport, model = viewport.model, selected = input.view.selectionState.selected;
+	const revision = input.view.selectionState.selectionRevision;
+	await test.press('ContextMenu'); await test.clickContextCommand('graph.fit');
+	check(viewport.captureViewState().scale === 'fit', 'graph camera: native context Fit admits responsive framing');
+	await test.runPaletteCommand('Workspace: Decrease Focused View Width'); await test.frame();
+	check(viewport.captureViewState().scale === 'fit' && viewport.model === model,
+		'graph camera: changing a Source split allocation retains Fit without rebuilding geometry');
+	await test.press('ContextMenu'); await test.clickContextCommand('graph.zoomIn');
+	const scale = viewport.zoom;
+	check(viewport.captureViewState().scale !== 'fit', 'graph camera: native zoom explicitly establishes manual reading');
+	await test.runPaletteCommand('Workspace: Increase Focused View Width'); await test.frame();
+	check(viewport.captureViewState().scale !== 'fit' && viewport.zoom === scale && viewport.model === model,
+		'graph camera: resizing preserves the explicit reading scale without a relayout');
+	await test.press('ContextMenu'); await test.clickContextCommand('graph.frameSelection');
+	check(viewport.captureViewState().scale !== 'fit', 'graph camera: native Frame Selection is a local reading request');
+	await test.press('ContextMenu'); await test.clickContextCommand('graph.fit');
+	check(viewport.captureViewState().scale === 'fit' && input.view.selectionState.selected === selected
+		&& input.view.selectionState.selectionRevision === revision,
+		'graph camera: fit, manual zoom, split resizing and framing never choose a different source occurrence');
 }
 
 async function settleLayout(test: StudioFixture, input: BehaviorLensInput): Promise<void> {

@@ -42,15 +42,11 @@ export type BehaviorLensOutline = WorkbenchListState<BehaviorLensRow> & {
 	textDirty: boolean;
 };
 
-/** Placement is consumed once geometry exists, including asynchronous FSM layouts. */
-export type BehaviorGraphPosition = 'initial' | 'preserve' | { readonly scrollX: number; readonly scrollY: number; readonly zoom: number };
-
 export type BehaviorLensGraph = {
 	readonly kind: 'graph';
 	readonly actionBar: WorkbenchActionBarState;
 	readonly viewport: WorkbenchGraphViewport<BehaviorGraphModel>;
 	dirty: boolean;
-	position: BehaviorGraphPosition;
 };
 
 export type BehaviorLensStateGraph = {
@@ -62,7 +58,6 @@ export type BehaviorLensStateGraph = {
 	/** The input publishes the session state during its normal update, never from a worker callback. */
 	layoutState: AsyncGraphLayoutState<StateGraphModel>;
 	dirty: boolean;
-	position: BehaviorGraphPosition;
 };
 
 /** Source selection belongs to the input, never to a visible list's row number. */
@@ -90,14 +85,14 @@ export function createBehaviorLensGraph(): BehaviorLensGraph {
 	return { kind: 'graph', actionBar: createWorkbenchActionBar('behaviorLens.graph.title', true, WORKBENCH_MENUS['behaviorLens.graph.actions']),
 		viewport: new WorkbenchGraphViewport<BehaviorGraphModel>({ ...createWorkbenchGraphModel(editorViewState.font.renderFont(), [], []),
 			nodesBySource: new Map(), edgesBySource: new Map() }),
-		dirty: true, position: 'initial' };
+		dirty: true };
 }
 
 export function createBehaviorLensStateGraph(): BehaviorLensStateGraph {
 	const emptyModel = emptyStateGraph(editorViewState.font.renderFont());
 	return { kind: 'state-graph', actionBar: createWorkbenchActionBar('behaviorLens.stateGraph.title', true, WORKBENCH_MENUS['behaviorLens.stateGraph.actions']),
 		viewport: new WorkbenchGraphViewport(emptyModel), emptyModel,
-		layoutState: { kind: 'idle' }, dirty: true, position: 'initial' };
+		layoutState: { kind: 'idle' }, dirty: true };
 }
 
 /** Input-owned source/view state; pixel layout is prepared only by the active pane. */

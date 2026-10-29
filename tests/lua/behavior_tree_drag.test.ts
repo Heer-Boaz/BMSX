@@ -8,8 +8,8 @@ import { BT_ORDER_SOURCE } from '../helpers/behavior_order_fixture';
 import { createBehaviorTreeEditFixture as fixture } from '../helpers/behavior_tree_edit_fixture';
 
 function over(f: ReturnType<typeof fixture>, node: BehaviorGraphNode, before: boolean) {
-	return [node.bounds.left + (node.bounds.right - node.bounds.left) * (before ? 0.25 : 0.75) + f.viewport.bounds.left - f.viewport.scrollX,
-		node.bounds.top + node.headerHeight / 2 + f.viewport.bounds.top - f.viewport.scrollY] as const;
+	return [f.viewport.graphToViewportX(node.bounds.left + (node.bounds.right - node.bounds.left) * (before ? 0.25 : 0.75)),
+		f.viewport.graphToViewportY(node.bounds.top + node.headerHeight / 2)] as const;
 }
 
 test('every sibling insertion sector normalizes once, with no preview edit and one ordinary Undo', t => {
@@ -86,8 +86,8 @@ test('different parents use real source lists; unchanged shared positions, defin
 	drag.dragOver(...over(f, sibling, false));
 	assert.equal(drag.feedback.accepted, true);
 	const edge = f.viewport.model.edges.find(edge => edge.child === sibling)!;
-	drag.dragOver(edge.points[edge.points.length - 2] + f.viewport.bounds.left - f.viewport.scrollX,
-		edge.points[edge.points.length - 1] - 6 + f.viewport.bounds.top - f.viewport.scrollY);
+	drag.dragOver(f.viewport.graphToViewportX(edge.points[edge.points.length - 2]),
+		f.viewport.graphToViewportY(edge.points[edge.points.length - 1] - 6));
 	assert.equal(drag.feedback.accepted, false, 'an old accepted card does not authorize dropping on its route');
 	drag.dragOver(-10, -10);
 	assert.equal(drag.feedback.accepted, false);

@@ -330,6 +330,14 @@ Behavior Lens retains definition and selected-source intent in its input-owned
 Source correspondence publishes the current index and semantic selection together;
 explicit selection and history replace intent, while corresponding reparses retain it.
 Typed edit state carries inert source correspondence and its originating intent.
+The retained `ui/graph/viewport.ts` camera owns Fit intent or an explicit
+graph-space reading center and scale. Controls own native framing, zoom and
+scrollbar gestures; allocation changes do not infer a new subject or selection.
+Graph producers publish complete geometry separately from temporarily pending,
+non-interactive geometry. Pending publication retains the admitted camera extent.
+Contribution history and independent views store the viewport's camera state,
+not host-pixel offsets interpreted by individual tools.
+
 Scene source documents are generation-cached at `contrib/scene_editor/source_documents.ts`
 and shared with project-content discovery. `SceneAuthoringContext` retains source
 correspondence, semantic selection and member editing independently of outline

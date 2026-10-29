@@ -81,6 +81,7 @@ test('containment, title space, labels, and sibling separation use the same meas
 
 test('parallel labels with identical text select their own edges; container interiors remain pan targets', async () => {
 	const { model, view, nodes } = await fixture();
+	view.setZoom(1);
 	const parallel = model.edges.filter(edge => edge.link.proof === 'start' || edge.link.proof === 'retry');
 	assert.notDeepEqual(parallel[0].points, parallel[1].points);
 	for (const edge of model.edges) {

@@ -1151,7 +1151,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 	const graph = input.stateGraph!, graphFocus = inputFocus.target!, selection = graph.viewport.selection;
 	const viewport = graph.viewport;
 	viewport.setZoom(0.5); viewport.scrollX = -17; viewport.scrollY = -9;
-	const viewState = { zoom: viewport.zoom, x: viewport.scrollX, y: viewport.scrollY };
+	const viewState = viewport.captureViewState();
 	editor.commands.execute('actorLab.details'); editor.update(0);
 	editor.commands.execute('actorLab.lockDetails', pane.inspector.focusTarget);
 	const details = input.details!, subject = details.subject!, detailsModel = input.detailsWindow;
@@ -1165,7 +1165,7 @@ test('Actor reflow retires the real sash while retaining primary, graph and lock
 			assert.ok(inputFocus.target === detailsFocus, 'preview retirement does not blur an independently focused Details client');
 			assert.ok(input.stateGraph === graph); assert.ok(graph.viewport.model === model); assert.ok(graph.viewport.selection === selection);
 			assert.ok(graph.viewport === viewport);
-			assert.deepEqual({ zoom: viewport.zoom, x: viewport.scrollX, y: viewport.scrollY }, viewState);
+			assert.deepEqual(viewport.captureViewState(), viewState);
 			assert.ok(input.detailsWindow === detailsModel); assert.ok(details.subject === subject); assert.equal(details.locked, true);
 			assert.ok(pane.commandTarget === graphFocus, 'compact composition retains the real graph command origin');
 		}

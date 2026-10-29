@@ -121,7 +121,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 		selectBehaviorLensDefinition(input.view, input.view.document.definitions[index].rowKey);
 		input.updateDefinition(); prepareBehaviorLensLayout(input.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(input.view.presentation.kind === 'graph');
-		input.view.presentation.position = { scrollX: 37 + index, scrollY: 25 + index, zoom: 0.75 };
+		input.view.presentation.viewport.restoreViewState({ centerX: 37 + index, centerY: 25 + index, scale: 0.75 });
 		f.group.model.add(input); return input;
 	});
 	const scene = new SceneEditorInput(f.model, f.scene.documents); scene.view.refresh(); selectSceneOutlineRow(scene.view.hierarchy, 1);
@@ -158,7 +158,7 @@ test('group round-trip restores ordered clean/dirty views, preview and distinct 
 	assert.equal(newClean.workingCopy.dirty, false); assert.equal([...editorTextModelService.models].length, 2);
 	prepareBehaviorLensLayout(second.view, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	assert.ok(second.view.presentation.kind === 'graph');
-	assert.equal(second.view.presentation.viewport.scrollX, 38); assert.equal(second.view.presentation.viewport.zoom, 0.75);
+	assert.deepEqual(second.view.presentation.viewport.captureViewState(), { scale: 0.75, centerX: 38, centerY: 26 });
 });
 
 test('changed canonical bytes retain topology but cannot adopt a same-length namesake source occurrence', async t => {

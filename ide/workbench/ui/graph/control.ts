@@ -26,6 +26,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private inputGeneration = 0;
 	private pointerModel: WorkbenchGraphModel | null = null;
 	private pointerZoom = 1;
+	private pointerAllocationRevision = 0;
 	private anchorX = 0;
 	private anchorY = 0;
 	private anchorScrollX = 0;
@@ -51,6 +52,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 	private hoverEnd: WorkbenchGraphConnectionEnd | undefined;
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
+	private readonly beginScrollbarNavigation = (): void => { this.inputValue!.beginManualNavigation(); };
 
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
 		private readonly pointerHover: PointerHoverService, keyboard: (input: KeyInputEvent) => void = input => this.handleKeyboard(input), parent: InputFocusTarget | null = null) {
@@ -66,18 +68,31 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 			keyboard(input);
 		});
 		this.unbindBlur = this.focusTarget.onDidBlur(() => this.cancelPointer());
+		this.focusTarget.registerCommand('graph.fit', {
+			isEnabled: () => this.hasGeometry,
+			isChecked: () => this.inputValue?.cameraMode === 'fit',
+			run: () => { this.cancelPointer(); this.inputValue!.frameAll(); this.update(); },
+		});
+		this.focusTarget.registerCommand('graph.frameSelection', {
+			isEnabled: () => this.hasGeometry && this.inputValue!.selection !== null,
+			run: () => { this.cancelPointer(); this.inputValue!.frameBounds(this.inputValue!.selection!.bounds); this.update(); },
+		});
 		this.focusTarget.registerCommand('graph.zoomIn', {
-			isEnabled: () => this.inputValue !== null && this.inputValue.zoom < GRAPH_ZOOM_MAX,
-			run: () => { this.inputValue!.zoomBySteps(1); this.update(); },
+			isEnabled: () => this.hasGeometry && this.inputValue!.zoom < GRAPH_ZOOM_MAX,
+			run: () => { this.cancelPointer(); this.inputValue!.zoomBySteps(1); this.update(); },
 		});
 		this.focusTarget.registerCommand('graph.zoomOut', {
-			isEnabled: () => this.inputValue !== null && this.inputValue.zoom > GRAPH_ZOOM_MIN,
-			run: () => { this.inputValue!.zoomBySteps(-1); this.update(); },
+			isEnabled: () => this.hasGeometry && this.inputValue!.zoom > GRAPH_ZOOM_MIN,
+			run: () => { this.cancelPointer(); this.inputValue!.zoomBySteps(-1); this.update(); },
 		});
 		this.focusTarget.registerCommand('graph.resetZoom', {
-			isEnabled: () => this.inputValue !== null && this.inputValue.zoom !== 1,
-			run: () => { this.inputValue!.setZoom(1); this.update(); },
+			isEnabled: () => this.hasGeometry && (this.inputValue!.zoom !== 1 || this.inputValue!.cameraMode === 'fit'),
+			run: () => { this.cancelPointer(); this.inputValue!.setZoom(1); this.update(); },
 		});
+	}
+
+	private get hasGeometry(): boolean {
+		return this.inputValue !== null && (this.inputValue.model.nodes.length !== 0 || this.inputValue.model.edges.length !== 0);
 	}
 
 	public setInput(input: WorkbenchGraphViewport, dragSource?: WorkbenchGraphDragSource): void {
@@ -87,6 +102,7 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		this.inputValue = input;
 		this.pointerModel = input.model;
 		this.pointerZoom = input.zoom;
+		this.pointerAllocationRevision = input.allocationRevision;
 		this.dragSource = dragSource;
 		this.updateConnectionHandles();
 	}
@@ -130,11 +146,13 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		if (this.inputValue === null) return;
 		if (this.pointerModel !== this.inputValue.model
 			|| this.pointerZoom !== this.inputValue.zoom
+			|| this.pointerAllocationRevision !== this.inputValue.allocationRevision
 			|| (this.gesture !== Gesture.None && this.inputValue.selection !== this.pressTarget)
 			|| (this.drag !== undefined && !this.drag.isCurrent())) {
 			this.cancelPointer();
 			this.pointerModel = this.inputValue.model;
 			this.pointerZoom = this.inputValue.zoom;
+			this.pointerAllocationRevision = this.inputValue.allocationRevision;
 		}
 		this.updateConnectionHandles();
 		if (this.pressConnection !== undefined && (this.connectionHandles === undefined
@@ -181,8 +199,11 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		if (this.gesture === Gesture.None) return;
 		const view = this.inputValue!;
 		if (this.gesture === Gesture.Pan) {
-			view.scrollX = this.anchorScrollX - Math.round(snapshot.viewportX - this.anchorX);
-			view.scrollY = this.anchorScrollY - Math.round(snapshot.viewportY - this.anchorY);
+			const scrollX = this.anchorScrollX - Math.round(snapshot.viewportX - this.anchorX);
+			const scrollY = this.anchorScrollY - Math.round(snapshot.viewportY - this.anchorY);
+			if (scrollX === view.scrollX && scrollY === view.scrollY) return;
+			view.scrollX = scrollX;
+			view.scrollY = scrollY;
 			return;
 		}
 		if (this.gesture === Gesture.PendingDrag) {
@@ -267,8 +288,8 @@ export class WorkbenchGraphControl implements PointerCaptureTarget, PointerHover
 		const auxiliary = (snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0;
 		if (!point_in_rect(snapshot.viewportX, snapshot.viewportY, view.bounds)) {
 			this.pointerHover.release(this);
-			if (this.scrollbarPointer.handlePointer(snapshot, view.horizontalScrollbar)
-				|| this.scrollbarPointer.handlePointer(snapshot, view.verticalScrollbar)) this.lastClick = null;
+			if (this.scrollbarPointer.handlePointer(snapshot, view.horizontalScrollbar, this.beginScrollbarNavigation)
+				|| this.scrollbarPointer.handlePointer(snapshot, view.verticalScrollbar, this.beginScrollbarNavigation)) this.lastClick = null;
 			return WorkbenchGraphPointerResult.Handled;
 		}
 		this.pointerHover.visit(this);

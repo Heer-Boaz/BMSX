@@ -27,6 +27,7 @@ function fixture() {
 	const model: WorkbenchGraphModel = createWorkbenchGraphModel(font, [a, b], [edge]);
 	const view = new WorkbenchGraphViewport(model);
 	view.layout(20, 20, 120, 100);
+	view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
 	return { view, a, b, edge, model };
 }
 function pointer(x: number, y: number, pressed = false): PointerInputSnapshot {
@@ -137,6 +138,7 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 		const disc = createWorkbenchGraphDisc(symbolFont.lineHeight + GRAPH_NODE_PADDING, 20, 20);
 		const model = createWorkbenchGraphModel(symbolFont, [disc], []);
 		const view = new WorkbenchGraphViewport(model); view.layout(0, 0, 100, 100);
+		view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
 		const control = new WorkbenchGraphControl(new InputFocusService(), new PointerCaptureService(), new PointerHoverService());
 		control.setInput(view); t.after(() => control.dispose());
 		const { presenter, renderer, queue, backend } = createHostOverlayFixture(100, 100);
@@ -244,6 +246,7 @@ test('retained arrow geometry participates in bounds and hit testing in every di
 		const edge = createWorkbenchGraphEdge([50, 50, 50 + dx * 20, 50 + dy * 20, 50 + dx * 20, 50 + dy * 20], [], true);
 		const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [], [edge]));
 		view.layout(0, 0, 100, 100);
+		view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
 		assert.equal(edge.arrow.length, 6);
 		assert.deepEqual(edge.arrow.slice(2, 4), edge.points.slice(-2), 'arrow ends at the actual directed endpoint');
 		assert.equal(view.hitTest(edge.arrow[0], edge.arrow[1]), edge, 'arrow wing outside the shaft hit radius is selectable');
@@ -262,6 +265,7 @@ test('label hit order matches paint order; opaque headers take precedence over l
 	const last = createWorkbenchGraphEdge([0, 70, 100, 70], [createWorkbenchGraphLabel(font, 'SAME\nLABEL')], true);
 	const view = new WorkbenchGraphViewport<WorkbenchGraphModel>(createWorkbenchGraphModel(font, [], [first, last]));
 	view.layout(0, 0, 100, 100);
+	view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
 	assert.equal(view.hitTest(1, 1), last);
 	assert.equal(last.bounds.top, 0, 'label contributes to the culling/reveal extent');
 	const node = createWorkbenchGraphNode(font, 'TITLE', 0, 0);
@@ -277,6 +281,7 @@ test('a visible compound body does not emit its offscreen header glyphs', () => 
 	node.bounds.bottom = 200;
 	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, [node], []));
 	view.layout(0, 0, 100, 100);
+	view.setZoom(1); view.scrollX = 0;
 	view.scrollY = 60;
 	const { presenter, renderer, queue } = createHostOverlayFixture(100, 100);
 	renderer.beginFrame(presenter);

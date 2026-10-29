@@ -9,7 +9,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.tools'
 	| 'menubar.window';
 
-export type WorkbenchContextMenuId = 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context';
+export type WorkbenchContextMenuId = 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context' | 'behaviorLens.graphCanvas.context';
 
 export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'window.minimizable.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -85,7 +85,9 @@ const WINDOW_CONTEXT_ACTIONS: readonly WorkbenchMenuItem[] = [
 	{ type: 'command', command: 'window.hide' },
 ];
 
-const GRAPH_ZOOM_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
+const GRAPH_VIEW_ACTIONS: readonly WorkbenchMenuCommandItem[] = [
+	{ type: 'command', command: 'graph.fit' },
+	{ type: 'command', command: 'graph.frameSelection' },
 	{ type: 'command', command: 'graph.zoomOut' },
 	{ type: 'command', command: 'graph.resetZoom' },
 	{ type: 'command', command: 'graph.zoomIn' },
@@ -189,14 +191,14 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.duplicateChild' },
 		{ type: 'command', command: 'behaviorLens.removeChild' },
-		{ type: 'separator' }, ...GRAPH_ZOOM_ACTIONS,
+		{ type: 'separator' }, ...GRAPH_VIEW_ACTIONS,
 	],
 	'behaviorLens.stateGraph.actions': [
 		{ type: 'command', command: 'editor.sourceToSide' },
 		{ type: 'command', command: 'behaviorLens.details' },
 		{ type: 'command', command: 'behaviorLens.setInitialState' },
 		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
-		{ type: 'separator' }, ...GRAPH_ZOOM_ACTIONS,
+		{ type: 'separator' }, ...GRAPH_VIEW_ACTIONS,
 	],
 	'behaviorLens.properties.actions': [
 		{ type: 'command', command: 'editor.sourceToSide' },
@@ -230,10 +232,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'actorLab.call' },
 		{ type: 'command', command: 'actorLab.spawn' },
 		{ type: 'command', command: 'actorLab.emit' },
-		{ type: 'separator' },
-		{ type: 'command', command: 'graph.zoomIn' },
-		{ type: 'command', command: 'graph.zoomOut' },
-		{ type: 'command', command: 'graph.resetZoom' },
+		{ type: 'separator' }, ...GRAPH_VIEW_ACTIONS,
 	],
 	'actorLab.stateGraph.title': [
 		{ type: 'command', command: 'actorLab.outline', icon: 'back' },
@@ -294,6 +293,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'undo' },
 		{ type: 'command', command: 'redo' },
+		{ type: 'separator' }, ...GRAPH_VIEW_ACTIONS,
 	],
 	'behaviorLens.state.context': [
 		{ type: 'command', command: 'editor.source' },
@@ -306,11 +306,13 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'undo' },
 		{ type: 'command', command: 'redo' },
+		{ type: 'separator' }, ...GRAPH_VIEW_ACTIONS,
 	],
 	'behaviorLens.edge.context': [
 		{ type: 'command', command: 'editor.source' },
 		{ type: 'command', command: 'editor.sourceToSide' },
 		{ type: 'command', command: 'behaviorLens.details' },
+		{ type: 'separator' }, ...GRAPH_VIEW_ACTIONS,
 	],
 	'behaviorLens.property.context': [
 		{ type: 'command', command: 'behaviorLens.editProperty' },
@@ -323,6 +325,10 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'behaviorLens.inspectRegisteredDefinitions' },
 	],
 	'behaviorLens.canvas.context': [{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' }],
+	'behaviorLens.graphCanvas.context': [
+		...GRAPH_VIEW_ACTIONS, { type: 'separator' },
+		{ type: 'command', command: 'undo' }, { type: 'command', command: 'redo' },
+	],
 	'romInspector.reader.title': [
 		{ type: 'command', command: 'romInspector.hold', icon: 'pin', checkedIcon: 'unpin' },
 		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },

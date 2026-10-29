@@ -23,6 +23,7 @@ function fixture() {
 	const model = createWorkbenchGraphModel(font, [node, other], [edge]);
 	const view = new WorkbenchGraphViewport(model);
 	view.layout(10, 20, 210, 180);
+	view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
 	view.selection = node;
 	const focus = new InputFocusService();
 	const capture = new PointerCaptureService();

@@ -1,3 +1,4 @@
+import type { WorkbenchGraphViewState } from '../../ui/graph/viewport';
 import { EditorPaneSelection } from '../../services/editor/editor_selection';
 import type { ActorLabInput } from './editor_input';
 import { actorTargetsEqual, type ActorTarget } from './target';
@@ -10,9 +11,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 	public readonly graph: {
 		readonly target: ActorTarget;
 		readonly kind: 'node' | 'edge';
-		readonly scrollX: number;
-		readonly scrollY: number;
-		readonly zoom: number;
+		readonly camera: WorkbenchGraphViewState;
 	} | undefined;
 	public readonly follow: ActorTarget | undefined;
 	public readonly detailsOpen: boolean;
@@ -36,7 +35,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		};
 		this.graph = graph?.machineTarget === undefined ? undefined : {
 			target: graph.machineTarget, kind: graph.selectionType,
-			scrollX: graph.viewport.scrollX, scrollY: graph.viewport.scrollY, zoom: graph.viewport.zoom,
+			camera: graph.viewport.captureViewState(),
 		};
 		this.follow = input.follow.target;
 		this.detailsOpen = input.detailsWindow.open;
@@ -79,9 +78,7 @@ export class ActorLabNavigationSelection extends EditorPaneSelection {
 		input.outline.scroll = this.outlineScroll;
 		if (this.graph !== undefined && input.presentation === 'graph') {
 			const viewport = input.stateGraph!.viewport;
-			viewport.setZoom(this.graph.zoom);
-			viewport.scrollX = this.graph.scrollX;
-			viewport.scrollY = this.graph.scrollY;
+			viewport.restoreViewState(this.graph.camera);
 		}
 	}
 }

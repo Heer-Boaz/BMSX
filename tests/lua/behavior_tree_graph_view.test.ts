@@ -158,8 +158,9 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	viewport.selection = edge;
 	acceptBehaviorGraphSelection(view, graph);
 	assert.equal(selectedBehaviorLensSourceRange(view), edge.range);
-	const screenX = edge.bounds.left - viewport.scrollX;
-	const screenY = edge.bounds.top - viewport.scrollY;
+	viewport.setZoom(2);
+	const screenX = viewport.graphToViewportX(edge.bounds.left);
+	const screenY = viewport.graphToViewportY(edge.bounds.top);
 	const insertion = luaSourceRangeToTextRange(f.model.buffer, initial.nodes[0].children[0].children[0].source.occurrenceRange);
 	f.model.pushEditOperations([{ offset: insertion.start, deleteLength: 0, text: "{ type = 'wait' }, " }]);
 	installBehaviorLensDocument(view, f.project());
@@ -167,8 +168,8 @@ test('concrete graph retains layout, source-backed edge selection and its screen
 	assert.ok(viewport.selection?.kind === 'edge');
 	assert.notEqual(viewport.selection, edge);
 	assert.equal(viewport.selection.child.member?.index, 2);
-	assert.equal(viewport.selection.bounds.left - viewport.scrollX, screenX);
-	assert.equal(viewport.selection.bounds.top - viewport.scrollY, screenY);
+	assert.equal(viewport.graphToViewportX(viewport.selection.bounds.left), screenX);
+	assert.equal(viewport.graphToViewportY(viewport.selection.bounds.top), screenY);
 	assert.equal(readLuaSourceRange(f.model.buffer, selectedBehaviorLensSourceRange(view)!), 'shared');
 	const span = luaSourceRangeToTextRange(f.model.buffer, viewport.selection.range);
 	f.model.pushEditOperations([{ offset: span.start, deleteLength: span.end - span.start, text: 'leaf' }]);

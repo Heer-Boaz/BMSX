@@ -49,7 +49,7 @@ function fixture(t: TestContext, source = FSM_RETARGET_SOURCE, imports: Readonly
 	const begin = () => beginStateMachineDrag(view, { kind: 'connection', edge, end: 'target' }, (...drop) => drops.push(drop))!;
 	const hover = (session: ReturnType<typeof begin>, name: string) => {
 		const node = bySource.get(branch.children.get(name)!.rowKey)!;
-		session.dragOver(node.bounds.left + 5, node.bounds.top + 3);
+		session.dragOver(graph.viewport.graphToViewportX(node.bounds.left + 5), graph.viewport.graphToViewportY(node.bounds.top + 3));
 		return node;
 	};
 	return { ...f, graph, definition, transition, edge, begin, hover, drops };
@@ -81,7 +81,7 @@ test('FSM drag publishes exact shared evidence only at drop and retains the cand
 	assert.equal(f.model.version, 1); assert.equal(f.drops.length, 0);
 	// The operation retains one proof result; repeat movement inside the same target must reuse it.
 	session.drop(); const first = f.drops[0];
-	session.dragOver(node.bounds.left + 7, node.bounds.top + 4); session.drop();
+	session.dragOver(f.graph.viewport.graphToViewportX(node.bounds.left + 7), f.graph.viewport.graphToViewportY(node.bounds.top + 4)); session.drop();
 	assert.equal(f.drops[1][1], first[1]);
 	assert.equal(first[0].outcome, f.transition.outcomes[1]);
 	assert.equal(first[1].text, '../other'); assert.equal(first[1].uses.length, 3);

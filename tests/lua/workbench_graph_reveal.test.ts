@@ -9,6 +9,7 @@ function fixture() {
 	const nodes = [createWorkbenchGraphNode(font, 'near', -500, -500), createWorkbenchGraphNode(font, 'far', 2000, 2000)];
 	const view = new WorkbenchGraphViewport(createWorkbenchGraphModel(font, nodes, []));
 	view.layout(10, 20, 213, 123);
+	view.setZoom(1); view.scrollX = 0; view.scrollY = 0;
 	view.selection = nodes[0];
 	return view;
 }

@@ -127,6 +127,8 @@ export type EditorCommandId =
 	| 'graph.zoomIn'
 	| 'graph.zoomOut'
 	| 'graph.resetZoom'
+	| 'graph.fit'
+	| 'graph.frameSelection'
 	| 'image.fit' | 'image.actualSize' | 'image.zoomIn' | 'image.zoomOut'
 	| 'resourceViewer.preview' | 'resourceViewer.info'
 	| 'editor.source' | 'editor.sourceToSide'

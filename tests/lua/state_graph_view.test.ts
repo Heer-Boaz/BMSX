@@ -70,7 +70,7 @@ test('FSM graph retains containment, concurrent entry and separate edges for ide
 				continue;
 			}
 			const label = edge.labels[0].bounds;
-			assert.equal(f.graph.viewport.hitTest(label.left + 2 - f.graph.viewport.scrollX, label.top + 2 - f.graph.viewport.scrollY), edge);
+			assert.equal(f.graph.viewport.hitTest(f.graph.viewport.graphToViewportX(label.left + 2), f.graph.viewport.graphToViewportY(label.top + 2)), edge);
 		}
 		f.graph.viewport.selection = updates[3];
 		acceptStateGraphSelection(f.view, f.graph);
@@ -259,9 +259,6 @@ test('ELK half-pixel labels become one integer canvas generation rather than per
 			'this independent fixture must exercise actual fractional ELK label placement');
 		for (const edge of f.graph.viewport.model.edges) {
 			for (const label of edge.labels) for (const value of Object.values(label.bounds)) assert.equal(value % 1, 0);
-			f.graph.viewport.reveal(edge);
-			assert.equal(f.graph.viewport.scrollX % 1, 0);
-			assert.equal(f.graph.viewport.scrollY % 1, 0);
 		}
 	} finally { f.input.dispose(); }
 });
@@ -285,8 +282,8 @@ test('authored initial and concurrent entries have their own in-scope marker and
 			assert.equal(marker.reference.field, entry.field);
 			assert.ok(model.nodesBySource.get(entry.origin)!.children.includes(marker), 'entry is inside its origin scope, not a rail from the container header');
 			f.graph.viewport.reveal(marker);
-			assert.equal(f.graph.viewport.hitTest(marker.bounds.left - f.graph.viewport.scrollX + 2,
-				marker.bounds.top - f.graph.viewport.scrollY + 2), marker);
+			assert.equal(f.graph.viewport.hitTest(f.graph.viewport.graphToViewportX(marker.bounds.left + 2),
+				f.graph.viewport.graphToViewportY(marker.bounds.top + 2)), marker);
 			f.graph.viewport.selection = marker;
 			acceptStateGraphSelection(f.view, f.graph);
 			assert.equal(f.view.selectionState.selected?.kind, 'state-entry');

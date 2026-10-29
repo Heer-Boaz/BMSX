@@ -110,7 +110,7 @@ function presentBehaviorLensDefinition(state: BehaviorLensViewState, key: Behavi
 		else {
 			graph.viewport.selection = null;
 			graph.dirty = true;
-			graph.position = 'initial';
+			graph.viewport.frameAll();
 		}
 	} else if (definition.behaviorKind === 'behavior_tree') {
 		state.presentation = createBehaviorLensGraph();
@@ -118,7 +118,7 @@ function presentBehaviorLensDefinition(state: BehaviorLensViewState, key: Behavi
 		if (state.presentation.kind !== 'state-graph') state.presentation = createBehaviorLensStateGraph();
 		else if (previousKey !== key) {
 			state.presentation.dirty = true;
-			state.presentation.position = 'initial';
+			state.presentation.viewport.frameAll();
 		}
 		else state.presentation.viewport.selection = stateGraphSelection(state.presentation.viewport.model, state.selectionState.selected);
 	} else if (state.presentation.kind === 'properties') {
