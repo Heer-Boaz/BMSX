@@ -2,7 +2,6 @@ import { AssistantHttpConnection } from '../../../ide/browser/assistant_connecti
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { TextStyle } from '../../../ide/common/markdown/model';
 import { check, createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { submitAssistantText } from './studio_assistant_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 
@@ -17,16 +16,15 @@ export async function runAssistantHistory(kind: StudioRendererKind, canvas: HTML
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, until, press, frame } = test;
-	await until(() => test.cycles() > test.runtime.timing.cpuHz * 13, 'history: boot actual cart');
-	await reachNemesisTitle(test);
+	await test.waitForTestFrame();
 	test.harness.openLuaSource('cart.lua'); await frame();
 	const mainTab = ide.editor.editorParts.activeGroup.model.activeTab, main = test.harness.getActiveEditorDocument().model;
 	await test.runPaletteCommand('View: Codex Assistant');
 	let view = ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant required');
-	const model = ide.editor.assistant, picker = ide.editor.quickInput, position = test.cycles();
+	const model = ide.editor.assistant, picker = ide.editor.editorParts.activePart.quickInput, position = test.cycles();
 	check(view.turnActions.items.filter(item => item.visible).length === 1, 'idle chat shows only Send, no account/connect/disconnect toolbar');
 	await submitAssistantText(test, '/');
-	check(picker.visible, 'slash discovery uses the shared picker without a process');
+	await until(() => picker.visible, 'slash discovery opens the shared picker without a process');
 	await frame(); await renderer.capture!('commands'); await press('Escape');
 	check((await control.metrics()).connects === 0, 'command discovery is local');
 	const firstPrompt = 'First history message\n\nUse **bold**, *italic*, and `velocity_x_q8`.\n\n- Inspect the cart.\n- Keep the game paused.\n\n```lua\nreturn mijter_foe_velocity_x_q8\n```';

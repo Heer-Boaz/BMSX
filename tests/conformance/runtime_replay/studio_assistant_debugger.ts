@@ -1,7 +1,6 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { check, createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
 
@@ -10,8 +9,7 @@ export async function runAssistantDebugger(kind: StudioRendererKind, canvas: HTM
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, runtime, frame, until, cycles, harness } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'debugger tools: boot actual cart');
-	await reachNemesisTitle(test);
+	await test.waitForTestFrame();
 	const resource = { contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cartlib/world/world.lua' };
 	const installed = ide.sources.catalog.resolveLuaSource(resource)!.record.src;
 	harness.openLuaSource(resource.path); await frame();
@@ -22,11 +20,12 @@ export async function runAssistantDebugger(kind: StudioRendererKind, canvas: HTM
 	await submitAssistantText(test, 'Use installed source to set a real cart breakpoint, call active_definition_view, inspect and source-step into/over/out, then complete the call and clear the breakpoint. Keep my dirty source uninstalled.');
 	await until(() => ide.debugger.source.stop !== undefined && ide.luaEvaluation.active !== undefined, 'debugger tools: model-set breakpoint hits actual cart method');
 	const evaluation = ide.luaEvaluation.active!, stoppedAt = cycles();
-	check(ide.debugger.breakpoints.get(resource).size === 2, 'tools and gutter share the actual breakpoint owner');
+	check(ide.debugger.breakpoints.readInstallation(resource, 0).some(point => point.status === 'bound'),
+		'tool breakpoints bind to the actual installed source image');
 	await renderer.capture!('model-breakpoint');
 	await until(() => ide.editor.assistant.state === 'ready', 'debugger tools: model source stepping and return finish');
 	check(ide.luaEvaluation.lastResult === evaluation && evaluation.result?.status === 'completed', 'debugger source controls complete the SAME Terminal call');
-	check(ide.debugger.breakpoints.get(resource).size === 0, 'model clears only the requested source breakpoints');
+	check(ide.debugger.breakpoints.readInstallation(resource, 0).length === 0, 'model clears the requested installed-source breakpoints');
 	check(model.version === version && model.dirty && media === ide.sources.currentBlua32Media && test.execution.userPaused,
 		'source debugging preserves dirty source, installed code and independent pause');
 	const completedAt = cycles(); for (let i = 0; i < 6; i++) await frame();

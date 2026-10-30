@@ -1,7 +1,6 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { createStudioFixture, check } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
 
@@ -10,9 +9,9 @@ export async function runAssistantSourceSave(kind: StudioRendererKind, canvas: H
 	armSave: () => Promise<void>, waitForHeldSave: () => Promise<void>, releaseHeldSave: () => Promise<void>) {
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
-	const { ide, runtime, until, cycles, frame, press, harness, runPaletteCommand } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'source Save: boot authoring target');
-	await reachNemesisTitle(test); harness.openLuaSource('cart.lua'); await frame();
+	const { ide, until, cycles, frame, press, harness, runPaletteCommand } = test;
+	await test.waitForTestFrame();
+	harness.openLuaSource('cart.lua'); await frame();
 	const mainTab = ide.editor.editorParts.activeGroup.model.activeTab, main = harness.getActiveEditorDocument().model;
 	const original = main.buffer.getText(), media = ide.sources.currentBlua32Media, stoppedAt = cycles();
 	await runPaletteCommand('View: Codex Assistant');

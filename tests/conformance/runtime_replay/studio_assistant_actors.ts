@@ -13,7 +13,7 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, runtime, guest, press, until, frame, cycles, harness, runPaletteCommand } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'actor tools: boot authoring');
+	await test.waitForTestFrame();
 	await press('ControlRight', 'ShiftRight');
 	harness.openLuaSource('cart.lua');
 	const sourceTab = ide.editor.editorParts.activeGroup.model.activeTab;

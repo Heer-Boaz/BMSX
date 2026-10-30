@@ -10,7 +10,7 @@ export async function runAssistantTestEvidence(kind: StudioRendererKind, canvas:
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, until, press, frame, harness, cycles, runPaletteCommand } = test;
-	await until(() => cycles() > test.runtime.timing.cpuHz * 13, 'test evidence: boot actual cart');
+	await test.waitForTestFrame();
 	await press('ControlRight', 'ShiftRight'); await runPaletteCommand('Run: Pause');
 	await runPaletteCommand('Scenario Lab: Open');
 	const lab = ide.editor.editorParts.activeGroup.model.activeTab; if (lab.kind !== 'scenario_lab') throw new Error('Scenario Lab required');

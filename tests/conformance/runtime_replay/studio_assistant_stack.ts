@@ -1,7 +1,6 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { check, createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
 
@@ -10,13 +9,14 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, runtime, frame, until, cycles, harness } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'stack tools: boot actual cart');
-	await reachNemesisTitle(test);
+	await test.waitForTestFrame();
 	const resource = { contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cartlib/world/world.lua' };
 	const lines = ide.sources.catalog.resolveLuaSource(resource)!.record.src.split('\n');
 	const declaration = lines.findIndex(line => line.includes('function world_class:active_definition_view('));
 	const line = lines.findIndex((text, index) => index > declaration && text.includes('views[definition_id] = created')) + 1;
 	harness.openLuaSource(resource.path); await frame();
+	const sourceInput = ide.editor.editorParts.activeGroup.model.activeTab;
+	if (sourceInput.kind !== 'code_editor') throw new Error('Source editor required');
 	const model = harness.getActiveEditorDocument().model;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- stack locations must still name installed code\n' }]);
 	const version = model.version, media = ide.sources.currentBlua32Media;
@@ -41,7 +41,9 @@ export async function runAssistantStack(kind: StudioRendererKind, canvas: HTMLCa
 	if (storage.value.kind !== 'address') throw new Error('Static storage must be a linked address, not a register or guessed number');
 	const staticAddress = storage.value.address;
 	check(cycles() === stoppedAt && runtime.machine.cpu.luaHeap.usedBytes() === heap, 'stack/scopes reads neither execute nor allocate guest state');
-	await until(() => harness.getActiveCodeContext()?.executionStopRow === line - 1, 'stack tools: ordinary debugger source navigation');
+	await frame();
+	check(sourceInput.context.executionStopRow === null && model.version === version && model.dirty,
+		'dirty authored source cannot receive a fabricated installed-code stop highlight');
 	await renderer.capture!('paused-call');
 	ide.debugger.breakpoints.toggle(resource, line);
 	await until(() => ide.editor.assistant.state === 'ready', 'stack tools: real model reads scopes and continues');

@@ -10,7 +10,6 @@ export { runAssistantDebugger } from './studio_assistant_debugger';
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { check, createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 
 export { runAssistantAccount } from './studio_assistant_account';
@@ -31,9 +30,8 @@ export async function runAssistant(kind: StudioRendererKind, canvas: HTMLCanvasE
 	const http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	capture = renderer.capture!;
-	const { ide, runtime, frame, press, until, cycles, harness } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'assistant: boot actual cart');
-	await reachNemesisTitle(test);
+	const { ide, frame, press, until, cycles, harness } = test;
+	await test.waitForTestFrame();
 	harness.openLuaSource('cart.lua'); await frame();
 	const main = harness.getActiveEditorDocument().model, mainTab = ide.editor.editorParts.activeGroup.model.activeTab;
 	await press('ControlLeft', 'Home'); await test.clipboard.writeText('-- UNSAVED ASSISTANT FIXTURE\n'); await press('ControlLeft', 'KeyV');

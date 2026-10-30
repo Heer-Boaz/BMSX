@@ -25,7 +25,8 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 			...['state', 'tree', 'effect'].map(kind => call(`${id}-${kind}`, 'studio_read_actor_node', { node: tree(body, id).nodes.find(node => node.kind === kind && (kind !== 'state' || node.label === 'nest'))!.reference })),
 			...(id === 'first' ? [call('timeline', 'studio_read_actor_node', { node: tree(body, id).nodes.find(node => node.kind === 'timeline')!.reference })] : []),
 		]),
-		(body: Body) => ['first', 'second'].flatMap(id => ['state', 'effect'].map(kind => read(`${id}-${kind}-values`, details(body, `${id}-${kind}`).object.reference!))),
+		(body: Body) => [...['first', 'second'].flatMap(id => ['state', 'effect'].map(kind => read(`${id}-${kind}-values`, details(body, `${id}-${kind}`).object.reference!))),
+			read('timeline-values', details(body, 'timeline').object.reference!)],
 		(body: Body) => [
 			...['first', 'second'].map(id => read(`${id}-data`, values(body, `${id}-state-values`).entries.find(entry => entry.key.display === 'data')!.value.reference!)),
 			read('effect-definition', values(body, 'first-effect-values').entries.find(entry => entry.key.display === 'definition')!.value.reference!),
@@ -57,5 +58,5 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(callback.origin, 'installed'); assert.equal(callback.resource.path, 'cart.lua'); assert.equal('installedSource' in callback, false);
 	assert.equal(callback.range.start.line, ACTOR_TOOLS_SOURCE.split('\n').findIndex(line => line.startsWith('local function callback')) + 1,
 		'dirty working-copy prefix does not shift the installed callback location');
-	assert.ok(details(body, 'timeline').properties.some(prop => prop.label === 'position_ms' && prop.value === '1'));
+	assert.equal(values(body, 'timeline-values').entries.find(entry => entry.key.display === 'position_ms')!.value.display, '1');
 });

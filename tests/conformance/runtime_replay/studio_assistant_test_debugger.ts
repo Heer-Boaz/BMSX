@@ -9,7 +9,7 @@ export async function runAssistantTestDebugger(kind: StudioRendererKind, canvas:
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, until, press, frame, harness, cycles, runPaletteCommand } = test;
-	await until(() => cycles() > test.runtime.timing.cpuHz * 13, 'test debugger: boot authoring');
+	await test.waitForTestFrame();
 	await press('ControlRight', 'ShiftRight'); await runPaletteCommand('Run: Pause');
 	ide.scenarioRuns.refreshSources();
 	const module = ide.scenarioRuns.collection.roots[0].children[0];

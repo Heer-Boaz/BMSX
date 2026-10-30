@@ -9,7 +9,7 @@ import { runtimeWorld } from '../../../ide/workbench/contrib/actor_lab/runtime';
 import { readRuntimeLuaModuleExport } from '../../../ide/runtime/lua_inspection';
 import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { check, type StudioFixture } from './studio_fixture';
-import { nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
+import { nemesisTitle, nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
 import { rects_intersect } from '../../../machine/ts/common/rect';
 
 /** Real host routing and latched ICU words, alongside ordinary cartridge gameplay. */
@@ -54,7 +54,7 @@ export async function runStudioGameInput(test: StudioFixture) {
 	test.setPointerButton('pointer_primary', false);
 	input.inputButton('gamepad:0', 'down', false, 0, clock.now(), 2);
 	await test.releaseGuestKey('KeyZ');
-	await until(() => guest.readStringMember(test.title(), 'selected_player_count') === 2,
+	await until(() => guest.readStringMember(nemesisTitle(test), 'selected_player_count') === 2,
 		'game input: controller changes the title menu through the cart input handlers');
 	await press('ShiftLeft', 'F1');
 	check(inputFocus.target?.guestInput?.bounds === undefined && ide.editor.guestInputRecipient === null,

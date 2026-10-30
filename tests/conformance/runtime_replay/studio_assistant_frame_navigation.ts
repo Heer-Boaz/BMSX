@@ -1,7 +1,6 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { check, createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
 
@@ -10,8 +9,7 @@ export async function runAssistantNavigation(kind: StudioRendererKind, canvas: H
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, runtime, frame, until, cycles } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'navigation tools: boot actual cart');
-	await reachNemesisTitle(test);
+	await test.waitForTestFrame();
 	test.harness.openLuaSource('cart.lua'); await frame();
 	const source = test.harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- navigation must not install this source\n' }]);

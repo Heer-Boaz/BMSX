@@ -12,7 +12,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const call = (id: string, name: string, args: unknown) => ({ type: 'function_call', call_id: id, name, arguments: JSON.stringify(args) });
 	const read = (phase: string) => [
 		[call(`list-${phase}`, 'studio_list_sources', {})],
-		(body: Body) => ['cart.lua', 'res/data/nemesis_s_stage.yaml'].map((path, index) => call(`read-${phase}-${index}`, 'studio_read_source',
+		(body: Body) => ['cart.lua', 'res/data/studio_source.yaml'].map((path, index) => call(`read-${phase}-${index}`, 'studio_read_source',
 			{ resource: output(body, `list-${phase}`).find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path === path).resource })),
 		(body: Body) => [0, 1].map(index => call(`status-${phase}-${index}`, 'studio_read_source_status', { receipt: output(body, `read-${phase}-${index}`).receipt })),
 	];
@@ -34,7 +34,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const held = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
 	let armed = false;
 	await f.page.route('**/__bmsx__/lua**', async route => {
-		if (armed && route.request().method() === 'PUT' && route.request().postDataJSON().path === 'carts/nemesis_s/cart.lua') {
+		if (armed && route.request().method() === 'PUT' && route.request().postDataJSON().path === 'carts/studio_test/cart.lua') {
 			armed = false; held.resolve(); await release.promise;
 		}
 		await route.continue();
@@ -64,9 +64,9 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(retired.latestSave.result.status, 'saved'); assert.deepEqual(retired.latestSave.result.persistence, { status: 'workspace' });
 	assert.equal(manual.dirty, false); assert.equal(manual.latestSave.matchesCurrentSource, true); assert.equal(manual.runtime, 'pending');
 	assert.notEqual(manual.latestSave.operation, retired.latestSave.operation);
-	for (const [path, text] of [['cart.lua', result.main], ['res/data/nemesis_s_stage.yaml', result.yaml]]) {
-		assert.equal(await readFile(join(f.root, 'carts/nemesis_s', path), 'utf8'), text, 'actual project file contains acknowledged source bytes');
+	for (const [path, text] of [['cart.lua', result.main], ['res/data/studio_source.yaml', result.yaml]]) {
+		assert.equal(await readFile(join(f.root, 'carts/studio_test', path), 'utf8'), text, 'actual project file contains acknowledged source bytes');
 	}
-	assert.equal(result.main, '-- later typing\n-- reviewed Lua save\n' + await readFile('carts/nemesis_s/cart.lua', 'utf8'));
-	assert.equal(result.yaml, '# reviewed canonical save 🐉\r\n' + await readFile('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8'));
+	assert.equal(result.main, '-- later typing\n-- reviewed Lua save\n' + await readFile('carts/studio_test/cart.lua', 'utf8'));
+	assert.equal(result.yaml, '# reviewed canonical save 🐉\r\n' + await readFile('carts/studio_test/res/data/studio_source.yaml', 'utf8'));
 });

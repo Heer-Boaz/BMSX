@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 /** Ordinary server/product, isolated project writes, and a canary against starting the embedded agent. */
 export async function createStudioServer(t, { codexHome } = {}) {
 	const root = await mkdtemp(join(tmpdir(), 'bmsx-studio-mcp-'));
-	for (const path of ['carts/nemesis_s', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/nemesis_s']) await cp(path, join(root, path), {
+	for (const path of ['carts/studio_test', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/studio_test']) await cp(path, join(root, path), {
 		recursive: true, filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path),
 	});
 	const bin = join(root, 'bin'), trace = join(root, 'embedded-codex-started');

@@ -55,7 +55,7 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 		[call('studio_list_sources', {})],
 		body => {
 			const catalog = outputs(body)[0];
-			return [catalog.find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path === 'cart.lua'), catalog.find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path.endsWith('nemesis_s_stage.yaml'))]
+			return [catalog.find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path === 'cart.lua'), catalog.find(resource => resource.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && resource.path.endsWith('studio_source.yaml'))]
 				.map((resource, index) => ({ ...call('studio_read_source', { resource: resource.resource }), call_id: `read:${index}` }));
 		},
 		body => outputs(body).slice(1).map((read, index) => ({ ...call('studio_read_diagnostics', { receipt: read.receipt }), call_id: `diagnostics:${index}` })),
@@ -76,9 +76,9 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 	assert.equal(result.assistant, 'pass'); assert.equal(result.sourceFiles, 2);
 	assert.equal(observations.connects, 1); assert.equal(model.requests.length, 21); assert.deepEqual(observations.errors, []);
 	const reads = outputs(model.requests[2]).slice(1);
-	const mainSource = await readFile('carts/nemesis_s/cart.lua', 'utf8');
+	const mainSource = await readFile('carts/studio_test/cart.lua', 'utf8');
 	assert.equal(reads[0].source, '-- UNSAVED ASSISTANT FIXTURE\n' + mainSource.replace('\n', '\nlocal studio_diagnostic_probe = missing_from_assistant_context\nstruct studio_type_probe\n\tvalue: word\nend\nlocal invalid_type_value = studio_type_probe\n'));
-	assert.equal(reads[1].source, await readFile('carts/nemesis_s/res/data/nemesis_s_stage.yaml', 'utf8'));
+	assert.equal(reads[1].source, await readFile('carts/studio_test/res/data/studio_source.yaml', 'utf8'));
 	assert.ok(JSON.stringify(outputs(model.requests[2])[0]).length > 16000, 'real catalog exceeds the old lossy truncation budget');
 	const diagnostics = outputs(model.requests[3]).slice(3);
 	assert.deepEqual(diagnostics.map(result => result.status), ['ready', 'unsupported']);
@@ -104,7 +104,7 @@ for (const backend of backends) test(`Studio ${backend}: actual browser, HTTP le
 	assert.deepEqual(afterUndo.map(read => read.source), reads.map(read => read.source), 'fresh reads see Undo, not the historical applied outcome');
 	assert.ok(afterUndo.every((read, index) => read.receipt !== reads[index].receipt), 'a review observation never refreshes an old source receipt');
 	// Review/Apply and Undo edit working copies; no Save was admitted in this workflow.
-	for (const path of ['carts/nemesis_s/cart.lua', 'carts/nemesis_s/res/data/nemesis_s_stage.yaml']) {
+	for (const path of ['carts/studio_test/cart.lua', 'carts/studio_test/res/data/studio_source.yaml']) {
 		assert.equal(await readFile(join(root, path), 'utf8'), await readFile(path, 'utf8'),
 			'review and Undo leave canonical source files unchanged');
 	}

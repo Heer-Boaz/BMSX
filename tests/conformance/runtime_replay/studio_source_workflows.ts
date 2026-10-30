@@ -1,3 +1,4 @@
+import { nemesisTitle } from './studio_nemesis_navigation';
 import { resourceIdentityKey } from '../../../ide/common/resource';
 import { editorTextModelService } from '../../../ide/editor/model/model_service';
 import type { EditorTextModel } from '../../../ide/editor/model/text_model';
@@ -14,10 +15,10 @@ export async function testSourceViewsBeforeApply(
 	originalRule: string,
 	newRule: string,
 ): Promise<string> {
-	const { ide, harness, press, frame, until, cycles, title } = test;
+	const { ide, harness, press, frame, until, cycles } = test;
 	const source = model.buffer.getText();
 	const position = cycles();
-	const actor = title();
+	const actor = nemesisTitle(test);
 	const media = ide.sources.currentBlua32Media;
 	const status = () => getTextFileRuntimeSourceStatus(ide.sources, model);
 	check(status() === 'applied', 'W04: newly opened source matches the installed code');
@@ -55,17 +56,17 @@ export async function testSourceViewsBeforeApply(
 	const note = '\n-- W04: this unsaved source edit is included in Hot Resume.\n';
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: note }]);
 	check(model.dirty && status() === 'pending', 'W04: saved, edited and installed sources are three different states');
-	check(ide.sources.currentBlua32Media === media && cycles() === position && title() === actor,
+	check(ide.sources.currentBlua32Media === media && cycles() === position && nemesisTitle(test) === actor,
 		'W04: view switches, save and source undo leave the paused machine untouched');
 	return edited + note;
 }
 
 export async function testSourceUndoAfterApply(test: StudioFixture, model: EditorTextModel, installed: string, original: string): Promise<void> {
-	const { ide, harness, press, until, cycles, title } = test;
+	const { ide, harness, press, until, cycles } = test;
 	harness.openLuaSource(model.resource.path);
 	const media = ide.sources.currentBlua32Media;
 	const position = cycles();
-	const actor = title();
+	const actor = nemesisTitle(test);
 	const status = () => getTextFileRuntimeSourceStatus(ide.sources, model);
 	check(status() === 'applied' && model.buffer.getText() === installed, 'W04: only actual code installation makes the captured source current');
 	await press('ControlLeft', 'KeyZ');
@@ -78,16 +79,16 @@ export async function testSourceUndoAfterApply(test: StudioFixture, model: Edito
 	await press('ControlLeft', 'KeyY');
 	check(model.buffer.getText() === installed && model.dirty && status() === 'applied',
 		'W04: redo can match installed code while still differing from the saved file');
-	check(ide.sources.currentBlua32Media === media && cycles() === position && title() === actor,
+	check(ide.sources.currentBlua32Media === media && cycles() === position && nemesisTitle(test) === actor,
 		'W04: post-apply source history cannot rewind or replace the actual actor');
 }
 
 /** Hold the real exclusive task queue; the editor must not acknowledge later text as installed. */
 export async function testCapturedSourceApply(test: StudioFixture): Promise<void> {
-	const { ide, harness, tasks, frame, until, press, runMenuCommand, runtime, cycles, title } = test;
+	const { ide, harness, tasks, frame, until, press, runMenuCommand, runtime, cycles } = test;
 	harness.openLuaSource('title_screen.lua');
 	const model = harness.getActiveEditorDocument().model;
-	const actor = title();
+	const actor = nemesisTitle(test);
 	const position = cycles();
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n-- W04 captured revision\n' }]);
 	const captured = model.buffer.getText();
@@ -103,7 +104,7 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 	await pendingApply.admission;
 	await until(() => tasks.ready && !ide.debugger.plans.mutationActive && !runtime.completionCallPending(), 'W04: captured source apply completes');
 	check((await pendingApply.completion).status === 'completed', 'W04: operation result follows the actual init roots');
-	check(title() === actor, 'W04: an asynchronous source install retains the real actor');
+	check(nemesisTitle(test) === actor, 'W04: an asynchronous source install retains the real actor');
 	check(ide.sources.cartridgeSlots[0]!.installedBlua32Sources.get('title_screen') === captured, 'W04: only the captured source is compiled, not later typing');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'W04: later typing stays visibly unapplied after installation');
 	await press('ControlRight', 'ShiftRight');
@@ -114,7 +115,7 @@ export async function testCapturedSourceApply(test: StudioFixture): Promise<void
 }
 
 export async function testAemSourceApplication(test: StudioFixture): Promise<void> {
-	const { ide, harness, tasks, until, press, title, runPaletteCommand } = test;
+	const { ide, harness, tasks, until, press, runPaletteCommand } = test;
 	const resource = ide.sources.catalog.resources.find(item => item.contextId === test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId && item.source.type === 'aem')!;
 	await ide.editor.navigation.openResource(ide.editor.editorParts.editorDestination(ide.editor.editorParts.activeGroup), resource);
 	const aem = ide.editor.editorParts.activeGroup.model.activeTab;
@@ -125,12 +126,12 @@ export async function testAemSourceApplication(test: StudioFixture): Promise<voi
 	const status = () => getTextFileRuntimeSourceStatus(ide.sources, model);
 	check(model.mode === 'aem' && model.buffer.getText() === resource.source.sourcemeta!.text && status() === 'applied',
 		'W04: packaged authored metadata identifies the initial installed AEM source');
-	const actor = title();
+	const actor = nemesisTitle(test);
 	model.pushEditOperations([{ offset: model.buffer.length, deleteLength: 0, text: '\n# W04 actual asset source application\n' }]);
 	const applied = model.buffer.getText();
 	await press('ControlLeft', 'KeyS');
 	await until(() => tasks.ready && !model.dirty && status() === 'applied', 'W04: real AEM save installs cooked asset and records its authored source');
-	check(title() === actor, 'W04: AEM application does not replace the game world');
+	check(nemesisTitle(test) === actor, 'W04: AEM application does not replace the game world');
 	await press('ControlLeft', 'KeyZ');
 	check(status() === 'pending', 'W04: source undo does not undo the installed AEM asset');
 	await press('ControlLeft', 'KeyY');

@@ -4,17 +4,17 @@ import { buildCodeTabId } from '../../../ide/workbench/ui/tab/id';
 import { resolveTextFileModel } from '../../../ide/workbench/services/working_copy/text_file_model';
 import { runBackgroundTasks } from '../../../ide/common/background_tasks';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
+import { nemesisTitle, reachNemesisTitle } from './studio_nemesis_navigation';
 
 /** Real visual/code/Problems projections and session teardown; authoring setup is automated. */
 export async function runStudioResourceContext(test: StudioFixture) {
-	const { ide, runtime, harness, until, frame, press, cycles, title, runMenuCommand } = test;
+	const { ide, runtime, harness, until, frame, press, cycles, runMenuCommand } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'resource context: boot real cartridge');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('title_screen.lua');
 	await frame();
 	await runMenuCommand('pause');
-	const actor = title(), position = cycles(), media = ide.sources.currentBlua32Media;
+	const actor = nemesisTitle(test), position = cycles(), media = ide.sources.currentBlua32Media;
 	const resource = ide.sources.catalog.resolveResource({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'scenes/root.lua' })!;
 	check(ide.editor.editorParts.groups.every(group => group.model.findById(buildCodeTabId(resource)) === undefined), 'resource context: scene has never had a code input');
 	ide.editor.sceneEditor.openResource(ide.editor.editorParts.activeGroup, resource);
@@ -54,7 +54,7 @@ export async function runStudioResourceContext(test: StudioFixture) {
 	model.undo();
 	await until(() => ide.diagnostics.get(model)!.status === 'ready', 'resource context: shared Undo recomputes source results');
 	check(!ide.diagnostics.diagnostics.some(item => item.message.includes('missing_from_scene_context')), 'resource context: no stale marker after Undo');
-	check(cycles() === position && title() === actor && ide.sources.currentBlua32Media === media,
+	check(cycles() === position && nemesisTitle(test) === actor && ide.sources.currentBlua32Media === media,
 		'resource context: source analysis never executes, resets or installs guest code');
 	await test.clickTab(scene.id);
 	await frame();

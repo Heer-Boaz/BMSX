@@ -34,7 +34,7 @@ test('server status follows the live Studio channel independently of the Codex d
 	const gate = Promise.withResolvers<void>(), opening = Promise.withResolvers<void>();
 	await page.route('**/__bmsx__/studio/connect', async route => { opening.resolve(); await gate.promise; await route.continue(); });
 	const registered = page.waitForResponse(response => response.url().endsWith('/studio/connect'));
-	await page.goto(`${server.address}/studio.debug.html?rom=nemesis_s.debug.rom`); await opening.promise;
+	await page.goto(`${server.address}/studio.debug.html?rom=studio_test.debug.rom`); await opening.promise;
 	const evidence = '/tmp/bmsx-studio-connection'; await mkdir(evidence, { recursive: true });
 	const press = async (keys: string) => { await page.keyboard.press(keys, { delay: 100 });
 		await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))); };
@@ -86,7 +86,7 @@ test('real Studio: choose the native conversation, follow work, resize and close
 		if (request.url().includes('/assistant/')) embedded.push(request.url());
 	});
 	const ready = page.waitForResponse(response => response.url().endsWith('/studio/connect'));
-	await page.goto(`${server.address}/studio.debug.html?rom=nemesis_s.debug.rom`); await ready;
+	await page.goto(`${server.address}/studio.debug.html?rom=studio_test.debug.rom`); await ready;
 	await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 	await page.keyboard.press('ControlRight+ShiftRight', { delay: 100 });
 	await page.keyboard.press('Control+Shift+p', { delay: 100 });
@@ -120,7 +120,7 @@ test('real Studio: choose the native conversation, follow work, resize and close
 	const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 	phone.on('pageerror', error => errors.push(String(error)));
 	const phoneReady = phone.waitForResponse(response => response.url().endsWith('/studio/connect'));
-	await phone.goto(`${server.address}/studio.debug.html?rom=nemesis_s.debug.rom`); await phoneReady;
+	await phone.goto(`${server.address}/studio.debug.html?rom=studio_test.debug.rom`); await phoneReady;
 	await phone.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 	await phone.keyboard.press('ControlRight+ShiftRight', { delay: 100 });
 	await phone.keyboard.press('Control+Shift+p', { delay: 100 });

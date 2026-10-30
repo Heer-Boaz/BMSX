@@ -1,7 +1,6 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { check, createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { submitAssistantText } from './studio_assistant_navigation';
 
@@ -10,9 +9,9 @@ export async function runAssistantProgram(kind: StudioRendererKind, canvas: HTML
 	armProgramRead: () => Promise<void>, waitForProgramRead: () => Promise<void>, releaseProgramRead: () => Promise<void>) {
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
-	const { ide, runtime, until, cycles, harness, frame, press } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'program: boot actual authored fixture');
-	await reachNemesisTitle(test); harness.openLuaSource('cart.lua'); await frame();
+	const { ide, until, cycles, harness, frame, press } = test;
+	await test.waitForTestFrame();
+	harness.openLuaSource('cart.lua'); await frame();
 	const mainTab = ide.editor.editorParts.activeGroup.model.activeTab, main = harness.getActiveEditorDocument().model;
 	const original = main.buffer.getText(), oldMedia = ide.sources.currentBlua32Media, before = cycles();
 	await test.runPaletteCommand('View: Codex Assistant');
@@ -29,7 +28,7 @@ export async function runAssistantProgram(kind: StudioRendererKind, canvas: HTML
 	await test.click(review.actionBar.items.find(item => item.command === 'workspaceEditReview.apply')!.bounds);
 	check(proposal.state === 'applied' && main.dirty && main.lastSavedSource === original, 'visible Apply does not Save or install');
 	await test.clickTab(view.id);
-	await submitAssistantText(test, 'Save the reviewed fix. Compare installed source, Reboot with current Lua sources, then verify the installed code using a breakpoint and the Lua Terminal. Capture the current frame, clear the breakpoint, advance 120 video frames and capture the visible intro. Rerun the unchanged test. Report reset separately from execution and test results.');
+	await submitAssistantText(test, 'Save the reviewed fix. Compare installed source, Reboot with current Lua sources, then verify the installed code using a breakpoint and the Lua Terminal. Capture the current frame, clear the breakpoint, advance 120 video frames and capture the visible test frame. Rerun the unchanged test. Report reset separately from execution and test results.');
 	await until(() => conversation.state === 'ready', 'program: Save, actual install/reset, execution, image and independent rerun finish');
 	check(!main.dirty && ide.sources.currentBlua32Media !== oldMedia && ide.editor.isActive,
 		'Reboot installs without closing the conversation');

@@ -2,13 +2,13 @@ import { sourcePane } from './studio_fixture';
 import { IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { HistoryMode } from '../../../machine/ts/machine/runtime/history/history';
 import { check, type StudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
+import { nemesisTitle, reachNemesisTitle } from './studio_nemesis_navigation';
 import { testCapturedSourceApply } from './studio_source_workflows';
 
 /** Real workbench/model/BIOS lifecycle evidence; not a UI-only authoring test. */
 export async function runStudioExecutionOperations(test: StudioFixture) {
 	const { runtime, ide, execution, tasks, history, harness, observations,
-		frame, until, press, runMenuCommand, cycles, title } = test;
+		frame, until, press, runMenuCommand, cycles } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'operations: boot real cartridge');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('title_screen.lua');
@@ -16,7 +16,7 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 	await runMenuCommand('pause');
 	const model = harness.getActiveEditorDocument().model;
 	const source = model.buffer.getText();
-	const actor = title(), media = ide.sources.currentBlua32Media, position = cycles();
+	const actor = nemesisTitle(test), media = ide.sources.currentBlua32Media, position = cycles();
 	harness.replaceActiveCodeSource(source + '\nend end\n');
 	const rejected = harness.performHotResume();
 	check((await rejected.admission).status === 'not-admitted', 'operations: failed build is not admitted');
@@ -36,7 +36,7 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 	check((await first.admission).status === 'accepted', 'operations: first init admitted');
 	await until(() => ide.debugger.source.stop !== undefined && first.applied && ide.editor.isActive, 'operations: actual init breakpoint');
 	check(first.status === 'initializing' && first.result === null && runtime.completionCallPending()
-		&& history.mode === HistoryMode.Disabled && title() === actor, 'operations: breakpoint is pending, not completion');
+		&& history.mode === HistoryMode.Disabled && nemesisTitle(test) === actor, 'operations: breakpoint is pending, not completion');
 	await until(() => harness.getActiveCodeContext()!.executionStopRow === initLine - 1, 'operations: breakpoint navigation finishes');
 	await frame();
 	await test.capture?.('init-pending');
@@ -49,7 +49,7 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 	await press('F5');
 	await until(() => first.result !== null && nested.result !== null, 'operations: both physical init batches return');
 	check((await first.completion).status === 'completed' && (await nested.completion).status === 'completed'
-		&& !ide.debugger.plans.mutationActive && title() === actor, 'operations: nested completion does not reboot the actor');
+		&& !ide.debugger.plans.mutationActive && nemesisTitle(test) === actor, 'operations: nested completion does not reboot the actor');
 
 	harness.openLuaSource('title_screen.lua');
 	await frame();
@@ -84,7 +84,7 @@ export async function runStudioExecutionOperations(test: StudioFixture) {
 	check(discarded.status === 'cancelled' && discarded.reason === 'plan-discarded' && !discarded.applied,
 		'operations: replaced supervisor plan retires its original request');
 	await until(() => repaired.result !== null && tasks.ready, 'operations: supervisor return, install and init all finish');
-	check((await repaired.completion).status === 'completed' && repaired.applied && title() === actor,
+	check((await repaired.completion).status === 'completed' && repaired.applied && nemesisTitle(test) === actor,
 		'operations: actual recovery reports completion without replacing the actor');
 	check(faulted.result === faultResult && ide.fault.lastLuaCallStack.length === 0,
 		'operations: recovery clears inspection but cannot rewrite the older failed outcome');

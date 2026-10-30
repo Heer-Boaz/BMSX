@@ -39,7 +39,7 @@ import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { HostPauseReason } from '../../../hosts/common/execution_control';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
-import { nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
+import { nemesisTitle, nemesisTitleState, reachNemesisTitle } from './studio_nemesis_navigation';
 import { testSceneSourceEdits } from './studio_scene_source';
 import { testSourceFormatting } from './studio_source_formatting';
 import { testStudioSyntaxHighlight } from './studio_syntax_highlight';
@@ -51,7 +51,7 @@ import { testAemSourceApplication, testCapturedSourceApply, testSourceUndoAfterA
 /** The same developer loop runs on every renderer, without backend-specific tests. */
 export async function runStudioWorkflows(test: StudioFixture) {
 	const { runtime, ide, execution, rewind, tasks, history, harness, guest, clock, input, observations,
-		frame, until, setKey, press, releaseGuestKey, click, runMenuCommand, settle, cycles, title } = test;
+		frame, until, setKey, press, releaseGuestKey, click, runMenuCommand, settle, cycles } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13 && !rewind.seeking, 'boot into real cart');
 	await reachNemesisTitle(test);
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
@@ -112,7 +112,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	const source = model.buffer.getText();
 	const originalRule = "pattern = 'up[jp] || down[jp] || left[jp] || right[jp]'";
 	check(source.includes(originalRule), 'actual title FSM input rule');
-	const actorBefore = title();
+	const actorBefore = nemesisTitle(test);
 	const countBefore = guest.readStringMember(actorBefore, 'selected_player_count');
 	const newRule = "pattern = 'right[jp]'";
 	const firstInstalledSource = await testSourceViewsBeforeApply(test, model, originalRule, newRule);
@@ -134,15 +134,15 @@ export async function runStudioWorkflows(test: StudioFixture) {
 		'Hot Resume installs edited source through product commands');
 	await until(() => !runtime.completionCallPending() && !rewind.active && history.checkpointCount !== 0 && tasks.ready, 'init completes on retained continuation');
 	check(!execution.userPaused && !ide.editor.isActive, 'explicit Hot Resume releases only user pause and editor focus');
-	check(title() === actorBefore, 'Hot Resume retains actor identity, not a cold-boot replacement');
-	check(guest.readStringMember(title(), 'selected_player_count') === countBefore, 'init rebind keeps live FSM state');
+	check(nemesisTitle(test) === actorBefore, 'Hot Resume retains actor identity, not a cold-boot replacement');
+	check(guest.readStringMember(nemesisTitle(test), 'selected_player_count') === countBefore, 'init rebind keeps live FSM state');
 	check(history.earliestCycles >= selected && history.latestCycles < selected + runtime.timing.cpuHz,
 		'new history begins at retained execution, without returning to old present');
 	await press('ArrowDown');
 	for (let index = 0; index < 5; index += 1) await frame();
-	check(guest.readStringMember(title(), 'selected_player_count') === countBefore, 'old FSM input rule no longer fires');
+	check(guest.readStringMember(nemesisTitle(test), 'selected_player_count') === countBefore, 'old FSM input rule no longer fires');
 	setKey('ArrowRight', true);
-	await until(() => guest.readStringMember(title(), 'selected_player_count') !== countBefore,
+	await until(() => guest.readStringMember(nemesisTitle(test), 'selected_player_count') !== countBefore,
 		'edited FSM rule fires on the retained actor');
 	setKey('ArrowRight', false);
 	await press('ControlRight', 'ShiftRight');
@@ -188,20 +188,20 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
 	const secondAt = cycles();
-	const secondActor = title();
+	const secondActor = nemesisTitle(test);
 	harness.openLuaSource('title_screen.lua');
 	harness.replaceActiveCodeSource(source.replace(originalRule, "pattern = 'left[jp]'"));
 	await press('ControlLeft', 'ShiftLeft', 'KeyS');
 	await press('Enter');
 	await until(() => tasks.ready && !ide.debugger.plans.controlActive && !runtime.completionCallPending()
 		&& !ide.editor.isActive && !rewind.active && history.checkpointCount !== 0, 'second Hot Resume finishes');
-	check(title() === secondActor && history.earliestCycles >= secondAt, 'second iteration keeps selected actor and forks history');
-	const countAtSecond = guest.readStringMember(title(), 'selected_player_count');
+	check(nemesisTitle(test) === secondActor && history.earliestCycles >= secondAt, 'second iteration keeps selected actor and forks history');
+	const countAtSecond = guest.readStringMember(nemesisTitle(test), 'selected_player_count');
 	await press('ArrowRight');
 	for (let index = 0; index < 5; index += 1) await frame();
-	check(guest.readStringMember(title(), 'selected_player_count') === countAtSecond, 'superseded rule no longer fires');
+	check(guest.readStringMember(nemesisTitle(test), 'selected_player_count') === countAtSecond, 'superseded rule no longer fires');
 	setKey('ArrowLeft', true);
-	await until(() => guest.readStringMember(title(), 'selected_player_count') !== countAtSecond, 'second rule fires');
+	await until(() => guest.readStringMember(nemesisTitle(test), 'selected_player_count') !== countAtSecond, 'second rule fires');
 	await releaseGuestKey('ArrowLeft');
 
 	// Breakpoint -> inspection -> explicit step while the independent pause stays set.
@@ -238,12 +238,12 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('ControlRight', 'AltRight');
 	for (let index = 0; index < 3; index += 1) await press('ArrowUp');
 	await press('Enter');
-	const oldActor = title();
+	const oldActor = nemesisTitle(test);
 	rewind.seekTo(history.earliestCycles);
 	await settle();
 	check(ide.debugger.source.stop === undefined && !ide.debugger.stopPresentationPending, 'restore invalidates the old stop');
 	check(sourcePane(test).code.hoverTooltip === null, 'restore invalidates cached inspection');
-	check(title() !== oldActor, 'inspection reacquires objects from restored heap');
+	check(nemesisTitle(test) !== oldActor, 'inspection reacquires objects from restored heap');
 	check(execution.userPaused, 'explicit rewind is allowed without lifting user pause');
 	await press('ControlRight', 'ShiftRight');
 	await runMenuCommand('pause');
@@ -278,10 +278,10 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	const initLine = source.split('\tfsm_library.register(')[0].split('\n').length;
 	harness.toggleLuaBreakpoint('title_screen.lua', initLine);
 	harness.replaceActiveCodeSource(source.replace(originalRule, "pattern = 'down[jp]'"));
-	const thirdActor = title();
+	const thirdActor = nemesisTitle(test);
 	await harness.performHotResume().admission;
 	await until(() => ide.debugger.source.stop !== undefined && ide.editor.isActive, 'breakpoint inside init is visible');
-	check(runtime.completionCallPending() && title() === thirdActor, 'init stop retains real completion call and actor');
+	check(runtime.completionCallPending() && nemesisTitle(test) === thirdActor, 'init stop retains real completion call and actor');
 	check(history.mode === HistoryMode.Disabled, 'host-controlled init is not recorded as ordinary replay input');
 	await runMenuCommand('pause');
 	const initStopPc = ide.debugger.source.stop!.pc;
@@ -292,7 +292,7 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await press('F5');
 	await until(() => !runtime.completionCallPending() && !ide.debugger.plans.mutationActive && tasks.ready
 		&& history.checkpointCount !== 0, 'third init completes and history resumes');
-	check(title() === thirdActor, 'third Hot Resume is not reboot');
+	check(nemesisTitle(test) === thirdActor, 'third Hot Resume is not reboot');
 
 	// A guest init fault is an execution stop, not a compile rejection or silent success.
 	await press('ControlRight', 'ShiftRight');
@@ -307,13 +307,13 @@ export async function runStudioWorkflows(test: StudioFixture) {
 	await until(() => runtime.machine.memory.readIoU32(IO_SYS_SUPERVISOR_FAULT_SEQUENCE) === observations.expectedFaultSequence
 		&& ide.fault.lastLuaCallStack.length !== 0, 'guest init fault exposes actual stack');
 	check(runtime.completionCallPending() && history.mode === HistoryMode.Disabled, 'failed init retains completion ownership');
-	const faultActor = title();
+	const faultActor = nemesisTitle(test);
 	harness.openLuaSource('title_screen.lua');
 	harness.replaceActiveCodeSource(source.replace(originalRule, "pattern = 'up[jp]'"));
 	await harness.performHotResume().admission;
 	await until(() => tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive
 		&& history.checkpointCount !== 0, 'fault repair follows existing supervisor return and init route');
-	check(title() === faultActor, 'fault repair keeps the retained actor');
+	check(nemesisTitle(test) === faultActor, 'fault repair keeps the retained actor');
 	check(ide.fault.lastLuaCallStack.length === 0 && ide.fault.faultSnapshot === null, 'repair clears obsolete fault inspection');
 	check(sourcePane(test).code.runtimeError.activeOverlay === null, 'repair removes the active error adornment');
 	for (const group of ide.editor.editorParts.groups) for (const input of group.model.tabs) {

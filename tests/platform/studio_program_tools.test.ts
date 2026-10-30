@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { createCodexModelFixture, CODEX_FIXTURE_DONE } from '../helpers/codex_model_fixture.mjs';
 import { createAssistantStudioFixture } from '../helpers/studio_assistant_fixture';
+import { TEST_STUDIO_CARTRIDGE_CONTEXT_ID } from '../helpers/studio_source_contexts';
 
 for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${backend}: reviewed source fix is saved, installed, executed and independently retested`, { timeout: 180000 }, async t => {
 	type Body = { input: { type: string; call_id: string; output: string | { type: string; image_url?: string; text?: string }[] }[] };
@@ -16,6 +17,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const target = (body: Body) => value(body, 'runtime').target;
 	const scope = (body: Body, id: string) => value(body, id).roots.flatMap(root => root.modules).flatMap(module => module.cases).find(item => item.name === 'installed_probe').scope;
 	const source = (body: Body, id: string) => value(body, id).find(item => item.domain === 0 && item.path === 'cart.lua');
+	const resource = (body: Body, id: string) => value(body, id).find(item => item.contextId === TEST_STUDIO_CARTRIDGE_CONTEXT_ID && item.path === 'cart.lua');
 	const model = await createCodexModelFixture(t, [
 		call('runtime', 'studio_runtime_status', {}),
 		call('tests-before', 'studio_list_tests', {}),
@@ -23,12 +25,12 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		body => call('failure-wait', 'studio_wait_test_run', { run: value(body, 'failing-run').run }),
 		body => call('failure', 'studio_read_test_result', { result: value(body, 'failure-wait').cases[0].result }),
 		call('sources-before', 'studio_list_sources', {}),
-		body => call('read-before', 'studio_read_source', { resource: source(body, 'sources-before').resource }),
+		body => call('read-before', 'studio_read_source', { resource: resource(body, 'sources-before').resource }),
 		body => call('fix', 'studio_propose_edits', { title: 'Repair installed probe', files: [{ receipt: value(body, 'read-before').receipt,
 			edits: [{ offset: value(body, 'read-before').source.indexOf('return 1 end'), deleteLength: 12, expectedText: 'return 1 end', text: 'return 2 end' }] }] }),
 		CODEX_FIXTURE_DONE,
 		call('sources-applied', 'studio_list_sources', {}),
-		body => call('read-applied', 'studio_read_source', { resource: source(body, 'sources-applied').resource }),
+		body => call('read-applied', 'studio_read_source', { resource: resource(body, 'sources-applied').resource }),
 		body => call('save', 'studio_save_source', { receipt: value(body, 'read-applied').receipt }),
 		body => call('saved-status', 'studio_read_source_status', { receipt: value(body, 'read-applied').receipt }),
 		body => call('old-installed', 'studio_list_debug_sources', { target: target(body) }),
@@ -62,9 +64,9 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	]);
 	const f = await createAssistantStudioFixture(t, `program-${backend}`, { provider: { name: 'Offline program lifecycle fixture', model: 'mock-model', baseUrl: `${model.url}/v1` } });
 	// Disposable authored fixture inputs, not edits to the checkout or a replacement runtime.
-	const initial = (await readFile('carts/nemesis_s/cart.lua', 'utf8')).replace('function new_game()', 'function codex_install_probe() return 1 end\n\nfunction new_game()');
-	await writeFile(join(f.root, 'carts/nemesis_s/cart.lua'), initial);
-	const testPath = 'tests/carts/nemesis_s/nemesis_s_cheat_codes_assert.lua';
+	const initial = (await readFile('carts/studio_test/cart.lua', 'utf8')).replace('function new_game()', 'function codex_install_probe() return 1 end\n\nfunction new_game()');
+	await writeFile(join(f.root, 'carts/studio_test/cart.lua'), initial);
+	const testPath = 'tests/carts/studio_test/studio_assert.lua';
 	await writeFile(join(f.root, testPath), `return { kind = 'integration', tests = {
 	installed_probe = function(t)
 		t:wait_until('cart probe', function() return type(codex_install_probe) == 'function' end, 120)
@@ -114,5 +116,5 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(value(final, 'rerun-wait').state, 'passed'); assert.equal(value(final, 'rerun-result').source, value(final, 'failure').source, 'the test was not weakened to pass');
 	assert.deepEqual(value(final, 'after-cancel').boot.result, { status: 'cancelled', reason: 'interrupted', installed: false, reset: false });
 	assert.notEqual(value(final, 'after-cancel').boot.operation, value(final, 'reboot').operation);
-	assert.equal(await readFile(join(f.root, 'carts/nemesis_s/cart.lua'), 'utf8'), value(final, 'installed-source').text);
+	assert.equal(await readFile(join(f.root, 'carts/studio_test/cart.lua'), 'utf8'), value(final, 'installed-source').text);
 });

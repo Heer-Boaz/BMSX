@@ -39,7 +39,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	const values = outputs(model.requests.at(-1));
 	assert.equal(values[0].target, result.target); assert.equal(values[2].cycles, result.position); assert.equal(values[2].videoTick, result.videoTick);
 	assert.deepEqual(values[2].coverage, { globals: 'installed-bindings', stack: 'current-cpu' });
-	assert.equal(values[4].entries.find(entry => entry.key.display === 'active_space_id').value.display, 'title');
+	assert.equal(values[4].entries.find(entry => entry.key.display === 'active_space_id').value.display, 'main');
 	assert.ok(values[6].entries.some(entry => entry.key.display === 'id'));
 	assert.ok(values[6].entries.some(entry => entry.key.display === '_components' && entry.value.kind === 'table'));
 	const imageOutput = model.requests.at(-1).input.find(item => item.call_id === 'studio_capture_game' && item.type === 'function_call_output').output;

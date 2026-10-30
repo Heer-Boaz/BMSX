@@ -15,7 +15,7 @@ export async function runAssistantLogin(kind: StudioRendererKind, canvas: HTMLCa
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, until, press, frame } = test;
-	await until(() => test.cycles() > test.runtime.timing.cpuHz * 13, 'login: boot actual cart');
+	await test.waitForTestFrame();
 	await press('ControlRight', 'ShiftRight'); await test.runPaletteCommand('Run: Pause');
 	ide.editor.setFontVariant('tiny');
 	await test.runPaletteCommand('View: Codex Assistant');

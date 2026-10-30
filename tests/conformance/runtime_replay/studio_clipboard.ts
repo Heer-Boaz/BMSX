@@ -7,15 +7,13 @@ import { inputFocus } from '../../../ide/input/focus';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { sourcePane, createStudioFixture } from './studio_fixture';
 import { createStudioRenderer } from './studio_renderer';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { selectMember } from './studio_scene_source';
 
 /** Setup and observations only: the test drives editing with actual browser gestures. */
 export async function startClipboardTest(canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
 	const renderer = await createStudioRenderer('software', canvas, capture);
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, undefined, true);
-	await test.until(() => test.cycles() > test.runtime.timing.cpuHz * 13, 'clipboard: boot');
-	await reachNemesisTitle(test);
+	await test.waitForTestFrame();
 	test.harness.openLuaSource('cart.lua'); await test.frame();
 	const source = sourcePane(test).code.model;
 	// Prepare a selection without granting browser user activation, to exercise denial first.

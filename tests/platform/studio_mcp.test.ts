@@ -44,7 +44,7 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	page.on('console', message => { if (message.type() === 'error') console.log('browser diagnostic', message.text(), message.location()); });
 	page.on('request', request => { if (request.url().includes('/__bmsx__/assistant/')) assistantRequests.push(request.url()); });
 	const registered = page.waitForResponse(response => response.url().endsWith('/__bmsx__/studio/connect'));
-	await page.goto(`${f.address}/studio.debug.html?rom=nemesis_s.debug.rom`);
+	await page.goto(`${f.address}/studio.debug.html?rom=studio_test.debug.rom`);
 	assert.equal((await registered).status(), 200);
 	const { sessions } = await call('studio_list_sessions');
 	assert.equal(sessions.length, 1);
@@ -79,7 +79,7 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	const evidence = '/tmp/bmsx-studio-mcp'; await mkdir(evidence, { recursive: true });
 	await writeFile(join(evidence, 'game.png'), Buffer.from(frame.data as string, 'base64'));
 	await page.screenshot({ path: join(evidence, 'studio.png') });
-	const sourceAdmission = await fetch(`${f.address}/__bmsx__/projects/source?root=carts%2Fnemesis_s`, { method: 'POST', headers: f.headers });
+	const sourceAdmission = await fetch(`${f.address}/__bmsx__/projects/source?root=carts%2Fstudio_test`, { method: 'POST', headers: f.headers });
 	assert.equal(sourceAdmission.status, 200);
 	const sourceContext = await sourceAdmission.json();
 	const sources = await call('studio_list_sources', { toolContext });
@@ -94,14 +94,14 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 	await page.mouse.click(860, 88, { delay: 100 });
 	await page.screenshot({ path: join(evidence, 'apply-click.png') });
 	assert.equal((await call('studio_read_review', { toolContext, review: proposal.review })).state, 'applied');
-	assert.equal(await readFile(join(f.root, 'carts/nemesis_s/cart.lua'), 'utf8'), source.source, 'Apply is not Save');
+	assert.equal(await readFile(join(f.root, 'carts/studio_test/cart.lua'), 'utf8'), source.source, 'Apply is not Save');
 	await page.screenshot({ path: join(evidence, 'applied.png') });
 	await page.mouse.click(90, 60, { delay: 100 });
 	await page.mouse.click(500, 280, { delay: 100 });
-	const saved = page.waitForResponse(response => response.request().method() === 'PUT' && response.request().postDataJSON().path === 'carts/nemesis_s/cart.lua');
+	const saved = page.waitForResponse(response => response.request().method() === 'PUT' && response.request().postDataJSON().path === 'carts/studio_test/cart.lua');
 	await page.keyboard.press('Control+s', { delay: 100 });
 	assert.equal((await saved).ok(), true);
-	assert.equal(await readFile(join(f.root, 'carts/nemesis_s/cart.lua'), 'utf8'), `-- MCP review\n${source.source}`);
+	assert.equal(await readFile(join(f.root, 'carts/studio_test/cart.lua'), 'utf8'), `-- MCP review\n${source.source}`);
 	await page.keyboard.press('Control+z', { delay: 100 });
 	const fresh = await call('studio_open_context', { session: sessions[0].id });
 	const latestCatalog = await call('studio_list_sources', fresh);
@@ -163,7 +163,7 @@ test('CLI MCP uses a real Studio window without its chat: runtime, Lua, frames, 
 
 	const other = await browser.newPage();
 	const otherRegistered = other.waitForResponse(response => response.url().endsWith('/__bmsx__/studio/connect'));
-	await other.goto(`${f.address}/studio.debug.html?rom=nemesis_s.debug.rom`);
+	await other.goto(`${f.address}/studio.debug.html?rom=studio_test.debug.rom`);
 	await otherRegistered;
 	const windows = (await call('studio_list_sessions')).sessions;
 	assert.equal(windows.length, 2);

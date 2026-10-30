@@ -35,7 +35,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 			`definition_id = ${value(body, 'locals').entries.find(entry => entry.key.display === 'definition_id').value.display}`,
 			`self.active_space_id = ${value(body, 'receiver').entries.find(entry => entry.key.display === 'active_space_id').value.display}`,
 			`empty_object_bucket: ${value(body, 'upvalues').entries.find(entry => entry.key.display === 'empty_object_bucket').value.kind} upvalue`,
-			`cartlib_render_commands: ${value(body, 'statics').entries.find(entry => entry.key.display === 'cartlib_render_commands').value.display}; game_text_record: type, not a value`,
+			`cartlib_render_commands: ${value(body, 'statics').entries.find(entry => entry.key.display === 'cartlib_render_commands').value.display}; studio_test_record: type, not a value`,
 			`Terminal: ${value(body, 'continue').status}; old frame: ${text(body, 'expired')}`,
 		].join('\n') }] }],
 	]);
@@ -66,7 +66,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(locals.find(entry => entry.key.display === 'definition_id').isConst, false);
 	assert.equal(locals.find(entry => entry.key.display === 'self').isConst, false);
 	assert.ok(!locals.some(entry => entry.key.display === 'space_order'), 'uninitialized binding has no scope yet');
-	assert.equal(value(final, 'receiver').entries.find(entry => entry.key.display === 'active_space_id').value.display, 'title');
+	assert.equal(value(final, 'receiver').entries.find(entry => entry.key.display === 'active_space_id').value.display, 'main');
 	assert.equal(value(final, 'upvalues').entries.find(entry => entry.key.display === 'empty_object_bucket').value.kind, 'table');
 	assert.equal(value(final, 'upvalues').entries.find(entry => entry.key.display === 'empty_object_bucket').isConst, true);
 	const unusedConstant = value(final, 'upvalues').entries.find(entry => entry.key.display === 'clear_color');
@@ -79,7 +79,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(storage.isConst, true); assert.equal(storage.value.kind, 'address');
 	assert.equal(storage.value.address, result.staticAddress, 'conversation and ordinary inspection share the exact linked address');
 	assert.equal(Number(storage.value.display), result.staticAddress, 'address display never rounds word bits');
-	assert.deepEqual(statics.find(entry => entry.key.display === 'game_text_record').value, { kind: 'type', display: '<struct game_text_record>' });
+	assert.deepEqual(statics.find(entry => entry.key.display === 'studio_test_record').value, { kind: 'type', display: '<struct studio_test_record>' });
 	assert.deepEqual(value(final, 'ram-frame').scopes, [
 		{ kind: 'locals', status: 'function-unmapped' }, { kind: 'upvalues', status: 'function-unmapped' },
 		{ kind: 'statics', status: 'function-unmapped' },

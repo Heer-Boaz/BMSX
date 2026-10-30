@@ -13,8 +13,8 @@ import { submitAssistantText } from './studio_assistant_navigation';
 export async function runAssistantActorExecution(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
-	const { ide, runtime, guest, press, until, frame, cycles, harness, runPaletteCommand } = test, service = ide.actorExecution;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'Actor execution: boot authoring');
+	const { ide, guest, press, until, frame, cycles, harness, runPaletteCommand } = test, service = ide.actorExecution;
+	await test.waitForTestFrame();
 	await press('ControlRight', 'ShiftRight'); harness.openLuaSource('cart.lua');
 	const source = harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length, text: ACTOR_EXECUTION_SOURCE }]);

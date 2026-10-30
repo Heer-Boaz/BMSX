@@ -1,15 +1,13 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 
 /** Real DOM keyboard/clipboard input is driven from Playwright, not injected into the text model. */
 export async function startAssistantImageTest(kind: StudioRendererKind, canvas: HTMLCanvasElement, capture: (name: string) => Promise<void>) {
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit), true);
-	await test.until(() => test.cycles() > test.runtime.timing.cpuHz * 13, 'images: boot cart');
-	await reachNemesisTitle(test);
+	await test.waitForTestFrame();
 	test.harness.openLuaSource('cart.lua'); await test.frame();
 	test.ide.editor.commands.execute('assistant'); await test.frame();
 	const view = test.ide.editor.editorParts.activeGroup.model.activeTab; if (view.kind !== 'assistant') throw new Error('Assistant expected');

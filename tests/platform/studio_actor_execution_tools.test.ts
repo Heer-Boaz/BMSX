@@ -40,6 +40,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		(body: Body) => call('scrub', 'studio_actor_action', { node: node(body, 'nested', 'timeline'), method: 'scrub_time', arguments: '2' }),
 		...refresh('scrubbed'),
 		(body: Body) => call('timeline', 'studio_read_actor_node', { node: node(body, 'scrubbed', 'timeline') }),
+		(body: Body) => call('timeline-values', 'studio_read_runtime_values', { reference: output(body, 'timeline').object.reference, start: 0, count: 100 }),
 		CODEX_FIXTURE_DONE,
 		...refresh('long'),
 		(body: Body) => call('long', 'studio_call_actor_method', { node: node(body, 'long', 'actor'), method: 'long_probe', arguments: '10000000' }),
@@ -73,7 +74,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(tree(body, 'nested').nodes.find(node => node.label === 'nest')!.activity.value, true);
 	assert.equal(tree(body, 'nested').nodes.find(node => node.label === 'wait')!.activity.value, true);
 	assert.equal(output(body, 'scrub').status, 'completed');
-	assert.ok(output(body, 'timeline').properties.some(prop => prop.label === 'position_ms' && prop.value === '2'));
+	assert.equal(output(body, 'timeline-values').entries.find(entry => entry.key.display === 'position_ms').value.display, '2');
 	assert.equal(output(body, 'retained').active.status, 'paused'); assert.equal(output(body, 'retained').active.revoked, false);
 	assert.equal(output(body, 'retained').canExecute, false); assert.equal(output(body, 'continued').status, 'completed');
 	assert.deepEqual(output(body, 'continued').values, ['4']);

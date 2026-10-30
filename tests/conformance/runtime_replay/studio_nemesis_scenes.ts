@@ -3,13 +3,13 @@ import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path
 import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
+import { nemesisTitle, reachNemesisTitle } from './studio_nemesis_navigation';
 
 export async function runStudioNemesisScenes(test: StudioFixture) {
-	const { runtime, ide, tasks, harness, guest, press, click, until, runMenuCommand, cycles, title } = test;
+	const { runtime, ide, tasks, harness, guest, press, click, until, runMenuCommand, cycles } = test;
 	const world = () => guest.global(buildModuleExportSlotName('cartlib/world/world', []));
 	const space = () => guest.formatValue(guest.readStringMember(world(), 'active_space_id'));
-	const presentation = () => guest.readStringMember(title(), 'presentation');
+	const presentation = () => guest.readStringMember(nemesisTitle(test), 'presentation');
 	const member = (name: string) => guest.readStringMember(guest.readStringMember(presentation(), 'members'), name);
 	const registered = (id: string) => {
 		const registry = guest.global(buildModuleExportSlotName('cartlib/registry', []));
@@ -17,7 +17,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	};
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'boot the shipped Nemesis cart');
 	await reachNemesisTitle(test);
-	const oldTitle = title();
+	const oldTitle = nemesisTitle(test);
 	const originalSelector = member('selector');
 	check(guest.readStringMember(originalSelector, 'x') === 80, 'unmodified selector starts at its authored position');
 	await test.capture?.('title-before');
@@ -61,7 +61,7 @@ export async function runStudioNemesisScenes(test: StudioFixture) {
 	await until(() => tasks.ready && harness.isCartActive() && world() !== null
 		&& (guest.readStringMember(world(), '_objects') as Table).arrayLength >= 4
 		&& !runtime.completionCallPending(), 'Reboot installs the saved scene sources and publishes the root composition');
-	check(title() !== oldTitle, 'cold reboot created a fresh controller');
+	check(nemesisTitle(test) !== oldTitle, 'cold reboot created a fresh controller');
 	const intro = guest.readStringMember(registered('nemesis_s.intro'), 'presentation');
 	check(guest.readStringMember(guest.readStringMember(guest.readStringMember(intro, 'members'), 'logo'), 'x') === 44,
 		'rebooted intro consumes the separately authored logo placement');

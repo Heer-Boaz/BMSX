@@ -33,9 +33,9 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.equal(result.presentation, 'pass'); assert.equal(result.paused, true);
 	assert.equal(model.requests.length, 4, 'render/resize/timers and reference completion do not send extra model requests');
 	assert.deepEqual(references!, result.references, 'the model receives the exact selected source, not just the filename');
-	const saved = await readFile('carts/nemesis_s/cart.lua', 'utf8');
+	const saved = await readFile('carts/studio_test/cart.lua', 'utf8');
 	assert.equal(outputs(model.requests[2])[1].source, '-- REFERENCED WORKING COPY\n' + saved);
-	assert.equal(await readFile(join(f.root, 'carts/nemesis_s/cart.lua'), 'utf8'), saved, 'reference reads neither require nor perform Save');
+	assert.equal(await readFile(join(f.root, 'carts/studio_test/cart.lua'), 'utf8'), saved, 'reference reads neither require nor perform Save');
 	assert.equal(model.requests[0].model, result.selectedModel); assert.equal(model.requests[0].reasoning.effort, result.selectedEffort);
 	assert.equal(model.requests[0].service_tier, 'priority', 'the model turn uses the chosen speed, not just its UI label');
 	assert.equal(f.observations.commands.filter(command => command === 'configure').length, 3);

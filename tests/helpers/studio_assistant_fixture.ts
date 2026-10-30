@@ -27,9 +27,9 @@ export async function createAssistantStudioFixture(t: TestContext, evidenceName:
 	await build({ entryPoints: ['tests/conformance/runtime_replay/studio_assistant.ts'], bundle: true, platform: 'browser', format: 'esm', target: 'es2020',
 		outfile: join(root, 'test.js'), tsconfig: 'tsconfig.base.json', loader: { '.glsl': 'text', '.wgsl': 'text', '.png': 'dataurl' } });
 	await writeFile(join(root, 'index.html'), '<!doctype html><link rel="icon" href="data:,"><style>body{margin:0;background:#000}#player-surface{position:fixed;inset:0}canvas{position:absolute;image-rendering:pixelated}</style><div id="player-surface"><canvas width="256" height="212"></canvas></div>');
-	await copyFile('dist/system/bmsx-bios.debug.rom', join(root, 'bios.rom')); await copyFile('dist/nemesis_s.debug.rom', join(root, 'cart.rom'));
+	await copyFile('dist/system/bmsx-bios.debug.rom', join(root, 'bios.rom')); await copyFile('dist/studio_test.debug.rom', join(root, 'cart.rom'));
 	await copyFile('dist/graph-layout.worker.js', join(root, 'graph-layout.worker.js'));
-	for (const path of ['carts/nemesis_s', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/nemesis_s']) await cp(path, join(root, path), { recursive: true,
+	for (const path of ['carts/studio_test', 'cartlib', 'machine/bios', 'testlib', 'tests/carts/studio_test']) await cp(path, join(root, path), { recursive: true,
 		filter: async path => (await stat(path)).isDirectory() || /\.(lua|yaml|yml)$/.test(path) });
 	const profileDirectory = join(root, 'profile');
 	// No real browser is launched from a test; the request is recorded and asserted instead.

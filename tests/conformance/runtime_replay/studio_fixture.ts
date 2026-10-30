@@ -41,12 +41,10 @@ import { HeadlessClipboard } from '../../../hosts/node/headless/clipboard';
 import { reportClipboardFailure } from '../../../ide/input/clipboard';
 import { createHeadlessIdeHarness } from '../../../ide/testing/headless_harness';
 import { RecordingLogOutput } from '../../../ide/testing/recording_log_output';
-import type { Table } from '../../../machine/ts/machine/cpu/table';
 import { IO_INP_KEYS, IO_INP_STATUS, IO_SYS_SUPERVISOR_FAULT_SEQUENCE } from '../../../machine/ts/spec/bmsx/io';
 import { IO_WORD_SIZE } from '../../../machine/ts/spec/bmsx/memory_map';
 import { hidKeyUsageForCode } from '../../../hosts/common/input/hid_keys';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
-import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
 import type { GPUBackend } from '../../../machine/ts/render/backend/backend';
 import type { EditorCommandId } from '../../../ide/common/commands';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
@@ -306,20 +304,18 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 	};
 	const settle = () => until(() => tasks.ready && !rewind.seeking, 'seek/queue must settle');
 	const guest = ide.guest;
-	// Diagnostic reads use the same raw guest representation as the inspector.
-	// No cart probe, Lua call, alternate world or replacement ROM is installed.
-	const world = () => guest.global(buildModuleExportSlotName('cartlib/world/world', []));
-	const title = () => {
-		const objects = guest.readStringMember(world(), '_objects') as Table;
-		for (let index = 1; index <= objects.arrayLength; index += 1) {
-			const object = objects.get(index);
-			if (guest.formatValue(guest.readStringMember(object, 'id')) === 'nemesis_s.title_screen') return object;
-		}
-		throw new Error('real title actor missing');
+	const waitForTestFrame = async () => {
+		await until(() => guest.global('studio_test_ready') === true
+			&& (guest.global('studio_test_rendered_frames') as number) > 0 && tasks.ready,
+			'dedicated Studio test cartridge completed its first render');
+		const renderedAt = cycles();
+		await until(() => screen.gameFrame.presentationSequence !== undefined
+			&& screen.gameFrame.cycles >= renderedAt && tasks.ready,
+			'the completed test-cartridge frame is published by the presenter');
 	};
 	audio.device.select(audio);
 	return { runtime, presenter, ide, execution, rewind, tasks, history, harness, guest, clock, input, remote, clipboard, observations,
-		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, title, capture: captureCheckpoint };
+		frame, until, setKey, setPointerButton, press, releaseGuestKey, movePointer, visiblePreviewPoint, click, clickTab, runMenuCommand, runPaletteCommand, clickContextCommand, settle, cycles, waitForTestFrame, capture: captureCheckpoint };
 }
 
 export type StudioFixture = Awaited<ReturnType<typeof createStudioFixture>>;

@@ -1,10 +1,10 @@
 import { sourcePane } from './studio_fixture';
 import { check, type StudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
+import { nemesisTitle, reachNemesisTitle } from './studio_nemesis_navigation';
 
 /** Actual commands, firmware and debugger; automated evidence, not UI-only authoring. */
 export async function runStudioBootOperations(test: StudioFixture) {
-	const { runtime, ide, execution, tasks, harness, frame, until, press, runMenuCommand, cycles, title } = test;
+	const { runtime, ide, execution, tasks, harness, frame, until, press, runMenuCommand, cycles } = test;
 	check(execution.launchPending, 'boot: rejected startup sources retain the launch hold');
 	const startup = ide.boots.latestOperation!;
 	const initial = await startup.completion;
@@ -41,7 +41,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	harness.openLuaSource('title_screen.lua');
 	await frame();
 	await runMenuCommand('pause');
-	const actor = title();
+	const actor = nemesisTitle(test);
 	const initLine = source.split('\tfsm_library.register(')[0].split('\n').length;
 	ide.debugger.breakpoints.toggle(model.resource, initLine);
 	const initializer = harness.performHotResume();
@@ -52,7 +52,7 @@ export async function runStudioBootOperations(test: StudioFixture) {
 	const rejected = harness.reboot();
 	check((await rejected.completion).status === 'rejected', 'boot: compile rejection is an operation result');
 	await tasks.join();
-	check(ide.debugger.source.stop !== undefined && initializer.result === null && title() === actor && cycles() === stopped
+	check(ide.debugger.source.stop !== undefined && initializer.result === null && nemesisTitle(test) === actor && cycles() === stopped
 		&& ide.sources.currentBlua32Media === media && tasks.ready && ide.editor.isActive,
 		'boot: rejected Reboot preserves the actual stop, pending init, actor and installed media');
 	await frame();

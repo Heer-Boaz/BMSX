@@ -11,7 +11,7 @@ export async function runAssistantBehavior(kind: StudioRendererKind, canvas: HTM
 	const renderer = await createStudioRenderer(kind, canvas, capture), http = new StudioHttpSession();
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, until, press, frame, harness, cycles, runPaletteCommand } = test;
-	await until(() => cycles() > test.runtime.timing.cpuHz * 13, 'behavior tools: boot authoring');
+	await test.waitForTestFrame();
 	await press('ControlRight', 'ShiftRight');
 	harness.openLuaSource('cart.lua');
 	const document = harness.getActiveEditorDocument().model;

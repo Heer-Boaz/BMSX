@@ -3,7 +3,7 @@ import { getTextFileRuntimeSourceStatus } from '../../../ide/workbench/services/
 import { workspaceRecords } from '../../../ide/workspace/records';
 import { resolveWorkspacePath } from '../../../ide/workspace/path';
 import { check, type StudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
+import { nemesisTitle, reachNemesisTitle } from './studio_nemesis_navigation';
 
 declare global {
 	/** Playwright rejects only HTTP PUTs; successful reads/writes use the real file API. */
@@ -12,7 +12,7 @@ declare global {
 
 /** Automated source/command/UI evidence, not a claim of UI-only authoring. */
 export async function runStudioSourceSaves(test: StudioFixture) {
-	const { runtime, ide, execution, tasks, harness, observations, frame, until, press, runMenuCommand, cycles, title } = test;
+	const { runtime, ide, execution, tasks, harness, observations, frame, until, press, runMenuCommand, cycles } = test;
 	await until(() => cycles() > runtime.timing.cpuHz * 13, 'source saves: boot real cartridge');
 	await reachNemesisTitle(test);
 	harness.openLuaSource('title_screen.lua');
@@ -22,7 +22,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	const root = ide.sources.catalog.getContext(model.resource.contextId).projectRootPath;
 	const path = resolveWorkspacePath(model.resource.path, root);
 	const source = model.buffer.getText();
-	const actor = title(), position = cycles(), media = ide.sources.currentBlua32Media;
+	const actor = nemesisTitle(test), position = cycles(), media = ide.sources.currentBlua32Media;
 	const files = workspaceRecords.provider;
 	harness.replaceActiveCodeSource(source + '\n-- project save acknowledged\n');
 	await press('ControlLeft', 'KeyS');
@@ -46,7 +46,7 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	await press('ControlLeft', 'KeyS');
 	await until(() => !model.dirty, 'source saves: later typing is explicitly saved');
 	check((await files.read(path))!.contents === model.buffer.getText(), 'source saves: next Save acknowledges the new project bytes');
-	check(ide.sources.currentBlua32Media === media && title() === actor && cycles() === position,
+	check(ide.sources.currentBlua32Media === media && nemesisTitle(test) === actor && cycles() === position,
 		'source saves: source persistence does not install or run code');
 	check(getTextFileRuntimeSourceStatus(ide.sources, model) === 'pending', 'source saves: saved source remains separately unapplied');
 	await frame();
@@ -129,6 +129,6 @@ export async function runStudioSourceSaves(test: StudioFixture) {
 	}
 	// AEM deliberately calls its real reload_from_rom function; that is guest
 	// work, unlike Lua/YAML persistence, but does not reboot or resume gameplay.
-	check(title() === actor && execution.userPaused, 'source saves: all formats retain the paused authoring machine');
+	check(nemesisTitle(test) === actor && execution.userPaused, 'source saves: all formats retain the paused authoring machine');
 	return { hostFrames: observations.hostFrames, formats: ['lua', 'yaml', 'aem'], sourceAcknowledgement: 'pass' };
 }

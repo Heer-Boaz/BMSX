@@ -25,14 +25,14 @@ test('Studio creates an exclusive authored cartridge project without copying edi
 
 test('source-folder opening is protected, persistent and independent of named-project admission', async t => {
 	const server = await createStudioServer(t);
-	const url = `${server.address}/__bmsx__/projects/source?root=carts%2Fnemesis_s`;
+	const url = `${server.address}/__bmsx__/projects/source?root=carts%2Fstudio_test`;
 	assert.equal((await fetch(url, { method: 'POST' })).status, 401);
 	const admitted = await fetch(url, { method: 'POST', headers: server.headers });
 	assert.equal(admitted.status, 200);
 	const context = await admitted.json();
-	assert.equal(context.projectRoot, 'carts/nemesis_s');
+	assert.equal(context.projectRoot, 'carts/studio_test');
 	assert.deepEqual(await (await fetch(url, { method: 'POST', headers: server.headers })).json(), context);
-	assert.deepEqual(await (await fetch(`${server.address}/__bmsx__/projects/source?root=.%2Fcarts%2Fnemesis_s%2F.`,
+	assert.deepEqual(await (await fetch(`${server.address}/__bmsx__/projects/source?root=.%2Fcarts%2Fstudio_test%2F.`,
 		{ method: 'POST', headers: server.headers })).json(), context);
 	assert.equal((await fetch(`${server.address}/__bmsx__/projects/source?root=..%2Foutside`,
 		{ method: 'POST', headers: server.headers })).status, 403);

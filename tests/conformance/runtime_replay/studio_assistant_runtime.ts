@@ -1,7 +1,6 @@
 import { AssistantHttpConnection } from '../../../ide/browser/assistant_connection';
 import { StudioHttpSession } from '../../../ide/browser/http_session';
 import { check, createStudioFixture } from './studio_fixture';
-import { reachNemesisTitle } from './studio_nemesis_navigation';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
 import { verifyColorReadback } from './color_readback';
 
@@ -11,8 +10,7 @@ export async function runAssistantRuntime(kind: StudioRendererKind, canvas: HTML
 	await verifyColorReadback(renderer.backend);
 	const test = await createStudioFixture(canvas, renderer.backend, renderer.capture, (signal, emit) => AssistantHttpConnection.open(http, signal, emit));
 	const { ide, runtime, frame, until, press, cycles } = test;
-	await until(() => cycles() > runtime.timing.cpuHz * 13, 'runtime tools: boot actual cart');
-	await reachNemesisTitle(test);
+	await test.waitForTestFrame();
 	test.harness.openLuaSource('cart.lua'); await frame();
 	const model = test.harness.getActiveEditorDocument().model;
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- uninstalled source, not runtime state\n' }]);
