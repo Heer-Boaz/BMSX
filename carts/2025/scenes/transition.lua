@@ -8,7 +8,6 @@ function scene.register()
 		objects = {
 			{
 				member_id = 'overlay', definition_id = presentation.overlay,
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { overlay = {
 					visible = false,
 					color = 0,
@@ -17,13 +16,11 @@ function scene.register()
 					width = 320,
 					height = 240,
 					order = 851,
-					attachment_affine = { 1, 0, 0, 1, 0, 0 },
 				} },
 			},
 			{
 				member_id = 'upper', definition_id = presentation.rectangle,
 				options = { palette_key = 'panel_primary', enter_x = -320 * 1.2, exit_x = 320, delay = 0 },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { rectangle = {
 					visible = false,
 					color = 0,
@@ -36,7 +33,6 @@ function scene.register()
 			{
 				member_id = 'middle', definition_id = presentation.rectangle,
 				options = { palette_key = 'panel_secondary', enter_x = 320, exit_x = -320 * 1.3, delay = transition_panel_gap_frames },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { rectangle = {
 					visible = false,
 					color = 0,
@@ -49,7 +45,6 @@ function scene.register()
 			{
 				member_id = 'lower', definition_id = presentation.rectangle,
 				options = { palette_key = 'panel_primary', enter_x = -320 * 0.55, exit_x = 320 * 1.1, delay = overgang_fade_out_frames - 1 - transition_panel_in_frames },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { rectangle = {
 					visible = false,
 					color = 0,
@@ -62,7 +57,6 @@ function scene.register()
 			{
 				member_id = 'accent', definition_id = presentation.rectangle,
 				options = { enter_x = 320, exit_x = -320 * 0.3 },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { rectangle = {
 					visible = false,
 					color = 0,
@@ -75,7 +69,6 @@ function scene.register()
 			{
 				member_id = 'caption', definition_id = presentation.text,
 				options = { id = 'p3.text.transition' },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { text = {
 					blank_lines = 1,
 					layout_rect = { left = 0, right = 320, top = 0, bottom = 64 },

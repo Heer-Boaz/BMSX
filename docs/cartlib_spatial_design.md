@@ -494,7 +494,6 @@ scene_library.register('hangar', {
                 parent_id = 'ship',
                 local_transform = { 1, 0, 0, 1, 12, -4 },
             },
-            options = {},
         },
     },
 })
@@ -505,6 +504,10 @@ member. It is not a Registry ID, array index or display label. Each instance
 resolves it to that instance's concrete transform. Root members omit it.
 A prefab's declared spatial capability supplies the dimensional family and
 default local affine; a member can replace the affine as one complete value.
+Members declare overrides, not copies of defaults: omit `spatial` when the
+prefab placement is unchanged, and omit `initial` fields already supplied by
+the prefab or component. An explicit identity or zero remains meaningful when
+it overrides a different default.
 Once constructed, only the instance's retained local affine is authoritative.
 Nonspatial definitions have no `spatial` record. Gameplay `options` no longer
 carry positional fields or `pos`; procedural spawn uses the same separate

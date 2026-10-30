@@ -39,6 +39,43 @@ return { image=function(id) return images[id] end }`,
 ];
 
 for (const optLevel of [0, 3] as const) {
+	test(`Scene members inherit prefab placement and visual defaults unless explicitly overridden (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+local sprite<const> = require('cartlib/component/sprite_component')
+prefab.define({def_id='visual.defaults',class={},
+ spatial={family='2d',authority='affine',local_transform={1,0,0,1,9,12}},
+ initial={sprite={imgid='tile',order=7,attachment_affine={1,0,0,1,2,3}}},components={sprite.new}})
+prefab.define({def_id='visual.neutral',class={},
+ spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
+ initial={sprite={imgid='tile'}},components={sprite.new}})
+scenes.register('visual.defaults',{objects={
+ {member_id='inherited',definition_id='visual.defaults'},
+ {member_id='neutral',definition_id='visual.neutral'},
+ {member_id='explicit',definition_id='visual.defaults',spatial={local_transform={1,0,0,1,0,0}},
+  initial={sprite={order=0,attachment_affine={1,0,0,1,0,0}}}},
+}})
+local instance<const> = scenes.instantiate('visual.defaults')
+local inherited<const>, neutral<const>, explicit<const> = instance.members.inherited, instance.members.neutral, instance.members.explicit
+local iv<const>, nv<const>, ev<const> = inherited:get_component(sprite),neutral:get_component(sprite),explicit:get_component(sprite)
+assert(inherited.spatial.ox==9 and inherited.spatial.oy==12 and iv.order==7
+ and iv.attachment_ox==2 and iv.attachment_oy==3 and iv.imgid=='tile',
+ 'omitting Scene overrides lost actual prefab placement or visual inputs')
+assert(neutral.spatial.ox==0 and neutral.spatial.oy==0 and nv.order==0
+ and nv.attachment_xx==1 and nv.attachment_yy==1 and nv.attachment_ox==0 and nv.attachment_oy==0,
+ 'neutral Scene member required duplicated identity or zero-order declarations')
+assert(explicit.spatial.ox==0 and explicit.spatial.oy==0 and ev.order==0
+ and ev.attachment_ox==0 and ev.attachment_oy==0 and ev.imgid=='tile',
+ 'explicit zero and identity overrides were confused with omitted defaults')
+inherited.spatial:set_local_origin(30,40)
+local second<const> = scenes.instantiate('visual.defaults')
+assert(second.members.inherited.spatial.ox==9 and second.members.inherited.spatial.oy==12,
+ 'instance writes mutated the shared prefab placement')
+return true
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+	});
+
 	test(`Sprite source changes preserve the concrete composite draw producer (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
 local sprite<const> = require('cartlib/component/sprite_component')

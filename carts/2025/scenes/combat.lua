@@ -9,7 +9,6 @@ function scene.register()
 			{
 				member_id = 'monster', definition_id = presentation.sprite,
 				options = { id = 'p3.combat.monster' },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { base_sprite = {
 					imgid = 'monster_snoozer',
 					visible = false,
@@ -20,7 +19,6 @@ function scene.register()
 			{
 				member_id = 'maya_a', definition_id = presentation.sprite,
 				options = { id = 'p3.combat.maya_a' },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { base_sprite = {
 					imgid = 'maya_a',
 					visible = false,
@@ -31,7 +29,6 @@ function scene.register()
 			{
 				member_id = 'maya_b', definition_id = presentation.sprite,
 				options = { id = 'p3.combat.maya_b' },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { base_sprite = {
 					imgid = 'maya_b',
 					visible = false,
@@ -42,18 +39,15 @@ function scene.register()
 			{
 				member_id = 'all_out', definition_id = presentation.surface,
 				options = { id = 'p3.combat.all_out' },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { surface = {
 					imgid = 'all_out',
 					visible = false,
 					order = 800,
-					attachment_affine = { 1, 0, 0, 1, 0, 0 },
 				} },
 			},
 			{
 				member_id = 'portrait', definition_id = presentation.sprite,
 				options = { id = 'p3.combat.all_out_portrait' },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { base_sprite = {
 					imgid = 'maya_v_s',
 					visible = false,
@@ -63,20 +57,17 @@ function scene.register()
 			},
 			{
 				member_id = 'cover', definition_id = presentation.rectangle,
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { rectangle = {
 					visible = false,
 					color = 0,
 					width = 320,
 					height = 240,
 					order = 850,
-					attachment_affine = { 1, 0, 0, 1, 0, 0 },
 				} },
 			},
 			{
 				member_id = 'results', definition_id = presentation.text,
 				options = { id = 'p3.text.results', results_offset_x = -16 },
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 0 } },
 				initial = { text = {
 					blank_lines = 1,
 					layout_rect = { left = 0, right = 320 - (320 / 3) - 32, top = 0, bottom = 128 },
