@@ -1,5 +1,8 @@
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local visual_2d<const> = require('cartlib/component/visual_2d_component')
+local gp0<const> = require('cartlib/gx/gp0')
+local velocity<const> = require('cartlib/velocity')
+local collision_storage<const> = require('collision_storage')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -19,28 +22,45 @@ local hit_area<const> = {
 	bottom = 8,
 }
 local new_collider<const> = collider_2d_component.factory({
+	geometry_pool = collision_storage.area,
 	layer = collision_pickup_layer,
 	mask = collision_pickup_mask,
 	local_area = hit_area,
 })
 
-local draw_option<const> = function(component, draw)
-	local owner<const> = component.owner
-	owner.animation_frames[owner.animation_owner.option_anim_index]:blit(
-		draw,
-		owner.x,
-		owner.y
-	)
+local option_visual<const> = {}
+option_visual.__index = option_visual
+setmetatable(option_visual, { __index = visual_2d })
+
+function option_visual:draw_option(draw)
+	self:resolve_pose()
+	local source<const> = self.frames[self.animation_owner.option_anim_index]
+	if self._translation_only then
+		source:blit(draw, self.wox, self.woy)
+	else
+		source:draw_affine(draw, self.wox, self.woy,
+			self.wxx * source.width, self.wxy * source.width,
+			self.wyx * source.height, self.wyy * source.height,
+			0, 0xffffffff, gp0.draw_mode_blend_half)
+	end
 end
-local new_visual<const> = custom_visual_component.factory({ draw = draw_option })
+
+function option_visual.new(context)
+	local self<const>, input<const> = visual_2d.new(context, 'option_visual')
+	setmetatable(self, option_visual)
+	self.frames = input.frames
+	self.animation_owner = input.animation_owner
+	self:set_draw_function(option_visual.draw_option)
+	return self
+end
 
 function option_pickup:ctor()
 	self.motion = self:get_component(fixed_point_velocity_component)
-	self.motion:set_velocity_pixels_per_second(player_option_pickup_speed_x_px_per_second, 0)
 end
 
 function option_pickup:update_active()
-	if self.x < -player_width then
+	local pose<const> = self.spatial
+	if pose.ox < -player_width then
 		self:mark_for_disposal()
 	end
 end
@@ -76,14 +96,17 @@ function option_pickup.register()
 		def_id = ids_option_pickup_def,
 		class = option_pickup,
 		base = world_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { option_visual = { order = 70 }, fixed_velocity = {
+			velocity_x = velocity.pixels_per_second_to_velocity_q8(player_option_pickup_speed_x_px_per_second), velocity_y = 0,
+		} },
 		components = {
-			new_visual,
+			option_visual.new,
 			new_collider,
 			fixed_point_velocity_component.new,
 			fsm_component.factory({ ids_option_pickup_fsm }),
 		},
 		defaults = {
-			z = 70,
 		},
 	})
 end

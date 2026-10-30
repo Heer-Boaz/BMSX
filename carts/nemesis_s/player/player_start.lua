@@ -5,7 +5,8 @@ local prefab<const> = require('cartlib/world/prefab')
 local player_start<const> = { definition_id = 'nemesis_s.player_start' }
 
 function player_start.register()
-	prefab.define({ def_id = player_start.definition_id, class = player_start })
+	prefab.define({ def_id = player_start.definition_id, class = player_start,
+		spatial = { family = '2d', authority = 'affine' } })
 end
 
 return player_start

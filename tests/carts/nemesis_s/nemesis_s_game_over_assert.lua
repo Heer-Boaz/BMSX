@@ -1,6 +1,5 @@
 local fixture<const> = require('tests/carts/nemesis_s/fixture')
 local test<const> = {}
-local clock<const> = require('cartlib/clock')
 
 local registry<const> = require('cartlib/registry')
 
@@ -16,8 +15,6 @@ local stage_music_source<const> = rom_dir.audio('music_stage').addr
 
 local curtain_timeline_id<const> = 'nemesis_s.director.game_over_curtain'
 
-local blackout_timeline_id<const> = 'nemesis_s.director.game_over_blackout'
-
 local read_music_source<const> = function()
 	*apu_slot = 1
 	return *selected_apu_source
@@ -27,7 +24,7 @@ return {
 	kind = 'integration',
 	tests = {
 		game_over = function(t)
-			local director<const>, stage<const>, player<const> = fixture.start_game(t)
+			local director<const> = fixture.start_game(t)
 			test.game_over_curtain_state = director.state_machines:bind_state_path('/game_over/curtain')
 			test.game_over_blackout_state = director.state_machines:bind_state_path('/game_over/blackout')
 			test.game_start_state = director.state_machines:bind_state_path('/game_start')
@@ -68,13 +65,15 @@ return {
 				'exhausted player retained the XNA power-up row')
 				assert(director.stage == previous_stage and registry:get(ids_stage_instance) == previous_stage,
 				'game-over curtain unloaded gameplay before it closed')
-				assert(not director.game_over_curtain.visible and director.game_over_curtain.sx == 0,
+				assert(not director.game_over_curtain.visible and director.game_over_curtain.visual.width == 0,
 				'game-over curtain did not start from an empty retained span')
 				director.timelines:advance_to(curtain_timeline_id, game_over_curtain_columns)
 				assert(director.game_over_curtain.visible
-				and director.game_over_curtain.sx == presentation_width,
+				and director.game_over_curtain.visual.width == presentation_width,
 				'game-over curtain did not cover all XNA stage columns')
-				director.timelines:tick_frame(clock.frame_delta_milliseconds())
+				t:wait_until('curtain completion', function()
+					return director.state_machines:matches_state(test.game_over_blackout_state)
+				end, 12)
 				assert(director.state_machines:matches_state(test.game_over_blackout_state),
 				'completed curtain did not enter the XNA game-over blackout')
 				assert(not world.gameplay_clock_running,
@@ -83,7 +82,9 @@ return {
 				'game-over blackout continued presenting the covered gameplay scene')
 				assert(registry:get(ids_stage_instance) == previous_stage,
 				'game-over blackout unloaded gameplay before its authored wait')
-				director.timelines:tick_frame(game_over_blackout_duration_ms)
+				t:wait_until('blackout completion', function()
+					return director.state_machines:matches_state(test.game_start_state)
+				end, 600)
 				assert(director.state_machines:matches_state(test.game_start_state),
 				'game-over blackout did not return to the status-only game start')
 				assert(world.gameplay_clock_running,
@@ -93,18 +94,21 @@ return {
 				'game-over restart retained the previous gameplay scene')
 				assert(restarted_stage.start_column == 227 and restarted_stage.restarting,
 				'game-over restart did not retain the exact XNA checkpoint')
-				assert(restarted_stage.tape_head - 1 == 258 and restarted_stage.total_scroll_px == 1816,
-				'restarted stage did not rebuild its tape from checkpoint column 227')
 				assert(director.player_states[1].lives == 9,
 				'game-over restart did not restore the XNA player life count')
 				assert(not director.players[1].metalion_cheat_active,
 				'game-over restart applied Metalion to the replacement player')
 				assert(not director.game_over_curtain.visible,
 				'game-over curtain remained active over the status-only game start')
-				director.timelines:tick_frame(1500)
+				t:wait_until('checkpoint gameplay resumes', function()
+					return director.state_machines:matches_state(test.gameplay_state)
+				end, 240)
 				assert(director.state_machines:matches_state(test.gameplay_state)
 				and world.active_space_id == 'main',
 				'status-only game start did not return to checkpoint gameplay')
+				-- The stage's boot state runs when main activates, not during status-only game start.
+				assert(restarted_stage.tape_head - 1 == 258 and restarted_stage.total_scroll_px == 1816,
+				'restarted stage did not rebuild its tape from checkpoint column 227')
 				test.director = director
 				t:wait_ticks(1)
 			end

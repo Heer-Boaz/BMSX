@@ -37,15 +37,15 @@ return { kind = 'integration', tests = { passwords_apply_to_both_paused_players 
 			and player_1.metalion_cheat_active
 			and player_2.metalion_cheat_active,
 			'Metalion cheat was not applied to both players')
-			assert(player_1.sprite.imgid == assets_player_cheat_n,
+			assert(player_1.sprite_component.imgid == assets_player_cheat_n,
 			'Metalion cheat did not publish the player-one green vessel source')
-			assert(player_2.sprite.imgid == assets_player_2_cheat_n,
+			assert(player_2.sprite_component.imgid == assets_player_2_cheat_n,
 			'Metalion cheat did not publish the player-two cyan vessel source')
 
+			local pose<const> = player_1.spatial:resolve_world()
 			local bullet<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_enemy_bullet_def, {
 				stage = player_1.stage,
-				pos = { x = player_1.x, y = player_1.y },
-			})
+			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
 			assert(collide_with(player_1, bullet, collision_enemy_projectile_layer) == nil,
 			'Metalion cheat admitted ordinary projectile damage')
 			bullet:mark_for_disposal()
@@ -53,16 +53,14 @@ return { kind = 'integration', tests = { passwords_apply_to_both_paused_players 
 			local rook<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_def, {
 				stage = player_1.stage,
 				rise_distance = rook_rise_distances[1],
-				pos = { x = player_1.x, y = player_1.y },
-			})
+			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
 			assert(collide_with(player_1, rook, collision_enemy_layer) == nil,
 			'Metalion cheat admitted small-fry contact damage')
 			rook:mark_for_disposal()
 
 			local kerk<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_kerk_def, {
 				stage = player_1.stage,
-				pos = { x = player_1.x, y = player_1.y },
-			})
+			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
 			assert(collide_with(player_1, kerk, collision_enemy_layer) == '/dying',
 			'Metalion cheat suppressed substantial stage-object contact')
 			kerk:mark_for_disposal()
@@ -73,9 +71,9 @@ return { kind = 'integration', tests = { passwords_apply_to_both_paused_players 
 			and not player_1.metalion_cheat_active
 			and not player_2.metalion_cheat_active,
 			'entering Metalion twice did not disable the cheat')
-			assert(player_1.sprite.imgid == assets_player_n,
+			assert(player_1.sprite_component.imgid == assets_player_n,
 			'disabling Metalion did not restore player one')
-			assert(player_2.sprite.imgid == assets_player_2_n,
+			assert(player_2.sprite_component.imgid == assets_player_2_n,
 			'disabling Metalion did not restore the purple player two')
 
 			for _, code in ipairs(passwords.lars18th) do t:press(code, 2) end

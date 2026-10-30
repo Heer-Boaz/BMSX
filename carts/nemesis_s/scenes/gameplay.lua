@@ -15,49 +15,49 @@ function gameplay_scene.register()
 				definition_id = starfield.definition_id,
 				options = {
 					id = starfield.instance_id, space_id = 'main',
-					pos = { x = 0, y = 0, z = 16 },
 				},
+				initial = { stars = { order = 16 } },
 			},
 			{
 				member_id = 'stage',
 				definition_id = stage.stage_def_id,
 				options = {
 					id = stage.stage_instance_id, space_id = 'main',
-					pos = { x = 0, y = 0, z = 16 },
 				},
+				initial = { tile_layer = { order = 16 } },
 			},
 			{
 				member_id = 'status_bar',
 				definition_id = status_bar.definition_id,
 				options = {
 					id = status_bar.instance_id, space_id = 'game_start',
-					pos = { x = 0, y = 176, z = 100 },
 				},
+				spatial = { local_transform = { 1, 0, 0, 1, 0, 176 } },
+				initial = { status = { order = 100 }, life_1 = { order = 101 }, life_2 = { order = 101 } },
 			},
 			{
 				member_id = 'player_start_1',
 				definition_id = player_start.definition_id,
 				options = {
 					player_id = 'nemesis_s.player.1', space_id = 'main',
-					pos = { x = 80, y = 60, z = 70 },
 				},
+				spatial = { local_transform = { 1, 0, 0, 1, 80, 60 } },
 			},
 			{
 				member_id = 'player_start_2',
 				definition_id = player_start.definition_id,
 				options = {
 					player_id = 'nemesis_s.player.2', space_id = 'main',
-					pos = { x = 120, y = 80, z = 70 },
 				},
+				spatial = { local_transform = { 1, 0, 0, 1, 120, 80 } },
 			},
 			{
 				member_id = 'game_over_curtain',
 				definition_id = presentation.cover_definition_id,
 				options = {
-					space_id = 'main', sx = 0, sy = 192,
-					color = 0xff000000, visible = false,
-					pos = { x = 0, y = 0, z = 200 },
+					space_id = 'main', visible = false,
 				},
+				initial = { rectangle = { width = 0, height = 192, color = 0xff000000, order = 200 } },
 			},
 		},
 	})

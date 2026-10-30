@@ -6,6 +6,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world_object<const> = require('cartlib/world/world_object')
+local collision_storage<const> = require('collision_storage')
 require('constants')
 
 local moon_small_ray<const> = {}
@@ -16,10 +17,13 @@ local new_ray_strip<const> = tile_strip_component.factory({
 	step_x = 0,
 	step_y = 0,
 	first_tile = 0,
+	maximum_tiles = (moon_small_ray_max_steps - 1) * moon_small_ray_growth_tiles,
+	order = name_table_weapon_draw_z,
 	enabled = false,
 })
 local new_ray_collider<const> = tile_strip_collider_2d_component.factory({
 	id_local = 0,
+	geometry_pool = collision_storage.area,
 	layer = collision_enemy_projectile_layer,
 	mask = collision_enemy_projectile_mask,
 	local_area = {
@@ -38,22 +42,18 @@ end
 
 function moon_small_ray:onspawn()
 	local strip<const> = self.ray_strip
-	strip.step_y = self.direction * moon_small_ray_tile_size
-	if self.direction == moon_vertical_direction_up then
-		strip.first_tile = 1
-	else
-		strip.first_tile = 0
-	end
-	strip.last_tile = strip.first_tile - 1
+	strip:set_step(0, self.direction * moon_small_ray_tile_size)
+	local first<const> = self.direction == moon_vertical_direction_up and 1 or 0
+	strip:set_range(first, first - 1)
 end
 
 function moon_small_ray:apply_expansion_frame(frame)
 	local strip<const> = self.ray_strip
 	local tile_count<const> = frame * moon_small_ray_growth_tiles
 	if self.direction == moon_vertical_direction_up then
-		strip.last_tile = tile_count
+		strip:set_range(strip.first_tile, tile_count)
 	else
-		strip.last_tile = tile_count - 1
+		strip:set_range(strip.first_tile, tile_count - 1)
 	end
 	local active<const> = tile_count ~= 0
 	strip:set_enabled(active)
@@ -61,12 +61,14 @@ function moon_small_ray:apply_expansion_frame(frame)
 end
 
 function moon_small_ray:update_moving()
-	self.y = self.y + self.direction * moon_small_ray_speed
+	local pose<const> = self.spatial:resolve_world()
+	local next_y<const> = pose.woy + self.direction * moon_small_ray_speed
+	self.spatial:set_world_origin(pose.wox, next_y)
 	if self.direction == moon_vertical_direction_up then
-		if self.y < 0 then
+		if next_y < 0 then
 			self:mark_for_disposal()
 		end
-	elseif self.y > playfield_height then
+	elseif next_y > playfield_height then
 		self:mark_for_disposal()
 	end
 end
@@ -79,6 +81,7 @@ local define_fsm<const> = function()
 				timelines = {
 					expansion = {
 						def = {
+							phase = 'physical',
 							frames = timeline.range(moon_small_ray_max_steps),
 							frame_duration = moon_small_ray_step_ms,
 							playback_mode = 'once',
@@ -100,6 +103,7 @@ local register_definition<const> = function()
 		def_id = ids_moon_small_ray_def,
 		class = moon_small_ray,
 		base = world_object,
+		spatial = { family = '2d', authority = 'affine' },
 		components = {
 			new_ray_strip,
 			new_ray_collider,
@@ -109,7 +113,6 @@ local register_definition<const> = function()
 		defaults = {
 			force_field_hit = player_force_field_hit_overload,
 			direction = moon_vertical_direction_up,
-			z = name_table_weapon_draw_z,
 		},
 	})
 end

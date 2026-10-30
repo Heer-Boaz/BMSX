@@ -1,6 +1,7 @@
 local actioneffects<const> = require('cartlib/actioneffects')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
 local ballistic_movement_component<const> = require('cartlib/physics/ballistic_movement_component')
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -35,13 +36,13 @@ local set_direction<const> = function(self, direction)
 end
 
 function zak_foe:ctor()
-	self:get_component(collider_2d_component).local_area = hit_area
 	self.motion = self:get_component(ballistic_movement_component)
 	self.motion:set_enabled(false)
 end
 
 function zak_foe:onspawn()
-	self.ground_y = self.y
+	local pose<const> = self.spatial
+	self.ground_y = pose.oy
 	set_direction(self, self.direction)
 end
 
@@ -62,10 +63,11 @@ function zak_foe:enter_jumping()
 		0,
 		zak_foe_vertical_acceleration_px_per_second_squared
 	)
-	self:set_imgid(assets_zak_foe_jump)
+	self.sprite_component:set_imgid(assets_zak_foe_jump)
 end
 
 function zak_foe:update_jumping()
+	local pose<const> = self.spatial
 	if self:dispose_if_left_of_stage(zak_foe_width) then
 		return
 	end
@@ -73,20 +75,20 @@ function zak_foe:update_jumping()
 
 	local stage<const> = self.stage
 	if self.direction == zak_foe_direction_left then
-		if self.x < 0
-		or stage:is_solid_pixel(self.x + hit_area.left, self.y + hit_area.top)
+		if pose.ox < 0
+		or stage:is_solid_pixel(pose.ox + hit_area.left, pose.oy + hit_area.top)
 		or not stage:is_solid_pixel(
-			self.x + hit_area.left - 4,
-			self.y + hit_area.bottom + stage.tile_size
+			pose.ox + hit_area.left - 4,
+			pose.oy + hit_area.bottom + stage.tile_size
 		) then
 			set_direction(self, zak_foe_direction_right)
 		end
 	else
-		if self.x + hit_area.right >= playfield_width
-		or stage:is_solid_pixel(self.x + hit_area.right, self.y + hit_area.top)
+		if pose.ox + hit_area.right >= playfield_width
+		or stage:is_solid_pixel(pose.ox + hit_area.right, pose.oy + hit_area.top)
 		or not stage:is_solid_pixel(
-			self.x + hit_area.right,
-			self.y + hit_area.bottom + stage.tile_size
+			pose.ox + hit_area.right,
+			pose.oy + hit_area.bottom + stage.tile_size
 		) then
 			set_direction(self, zak_foe_direction_left)
 		end
@@ -94,6 +96,7 @@ function zak_foe:update_jumping()
 end
 
 function zak_foe:enter_recovering()
+	local pose<const> = self.spatial
 	local motion<const> = self.motion
 	motion:set_enabled(false)
 	motion.velocity_x = 0
@@ -101,8 +104,9 @@ function zak_foe:enter_recovering()
 	motion.acceleration_x = 0
 	motion.acceleration_y = 0
 	motion.fraction_y = 0
-	self.y = self.ground_y
-	self:set_imgid(assets_zak_foe_recover)
+	local next_y<const> = self.ground_y
+	self.spatial:set_world_origin(pose.ox, next_y)
+	self.sprite_component:set_imgid(assets_zak_foe_recover)
 end
 
 local define_fsm<const> = function()
@@ -111,12 +115,13 @@ local define_fsm<const> = function()
 		states = {
 			prepare_jump = {
 				entering_state = function(self)
-					self:set_imgid(assets_zak_foe_stand)
+					self.sprite_component:set_imgid(assets_zak_foe_stand)
 				end,
 				update = zak_foe.update_stationary,
 				timelines = {
 					prepare_jump = {
 						def = {
+							phase = 'physical',
 							continuous = true,
 							duration_ms = zak_foe_prepare_ms,
 							playback_mode = 'once',
@@ -131,6 +136,7 @@ local define_fsm<const> = function()
 				timelines = {
 					jumping = {
 						def = {
+							phase = 'physical',
 							continuous = true,
 							duration_ms = zak_foe_jump_ms,
 							playback_mode = 'once',
@@ -145,6 +151,7 @@ local define_fsm<const> = function()
 				timelines = {
 					recovering = {
 						def = {
+							phase = 'physical',
 							continuous = true,
 							duration_ms = zak_foe_recovery_ms,
 							playback_mode = 'once',
@@ -162,8 +169,13 @@ local register_definition<const> = function()
 		def_id = ids_zak_foe_def,
 		class = zak_foe,
 		base = foe,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_zak_foe_stand, order = zak_foe_draw_z } },
 		components = {
-			enemy.new_collider,
+			collider_2d_component.factory({
+				geometry_pool = collision_storage.area, local_area = hit_area,
+				layer = collision_enemy_layer, mask = collision_enemy_mask,
+			}),
 			stage_scroll_follower_component.new,
 			ballistic_movement_component.new,
 			actioneffect_component.factory({ fire_effect_id }),
@@ -171,12 +183,10 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_zak_foe_fsm }),
 		},
 		defaults = {
-			imgid = assets_zak_foe_stand,
 			max_health = zak_foe_health,
 			small_fry = true,
 			drop_definition_id = ids_roodje_def,
 			direction = zak_foe_direction_left,
-			z = zak_foe_draw_z,
 		},
 	})
 end
@@ -193,6 +203,7 @@ function zak_foe.register()
 			return wait_ms
 		end,
 		handler = function(self)
+			local pose<const> = self.spatial
 			local players<const> = players_view.objects
 			local target
 			if #players == 1 then
@@ -200,21 +211,19 @@ function zak_foe.register()
 			else
 				target = players[math.random(1, #players)]
 			end
-			local bullet_x<const> = self.x + 4
-			local bullet_y<const> = self.y
+			local target_pose<const> = target.spatial
+			local bullet_x<const> = pose.ox + 4
+			local bullet_y<const> = pose.oy
 			local velocity_x<const>, velocity_y<const> = enemy_bullet.aim_velocity(
-				target.x - bullet_x,
-				target.y - bullet_y
+				target_pose.ox - bullet_x,
+				target_pose.oy - bullet_y
 			)
 			if velocity_x == nil then
 				return
 			end
-			local bullet<const> = self.scene:spawn(ids_enemy_bullet_def, {
+			self.scene:spawn(ids_enemy_bullet_def, {
 				stage = self.stage,
-				pos = { x = bullet_x, y = bullet_y },
-			})
-			bullet.motion.velocity_x = velocity_x
-			bullet.motion.velocity_y = velocity_y
+			}, { local_transform = { 1, 0, 0, 1, bullet_x, bullet_y } }, { fixed_velocity = { velocity_x = velocity_x, velocity_y = velocity_y } })
 		end,
 	})
 	define_fsm()

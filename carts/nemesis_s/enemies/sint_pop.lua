@@ -1,3 +1,4 @@
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -17,32 +18,35 @@ local hit_area<const> = {
 }
 
 function sint_pop:ctor()
-	self:get_component(collider_2d_component).local_area = hit_area
 	self.motion = self:get_component(fixed_point_velocity_component)
 	self.motion:set_velocity_pixels_per_second(sint_pop_move_to_player_speed_x_px_per_second, 0)
 end
 
 function sint_pop:update_move_to_player()
-	if self.x > sint_pop_vertical_start_x then
+	local pose<const> = self.spatial
+	if pose.ox > sint_pop_vertical_start_x then
 		return
 	end
 	return '/move_vertical'
 end
 
 function sint_pop:update_move_vertical()
-	if self.x > sint_pop_retreat_start_x then
+	local pose<const> = self.spatial
+	if pose.ox > sint_pop_retreat_start_x then
 		return
 	end
 	return '/move_away_from_player'
 end
 
 function sint_pop:update_move_away_from_player()
-	if self.x > playfield_width then
+	local pose<const> = self.spatial
+	if pose.ox > playfield_width then
 		self:mark_for_disposal()
 	end
 end
 
 function sint_pop:on_destroyed(projectile)
+	local pose<const> = self.spatial
 	local formation<const> = self.formation
 	local remaining<const> = formation.remaining - 1
 	formation.remaining = remaining
@@ -53,8 +57,7 @@ function sint_pop:on_destroyed(projectile)
 	self.scene:spawn(ids_small_explosion_def, {
 		stage = self.stage,
 		drop_definition_id = drop_definition_id,
-		pos = { x = self.x, y = self.y + 8 },
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy + 8 } })
 	self.events:emit('enemy.small.destroyed')
 	enemy.on_destroyed(self, projectile)
 end
@@ -93,17 +96,20 @@ function sint_pop.register()
 		def_id = ids_sint_pop_def,
 		class = sint_pop,
 		base = foe,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_sint_pop, order = sint_pop_draw_z } },
 		components = {
-			enemy.new_collider,
+			collider_2d_component.factory({
+				geometry_pool = collision_storage.area, local_area = hit_area,
+				layer = collision_enemy_layer, mask = collision_enemy_mask,
+			}),
 			fixed_point_velocity_component.new,
 			fsm_component.factory({ ids_sint_pop_fsm }),
 		},
 		defaults = {
-			imgid = assets_sint_pop,
 			group_type = sint_pop_group_up,
 			max_health = 1,
 			small_fry = true,
-			z = sint_pop_draw_z,
 		},
 	})
 end

@@ -1,3 +1,4 @@
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -29,8 +30,7 @@ local hit_area<const> = {
 }
 local roodje_view
 
-function noot:ctor(options)
-	self:get_component(collider_2d_component).local_area = hit_area
+function noot:ctor()
 	local color_index = math.random(1, #colors)
 	if color_index == red_color_index and #roodje_view.objects >= noot_red_pickup_limit then
 		color_index = 1
@@ -39,15 +39,14 @@ function noot:ctor(options)
 	if color_index == red_color_index then
 		self.drop_definition_id = ids_roodje_def
 	end
-	local motion<const> = self:get_component(fixed_point_velocity_component)
-	motion:set_velocity_pixels_per_second(options.velocity_x, options.velocity_y)
 end
 
 function noot:update_flying()
-	if self.x < -noot_width
-	or self.x > playfield_width
-	or self.y < -noot_height
-	or self.y > playfield_height then
+	local pose<const> = self.spatial
+	if pose.ox < -noot_width
+	or pose.ox > playfield_width
+	or pose.oy < -noot_height
+	or pose.oy > playfield_height then
 		self:mark_for_disposal()
 	end
 end
@@ -69,16 +68,19 @@ local register_definition<const> = function()
 		def_id = ids_noot_def,
 		class = noot,
 		base = foe,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_noot, order = noot_draw_z } },
 		components = {
-			enemy.new_collider,
+			collider_2d_component.factory({
+				geometry_pool = collision_storage.area, local_area = hit_area,
+				layer = collision_enemy_layer, mask = collision_enemy_mask,
+			}),
 			fixed_point_velocity_component.new,
 			fsm_component.factory({ ids_noot_fsm }),
 		},
 		defaults = {
-			imgid = assets_noot,
 			max_health = 1,
 			small_fry = true,
-			z = noot_draw_z,
 		},
 	})
 end

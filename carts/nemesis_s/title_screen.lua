@@ -92,7 +92,7 @@ local hangar_background_keys<const> = {
 
 local apply_background<const> = function(target, frame)
 	local background<const> = target.presentation.members.background
-	background:set_imgid(background.images[frame])
+	background.sprite_component:set_imgid(background.images[frame])
 end
 
 local apply_burst_frame<const> = function(target, frame)
@@ -101,7 +101,8 @@ end
 
 local apply_ship_position<const> = function(target, offset_y)
 	local ship<const> = target.presentation.members.ship
-	ship.y = ship.start_y + offset_y
+	ship.sprite_component:set_presentation_origin(0, offset_y)
+	ship.burst:set_presentation_origin(0, offset_y)
 end
 
 function title_screen:release_presentation()
@@ -122,8 +123,8 @@ function title_screen:toggle_player_count()
 	self.selected_player_count = self.selected_player_count == 1 and 2 or 1
 	local offset_y<const> = (self.selected_player_count - 1) * 16
 	local members<const> = self.presentation.members
-	members.selector.sprite_component.offset_y = offset_y
-	members.selection_cover.visual.offset_y = offset_y
+	members.selector.sprite_component:set_presentation_origin(0, offset_y)
+	members.selection_cover.visual:set_presentation_origin(0, offset_y)
 	members.selector.visible = true
 	self.timelines:play(idle_timeline_id, {
 		rewind = true,
@@ -183,6 +184,7 @@ local define_fsm<const> = function()
 				timelines = {
 					[idle_timeline_id] = {
 						def = {
+							phase = 'presentation',
 							frames = timeline.range(24),
 							playback_mode = 'loop',
 							clock_source = timeline_clock_source.frame,
@@ -232,6 +234,7 @@ local define_fsm<const> = function()
 						timelines = {
 							[confirmation_timeline_id] = {
 								def = {
+									phase = 'presentation',
 									frames = selection_flash_frames,
 									repetitions = selection_flash_cycles,
 									playback_mode = 'once',
@@ -262,6 +265,7 @@ local define_fsm<const> = function()
 						timelines = {
 							[hangar_timeline_id] = {
 								def = {
+									phase = 'presentation',
 									frames = timeline.range(hangar_duration_frames),
 									playback_mode = 'once',
 									clock_source = timeline_clock_source.frame,
@@ -283,6 +287,7 @@ local define_fsm<const> = function()
 								timelines = {
 									[lift_timeline_id] = {
 										def = {
+											phase = 'presentation',
 											frames = timeline.range(lift_duration_frames),
 											playback_mode = 'once',
 											clock_source = timeline_clock_source.frame,
@@ -306,6 +311,7 @@ local define_fsm<const> = function()
 								timelines = {
 									[ignition_timeline_id] = {
 										def = {
+											phase = 'presentation',
 											frames = ignition_frames,
 											repetitions = ignition_cycles,
 											playback_mode = 'once',
@@ -322,6 +328,7 @@ local define_fsm<const> = function()
 								timelines = {
 									[burst_ramp_timeline_id] = {
 										def = {
+											phase = 'presentation',
 											frames = burst_ramp_frames,
 											playback_mode = 'once',
 											clock_source = timeline_clock_source.frame,
@@ -349,6 +356,7 @@ local define_fsm<const> = function()
 								timelines = {
 									[burst_cooldown_timeline_id] = {
 										def = {
+											phase = 'presentation',
 											frames = burst_cooldown_frames,
 											playback_mode = 'once',
 											clock_source = timeline_clock_source.frame,

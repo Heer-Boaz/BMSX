@@ -17,8 +17,8 @@ return {kind = 'integration', tests = { title_takeoff_and_reentry = function(t)
 			local second<const> = scene_library.instantiate('nemesis_s.title')
 			assert(first.selector ~= second.members.selector and first.selector.id ~= second.members.selector.id,
 			'title placements shared an object or a runtime identity')
-			second.members.selector.sprite_component.offset_y = 16
-			assert(first.selector.sprite_component.offset_y == 0,
+			second.members.selector.sprite_component:set_presentation_origin(0, 16)
+			assert(first.selector.sprite_component.presentation_oy == 0,
 			'a second scene mutated the first scene visual')
 			local second_members<const> = shallow_copy(second.members)
 			second:dispose()
@@ -31,7 +31,8 @@ return {kind = 'integration', tests = { title_takeoff_and_reentry = function(t)
 			t:wait_until('hangar composition', function() return title.presentation ~= nil and title.presentation.members.ship ~= nil end, 120)
 			assert_disposed(menu)
 			local hangar<const> = shallow_copy(title.presentation.members)
-			assert(hangar.ship.space_id == 'title' and hangar.ship.start_y == 129, 'takeoff discarded authored hangar placement')
+			assert(hangar.ship.space_id == 'title' and hangar.ship.spatial.oy == 129,
+			'takeoff discarded authored hangar placement')
 			t:wait_until('takeoff completes', function() return world.active_space_id == 'main' end, 650)
 			assert_disposed(hangar)
 			assert(title.presentation == nil, 'gameplay retained the hangar composition')

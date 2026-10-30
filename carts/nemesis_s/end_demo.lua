@@ -33,9 +33,9 @@ local slides<const> = end_demo_scene.panels
 
 local apply_slide<const> = function(target, slide_index)
 	local slide<const> = slides[slide_index]
-	target.presentation.members.picture:set_imgid(slide.imgid)
+	target.presentation.members.picture.sprite_component:set_imgid(slide.imgid)
 	local caption<const> = target.presentation.members.caption.text_component
-	caption.offset_x = slide.text_x
+	caption:set_presentation_origin(slide.text_x, 0)
 	caption:set_text(slide.text)
 end
 
@@ -44,10 +44,11 @@ local apply_reveal<const> = function(target, height)
 end
 
 local apply_curtain_frame<const> = function(target, frame)
-	target.presentation.members.curtain.count = frame + 1
+	target.presentation.members.curtain.visual.count = frame + 1
 end
 
 local first_reveal_sequence<const> = {
+	phase = 'presentation',
 	frames = timeline.build_frame_sequence({
 		{ value = 0, hold = 5 },
 		{ value = 1 },
@@ -65,6 +66,7 @@ local first_reveal_sequence<const> = {
 }
 
 local second_reveal_sequence<const> = {
+	phase = 'presentation',
 	frames = timeline.range(9),
 	frame_duration = reveal_step_ms,
 	playback_mode = 'once',
@@ -72,6 +74,7 @@ local second_reveal_sequence<const> = {
 }
 
 local curtain_sequence<const> = {
+	phase = 'presentation',
 	frames = timeline.range(8),
 	frame_duration = curtain_step_ms,
 	playback_mode = 'once',
@@ -79,6 +82,7 @@ local curtain_sequence<const> = {
 }
 
 local presentation_timeline<const> = {
+	phase = 'presentation',
 	continuous = true,
 	duration_ms = second_curtain_end_ms,
 	playback_mode = 'once',
@@ -168,13 +172,7 @@ end_demo.ondespawn = end_demo.release_presentation
 
 local define_fsm<const> = function()
 	fsm_library.register(fsm_id, {
-		initial = 'hidden',
-		on = {
-			['end_demo'] = {
-				emitter = ids_director_instance,
-				go = '/playing',
-			},
-		},
+		initial = 'playing',
 		states = {
 			hidden = {},
 			playing = {

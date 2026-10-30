@@ -18,9 +18,8 @@ local new_flash_animation<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_2,
 	},
 	loop = true,
-	offset_x = sneeuwpop_flash_offset_x,
-	offset_y = sneeuwpop_flash_offset_y,
-	offset_z = 0,
+	attachment_affine = { 1, 0, 0, 1, sneeuwpop_flash_offset_x, sneeuwpop_flash_offset_y },
+	order = sneeuwpop_draw_z,
 	enabled = false,
 })
 
@@ -29,19 +28,17 @@ function sneeuwpop:ctor()
 end
 
 function sneeuwpop:update_idle()
-	if self.x <= 0 then
+	local pose<const> = self.spatial
+	if pose.ox <= 0 then
 		return
 	end
 	return '/ready_to_fire'
 end
 
 function sneeuwpop:fire_ray()
+	local pose<const> = self.spatial
 	local ray<const> = self.scene:spawn(ids_sneeuwpop_ray_def, {
-		pos = {
-			x = self.x + sneeuwpop_ray_offset_x,
-			y = self.y + sneeuwpop_ray_offset_y,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + sneeuwpop_ray_offset_x, pose.oy + sneeuwpop_ray_offset_y } })
 	ray.events:on({
 		event = 'enemy.ray.finished',
 		subscriber = self,
@@ -59,10 +56,10 @@ function sneeuwpop:ray_finished()
 end
 
 function sneeuwpop:on_destroyed(projectile)
+	local pose<const> = self.spatial
 	self.scene:spawn(ids_destroyed_sneeuwpop_def, {
 		stage = self.stage,
-		pos = { x = self.x, y = self.y },
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
 	ground_foe.on_destroyed(self, projectile)
 end
 
@@ -114,6 +111,8 @@ local register_definition<const> = function()
 		def_id = ids_sneeuwpop_def,
 		class = sneeuwpop,
 		base = ground_foe,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_sneeuwpop, order = sneeuwpop_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_sneeuwpop_body_addr),
 			new_flash_animation,
@@ -122,11 +121,9 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_sneeuwpop_fsm }),
 		},
 		defaults = {
-			imgid = assets_sneeuwpop,
 			max_health = sneeuwpop_health,
 			small_fry = false,
 			stage_scroll_width = sneeuwpop_width,
-			z = sneeuwpop_draw_z,
 		},
 	})
 end

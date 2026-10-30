@@ -7,8 +7,6 @@ local caption<const> = { definition_id = 'nemesis_s.presentation.caption' }
 
 function caption:ctor()
 	local text<const> = self:get_component(text_component)
-	text:set_font(font.get(nemesis_font.font_id))
-	text:set_text(self.text)
 	text:set_glyph_visible_height(0)
 	self.text_component = text
 end
@@ -17,8 +15,9 @@ function caption.register()
 	prefab.define({
 		def_id = caption.definition_id,
 		class = caption,
+		spatial = { family = '2d', authority = 'affine' },
 		components = { text_component.new },
-		defaults = { text = '' },
+		initial = { text = { font = font.get(nemesis_font.font_id), text = '' } },
 	})
 end
 

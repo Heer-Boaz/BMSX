@@ -27,28 +27,23 @@ function story_scene.register()
 			{
 				member_id = 'picture',
 				definition_id = presentation.sprite_definition_id,
-				options = { pos = { x = 0, y = 0, z = 0 } },
 			},
 			{
 				member_id = 'primary_caption',
 				definition_id = caption.definition_id,
-				options = { pos = { x = 0, y = 144, z = 1 } },
+				spatial = { local_transform = { 1, 0, 0, 1, 0, 144 } },
+				initial = { text = { order = 1 } },
 			},
 			{
 				member_id = 'secondary_caption',
 				definition_id = caption.definition_id,
-				options = {
-					text = game_text[0].story_piet_text,
-					pos = { x = 0, y = 136, z = 2 },
-				},
+				spatial = { local_transform = { 1, 0, 0, 1, 0, 136 } },
+				initial = { text = { text = game_text[0].story_piet_text, order = 2 } },
 			},
 			{
 				member_id = 'curtain',
 				definition_id = curtain.definition_id,
-				options = {
-					sx = 256, sy = 192, opening_bottom = 128,
-					pos = { x = 0, y = 0, z = 3 },
-				},
+				initial = { curtain = { width = 256, height = 192, opening_bottom = 128, order = 3 } },
 			},
 		},
 	})

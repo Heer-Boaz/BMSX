@@ -30,8 +30,7 @@ return {
 				stage.actor_spawn_index = stage.actor_spawn_count + 1
 				local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 					stage = stage,
-					pos = { x = 100, y = 48 },
-				})
+				}, { local_transform = { 1, 0, 0, 1, 100, 48 } })
 				local animation<const> = snowman:get_component(sprite_animation_component)
 				assert(not animation.enabled,
 				'the dormant flash animation entered retained render or tick storage')
@@ -59,19 +58,18 @@ return {
 				assert(ray.top_y == nil,
 				'the ray still shadows derived strip geometry on its world object')
 				ray:apply_expansion_frame(sneeuwpop_ray_max_steps - 1)
-				local x<const> = ray.x
-				local y<const> = ray.y
+				local x<const> = ray.spatial.ox
+				local y<const> = ray.spatial.oy
 				local first_tile<const> = strip.first_tile
 				ray:apply_contraction_frame(1)
 				assert(strip.first_tile == first_tile + sneeuwpop_ray_growth_tiles,
 				'ray contraction did not trim its retained tile range')
-				assert(ray.x == x and ray.y == y,
+				assert(ray.spatial.ox == x and ray.spatial.oy == y,
 				'ray contraction mutated world position to encode visual geometry')
 				local rook<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_def, {
 					stage = stage,
 					rise_distance = 0,
-					pos = { x = 240, y = 112 },
-				})
+				}, { local_transform = { 1, 0, 0, 1, 240, 112 } })
 				local rook_animation<const> = rook:get_component(sprite_animation_component)
 				assert(rook.sprite_component == rook_animation
 				and #rook._components_by_class[sprite_component] == 1,
@@ -83,24 +81,23 @@ return {
 				and rook.motion.velocity_y == rook_rise_velocity_y_q8,
 				'Rook admission lost its raw Nemesis 2 rise velocity')
 				local player<const> = registry:get('nemesis_s.player.1')
-				local player_x<const> = player.x
-				local player_y<const> = player.y
-				player.x = rook.x - 1
+				local player_x<const> = player.spatial.ox
+				local player_y<const> = player.spatial.oy
+				player.spatial:set_world_origin(rook.spatial.ox - 1, player_y)
 				rook:update_leaving_chimney()
 				assert(rook.motion.velocity_x == -rook_attack_velocity_x_q8
 				and rook.motion.velocity_y == 0
 				and not rook.stage_scroll_follower.enabled,
 				'Rook launch lost its raw horizontal velocity or stage detachment')
-				player.y = rook.y - 1
+				player.spatial:set_world_origin(player.spatial.ox, rook.spatial.oy - 1)
 				rook:update_attacking_player()
 				assert(rook.motion.velocity_y == -rook_tracking_acceleration_y_q8,
 				'Rook did not accelerate upward toward its retained target')
-				player.y = rook.y + 1
+				player.spatial:set_world_origin(player.spatial.ox, rook.spatial.oy + 1)
 				rook:update_attacking_player()
 				assert(rook.motion.velocity_y == 0,
 				'Rook did not add the raw downward tracking acceleration')
-				player.x = player_x
-				player.y = player_y
+				player.spatial:set_world_origin(player_x, player_y)
 			end
 		end,
 	},

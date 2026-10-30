@@ -17,7 +17,6 @@ function root_scene.register()
 				options = {
 					id = intro.instance_id,
 					space_id = 'intro',
-					pos = { x = 0, y = 0, z = 0 },
 				},
 			},
 			{
@@ -26,7 +25,6 @@ function root_scene.register()
 				options = {
 					id = story.instance_id,
 					space_id = 'story',
-					pos = { x = 0, y = 0, z = 0 },
 				},
 			},
 			{
@@ -35,7 +33,6 @@ function root_scene.register()
 				options = {
 					id = title_screen.instance_id,
 					space_id = 'title',
-					pos = { x = 0, y = 0, z = 0 },
 				},
 			},
 			{
@@ -44,7 +41,6 @@ function root_scene.register()
 				options = {
 					id = director.director_instance_id,
 					space_id = 'intro',
-					pos = { x = 0, y = 0, z = 0 },
 				},
 			},
 		},

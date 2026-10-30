@@ -7,6 +7,7 @@ local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world_object<const> = require('cartlib/world/world_object')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
+local collision_storage<const> = require('collision_storage')
 require('constants')
 
 local sneeuwpop_ray<const> = {}
@@ -19,10 +20,13 @@ local new_ray_strip<const> = tile_strip_component.factory({
 	step_x = -sneeuwpop_ray_tile_size,
 	step_y = -sneeuwpop_ray_tile_size,
 	first_tile = 0,
+	maximum_tiles = (sneeuwpop_ray_max_steps - 1) * sneeuwpop_ray_growth_tiles,
+	order = name_table_weapon_draw_z,
 	enabled = false,
 })
 local new_ray_collider<const> = tile_strip_collider_2d_component.factory({
 	id_local = 0,
+	geometry_pool = collision_storage.diagonal,
 	layer = collision_enemy_projectile_layer,
 	mask = collision_enemy_projectile_mask,
 	enabled = false,
@@ -35,7 +39,7 @@ end
 
 function sneeuwpop_ray:apply_expansion_frame(frame)
 	local tile_count<const> = frame * sneeuwpop_ray_growth_tiles
-	self.ray_strip.last_tile = tile_count - 1
+	self.ray_strip:set_range(self.ray_strip.first_tile, tile_count - 1)
 	local active<const> = tile_count ~= 0
 	self.ray_strip:set_enabled(active)
 	self.ray_collider:set_enabled(active)
@@ -43,7 +47,7 @@ end
 
 function sneeuwpop_ray:apply_contraction_frame(frame)
 	local tile_count<const> = (sneeuwpop_ray_max_steps - 1 - frame) * sneeuwpop_ray_growth_tiles
-	self.ray_strip.first_tile = self.ray_strip.last_tile - tile_count + 1
+	self.ray_strip:set_range(self.ray_strip.last_tile - tile_count + 1, self.ray_strip.last_tile)
 	local active<const> = tile_count ~= 0
 	self.ray_strip:set_enabled(active)
 	self.ray_collider:set_enabled(active)
@@ -62,6 +66,7 @@ local define_fsm<const> = function()
 				timelines = {
 					[sneeuwpop_ray_expand_timeline_id] = {
 						def = {
+							phase = 'physical',
 							frames = timeline.range(sneeuwpop_ray_max_steps),
 							frame_duration = sneeuwpop_ray_step_ms,
 							playback_mode = 'once',
@@ -75,6 +80,7 @@ local define_fsm<const> = function()
 				timelines = {
 					[sneeuwpop_ray_contract_timeline_id] = {
 						def = {
+							phase = 'physical',
 							frames = timeline.range(sneeuwpop_ray_max_steps),
 							frame_duration = sneeuwpop_ray_step_ms,
 							playback_mode = 'once',
@@ -93,6 +99,7 @@ local register_definition<const> = function()
 		def_id = ids_sneeuwpop_ray_def,
 		class = sneeuwpop_ray,
 		base = world_object,
+		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			new_ray_strip,
 			new_ray_collider,
@@ -102,7 +109,6 @@ local register_definition<const> = function()
 		},
 		defaults = {
 			force_field_hit = player_force_field_hit_overload,
-			z = name_table_weapon_draw_z,
 		},
 	})
 end

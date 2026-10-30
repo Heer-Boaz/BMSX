@@ -34,9 +34,9 @@ return { kind = 'integration', tests = { input_pause_retains_simulation_and_musi
 			test.stage_scroll_px = stage.total_scroll_px
 			test.stage_scroll_gate = stage.scroll_gate
 			test.player_frame = player.frame
-			test.player_x = player.x
-			test.player_y = player.y
-			test.player_visual_visible = player.vessel_visual.visible
+			test.player_x = player.spatial.ox
+			test.player_y = player.spatial.oy
+			test.player_visual_visible = player.sprite_component.visible
 
 			for _ = 1, 12 do
 				assert(not world.gameplay_clock_running, 'pause resumed the gameplay schedule')
@@ -51,10 +51,10 @@ return { kind = 'integration', tests = { input_pause_retains_simulation_and_musi
 				and stage.scroll_gate == test.stage_scroll_gate,
 				'stage simulation advanced during pause')
 				assert(player.frame == test.player_frame
-				and player.x == test.player_x
-				and player.y == test.player_y,
+				and player.spatial.ox == test.player_x
+				and player.spatial.oy == test.player_y,
 				'player simulation advanced during pause')
-				assert(player.vessel_visual.visible == test.player_visual_visible,
+				assert(player.sprite_component.visible == test.player_visual_visible,
 				'pause changed the retained gameplay presentation')
 				assert(read_slot_source(1) == stage_music_source
 				and (*apu_active_mask & music_slot_mask) ~= 0,

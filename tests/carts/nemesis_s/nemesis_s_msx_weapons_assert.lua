@@ -68,22 +68,22 @@ return {kind = 'integration', tests = {
 			end
 			state:reset_powerups()
 
-			player.x = 41
-			player.y = 25
+			player.spatial:set_world_origin(41, 25)
+			local pose<const> = player.spatial:resolve_world()
 			local primary<const> = player.primary_projectiles[1]
 			local secondary<const> = player.secondary_projectiles[1]
-			player:spawn_bullet(player, primary)
+			player:spawn_bullet(1, pose.wox, pose.woy, primary)
 			assert(*selected_apu_source == bullet_audio_source,
 			'the retained bullet spawn did not emit its XNA fire cue')
 			assert(primary.x == 48 and primary.y == 31,
 			'the MSX bullet spawn anchor was not restored')
-			assert(primary.collider.local_area.right == 8 and primary.collider.local_area.bottom == 2,
+			assert(primary.collider.local_right == 8 and primary.collider.local_bottom == 2,
 			'the bullet did not publish its original collision record at admission')
 			player:update_weapons()
 			assert(primary.type ~= 0 and primary.x == 60,
 			'the MSX bullet did not advance twelve pixels per gameplay tick')
 			player:despawn_slot_projectile(primary, 'test_reset')
-			player:spawn_bullet(player, primary)
+			player:spawn_bullet(1, pose.wox, pose.woy, primary)
 			assert(player.primary_projectiles[1] == primary,
 			'firing allocated a replacement projectile instead of reusing the retained vessel slot')
 			local bullet_collision_column<const> = ((primary.x + player_bullet_movement_speed
@@ -106,18 +106,16 @@ return {kind = 'integration', tests = {
 			player:despawn_slot_projectile(primary, 'test_reset')
 			player:despawn_slot_projectile(secondary, 'test_reset')
 
-			player:spawn_laser(player, 1)
+			player:spawn_laser(1, pose.wox, pose.woy, pose, 1)
 			assert(*selected_apu_source == laser_audio_source,
 			'the retained laser spawn did not emit its XNA fire cue')
-			assert(primary.collider.local_area.right == 0 and primary.collider.local_area.bottom == 2,
+			assert(primary.collider.local_right == 0 and primary.collider.local_bottom == 2,
 			'the laser did not publish its empty expansion record at admission')
-			player.x = 49
-			player.y = 29
+			pose:set_world_origin(49, 29)
 			player:update_weapons()
 			assert(primary.length_tiles == 4 and primary.x == 64 and primary.y == 35,
 			'the expanding laser did not follow its source vessel')
-			player.x = 57
-			player.y = 33
+			pose:set_world_origin(57, 33)
 			for expected_length = 8, 12, 4 do
 				player:update_weapons()
 				assert(primary.length_tiles == expected_length,
@@ -126,24 +124,23 @@ return {kind = 'integration', tests = {
 			player:update_weapons()
 			assert(primary.length_tiles == 15 and primary.x == 72 and primary.y == 39,
 			'the level-one laser did not retain the fifteen-tile MSX extent')
-			player.x = 1
-			player.y = 1
+			pose:set_world_origin(1, 1)
 			player:update_weapons()
 			assert(primary.x == 104 and primary.y == 39 and primary.length_tiles == 15,
 			'the completed laser remained attached instead of entering its independent 32-pixel travel phase')
 			player:despawn_slot_projectile(primary, 'test_reset')
 
-			player.x = 41
-			player.y = 25
-			player:spawn_missile(player, 1)
+			pose:set_world_origin(41, 25)
+			pose:resolve_world()
+			player:spawn_missile(1, pose.wox, pose.woy, 1)
 			local missile<const> = player.missile_projectiles[1]
-			assert(missile.collider.local_area.right == 8 and missile.collider.local_area.bottom == 2,
+			assert(missile.collider.local_right == 8 and missile.collider.local_bottom == 2,
 			'the missile did not publish its original collision record at admission')
 			player:update_weapons()
 			assert(missile.x == 50 and missile.y == 36,
 			'the level-one missile did not use the MSX 1px/4px falling vector')
 			player:despawn_missile(missile, 'test_reset')
-			player:spawn_missile(player, 2)
+			player:spawn_missile(1, pose.wox, pose.woy, 2)
 			player:update_weapons()
 			assert(missile.x == 50 and missile.fraction_x == 0x80 and missile.y == 38,
 			'the level-two missile did not retain its Q8.8 one-and-a-half-pixel falling motion')
@@ -151,7 +148,7 @@ return {kind = 'integration', tests = {
 			assert(missile.x == 52 and missile.fraction_x == 0 and missile.y == 44,
 			'the level-two missile did not consume its retained Q8.8 fraction')
 			player:despawn_missile(missile, 'test_reset')
-			player:spawn_missile(player, 3)
+			player:spawn_missile(1, pose.wox, pose.woy, 3)
 			assert(missile.type == 5,
 			'the third missile level did not admit the source ROM Napalm record')
 			player:update_weapons()
@@ -173,8 +170,8 @@ return {kind = 'integration', tests = {
 			'begin'
 			)
 			assert(missile.type == 6
-			and missile.collider.local_area.right == weapons_napalm.blast_width
-			and missile.collider.local_area.bottom == weapons_napalm.blast_height,
+			and missile.collider.local_right == weapons_napalm.blast_width
+			and missile.collider.local_bottom == weapons_napalm.blast_height,
 			'the Napalm impact did not convert its retained missile slot into the 24px blast')
 			player:resolve_projectile_overlap(
 			missile.collider.id_local,
@@ -205,23 +202,25 @@ return {kind = 'integration', tests = {
 			assert(missile.type == 0,
 			'the Napalm blast remained resident after its fourth source phase')
 			stage.total_scroll_px = scroll_before_napalm
-			player.y = playfield_height - player_height
-			player:spawn_missile(player, 1)
+			pose:set_world_origin(41, playfield_height - player_height)
+			pose:resolve_world()
+			player:spawn_missile(1, pose.wox, pose.woy, 1)
 			assert(missile.type == 0,
 			'a missile originating below its playfield lifetime entered the terrain query')
-			player.y = 25
+			pose:set_world_origin(41, 25)
+			pose:resolve_world()
 
 			local floor_row<const> = stage.solid_tape[((32 + 8) // stage.tile_size) + 1]
 			local missile_column<const> = ((49 + stage.total_scroll_px) // stage.tile_size) + 1
 			floor_row[missile_column + 1] = 1
-			player:spawn_missile(player, 1)
+			player:spawn_missile(1, pose.wox, pose.woy, 1)
 			player:update_weapons()
 			assert(missile.x == 53 and missile.y == 32,
 			'the missile ignored the second tile in its original floor probe')
 			player:despawn_missile(missile, 'test_reset')
 			floor_row[missile_column] = 1
 			floor_row[missile_column + 1] = 0
-			player:spawn_missile(player, 1)
+			player:spawn_missile(1, pose.wox, pose.woy, 1)
 			player:update_weapons()
 			assert(missile.x == 53 and missile.y == 36,
 			'the missile did not traverse an original floor-edge sample')
@@ -229,7 +228,7 @@ return {kind = 'integration', tests = {
 			floor_row[missile_column + 1] = 1
 			local missile_row<const> = stage.solid_tape[(32 // stage.tile_size) + 1]
 			missile_row[missile_column + 1] = 1
-			player:spawn_missile(player, 1)
+			player:spawn_missile(1, pose.wox, pose.woy, 1)
 			player:update_weapons()
 			assert(missile.type == 0,
 			'the missile skipped the second tile in its original body probe')
@@ -250,7 +249,7 @@ return {kind = 'integration', tests = {
 			'the up-laser did not emit its dedicated Nemesis 2 sound command')
 			assert(uplaser.x == 40 and uplaser.y == 31,
 			'the up-laser did not retain its original vessel anchor')
-			assert(uplaser.collider.local_area.right == 16 and uplaser.collider.local_area.bottom == 8,
+			assert(uplaser.collider.local_right == 16 and uplaser.collider.local_bottom == 8,
 			'the up-laser did not publish its original collision record at admission')
 			for _ = 1, 4 do
 				player:update_weapons()
@@ -259,13 +258,13 @@ return {kind = 'integration', tests = {
 			'the level-two up-laser did not apply its four-tick symmetric growth gate')
 			player:despawn_slot_projectile(uplaser, 'test_reset')
 
-			player.x = 1
-			player.y = 25
-			player:spawn_laser(player, 3)
+			pose:set_world_origin(1, 25)
+			pose:resolve_world()
+			player:spawn_laser(1, pose.wox, pose.woy, pose, 3)
 			assert(*selected_apu_source == extended_laser_audio_source,
 			'the Extended Laser did not supersede the up-laser sound channel')
 			assert(primary.type == 8 and primary.y == 24
-			and primary.collider.local_area.bottom == 8,
+			and primary.collider.local_bottom == 8,
 			'the third laser level did not admit its tile-aligned source ROM beam')
 			for expected_length = 5, 25, 5 do
 				player:update_weapons()
@@ -274,25 +273,25 @@ return {kind = 'integration', tests = {
 			end
 			player:update_weapons()
 			assert(primary.length_tiles == 28 and primary.x == 16 and primary.y == 24
-			and primary.collider.local_area.right == 224
-			and primary.collider.local_area.bottom == 8,
+			and primary.collider.local_right == 224
+			and primary.collider.local_bottom == 8,
 			'the Extended Laser did not retain its 28x8-tile source extent')
-			player.x = 121
+			pose:set_world_origin(121, 25)
 			player:update_weapons()
 			assert(primary.x == 48 and primary.length_tiles == 26,
 			'the completed Extended Laser did not enter its independent travel phase')
 			player:despawn_slot_projectile(primary, 'test_reset')
 
-			player.x = 1
-			player.y = 25
-			player:spawn_laser(player, 3)
+			pose:set_world_origin(1, 25)
+			pose:resolve_world()
+			player:spawn_laser(1, pose.wox, pose.woy, pose, 3)
 			local extended_laser_row<const> = stage.solid_tape[(primary.y // stage.tile_size) + 1]
 			local extended_laser_column<const> =
 			((primary.x + stage.total_scroll_px) // stage.tile_size) + 1
 			extended_laser_row[extended_laser_column + 2] = 1
 			player:update_weapons()
 			assert(primary.type == 8 and primary.y == 24 and primary.length_tiles == 1
-			and primary.collider.local_area.right == 8,
+			and primary.collider.local_right == 8,
 			'the tile-aligned Extended Laser did not stop at its authored stage row')
 			extended_laser_row[extended_laser_column + 2] = 0
 			player:despawn_slot_projectile(primary, 'test_reset')

@@ -51,15 +51,15 @@ local apply_secondary_reveal<const> = function(target, height)
 end
 
 local apply_curtain_mode<const> = function(target, mode)
-	target.presentation.members.curtain:set_mode(mode)
+	target.presentation.members.curtain.visual:set_mode(mode)
 end
 
 local apply_venom_image<const> = function(target, visible)
 	if visible then
 		atlas.load(image.atlas_id(story_scene.portrait_imgid))
-		target.presentation.members.picture:set_imgid(story_scene.portrait_imgid)
+		target.presentation.members.picture.sprite_component:set_imgid(story_scene.portrait_imgid)
 	else
-		target.presentation.members.picture:set_imgid(nil)
+		target.presentation.members.picture.sprite_component:set_imgid(nil)
 	end
 end
 
@@ -81,6 +81,7 @@ local build_normal_timeline<const> = function(duration_frames)
 		- normal_slide_out_duration_frames
 		- normal_next_slide_wait_frames
 	return {
+		phase = 'presentation',
 		frames = timeline.range(duration_frames),
 		playback_mode = 'once',
 		clock_source = timeline_clock_source.frame,
@@ -94,7 +95,7 @@ local build_normal_timeline<const> = function(duration_frames)
 			{
 				kind = 'value',
 				interpolation = 'step',
-				path = { 'presentation', 'members', 'curtain', 'count' },
+				path = { 'presentation', 'members', 'curtain', 'visual', 'count' },
 				keys = build_curtain_count_keys(slide_out_start_frame, normal_slide_out_offsets),
 			},
 			{
@@ -196,6 +197,7 @@ local build_venom_timeline<const> = function()
 		}
 	end
 	return {
+		phase = 'presentation',
 		frames = timeline.range(venom_duration_frames),
 		playback_mode = 'once',
 		clock_source = timeline_clock_source.frame,
@@ -218,13 +220,13 @@ local build_venom_timeline<const> = function()
 			{
 				kind = 'value',
 				interpolation = 'step',
-				path = { 'presentation', 'members', 'curtain', 'opening_start' },
+				path = { 'presentation', 'members', 'curtain', 'visual', 'opening_start' },
 				keys = curtain_start_keys,
 			},
 			{
 				kind = 'value',
 				interpolation = 'step',
-				path = { 'presentation', 'members', 'curtain', 'opening_end' },
+				path = { 'presentation', 'members', 'curtain', 'visual', 'opening_end' },
 				keys = curtain_end_keys,
 			},
 			{
@@ -236,7 +238,7 @@ local build_venom_timeline<const> = function()
 			{
 				kind = 'value',
 				interpolation = 'step',
-				path = { 'presentation', 'members', 'curtain', 'count' },
+				path = { 'presentation', 'members', 'curtain', 'visual', 'count' },
 				keys = build_curtain_count_keys(venom_slide_out_start_frame, venom_slide_out_offsets),
 			},
 			{
@@ -262,14 +264,14 @@ function story:begin_slide(state)
 	end
 	local primary_text<const> = self.presentation.members.primary_caption.text_component
 	primary_text:set_text(slide.text)
-	primary_text.offset_y = slide.text_y
+	primary_text:set_presentation_origin(0, slide.text_y)
 	primary_text:set_glyph_visible_height(0)
 	local secondary_text<const> = self.presentation.members.secondary_caption.text_component
 	secondary_text.visible = state.data.slide_index == 6
 	secondary_text:set_glyph_visible_height(0)
-	self.presentation.members.curtain:set_mode(curtain_none)
-	self.presentation.members.curtain.count = 0
-	self.presentation.members.picture:set_imgid(slide.imgid)
+	self.presentation.members.curtain.visual:set_mode(curtain_none)
+	self.presentation.members.curtain.visual.count = 0
+	self.presentation.members.picture.sprite_component:set_imgid(slide.imgid)
 end
 
 local finish_story<const> = function(self)

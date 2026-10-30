@@ -19,20 +19,20 @@ function end_demo_scene.register()
 			{
 				member_id = 'picture',
 				definition_id = presentation.sprite_definition_id,
-				options = { pos = { x = 0, y = 0, z = 0 } },
 			},
 			{
 				member_id = 'caption',
 				definition_id = caption.definition_id,
-				options = { pos = { x = 0, y = 8, z = 1 } },
+				spatial = { local_transform = { 1, 0, 0, 1, 0, 8 } },
+				initial = { text = { order = 1 } },
 			},
 			{
 				member_id = 'curtain',
 				definition_id = curtain.definition_id,
 				options = {
-					sx = 256, sy = 192, mode = 1, visible = false,
-					pos = { x = 0, y = 0, z = 2 },
+					visible = false,
 				},
+				initial = { curtain = { width = 256, height = 192, mode = 1, order = 2 } },
 			},
 		},
 	})

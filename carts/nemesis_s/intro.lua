@@ -26,7 +26,8 @@ function intro:begin()
 	self.presentation = scene_library.instantiate(intro_scene.id)
 	local logo<const> = self.presentation.members.logo
 	logo.visible = false
-	logo.sprite_component:set_region(0, 0, logo.sx, 1)
+	local visual<const> = logo.sprite_component
+	visual:set_region(0, 0, visual.source_width, 1)
 end
 
 function intro:release_presentation()
@@ -95,6 +96,7 @@ local define_fsm<const> = function()
 						timelines = {
 							[logo_reveal_timeline_id] = {
 								def = {
+									phase = 'presentation',
 									frames = timeline.range(logo_height),
 									frame_duration = logo_row_duration,
 									playback_mode = 'once',

@@ -34,8 +34,7 @@ return {
 				stage.state_machines:transition_to('/running/stopped')
 				local boss<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_moon_def, {
 					stage = stage,
-					pos = { x = moon_spawn_x, y = moon_spawn_y },
-				})
+				}, { local_transform = { 1, 0, 0, 1, moon_spawn_x, moon_spawn_y } })
 				test.boss = boss
 				test.active = boss.state_machines:bind_state_path('/active')
 				test.dying = boss.state_machines:bind_state_path('/dying')
@@ -54,7 +53,7 @@ return {
 				'Moon did not bind its separate retained core and armor hitmaps')
 				assert(core.mask == collision_enemy_mask,
 				'Moon core tilemap did not block both players and their projectiles')
-				boss:receive_player_projectile({ damage = 1, x = boss.x, y = boss.y }, moon_core_collider_id)
+				boss:receive_player_projectile({ damage = 1 }, moon_core_collider_id)
 				assert(boss.health == moon_health,
 				'Moon core accepted damage during the armored entrance')
 				boss:rotate_counterclockwise()
@@ -80,7 +79,7 @@ return {
 			local boss<const> = test.boss
 			do
 				t:wait_until('Moon entering', function() return not (not boss.vulnerable) end, 1200)
-				assert(boss.x == moon_enter_target_x
+				assert(boss.spatial.ox == moon_enter_target_x
 				and boss.state_machines:matches_state(test.active)
 				and boss.behaviour.enabled,
 				'Moon entrance did not stop at the authored combat boundary')
@@ -103,8 +102,7 @@ return {
 				)
 				assert(spawn_interval == expected_interval,
 				'Moon did not retain the reduced Mini Moon admission cadence')
-				boss.x = 0
-				boss.y = 0
+				boss.spatial:set_world_origin(0, 0)
 			end
 			do
 				local rays<const> = small_rays.objects
@@ -113,7 +111,7 @@ return {
 				assert(direction == boss.vertical_direction and rays[2].direction == direction,
 				'Moon volley emitted a ray in the wrong direction')
 				local offset_y<const> = direction == moon_vertical_direction_down and 56 or 8
-				assert(rays[1].y == boss.y + offset_y and rays[2].y == boss.y + offset_y,
+				assert(rays[1].spatial:resolve_world().woy == boss.spatial.oy + offset_y and rays[2].spatial:resolve_world().woy == boss.spatial.oy + offset_y,
 				'Moon volley lost its authored muzzle anchors')
 				test.small_ray = rays[1]
 				test.small_ray_moving = rays[1].state_machines:bind_state_path('/moving')
@@ -121,27 +119,27 @@ return {
 			do
 				local ray<const> = test.small_ray
 				t:wait_until('Moon small_ray_moving', function() return not (not ray.state_machines:matches_state(test.small_ray_moving)) end, 1200)
-				test.small_ray_y = ray.y
+				test.small_ray_y = ray.spatial:resolve_world().woy
 				test.small_ray_time_ms = world.gameplay_time_ms
 			end
 			do
 				t:wait_until('Moon small_ray_speed', function() return not (world.gameplay_time_ms == test.small_ray_time_ms) end, 1200)
-				assert(math.abs(test.small_ray_y - test.small_ray.y) == moon_small_ray_speed,
+				assert(math.abs(test.small_ray_y - test.small_ray.spatial:resolve_world().woy) == moon_small_ray_speed,
 				'Moon small ray did not retain its balanced movement step')
-				test.small_ray_pass_previous_x = boss.x
+				test.small_ray_pass_previous_x = boss.spatial.ox
 			end
 			do
-				t:wait_until('Moon small_ray_pass_start', function() return not (boss.x == test.small_ray_pass_previous_x) end, 1200)
+				t:wait_until('Moon small_ray_pass_start', function() return not (boss.spatial.ox == test.small_ray_pass_previous_x) end, 1200)
 				local tile_size<const> = boss.stage.tile_size
-				assert(boss.x == test.small_ray_pass_previous_x + tile_size,
+				assert(boss.spatial.ox == test.small_ray_pass_previous_x + tile_size,
 				'Moon small-ray pass skipped a retained horizontal tile step')
-				test.small_ray_pass_start_x = boss.x
+				test.small_ray_pass_start_x = boss.spatial.ox
 				test.small_ray_pass_start_time_ms = world.gameplay_time_ms
 			end
 			do
 				local expected_x<const> = test.small_ray_pass_start_x + boss.stage.tile_size * 5
-				t:wait_until('Moon small_ray_pass_speed', function() return not (boss.x < expected_x) end, 1200)
-				assert(boss.x == expected_x,
+				t:wait_until('Moon small_ray_pass_speed', function() return not (boss.spatial.ox < expected_x) end, 1200)
+				assert(boss.spatial.ox == expected_x,
 				'Moon small-ray pass skipped a retained horizontal tile step')
 				local elapsed_ms<const> = world.gameplay_time_ms - test.small_ray_pass_start_time_ms
 				local expected_ms<const> = (
@@ -157,9 +155,8 @@ return {
 				)
 				assert(test.volley_time_ms - test.first_volley_time_ms == expected_ms,
 				'Moon vertical-ray cadence was not halved at its authored BT interval')
-				boss.x = playfield_width - moon_width
-				boss.y = 0
-				player.y = playfield_height - player_height
+				boss.spatial:set_world_origin(playfield_width - moon_width, 0)
+				player.spatial:set_world_origin(player.spatial.ox, playfield_height - player_height)
 			end
 			do
 				local rays<const> = death_rays.objects
@@ -169,14 +166,14 @@ return {
 				test.ray_cap = ray:get_component(sprite_component, moon_death_ray_cap_id)
 				test.ray_cap_collider = ray:get_component(collider_2d_component, moon_death_ray_cap_id)
 				test.death_ray_holding = ray.state_machines:bind_state_path('/holding')
-				test.death_ray_start_y = boss.y
-				test.death_ray_previous_y = boss.y
+				test.death_ray_start_y = boss.spatial.oy
+				test.death_ray_previous_y = boss.spatial.oy
 				test.death_ray_previous_tiles = ray.ray_strip.last_tile
 				test.death_ray_update_count = 0
 				test.gameplay_time_ms = world.gameplay_time_ms
 				assert(boss.behaviour.enabled and boss.vertical_direction == moon_vertical_direction_down,
 				'Moon death-ray task did not select the primary player direction')
-				assert(ray.x == boss.x + moon_death_ray_offset_x and ray.originator == boss,
+				assert(ray.spatial:resolve_world().wox == boss.spatial.ox + moon_death_ray_offset_x and ray.originator == boss,
 				'Moon death ray lost its authored muzzle or source actor binding')
 				assert(ray.ray_strip.last_tile == 2
 				and ray.ray_strip.enabled and ray.ray_strip_collider.enabled,
@@ -194,21 +191,21 @@ return {
 					'Moon death ray did not grow by one source tile per gameplay update')
 					test.death_ray_previous_tiles = tile_count
 				end
-				assert(ray.y == boss.y + moon_death_ray_offset_y,
+				assert(ray.spatial:resolve_world().woy == boss.spatial.oy + moon_death_ray_offset_y,
 				'Moon death ray did not follow its source actor while expanding')
 				local update_count<const> = test.death_ray_update_count
 				if update_count == 1 then
-					assert(boss.y == test.death_ray_start_y + boss.stage.tile_size,
+					assert(boss.spatial.oy == test.death_ray_start_y + boss.stage.tile_size,
 					'Moon death-ray movement did not consume the source accumulator overflow')
 				elseif update_count == 2 or update_count == 3 then
-					assert(boss.y == test.death_ray_previous_y,
+					assert(boss.spatial.oy == test.death_ray_previous_y,
 					'Moon death-ray movement lost its source accumulator stalls')
 				end
-				test.death_ray_previous_y = boss.y
+				test.death_ray_previous_y = boss.spatial.oy
 				if not holding then
 					return false
 				end
-				assert(tile_count == moon_death_ray_tile_count and ray.x > 0,
+				assert(tile_count == moon_death_ray_tile_count and ray.spatial:resolve_world().wox > 0,
 				'Moon death ray did not reach the left edge at the source growth rate')
 				test.hold_start_time_ms = world.gameplay_time_ms
 
@@ -222,7 +219,7 @@ return {
 				assert(ray.ray_strip.last_tile == moon_death_ray_tile_count
 				and test.ray_cap.enabled and test.ray_cap_collider.enabled,
 				'Moon death ray contracted instead of retaining the source hold')
-				assert(ray.y == boss.y + moon_death_ray_offset_y,
+				assert(ray.spatial:resolve_world().woy == boss.spatial.oy + moon_death_ray_offset_y,
 				'Moon death ray stopped following its source actor during the hold')
 				return false
 			end, 1200)
@@ -238,7 +235,7 @@ return {
 				local ray<const> = rays[1]
 				boss.health = 1
 				boss.vulnerable = true
-				boss:receive_player_projectile({ damage = 1, x = boss.x, y = boss.y }, moon_core_collider_id)
+				boss:receive_player_projectile({ damage = 1 }, moon_core_collider_id)
 				assert(boss.health == 0 and boss.state_machines:matches_state(test.dying),
 				'Moon core destruction did not enter the authored death sequence')
 				assert(not boss.behaviour.enabled,
@@ -253,7 +250,7 @@ return {
 				t:wait_until('Moon dying_ray_finished', function() return not (#death_rays.objects ~= 0) end, 1200)
 				assert(boss.state_machines:matches_state(test.dying),
 				'Moon death-ray completion escaped the active death sequence')
-				t:wait_until('Moon dying_ray_finished', function() return not (boss.visible) end, 1200)
+				t:wait_until('Moon dying_ray_finished', function() return not (boss.sprite_component.visible) end, 1200)
 				assert(not boss.core_collider.enabled and not boss.armor_collider.enabled,
 				'Moon retained its hitmap after the visible body disappeared')
 				boss:mark_for_disposal()

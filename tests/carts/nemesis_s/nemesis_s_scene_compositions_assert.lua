@@ -21,7 +21,7 @@ return {
 			intro.state_machines:transition_to('/hidden')
 			assert_disposed(logo_scene)
 			intro.state_machines:transition_to('/playing')
-			assert(intro.presentation.members.logo ~= logo_scene.logo and intro.presentation.members.logo.x == 40,
+			assert(intro.presentation.members.logo ~= logo_scene.logo and intro.presentation.members.logo.spatial.ox == 40,
 			'intro reentry did not instantiate fresh authored members')
 			intro.state_machines:transition_to('/hidden')
 			director.state_machines:transition_to('/story')
@@ -42,7 +42,7 @@ return {
 				ending.state_machines:transition_to('/hidden')
 				assert_disposed(members)
 				ending.state_machines:transition_to('/playing')
-				assert(ending.presentation.members.caption ~= members.caption and ending.presentation.members.caption.y == 8,
+				assert(ending.presentation.members.caption ~= members.caption and ending.presentation.members.caption.spatial.oy == 8,
 				'end demo reentry did not use a fresh authored caption')
 				test.ending = shallow_copy(ending.presentation.members)
 				director.state_machines:transition_to('/game_start')
@@ -59,12 +59,11 @@ return {
 				local player<const> = director.players[1]
 				assert(player.start_point == members.player_start_1,
 				'player admission did not retain the scene-owned respawn point')
-				members.player_start_1.x = 88
-				members.player_start_1.y = 68
+				members.player_start_1.spatial:set_local_origin(88, 68)
 				player:finish_dying()
-				assert(player.x == 88 and player.y == 68,
+				assert(player.spatial.ox == 88 and player.spatial.oy == 68,
 				'respawn discarded the authored start point')
-				assert(stage.actor_spawn_count == 179 and stage.actor_spawns[1].options.pos.y == 16,
+				assert(stage.actor_spawn_count == 179 and stage.actor_spawns[1].spatial.local_transform[6] == 16,
 				'stage did not consume its YAML-authored actor placements')
 				local first<const> = stage.actor_spawns[1]
 				assert(first.options.formation == stage.actor_spawns[6].options.formation
@@ -77,7 +76,7 @@ return {
 				local solid_x<const> = (150 - 1) * 8 - stage.total_scroll_px
 				local solid_y<const> = 21 * 8
 				assert(stage:is_solid_pixel(solid_x, solid_y), 'fixture must address solid terrain')
-				stage:set_pos(16, 8)
+				stage.spatial:set_world_origin(16, 8)
 				assert(stage:is_solid_pixel(solid_x + 16, solid_y + 8)
 				and stage:first_solid_tile_offset(solid_x + 16, solid_y + 8, 3) == 0
 				and stage:first_solid_vertical_tile_offset(solid_x + 16, solid_y + 8, 3, -1) == 0,
@@ -104,7 +103,7 @@ return {
 			'restart did not register the replacement stage')
 			assert(stage.actor_spawns[1].options.formation ~= test.formation
 			and stage.actor_spawns[1].options.formation.remaining == 6
-			and director.players[1].x == 80 and director.players[1].y == 60,
+			and director.players[1].spatial.ox == 80 and director.players[1].spatial.oy == 60,
 			'new run shared formation progress or modified placement with the previous run')
 
 		end,

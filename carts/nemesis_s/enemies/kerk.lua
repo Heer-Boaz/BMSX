@@ -1,3 +1,4 @@
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -17,7 +18,6 @@ local hit_area<const> = {
 }
 
 function kerk:ctor()
-	self:get_component(collider_2d_component).local_area = hit_area
 	self.vulnerable = false
 end
 
@@ -36,17 +36,20 @@ local register_definition<const> = function()
 		def_id = ids_kerk_def,
 		class = kerk,
 		base = enemy,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_kerk, order = kerk_draw_z } },
 		components = {
-			enemy.new_collider,
+			collider_2d_component.factory({
+				geometry_pool = collision_storage.area, local_area = hit_area,
+				layer = collision_enemy_layer, mask = collision_enemy_mask,
+			}),
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_kerk_fsm }),
 		},
 		defaults = {
-			imgid = assets_kerk,
 			max_health = 0,
 			small_fry = false,
 			stage_scroll_width = kerk_width,
-			z = kerk_draw_z,
 		},
 	})
 end

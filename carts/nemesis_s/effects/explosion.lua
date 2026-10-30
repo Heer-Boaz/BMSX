@@ -1,6 +1,7 @@
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
+local sprite_component<const> = require('cartlib/component/sprite_component')
 local sprite_object<const> = require('cartlib/sprite')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
@@ -22,12 +23,12 @@ local large_frames<const> = {
 }
 
 function explosion:finish()
+	local pose<const> = self.spatial
 	local drop_definition_id<const> = self.drop_definition_id
 	if drop_definition_id ~= nil then
 		self.scene:spawn(drop_definition_id, {
 			stage = self.stage,
-			pos = { x = self.x, y = self.y },
-		})
+		}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
 	end
 	self:mark_for_disposal()
 end
@@ -39,11 +40,13 @@ local register_variant<const> = function(definition_id, machine_id, frames, draw
 			playing = {
 				timelines = {
 					animation = {
+						target_path = { 'sprite_component' },
 						def = {
+							phase = 'presentation',
 							frames = frames,
 							frame_duration = explosion_frame_ms,
 							playback_mode = 'once',
-							apply = sprite_object.set_imgid,
+							apply = sprite_component.set_imgid,
 						},
 						on_finished = explosion.finish,
 					},
@@ -55,14 +58,14 @@ local register_variant<const> = function(definition_id, machine_id, frames, draw
 		def_id = definition_id,
 		class = explosion,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = frames[1], order = draw_z } },
 		components = {
 			stage_scroll_follower_component.new,
 			timeline_component.new,
 			fsm_component.factory({ machine_id }),
 		},
 		defaults = {
-			imgid = frames[1],
-			z = draw_z,
 		},
 	})
 end

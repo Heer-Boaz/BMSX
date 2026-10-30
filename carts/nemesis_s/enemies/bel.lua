@@ -2,6 +2,7 @@ local collider_2d_component<const> = require('cartlib/collision/collider_2d_comp
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
+local velocity<const> = require('cartlib/velocity')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world<const> = require('cartlib/world/world')
 local assets<const> = require('bmsx/assets')
@@ -25,32 +26,31 @@ end
 
 function bel:center()
 	local sprite<const> = self.sprite_component
-	self:set_imgid(assets_bel_middle)
+	self.sprite_component:set_imgid(assets_bel_middle)
 	sprite.flip_h = false
-	sprite.offset_x = 0
-	sprite.offset_y = 0
-	self.collider.shape_offset_x = 0
-	self.collider.shape_offset_y = 0
+	sprite:set_attachment_origin(0, 0)
+	self.collider:set_local_origin(0, 0)
 	self.collider:set_shape_asset(assets.collision_shape_bel_middle_body_addr)
 end
 
 function bel:ring()
+	local pose<const> = self.spatial
 	local sprite<const> = self.sprite_component
 	local spawn_count<const> = math.random(
 		bel_note_spawn_count_min,
 		bel_note_spawn_count_max
 	) * self.player_count
-	local spawn_x<const> = self.x + sprite.offset_x + bel_note_spawn_offset_x
-	local spawn_y<const> = self.y + sprite.offset_y + bel_note_spawn_offset_y
+	local spawn_x<const> = pose.ox + sprite.attachment_ox + bel_note_spawn_offset_x
+	local spawn_y<const> = pose.oy + sprite.attachment_oy + bel_note_spawn_offset_y
 	for _ = 1, spawn_count do
 		local angle<const> = math.random() * math.pi
-		self.scene:spawn(ids_noot_def, {
-			stage = self.stage,
-			velocity_x = math.cos(angle + math.pi * 0.5) *
-				(math.random() + 0.5) * noot_velocity_scale_px_per_second,
-			velocity_y = math.sin(angle - math.pi * 0.5) * noot_velocity_scale_px_per_second,
-			pos = { x = spawn_x, y = spawn_y },
-		})
+		local velocity_x<const> = velocity.pixels_per_second_to_velocity_q8(
+			math.cos(angle + math.pi * 0.5) * (math.random() + 0.5) * noot_velocity_scale_px_per_second)
+		local velocity_y<const> = velocity.pixels_per_second_to_velocity_q8(
+			math.sin(angle - math.pi * 0.5) * noot_velocity_scale_px_per_second)
+		self.scene:spawn(ids_noot_def, { stage = self.stage },
+			{ local_transform = { 1, 0, 0, 1, spawn_x, spawn_y } },
+			{ fixed_velocity = { velocity_x = velocity_x, velocity_y = velocity_y } })
 	end
 	self.events:emit('enemy.bel.ring')
 end
@@ -68,12 +68,10 @@ end
 
 function bel:enter_left()
 	local sprite<const> = self.sprite_component
-	self:set_imgid(assets_bel_side)
+	self.sprite_component:set_imgid(assets_bel_side)
 	sprite.flip_h = false
-	sprite.offset_x = -bel_side_offset_x
-	sprite.offset_y = bel_side_offset_y
-	self.collider.shape_offset_x = -bel_side_offset_x
-	self.collider.shape_offset_y = bel_side_offset_y
+	sprite:set_attachment_origin(-bel_side_offset_x, bel_side_offset_y)
+	self.collider:set_local_origin(-bel_side_offset_x, bel_side_offset_y)
 	self.collider:set_shape_asset(assets.collision_shape_bel_side_body_addr)
 	self.ring_count = self.ring_count + 1
 	self:ring()
@@ -81,12 +79,10 @@ end
 
 function bel:enter_right()
 	local sprite<const> = self.sprite_component
-	self:set_imgid(assets_bel_side)
+	self.sprite_component:set_imgid(assets_bel_side)
 	sprite.flip_h = true
-	sprite.offset_x = bel_side_offset_x
-	sprite.offset_y = bel_side_offset_y
-	self.collider.shape_offset_x = bel_side_offset_x
-	self.collider.shape_offset_y = bel_side_offset_y
+	sprite:set_attachment_origin(bel_side_offset_x, bel_side_offset_y)
+	self.collider:set_local_origin(bel_side_offset_x, bel_side_offset_y)
 	self.collider:set_shape_asset(assets.collision_shape_bel_side_body_addr)
 	self.collider:set_shape_flip(true, false)
 	self.ring_count = self.ring_count + 1
@@ -119,18 +115,17 @@ function bel:receive_player_projectile(projectile, _collider_local_id, hit_point
 		self.events:emit('enemy.bel.hit')
 		self.scene:spawn(ids_small_explosion_def, {
 			stage = self.stage,
-			pos = { x = hit_point.x, y = hit_point.y },
-		})
+		}, { local_transform = { 1, 0, 0, 1, hit_point.x, hit_point.y } })
 	end
 	return true
 end
 
 function bel:on_destroyed(projectile)
+	local pose<const> = self.spatial
 	self:center()
 	self.scene:spawn(ids_large_explosion_def, {
 		stage = self.stage,
-		pos = { x = self.x, y = self.y },
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
 	self.events:emit('enemy.bel.destroyed')
 	self.stage:resume_scrolling()
 	enemy.on_destroyed(self, projectile)
@@ -139,6 +134,7 @@ end
 local duration_timeline<const> = function(duration_ms, on_finished)
 	return {
 		def = {
+			phase = 'physical',
 			continuous = true,
 			duration_ms = duration_ms,
 			playback_mode = 'once',
@@ -195,6 +191,8 @@ local register_definition<const> = function()
 		def_id = ids_bel_def,
 		class = bel,
 		base = enemy,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_bel_middle, order = bel_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_bel_middle_body_addr),
 			stage_scroll_follower_component.new,
@@ -202,10 +200,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_bel_fsm }),
 		},
 		defaults = {
-			imgid = assets_bel_middle,
 			max_health = bel_health,
 			small_fry = false,
-			z = bel_draw_z,
 		},
 	})
 end

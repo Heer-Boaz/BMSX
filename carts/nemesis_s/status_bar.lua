@@ -1,4 +1,4 @@
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local visual_2d<const> = require('cartlib/component/visual_2d_component')
 local font<const> = require('cartlib/font')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
@@ -53,12 +53,35 @@ local sources<const> = {
 }
 
 local draw_status_bar<const> = function(component, draw)
+	component:resolve_pose()
 	local owner<const> = component.owner
 	local rows<const> = owner.rows
-	local x<const> = owner.x + component.offset_x
+	local x<const>, origin_y<const> = component.wox, component.woy
+	if not component._translation_only then
+		local xx<const>, xy<const>, yx<const>, yy<const> = component.wxx, component.wxy, component.wyx, component.wyy
+		for player_index = 1, #rows do
+			local row<const> = rows[player_index]
+			local y<const> = bar_y + (player_index - 1) * row_height
+			if row.powerups_visible then
+				for slot_index = 1, slot_count do
+					local source<const> = row.powerup_sources[slot_index]
+					local local_x<const> = bar_x + (slot_index - 1) * bar_stride_x
+					source:draw_affine(draw, x + xx * local_x + yx * y, origin_y + xy * local_x + yy * y,
+						xx * source.width, xy * source.width, yx * source.height, yy * source.height, 0, 0xffffffff, 0)
+				end
+				local source<const> = row.description_source
+				source:draw_affine(draw, x + xx * description_x + yx * y, origin_y + xy * description_x + yy * y,
+					xx * source.width, xy * source.width, yx * source.height, yy * source.height, 0, 0xffffffff, 0)
+			end
+			local source<const> = sources.ship
+			source:draw_affine(draw, x + xx * ship_x + yx * y, origin_y + xy * ship_x + yy * y,
+				xx * source.width, xy * source.width, yx * source.height, yy * source.height, 0, 0xffffffff, 0)
+		end
+		return
+	end
 	for player_index = 1, #rows do
 		local row<const> = rows[player_index]
-		local y<const> = owner.y + component.offset_y + bar_y + (player_index - 1) * row_height
+		local y<const> = origin_y + bar_y + (player_index - 1) * row_height
 		if row.powerups_visible then
 			local powerup_sources<const> = row.powerup_sources
 			for slot_index = 1, slot_count do
@@ -69,7 +92,16 @@ local draw_status_bar<const> = function(component, draw)
 		sources.ship:blit(draw, x + ship_x, y)
 	end
 end
-local new_status_bar_visual<const> = custom_visual_component.factory({ draw = draw_status_bar })
+local status_visual<const> = {}
+status_visual.__index = status_visual
+setmetatable(status_visual, { __index = visual_2d })
+
+function status_visual.new(context)
+	local self<const> = visual_2d.new(context, 'status')
+	setmetatable(self, status_visual)
+	self:set_draw_function(draw_status_bar)
+	return self
+end
 
 local select_slot_source<const> = function(row, slot_index)
 	local state<const> = row.player_state
@@ -144,18 +176,11 @@ function status_bar:bind()
 	end
 end
 
-function status_bar:ctor()
-	local resolved_font<const> = font.get(nemesis_font.font_id)
+function status_bar:ctor(_options, _definition_id, context)
 	local rows<const> = {}
 	self.rows = rows
 	for player_index = 1, #self.player_states do
-		local life_text<const> = text_component.new({
-			id_local = 'life_' .. tostring(player_index),
-			font = resolved_font,
-			offset_x = life_x,
-			offset_y = bar_y + (player_index - 1) * row_height,
-			offset_z = 1,
-		})
+		local life_text<const> = text_component.new(context, 'life_' .. tostring(player_index))
 		self:add_component(life_text)
 		local row<const> = {
 			player_state = self.player_states[player_index],
@@ -173,8 +198,13 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = definition_id,
 		class = status_bar,
+		spatial = { family = '2d', authority = 'affine' },
+		initial = {
+			life_1 = { font = font.get(nemesis_font.font_id), attachment_affine = { 1, 0, 0, 1, life_x, bar_y } },
+			life_2 = { font = font.get(nemesis_font.font_id), attachment_affine = { 1, 0, 0, 1, life_x, bar_y + row_height } },
+		},
 		components = {
-			new_status_bar_visual,
+			status_visual.new,
 		},
 	})
 end

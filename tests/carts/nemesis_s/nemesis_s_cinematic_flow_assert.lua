@@ -46,7 +46,7 @@ return {
 			local logo_object<const> = intro.presentation.members.logo
 			local logo<const> = logo_object.sprite_component
 			assert(logo.imgid == 'intro_konami'
-			and logo_object.x == 40 and logo_object.y == 64
+			and logo_object.spatial.ox == 40 and logo_object.spatial.oy == 64
 			and logo.region_width == 168 and logo.region_height == 1
 			and not logo_object.visible,
 			'Konami logo did not enter the source-derived blank presentation')
@@ -74,7 +74,7 @@ return {
 
 			local story<const> = registry:get('nemesis_s.story')
 			assert(story.presentation.members.picture.sprite_component.imgid == 'story_coup', 'story did not start on the coup image')
-			assert((story.presentation.members.primary_caption.y + story.presentation.members.primary_caption.text_component.offset_y) == 144,
+			assert(story.presentation.members.primary_caption.text_component:resolve_pose().woy == 144,
 			'first story caption differs from the XNA layout')
 			local story_panel_frames<const> = { 1257, 538, 480, 419, 367, 1014, 2101, 1202, 839 }
 			local story_frame_ms<const> = clock.frame_delta_milliseconds()
@@ -94,16 +94,16 @@ return {
 			story.timelines:advance_to('nemesis_s.story.slide.6', 126)
 			assert(story.presentation.members.picture.sprite_component.imgid == 'story_piet2', 'Pieton interlude did not reveal its image')
 			story.timelines:advance_to('nemesis_s.story.slide.6', 158)
-			assert(story.presentation.members.curtain.opening_start == 78 and story.presentation.members.curtain.opening_end == 62,
+			assert(story.presentation.members.curtain.visual.opening_start == 78 and story.presentation.members.curtain.visual.opening_end == 62,
 			'Pieton curtain did not reach its retained upper reveal bounds')
 			story.timelines:advance_to('nemesis_s.story.slide.6', 310)
-			assert(story.presentation.members.curtain.opening_start == 126 and story.presentation.members.curtain.opening_end == 110,
+			assert(story.presentation.members.curtain.visual.opening_start == 126 and story.presentation.members.curtain.visual.opening_end == 110,
 			'Pieton curtain did not return to its retained lower bounds')
 			story.timelines:advance_to('nemesis_s.story.slide.6', 663)
-			assert(story.presentation.members.curtain.opening_end == 4 and story.presentation.members.secondary_caption.text_component.glyph_visible_height == nil,
+			assert(story.presentation.members.curtain.visual.opening_end == 4 and story.presentation.members.secondary_caption.text_component.glyph_visible_height == nil,
 			'Pieton wipe did not reveal the complete second caption')
 			story.timelines:advance_to('nemesis_s.story.slide.6', 1003)
-			assert(story.presentation.members.curtain.count == 8,
+			assert(story.presentation.members.curtain.visual.count == 8,
 			'Pieton panel did not reach black on the original transition boundary')
 			story.events:emit('story_done')
 			assert(director.state_machines:matches_state(test.title_state), 'story did not advance to title')
@@ -111,7 +111,7 @@ return {
 
 			local title<const> = registry:get('nemesis_s.title_screen')
 			local menu<const> = shallow_copy(title.presentation.members)
-			assert(menu.background.sprite_component.imgid == 'title_screen_1' and (menu.selector.y + menu.selector.sprite_component.offset_y) == 136,
+			assert(menu.background.sprite_component.imgid == 'title_screen_1' and menu.selector.sprite_component:resolve_pose().woy == 136,
 			'title did not enter its authored idle presentation')
 			title.timelines:advance_to('nemesis_s.title_screen.idle', 8)
 			assert(title.presentation.members.background.sprite_component.imgid == 'title_screen_2',
@@ -120,7 +120,7 @@ return {
 			assert(title.presentation.members.background.sprite_component.imgid == 'title_screen_1' and not menu.selector.visible,
 			'title idle presentation did not retain the ROM 8/4 and 12/12 cadences')
 			title:toggle_player_count()
-			assert(title.selected_player_count == 2 and (menu.selector.y + menu.selector.sprite_component.offset_y) == 152
+			assert(title.selected_player_count == 2 and menu.selector.sprite_component:resolve_pose().woy == 152
 			and menu.selector.visible,
 			'title selector did not retain the two-player selection')
 			title.state_machines:transition_to('/startup/confirmation')
@@ -135,16 +135,17 @@ return {
 			local hangar<const> = shallow_copy(title.presentation.members)
 			local ship<const> = hangar.ship
 			title.timelines:advance_to('nemesis_s.title_screen.lift', 4)
-			assert(ship.y == 121,
+			assert(ship.sprite_component:resolve_pose().woy == 121,
 			'Metalion lift did not retain the first ROM position boundary')
 			title.timelines:advance_to('nemesis_s.title_screen.hangar', 4)
 			assert(title.presentation.members.background.sprite_component.imgid == 'title_hangar_2',
 			'hangar lights did not retain the first observed ROM boundary')
 			title.timelines:advance_to('nemesis_s.title_screen.lift', 49)
-			assert(ship.y == 81,
+			assert(ship.sprite_component:resolve_pose().woy == 81,
 			'Metalion lift did not retain its final visible ROM step')
 			title.state_machines:transition_to('/startup/flight/ignition')
-			assert(ship.y == 73,
+			assert(ship.sprite_component:resolve_pose().woy == 73 and ship.burst:resolve_pose().woy == 73
+			and ship.spatial.oy == 129,
 			'Metalion ignition did not enter at the hangar endpoint')
 			title.timelines:advance_to('nemesis_s.title_screen.ignition', 0)
 			assert(ship.burst.imgid == 'title_startup_metalion_burst_1',
@@ -188,11 +189,11 @@ return {
 			'status presentation did not bind the retained player states')
 			local player_1<const> = registry:get('nemesis_s.player.1')
 			local player_2<const> = registry:get('nemesis_s.player.2')
-			assert(player_1 ~= nil and player_1.x == 80 and player_1.y == 60,
+			assert(player_1 ~= nil and player_1.spatial.ox == 80 and player_1.spatial.oy == 60,
 			'selected game did not spawn player 1 at the XNA start')
-			assert(player_2 ~= nil and player_2.x == 120 and player_2.y == 80,
+			assert(player_2 ~= nil and player_2.spatial.ox == 120 and player_2.spatial.oy == 80,
 			'selected two-player game did not spawn player 2 at the XNA start')
-			assert(player_1.sprite.imgid == 'metallion_n' and player_2.sprite.imgid == 'metallion_n_p2',
+			assert(player_1.sprite_component.imgid == 'metallion_n' and player_2.sprite_component.imgid == 'metallion_n_p2',
 			'local players did not retain their authored vessel presentation')
 			assert(player_1.player_state == player_states[1] and player_2.player_state == player_states[2],
 			'player pawns did not receive their retained player state')
@@ -250,14 +251,14 @@ return {
 				local presentation<const> = registry:get('nemesis_s.end_demo')
 				assert(presentation.presentation.members.picture.sprite_component.imgid == 'end_demo_sint_duim',
 				'end demo did not start on the authored Sint image')
-				assert(presentation.presentation.members.caption.text_component.offset_x == 0
-				and (presentation.presentation.members.caption.y + presentation.presentation.members.caption.text_component.offset_y) == 8,
+				assert(presentation.presentation.members.caption.text_component:resolve_pose().wox == 0
+				and presentation.presentation.members.caption.text_component:resolve_pose().woy == 8,
 				'first end-demo caption differs from the XNA layout')
 				presentation.timelines:advance_time_to(end_demo_timeline_id, 240)
 				assert(presentation.presentation.members.caption.text_component.glyph_visible_height == nil,
 				'first end-demo caption did not finish its four-row delayed reveal')
 				presentation.timelines:advance_time_to(end_demo_timeline_id, first_curtain_start_ms)
-				assert(presentation.presentation.members.curtain.visible and presentation.presentation.members.curtain.count == 1,
+				assert(presentation.presentation.members.curtain.visible and presentation.presentation.members.curtain.visual.count == 1,
 				'first end-demo curtain did not start on its authored boundary')
 				presentation.timelines:advance_time_to(end_demo_timeline_id, first_curtain_end_ms)
 				assert(not presentation.presentation.members.picture.visible and not presentation.presentation.members.caption.visible and not presentation.presentation.members.curtain.visible,
@@ -266,24 +267,26 @@ return {
 				assert(presentation.presentation.members.picture.visible and presentation.presentation.members.caption.visible
 				and presentation.presentation.members.picture.sprite_component.imgid == 'end_demo_boaz'
 				and presentation.presentation.members.caption.text_component.glyph_line_count == 16
-				and presentation.presentation.members.caption.text_component.offset_x == 128
+				and presentation.presentation.members.caption.text_component:resolve_pose().wox == 128
 				and presentation.presentation.members.caption.text_component.glyph_visible_height == 0,
 				'second end-demo slide differs from the XNA image and caption layout')
 				presentation.timelines:advance_time_to(end_demo_timeline_id, second_slide_start_ms + 160)
 				assert(presentation.presentation.members.caption.text_component.glyph_visible_height == nil,
 				'second end-demo caption did not retain its faster XNA reveal')
 				presentation.timelines:advance_time_to(end_demo_timeline_id, second_curtain_start_ms)
-				assert(presentation.presentation.members.curtain.visible and presentation.presentation.members.curtain.count == 1,
+				assert(presentation.presentation.members.curtain.visible and presentation.presentation.members.curtain.visual.count == 1,
 				'second end-demo curtain did not start on its authored boundary')
 				presentation.timelines:advance_time_to(end_demo_timeline_id, end_demo_end_ms - 1)
-				presentation.timelines:tick_frame(1)
+				t:wait_until('end-demo completion', function()
+					return director.state_machines:matches_state(test.title_state)
+				end, 12)
 				assert(director.state_machines:matches_state(test.title_state)
 				and world.active_space_id == 'title',
 				'end-demo completion did not return to the title presentation')
 				assert(read_music_source() == end_demo_music_source,
 				'title entry stopped the non-looping XNA end-demo music')
 				local title<const> = registry:get('nemesis_s.title_screen')
-				assert(title.presentation.members.selector.y == 136 and title.selected_player_count == 1,
+				assert(title.presentation.members.selector.spatial.oy == 136 and title.selected_player_count == 1,
 				'returning from gameplay did not create a fresh title scene')
 				title.events:emit('title_screen_done', { player_count = 1 })
 				assert(not director.metalion_cheat_active,
@@ -292,7 +295,7 @@ return {
 			end
 			t:wait_until('new game', function() return director.status_bar ~= nil and registry:get('nemesis_s.player.1') ~= nil end, 120)
 			local player<const> = registry:get('nemesis_s.player.1')
-			assert(not player.metalion_cheat_active and player.sprite.imgid == assets_player_n,
+			assert(not player.metalion_cheat_active and player.sprite_component.imgid == assets_player_n,
 			'new game inherited the completed run Metalion vessel')
 
 		end,

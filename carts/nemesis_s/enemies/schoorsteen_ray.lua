@@ -7,6 +7,7 @@ local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local world_object<const> = require('cartlib/world/world_object')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
+local collision_storage<const> = require('collision_storage')
 require('constants')
 
 local schoorsteen_ray<const> = {}
@@ -22,10 +23,13 @@ local new_ray_strip<const> = tile_strip_component.factory({
 	step_x = 0,
 	step_y = -schoorsteen_ray_tile_size,
 	first_tile = initial_first_tile,
+	maximum_tiles = max_tiles,
+	order = name_table_weapon_draw_z,
 	enabled = false,
 })
 local new_ray_collider<const> = tile_strip_collider_2d_component.factory({
 	id_local = 0,
+	geometry_pool = collision_storage.area,
 	layer = collision_enemy_projectile_layer,
 	mask = collision_enemy_projectile_mask,
 	enabled = false,
@@ -36,9 +40,9 @@ function schoorsteen_ray:apply_expansion_frame(frame)
 	local last_tile<const> = schoorsteen_ray_initial_tiles
 		+ (frame + 1) * schoorsteen_ray_growth_tiles
 	if last_tile < self.max_tiles then
-		ray_strip.last_tile = last_tile
+		ray_strip:set_range(ray_strip.first_tile, last_tile)
 	else
-		ray_strip.last_tile = self.max_tiles
+		ray_strip:set_range(ray_strip.first_tile, self.max_tiles)
 	end
 end
 
@@ -49,7 +53,7 @@ function schoorsteen_ray:apply_contraction_frame(frame)
 		self:mark_for_disposal()
 		return
 	end
-	ray_strip.first_tile = first_tile
+	ray_strip:set_range(first_tile, ray_strip.last_tile)
 end
 
 function schoorsteen_ray:ctor()
@@ -58,17 +62,18 @@ function schoorsteen_ray:ctor()
 end
 
 function schoorsteen_ray:onspawn()
+	local pose<const> = self.spatial
 	local direction<const> = self.direction
 	local ray_strip<const> = self.ray_strip
-	ray_strip.step_y = direction * schoorsteen_ray_tile_size
+	ray_strip:set_step(0, direction * schoorsteen_ray_tile_size)
 	self.max_tiles = self.stage:first_solid_vertical_tile_offset(
-		self.x,
-		self.y + ray_strip.step_y,
+		pose.ox,
+		pose.oy + ray_strip.step_y,
 		max_tiles,
 		direction
 	)
 	local active<const> = self.max_tiles > 0
-	ray_strip.last_tile = active and schoorsteen_ray_initial_tiles or 0
+	ray_strip:set_range(initial_first_tile, active and schoorsteen_ray_initial_tiles or 0)
 	ray_strip:set_enabled(active)
 	self.ray_collider:set_enabled(active)
 end
@@ -84,6 +89,7 @@ local define_fsm<const> = function()
 				timelines = {
 					expand = {
 						def = {
+							phase = 'physical',
 							frames = timeline.range(schoorsteen_ray_growth_updates),
 							playback_mode = 'once',
 							apply = schoorsteen_ray.apply_expansion_frame,
@@ -108,6 +114,7 @@ local define_fsm<const> = function()
 				timelines = {
 					contract = {
 						def = {
+							phase = 'physical',
 							frames = timeline.range(contraction_updates),
 							playback_mode = 'once',
 							apply = schoorsteen_ray.apply_contraction_frame,
@@ -125,6 +132,7 @@ local register_definition<const> = function()
 		def_id = ids_schoorsteen_ray_def,
 		class = schoorsteen_ray,
 		base = world_object,
+		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			new_ray_strip,
 			new_ray_collider,
@@ -135,7 +143,6 @@ local register_definition<const> = function()
 		defaults = {
 			force_field_hit = player_force_field_hit_overload,
 			direction = -1,
-			z = name_table_weapon_draw_z,
 		},
 	})
 end

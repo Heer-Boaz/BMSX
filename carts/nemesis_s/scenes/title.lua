@@ -11,25 +11,22 @@ function title_scene.register()
 				definition_id = presentation.sprite_definition_id,
 				options = {
 					images = { 'title_screen_1', 'title_screen_2' },
-					pos = { x = 0, y = 0, z = 0 },
 				},
 			},
 			{
 				member_id = 'selector',
 				definition_id = presentation.sprite_definition_id,
-				options = {
-					imgid = 'title_selector',
-					pos = { x = 80, y = 136, z = 1 },
-				},
+				spatial = { local_transform = { 1, 0, 0, 1, 80, 136 } },
+				initial = { base_sprite = { imgid = 'title_selector', order = 1 } },
 			},
 			{
 				member_id = 'selection_cover',
 				definition_id = presentation.cover_definition_id,
 				options = {
-					sx = 64, sy = 8, color = 0xff000000,
 					visible = false,
-					pos = { x = 104, y = 136, z = 2 },
 				},
+				spatial = { local_transform = { 1, 0, 0, 1, 104, 136 } },
+				initial = { rectangle = { width = 64, height = 8, color = 0xff000000, order = 2 } },
 			},
 		},
 	})

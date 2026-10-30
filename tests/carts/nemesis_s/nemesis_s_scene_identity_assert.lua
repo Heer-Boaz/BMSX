@@ -37,11 +37,11 @@ return {
 					objects = {
 						{
 							member_id = 'left', definition_id = placement.definition_id,
-							options = { space_id = placement.space_id, pos = { x = 11, y = 12, z = 13 } },
+							options = { space_id = placement.space_id },
 						},
 						{
 							member_id = 'right', definition_id = placement.definition_id,
-							options = { space_id = placement.space_id, pos = { x = 21, y = 22, z = 23 } },
+							options = { space_id = placement.space_id },
 						},
 					},
 				}
@@ -51,9 +51,8 @@ return {
 				assert(first.members.left.id ~= first.members.right.id and second.members.left.id ~= second.members.right.id
 				and first.members.left.id ~= second.members.left.id and first.members.right.id ~= second.members.right.id,
 				'repeated scene placement reused a Registry identity')
-				assert(first.members.left.x == 11 and first.members.left.y == 12 and first.members.left.z == 13
-				and second.members.right.x == 21 and second.members.right.y == 22 and second.members.right.z == 23,
-				'placement stopped consuming the actual prefab construction and position options')
+				assert(first.members.left.spatial == nil and second.members.right.spatial == nil,
+				'placing a controller manufactured a spatial capability')
 				assert(prefab.definition(placement.definition_id).defaults.id == nil
 				and definition.objects[1].options.id == nil and definition.objects[2].options.id == nil,
 				'instantiation manufactured identity inside the authored prototype or placement')

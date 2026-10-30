@@ -1,3 +1,4 @@
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
@@ -31,18 +32,19 @@ local hit_area<const> = {
 }
 
 function rook:ctor()
-	self:get_component(collider_2d_component).local_area = hit_area
 	self.motion = self:get_component(fixed_point_velocity_component)
 end
 
 function rook:onspawn()
-	self.chimney_exit_y = self.y - self.rise_distance
+	local pose<const> = self.spatial
+	self.chimney_exit_y = pose.oy - self.rise_distance
 	self.motion.velocity_x = 0
 	self.motion.velocity_y = rook_rise_velocity_y_q8
 end
 
 function rook:update_leaving_chimney()
-	if self.y > self.chimney_exit_y then
+	local pose<const> = self.spatial
+	if pose.oy > self.chimney_exit_y then
 		return
 	end
 	local players<const> = players_view.objects
@@ -54,7 +56,8 @@ function rook:update_leaving_chimney()
 	end
 	self.target = target
 	local motion<const> = self.motion
-	motion.velocity_x = target.x < self.x
+	local target_pose<const> = target.spatial
+	motion.velocity_x = target_pose.ox < pose.ox
 		and -rook_attack_velocity_x_q8
 		or rook_attack_velocity_x_q8
 	motion.velocity_y = 0
@@ -63,16 +66,18 @@ function rook:update_leaving_chimney()
 end
 
 function rook:update_attacking_player()
+	local pose<const> = self.spatial
 	local motion<const> = self.motion
-	if self.target.y < self.y then
+	local target<const> = self.target.spatial
+	if target.oy < pose.oy then
 		motion.velocity_y = motion.velocity_y - rook_tracking_acceleration_y_q8
 	else
 		motion.velocity_y = motion.velocity_y + rook_tracking_acceleration_y_q8
 	end
-	if self.x < -rook_width
-	or self.x > playfield_width
-	or self.y < -rook_height
-	or self.y > playfield_height then
+	if pose.ox < -rook_width
+	or pose.ox > playfield_width
+	or pose.oy < -rook_height
+	or pose.oy > playfield_height then
 		self:mark_for_disposal()
 	end
 end
@@ -96,17 +101,20 @@ local register_definition<const> = function()
 		def_id = ids_rook_def,
 		class = rook,
 		base = foe,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_rook_1, order = rook_draw_z } },
 		components = {
-			enemy.new_collider,
+			collider_2d_component.factory({
+				geometry_pool = collision_storage.area, local_area = hit_area,
+				layer = collision_enemy_layer, mask = collision_enemy_mask,
+			}),
 			fixed_point_velocity_component.new,
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_rook_fsm }),
 		},
 		defaults = {
-			imgid = assets_rook_1,
 			max_health = rook_health,
 			small_fry = true,
-			z = rook_draw_z,
 		},
 	})
 end

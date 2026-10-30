@@ -1,6 +1,7 @@
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local world<const> = require('cartlib/world/world')
@@ -33,13 +34,12 @@ local hit_area<const> = {
 }
 
 function mijter_foe:ctor()
-	self:get_component(collider_2d_component).local_area = hit_area
 	self.motion = self:get_component(fixed_point_velocity_component)
 end
 
 function mijter_foe:onspawn()
 	self.images = images_by_type[self.mijter_type]
-	self:set_imgid(self.images.neutral)
+	self.sprite_component:set_imgid(self.images.neutral)
 	if self.mijter_type == mijter_foe_type_red then
 		self.drop_definition_id = ids_roodje_def
 	end
@@ -55,20 +55,22 @@ function mijter_foe:onspawn()
 end
 
 function mijter_foe:update_flying()
+	local pose<const> = self.spatial
 	local motion<const> = self.motion
-	if self.target.y < self.y then
+	local target<const> = self.target.spatial
+	if target.oy < pose.oy then
 		motion.velocity_y = motion.velocity_y - mijter_foe_tracking_acceleration_y_q8
 	else
 		motion.velocity_y = motion.velocity_y + mijter_foe_tracking_acceleration_y_q8
 	end
 	local imgid<const> = motion.velocity_y > 0 and self.images.down or self.images.up
 	if self.sprite_component.imgid ~= imgid then
-		self:set_imgid(imgid)
+		self.sprite_component:set_imgid(imgid)
 	end
-	if self.x < -mijter_foe_width
-	or self.x > playfield_width
-	or self.y < -mijter_foe_height
-	or self.y > playfield_height then
+	if pose.ox < -mijter_foe_width
+	or pose.ox > playfield_width
+	or pose.oy < -mijter_foe_height
+	or pose.oy > playfield_height then
 		self:mark_for_disposal()
 	end
 end
@@ -87,17 +89,20 @@ function mijter_foe.register()
 		def_id = ids_mijter_foe_def,
 		class = mijter_foe,
 		base = foe,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_mijter_foe_blue_neutral, order = mijter_foe_draw_z } },
 		components = {
-			enemy.new_collider,
+			collider_2d_component.factory({
+				geometry_pool = collision_storage.area, local_area = hit_area,
+				layer = collision_enemy_layer, mask = collision_enemy_mask,
+			}),
 			fixed_point_velocity_component.new,
 			fsm_component.factory({ ids_mijter_foe_fsm }),
 		},
 		defaults = {
-			imgid = assets_mijter_foe_blue_neutral,
 			mijter_type = mijter_foe_type_blue,
 			max_health = 1,
 			small_fry = true,
-			z = mijter_foe_draw_z,
 		},
 	})
 end

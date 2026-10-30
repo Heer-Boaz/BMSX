@@ -1,3 +1,4 @@
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fixed_point_velocity_component<const> = require('cartlib/physics/fixed_point_velocity_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -64,6 +65,7 @@ local angle_by_delta<const>: *u8 = enemy_bullet_angle_by_delta
 local velocity_by_angle<const>: *word = enemy_bullet_velocity_by_angle
 
 local new_enemy_bullet_collider<const> = collider_2d_component.factory_for_sprite({
+	geometry_pool = collision_storage.sprite,
 	id_local = 0,
 	layer = collision_enemy_projectile_layer,
 	mask = collision_enemy_projectile_mask,
@@ -88,11 +90,12 @@ function enemy_bullet.aim_velocity(delta_x, delta_y)
 end
 
 function enemy_bullet:update_flying()
-	if self.x < enemy_bullet_size
-	or self.x > playfield_width
-	or self.y < enemy_bullet_size
-	or self.y > playfield_height
-	or self.stage:is_solid_pixel(self.x + 2, self.y + 2) then
+	local pose<const> = self.spatial
+	if pose.ox < enemy_bullet_size
+	or pose.ox > playfield_width
+	or pose.oy < enemy_bullet_size
+	or pose.oy > playfield_height
+	or self.stage:is_solid_pixel(pose.ox + 2, pose.oy + 2) then
 		self:mark_for_disposal()
 	end
 end
@@ -120,15 +123,15 @@ local register_definition<const> = function()
 		def_id = ids_enemy_bullet_def,
 		class = enemy_bullet,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_enemy_bullet, order = enemy_bullet_draw_z } },
 		components = {
 			new_enemy_bullet_collider,
 			fixed_point_velocity_component.new,
 			fsm_component.factory({ ids_enemy_bullet_fsm }),
 		},
 		defaults = {
-			imgid = assets_enemy_bullet,
 			force_field_hit = player_force_field_hit_standard,
-			z = enemy_bullet_draw_z,
 		},
 	})
 end

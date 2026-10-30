@@ -9,18 +9,13 @@ function intro_scene.register()
 			{
 				member_id = 'background',
 				definition_id = presentation.cover_definition_id,
-				options = {
-					sx = 256, sy = 192, color = 0xffffffff,
-					pos = { x = 0, y = 0, z = -1 },
-				},
+				initial = { rectangle = { width = 256, height = 192, color = 0xffffffff, order = -1 } },
 			},
 			{
 				member_id = 'logo',
 				definition_id = presentation.sprite_definition_id,
-				options = {
-					imgid = 'intro_konami',
-					pos = { x = 40, y = 64, z = 0 },
-				},
+				spatial = { local_transform = { 1, 0, 0, 1, 40, 64 } },
+				initial = { base_sprite = { imgid = 'intro_konami' } },
 			},
 		},
 	})

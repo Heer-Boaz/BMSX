@@ -1,3 +1,4 @@
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -17,13 +18,15 @@ local hit_area<const> = {
 	bottom = 16,
 }
 local new_collider<const> = collider_2d_component.factory({
+	geometry_pool = collision_storage.area,
 	layer = collision_pickup_layer,
 	mask = collision_pickup_mask,
 	local_area = hit_area,
 })
 
 function roodje:update_active()
-	if self.x <= -roodje_width then
+	local pose<const> = self.spatial
+	if pose.ox <= -roodje_width then
 		self:mark_for_disposal()
 	end
 end
@@ -60,14 +63,14 @@ local register_definition<const> = function()
 		def_id = ids_roodje_def,
 		class = roodje,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_roodje, order = roodje_draw_z } },
 		components = {
 			new_collider,
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_roodje_fsm }),
 		},
 		defaults = {
-			imgid = assets_roodje,
-			z = roodje_draw_z,
 		},
 	})
 end

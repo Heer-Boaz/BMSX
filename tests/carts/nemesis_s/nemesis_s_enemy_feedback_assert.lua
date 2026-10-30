@@ -39,8 +39,7 @@ return {
 				stage.actor_spawn_index = stage.actor_spawn_count + 1
 				local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 					stage = stage,
-					pos = { x = 184, y = 112 },
-				})
+				}, { local_transform = { 1, 0, 0, 1, 184, 112 } })
 				local health<const> = snowman.health
 				snowman:receive_player_projectile(projectile)
 				assert(snowman.health == health - 1,
@@ -50,8 +49,7 @@ return {
 				local mijter<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_mijter_foe_def, {
 					stage = stage,
 					mijter_type = mijter_foe_type_red,
-					pos = { x = 152, y = 80 },
-				})
+				}, { local_transform = { 1, 0, 0, 1, 152, 80 } })
 				mijter:receive_player_projectile(projectile)
 				assert(*selected_apu_source == small_destroyed_source,
 				'default Foe destruction did not select the XNA small-enemy cue')
@@ -63,8 +61,7 @@ return {
 						stage = stage,
 						formation = formation,
 						group_type = sint_pop_group_up,
-						pos = { x = 96 + index * sint_pop_width, y = 48 },
-					})
+					}, { local_transform = { 1, 0, 0, 1, 96 + index * sint_pop_width, 48 } })
 					sint_pop:receive_player_projectile(projectile)
 					local explosion<const> = test.small_explosions.objects[index + 1]
 					if index < sint_pop_group_size then
@@ -79,8 +76,7 @@ return {
 				'SintPop destruction did not consume its shared formation state')
 				local zak<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_zak_foe_def, {
 					stage = stage,
-					pos = { x = 72, y = 112 },
-				})
+				}, { local_transform = { 1, 0, 0, 1, 72, 112 } })
 				projectile.damage = zak.health
 				zak:receive_player_projectile(projectile)
 				projectile.damage = 1
@@ -97,13 +93,12 @@ return {
 				'GroundFoe fatal damage did not spawn one retained large explosion')
 				local generator<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_generator_def, {
 					stage = stage,
-					pos = { x = 128, y = 96 },
-				})
+				}, { local_transform = { 1, 0, 0, 1, 128, 96 } })
 				generator.health = 1
 				generator.vulnerable = true
 				generator:receive_player_projectile(projectile)
 				local generator_explosion<const> = test.large_explosions.objects[2]
-				assert(generator_explosion.x == 124 and generator_explosion.y == 92,
+				assert(generator_explosion.spatial.ox == 124 and generator_explosion.spatial.oy == 92,
 				'RookGenerator death lost its XNA explosion origin')
 				assert(#test.small_explosions.objects == sint_pop_group_size + 2,
 				'Foe destruction did not spawn the expected retained small explosions')

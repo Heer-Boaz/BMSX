@@ -1,3 +1,4 @@
+local sprite_component<const> = require('cartlib/component/sprite_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -39,9 +40,8 @@ local new_flash_animation<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_2,
 	},
 	loop = true,
-	offset_x = schoorsteen_flash_offset_x,
-	offset_y = schoorsteen_flash_offset_y,
-	offset_z = 0,
+	attachment_affine = { 1, 0, 0, 1, schoorsteen_flash_offset_x, schoorsteen_flash_offset_y },
+	order = schoorsteen_foe_draw_z,
 	enabled = false,
 })
 local players_view
@@ -59,19 +59,20 @@ end
 function schoorsteen_foe:enter_closed()
 	self.vulnerable = false
 	self.flash_animation:deactivate()
-	self:set_imgid(assets_schoorsteen_foe_1)
+	self.sprite_component:set_imgid(assets_schoorsteen_foe_1)
 end
 
 function schoorsteen_foe:update_idle()
-	if self.x <= 0 then
+	local pose<const> = self.spatial
+	if pose.ox <= 0 then
 		return
 	end
 	local players<const> = players_view.objects
-	local fire_left<const> = self.x + schoorsteen_foe_fire_left
-	local fire_right<const> = self.x + schoorsteen_foe_fire_right
+	local fire_left<const> = pose.ox + schoorsteen_foe_fire_left
+	local fire_right<const> = pose.ox + schoorsteen_foe_fire_right
 	for player_index = 1, #players do
-		local player_x<const> = players[player_index].x
-		if player_x >= fire_left and player_x <= fire_right then
+		local target<const> = players[player_index].spatial
+		if target.ox >= fire_left and target.ox <= fire_right then
 			return '/opening'
 		end
 	end
@@ -87,13 +88,10 @@ function schoorsteen_foe:enter_opening()
 end
 
 function schoorsteen_foe:fire_ray()
+	local pose<const> = self.spatial
 	self.scene:spawn(ids_schoorsteen_ray_def, {
 		stage = self.stage,
-		pos = {
-			x = self.x + schoorsteen_ray_offset_x,
-			y = self.y + schoorsteen_ray_offset_y,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + schoorsteen_ray_offset_x, pose.oy + schoorsteen_ray_offset_y } })
 	self.events:emit('enemy.ray_fired')
 	return '/firing'
 end
@@ -108,6 +106,7 @@ local define_fsm<const> = function()
 				timelines = {
 					startup_wait = {
 						def = {
+							phase = 'physical',
 							continuous = true,
 							duration_frames = schoorsteen_foe_initial_wait_updates,
 							playback_mode = 'once',
@@ -131,10 +130,12 @@ local define_fsm<const> = function()
 				},
 				timelines = {
 					open = {
+						target_path = { 'sprite_component' },
 						def = {
+							phase = 'physical',
 							frames = opening_frames,
 							playback_mode = 'once',
-							apply = schoorsteen_foe.set_imgid,
+							apply = sprite_component.set_imgid,
 							tracks = {
 								{
 									kind = 'event',
@@ -156,6 +157,7 @@ local define_fsm<const> = function()
 				timelines = {
 					firing_wait = {
 						def = {
+							phase = 'physical',
 							continuous = true,
 							duration_frames = schoorsteen_foe_firing_wait_updates,
 							playback_mode = 'once',
@@ -171,10 +173,12 @@ local define_fsm<const> = function()
 				},
 				timelines = {
 					close = {
+						target_path = { 'sprite_component' },
 						def = {
+							phase = 'physical',
 							frames = closing_frames,
 							playback_mode = 'once',
-							apply = schoorsteen_foe.set_imgid,
+							apply = sprite_component.set_imgid,
 							tracks = {
 								{
 									kind = 'event',
@@ -196,6 +200,7 @@ local define_fsm<const> = function()
 				timelines = {
 					cooldown_wait = {
 						def = {
+							phase = 'physical',
 							continuous = true,
 							duration_frames = schoorsteen_foe_cooldown_updates,
 							playback_mode = 'once',
@@ -214,6 +219,8 @@ local register_definition<const> = function()
 		def_id = ids_schoorsteen_foe_def,
 		class = schoorsteen_foe,
 		base = ground_foe,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_schoorsteen_foe_1, order = schoorsteen_foe_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_schoorsteen_foe_body_addr),
 			new_flash_animation,
@@ -222,11 +229,9 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_schoorsteen_foe_fsm }),
 		},
 		defaults = {
-			imgid = assets_schoorsteen_foe_1,
 			max_health = schoorsteen_foe_health,
 			small_fry = false,
 			stage_scroll_width = schoorsteen_foe_width,
-			z = schoorsteen_foe_draw_z,
 		},
 	})
 end

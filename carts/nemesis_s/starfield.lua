@@ -1,4 +1,4 @@
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local visual_2d<const> = require('cartlib/component/visual_2d_component')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -52,6 +52,7 @@ local blue_points<const> = {
 }
 
 local blink_sequence<const> = {
+	phase = 'presentation',
 	frames = {
 		{ blink_turn = 'yellow', yellow_blink = false, blue_blink = false },
 		{ blink_turn = 'yellow', yellow_blink = true, blue_blink = false },
@@ -105,33 +106,58 @@ local scroll_particles<const> = function(particles, step, width)
 end
 
 function starfield:scroll()
-	scroll_particles(self.yellow_stars, self.scroll_step, self.sx)
-	scroll_particles(self.blue_stars, self.scroll_step, self.sx)
+	scroll_particles(self.yellow_stars, self.scroll_step, self.wrap_width)
+	scroll_particles(self.blue_stars, self.scroll_step, self.wrap_width)
 end
 
-local draw_particles<const> = function(owner, draw, stars, source, hidden)
+local draw_particles<const> = function(component, draw, stars, source, hidden)
 	if hidden then return end
+	if not component._translation_only then
+		local xx<const>, xy<const>, yx<const>, yy<const> = component.wxx, component.wxy, component.wyx, component.wyy
+		local ox<const>, oy<const> = component.wox, component.woy
+		local ax<const>, ay<const> = xx * source.width, xy * source.width
+		local bx<const>, by<const> = yx * source.height, yy * source.height
+		for i = 1, #stars do
+			local star<const> = stars[i]
+			source:draw_affine(draw, ox + xx * star.x + yx * star.y, oy + xy * star.x + yy * star.y,
+				ax, ay, bx, by, 0, 0xffffffff, 0)
+		end
+		return
+	end
 	for i = 1, #stars do
 		local star<const> = stars[i]
-		source:blit(draw, owner.x + star.x, owner.y + star.y)
+		source:blit(draw, component.wox + star.x, component.woy + star.y)
 	end
 end
 
 local draw_stars<const> = function(component, draw)
+	component:resolve_pose()
 	local owner<const> = component.owner
-	draw_particles(owner, draw, owner.yellow_stars, yellow_source, owner.yellow_blink)
-	draw_particles(owner, draw, owner.blue_stars, blue_source, owner.blue_blink)
+	draw_particles(component, draw, owner.yellow_stars, yellow_source, owner.yellow_blink)
+	draw_particles(component, draw, owner.blue_stars, blue_source, owner.blue_blink)
+end
+
+local starfield_visual<const> = {}
+starfield_visual.__index = starfield_visual
+setmetatable(starfield_visual, { __index = visual_2d })
+
+function starfield_visual.new(context)
+	local self<const> = visual_2d.new(context, 'stars')
+	setmetatable(self, starfield_visual)
+	self:set_draw_function(draw_stars)
+	return self
 end
 
 function starfield.register()
 	prefab.define({
 		def_id = starfield.definition_id,
 		class = starfield,
+		spatial = { family = '2d', authority = 'affine' },
 		components = {
-			custom_visual_component.factory({ draw = draw_stars }),
+			starfield_visual.new,
 			timeline_component.new,
 		},
-		defaults = { sx = 256, yellow_points = yellow_points, blue_points = blue_points },
+		defaults = { wrap_width = 256, yellow_points = yellow_points, blue_points = blue_points },
 	})
 end
 

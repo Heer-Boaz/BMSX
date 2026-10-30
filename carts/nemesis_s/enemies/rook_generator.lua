@@ -1,3 +1,4 @@
+local sprite_component<const> = require('cartlib/component/sprite_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -37,29 +38,26 @@ end
 
 function rook_generator:enter_closed()
 	self.vulnerable = false
-	self:set_imgid(assets_rook_generator_closed)
+	self.sprite_component:set_imgid(assets_rook_generator_closed)
 end
 
 function rook_generator:enter_generating()
 	self.vulnerable = true
-	self:set_imgid(assets_rook_generator_open)
+	self.sprite_component:set_imgid(assets_rook_generator_open)
 end
 
 function rook_generator:spawn_rook(_state, rise_distance)
+	local pose<const> = self.spatial
 	self.scene:spawn(ids_rook_def, {
 		stage = self.stage,
 		rise_distance = rise_distance,
-		pos = {
-			x = self.x + rook_spawn_offset_x,
-			y = self.y + rook_spawn_offset_y,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + rook_spawn_offset_x, pose.oy + rook_spawn_offset_y } })
 	self.events:emit('enemy.spawned')
 end
 
 function rook_generator:on_destroyed(projectile)
-	self.x = self.x - 4
-	self.y = self.y - 4
+	local pose<const> = self.spatial
+	self.spatial:set_world_origin(pose.ox - 4, pose.oy - 4)
 	ground_foe.on_destroyed(self, projectile)
 end
 
@@ -73,6 +71,7 @@ local define_fsm<const> = function()
 				timelines = {
 					wait = {
 						def = {
+							phase = 'physical',
 							continuous = true,
 							duration_frames = rook_generator_initial_wait_updates,
 							playback_mode = 'once',
@@ -88,10 +87,12 @@ local define_fsm<const> = function()
 				},
 				timelines = {
 					open = {
+						target_path = { 'sprite_component' },
 						def = {
+							phase = 'physical',
 							frames = opening_frames,
 							playback_mode = 'once',
-							apply = rook_generator.set_imgid,
+							apply = sprite_component.set_imgid,
 							tracks = {
 								{
 									kind = 'event',
@@ -117,6 +118,7 @@ local define_fsm<const> = function()
 				timelines = {
 					formation = {
 						def = {
+							phase = 'physical',
 							frames = timeline.range(rook_generator_cycle_updates),
 							playback_mode = 'loop',
 							tracks = {
@@ -139,6 +141,8 @@ local register_definition<const> = function()
 		def_id = ids_rook_generator_def,
 		class = rook_generator,
 		base = ground_foe,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_rook_generator_closed, order = rook_generator_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_rook_generator_body_addr),
 			stage_scroll_follower_component.new,
@@ -146,11 +150,9 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_rook_generator_fsm }),
 		},
 		defaults = {
-			imgid = assets_rook_generator_closed,
 			max_health = rook_generator_health,
 			small_fry = false,
 			stage_scroll_width = rook_generator_width,
-			z = rook_generator_draw_z,
 		},
 	})
 end

@@ -118,6 +118,7 @@ function director:populate_game_start()
 	local status_bar<const> = members.status_bar
 	for player_index = 1, self.player_count do
 		local start<const> = members['player_start_' .. tostring(player_index)]
+		local pose<const> = start.spatial:resolve_world()
 		players[player_index] = instance:spawn(player_module.player_def_id, {
 			id = start.player_id,
 			start_point = start,
@@ -126,8 +127,7 @@ function director:populate_game_start()
 			metalion_cheat_active = self.metalion_cheat_active,
 			space_id = 'main',
 			stage = stage,
-			pos = { x = start.x, y = start.y, z = start.z },
-		})
+		}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
 	end
 	self.player_states = player_states
 	self.players = players
@@ -202,7 +202,6 @@ function director:populate_end_demo()
 	self.ending = self.scene:spawn(end_demo_module.definition_id, {
 		id = end_demo_module.instance_id,
 		space_id = 'end_demo',
-		pos = { x = 0, y = 0, z = 0 },
 	})
 	self.events:emit('end_demo')
 end
@@ -232,13 +231,13 @@ function director:on_player_death()
 end
 
 function director:apply_game_over_curtain_frame(frame)
-	self.game_over_curtain.sx = frame * game_over_curtain_tile_width
+	self.game_over_curtain.visual.width = frame * game_over_curtain_tile_width
 	self.game_over_curtain.visible = frame ~= 0
 end
 
 function director:enter_game_over()
 	self.metalion_cheat_active = false
-	self.game_over_curtain.sx = 0
+	self.game_over_curtain.visual.width = 0
 	self.game_over_curtain.visible = false
 	self.events:emit('game_over')
 end
@@ -438,6 +437,7 @@ local define_director_fsm<const> = function()
 						timelines = {
 							[game_over_curtain_timeline_id] = {
 								def = {
+									phase = 'presentation',
 									frames = timeline.range(game_over_curtain_columns + 1),
 									playback_mode = 'once',
 									clock_source = timeline_clock_source.frame,

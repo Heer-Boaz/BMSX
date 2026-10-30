@@ -1,5 +1,6 @@
 local behaviour_tree_component<const> = require('cartlib/behaviour_tree/bt_component')
 local behaviour_tree_result<const> = require('cartlib/behaviour_tree/result')
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -25,11 +26,15 @@ local roodjes_view
 
 local new_core_collider<const> = collider_2d_component.factory({
 	id_local = moon_core_collider_id,
+	geometry_pool = collision_storage.actor,
+	shape_asset = assets.collision_shape_moon_down_right_core_addr,
 	layer = collision_enemy_layer,
 	mask = collision_enemy_mask,
 })
 local new_armor_collider<const> = collider_2d_component.factory({
 	id_local = moon_armor_collider_id,
+	geometry_pool = collision_storage.actor,
+	shape_asset = assets.collision_shape_moon_down_right_armor_addr,
 	layer = collision_enemy_layer,
 	mask = collision_enemy_mask,
 })
@@ -40,7 +45,7 @@ local new_flash_left<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_2,
 	},
 	loop = true,
-	offset_z = 1,
+	order = moon_draw_z + 1,
 	enabled = false,
 })
 local new_flash_right<const> = sprite_animation_component.factory({
@@ -50,7 +55,7 @@ local new_flash_right<const> = sprite_animation_component.factory({
 		assets_schoorsteen_flash_2,
 	},
 	loop = true,
-	offset_z = 1,
+	order = moon_draw_z + 1,
 	enabled = false,
 })
 
@@ -116,7 +121,7 @@ local rotation_poses<const> = {
 function moon:apply_rotation()
 	local pose<const> = rotation_poses[self.rotation]
 	local sprite<const> = self.sprite_component
-	self:set_imgid(pose.imgid)
+	self.sprite_component:set_imgid(pose.imgid)
 	sprite.flip_h = pose.flip_h
 	sprite.flip_v = pose.flip_v
 	local armor<const> = self.armor_collider
@@ -152,8 +157,10 @@ function moon:onspawn()
 end
 
 function moon:tick_entering()
-	self.x = self.x - self.stage.tile_size
-	if self.x <= moon_enter_target_x then
+	local pose<const> = self.spatial
+	local next_x<const> = pose.ox - self.stage.tile_size
+	self.spatial:set_world_origin(next_x, pose.oy)
+	if next_x <= moon_enter_target_x then
 		self.vulnerable = true
 		return bt_success
 	end
@@ -161,18 +168,22 @@ function moon:tick_entering()
 end
 
 function moon:tick_fly_left()
+	local pose<const> = self.spatial
 	self:rotate_counterclockwise()
-	self.x = self.x - self.stage.tile_size
-	if self.x <= 0 then
+	local next_x<const> = pose.ox - self.stage.tile_size
+	self.spatial:set_world_origin(next_x, pose.oy)
+	if next_x <= 0 then
 		return bt_success
 	end
 	return bt_running
 end
 
 function moon:tick_fly_up()
+	local pose<const> = self.spatial
 	self:rotate_counterclockwise()
-	self.y = self.y - self.stage.tile_size
-	if self.y <= 0 then
+	local next_y<const> = pose.oy - self.stage.tile_size
+	self.spatial:set_world_origin(pose.ox, next_y)
+	if next_y <= 0 then
 		self.vertical_direction = moon_vertical_direction_down
 		return bt_success
 	end
@@ -180,9 +191,11 @@ function moon:tick_fly_up()
 end
 
 function moon:tick_fly_down()
+	local pose<const> = self.spatial
 	self:rotate_counterclockwise()
-	self.y = self.y + self.stage.tile_size
-	if self.y >= playfield_height - moon_height then
+	local next_y<const> = pose.oy + self.stage.tile_size
+	self.spatial:set_world_origin(pose.ox, next_y)
+	if next_y >= playfield_height - moon_height then
 		self.vertical_direction = moon_vertical_direction_up
 		return bt_success
 	end
@@ -190,6 +203,7 @@ function moon:tick_fly_down()
 end
 
 function moon:spawn_mini_moon()
+	local pose<const> = self.spatial
 	local players<const> = players_view.objects
 	local target<const> = players[math.random(1, #players)]
 	local red<const> = math.random(1, 100) <= mini_moon_red_chance_percent
@@ -198,16 +212,14 @@ function moon:spawn_mini_moon()
 		stage = self.stage,
 		target = target,
 		red = red,
-		pos = {
-			x = self.x + moon_width // 2,
-			y = self.y + moon_height // 2,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + moon_width // 2, pose.oy + moon_height // 2 } })
 end
 
 function moon:tick_small_ray_pass()
-	self.x = self.x + self.stage.tile_size
-	if self.x >= playfield_width - moon_width then
+	local pose<const> = self.spatial
+	local next_x<const> = pose.ox + self.stage.tile_size
+	self.spatial:set_world_origin(next_x, pose.oy)
+	if next_x >= playfield_width - moon_width then
 		return bt_success
 	end
 	return bt_running
@@ -226,12 +238,10 @@ end
 function moon:activate_small_ray_flashes()
 	local offset_y<const> = self.rotation == moon_rotation_up and 50 or 0
 	local flash_left<const> = self.flash_left
-	flash_left.offset_x = 2
-	flash_left.offset_y = offset_y
+	flash_left:set_attachment_origin(2, offset_y)
 	flash_left:activate()
 	local flash_right<const> = self.flash_right
-	flash_right.offset_x = 44
-	flash_right.offset_y = offset_y
+	flash_right:set_attachment_origin(44, offset_y)
 	flash_right:activate()
 end
 
@@ -241,17 +251,16 @@ function moon:deactivate_flashes()
 end
 
 function moon:fire_small_ray_volley()
+	local pose<const> = self.spatial
 	local points_down<const> = self.rotation == moon_rotation_up
 	local direction<const> = points_down and moon_vertical_direction_down or moon_vertical_direction_up
 	local offset_y<const> = points_down and 56 or 8
 	self.scene:spawn(ids_moon_small_ray_def, {
 		direction = direction,
-		pos = { x = self.x + 2, y = self.y + offset_y },
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + 2, pose.oy + offset_y } })
 	self.scene:spawn(ids_moon_small_ray_def, {
 		direction = direction,
-		pos = { x = self.x + 44, y = self.y + offset_y },
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + 44, pose.oy + offset_y } })
 	self.events:emit('enemy.moon.small_ray_fired')
 	return bt_success
 end
@@ -265,24 +274,23 @@ function moon:tick_rotate_to_right()
 end
 
 function moon:tick_vertical_playfield()
-	self.y = self.y + self.vertical_direction * self.stage.tile_size
+	local pose<const> = self.spatial
+	local next_y<const> = pose.oy + self.vertical_direction * self.stage.tile_size
+	self.spatial:set_world_origin(pose.ox, next_y)
 	if self.vertical_direction == moon_vertical_direction_up then
-		if self.y <= 0 then
+		if next_y <= 0 then
 			self.vertical_direction = moon_vertical_direction_down
 		end
-	elseif self.y >= playfield_height - moon_height then
+	elseif next_y >= playfield_height - moon_height then
 		self.vertical_direction = moon_vertical_direction_up
 	end
 end
 
 function moon:begin_death_ray()
+	local pose<const> = self.spatial
 	self.scene:spawn(ids_moon_death_ray_def, {
 		originator = self,
-		pos = {
-			x = self.x + moon_death_ray_offset_x,
-			y = self.y + moon_death_ray_offset_y,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + moon_death_ray_offset_x, pose.oy + moon_death_ray_offset_y } })
 	self.events:emit('enemy.moon.death_ray_fired')
 	return bt_success
 end
@@ -295,8 +303,9 @@ local death_ray_movement_task<const> = {
 }
 
 function death_ray_movement_task.execute(self, node_memory)
-	local player<const> = players_view.objects[1]
-	if self.y < 0 or self.y + moon_death_ray_move_target_offset_y < player.y then
+	local pose<const> = self.spatial
+	local target<const> = players_view.objects[1].spatial
+	if pose.oy < 0 or pose.oy + moon_death_ray_move_target_offset_y < target.oy then
 		self.vertical_direction = moon_vertical_direction_down
 	else
 		self.vertical_direction = moon_vertical_direction_up
@@ -310,6 +319,7 @@ function death_ray_movement_task.execute(self, node_memory)
 end
 
 function death_ray_movement_task.tick(self, node_memory)
+	local pose<const> = self.spatial
 	local movement_accumulator<const> = node_memory.movement_accumulator
 		+ moon_death_ray_move_accumulator_step
 	if movement_accumulator < 0x100 then
@@ -325,8 +335,8 @@ function death_ray_movement_task.tick(self, node_memory)
 	node_memory.remaining_moves = remaining_moves - 1
 
 	local direction<const> = self.vertical_direction
-	local y<const> = self.y + direction * self.stage.tile_size
-	self.y = y
+	local y<const> = pose.oy + direction * self.stage.tile_size
+	self.spatial:set_world_origin(pose.ox, y)
 	if direction == moon_vertical_direction_down then
 		if y >= moon_death_ray_move_bottom_y then
 			self.vertical_direction = moon_vertical_direction_up
@@ -391,8 +401,7 @@ function moon:receive_player_projectile(projectile, collider_local_id, hit_point
 		self.events:emit('enemy.moon.hit')
 		self.scene:spawn(ids_small_explosion_def, {
 			stage = self.stage,
-			pos = { x = hit_point.x, y = hit_point.y },
-		})
+		}, { local_transform = { 1, 0, 0, 1, hit_point.x, hit_point.y } })
 	end
 	return true
 end
@@ -408,17 +417,14 @@ function moon:begin_dying()
 end
 
 function moon:explode()
-	self.visible = false
+	local pose<const> = self.spatial
+	self.sprite_component.visible = false
 	self.core_collider:set_enabled(false)
 	self.armor_collider:set_enabled(false)
 	self.events:emit('enemy.moon.explosion')
 	self.scene:spawn(ids_large_explosion_def, {
 		stage = self.stage,
-		pos = {
-			x = self.x + moon_width // 3,
-			y = self.y + moon_height // 3,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + moon_width // 3, pose.oy + moon_height // 3 } })
 	return '/dying/wait_for_end_demo'
 end
 
@@ -438,6 +444,7 @@ local define_fsm<const> = function()
 						timelines = {
 							[wait_for_explosion_timeline_id] = {
 								def = {
+									phase = 'physical',
 									duration_frames = moon_wait_for_explosion_ticks,
 								},
 								on_finished = moon.explode,
@@ -448,6 +455,7 @@ local define_fsm<const> = function()
 						timelines = {
 							[wait_for_end_demo_timeline_id] = {
 								def = {
+									phase = 'physical',
 									duration_frames = moon_wait_for_end_demo_ticks,
 								},
 								on_finished = function(self)
@@ -469,6 +477,8 @@ local register_definition<const> = function()
 		def_id = ids_moon_def,
 		class = moon,
 		base = enemy,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_moon_down_right, order = moon_draw_z } },
 		components = {
 			new_core_collider,
 			new_armor_collider,
@@ -479,12 +489,10 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_moon_fsm }),
 		},
 		defaults = {
-			imgid = assets_moon_down_right,
 			max_health = moon_health,
 			rotation = moon_rotation_down_right,
 			vertical_direction = moon_vertical_direction_down,
 			small_fry = false,
-			z = moon_draw_z,
 		},
 	})
 end

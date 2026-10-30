@@ -22,8 +22,7 @@ return {kind = 'integration', tests = {
 			stage.actor_spawn_index = stage.actor_spawn_count + 1
 			local foe<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_zak_foe_def, {
 				stage = stage,
-				pos = { x = 200, y = 112 },
-			})
+			}, { local_transform = { 1, 0, 0, 1, 200, 112 } })
 			local foe_collider<const> = foe:get_component(collider_2d_component)
 			foe_collider:set_enabled(false)
 			test.foe = foe
@@ -42,8 +41,8 @@ return {kind = 'integration', tests = {
 				'ZakFoe prepare timeline changed its authored cadence')
 				test.jumping_time_ms = world.gameplay_time_ms
 				test.jump_sample_time_ms = world.gameplay_time_ms + clock.gameplay_delta_milliseconds()
-				test.jump_start_x = test.foe.x
-				test.jump_start_y = test.foe.y
+				test.jump_start_x = test.foe.spatial.ox
+				test.jump_start_y = test.foe.spatial.oy
 				local motion<const> = test.foe.motion
 				assert(motion.velocity_x == -jump_velocity_q8
 				and motion.velocity_y == -jump_velocity_q8,
@@ -56,8 +55,8 @@ return {kind = 'integration', tests = {
 			assert(state_machines:matches_state(test.jumping_state), 'ZakFoe jump ended before its first update')
 			do
 				local motion<const> = test.foe.motion
-				local delta_x<const> = test.foe.x - test.jump_start_x
-				local delta_y<const> = test.foe.y - test.jump_start_y
+				local delta_x<const> = test.foe.spatial.ox - test.jump_start_x
+				local delta_y<const> = test.foe.spatial.oy - test.jump_start_y
 				assert(math.abs(delta_x + (jump_velocity_q8 >> 8)) <= 1,
 				'ZakFoe horizontal jump speed changed with the gameplay cadence: ' .. delta_x)
 				assert(math.abs(delta_y + (jump_velocity_q8 >> 8)) <= 1,
@@ -89,8 +88,7 @@ return {kind = 'integration', tests = {
 			stage.actor_spawn_index = stage.actor_spawn_count + 1
 			local foe<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_zak_foe_def, {
 				stage = stage,
-				pos = { x = 200, y = 112 },
-			})
+			}, { local_transform = { 1, 0, 0, 1, 200, 112 } })
 			local foe_collider<const> = foe:get_component(collider_2d_component)
 			foe_collider:set_enabled(false)
 			test.foe = foe
@@ -135,17 +133,17 @@ return {kind = 'integration', tests = {
 			assert(repeat_delay_ms >= zak_foe_fire_min_ms, 'ZakFoe repeated before its random cooldown')
 			assert(repeat_delay_ms <= zak_foe_fire_max_ms + clock.gameplay_delta_milliseconds(),
 			'ZakFoe exceeded its random cooldown')
-			local bullet_x<const>, bullet_y<const> = retained_bullet.x, retained_bullet.y
+			local bullet_x<const>, bullet_y<const> = retained_bullet.spatial.ox, retained_bullet.spatial.oy
 			local player<const> = registry:get('nemesis_s.player.1')
 			local projectile<const> = player.primary_projectiles[1]
-			player:spawn_bullet(player, projectile)
+			player:spawn_bullet(1, player.spatial.ox, player.spatial.oy, projectile)
 			test.foe.events:emit('overlap.begin', {
 				other_id = player.id,
 				other_collider_local_id = projectile.collider.id_local,
 				other_layer = collision_player_projectile_layer,
 				collider_local_id = test.foe_collider_local_id,
 				contact = {
-					point = { x = test.foe.x, y = test.foe.y },
+					point = { x = test.foe.spatial.ox, y = test.foe.spatial.oy },
 				},
 			})
 
@@ -154,7 +152,7 @@ return {kind = 'integration', tests = {
 				return registry:get(test.foe.id) == nil and world.gameplay_time_ms ~= destroyed_time_ms
 			end, 30)
 			assert(registry:get(retained_bullet.id) == retained_bullet, 'destroying shooter removed its projectile')
-			assert(retained_bullet.x ~= bullet_x or retained_bullet.y ~= bullet_y,
+			assert(retained_bullet.spatial.ox ~= bullet_x or retained_bullet.spatial.oy ~= bullet_y,
 			'projectile stopped updating after its shooter was destroyed')
 		end,
 }}

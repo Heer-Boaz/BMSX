@@ -16,11 +16,11 @@ function ground_foe:receive_player_projectile(projectile)
 end
 
 function ground_foe:on_destroyed(projectile)
+	local pose<const> = self.spatial
 	self.scene:spawn(ids_large_explosion_def, {
 		stage = self.stage,
 		drop_definition_id = self.drop_definition_id,
-		pos = { x = self.x, y = self.y },
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
 	self.events:emit('enemy.structure.destroyed')
 	enemy.on_destroyed(self, projectile)
 end

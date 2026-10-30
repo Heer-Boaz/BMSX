@@ -1,3 +1,4 @@
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local registry<const> = require('cartlib/registry')
 local sprite_object<const> = require('cartlib/sprite')
@@ -7,17 +8,10 @@ local enemy<const> = {}
 enemy.__index = enemy
 setmetatable(enemy, { __index = sprite_object })
 
-function enemy.initialize(self)
-	sprite_object.initialize(self)
+function enemy.initialize(self, context)
+	sprite_object.initialize(self, context)
 	self.health = self.max_health
 	self.vulnerable = true
-end
-
-function enemy.new_collider(opts)
-	local collider<const> = collider_2d_component.new(opts)
-	collider.layer = collision_enemy_layer
-	collider.mask = collision_enemy_mask
-	return collider
 end
 
 -- Static packed shapes resolve their four GEO descriptors when the prefab is
@@ -28,14 +22,8 @@ function enemy.collider_factory(shape_asset)
 		layer = collision_enemy_layer,
 		mask = collision_enemy_mask,
 		shape_asset = shape_asset,
+		geometry_pool = collision_storage.actor,
 	})
-end
-
-function enemy.new_sprite_collider(opts)
-	local collider<const> = collider_2d_component.new_for_sprite(opts)
-	collider.layer = collision_enemy_layer
-	collider.mask = collision_enemy_mask
-	return collider
 end
 
 function enemy:on_destroyed()
@@ -87,7 +75,8 @@ function enemy:bind()
 end
 
 function enemy:dispose_if_left_of_stage(width)
-	if self.x < -width then
+	local pose<const> = self.spatial
+	if pose.ox < -width then
 		self:mark_for_disposal()
 		return true
 	end
@@ -95,7 +84,8 @@ function enemy:dispose_if_left_of_stage(width)
 end
 
 function enemy:update_stage_follower()
-	if self.x < -self.stage_scroll_width then
+	local pose<const> = self.spatial
+	if pose.ox < -self.stage_scroll_width then
 		self:mark_for_disposal()
 	end
 end

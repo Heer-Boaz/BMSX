@@ -10,6 +10,7 @@ local image<const> = require('cartlib/gx/image')
 local input<const> = require('cartlib/input/input')
 local prefab<const> = require('cartlib/world/prefab')
 local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local sprite_object<const> = require('cartlib/sprite')
 local sprite_animation_component<const> = require('cartlib/component/sprite_animation_component')
 local sprite_component<const> = require('cartlib/component/sprite_component')
 local registry<const> = require('cartlib/registry')
@@ -18,7 +19,10 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 require('constants')
 local player_actioneffects<const> = require('player/actioneffects')
 local player_state_module<const> = require('player/player_state')
+local collision_storage<const> = require('collision_storage')
 
+-- The physical body is an origin-only root: ox/oy are its canonical world
+-- origin. Visuals and colliders resolve their own composed affines.
 local player<const> = {}
 player.__index = player
 local active_state_tag<const> = 'nemesis_s.player.active'
@@ -28,7 +32,6 @@ local option_animation_timeline_id<const> = 'player_option_animation'
 local player_death_timeline_id<const> = 'player_death'
 local player_respawn_timeline_id<const> = 'player_respawn'
 local player_body_collider_id<const> = 0
-local player_vessel_visual_id<const> = 'vessel'
 local player_name_table_weapon_visual_id<const> = 'name_table_weapons'
 local player_sprite_projectile_visual_id<const> = 'sprite_projectiles'
 local player_death_visual_id<const> = 'death'
@@ -43,6 +46,7 @@ local player_hit_area<const> = {
 }
 local new_player_collider<const> = collider_2d_component.factory({
 	id_local = player_body_collider_id,
+	geometry_pool = collision_storage.area,
 	layer = collision_player_layer,
 	mask = collision_player_mask,
 	local_area = player_hit_area,
@@ -50,8 +54,8 @@ local new_player_collider<const> = collider_2d_component.factory({
 local new_death_visual<const> = sprite_component.factory({
 	id_local = player_death_visual_id,
 	imgid = assets_player_death_3,
-	offset_x = -8,
-	offset_z = 1,
+	attachment_affine = { 1, 0, 0, 1, -8, 0 },
+	order = player_draw_z + 1,
 	enabled = false,
 })
 local new_force_field_visual<const> = sprite_animation_component.factory({
@@ -69,8 +73,8 @@ local new_force_field_visual<const> = sprite_animation_component.factory({
 			loop = true,
 		},
 	},
-	offset_y = player_force_field_offset_y,
-	offset_z = -1,
+	attachment_affine = { 1, 0, 0, 1, 0, player_force_field_offset_y },
+	order = player_draw_z - 1,
 	enabled = false,
 })
 local player_death_frames<const> = timeline.build_frame_sequence({
@@ -132,61 +136,44 @@ local powerup_slot_shield<const> = powerup_slot.shield
 local player_vessel_source_sets<const> = {
 	{
 		standard = {
-			neutral = { imgid = assets_player_n, source = image.resolve(assets_player_n) },
-			neutral_shield = {
-				imgid = assets_player_n_shield,
-				source = image.resolve(assets_player_n_shield),
-			},
-			up = { imgid = assets_player_u, source = image.resolve(assets_player_u) },
-			down = { imgid = assets_player_d, source = image.resolve(assets_player_d) },
-			down_shield = {
-				imgid = assets_player_d_shield,
-				source = image.resolve(assets_player_d_shield),
-			},
+			neutral = assets_player_n,
+			neutral_shield = assets_player_n_shield,
+			up = assets_player_u,
+			down = assets_player_d,
+			down_shield = assets_player_d_shield,
 		},
 		cheat = {
-			neutral = { imgid = assets_player_cheat_n, source = image.resolve(assets_player_cheat_n) },
-			neutral_shield = {
-				imgid = assets_player_cheat_n_shield,
-				source = image.resolve(assets_player_cheat_n_shield),
-			},
-			up = { imgid = assets_player_cheat_u, source = image.resolve(assets_player_cheat_u) },
-			down = { imgid = assets_player_cheat_d, source = image.resolve(assets_player_cheat_d) },
-			down_shield = {
-				imgid = assets_player_cheat_d_shield,
-				source = image.resolve(assets_player_cheat_d_shield),
-			},
+			neutral = assets_player_cheat_n,
+			neutral_shield = assets_player_cheat_n_shield,
+			up = assets_player_cheat_u,
+			down = assets_player_cheat_d,
+			down_shield = assets_player_cheat_d_shield,
 		},
 	},
 	{
 		standard = {
-			neutral = { imgid = assets_player_2_n, source = image.resolve(assets_player_2_n) },
-			neutral_shield = {
-				imgid = assets_player_n_shield_p2,
-				source = image.resolve(assets_player_n_shield_p2),
-			},
-			up = { imgid = assets_player_2_u, source = image.resolve(assets_player_2_u) },
-			down = { imgid = assets_player_2_d, source = image.resolve(assets_player_2_d) },
-			down_shield = {
-				imgid = assets_player_d_shield_p2,
-				source = image.resolve(assets_player_d_shield_p2),
-			},
+			neutral = assets_player_2_n,
+			neutral_shield = assets_player_n_shield_p2,
+			up = assets_player_2_u,
+			down = assets_player_2_d,
+			down_shield = assets_player_d_shield_p2,
 		},
 		cheat = {
-			neutral = { imgid = assets_player_2_cheat_n, source = image.resolve(assets_player_2_cheat_n) },
-			neutral_shield = {
-				imgid = assets_player_2_cheat_n_shield,
-				source = image.resolve(assets_player_2_cheat_n_shield),
-			},
-			up = { imgid = assets_player_2_cheat_u, source = image.resolve(assets_player_2_cheat_u) },
-			down = { imgid = assets_player_2_cheat_d, source = image.resolve(assets_player_2_cheat_d) },
-			down_shield = {
-				imgid = assets_player_2_cheat_d_shield,
-				source = image.resolve(assets_player_2_cheat_d_shield),
-			},
+			neutral = assets_player_2_cheat_n,
+			neutral_shield = assets_player_2_cheat_n_shield,
+			up = assets_player_2_cheat_u,
+			down = assets_player_2_cheat_d,
+			down_shield = assets_player_2_cheat_d_shield,
 		},
 	},
 }
+-- Resolve the fixed tilt/shield/cheat image set at admission. The gameplay
+-- selector retains imgids, not a second source DTO or a first-use allocation.
+for player_index = 1, #player_vessel_source_sets do
+	for _, variant in pairs(player_vessel_source_sets[player_index]) do
+		for _, imgid in pairs(variant) do image.resolve(imgid) end
+	end
+end
 local player_option_sources<const> = {
 	{
 		image.resolve(assets_option1),
@@ -216,24 +203,20 @@ local weapon_sources<const> = {
 	},
 }
 
-local set_projectile_collider<const> = function(owner, projectile, width, height)
+local set_projectile_collider<const> = function(pose, projectile, width, height)
 	local collider<const> = projectile.collider
-	collider.shape_offset_x = projectile.x - owner.x
-	collider.shape_offset_y = projectile.y - owner.y
-	local area<const> = collider.local_area
-	area.right = width
-	area.bottom = height
+	collider:set_local_origin(projectile.x - pose.ox, projectile.y - pose.oy)
+	collider:set_local_area(0, 0, width, height)
 end
 
-local attach_projectile_collider<const> = function(owner, projectile, local_id)
-	local collider<const> = collider_2d_component.new({
-		owner = owner,
-		id_local = local_id,
-		enabled = false,
-		layer = collision_player_projectile_layer,
-		mask = collision_player_projectile_mask,
-		local_area = { left = 0, top = 0, right = 0, bottom = 0 },
-	})
+local projectile_collider_definition<const> = {
+	geometry_pool = collision_storage.area, enabled = false,
+	layer = collision_player_projectile_layer, mask = collision_player_projectile_mask,
+	local_area = { left = 0, top = 0, right = 0, bottom = 0 },
+}
+
+local attach_projectile_collider<const> = function(owner, projectile, local_id, context)
+	local collider<const> = collider_2d_component.new(context, local_id, projectile_collider_definition)
 	projectile.collider = collider
 	owner.projectiles_by_collider_local_id[local_id] = projectile
 	owner:add_component(collider)
@@ -268,6 +251,7 @@ function player:emit_metric()
 	if not telemetry_enabled then
 		return
 	end
+	local pose<const> = self.spatial
 	local primary_bullet_count<const> , primary_bullet_x<const> , primary_bullet_y<const> =
 		get_projectile_metrics(self.primary_projectiles, projectile_bullet_type_mask)
 	local secondary_bullet_count<const> , secondary_bullet_x<const> , secondary_bullet_y<const> =
@@ -291,11 +275,11 @@ function player:emit_metric()
 		'%s|kind=player|f=%d|x=%.3f|y=%.3f|dx=%.3f|dy=%.3f|sprite=%s|speed=%.3f|left=%d|right=%d|up=%d|down=%d|fire=%d|fire_press=%d|options=%d|bullet=%d|laser=%d|missile=%d|uplaser=%d|b0x=%.3f|b0y=%.3f|l0x=%.3f|l0y=%.3f|m0x=%.3f|m0y=%.3f|u0x=%.3f|u0y=%.3f',
 		telemetry_metric_prefix,
 		self.frame,
-		self.x,
-		self.y,
+		pose.ox,
+		pose.oy,
 		self.last_dx,
 		self.last_dy,
-		self.sprite.imgid,
+		self.sprite_component.imgid,
 		self.last_speed,
 		bool01(self.left_held),
 		bool01(self.right_held),
@@ -320,11 +304,12 @@ function player:emit_metric()
 end
 
 local append_option<const> = function(self)
+	local pose<const> = self.spatial
 	local vessel_id<const> = #self.options + 2
 	self.options[vessel_id - 1] = {
 		vessel_id = vessel_id,
-		x = self.x,
-		y = self.y,
+		x = pose.ox,
+		y = pose.oy,
 	}
 end
 
@@ -349,12 +334,13 @@ local place_options_from_history<const> = function(self)
 end
 
 function player:initialize_options()
+	local pose<const> = self.spatial
 	self.options = {}
 	local history_x<const> = {}
 	local history_y<const> = {}
 	for index = 1, player_option_history_count do
-		history_x[index] = self.x
-		history_y[index] = self.y
+		history_x[index] = pose.ox
+		history_y[index] = pose.oy
 	end
 	self.option_history_x = history_x
 	self.option_history_y = history_y
@@ -377,7 +363,7 @@ function player:reset_runtime()
 	self.fire_held = false
 	self.fire_pressed = false
 	self:deactivate_force_field()
-	self.sprite = self.vessel_sources.neutral
+	self.sprite_component:set_imgid(self.vessel_sources.neutral)
 	for vessel_id = 1, player_vessel_capacity do
 		local primary<const> = self.primary_projectiles[vessel_id]
 		local missile<const> = self.missile_projectiles[vessel_id]
@@ -395,12 +381,13 @@ function player:reset_runtime()
 		self:activate_force_field()
 	end
 	if telemetry_enabled then
+		local pose<const> = self.spatial
 		self:emit_event(
 			'player_reset',
 			string.format(
 				'x=%d|y=%d|speed=%d|options=%d|laser=%d|missile=%d|uplaser=%d',
-				self.x,
-				self.y,
+				pose.ox,
+				pose.oy,
 				self.powerup_levels[powerup_slot_speed],
 				self.powerup_levels[powerup_slot_option],
 				self.powerup_levels[powerup_slot_laser],
@@ -441,7 +428,7 @@ end
 local new_name_table_weapon_visual<const> = custom_visual_component.factory({
 	id_local = player_name_table_weapon_visual_id,
 	draw = draw_player_name_table_weapons,
-	offset_z = name_table_weapon_draw_z - player_draw_z,
+	order = name_table_weapon_draw_z,
 })
 
 local draw_player_sprite_projectiles<const> = function(component, draw)
@@ -473,22 +460,31 @@ local draw_player_sprite_projectiles<const> = function(component, draw)
 end
 local new_sprite_projectile_visual<const> = custom_visual_component.factory({
 	id_local = player_sprite_projectile_visual_id,
+	order = player_draw_z,
 	draw = draw_player_sprite_projectiles,
 })
 
-local draw_player_vessel<const> = function(component, draw)
-	local owner<const> = component.owner
+local vessel_visual<const> = {}
+vessel_visual.__index = vessel_visual
+setmetatable(vessel_visual, { __index = sprite_component })
+
+function vessel_visual:draw_visual(draw)
+	local owner<const> = self.owner
 	local option_source<const> = owner.option_sources[owner.option_anim_index]
 	for i = 1, #owner.options do
 		local option<const> = owner.options[i]
 		option_source:blit(draw, option.x, option.y)
 	end
-	owner.sprite.source:blit(draw, owner.x, owner.y)
+	sprite_component.draw_visual(self, draw)
 end
-local new_vessel_visual<const> = custom_visual_component.factory({
-	id_local = player_vessel_visual_id,
-	draw = draw_player_vessel,
-})
+
+function vessel_visual.new(context, id_local)
+	local self<const> = sprite_component.new(context, id_local)
+	setmetatable(self, vessel_visual)
+	self:set_draw_function(vessel_visual.draw_visual)
+	return self
+end
+player.primary_sprite_factory = vessel_visual.new
 
 local collides_at<const> = function(self, x, y)
 	for i = 1, #player_hitcheck_x do
@@ -500,11 +496,11 @@ local collides_at<const> = function(self, x, y)
 end
 
 function player:update_position()
+	local pose<const> = self.spatial
 	local vessel_sources<const> = self.vessel_sources
 	local max_x<const> = playfield_width - player_width
 	local max_y<const> = playfield_height - player_height
-	local previous_x<const> = self.x
-	local previous_y<const> = self.y
+	local next_x, next_y = pose.ox, pose.oy
 	local movement_speed<const> = player_base_movement_step
 		+ player_movement_step_increase * self.powerup_levels[powerup_slot_speed]
 	local strong_force_field<const> = self.force_field_strength > 1
@@ -512,29 +508,32 @@ function player:update_position()
 
 	if self.left_held ~= self.right_held then
 		if self.left_held then
-			self.x = clamp(self.x - movement_speed, 0, max_x)
+			next_x = clamp(next_x - movement_speed, 0, max_x)
 		else
-			self.x = clamp(self.x + movement_speed, 0, max_x)
+			next_x = clamp(next_x + movement_speed, 0, max_x)
 		end
 	end
 
 	if self.up_held ~= self.down_held then
 		if self.up_held then
-			self.y = clamp(self.y - movement_speed, 0, max_y)
+			next_y = clamp(next_y - movement_speed, 0, max_y)
 		else
-			self.y = clamp(self.y + movement_speed, 0, max_y)
+			next_y = clamp(next_y + movement_speed, 0, max_y)
 		end
 	end
+	local imgid
 	if self.up_held then
-		self.sprite = vessel_sources.up
+		imgid = vessel_sources.up
 	elseif self.down_held then
-		self.sprite = strong_force_field and vessel_sources.down_shield or vessel_sources.down
+		imgid = strong_force_field and vessel_sources.down_shield or vessel_sources.down
 	else
-		self.sprite = strong_force_field and vessel_sources.neutral_shield or vessel_sources.neutral
+		imgid = strong_force_field and vessel_sources.neutral_shield or vessel_sources.neutral
 	end
+	self.sprite_component:set_imgid(imgid)
 
-	self.last_dx = self.x - previous_x
-	self.last_dy = self.y - previous_y
+	self.last_dx = next_x - pose.ox
+	self.last_dy = next_y - pose.oy
+	self.spatial:set_world_origin(next_x, next_y)
 end
 
 function player:activate_force_field()
@@ -555,17 +554,19 @@ function player:set_metalion_cheat(active)
 	local source_set<const> = self.vessel_source_set
 	local vessel_sources<const> = active and source_set.cheat or source_set.standard
 	self.vessel_sources = vessel_sources
+	local imgid
 	if self.up_held then
-		self.sprite = vessel_sources.up
+		imgid = vessel_sources.up
 	elseif self.down_held then
-		self.sprite = self.force_field_strength > 1
+		imgid = self.force_field_strength > 1
 			and vessel_sources.down_shield
 			or vessel_sources.down
 	else
-		self.sprite = self.force_field_strength > 1
+		imgid = self.force_field_strength > 1
 			and vessel_sources.neutral_shield
 			or vessel_sources.neutral
 	end
+	self.sprite_component:set_imgid(imgid)
 end
 
 function player:apply_force_field_hit(hit)
@@ -590,9 +591,10 @@ function player:update_options()
 	if self.left_held == self.right_held and self.up_held == self.down_held then
 		return
 	end
+	local pose<const> = self.spatial
 	local history_index = self.option_history_index
-	self.option_history_x[history_index] = self.x
-	self.option_history_y[history_index] = self.y
+	self.option_history_x[history_index] = pose.ox
+	self.option_history_y[history_index] = pose.oy
 	history_index = history_index + 1
 	if history_index > player_option_history_count then
 		history_index = 1
@@ -636,13 +638,12 @@ function player:bind()
 	})
 end
 
-function player:spawn_bullet(vessel, bullet)
-	local vessel_id<const> = vessel.vessel_id
+function player:spawn_bullet(vessel_id, vessel_x, vessel_y, bullet)
 	bullet.type = projectile_type_bullet
 	bullet.pierces_small_fry = false
-	bullet.x = ((vessel.x + player_bullet_spawn_offset_x) // 8) * 8
-	bullet.y = (vessel.y + player_bullet_spawn_offset_y) // 1
-	set_projectile_collider(self, bullet, 8, 2)
+	bullet.x = ((vessel_x + player_bullet_spawn_offset_x) // 8) * 8
+	bullet.y = (vessel_y + player_bullet_spawn_offset_y) // 1
+	set_projectile_collider(self.spatial, bullet, 8, 2)
 	bullet.collider:set_enabled(true)
 	self.events:emit('player.bullet_fired')
 	if telemetry_enabled then
@@ -666,8 +667,7 @@ function player:spawn_bullet(vessel, bullet)
 	end
 end
 
-function player:spawn_laser(vessel, level)
-	local vessel_id<const> = vessel.vessel_id
+function player:spawn_laser(vessel_id, vessel_x, vessel_y, source_vessel, level)
 	local laser<const> = self.primary_projectiles[vessel_id]
 	local level_config<const> = weapons_laser.levels[level]
 	local extended<const> = level == weapons_laser.extended_level
@@ -676,20 +676,20 @@ function player:spawn_laser(vessel, level)
 	-- The normal laser follows its firing vessel throughout expansion. Removing
 	-- an option stops updating that retained vessel record; it does not end an
 	-- already admitted projectile. Travel begins from the last expanded pose.
-	laser.source_vessel = vessel
-	laser.x = ((vessel.x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
+	laser.source_vessel = source_vessel
+	laser.x = ((vessel_x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
 		weapons_laser.tile_width
 	laser.source_y_mask = extended
 		and extended_laser_source_y_mask
 		or laser_source_y_mask
-	laser.y = (vessel.y + weapons_laser.spawn_offset_y) & laser.source_y_mask
+	laser.y = (vessel_y + weapons_laser.spawn_offset_y) & laser.source_y_mask
 	laser.state = laser_state_expand
 	laser.source = extended and weapon_sources.extended_laser or weapon_sources.laser
 	laser.height = level_config.height
 	laser.expansion_tiles_per_tick = level_config.expansion_tiles_per_tick
 	laser.length_tiles = 0
 	laser.expansion_tiles_remaining = level_config.length_tiles
-	set_projectile_collider(self, laser, 0, level_config.height)
+	set_projectile_collider(self.spatial, laser, 0, level_config.height)
 	laser.collider:set_enabled(true)
 	if extended then
 		self.events:emit('player.extended_laser_fired')
@@ -710,11 +710,10 @@ function player:spawn_laser(vessel, level)
 	end
 end
 
-function player:spawn_missile(vessel, level)
-	local vessel_id<const> = vessel.vessel_id
+function player:spawn_missile(vessel_id, vessel_x, vessel_y, level)
 	local motion<const> = weapons_missile_motion_by_level[level]
 	local missile<const> = self.missile_projectiles[vessel_id]
-	local missile_y<const> = (vessel.y + weapons_missile_spawn_offset_y) // 1
+	local missile_y<const> = (vessel_y + weapons_missile_spawn_offset_y) // 1
 	if missile_y >= weapons_missile_despawn_y then
 		return
 	end
@@ -722,7 +721,7 @@ function player:spawn_missile(vessel, level)
 	missile.type = napalm and projectile_type_napalm_missile or projectile_type_missile
 	missile.pierces_small_fry = false
 	missile.continuous_damage = false
-	missile.x = (vessel.x + weapons_missile_spawn_offset_x) // 1
+	missile.x = (vessel_x + weapons_missile_spawn_offset_x) // 1
 	missile.y = missile_y
 	missile.fraction_x = 0
 	missile.fraction_y = 0
@@ -737,7 +736,7 @@ function player:spawn_missile(vessel, level)
 		missile.flying_source = weapon_sources.missile_flying
 	end
 	missile.sprite = missile.falling_source
-	set_projectile_collider(self, missile, 8, 2)
+	set_projectile_collider(self.spatial, missile, 8, 2)
 	missile.collider:set_enabled(true)
 	if telemetry_enabled then
 		self:emit_event(
@@ -753,18 +752,17 @@ function player:spawn_missile(vessel, level)
 	end
 end
 
-function player:spawn_uplaser(vessel, level)
-	local vessel_id<const> = vessel.vessel_id
+function player:spawn_uplaser(vessel_id, vessel_x, vessel_y, level)
 	local uplaser<const> = self.secondary_projectiles[vessel_id]
 	uplaser.type = uplaser_projectile_type_by_level[level]
 	uplaser.pierces_small_fry = true
-	uplaser.x = ((vessel.x + weapons_uplaser.spawn_offset_x) // weapons_uplaser.tile_width) *
+	uplaser.x = ((vessel_x + weapons_uplaser.spawn_offset_x) // weapons_uplaser.tile_width) *
 		weapons_uplaser.tile_width
-	uplaser.y = (vessel.y + weapons_uplaser.spawn_offset_y) // 1
+	uplaser.y = (vessel_y + weapons_uplaser.spawn_offset_y) // 1
 	uplaser.gate_counter = weapons_uplaser.level2_gate_frames
 	uplaser.length_tiles = weapons_uplaser.initial_length_tiles
 	set_projectile_collider(
-		self,
+		self.spatial,
 		uplaser,
 		uplaser.length_tiles * weapons_uplaser.tile_width,
 		8
@@ -787,6 +785,7 @@ function player:spawn_uplaser(vessel, level)
 end
 
 function player:fire_weapon_salvo()
+	local pose<const> = self.spatial
 	local options<const> = self.options
 	local vessel_count<const> = #options + 1
 	local powerup_levels<const> = self.powerup_levels
@@ -794,17 +793,18 @@ function player:fire_weapon_salvo()
 	local missile_level<const> = powerup_levels[powerup_slot_missile]
 	local uplaser_level<const> = powerup_levels[powerup_slot_uplaser]
 	for vessel_id = 1, vessel_count do
-		local vessel = self
+		local source_vessel = self.spatial
+		local vessel_x, vessel_y = pose.ox, pose.oy
 		if vessel_id > 1 then
-			vessel = options[vessel_id - 1]
+			local option<const> = options[vessel_id - 1]
+			source_vessel = option
+			vessel_x, vessel_y = option.x, option.y
 		end
-		local vessel_x<const> = vessel.x
-		local vessel_y<const> = vessel.y
 		local primary<const> = self.primary_projectiles[vessel_id]
 		if vessel_y < 166 and vessel_x < 217 then
 			if laser_level > 0 then
 				if primary.type == projectile_type_none then
-					self:spawn_laser(vessel, laser_level)
+					self:spawn_laser(vessel_id, vessel_x, vessel_y, source_vessel, laser_level)
 				elseif telemetry_enabled then
 					self:emit_event(
 						'weapon_blocked',
@@ -814,9 +814,9 @@ function player:fire_weapon_salvo()
 			else
 				local secondary<const> = self.secondary_projectiles[vessel_id]
 				if primary.type == projectile_type_none then
-					self:spawn_bullet(vessel, primary)
+					self:spawn_bullet(vessel_id, vessel_x, vessel_y, primary)
 				elseif secondary.type == projectile_type_none then
-					self:spawn_bullet(vessel, secondary)
+					self:spawn_bullet(vessel_id, vessel_x, vessel_y, secondary)
 				elseif telemetry_enabled then
 					self:emit_event(
 						'weapon_blocked',
@@ -828,14 +828,14 @@ function player:fire_weapon_salvo()
 
 		local missile<const> = self.missile_projectiles[vessel_id]
 		if missile_level > 0 and missile.type == projectile_type_none and vessel_y < 165 and vessel_x < 232 then
-			self:spawn_missile(vessel, missile_level)
+			self:spawn_missile(vessel_id, vessel_x, vessel_y, missile_level)
 		elseif telemetry_enabled and missile_level > 0 and missile.type ~= projectile_type_none then
 			self:emit_event('weapon_blocked', 'weapon=missile|vessel=' .. tostring(vessel_id) .. '|active=1|max=1')
 		end
 
 		local uplaser<const> = self.secondary_projectiles[vessel_id]
 		if uplaser_level > 0 and uplaser.type == projectile_type_none and vessel_y < 166 and vessel_x < 217 then
-			self:spawn_uplaser(vessel, uplaser_level)
+			self:spawn_uplaser(vessel_id, vessel_x, vessel_y, uplaser_level)
 		elseif telemetry_enabled and uplaser_level > 0 and uplaser.type ~= projectile_type_none then
 			self:emit_event('weapon_blocked', 'weapon=uplaser|vessel=' .. tostring(vessel_id) .. '|active=1|max=1')
 		end
@@ -903,9 +903,16 @@ function player:update_laser(laser)
 	local state<const> = laser.state
 	if state == laser_state_expand then
 		local source_vessel<const> = laser.source_vessel
-		laser.x = ((source_vessel.x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
+		local source_x, source_y
+		if laser.vessel_id == 1 then
+			local pose<const> = source_vessel
+			source_x, source_y = pose.ox, pose.oy
+		else
+			source_x, source_y = source_vessel.x, source_vessel.y
+		end
+		laser.x = ((source_x + weapons_laser.spawn_offset_x) // weapons_laser.tile_width) *
 			weapons_laser.tile_width
-		laser.y = (source_vessel.y + weapons_laser.spawn_offset_y) & laser.source_y_mask
+		laser.y = (source_y + weapons_laser.spawn_offset_y) & laser.source_y_mask
 		if laser.x >= playfield_width - weapons_laser.tile_width then
 			self:despawn_slot_projectile(laser, 'screen_edge')
 			return
@@ -1008,7 +1015,7 @@ function player:detonate_napalm(missile)
 	missile.blast_ticks = 1
 	missile.fragment_ticks = 0
 	missile.stage_scroll_px = self.stage.total_scroll_px
-	set_projectile_collider(self, missile, weapons_napalm.blast_width, weapons_napalm.blast_height)
+	set_projectile_collider(self.spatial, missile, weapons_napalm.blast_width, weapons_napalm.blast_height)
 end
 
 function player:update_napalm_blast(missile)
@@ -1071,6 +1078,7 @@ function player:update_uplaser(uplaser)
 end
 
 function player:update_weapons()
+	local pose<const> = self.spatial
 	for vessel_id = 1, player_vessel_capacity do
 		local primary<const> = self.primary_projectiles[vessel_id]
 		if primary.type ~= projectile_type_none then
@@ -1080,10 +1088,10 @@ function player:update_weapons()
 				self:update_laser(primary)
 			end
 			if primary.type == projectile_type_bullet then
-				set_projectile_collider(self, primary, 8, 2)
+				set_projectile_collider(pose, primary, 8, 2)
 			elseif primary.type ~= projectile_type_none then
 				set_projectile_collider(
-					self,
+					pose,
 					primary,
 					primary.length_tiles * weapons_laser.tile_width,
 					primary.height
@@ -1095,13 +1103,13 @@ function player:update_weapons()
 			if secondary.type == projectile_type_bullet then
 				self:update_bullet(secondary)
 				if secondary.type == projectile_type_bullet then
-					set_projectile_collider(self, secondary, 8, 2)
+					set_projectile_collider(pose, secondary, 8, 2)
 				end
 			else
 				self:update_uplaser(secondary)
 				if secondary.type ~= projectile_type_none then
 					set_projectile_collider(
-						self,
+						pose,
 						secondary,
 						secondary.length_tiles * weapons_uplaser.tile_width,
 						8
@@ -1121,13 +1129,13 @@ function player:update_weapons()
 			if missile.type ~= projectile_type_none then
 				if missile.type == projectile_type_napalm_blast then
 					set_projectile_collider(
-						self,
+						pose,
 						missile,
 						weapons_napalm.blast_width,
 						weapons_napalm.blast_height
 					)
 				else
-					set_projectile_collider(self, missile, 8, 2)
+					set_projectile_collider(pose, missile, 8, 2)
 				end
 			end
 		end
@@ -1190,13 +1198,14 @@ end
 
 function player:update_flying()
 	self:update_runtime()
-	if collides_at(self, self.x, self.y) then
+	local pose<const> = self.spatial
+	if collides_at(self, pose.ox, pose.oy) then
 		return '/dying'
 	end
 end
 
 function player:enter_flying()
-	self.vessel_visual.visible = true
+	self.sprite_component.visible = true
 	local body_collider<const> = self.body_collider
 	body_collider.mask = collision_player_mask
 	body_collider:set_enabled(true)
@@ -1220,13 +1229,11 @@ function player:enter_dying()
 		if pickup_x > playfield_width then
 			pickup_x = playfield_width
 		end
-		self.scene:spawn(ids_option_pickup_def, {
-			animation_frames = animation_frames,
-			animation_owner = self,
-			pos = { x = pickup_x, y = option.y, z = self.z },
-		})
+		self.scene:spawn(ids_option_pickup_def, {},
+			{ local_transform = { 1, 0, 0, 1, pickup_x, option.y } },
+			{ option_visual = { frames = animation_frames, animation_owner = self, order = 70 } })
 	end
-	self.vessel_visual.visible = false
+	self.sprite_component.visible = false
 	self.body_collider:set_enabled(false)
 	self.death_visual:set_enabled(true)
 	self.player_state:lose_life()
@@ -1246,8 +1253,9 @@ function player:finish_dying()
 		return '/exhausted'
 	end
 	local start<const> = self.start_point
-	self:set_pos(start.x, start.y)
-	self.sprite = self.vessel_sources.neutral
+	local pose<const> = start.spatial:resolve_world()
+	self.spatial:set_world_origin(pose.wox, pose.woy)
+	self.sprite_component:set_imgid(self.vessel_sources.neutral)
 	self:initialize_options()
 	return '/active/respawning'
 end
@@ -1278,8 +1286,7 @@ function player:on_body_overlap(_state, event)
 	return '/dying'
 end
 
-function player:ctor()
-	self.vessel_visual = self:get_component(custom_visual_component, player_vessel_visual_id)
+function player:ctor(_options, _definition_id, context)
 	self.death_visual = self:get_component(sprite_component, player_death_visual_id)
 	self.force_field_visual = self:get_component(
 		sprite_animation_component,
@@ -1323,9 +1330,9 @@ function player:ctor()
 		self.missile_projectiles[vessel_id] = missile
 		self.secondary_projectiles[vessel_id] = secondary
 		local collider_base<const> = (vessel_id - 1) * 3
-		attach_projectile_collider(self, primary, collider_base + 1)
-		attach_projectile_collider(self, missile, collider_base + 2)
-		attach_projectile_collider(self, secondary, collider_base + 3)
+		attach_projectile_collider(self, primary, collider_base + 1, context)
+		attach_projectile_collider(self, missile, collider_base + 2, context)
+		attach_projectile_collider(self, secondary, collider_base + 3, context)
 	end
 end
 
@@ -1336,6 +1343,7 @@ local define_player_fsm<const> = function()
 		timelines = {
 			[option_animation_timeline_id] = {
 				def = {
+					phase = 'presentation',
 					frames = {
 						{ option_anim_index = 1 },
 						{ option_anim_index = 2 },
@@ -1377,6 +1385,7 @@ local define_player_fsm<const> = function()
 						timelines = {
 							[player_respawn_timeline_id] = {
 								def = {
+									phase = 'presentation',
 									frames = player_respawn_frames,
 									repetitions = player_respawn_invulnerability_ms
 										// (player_respawn_blink_ms * 2),
@@ -1384,7 +1393,7 @@ local define_player_fsm<const> = function()
 									playback_mode = 'once',
 									apply = true,
 								},
-								target_path = { 'vessel_visual' },
+								target_path = { 'sprite_component' },
 								on_finished = '/active/flying',
 							},
 						},
@@ -1396,6 +1405,7 @@ local define_player_fsm<const> = function()
 				timelines = {
 					[player_death_timeline_id] = {
 						def = {
+							phase = 'presentation',
 							frames = player_death_frames,
 							frame_duration = 100,
 							playback_mode = 'once',
@@ -1419,9 +1429,11 @@ local register_player_definition<const> = function()
 	prefab.define({
 		def_id = ids_player_def,
 		class = player,
+		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = assets_player_n, order = player_draw_z } },
 		components = {
 			new_name_table_weapon_visual,
-			new_vessel_visual,
 			new_sprite_projectile_visual,
 			new_death_visual,
 			new_force_field_visual,
@@ -1432,8 +1444,6 @@ local register_player_definition<const> = function()
 		},
 		defaults = {
 			player_index = 1,
-			vessel_id = 1,
-			z = player_draw_z,
 			frame = 0,
 			last_dx = 0,
 			last_dy = 0,

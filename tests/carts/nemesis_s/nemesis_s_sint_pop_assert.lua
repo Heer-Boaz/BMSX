@@ -28,15 +28,15 @@ return {
 			local formation<const> = sint_pops[1].formation
 			assert(formation.remaining == sint_pop_group_size,
 			'SintPop formation did not retain its authored member count')
-			local formation_x<const> = sint_pops[1].x
+			local formation_x<const> = sint_pops[1].spatial.ox
 			for index = 1, sint_pop_group_size do
 				local sint_pop<const> = sint_pops[index]
 				assert(sint_pop.formation == formation,
 				'SintPop group members did not share one formation state')
 				assert(sint_pop.group_type == sint_pop_group_up, 'lowercase p did not produce the upward group')
-				assert(sint_pop.x == formation_x + ((index - 1) * sint_pop_width),
+				assert(sint_pop.spatial.ox == formation_x + ((index - 1) * sint_pop_width),
 				'SintPop group spacing no longer matches the XNA formation')
-				assert(sint_pop.y == 16, 'SintPop group no longer uses the authored map row')
+				assert(sint_pop.spatial.oy == 16, 'SintPop group no longer uses the authored map row')
 			end
 			stage.scrolling = false
 			local sint_pop<const> = sint_pops[1]
@@ -49,20 +49,20 @@ return {
 			'SintPop approach retained the wrong velocity')
 
 			local state_machines<const> = sint_pop.state_machines
-			local previous_x = sint_pop.x
-			local previous_y = sint_pop.y
+			local previous_x = sint_pop.spatial.ox
+			local previous_y = sint_pop.spatial.oy
 			for tick = 1, 500 do
 				if not state_machines:matches_state(move_to_player_state) then break end
-				assert(sint_pop.x <= previous_x and sint_pop.y == previous_y,
+				assert(sint_pop.spatial.ox <= previous_x and sint_pop.spatial.oy == previous_y,
 				'SintPop approach moved outside its retained velocity')
-				previous_x = sint_pop.x
+				previous_x = sint_pop.spatial.ox
 				t:wait_ticks(1)
 			end
 			assert(not state_machines:matches_state(move_to_player_state), 'Timed out: SintPop begins vertical pass')
 			do
 				assert(state_machines:matches_state(move_vertical_state),
 				'SintPop skipped its vertical pass')
-				assert(sint_pop.x <= sint_pop_vertical_start_x,
+				assert(sint_pop.spatial.ox <= sint_pop_vertical_start_x,
 				'SintPop began its vertical pass before the authored X threshold')
 				local motion<const> = sint_pop:get_component(fixed_point_velocity_component)
 				assert(motion.velocity_x == approach_velocity_x
@@ -70,34 +70,34 @@ return {
 				'SintPop vertical pass retained the wrong velocity')
 
 			end
-			previous_x = sint_pop.x
-			previous_y = sint_pop.y
+			previous_x = sint_pop.spatial.ox
+			previous_y = sint_pop.spatial.oy
 			for tick = 1, 500 do
 				if not state_machines:matches_state(move_vertical_state) then break end
-				assert(sint_pop.x <= previous_x and sint_pop.y >= previous_y,
+				assert(sint_pop.spatial.ox <= previous_x and sint_pop.spatial.oy >= previous_y,
 				'SintPop vertical pass moved outside its retained velocity')
-				previous_x = sint_pop.x
-				previous_y = sint_pop.y
+				previous_x = sint_pop.spatial.ox
+				previous_y = sint_pop.spatial.oy
 				t:wait_ticks(1)
 			end
 			assert(not state_machines:matches_state(move_vertical_state), 'Timed out: SintPop begins retreat')
 			do
 				assert(state_machines:matches_state(move_away_state),
 				'SintPop skipped its retreat')
-				assert(sint_pop.x <= sint_pop_retreat_start_x,
+				assert(sint_pop.spatial.ox <= sint_pop_retreat_start_x,
 				'SintPop began its retreat before the authored X threshold')
 				local motion<const> = sint_pop:get_component(fixed_point_velocity_component)
 				assert(motion.velocity_x == retreat_velocity_x and motion.velocity_y == 0,
 				'SintPop retreat retained the wrong velocity')
 
 			end
-			previous_x = sint_pop.x
-			previous_y = sint_pop.y
+			previous_x = sint_pop.spatial.ox
+			previous_y = sint_pop.spatial.oy
 			for tick = 1, 500 do
 				if not sint_pop.active then break end
-				assert(sint_pop.x >= previous_x and sint_pop.y == previous_y,
+				assert(sint_pop.spatial.ox >= previous_x and sint_pop.spatial.oy == previous_y,
 				'SintPop retreat moved outside its retained velocity')
-				previous_x = sint_pop.x
+				previous_x = sint_pop.spatial.ox
 				t:wait_ticks(1)
 			end
 			assert(not sint_pop.active, 'Timed out: SintPop leaves playfield')
