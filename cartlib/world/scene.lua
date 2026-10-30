@@ -7,8 +7,8 @@ local world<const> = require('cartlib/world/world')
 local scene<const> = {}
 scene.__index = scene
 
-function scene.new(definition)
-	return setmetatable({ definition = definition, members = {}, objects = dense_set.new(), closed = false }, scene)
+function scene.new(plan)
+	return setmetatable({ definition = plan, members = {}, objects = dense_set.new(), closed = false }, scene)
 end
 
 -- World calls these at construction and final teardown, including objects
@@ -39,7 +39,8 @@ end
 
 -- Admission policy belongs to the cart. It may instantiate an authored member
 -- later (a revealed pickup or a scrolling enemy) without cloning the definition.
-function scene:spawn_member(member, overrides)
+function scene:spawn_member(member_id, overrides)
+	local member<const> = self.definition.members_by_id[member_id]
 	local options = member.options
 	if overrides ~= nil then
 		options = shallow_copy(options)
@@ -47,7 +48,20 @@ function scene:spawn_member(member, overrides)
 			options[key] = value
 		end
 	end
-	return world:spawn(member.definition_id, options, self, member.member_id)
+	return world:_spawn_definition(member.definition, options, self, member_id)
+end
+
+function scene:spawn_members(member_ids, overrides)
+	local members<const> = {}
+	local by_id<const> = self.definition.members_by_id
+	for index = 1, #member_ids do
+		members[index] = by_id[member_ids[index]]
+	end
+	world:spawn_members(self, members, overrides)
+end
+
+function scene:spawn_all(overrides)
+	world:spawn_members(self, self.definition.objects, overrides)
 end
 
 function scene:dispose(on_unloaded, context)

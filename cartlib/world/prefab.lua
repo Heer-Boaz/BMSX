@@ -1,4 +1,5 @@
 local world_object<const> = require('cartlib/world/world_object')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local definitions<const> = {}
 local prefab<const> = {}
@@ -12,20 +13,41 @@ local empty_components<const> = {}
 function prefab.define(source)
 	local prototype<const> = source.base or world_object
 	local class<const> = source.class
-	local class_metatable<const> = getmetatable(class)
-	if class_metatable then
-		if not class_metatable.__index then
-			class_metatable.__index = prototype
+	-- A concrete library base may itself be the instantiated class. That
+	-- declares no new inheritance edge (not a self-parented prototype).
+	if class ~= prototype then
+		local class_metatable<const> = getmetatable(class)
+		local inheritance<const> = class_metatable and shallow_copy(class_metatable) or {}
+		inheritance.__index = prototype
+		setmetatable(class, inheritance)
+	end
+
+	-- Admission owns the lookup surface and ordered construction mappings.
+	-- Nested authored values and closure captures retain their declared identity;
+	-- this is not a deep clone of gameplay state or executable closures.
+	local methods<const> = {}
+	local current = class
+	while current ~= nil do
+		for key, value in pairs(current) do
+			if key ~= '__index' and rawget(methods, key) == nil then
+				methods[key] = value
+			end
 		end
-	else
-		setmetatable(class, { __index = prototype })
+		local metatable<const> = getmetatable(current)
+		current = metatable and metatable.__index
+	end
+	local components<const> = {}
+	local source_components<const> = source.components or empty_components
+	for index = 1, #source_components do
+		components[index] = source_components[index]
 	end
 	definitions[source.def_id] = {
-		ctor = class.ctor,
-		instance_metatable = { __index = class },
-		initialize = prototype.initialize,
-		defaults = source.defaults or empty_values,
-		components = source.components or empty_components,
+		definition_id = source.def_id,
+		ctor = methods.ctor,
+		instance_metatable = { __index = methods },
+		initialize = methods.initialize,
+		defaults = shallow_copy(source.defaults or empty_values),
+		components = components,
 	}
 end
 

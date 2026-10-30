@@ -6,7 +6,7 @@ local room_spawner<const> = {}
 -- Conditional admission consumes the immutable definition and the session
 -- model. The live scene owns members and procedural children alike.
 local spawn_member<const> = function(room, member)
-	return room.scene:spawn_member(member, {
+	return room.scene:spawn_member(member.member_id, {
 		castle = room.castle, room = room, player = room.player,
 		room_number = room.room_number, item_id = member.member_id,
 	})

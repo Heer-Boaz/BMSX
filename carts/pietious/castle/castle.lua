@@ -2,12 +2,11 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local world<const> = require('cartlib/world/world')
-local scene<const> = require('cartlib/world/scene')
+local scene_library<const> = require('cartlib/world/scene_library')
 require('constants')
 local castle_map<const> = require('castle/map')
 local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
-local world_object<const> = require('cartlib/world/world_object')
 
 local castle<const> = {}
 
@@ -337,7 +336,7 @@ function castle:sync_current_room_seal_instance()
 	end
 
 	if seal_instance == nil then
-		seal_instance = room.scene:spawn_member(seal, {
+		seal_instance = room.scene:spawn_member(seal.member_id, {
 			space_id = world.active_space_id,
 			player_index = room.player.player_index,
 		})
@@ -548,11 +547,15 @@ function castle:ctor()
 	self.elevators = {}
 	self.room_enter_pending = false
 	self:reset_room_encounter_tags()
+end
+
+-- disable-next-line single_line_method_pattern -- World lifecycle owns admission of progression subscriptions, after all ready callbacks.
+function castle:bind()
 	progression.mount(self, self.level.program, self.session.progression)
 end
 
+-- disable-next-line single_line_method_pattern -- Paired World lifecycle releases this controller's mounted progression runtime.
 function castle:unbind()
-	world_object.unbind(self)
 	progression.unmount(self)
 end
 
@@ -624,7 +627,7 @@ function castle:load_room(room_number)
 		previous.scene:dispose()
 	end
 	local template<const> = self.level.map.rooms[room_number]
-	local instance<const> = scene.new(template.scene_definition)
+	local instance<const> = scene_library.create(template.scene_id)
 	local room<const> = instance:spawn('room', {
 		space_id = 'main', castle = self, player = self.player,
 		template = template, progress = self.session.rooms[template.scene_id],
@@ -659,7 +662,7 @@ function castle:reload_current_room()
 	end, self)
 end
 
-function castle:initialize(initial_room_number, emit_room_enter_now)
+function castle:start_at_room(initial_room_number, emit_room_enter_now)
 	local room_number<const> = initial_room_number or castle_map.start_room_number
 	self.current_room_number = room_number
 	local rm<const> = self:load_room(room_number)

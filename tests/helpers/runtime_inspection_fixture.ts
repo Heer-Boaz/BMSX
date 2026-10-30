@@ -72,7 +72,7 @@ inspection_other = inspection_second.effects.pulse
 for _, effect_component in ipairs({ inspection_first, inspection_second }) do
 	local owner<const> = effect_component.owner
 	setmetatable(owner, world_object)
-	world_object.initialize(owner)
+	world_object._initialize(owner)
 	owner.active = true
 	owner.player_index = 1
 end
@@ -80,6 +80,7 @@ inspection_fsm_first = fsm_component.new({ owner = inspection_first.owner }, { '
 inspection_fsm_first.id = 'inspection.fsm.first'
 registry:register(inspection_fsm_first)
 registry:index(inspection_fsm_first, fsm_component)
+inspection_fsm_first:_bind()
 inspection_fsm_first:start()
 inspection_fsm_first:get_machine('walker'):transition_to('/parked')
 inspection_fsm_first:get_machine('walker').states.nest.data.revision = 111
@@ -87,6 +88,7 @@ inspection_fsm_second = fsm_component.new({ owner = inspection_second.owner }, {
 inspection_fsm_second.id = 'inspection.fsm.second'
 registry:register(inspection_fsm_second)
 registry:index(inspection_fsm_second, fsm_component)
+inspection_fsm_second:_bind()
 inspection_fsm_second:start()
 inspection_fsm_second:get_machine('walker').states.nest.data.revision = 222
 trees.attach(inspection_first.owner, inspection_second.owner)

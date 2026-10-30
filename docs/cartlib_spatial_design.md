@@ -551,8 +551,11 @@ including when spawn is called outside a tick group:
    through the same barrier before allowing the next scheduled group to run.
 
 Callbacks can observe fully constructed peers, not a promise that every peer's
-activation callback has already run. Reentrant spawns construct within the
-same open structural scope and publish in subsequent batches, not recursively
+activation callback has already run. Component subscription binding precedes
+activation too; an inactive gameplay receiver, including an FSM that has not
+started, still ignores events until its own activation. Binding does not queue
+events or enter that receiver's states early. Reentrant spawns construct within
+the same open structural scope and publish in subsequent batches, not recursively
 published half-batches. Scene closure retires its pending as well as live owned
 set. There is no arbitrary constructor rollback; a thrown constructor error is
 a failed construction, not a recoverable partial scene.

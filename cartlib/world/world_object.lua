@@ -5,23 +5,23 @@
 -- DESIGN PRINCIPLES — object lifecycle and event subscription
 --
 -- 1. OBJECT LIFECYCLE ORDER.
---    initialize() — initializes the object and its components; no event
---                   subscriptions here; the object is not yet active.
---    onspawn()    — called by world:spawn() after position is set from pos.
---                   Override for spawn-time setup.  No super call needed.
---    activate()   — called by world:spawn() after onspawn().  Sets
---                   active = true, binds a new object once, then activates
---                   the attached components.
+--    _initialize() — World-owned common setup before custom initialization,
+--                    component factories and ctor; position and identity exist.
+--    initialize()  — optional custom initialization; no subscriptions here.
+--    onspawn()     — called after every batch object is constructed and its
+--                    identity published. No super call needed.
+--    _bind()       — binds every surviving batch object before activation.
+--    _activate()   — sets active = true and activates attached components.
 --    bind()       — override this in subclasses to subscribe to events.
 --                   Called exactly once during the object's lifetime.
 --    ondespawn()  — called when removed from the world, before final teardown.
---    _dispose()   — object-owned final teardown after world removal; calls unbind() which removes all event
---                   subscriptions whose `subscriber` field is this object.
+--    _dispose()   — final component/subscription teardown after world removal;
+--                   calls the optional unbind hook only after a matching bind.
 --
 -- 2. bind() / unbind() — event subscription lifecycle.
 --    All external event subscriptions must be registered inside bind(), not
 --    in ctor / new(). The object's event port retains self as the subscriber,
---    so the default unbind() can clean them up through remove_subscriber(self).
+--    so WorldObject teardown can remove them through remove_subscriber(self).
 --
 --    WRONG — subscribing in ctor (fires before object is active/ready):
 --      function myobj:ctor()
@@ -33,15 +33,13 @@
 --              handler = self.on_something })
 --      end
 --    A one-shot connection to an emitter created after bind() belongs at that
---    creation boundary. Set subscriber = self and once = true; unbind() still
+--    creation boundary. Set subscriber = self and once = true; teardown still
 --    owns early cleanup if the subscriber dies before the event is emitted.
 --
---    Override unbind() only when you need extra cleanup beyond event
---    unsubscription (e.g. releasing external resources).  Always call
---    super's unbind via remove_subscriber if you do override it:
+--    An unbind hook releases resources acquired by bind. Common subscription
+--    cleanup belongs to WorldObject and runs even when construction is canceled:
 --      function myobj:unbind()
---          event_emitter:remove_subscriber(self)  -- base
---          -- additional cleanup ...
+--          -- release the resources acquired by myobj:bind()
 --      end
 --
 -- 3. NEVER CALL METHODS ON OTHER OBJECTS DIRECTLY FROM bind().
@@ -63,23 +61,27 @@
 --    subscriptions persist until the object's space is selected again.
 local component_class_chain<const> = require('cartlib/component/component_class').chain
 local event_emitter<const> = require('cartlib/event_emitter')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local world_object<const> = {}
 world_object.__index = world_object
 
-function world_object.initialize(self)
-	self:set_pos(self.x or 0, self.y or 0, self.z or 0)
+function world_object._initialize(self)
+	self.x = self.x or 0
+	self.y = self.y or 0
+	self.z = self.z or 0
 	self.sx = self.sx or 0
 	self.sy = self.sy or 0
 	self.sz = self.sz or 0
 	self.visible = self.visible == nil or self.visible
 	self.active = false
-	self.tags = self.tags or {}
+	self.tags = self.tags and shallow_copy(self.tags) or {}
 	self._explicit_tags = nil
 	self._retained_tag_counts = nil
 	self._components = {}
 	self._components_by_class = {}
 	self._bound = false
+	self._constructed = false
 	self.events = event_emitter.events_of(self)
 end
 
@@ -139,6 +141,7 @@ function world_object:_attach_component(comp)
 		end
 	end
 	comp._attached = true
+	comp._attach_notified = false
 	local components<const> = self._components
 	local component_index<const> = #components + 1
 	components[component_index] = comp
@@ -156,7 +159,10 @@ function world_object:_attach_component(comp)
 			comp._owner_class_index = bucket_index
 		end
 	end
-	comp:on_attach()
+	if not self.marked_for_disposal then
+		comp._attach_notified = true
+		comp:on_attach()
+	end
 end
 
 function world_object:get_component(component_class, id_local)
@@ -224,7 +230,11 @@ function world_object:_detach_component(comp)
 	end
 	components[last_component_index] = nil
 	comp._owner_component_index = nil
-	comp:on_detach()
+	if comp._attach_notified then
+		comp._attach_notified = false
+		comp:on_detach()
+	end
+	comp._bound = false
 	comp:unbind()
 end
 
@@ -335,11 +345,28 @@ function world_object:toggle_tag(tag)
 	end
 end
 
--- activate(): called by world:spawn() after onspawn(). Sets active = true,
--- binds a new object once, then activates the components that were already attached.
--- Components added during bind activate through add_component() exactly once.
--- Do not call directly; spawn the object through the world instead.
-function world_object:activate()
+-- World binds the whole admitted batch before activating any of its objects.
+function world_object:_bind()
+	if self.marked_for_disposal then
+		return
+	end
+	if not self._bound then
+		self._bound = true
+		self:bind()
+	end
+	local components<const> = self._components
+	for index = 1, #components do
+		if self.marked_for_disposal then
+			return
+		end
+		local component<const> = components[index]
+		if component._attached then
+			component:_bind()
+		end
+	end
+end
+
+function world_object:_activate()
 	if self.marked_for_disposal then
 		return
 	end
@@ -349,29 +376,21 @@ function world_object:activate()
 	if self._world_object_index ~= nil then
 		self.world:reconcile_object(self)
 	end
-	if not self._bound then
-		self._bound = true
-		self:bind()
-	end
-	if not self.active then
-		return
-	end
 	for i = 1, component_count do
-		components[i]:on_activate()
+		if self.marked_for_disposal or not self.active then
+			return
+		end
+		local component<const> = components[i]
+		if component._attached then
+			component:on_activate()
+		end
 	end
 end
 
 -- bind(): override in subclasses to register event subscriptions.
--- Called once by the first activate() before attached components activate. The
--- object event port retains self so unbind() owns subscription cleanup.
+-- Called once by World before any batch object's components activate. The object
+-- event port retains self so common teardown owns subscription cleanup.
 function world_object:bind()
-end
-
--- unbind(): removes all event subscriptions whose subscriber == self.
--- Called by _dispose().  Override only if you need extra teardown beyond
--- event unsubscription; in that case call the base implementation first.
-function world_object:unbind()
-	event_emitter:remove_subscriber(self)
 end
 
 -- deactivate(): removes the object and its components from active scheduling
@@ -385,10 +404,9 @@ function world_object:deactivate()
 	end
 end
 
--- onspawn(pos): called by world:spawn() after position is set from pos.
--- Override for spawn-time setup.  Position (x, y, z) is already applied.
--- activate(), bind(), and component activation are handled automatically by
--- world:spawn() after this returns — no super call needed.
+-- onspawn(pos): the ready/wiring boundary for a published construction batch.
+-- Every peer is constructed and addressable; subscriptions bind afterward,
+-- before any object or component activation. No super call needed.
 function world_object:onspawn(pos)
 end
 
@@ -410,13 +428,21 @@ end
 -- space, and active membership. Cart code requests that transition through
 -- mark_for_disposal(); it never tears down a live object directly.
 function world_object:_dispose()
+	local bound<const> = self._bound
+	self._bound = false
+	if bound then
+		local unbind<const> = self.unbind
+		if unbind ~= nil then
+			unbind(self)
+		end
+	end
 	local components<const> = self._components
-	for i = #components, 1, -1 do
-		local component<const> = components[i]
+	while #components > 0 do
+		local component<const> = components[#components]
 		component._attached = false
 		self:_detach_component(component)
 	end
-	self:unbind()
+	event_emitter:remove_subscriber(self)
 end
 
 return world_object

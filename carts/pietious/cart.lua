@@ -95,10 +95,10 @@ local create_world<const> = function(director_boot_mode)
 	local session<const> = session_model.new(castle_module.castle.level.program, player_member.options.pos, castle_module.castle.level.map.rooms)
 	local gameplay<const> = scene_library.create(gameplay_scene.id)
 	local castle<const> = gameplay:spawn('castle', { id = 'c', session = session })
-	local player<const> = gameplay:spawn_member(player_member, { castle = castle, status = session.player })
+	local player<const> = gameplay:spawn_member('player', { castle = castle, status = session.player })
 	castle.player = player
 	grant_debug_starting_loadout(player, castle)
-	castle:initialize(castle_map.start_room_number, director_boot_mode == 'room')
+	castle:start_at_room(castle_map.start_room_number, director_boot_mode == 'room')
 
 	world:spawn('intro', { id = 'intro', space_id = 'intro', })
 	world:spawn('narrative_screen', { id = 'narrative', space_id = 'narrative', })
@@ -112,8 +112,7 @@ local create_world<const> = function(director_boot_mode)
 		castle = castle,
 		player = player,
 	})
-	local hud_member<const> = scene_library.member_definition(gameplay_scene.id, 'hud')
-	local ui<const> = gameplay:spawn_member(hud_member, { player = player })
+	local ui<const> = gameplay:spawn_member('hud', { player = player })
 	world:spawn('title_screen', { id = 'title_screen', space_id = 'title', })
 	local director<const> = world:spawn('director', {
 		id = 'd',
@@ -133,8 +132,6 @@ end
 local function init<init>()
 	pietious_font.register_fonts()
 	presentation.register()
-	gameplay_scene.register()
-	castle_map.initialize()
 
 	player_module.define_player_fsm()
 	boekfoe_module.register()
@@ -193,7 +190,6 @@ local function init<init>()
 	rock_module.register_rock_definition()
 	pepernoot_projectile_module.register_pepernoot_projectile_definition()
 	enemy_explosion_module.register_enemy_explosion_definition()
-	castle_module.register_castle_definition()
 	world_entrance_module.register_world_entrance_definition()
 	world1_daemon_module.register_world1_daemon_definition()
 	daemon_cloud_module.register_daemon_cloud_definition()
@@ -202,6 +198,9 @@ local function init<init>()
 	end_demo_module.register_end_demo_definition()
 	title_screen_module.register_title_screen_definition()
 	director_module.register_director_definition()
+	gameplay_scene.register()
+	castle_map.initialize()
+	castle_module.register_castle_definition()
 end
 
 init()

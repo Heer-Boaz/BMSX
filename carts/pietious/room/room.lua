@@ -851,9 +851,6 @@ function room_object:ctor()
 	})
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
-end
-
-function room_object:onspawn()
 	apply_room_template(self, self.template)
 	self:rebuild_room_tiles()
 end

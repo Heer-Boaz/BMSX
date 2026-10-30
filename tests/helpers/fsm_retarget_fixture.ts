@@ -142,6 +142,7 @@ fsm_drag_component.id = 'drag-target-fsm'
 fsm_drag_component:on_attach()
 registry:register(fsm_drag_component)
 registry:index(fsm_drag_component, component)
+fsm_drag_component:_bind()
 fsm_drag_component:start()
 fsm_drag_machine = fsm_drag_component:get_machine('fixture.drag.one')
 fsm_drag_second = fsm_drag_component:get_machine('fixture.drag.two')

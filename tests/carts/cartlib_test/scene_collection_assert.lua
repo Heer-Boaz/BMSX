@@ -22,7 +22,6 @@ setmetatable(scene_actor_base, { __index = world_object })
 
 function scene_actor_base.initialize(self)
 	lifecycle[#lifecycle + 1] = 'initialize:' .. self.authored_value
-	world_object.initialize(self)
 end
 
 local scene_actor<const> = {}
@@ -88,13 +87,14 @@ return {
 		scene_membership_and_lifecycle = function(t)
 			world:clear()
 			scene_library.register(scene_id, first_definition)
+			local admitted_definition<const> = scene_library.definition(scene_id)
 			local first<const> = scene_library.instantiate(scene_id)
 			local first_left<const> = first.members.left
 			local first_right<const> = first.members.right
 
 			assert(lifecycle[1] == 'initialize:left.1'
-			and lifecycle[2] == 'spawn:left.1'
-			and lifecycle[3] == 'initialize:right.1'
+			and lifecycle[2] == 'initialize:right.1'
+			and lifecycle[3] == 'spawn:left.1'
 			and lifecycle[4] == 'spawn:right.1',
 			'scene members were not instantiated in authored order')
 			assert(first_left.authored_value == 'left.1'
@@ -118,7 +118,7 @@ return {
 			assert(bound.members.left.player_state == state and bound.members.left.authored_value == 'bound'
 			and bound.members.left.x == 11 and bound.members.right.authored_value == 'right.1',
 			'runtime binding discarded layout or affected an unbound member')
-			assert(scene_library.definition(scene_id) == first_definition
+			assert(scene_library.definition(scene_id) == admitted_definition
 			and first_definition.objects[1].options.authored_value == 'left.1'
 			and first_definition.objects[1].options.player_state == nil,
 			'runtime binding mutated the authored definition')

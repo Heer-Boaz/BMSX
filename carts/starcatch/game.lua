@@ -1,5 +1,4 @@
 local world<const> = require('cartlib/world/world')
-local world_object<const> = require('cartlib/world/world_object')
 local scene_library<const> = require('cartlib/world/scene_library')
 local prefab<const> = require('cartlib/world/prefab')
 local progression<const> = require('cartlib/progression')
@@ -38,9 +37,9 @@ function game:bind()
 	progression.mount(self, milestones, self.progress_state)
 end
 
+-- disable-next-line single_line_method_pattern -- Paired World lifecycle releases the session's mounted progression runtime.
 function game:unbind()
 	progression.unmount(self)
-	world_object.unbind(self)
 end
 
 function game:reset_match()

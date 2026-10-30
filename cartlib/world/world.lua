@@ -42,8 +42,10 @@ local gp0<const> = require('cartlib/gx/gp0')
 local component_class_chain<const> = require('cartlib/component/component_class').chain
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local space<const> = require('cartlib/world/space')
 local system_manager<const> = require('cartlib/world/system_manager')
+local world_object<const> = require('cartlib/world/world_object')
 
 local world
 local clear_color<const> = 0xff000000
@@ -110,12 +112,13 @@ function world_class.new()
 	self._space_order = {}
 	self._pending_disposals = {}
 	self._pending_disposal_count = 0
-	self._flushing_disposals = false
 	self._pending_admissions = {}
 	self._pending_admission_count = 0
+	self._pending_admission_first = 1
 	self._pending_unload_callbacks = {}
 	self._pending_unload_contexts = {}
 	self._pending_unload_count = 0
+	self._pending_unload_first = 1
 	self._pending_objects = {}
 	self._pending_object_count = 0
 	self._pending_components = {}
@@ -513,6 +516,7 @@ end
 
 function world_class:_commit_component_attach(comp)
 	local owner<const> = comp.owner
+	comp._attach_pending = nil
 	owner:_attach_component(comp)
 	if comp.id == nil then
 		comp.id = registry:next_id()
@@ -523,22 +527,27 @@ function world_class:_commit_component_attach(comp)
 		registry:index(comp, classes[class_index])
 	end
 	self:_reconcile_active_component(comp)
-	comp._attach_pending = nil
-	if owner.active then
+	if comp._attached and owner._bound and not owner.marked_for_disposal then
+		comp:_bind()
+	end
+	if comp._attached and owner.active and not owner.marked_for_disposal then
 		comp:on_activate()
 	end
 end
 
 function world_class:attach_component(comp)
-	comp._attach_pending = true
-	if not self._mutation_barrier_open then
-		self:_commit_component_attach(comp)
-		return comp
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
 	end
+	comp._attach_pending = true
 	local index<const> = self._pending_component_attach_count + 1
 	self._pending_component_attach_count = index
 	self._pending_component_attaches[index] = comp
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component_attach
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
 	return comp
 end
 
@@ -553,14 +562,17 @@ function world_class:detach_component(comp)
 		comp._attach_pending = nil
 		return
 	end
-	if not self._mutation_barrier_open then
-		self:_commit_component_detach(comp)
-		return
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
 	end
 	local index<const> = self._pending_component_detach_count + 1
 	self._pending_component_detach_count = index
 	self._pending_component_detaches[index] = comp
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_component_detach
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
 end
 
 function world_class:_flush_component_attaches()
@@ -663,74 +675,162 @@ end
 
 function world_class:_flush_admissions()
 	local pending<const> = self._pending_admissions
-	local index = 1
-	while index <= self._pending_admission_count do
+	local first<const> = self._pending_admission_first
+	local last<const> = self._pending_admission_count
+	-- Keep this span retained through all lifecycle phases. Reentrant spawns
+	-- append their constructed shells for the next batch at this same barrier.
+	for index = first, last do
 		local obj<const> = pending[index]
-		pending[index] = nil
-		-- A spawn canceled in the same structural scope never enters the
-		-- published Registry, space, or system views.
-		if obj.marked_for_disposal then
-			self:_commit_disposal(obj)
-		else
+		if not obj.marked_for_disposal then
 			self:_commit_spawn(obj)
 		end
-		index = index + 1
 	end
-	self._pending_admission_count = 0
+	for index = first, last do
+		local obj<const> = pending[index]
+		if not obj.marked_for_disposal then
+			obj:onspawn(obj._construction_options.pos)
+		end
+	end
+	for index = first, last do
+		local obj<const> = pending[index]
+		if not obj.marked_for_disposal then
+			obj:_bind()
+		end
+	end
+	for index = first, last do
+		local obj<const> = pending[index]
+		if not obj.marked_for_disposal then
+			obj:_activate()
+		end
+	end
+	for index = first, last do
+		local obj<const> = pending[index]
+		pending[index] = nil
+		self._pending_admission_first = index + 1
+		obj._construction_definition = nil
+		obj._construction_options = nil
+		if obj.marked_for_disposal and obj._world_object_index == nil then
+			self:_commit_disposal(obj)
+		end
+	end
+	if self._pending_admission_count == last then
+		self._pending_admission_count = 0
+		self._pending_admission_first = 1
+	else
+		self._pending_admission_first = last + 1
+	end
 end
 
--- A prefab instance is fully constructed before Registry, space and system
--- views publish it. During a tick group that publication or cancellation
--- happens at the group barrier.
-function world_class:spawn(definition_id, options, scene, member_id)
-	local definition<const> = prefab.definition(definition_id)
-	local obj<const> = {}
+-- Allocate the final object identity and all common metadata before entering
+-- any initializer, component factory or constructor.
+function world_class:_prepare_spawn(definition, options, scene, member_id)
+	local obj<const> = setmetatable({}, definition.instance_metatable)
 	apply_spawn_values(obj, definition.defaults)
 	apply_spawn_values(obj, options)
-	obj.definition_id = definition_id
-	obj.id = obj.id or registry:next_id()
-
-	setmetatable(obj, definition.instance_metatable)
-	definition.initialize(obj)
-	obj.world = self
-	if scene ~= nil then
-		obj.scene = scene
-		scene:_attach(obj, member_id)
-	end
-	obj.space_id = obj.space_id or self.active_space_id
-	local component_options<const> = { owner = obj }
-	local component_factories<const> = definition.components
-	for index = 1, #component_factories do
-		obj:add_component(component_factories[index](component_options))
-	end
-	local ctor<const> = definition.ctor
-	if ctor then
-		ctor(obj, options, definition_id)
-	end
-
-	local deferred<const> = self._mutation_barrier_open
-	if deferred then
-		local index<const> = self._pending_admission_count + 1
-		self._pending_admission_count = index
-		self._pending_admissions[index] = obj
-		self._pending_mutation_mask = self._pending_mutation_mask | mutation_admission
-	end
 	local pos<const> = options.pos
-	if pos then
+	if pos ~= nil then
 		obj.x = pos.x or obj.x
 		obj.y = pos.y or obj.y
 		obj.z = pos.z or obj.z
 	end
-	obj:onspawn(pos)
-	obj:activate()
-	if not deferred then
-		if obj.marked_for_disposal then
-			self:_commit_disposal(obj)
-		else
-			self:_commit_spawn(obj)
+	obj.definition_id = definition.definition_id
+	obj.id = obj.id or registry:next_id()
+	obj.world = self
+	obj.space_id = obj.space_id or self.active_space_id
+	world_object._initialize(obj)
+	if scene ~= nil then
+		obj.scene = scene
+		scene:_attach(obj, member_id)
+	end
+	obj._construction_definition = definition
+	obj._construction_options = options
+	local index<const> = self._pending_admission_count + 1
+	self._pending_admission_count = index
+	self._pending_admissions[index] = obj
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_admission
+	return obj
+end
+
+function world_class:_construct_spawn(obj)
+	if obj.marked_for_disposal then
+		return
+	end
+	local definition<const> = obj._construction_definition
+	local options<const> = obj._construction_options
+	local initialize<const> = definition.initialize
+	if initialize ~= nil then
+		initialize(obj)
+	end
+	if obj.marked_for_disposal then
+		return
+	end
+	local component_factories<const> = definition.components
+	if #component_factories > 0 then
+		local component_options<const> = { owner = obj }
+		for index = 1, #component_factories do
+			local component<const> = component_factories[index](component_options)
+			-- A factory may close the Scene. Its returned component still belongs
+			-- to this shell and is torn down through the common disposal path.
+			obj:add_component(component)
+			if obj.marked_for_disposal then
+				return
+			end
 		end
 	end
+	local ctor<const> = definition.ctor
+	if ctor ~= nil then
+		ctor(obj, options, definition.definition_id)
+	end
+	obj._constructed = true
+	obj._construction_definition = nil
+end
+
+-- Procedural requests resolve once; retained Scene rows call the concrete
+-- definition boundary without re-resolving an identifier.
+function world_class:spawn(definition_id, options, scene, member_id)
+	return self:_spawn_definition(prefab.definition(definition_id), options, scene, member_id)
+end
+
+function world_class:_spawn_definition(definition, options, scene, member_id)
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
+	end
+	local obj<const> = self:_prepare_spawn(definition, options, scene, member_id)
+	self:_construct_spawn(obj)
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
 	return obj
+end
+
+function world_class:spawn_members(scene, members, overrides)
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
+	end
+	local first<const> = self._pending_admission_count + 1
+	for index = 1, #members do
+		local member<const> = members[index]
+		local options = member.options
+		local member_overrides<const> = overrides and overrides[member.member_id]
+		if member_overrides ~= nil then
+			options = shallow_copy(options)
+			for key, value in pairs(member_overrides) do
+				options[key] = value
+			end
+		end
+		self:_prepare_spawn(member.definition, options, scene, member.member_id)
+	end
+	local last<const> = self._pending_admission_count
+	local pending<const> = self._pending_admissions
+	for index = first, last do
+		self:_construct_spawn(pending[index])
+	end
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
+	return scene
 end
 
 function world_class:_commit_disposal(obj)
@@ -750,7 +850,9 @@ function world_class:_commit_disposal(obj)
 		self:_remove_world_object(obj)
 	end
 
-	obj:ondespawn()
+	if obj._constructed then
+		obj:ondespawn()
+	end
 	obj:_dispose()
 	if obj.scene ~= nil then
 		obj.scene:_detach(obj)
@@ -771,19 +873,21 @@ function world_class:mark_for_disposal(obj)
 	if obj._world_object_index == nil then
 		return
 	end
-	if not self._mutation_barrier_open and not self._flushing_disposals then
-		self:_commit_disposal(obj)
-		return
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
 	end
 	local pending_count<const> = self._pending_disposal_count + 1
 	self._pending_disposal_count = pending_count
 	self._pending_disposals[pending_count] = obj
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_disposal
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
 end
 
 function world_class:_flush_disposals()
 	local pending<const> = self._pending_disposals
-	self._flushing_disposals = true
 	local index = 1
 	while index <= self._pending_disposal_count do
 		local obj<const> = pending[index]
@@ -792,7 +896,6 @@ function world_class:_flush_disposals()
 		index = index + 1
 	end
 	self._pending_disposal_count = 0
-	self._flushing_disposals = false
 end
 
 function world_class:_open_mutation_barrier()
@@ -874,39 +977,43 @@ function world_class:_flush_structural_mutations()
 end
 
 function world_class:_commit_mutation_barrier()
-	local pending_mutation_mask<const> = self._pending_mutation_mask
-	if pending_mutation_mask == 0 then
-		self._mutation_barrier_open = false
-		return
-	end
 	local schedule_changed = false
-	if (pending_mutation_mask & structural_mutation_mask) ~= 0 then
-		schedule_changed = self:_flush_structural_mutations()
-	end
-	self._mutation_barrier_open = false
-	if (self._pending_mutation_mask & mutation_disposal) ~= 0 then
-		self:_flush_disposals()
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_disposal
-	end
-	if (self._pending_mutation_mask & mutation_clear) ~= 0 then
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_clear
-		self:_commit_clear()
-		return true
-	end
-	if (self._pending_mutation_mask & mutation_unload) ~= 0 then
-		self._pending_mutation_mask = self._pending_mutation_mask - mutation_unload
-		local callbacks<const> = self._pending_unload_callbacks
-		local contexts<const> = self._pending_unload_contexts
-		local count<const> = self._pending_unload_count
-		self._pending_unload_count = 0
-		for index = 1, count do
+	-- Keep the same scope open through teardown and completion callbacks too.
+	-- They can append any mutation kind without recursively committing a
+	-- partially published batch or losing an earlier kind to a later flush.
+	while self._pending_mutation_mask ~= 0 do
+		if (self._pending_mutation_mask & structural_mutation_mask) ~= 0 then
+			if self:_flush_structural_mutations() then
+				schedule_changed = true
+			end
+		end
+		if (self._pending_mutation_mask & mutation_disposal) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_disposal
+			self:_flush_disposals()
+		end
+		if (self._pending_mutation_mask & mutation_clear) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_clear
+			self:_commit_clear()
+			schedule_changed = true
+		elseif self._pending_mutation_mask == mutation_unload then
+			local index<const> = self._pending_unload_first
+			local callbacks<const> = self._pending_unload_callbacks
+			local contexts<const> = self._pending_unload_contexts
 			local callback<const> = callbacks[index]
 			local context<const> = contexts[index]
 			callbacks[index] = nil
 			contexts[index] = nil
+			if index == self._pending_unload_count then
+				self._pending_unload_first = 1
+				self._pending_unload_count = 0
+				self._pending_mutation_mask = self._pending_mutation_mask - mutation_unload
+			else
+				self._pending_unload_first = index + 1
+			end
 			callback(context)
 		end
 	end
+	self._mutation_barrier_open = false
 	return schedule_changed
 end
 
@@ -970,6 +1077,10 @@ end
 -- query: inactive objects and admissions from the current tick group belong to
 -- the same teardown.
 function world_class:clear_space(space_id)
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
+	end
 	local objects<const> = self._objects
 	for index = #objects, 1, -1 do
 		local obj<const> = objects[index]
@@ -978,11 +1089,14 @@ function world_class:clear_space(space_id)
 		end
 	end
 	local admissions<const> = self._pending_admissions
-	for index = 1, self._pending_admission_count do
+	for index = self._pending_admission_first, self._pending_admission_count do
 		local obj<const> = admissions[index]
 		if obj.space_id == space_id then
 			self:mark_for_disposal(obj)
 		end
+	end
+	if own_barrier then
+		self:_commit_mutation_barrier()
 	end
 end
 
@@ -991,8 +1105,15 @@ end
 -- this boundary to construct the incoming scene without retaining both object
 -- graphs at once.
 function world_class:unload_space(space_id, on_unloaded, context)
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
+	end
 	self:clear_space(space_id)
 	self:_after_disposals(on_unloaded, context)
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
 end
 
 -- Scene ownership is opt-in and independent of the selected update space.
@@ -1000,7 +1121,7 @@ end
 function world_class:unload_objects(objects, on_unloaded, context)
 	-- Queue the whole group before ondespawn hooks run: an encounter's teardown
 	-- may also dispose siblings and mutate this dense membership list.
-	local own_barrier<const> = not self._mutation_barrier_open and not self._flushing_disposals
+	local own_barrier<const> = not self._mutation_barrier_open
 	if own_barrier then
 		self:_open_mutation_barrier()
 	end
@@ -1016,50 +1137,65 @@ function world_class:unload_objects(objects, on_unloaded, context)
 end
 
 function world_class:_after_disposals(on_unloaded, context)
-	if not self._mutation_barrier_open and not self._flushing_disposals then
-		on_unloaded(context)
-		return
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
 	end
 	local count<const> = self._pending_unload_count + 1
 	self._pending_unload_count = count
 	self._pending_unload_callbacks[count] = on_unloaded
 	self._pending_unload_contexts[count] = context
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_unload
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
 end
 
 function world_class:_commit_clear()
 	local unload_callbacks<const> = self._pending_unload_callbacks
 	local unload_contexts<const> = self._pending_unload_contexts
-	for index = 1, self._pending_unload_count do
+	for index = self._pending_unload_first, self._pending_unload_count do
 		unload_callbacks[index] = nil
 		unload_contexts[index] = nil
 	end
+	self._pending_unload_first = 1
 	self._pending_unload_count = 0
 	self._pending_mutation_mask = self._pending_mutation_mask & ~mutation_unload
+	local objects<const> = self._objects
+	local admissions<const> = self._pending_admissions
+	if #objects > 0 or self._pending_admission_count > 0 then
+		for index = #objects, 1, -1 do
+			self:mark_for_disposal(objects[index])
+		end
+		for index = self._pending_admission_first, self._pending_admission_count do
+			self:mark_for_disposal(admissions[index])
+		end
+		self._pending_mutation_mask = self._pending_mutation_mask | mutation_clear
+		return
+	end
 	self:_commit_gameplay_clock(true)
 	self._visual_sequence = 0
-	local objects<const> = self._objects
-	while #objects > 0 do
-		self:mark_for_disposal(objects[#objects])
-	end
 	self._system_manager:reset()
 	self:set_space(self._initial_space_id)
 end
 
 function world_class:clear()
-	if self._mutation_barrier_open or self._flushing_disposals then
-		local objects<const> = self._objects
-		for i = #objects, 1, -1 do
-			self:mark_for_disposal(objects[i])
-		end
-		local pending_admissions<const> = self._pending_admissions
-		for i = 1, self._pending_admission_count do
-			self:mark_for_disposal(pending_admissions[i])
-		end
-		self._pending_mutation_mask = self._pending_mutation_mask | mutation_clear
-		return
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
 	end
-	self:_commit_clear()
+	local objects<const> = self._objects
+	for index = #objects, 1, -1 do
+		self:mark_for_disposal(objects[index])
+	end
+	local pending_admissions<const> = self._pending_admissions
+	for index = self._pending_admission_first, self._pending_admission_count do
+		self:mark_for_disposal(pending_admissions[index])
+	end
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_clear
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
 end
 world = world_class.new()
 world.id = 'world'

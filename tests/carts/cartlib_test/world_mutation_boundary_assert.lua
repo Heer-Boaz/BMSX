@@ -10,6 +10,8 @@ local registry<const> = require('cartlib/registry')
 
 local scene<const> = require('cartlib/world/scene')
 
+local scene_plan<const> = require('cartlib/world/scene_plan')
+
 local system_manager<const> = require('cartlib/world/system_manager')
 
 local world<const> = require('cartlib/world/world')
@@ -17,6 +19,8 @@ local world<const> = require('cartlib/world/world')
 local world_object<const> = require('cartlib/world/world_object')
 
 local actor_id<const> = 'cartlib_test.boundary_actor'
+
+local empty_scene_plan<const> = scene_plan.compile({ objects = {} })
 
 prefab.define({ def_id = actor_id, class = {}, base = world_object })
 
@@ -35,9 +39,9 @@ function test_system:first()
 	assert(not state.receipt.reached, 'admission happened before the update completed')
 	state.scene:dispose(function()
 		assert(not state.receipt.reached, 'admission escaped into an unload callback')
-		-- This teardown owns and commits its own structural barrier. It must
-		-- not publish the enclosing update's admission point.
-		local nested<const> = scene.new({ objects = {} })
+		-- Callback-requested teardown stays in the current structural scope;
+		-- it must not publish the enclosing update's admission point.
+		local nested<const> = scene.new(empty_scene_plan)
 		nested:spawn(actor_id, {})
 		nested:dispose()
 		assert(not state.receipt.reached, 'nested disposal admitted an external edit')
@@ -80,7 +84,7 @@ return {
 				state.stop_schedule = mode == 2
 				state.last_ran = false
 				state.unloaded = false
-				state.scene = scene.new({ objects = {} })
+				state.scene = scene.new(empty_scene_plan)
 				local actor<const> = state.scene:spawn(actor_id, {})
 				state.receipt = world:request_mutation_boundary()
 				local other_receipt<const> = world:request_mutation_boundary()

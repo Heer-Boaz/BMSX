@@ -31,9 +31,9 @@ return {
 			-- from the old player/room and no replay of pickup/damage events is allowed.
 			local scene<const> = scene_library.create('pietious.gameplay')
 			local castle<const> = scene:spawn('castle', { id = 'c', session = session })
-			local player<const> = scene:spawn_member(scene_library.member_definition('pietious.gameplay', 'player'), { castle = castle, status = session.player })
+			local player<const> = scene:spawn_member('player', { castle = castle, status = session.player })
 			castle.player = player
-			castle:initialize(2)
+			castle:start_at_room(2)
 			assert(player ~= old_player and castle.room ~= old_room and player.status == session.player,
 			'actor reconstruction reused the outgoing object graph')
 			assert(player.status.health == 13 and player.status.weapon_level == 1

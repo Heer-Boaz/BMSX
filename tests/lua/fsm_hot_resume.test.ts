@@ -104,6 +104,7 @@ state_machines.id = 'hot_target_fsm'
 state_machines:on_attach()
 registry:register(state_machines)
 registry:index(state_machines, state_machine_component)
+state_machines:_bind()
 state_machines:start()
 
 local machine<const> = state_machines:get_machine('hot_machine')
@@ -329,6 +330,7 @@ fsm_library.register('trace_machine', {
 
 local state_machines<const> = fsm_component.new({ owner = target }, { 'trace_machine' })
 local machine<const> = state_machines:get_machine('trace_machine')
+state_machines:_bind()
 state_machines:start()
 local recorder<const> = transition_recorder.new(machine, 4)
 
@@ -619,6 +621,7 @@ machines.id='initial-test-fsm'
 machines:on_attach()
 registry:register(machines)
 registry:index(machines, component)
+machines:_bind()
 machines:start()
 local machine<const> = machines:get_machine('fixture.initial')
 local left<const> = machine.states.left
@@ -794,6 +797,7 @@ machines.id='retarget-test-fsm'
 machines:on_attach()
 registry:register(machines)
 registry:index(machines, component)
+machines:_bind()
 machines:start()
 local machine<const> = machines:get_machine('fixture.execution')
 local idle<const> = machine.current_state

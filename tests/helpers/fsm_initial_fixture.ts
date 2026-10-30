@@ -50,6 +50,7 @@ fsm_initial_component.id = 'initial-target-fsm'
 fsm_initial_component:on_attach()
 registry:register(fsm_initial_component)
 registry:index(fsm_initial_component, component)
+fsm_initial_component:_bind()
 fsm_initial_component:start()
 fsm_initial_machine = fsm_initial_component:get_machine('fixture.initial')
 while true do vblank.wait() end

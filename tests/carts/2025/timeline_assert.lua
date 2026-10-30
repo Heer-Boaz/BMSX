@@ -9,7 +9,7 @@ return {
 		linear_value = function()
 
 			local owner<const> = setmetatable({ id = 'timeline_linear_value_test' }, world_object)
-			world_object.initialize(owner)
+			world_object._initialize(owner)
 
 			local timelines<const> = timeline_component.new({ owner = owner })
 			timelines:on_attach()
@@ -283,7 +283,7 @@ return {
 			end
 
 			local owner<const> = setmetatable({ id = 'timeline_cubic_value_test' }, world_object)
-			world_object.initialize(owner)
+			world_object._initialize(owner)
 
 			local timelines<const> = timeline_component.new({ owner = owner })
 			timelines:on_attach()
@@ -413,7 +413,7 @@ return {
 		subsequence = function()
 
 			local owner<const> = setmetatable({ id = 'timeline_subsequence_test', value = 0 }, world_object)
-			world_object.initialize(owner)
+			world_object._initialize(owner)
 
 			local event_count = 0
 			local backward_count = 0
@@ -666,7 +666,7 @@ return {
 		time_warp = function()
 
 			local owner<const> = setmetatable({ id = 'timeline_time_warp_test' }, world_object)
-			world_object.initialize(owner)
+			world_object._initialize(owner)
 			owner:add_tag('tag_ownership_probe')
 			owner:_retain_tag('tag_ownership_probe')
 			owner:remove_tag('tag_ownership_probe')
@@ -1224,7 +1224,7 @@ return {
 			timelines:stop('event_update_policy')
 
 			local chain_owner<const> = setmetatable({ id = 'timeline_completion_chain_test' }, world_object)
-			world_object.initialize(chain_owner)
+			world_object._initialize(chain_owner)
 			local chain_timelines<const> = timeline_component.new({ owner = chain_owner })
 			chain_timelines:on_attach()
 			chain_timelines:define('successor', {
@@ -1247,7 +1247,7 @@ return {
 			assert(chain_timelines:get('successor').position_ms == 20)
 
 			local mutation_owner<const> = setmetatable({ id = 'timeline_lane_mutation_test' }, world_object)
-			world_object.initialize(mutation_owner)
+			world_object._initialize(mutation_owner)
 			local mutation_timelines<const> = timeline_component.new({ owner = mutation_owner })
 			mutation_timelines:on_attach()
 			mutation_owner.events:on({
@@ -1290,7 +1290,7 @@ return {
 			assert(mutation_timelines:get('replacement').position_ms == 20)
 
 			local rate_owner<const> = setmetatable({ id = 'timeline_play_rate_test' }, world_object)
-			world_object.initialize(rate_owner)
+			world_object._initialize(rate_owner)
 			local rate_timelines<const> = timeline_component.new({ owner = rate_owner })
 			rate_timelines:on_attach()
 			rate_timelines:define('scaled', {

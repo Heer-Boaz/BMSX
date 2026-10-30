@@ -67,6 +67,7 @@ library.register('entry_order', {
 })
 local machine<const> = fsm.factory({ 'entry_order' })({ owner = target })
 machine:on_attach()
+machine:_bind()
 machine:start()
 assert(order[1] == 'entry' and order[2] == 'sample', 'initial entry sampled an unconstructed target')
 machine:transition_to('/manual')

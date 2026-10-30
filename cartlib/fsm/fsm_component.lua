@@ -104,7 +104,7 @@ end
 
 local auto_dispatch<const> = function(self, event_type, emitter, payload, emitter_id)
 	local owner<const> = self.owner
-	if not self.enabled or not owner.active then
+	if not self.enabled or not owner.active or not self._started then
 		return
 	end
 	self:dispatch(event_type, payload, emitter, emitter_id)
@@ -156,6 +156,16 @@ local bind_machines<const> = function(self)
 	end
 end
 
+-- World prepares every admitted component's subscriptions before activation.
+-- Entering states and autoplay remain part of machine startup, not binding.
+function fsm_component:on_bind()
+	local list<const> = self._machines
+	for i = 1, self._machine_count do
+		list[i]:resolve_timeline_targets()
+	end
+	bind_machines(self)
+end
+
 function fsm_component:rebind_state_machine(id, definition)
 	local machine<const> = self._machines_by_id[id]
 	if machine == nil then
@@ -163,28 +173,24 @@ function fsm_component:rebind_state_machine(id, definition)
 	end
 	machine:rebind_definition(definition)
 	self._state_paths = nil
-	if self._started then
+	if self._bound then
 		self:unbind()
 		bind_machines(self)
 	end
 end
 
 -- fsm_component:start(): start all managed FSMs from their initial
--- state.  Called automatically by world_object:activate(); do not call
+-- state. Called by the World's component activation phase; do not call
 -- manually in normal cart code.
 function fsm_component:start()
 	if self._started then
 		return
 	end
+	self._started = true
 	local list<const> = self._machines
-	for i = 1, self._machine_count do
-		list[i]:resolve_timeline_targets()
-	end
-	bind_machines(self)
 	for i = 1, self._machine_count do
 		list[i]:start()
 	end
-	self._started = true
 end
 
 -- fsm_component:dispatch(event_name, payload): deliver an event

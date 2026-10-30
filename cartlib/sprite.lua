@@ -17,9 +17,8 @@ setmetatable(sprite_object, { __index = world_object })
 local base_sprite_id<const> = 'base_sprite'
 
 function sprite_object.initialize(self)
-	world_object.initialize(self)
-
 	self.sprite_component = self.primary_sprite_factory({
+		owner = self,
 		imgid = self.imgid,
 		id_local = base_sprite_id,
 	})

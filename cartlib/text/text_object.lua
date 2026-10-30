@@ -309,7 +309,6 @@ fsm_library.register(text_object_fsm_id, {
 })
 
 function text_object.initialize(self)
-	world_object.initialize(self)
 	self:add_component(timeline_component.new({ owner = self }))
 	self:add_component(fsm_component.new({ owner = self }, text_object_machine_ids))
 	self.is_text_object = true

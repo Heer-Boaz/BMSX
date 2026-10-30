@@ -10,6 +10,7 @@ function base_component.new(opts)
 	self.id_local = opts.id_local
 	self.enabled = opts.enabled == nil or opts.enabled
 	self._attached = false
+	self._bound = false
 	return self
 end
 
@@ -51,6 +52,18 @@ function base_component:on_attach()
 end
 
 function base_component:on_detach()
+end
+
+-- Binding is a lifetime transition, distinct from entering active gameplay.
+-- World calls it after construction/publication and before any batch activation.
+function base_component:_bind()
+	if not self._bound then
+		self._bound = true
+		self:on_bind()
+	end
+end
+
+function base_component:on_bind()
 end
 
 function base_component:on_activate()

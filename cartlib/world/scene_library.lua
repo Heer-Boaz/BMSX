@@ -1,31 +1,24 @@
--- Registered scenes are direct, ordered cart-owned composition definitions.
--- Instantiation is a cold operation: each member delegates construction and
--- admission to World. The live scene owns both authored members and procedural
--- descendants; its member keys are distinct from Registry-owned runtime IDs.
+-- Registration admits an ordered composition over concrete prefab definitions.
+-- Instantiation shares that plan; the live Scene owns authored and procedural
+-- objects while World owns construction and publication.
 
 local scene<const> = require('cartlib/world/scene')
+local scene_plan<const> = require('cartlib/world/scene_plan')
 
 local definitions<const> = {}
 local scene_library<const> = {}
 
 function scene_library.register(id, definition)
-	definitions[id] = definition
+	definitions[id] = scene_plan.compile(definition)
 end
 
 function scene_library.definition(id)
 	return definitions[id]
 end
 
--- Authored order controls admission, not a member's role. Staged constructors
--- select by scene-local identity even after the editor reorders the definition.
+-- Staged construction selects the admitted member by scene-local identity.
 function scene_library.member_definition(id, member_id)
-	local objects<const> = definitions[id].objects
-	for index = 1, #objects do
-		local member<const> = objects[index]
-		if member.member_id == member_id then
-			return member
-		end
-	end
+	return definitions[id].members_by_id[member_id]
 end
 
 -- Runtime bindings (e.g. the current players' state) override only the named
@@ -36,12 +29,7 @@ end
 
 function scene_library.instantiate(id, overrides)
 	local instance<const> = scene_library.create(id)
-	local objects<const> = instance.definition.objects
-	for index = 1, #objects do
-		local object<const> = objects[index]
-		local member_overrides<const> = overrides and overrides[object.member_id]
-		instance:spawn_member(object, member_overrides)
-	end
+	instance:spawn_all(overrides)
 	return instance
 end
 

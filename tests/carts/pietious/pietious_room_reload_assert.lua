@@ -1,6 +1,7 @@
 local registry<const> = require('cartlib/registry')
 local world<const> = require('cartlib/world/world')
 local progression<const> = require('cartlib/progression')
+local scene_library<const> = require('cartlib/world/scene_library')
 local castle_map<const> = require('castle/map')
 local castle_module<const> = require('castle/castle')
 local fixture<const> = require('tests/carts/pietious/fixture')
@@ -18,6 +19,7 @@ return {
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			local previous<const> = castle.room
 			local old_scene<const> = previous.scene
+			local old_scene_plan<const> = old_scene.definition
 			local old_level<const> = castle.level
 			local player<const> = castle.player
 			local session<const> = castle.session
@@ -32,12 +34,17 @@ return {
 			local rock<const> = old_scene.members.rock_002_01
 			-- Repeat the same definition registration performed by <init> at Hot Resume.
 			castle_map.initialize()
-			castle_map.definition.rooms[2].rocks[1].options.pos.x = 120
+			local template<const> = castle_map.definition.rooms[2]
+			local rock_options<const> = template.rocks[1].options
+			local rock_pos<const> = rock_options.pos
+			rock_options.pos = { x = 120, y = rock_pos.y, z = rock_pos.z }
+			scene_library.register(template.scene_id, template.scene_definition)
 			castle_module.register_castle_definition()
 			assert(castle.level == old_level and old_level ~= castle_module.castle.level,
 			'registration changed the active controller revision')
 			assert(previous.enemies[1] == old_level.map.rooms[2].enemies[1]
-			and old_scene.definition == old_level.map.rooms[2].scene_definition,
+			and old_scene.definition == old_scene_plan
+			and old_scene_plan ~= scene_library.definition(template.scene_id),
 			'old scene mixes different definition revisions')
 			assert(progression.matches(castle, old_level.filters[previous.enemies[1]]), 'old conditions became unreadable after registration')
 			assert(rock.x == 104 and previous.rocks[1].options.pos.x == 104, 'registration mutated an existing scene')
