@@ -31,7 +31,7 @@ local type<const> = require('cartlib/fsm/fsm_component')
 local state<const> = { id = 'root', localdef_id = 'test', current_id = 'a', states = {}, state_ids = {}, data = {
 answer = 42, nested = { value = 7, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, [1] = 'numeric', ['1'] = 'string', [true] = 'boolean' },
 definition = { def_id = 'root', on = {} } }
-local component<const> = { id = 1, parent = { id = 2 }, enabled = true, _started = true,
+local component<const> = { id = 1, owner = { id = 2 }, enabled = true, _started = true,
 _machines = { state }, _machines_by_id = { test = state } }
 registry._entries_by_key[type].items[1] = component
 function change() state.current_id = 'b' end

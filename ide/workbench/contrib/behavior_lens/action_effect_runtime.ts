@@ -29,7 +29,7 @@ export function findActionEffectInstance(sources: RuntimeInstalledSourceState, g
 
 function actionEffectInstanceChoice(guest: SuspendedGuestSession, component: Table, key: SuspendedGuestValue, effect: Table): ActionEffectInstanceChoice {
 	return { label: guest.formatValue(key), description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
-		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, component, key, effect };
+		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'owner'), 'id'))}`, component, key, effect };
 }
 
 /** The actual type index, not a source registration scan or a heap-wide discovery walk. */
@@ -54,11 +54,11 @@ export function inspectActionEffectInstance(
 	sources: RuntimeInstalledSourceState, guest: SuspendedGuestSession, choice: ActionEffectInstance,
 	properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
-	const parent = guest.readStringMember(choice.component, 'parent');
-	const world = guest.readStringMember(parent, 'world');
+	const owner = guest.readStringMember(choice.component, 'owner');
+	const world = guest.readStringMember(owner, 'world');
 	// Values remain independently refreshable; the definition follows in the same document.
 	properties.field('component', 'id', 'COMPONENT', guest.readStringMember(choice.component, 'id'));
-	properties.field('owner', 'id', 'OWNER', guest.readStringMember(parent, 'id'));
+	properties.field('owner', 'id', 'OWNER', guest.readStringMember(owner, 'id'));
 	properties.field('world', 'gameplay_time_ms', 'GAMEPLAY TIME (MS)', guest.readStringMember(world, 'gameplay_time_ms'));
 	for (const [field, label] of INSTANCE_FIELDS) {
 		const value = guest.readStringMember(choice.effect, field);

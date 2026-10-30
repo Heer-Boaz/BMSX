@@ -59,7 +59,7 @@ function actioneffect_component.factory(effect_ids)
 end
 
 function actioneffect_component:on_attach()
-	self.parent.actioneffects = self
+	self.owner.actioneffects = self
 	local initial_effect_ids<const> = self._initial_effect_ids
 	if initial_effect_ids ~= nil then
 		self._initial_effect_ids = nil
@@ -75,8 +75,8 @@ end
 
 function actioneffect_component:on_detach()
 	self._state_paths_ready = false
-	if self.parent.actioneffects == self then
-		self.parent.actioneffects = nil
+	if self.owner.actioneffects == self then
+		self.owner.actioneffects = nil
 	end
 end
 
@@ -85,7 +85,7 @@ function actioneffect_component:on_activate()
 		return
 	end
 	self._state_paths_ready = true
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	for _, effect in pairs(self.effects) do
 		local definition<const> = effect.definition
 		effect.required_states = bind_state_paths(owner, definition.required_state_paths)
@@ -125,7 +125,7 @@ local remove_periodic_effect<const> = function(self, effect)
 end
 
 function actioneffect_component:grant_effect(id)
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	local definition<const> = definitions_by_id[id]
 	local effect<const> = {
 		definition = definition,
@@ -144,7 +144,7 @@ end
 
 function actioneffect_component:rebind_effect(id, definition)
 	local effect<const> = self.effects[id]
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	remove_periodic_effect(self, effect)
 	effect.definition = definition
 	if self._state_paths_ready then
@@ -186,7 +186,7 @@ function actioneffect_component:activate(id)
 	if period_ms ~= nil then
 		if effect.periodic_index == nil then
 			add_periodic_effect(self, effect)
-			effect.next_execution_ms = self.parent.world.gameplay_time_ms + period_ms
+			effect.next_execution_ms = self.owner.world.gameplay_time_ms + period_ms
 		end
 	end
 	blua32.trace(self, 'actioneffect.fact', 'activate', id, new_active_count)
@@ -211,9 +211,9 @@ function actioneffect_component:commit_cooldown(id, payload, ...)
 		effect.cooldown_pending = nil
 		effect.pending_cooldown_ms = nil
 	else
-		cooldown_ms = calculate_effect_cooldown(effect, self.parent, payload, ...)
+		cooldown_ms = calculate_effect_cooldown(effect, self.owner, payload, ...)
 	end
-	commit_effect_cooldown(effect, self.parent, cooldown_ms)
+	commit_effect_cooldown(effect, self.owner, cooldown_ms)
 end
 
 -- Admission stays separate from cooldown commitment and execution, matching
@@ -287,7 +287,7 @@ end
 
 function actioneffect_component:trigger(id, payload, ...)
 	local effect<const> = self.effects[id]
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	-- The world advances this clock once per admitted gameplay update. Cooldowns
 	-- therefore need no component tick, stop with gameplay suspension and retain
 	-- their meaning while their owner's space is inactive.
@@ -316,7 +316,7 @@ end
 -- activates them once; the frame path consumes only that dense active set and
 -- never evaluates state paths, tags or cart-side timers.
 function actioneffect_component:tick_periodic()
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	local current_time_ms<const> = owner.world.gameplay_time_ms
 	local effects<const> = self.periodic_effects
 	local index = 1
@@ -347,7 +347,7 @@ function actioneffect_component:cooldown_remaining(id)
 	if cooldown_until_ms == nil then
 		return nil
 	end
-	local remaining<const> = cooldown_until_ms - self.parent.world.gameplay_time_ms
+	local remaining<const> = cooldown_until_ms - self.owner.world.gameplay_time_ms
 	if remaining > 0 then
 		return remaining
 	end

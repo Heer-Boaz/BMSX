@@ -31,14 +31,14 @@ local timelines<const> = require('cartlib/timeline/timeline_component')
 local effects<const> = require('cartlib/actioneffects/actioneffect_component')
 local state<const> = { id = 'shared', definition = { on = {}, input_patterns = { 'first' }, input_transitions = { 'transition' } }, states = {}, state_ids = {}, data = { answer = 42 } }
 local machine<const> = { localdef_id = 'main', definition = { on = {} }, states = { [1] = state, ['1'] = state }, state_ids = { 1, '1' }, current_id = 1 }
-local fsm_component<const> = { id = 'fsm', enabled = true, _parent_component_index = 1, _started = true, _machines = { machine } }
-local bt_component<const> = { id = 'bt', tree_id = 'tree', enabled = true, _parent_component_index = 2,
+local fsm_component<const> = { id = 'fsm', enabled = true, _owner_component_index = 1, _started = true, _machines = { machine } }
+local bt_component<const> = { id = 'bt', tree_id = 'tree', enabled = true, _owner_component_index = 2,
 blackboard = board }
-local timeline_component<const> = { id = 'timeline', enabled = true, _parent_component_index = 3,
+local timeline_component<const> = { id = 'timeline', enabled = true, _owner_component_index = 3,
 _entries_by_id = { intro = { position_ms = 0, playing = true, program = { duration = 1000 } } } }
-local effect_component<const> = { id = 'effects', enabled = true, _parent_component_index = 4,
+local effect_component<const> = { id = 'effects', enabled = true, _owner_component_index = 4,
 effects = { pulse = { active_count = 1, definition = { cooldown_ms = 20 } } } }
-local ordinary<const> = { id = 'ordinary', enabled = true, _parent_component_index = 5, value = 7, [1] = 'numeric', ['1'] = 'string', callback = function() return 1 end }
+local ordinary<const> = { id = 'ordinary', enabled = true, _owner_component_index = 5, value = 7, [1] = 'numeric', ['1'] = 'string', callback = function() return 1 end }
 local actor<const> = { id = 1, definition_id = 'actor', active = true, x = 0, y = 0, z = 0,
 data = { answer = 42, nested = { value = 7 } }, tags = {}, events = {},
 _components = { fsm_component, bt_component, timeline_component, effect_component, ordinary },
@@ -46,7 +46,7 @@ _components_by_class = { [fsm] = { fsm_component }, [bt] = { bt_component }, [ti
 local other<const> = { id = 2, definition_id = 'other', active = true, x = 20, y = 30, z = 40,
 data = {}, tags = {}, events = {}, _components = {}, _components_by_class = {} }
 local world<const> = { _objects = { actor, other }, gameplay_time_ms = 0 }
-fsm_component.parent = actor; bt_component.parent = actor; timeline_component.parent = actor; effect_component.parent = actor
+fsm_component.owner = actor; bt_component.owner = actor; timeline_component.owner = actor; effect_component.owner = actor
 actor.world = world
 function change_data() actor.data.answer = 43; actor.data.nested.value = 8 end
 function fill_data() for i = 1, 12 do actor.data[i] = i end end
@@ -739,12 +739,12 @@ test('paused Details disclosures refresh without execution and hidden storage re
 	f.details.followSelection(-1, f.target.worldHashId, f.actorHashId, target.path, f.tree);
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
 	assert.equal(f.details.caption, 'Component: ordinary');
-	assert.ok(!document.some(item => item.label === '_parent_component_index'));
+	assert.ok(!document.some(item => item.label === '_owner_component_index'));
 	assert.equal(document.find(item => item.label === 'value')!.value, '7', 'actual public component fields remain available and watchable');
 	const storage = document.find(item => item.label === 'Stored fields')!;
 	assert.equal(storage.watchIdentity, undefined); storage.expansion!.setExpanded(true);
 	f.details.refreshSubject(f.tree, -1, f.target.worldHashId, false);
-	assert.equal(document.find(item => item.label === '_parent_component_index')!.value, '5');
+	assert.equal(document.find(item => item.label === '_owner_component_index')!.value, '5');
 	assert.ok(document.every(item => !item.value.includes('\n')), 'normal runtime fields and table references remain compact');
 });
 
@@ -790,26 +790,26 @@ test('internal component storage visibility cannot suppress an explicitly retain
 	const f = fixture(); t.after(() => { f.details.dispose(); f.tree.dispose(); });
 	const node = f.tree.roots[0].children.find(node => node.name === 'ordinary')!;
 	const target = captureActorTarget(-1, f.target.worldHashId, f.tree.roots, node, f.guest);
-	const key = valueString(f.cpu.stringPool.find('_parent_component_index')!), identity = f.guest.identity(key);
+	const key = valueString(f.cpu.stringPool.find('_owner_component_index')!), identity = f.guest.identity(key);
 	const properties = new BehaviorRuntimeProperties(f.sources, f.guest,
 		(section, _field, entry) => section === 'member' && entry !== undefined && f.guest.matchesIdentity(entry, identity));
 	properties.begin();
 	const property = inspectActorNode(f.sources, f.guest, node, properties)[0];
-	assert.equal(property.label, '_parent_component_index'); assert.equal(property.value, '5');
+	assert.equal(property.label, '_owner_component_index'); assert.equal(property.value, '5');
 	const pin = f.details.watches.add(target, 'ordinary', property);
 	f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false);
 	assert.equal(pin.available, true); assert.equal(pin.item.value, '5');
 	const reads = t.mock.method(f.guest, 'readStringMember');
 	for (let frame = 0; frame < 1000; frame++) assert.equal(f.details.refresh(node, target.path, f.tree, -1, f.target.worldHashId, false), undefined);
 	assert.equal(reads.mock.callCount(), 0); assert.equal(pin.available, true);
-	assert.ok(!f.details.items.some(item => item.watch === undefined && item.label === '_parent_component_index'));
+	assert.ok(!f.details.items.some(item => item.watch === undefined && item.label === '_owner_component_index'));
 });
 
 
 test('Details caption follows shared sibling disambiguation even when the complete locked identity path stays the same', t => {
 	const source = WORLD.replace("id = 'timeline'", 'id = 1').replace('return world', `
 function add_timeline_component()
- local sibling<const> = { id = 9, enabled = true, _parent_component_index = 6, _entries_by_id = {} }
+ local sibling<const> = { id = 9, enabled = true, _owner_component_index = 6, _entries_by_id = {} }
  actor._components[6] = sibling
  actor._components_by_class[timelines][2] = sibling
 end

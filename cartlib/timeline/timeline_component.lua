@@ -139,7 +139,7 @@ local resolve_timeline_bindings<const> = function(entry, program, primary_bindin
 end
 
 local finish_entry<const> = function(self, entry)
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	clear_entry_state(entry, owner)
 	entry.playing = false
 	reconcile_timeline_schedule(self, entry)
@@ -161,12 +161,12 @@ function timeline_component.new(opts)
 end
 
 function timeline_component:on_attach()
-	self.parent.timelines = self
+	self.owner.timelines = self
 end
 
 function timeline_component:on_detach()
-	if self.parent.timelines == self then
-		self.parent.timelines = nil
+	if self.owner.timelines == self then
+		self.owner.timelines = nil
 	end
 end
 
@@ -176,7 +176,7 @@ function timeline_component:define(id, definition)
 	if entry == nil then
 		local primary_binding = program.default_binding
 		if primary_binding == nil then
-			primary_binding = self.parent
+			primary_binding = self.owner
 		end
 		entry = timeline.new(id, program)
 		entry.primary_binding = primary_binding
@@ -193,7 +193,7 @@ function timeline_component:define(id, definition)
 	local previous_program<const> = entry.program
 	local playing<const> = entry.playing
 	if playing then
-		clear_entry_state(entry, self.parent)
+		clear_entry_state(entry, self.owner)
 		remove_timeline_schedule(self, entry)
 	end
 	if playing and program.frame_builder ~= nil then
@@ -223,7 +223,7 @@ function timeline_component:define(id, definition)
 	else
 		local primary_binding = program.default_binding
 		if primary_binding == nil then
-			primary_binding = self.parent
+			primary_binding = self.owner
 		end
 		entry.primary_binding = primary_binding
 		entry.bindings = nil
@@ -233,17 +233,17 @@ function timeline_component:define(id, definition)
 	timeline_sequence_evaluator.init_entry(entry)
 	if playing then
 		reconcile_timeline_schedule(self, entry)
-		timeline_sequence_evaluator.bind_entry(entry, self.parent)
+		timeline_sequence_evaluator.bind_entry(entry, self.owner)
 		if entry.head >= 0 then
 			timeline_track_evaluator.sync_tags(
 				entry,
-				self.parent,
+				self.owner,
 				entry.head,
 				entry.position_ms
 			)
 			timeline_sequence_evaluator.sync_entry(
 				entry,
-				self.parent,
+				self.owner,
 				entry.position_ms
 			)
 		end
@@ -256,43 +256,43 @@ end
 
 function timeline_component:seek(id, frame)
 	local entry<const> = self._entries_by_id[id]
-	entry:seek(self.parent, frame)
+	entry:seek(self.owner, frame)
 	return entry
 end
 
 function timeline_component:seek_time(id, time_ms)
 	local entry<const> = self._entries_by_id[id]
-	entry:seek_time(self.parent, time_ms)
+	entry:seek_time(self.owner, time_ms)
 	return entry
 end
 
 function timeline_component:scrub_time(id, time_ms)
 	local entry<const> = self._entries_by_id[id]
-	entry:scrub_time(self.parent, time_ms)
+	entry:scrub_time(self.owner, time_ms)
 	return entry
 end
 
 function timeline_component:seek_to_end(id)
 	local entry<const> = self._entries_by_id[id]
-	entry:seek_time(self.parent, entry.program.duration_ms)
+	entry:seek_time(self.owner, entry.program.duration_ms)
 	return entry
 end
 
 function timeline_component:advance_to(id, frame)
 	local entry<const> = self._entries_by_id[id]
-	entry:advance_to(self.parent, frame)
+	entry:advance_to(self.owner, frame)
 	return entry
 end
 
 function timeline_component:advance_time_to(id, time_ms)
 	local entry<const> = self._entries_by_id[id]
-	entry:advance_time_to(self.parent, time_ms)
+	entry:advance_time_to(self.owner, time_ms)
 	return entry
 end
 
 function timeline_component:advance(id)
 	local entry<const> = self._entries_by_id[id]
-	if entry:advance(self.parent) then
+	if entry:advance(self.owner) then
 		finish_entry(self, entry)
 	end
 	return entry
@@ -319,7 +319,7 @@ end
 -- not playback completion.
 function timeline_component:play(id, opts, on_finished, finished_context)
 	local entry<const> = self._entries_by_id[id]
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	local rewind
 	local snap
 	local params
@@ -380,7 +380,7 @@ end
 
 function timeline_component:stop(id)
 	local entry<const> = self._entries_by_id[id]
-	clear_entry_state(entry, self.parent)
+	clear_entry_state(entry, self.owner)
 	entry.playing = false
 	reconcile_timeline_schedule(self, entry)
 end
@@ -391,7 +391,7 @@ end
 -- which completed its predecessor. The deferred array is retained per lane;
 -- steady playback performs no allocation and keeps the direct dense loop.
 local tick_lane<const> = function(self, entries, delta_time)
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	entries.ticking = true
 	local count<const> = entries.count
 	for index = 1, count do

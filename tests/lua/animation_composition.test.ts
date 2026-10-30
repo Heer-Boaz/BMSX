@@ -177,7 +177,7 @@ test('clip trim edits the written parent once, preserves child time and imported
 	assert.ok(model.buffer.getText().startsWith('-- untouched\n'));
 	for (const optLevel of [0, 3] as const) {
 		const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component')
-			local owner={x=-1}; local timelines=component.new({parent=owner})
+			local owner={x=-1}; local timelines=component.new({owner=owner})
 			timelines:define('clip',require('parent')); timelines:play('clip')
 			timelines:seek_time('clip',50); assert(owner.x==50)
 		`, { optLevel, modules: [{ path: 'parent', source: model.buffer.getText() }, { path: 'child', source: child }] });
@@ -237,7 +237,7 @@ test('a multiline clip trim inserts missing transport fields as one syntax batch
 		assert.ok(changed.includes('-- child stays here'));
 		for (const optLevel of [0, 3] as const) {
 			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component')
-				local owner={x=-1}; local timeline=component.new({parent=owner})
+				local owner={x=-1}; local timeline=component.new({owner=owner})
 				timeline:define('clip',require('parent')); timeline:play('clip')
 				timeline:seek_time('clip',50); assert(owner.x==50)
 			`, { optLevel, modules: [{ path: 'parent', source: changed }, { path: 'child', source: child }] });

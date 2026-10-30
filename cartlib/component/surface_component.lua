@@ -25,9 +25,9 @@ function surface_component:set_imgid(imgid)
 end
 
 function surface_component:draw_visual(draw)
-	local parent<const> = self.parent
-	local x<const> = parent.x + self.offset_x + self.draw_offset_x
-	local y<const> = parent.y + self.offset_y + self.draw_offset_y
+	local owner<const> = self.owner
+	local x<const> = owner.x + self.offset_x + self.draw_offset_x
+	local y<const> = owner.y + self.offset_y + self.draw_offset_y
 	command_list.blit_offset_span(draw, self._tiles, x, y, self.color)
 end
 

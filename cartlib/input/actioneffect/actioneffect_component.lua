@@ -28,7 +28,7 @@ end
 
 function input_actioneffect_component:on_activate()
 	if self.program == nil then
-		local owner<const> = self.parent
+		local owner<const> = self.owner
 		local program<const>, uses_effect_triggers<const> = compiler.compile_program(
 			owner,
 			self.source_program,

@@ -31,8 +31,8 @@ function trees.configure(revision)
 	library.register('empty_board', { blackboard = {}, root = { type = 'sequence', children = {} } })
 	library.register('unused', { root = { type = 'sequence', children = {} } })
 end
-local function attach(parent, id, tree_id)
-	local instance<const> = component.new({ parent = parent }, tree_id)
+local function attach(owner, id, tree_id)
+	local instance<const> = component.new({ owner = owner }, tree_id)
 	instance.id = id
 	registry:register(instance)
 	registry:index(instance, component)
@@ -47,8 +47,8 @@ function trees.attach(first, second)
 	inspection_bt_second.blackboard:set(count_key, 222)
 end
 function trees.tick()
-	inspection_bt_first.evaluate(inspection_bt_first.parent, inspection_bt_first, inspection_bt_first.operand)
-	inspection_bt_second.evaluate(inspection_bt_second.parent, inspection_bt_second, inspection_bt_second.operand)
+	inspection_bt_first.evaluate(inspection_bt_first.owner, inspection_bt_first, inspection_bt_first.operand)
+	inspection_bt_second.evaluate(inspection_bt_second.owner, inspection_bt_second, inspection_bt_second.operand)
 end
 function trees.never_registered()
 	library.register('rover', { root = { type = 'wait', duration_ticks = 999 } })

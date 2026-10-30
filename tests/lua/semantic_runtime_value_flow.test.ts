@@ -9,7 +9,7 @@ const unitBaseSource = [
 	'local unit_base<const> = {}',
 	'unit_base.__index = unit_base',
 	'function unit_base.new(opts)',
-	'\treturn setmetatable({ parent = opts.parent }, unit_base)',
+	'\treturn setmetatable({ owner = opts.owner }, unit_base)',
 	'end',
 	'function unit_base:on_attach() end',
 	'return unit_base',
@@ -30,7 +30,7 @@ test('semantic workspace follows member effects through higher-order factory cal
 		'\treturn setmetatable(unit_base.new(opts), timer_unit)',
 		'end',
 		'function timer_unit:on_attach()',
-		'\tself.parent.timers = self',
+		'\tself.owner.timers = self',
 		'end',
 		'function timer_unit:play() end',
 		'return timer_unit',
@@ -49,7 +49,7 @@ test('semantic workspace follows member effects through higher-order factory cal
 		'\tend',
 		'end',
 		'function effect_unit:on_attach()',
-		'\tself.parent.effects = self',
+		'\tself.owner.effects = self',
 		'end',
 		'function effect_unit:trigger() end',
 		'return effect_unit',
@@ -59,7 +59,7 @@ test('semantic workspace follows member effects through higher-order factory cal
 		"local effect_unit<const> = require('effect_unit')",
 		'local attach_units<const> = function(object, factories)',
 		'\tfor _, factory in ipairs(factories) do',
-		'\t\tlocal unit<const> = factory({ parent = object })',
+		'\t\tlocal unit<const> = factory({ owner = object })',
 		'\t\tunit:on_attach()',
 		'\tend',
 		'end',
@@ -93,12 +93,12 @@ test('semantic workspace follows member effects through higher-order factory cal
 	assert.equal(targetAt('\tself.timers:play()', 'play')!.declaration.file, 'timer_unit.lua');
 	assert.equal(
 		targetAt('\tself.timers:play()', 'timers')!.range.start.line,
-		lineNumber(timerSource, '\tself.parent.timers = self'),
+		lineNumber(timerSource, '\tself.owner.timers = self'),
 	);
 	assert.equal(targetAt('\tself.effects:trigger()', 'trigger')!.declaration.file, 'effect_unit.lua');
 	assert.equal(
 		targetAt('\tself.effects:trigger()', 'effects')!.range.start.line,
-		lineNumber(effectSource, '\tself.parent.effects = self'),
+		lineNumber(effectSource, '\tself.owner.effects = self'),
 	);
 	const rightPlayLine = actorLines.lastIndexOf('\tself.timers:play()') + 1;
 	assert.equal(
@@ -127,7 +127,7 @@ test('semantic workspace follows inherited method effects without matching by me
 		'local object_base<const> = {}',
 		'object_base.__index = object_base',
 		'function object_base:add_unit(unit)',
-		'\tunit.parent = self',
+		'\tunit.owner = self',
 		'\tunit:on_attach()',
 		'\treturn unit',
 		'end',
@@ -142,7 +142,7 @@ test('semantic workspace follows inherited method effects without matching by me
 		'\treturn setmetatable(unit_base.new(opts), effect_unit)',
 		'end',
 		'function effect_unit:on_attach()',
-		'\tself.parent.effects = self',
+		'\tself.owner.effects = self',
 		'end',
 		'function effect_unit:trigger() end',
 		'return effect_unit',

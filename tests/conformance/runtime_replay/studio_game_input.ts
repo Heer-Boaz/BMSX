@@ -138,20 +138,20 @@ export async function runStudioGameInput(test: StudioFixture) {
 	const lane = guest.readStringMember(world, '_render_visuals') as Table;
 	let pickX = -1, pickY = -1, pickHashId = 0;
 	for (let index = guest.readStringMember(world, '_render_visual_count') as number; index > 0; index--) {
-		const visual = lane.getInteger(index), parent = guest.readStringMember(visual, 'parent') as Table;
+		const visual = lane.getInteger(index), owner = guest.readStringMember(visual, 'owner') as Table;
 		const draw = guest.readStringMember(visual, 'draw'), cropped = guest.matchesIdentity(draw, region);
 		if (!cropped && !guest.matchesIdentity(draw, full) || !guest.isTruthy(guest.readStringMember(visual, 'visible'))
-			|| !guest.isTruthy(guest.readStringMember(parent, 'visible'))) continue;
+			|| !guest.isTruthy(guest.readStringMember(owner, 'visible'))) continue;
 		const width = (guest.readStringMember(visual, cropped ? 'region_width' : 'source_width') as number)
 			* (guest.readStringMember(visual, 'scale_x') as number) * (guest.readStringMember(visual, 'draw_scale_x') as number);
 		const height = (guest.readStringMember(visual, cropped ? 'region_height' : 'source_height') as number)
 			* (guest.readStringMember(visual, 'scale_y') as number) * (guest.readStringMember(visual, 'draw_scale_y') as number);
-		const x = (guest.readStringMember(parent, 'x') as number) + (guest.readStringMember(visual, 'offset_x') as number)
+		const x = (guest.readStringMember(owner, 'x') as number) + (guest.readStringMember(visual, 'offset_x') as number)
 			+ (guest.readStringMember(visual, 'draw_offset_x') as number) + width / 2;
-		const y = (guest.readStringMember(parent, 'y') as number) + (guest.readStringMember(visual, 'offset_y') as number)
+		const y = (guest.readStringMember(owner, 'y') as number) + (guest.readStringMember(visual, 'offset_y') as number)
 			+ (guest.readStringMember(visual, 'draw_offset_y') as number) + height / 2;
 		if (width === 0 || height === 0 || x < 0 || y < 0 || x >= test.presenter.offscreenCanvasSize.x || y >= test.presenter.offscreenCanvasSize.y) continue;
-		pickX = x; pickY = y; pickHashId = parent.hashId; break;
+		pickX = x; pickY = y; pickHashId = owner.hashId; break;
 	}
 	check(pickHashId !== 0, 'real title presentation contains a visible sprite to pick');
 	const point = { left: actor.previewBounds.left + pickX * (actor.previewBounds.right - actor.previewBounds.left) / test.presenter.offscreenCanvasSize.x,

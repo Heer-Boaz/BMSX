@@ -29,7 +29,7 @@ function owner.events:emit(event, payload)
 	self.last_event = event
 	self.last_payload = payload
 end
-local component<const> = component_type.new({ parent = owner })
+local component<const> = component_type.new({ owner = owner })
 component.id = registry:next_id()
 registry:register(component)
 registry:index(component, component_type)

@@ -11,7 +11,7 @@ function recorder.new(component, capacity)
 	for i = 1, capacity do
 		records[i] = { 0, 0, '', '', 0 }
 	end
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local self<const> = setmetatable({
 		owner.id,
 		owner.definition_id,

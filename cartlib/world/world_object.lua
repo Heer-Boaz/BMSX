@@ -112,7 +112,7 @@ end
 -- group the object's component storage, lifecycle hooks, Registry identity and
 -- active system views all commit together at the group barrier.
 function world_object:add_component(comp)
-	comp.parent = self
+	comp.owner = self
 	if self._world_object_index ~= nil then
 		return self.world:attach_component(comp)
 	end
@@ -142,7 +142,7 @@ function world_object:_attach_component(comp)
 	local components<const> = self._components
 	local component_index<const> = #components + 1
 	components[component_index] = comp
-	comp._parent_component_index = component_index
+	comp._owner_component_index = component_index
 	for class_index = 1, #classes do
 		local class<const> = classes[class_index]
 		local bucket = components_by_class[class]
@@ -153,7 +153,7 @@ function world_object:_attach_component(comp)
 		local bucket_index<const> = #bucket + 1
 		bucket[bucket_index] = comp
 		if class_index == 1 then
-			comp._parent_class_index = bucket_index
+			comp._owner_class_index = bucket_index
 		end
 	end
 	comp:on_attach()
@@ -190,7 +190,7 @@ function world_object:_detach_component(comp)
 		local list<const> = components_by_class[class]
 		local class_index
 		if chain_index == 1 then
-			class_index = comp._parent_class_index
+			class_index = comp._owner_class_index
 		else
 			for index = 1, #list do
 				if list[index] == comp then
@@ -204,7 +204,7 @@ function world_object:_detach_component(comp)
 			local moved<const> = list[last_class_index]
 			list[class_index] = moved
 			if getmetatable(moved) == class then
-				moved._parent_class_index = class_index
+				moved._owner_class_index = class_index
 			end
 		end
 		list[last_class_index] = nil
@@ -212,18 +212,18 @@ function world_object:_detach_component(comp)
 			components_by_class[class] = nil
 		end
 	end
-	comp._parent_class_index = nil
+	comp._owner_class_index = nil
 
 	local components<const> = self._components
-	local component_index<const> = comp._parent_component_index
+	local component_index<const> = comp._owner_component_index
 	local last_component_index<const> = #components
 	if component_index < last_component_index then
 		local moved<const> = components[last_component_index]
 		components[component_index] = moved
-		moved._parent_component_index = component_index
+		moved._owner_component_index = component_index
 	end
 	components[last_component_index] = nil
-	comp._parent_component_index = nil
+	comp._owner_component_index = nil
 	comp:on_detach()
 	comp:unbind()
 end

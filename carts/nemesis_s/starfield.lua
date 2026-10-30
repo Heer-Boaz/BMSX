@@ -118,7 +118,7 @@ local draw_particles<const> = function(owner, draw, stars, source, hidden)
 end
 
 local draw_stars<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	draw_particles(owner, draw, owner.yellow_stars, yellow_source, owner.yellow_blink)
 	draw_particles(owner, draw, owner.blue_stars, blue_source, owner.blue_blink)
 end

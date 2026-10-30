@@ -684,10 +684,10 @@ function actorFixture(t: TestContext) {
 	const modules = [{ path: 'cartlib/world/world', source: `local fsm<const> = require('cartlib/fsm/fsm_component')
 local state<const> = { definition = { on = {} }, states = {}, state_ids = {}, data = { answer = 42 } }
 local machine<const> = { localdef_id = 'flight', definition = { on = {} }, states = { idle = state }, state_ids = { 'idle' }, current_id = 'idle' }
-local component<const> = { id = 'states', enabled = true, _parent_component_index = 1, _started = true, _machines = { machine }, _machines_by_id = { flight = machine } }
+local component<const> = { id = 'states', enabled = true, _owner_component_index = 1, _started = true, _machines = { machine }, _machines_by_id = { flight = machine } }
 local actor<const> = { id = 1, active = true, _components = { component }, _components_by_class = { [fsm] = { component } } }
 local other<const> = { id = 2, active = true, _components = {}, _components_by_class = {} }
-component.parent = actor
+component.owner = actor
 return { _objects = { actor, other } }` },
 		{ path: 'cartlib/fsm/fsm_component', source: 'return {}' },
 		{ path: 'cartlib/timeline/timeline_component', source: 'return {}' },

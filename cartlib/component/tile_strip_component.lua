@@ -6,7 +6,7 @@ tile_strip_component.__index = tile_strip_component
 setmetatable(tile_strip_component, { __index = visual_component })
 
 function tile_strip_component:draw_visual(draw)
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	local origin_x<const> = owner.x + self.offset_x + self.draw_offset_x
 	local origin_y<const> = owner.y + self.offset_y + self.draw_offset_y
 	local step_x<const> = self.step_x

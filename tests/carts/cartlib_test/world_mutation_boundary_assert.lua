@@ -56,11 +56,11 @@ end
 prefab.define({
 	def_id = 'cartlib_test.boundary_visual', class = {}, base = world_object,
 	components = { custom_visual.factory({ draw = function(visual)
-				local parent<const> = visual.parent
-				local state<const> = parent.state
+				local owner<const> = visual.owner
+				local state<const> = owner.state
 				state.draws = state.draws + 1
-				parent:mark_for_disposal()
-				assert(parent.world ~= nil and registry:get(parent.id) == parent,
+				owner:mark_for_disposal()
+				assert(owner.world ~= nil and registry:get(owner.id) == owner,
 				'render disposed its current visual while command construction was active')
 				assert(not state.receipt.reached, 'render admitted an edit before submission')
 		end }) },

@@ -41,8 +41,8 @@ function probe.compile(width, retain)
 	probe.weak_inputs = setmetatable({ definition, shared }, { __mode = 'v' })
 	if retain then probe.definition = definition else probe.definition = nil end
 	if probe.first == nil then
-		probe.first = component.new({ parent = { ticks = 0, services = 0, predicates = 0 } }, 'probe')
-		probe.second = component.new({ parent = { ticks = 0, services = 0, predicates = 0 } }, 'probe')
+		probe.first = component.new({ owner = { ticks = 0, services = 0, predicates = 0 } }, 'probe')
+		probe.second = component.new({ owner = { ticks = 0, services = 0, predicates = 0 } }, 'probe')
 		probe.first.id = 'probe.first'
 		probe.second.id = 'probe.second'
 		for _, instance in ipairs({ probe.first, probe.second }) do
@@ -55,8 +55,8 @@ function probe.run(count)
 	local first<const> = probe.first
 	local second<const> = probe.second
 	for index = 1, count do
-		first.evaluate(first.parent, first, first.operand)
-		second.evaluate(second.parent, second, second.operand)
+		first.evaluate(first.owner, first, first.operand)
+		second.evaluate(second.owner, second, second.operand)
 	end
 end
 function probe.check()
@@ -108,8 +108,8 @@ function probe.check_replaced()
 	probe.displaced = weak
 end
 function probe.check_unobserved()
-	assert(probe.first.parent.ticks == 0 and probe.second.parent.ticks == 0)
-	assert(probe.first.parent.services == 0 and probe.second.parent.services == 0)
-	assert(probe.first.parent.predicates == 0 and probe.second.parent.predicates == 0)
+	assert(probe.first.owner.ticks == 0 and probe.second.owner.ticks == 0)
+	assert(probe.first.owner.services == 0 and probe.second.owner.services == 0)
+	assert(probe.first.owner.predicates == 0 and probe.second.owner.predicates == 0)
 end
 `;

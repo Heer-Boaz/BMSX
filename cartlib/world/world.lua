@@ -75,8 +75,8 @@ local world_class<const> = {}
 world_class.__index = world_class
 
 local visual_depth_less<const> = function(a, b)
-	local a_depth<const> = a.parent.z + a.offset_z + a.draw_offset_z
-	local b_depth<const> = b.parent.z + b.offset_z + b.draw_offset_z
+	local a_depth<const> = a.owner.z + a.offset_z + a.draw_offset_z
+	local b_depth<const> = b.owner.z + b.offset_z + b.draw_offset_z
 	if a_depth ~= b_depth then
 		return a_depth < b_depth
 	end
@@ -470,10 +470,10 @@ function world_class:_queue_component_reconcile(comp)
 end
 
 function world_class:_reconcile_active_component(comp)
-	local parent<const> = comp.parent
+	local owner<const> = comp.owner
 	local target_space = nil
-	if comp._attached and comp.enabled and parent._world_object_index ~= nil and parent.active then
-		target_space = parent._space
+	if comp._attached and comp.enabled and owner._world_object_index ~= nil and owner.active then
+		target_space = owner._space
 	end
 	local active_space<const> = comp._active_space
 	if active_space ~= target_space then
@@ -512,8 +512,8 @@ function world_class:reconcile_component(comp)
 end
 
 function world_class:_commit_component_attach(comp)
-	local parent<const> = comp.parent
-	parent:_attach_component(comp)
+	local owner<const> = comp.owner
+	owner:_attach_component(comp)
 	if comp.id == nil then
 		comp.id = registry:next_id()
 	end
@@ -524,7 +524,7 @@ function world_class:_commit_component_attach(comp)
 	end
 	self:_reconcile_active_component(comp)
 	comp._attach_pending = nil
-	if parent.active then
+	if owner.active then
 		comp:on_activate()
 	end
 end
@@ -544,7 +544,7 @@ end
 
 function world_class:_commit_component_detach(comp)
 	self:_reconcile_active_component(comp)
-	comp.parent:_detach_component(comp)
+	comp.owner:_detach_component(comp)
 	registry:deregister(comp)
 end
 
@@ -698,7 +698,7 @@ function world_class:spawn(definition_id, options, scene, member_id)
 		scene:_attach(obj, member_id)
 	end
 	obj.space_id = obj.space_id or self.active_space_id
-	local component_options<const> = { parent = obj }
+	local component_options<const> = { owner = obj }
 	local component_factories<const> = definition.components
 	for index = 1, #component_factories do
 		obj:add_component(component_factories[index](component_options))
@@ -938,7 +938,7 @@ function world_class:_build_render_commands(draw_page)
 	local visuals<const> = self._render_visuals
 	for i = 1, self._render_visual_count do
 		local visual<const> = visuals[i]
-		if visual.parent.visible and visual.visible then
+		if visual.owner.visible and visual.visible then
 			visual:draw(draw_commands)
 		end
 	end

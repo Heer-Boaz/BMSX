@@ -95,7 +95,7 @@ export class ActorRuntimeTree {
 				if (type.kind !== 'value' || type.value === null) continue;
 				const bucket = classes.get(type.value) as Table | null;
 				if (bucket !== null) for (let j = 1; j <= bucket.arrayLength; j += 1) {
-					const index = guest.readStringMember(bucket.getInteger(j), '_parent_component_index') as number;
+					const index = guest.readStringMember(bucket.getInteger(j), '_owner_component_index') as number;
 					this.kinds[index] = i;
 				}
 			}

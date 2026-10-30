@@ -27,22 +27,22 @@ function visual_component:set_draw_function(draw_function)
 	end
 	self.draw = draw_function
 	if self._active_space ~= nil then
-		self.parent.world:reconcile_component(self)
+		self.owner.world:reconcile_component(self)
 	end
 	return self
 end
 
 function visual_component:set_offset_z(offset_z)
 	self.offset_z = offset_z
-	if self._attached and self.parent._world_object_index ~= nil then
-		self.parent.world:visual_depth_changed()
+	if self._attached and self.owner._world_object_index ~= nil then
+		self.owner.world:visual_depth_changed()
 	end
 end
 
 function visual_component:set_draw_offset_z(draw_offset_z)
 	self.draw_offset_z = draw_offset_z
-	if self._attached and self.parent._world_object_index ~= nil then
-		self.parent.world:visual_depth_changed()
+	if self._attached and self.owner._world_object_index ~= nil then
+		self.owner.world:visual_depth_changed()
 	end
 end
 

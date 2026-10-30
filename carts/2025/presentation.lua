@@ -40,13 +40,13 @@ function rectangle:ctor()
 end
 
 local draw_rectangle<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local x<const>, y<const> = owner.x + component.offset_x, owner.y + component.offset_y
 	draw:rect(x, y, x + owner.width, y + owner.height, owner.color)
 end
 
 local draw_overlay<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local x<const>, y<const> = owner.x, owner.y
 	if owner.color ~= 0 then
 		draw:rect(x, y, x + owner.width, y + owner.height, owner.color)

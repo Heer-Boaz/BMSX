@@ -121,7 +121,7 @@ test('a key gesture is presentation only until one shared document edit, with na
 		const { cpu } = createCartlibProgramHarness(`
 			local component = require('cartlib/timeline/timeline_component')
 			local owner = {x=-1}
-			local timelines = component.new({parent=owner})
+			local timelines = component.new({owner=owner})
 			timelines:define('movement', require('animation'))
 			timelines:play('movement')
 			assert(owner.x==0)

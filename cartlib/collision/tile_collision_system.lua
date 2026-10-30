@@ -37,7 +37,7 @@ function tile_collision_system:update()
 	local components<const> = self._component_view.components
 	for i = 1, #components do
 		local component<const> = components[i]
-		local obj<const> = component.parent
+		local obj<const> = component.owner
 		local current_payload<const> = component.current_payload
 		local previous_payload<const> = component.previous_payload
 		clear_map(current_payload)

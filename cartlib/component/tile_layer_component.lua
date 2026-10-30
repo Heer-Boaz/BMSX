@@ -209,7 +209,7 @@ function tile_layer_component:draw_visual(draw)
 		end
 		self._selected_view_revision = view_revision
 	end
-	local parent<const> = self.parent
+	local owner<const> = self.owner
 	command_list.tile_layer(
 		draw,
 		rows,
@@ -218,8 +218,8 @@ function tile_layer_component:draw_visual(draw)
 		last_visible_column,
 		self._coordinate_domain_columns,
 		self._tile_size,
-		parent.x + self.offset_x + self.draw_offset_x,
-		parent.y + self.offset_y + self.draw_offset_y
+		owner.x + self.offset_x + self.draw_offset_x,
+		owner.y + self.offset_y + self.draw_offset_y
 	)
 end
 

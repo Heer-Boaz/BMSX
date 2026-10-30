@@ -11,7 +11,7 @@ function prohibit_leaving_screen_component.new(opts)
 end
 
 function prohibit_leaving_screen_component:resolve_leaving(direction, previous_position)
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	if direction == 'left' then
 		owner.x = self.stick_to_edge and self.left or previous_position
 	elseif direction == 'right' then

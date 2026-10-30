@@ -4,7 +4,7 @@ local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 local velocity<const> = require('cartlib/velocity')
 
 -- Signed Q8.8 velocity with the fractional bytes of the X/Y position retained
--- on the component. The parent owns the visible integer position; the motion
+-- on the component. The owner owns the visible integer position; the motion
 -- system advances that position exactly like a two's-complement fixed-point
 -- accumulator.
 local fixed_point_velocity_component<const> = {}

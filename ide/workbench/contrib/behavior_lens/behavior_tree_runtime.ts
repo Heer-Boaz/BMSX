@@ -11,7 +11,7 @@ export type BehaviorTreeInstanceChoice = QuickPickItem & { readonly component: T
 function behaviorTreeInstanceChoice(guest: SuspendedGuestSession, component: Table): BehaviorTreeInstanceChoice {
 	return { label: guest.formatValue(guest.readStringMember(component, 'tree_id')),
 		description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
-		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, component };
+		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'owner'), 'id'))}`, component };
 }
 
 /** Actual components, not registered programs or authored registrations with matching ids. */
@@ -37,7 +37,7 @@ export function inspectBehaviorTreeInstance(
 	properties = new BehaviorRuntimeProperties(sources, guest),
 ): RuntimeInspectionProperty[] {
 	properties.field('component', 'id', 'COMPONENT', guest.readStringMember(component, 'id'));
-	properties.field('owner', 'id', 'OWNER', guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'));
+	properties.field('owner', 'id', 'OWNER', guest.readStringMember(guest.readStringMember(component, 'owner'), 'id'));
 	const board = guest.readStringMember(component, 'blackboard');
 	if (board === null) {
 		properties.field('component', 'blackboard', 'BLACKBOARD', board, 'THIS COMPONENT HAS NO BLACKBOARD.');

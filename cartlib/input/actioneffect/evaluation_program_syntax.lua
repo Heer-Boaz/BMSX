@@ -503,7 +503,7 @@ function evaluation_program_syntax.build(program, effect_program, player_index, 
 	local body<const> = {
 		local_statement(
 			reference(symbols.owner),
-			member_expression(reference(symbols.component), 'parent'),
+			member_expression(reference(symbols.component), 'owner'),
 			false
 		),
 		local_statement(reference(symbols.binding), nil, false),

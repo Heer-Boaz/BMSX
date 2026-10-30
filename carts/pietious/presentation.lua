@@ -28,7 +28,7 @@ function caption:ctor()
 end
 
 local draw_rectangle<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	draw:rect(owner.x, owner.y, owner.x + owner.width, owner.y + owner.height, owner.color)
 end
 

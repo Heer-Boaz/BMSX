@@ -4,7 +4,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local curtain<const> = { definition_id = 'nemesis_s.presentation.curtain' }
 
 local draw_blinds<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local x<const> = owner.x + component.offset_x
 	local y<const> = owner.y + component.offset_y
 	if owner.count == 8 then
@@ -17,7 +17,7 @@ local draw_blinds<const> = function(component, draw)
 end
 
 local draw_window<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local x<const> = owner.x + component.offset_x
 	local y<const> = owner.y + component.offset_y
 	draw:rect(x, y, x + owner.sx, y + owner.opening_end, 0xff000000)

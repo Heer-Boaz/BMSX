@@ -51,21 +51,21 @@ function velocity_system:update()
 	local bouncing_components<const> = self._bouncing_component_view.components
 	for index = 1, #bouncing_components do
 		local component<const> = bouncing_components[index]
-		local parent<const> = component.parent
-		local velocity_x<const> = parent.speed_x_num
-		local velocity_y<const> = parent.speed_y_num
+		local owner<const> = component.owner
+		local velocity_x<const> = owner.speed_x_num
+		local velocity_y<const> = owner.speed_y_num
 		local contacts<const> = move_kinematic(component, velocity_x, velocity_y)
 		if (contacts & horizontal_contacts) ~= 0 then
-			parent.speed_x_num = -velocity_x
+			owner.speed_x_num = -velocity_x
 		end
 		if (contacts & vertical_contacts) ~= 0 then
-			parent.speed_y_num = -velocity_y
+			owner.speed_y_num = -velocity_y
 		end
 	end
 
 	local components<const> = self._rational_component_view.components
 	for index = 1, #components do
-		velocity.move_with_velocity(components[index].parent)
+		velocity.move_with_velocity(components[index].owner)
 	end
 end
 
@@ -77,13 +77,13 @@ function velocity_system:update_fixed_point()
 	local fixed_point_components<const> = self._fixed_point_component_view.components
 	for index = 1, #fixed_point_components do
 		local component<const> = fixed_point_components[index]
-		local parent<const> = component.parent
+		local owner<const> = component.owner
 		local x<const> = component.fraction_x + component.velocity_x
 		local y<const> = component.fraction_y + component.velocity_y
 		component.fraction_x = x & 0xff
 		component.fraction_y = y & 0xff
-		parent.x = parent.x + (x >> 8)
-		parent.y = parent.y + (y >> 8)
+		owner.x = owner.x + (x >> 8)
+		owner.y = owner.y + (y >> 8)
 	end
 
 	local ballistic_components<const> = self._ballistic_component_view.components

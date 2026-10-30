@@ -58,7 +58,7 @@ end
 function bt_component:abort()
 	local reset<const> = self.reset
 	if reset ~= nil then
-		reset(self.parent, self, self._execution_state)
+		reset(self.owner, self, self._execution_state)
 	end
 	self._execution_request_pending = false
 	self._execution_waiting = false

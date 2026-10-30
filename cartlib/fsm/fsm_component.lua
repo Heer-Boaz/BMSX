@@ -54,7 +54,7 @@ function fsm_component.new(opts, machine_ids)
 		local definition<const> = definitions_by_id[machine_id]
 		local machine<const> = state.new(
 			definition,
-			self.parent,
+			self.owner,
 			nil,
 			self,
 			fsm_component.machine_frame_work_changed
@@ -81,13 +81,13 @@ function fsm_component.factory(machine_ids)
 end
 
 function fsm_component:on_attach()
-	self.parent.state_machines = self
+	self.owner.state_machines = self
 end
 
 function fsm_component:on_detach()
 	self:dispose()
-	if self.parent.state_machines == self then
-		self.parent.state_machines = nil
+	if self.owner.state_machines == self then
+		self.owner.state_machines = nil
 	end
 end
 
@@ -103,8 +103,8 @@ local append_bound_machine<const> = function(bound, machine, path)
 end
 
 local auto_dispatch<const> = function(self, event_type, emitter, payload, emitter_id)
-	local parent<const> = self.parent
-	if not self.enabled or not parent.active then
+	local owner<const> = self.owner
+	if not self.enabled or not owner.active then
 		return
 	end
 	self:dispatch(event_type, payload, emitter, emitter_id)
@@ -145,7 +145,7 @@ local bind_machines<const> = function(self)
 				if emitter_filter == default_emitter then
 					emitter_filter = nil
 				end
-				self.parent.events:on({
+				self.owner.events:on({
 					event = event_name,
 					emitter = emitter_filter,
 					handler = auto_dispatch,
@@ -194,8 +194,8 @@ end
 -- instead of raw dispatch where possible.
 function fsm_component:dispatch(event_name, payload, emitter, emitter_id)
 	if emitter_id == nil then
-		emitter = self.parent
-		emitter_id = self.parent.id
+		emitter = self.owner
+		emitter_id = self.owner.id
 	end
 	local handled
 	local list<const> = self._machines

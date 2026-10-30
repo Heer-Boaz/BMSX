@@ -10,7 +10,7 @@ local sources<const> = {
 local map_widget<const> = {}
 
 local draw_map<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local proxies<const> = castle_map.map_world_proxies[owner.castle.room.world_number]
 	for i = 1, #proxies do
 		local proxy<const> = proxies[i]

@@ -44,14 +44,14 @@ local owner_b<const> = {
 }
 
 local collider_a<const> = collider_2d_component.new({
-	parent = owner_a,
+	owner = owner_a,
 	id_local = 1,
 	layer = 1,
 	mask = 1,
 })
 
 local collider_b<const> = collider_2d_component.new({
-	parent = owner_b,
+	owner = owner_b,
 	id_local = 1,
 	layer = 1,
 	mask = 1,

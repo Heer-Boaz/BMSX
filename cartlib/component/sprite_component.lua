@@ -114,14 +114,14 @@ function sprite_component:on_detach()
 	if self._collider then
 		self._collider:set_sprite(nil)
 	end
-	if self.parent.sprite_component == self then
-		self.parent.sprite_component = nil
+	if self.owner.sprite_component == self then
+		self.owner.sprite_component = nil
 	end
 end
 
 function sprite_component:draw_visual(draw)
 	local source<const> = self._source
-	local obj<const> = self.parent
+	local obj<const> = self.owner
 	local x<const> = obj.x + self.offset_x + self.draw_offset_x
 	local y<const> = obj.y + self.offset_y + self.draw_offset_y
 	local scale_x<const> = self.scale_x * self.draw_scale_x
@@ -151,7 +151,7 @@ end
 
 function sprite_component:draw_region_visual(draw)
 	local source<const> = self._source
-	local obj<const> = self.parent
+	local obj<const> = self.owner
 	local x<const> = obj.x + self.offset_x + self.draw_offset_x
 	local y<const> = obj.y + self.offset_y + self.draw_offset_y
 	local source_x<const> = self.region_x

@@ -57,14 +57,14 @@ export class ActorViewportPicker {
 		const visuals = this.guest.readStringMember(world, '_render_visuals') as Table;
 		const count = this.guest.readStringMember(world, '_render_visual_count') as number;
 		for (let index = count; index > 0; index--) {
-			const visual = visuals.getInteger(index), parent = this.guest.readStringMember(visual, 'parent') as Table;
-			if (!this.guest.isTruthy(this.guest.readStringMember(parent, 'visible')) || !this.guest.isTruthy(this.guest.readStringMember(visual, 'visible'))) continue;
+			const visual = visuals.getInteger(index), owner = this.guest.readStringMember(visual, 'owner') as Table;
+			if (!this.guest.isTruthy(this.guest.readStringMember(owner, 'visible')) || !this.guest.isTruthy(this.guest.readStringMember(visual, 'visible'))) continue;
 			const draw = this.guest.readStringMember(visual, 'draw');
 			const region = this.guest.matchesIdentity(draw, this.regionDraw);
 			if (!region && !this.guest.matchesIdentity(draw, this.fullDraw)) continue;
-			const x0 = (this.guest.readStringMember(parent, 'x') as number) + (this.guest.readStringMember(visual, 'offset_x') as number)
+			const x0 = (this.guest.readStringMember(owner, 'x') as number) + (this.guest.readStringMember(visual, 'offset_x') as number)
 				+ (this.guest.readStringMember(visual, 'draw_offset_x') as number);
-			const y0 = (this.guest.readStringMember(parent, 'y') as number) + (this.guest.readStringMember(visual, 'offset_y') as number)
+			const y0 = (this.guest.readStringMember(owner, 'y') as number) + (this.guest.readStringMember(visual, 'offset_y') as number)
 				+ (this.guest.readStringMember(visual, 'draw_offset_y') as number);
 			const scaleX = (this.guest.readStringMember(visual, 'scale_x') as number) * (this.guest.readStringMember(visual, 'draw_scale_x') as number);
 			const scaleY = (this.guest.readStringMember(visual, 'scale_y') as number) * (this.guest.readStringMember(visual, 'draw_scale_y') as number);
@@ -72,15 +72,15 @@ export class ActorViewportPicker {
 			const y1 = y0 + (this.guest.readStringMember(visual, region ? 'region_height' : 'source_height') as number) * scaleY;
 			const left = Math.min(x0, x1), right = Math.max(x0, x1), top = Math.min(y0, y1), bottom = Math.max(y0, y1);
 			if (!(x >= left && x < right && y >= top && y < bottom)) continue;
-			const id = this.guest.readStringMember(parent, 'id'), definition = this.guest.readStringMember(parent, 'definition_id');
-			if (this.labelHashId !== parent.hashId || !this.guest.matchesIdentity(id, this.labelId) || !this.guest.matchesIdentity(definition, this.labelDefinition)) {
-				this.labelHashId = parent.hashId;
+			const id = this.guest.readStringMember(owner, 'id'), definition = this.guest.readStringMember(owner, 'definition_id');
+			if (this.labelHashId !== owner.hashId || !this.guest.matchesIdentity(id, this.labelId) || !this.guest.matchesIdentity(definition, this.labelDefinition)) {
+				this.labelHashId = owner.hashId;
 				this.labelId = this.guest.identity(id); this.labelDefinition = this.guest.identity(definition);
 				const name = this.guest.formatValue(id);
 				this.hit.label = valueTag(definition) === ValueTag.Nil ? valueTag(id) === ValueTag.Number ? `#${name}` : name
 					: `${this.guest.formatValue(definition)} #${name}`;
 			}
-			this.hit.domain = domain; this.hit.hashId = parent.hashId;
+			this.hit.domain = domain; this.hit.hashId = owner.hashId;
 			this.hit.left = left; this.hit.right = right;
 			this.hit.top = top; this.hit.bottom = bottom;
 			return this.hit;

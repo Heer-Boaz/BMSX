@@ -25,7 +25,7 @@ local new_collider<const> = collider_2d_component.factory({
 })
 
 local draw_option<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	owner.animation_frames[owner.animation_owner.option_anim_index]:blit(
 		draw,
 		owner.x,

@@ -176,11 +176,11 @@ probe = { recorder = recorder }
 
 local first<const> = compiler.compile('shared', definition)
 component.install_program(first)
-probe.first = component.new({ parent = {} }, 'shared')
+probe.first = component.new({ owner = {} }, 'shared')
 probe.old = setmetatable({ first, recorder.programs[first], probe.first }, weak_values)
 local second<const> = compiler.compile('shared', definition)
 component.install_program(second)
-probe.second = component.new({ parent = {} }, 'shared')
+probe.second = component.new({ owner = {} }, 'shared')
 assert(first ~= second and first.evaluate == second.evaluate and first.reset == second.reset)
 assert(recorder.completed_bindings[probe.first] == first)
 assert(recorder.completed_bindings[probe.second] == second)
@@ -192,7 +192,7 @@ probe.unused = setmetatable({ unused, recorder.programs[unused] }, weak_values)
 
 local make_cycle<const> = function()
 	component.install_program(compiler.compile('cyclic', definition))
-	local actor<const> = component.new({ parent = {} }, 'cyclic')
+	local actor<const> = component.new({ owner = {} }, 'cyclic')
 	local cyclic<const> = compiler.compile('cyclic', { root = { type = 'task', task = {
 		execute = function() return actor.enabled and result.success or result.failure end,
 	} } })
@@ -250,13 +250,13 @@ initial = compiler.compile('same', { root = { type = 'task', task = {
 	end,
 } } })
 component.install_program(initial)
-local actor<const> = component.new({ parent = {} }, 'same')
-actor.evaluate(actor.parent, actor, actor.operand)
+local actor<const> = component.new({ owner = {} }, 'same')
+actor.evaluate(actor.owner, actor, actor.operand)
 actor:rebind_program(outer)
 assert(saw_nested and recorder.completed_bindings[actor] == outer)
 
 actor:rebind_program(initial)
-actor.evaluate(actor.parent, actor, actor.operand)
+actor.evaluate(actor.owner, actor, actor.operand)
 fail = true
 local accepted<const> = pcall(component.rebind_program, actor, outer)
 assert(not accepted and recorder.completed_bindings[actor] == initial)

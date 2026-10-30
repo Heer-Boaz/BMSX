@@ -56,13 +56,13 @@ effects.register_effect('shared_alias', ungranted)
 effects.register_effect('empty', {})
 fsm_library.register('unattached', { states = { hidden = {} } })
 fsm_library.register('empty', { states = {} })
-inspection_first = component.new({ parent = { id = 'first_actor', world = { gameplay_time_ms = 100 } } })
+inspection_first = component.new({ owner = { id = 'first_actor', world = { gameplay_time_ms = 100 } } })
 inspection_first.id = 'inspection.first'
 registry:register(inspection_first)
 registry:index(inspection_first, component)
 inspection_first:grant_effect('pulse')
 inspection_first:activate('pulse')
-inspection_second = component.new({ parent = { id = 'second_actor', world = { gameplay_time_ms = 200 } } })
+inspection_second = component.new({ owner = { id = 'second_actor', world = { gameplay_time_ms = 200 } } })
 inspection_second.id = 'inspection.second'
 registry:register(inspection_second)
 registry:index(inspection_second, component)
@@ -70,26 +70,26 @@ inspection_second:grant_effect('pulse')
 inspection_effect = inspection_first.effects.pulse
 inspection_other = inspection_second.effects.pulse
 for _, effect_component in ipairs({ inspection_first, inspection_second }) do
-	local parent<const> = effect_component.parent
-	setmetatable(parent, world_object)
-	world_object.initialize(parent)
-	parent.active = true
-	parent.player_index = 1
+	local owner<const> = effect_component.owner
+	setmetatable(owner, world_object)
+	world_object.initialize(owner)
+	owner.active = true
+	owner.player_index = 1
 end
-inspection_fsm_first = fsm_component.new({ parent = inspection_first.parent }, { 'walker' })
+inspection_fsm_first = fsm_component.new({ owner = inspection_first.owner }, { 'walker' })
 inspection_fsm_first.id = 'inspection.fsm.first'
 registry:register(inspection_fsm_first)
 registry:index(inspection_fsm_first, fsm_component)
 inspection_fsm_first:start()
 inspection_fsm_first:get_machine('walker'):transition_to('/parked')
 inspection_fsm_first:get_machine('walker').states.nest.data.revision = 111
-inspection_fsm_second = fsm_component.new({ parent = inspection_second.parent }, { 'walker', 'companion' })
+inspection_fsm_second = fsm_component.new({ owner = inspection_second.owner }, { 'walker', 'companion' })
 inspection_fsm_second.id = 'inspection.fsm.second'
 registry:register(inspection_fsm_second)
 registry:index(inspection_fsm_second, fsm_component)
 inspection_fsm_second:start()
 inspection_fsm_second:get_machine('walker').states.nest.data.revision = 222
-trees.attach(inspection_first.parent, inspection_second.parent)
+trees.attach(inspection_first.owner, inspection_second.owner)
 inspection_fsm_ready = true
 
 -- Written registration candidates are not a loaded-definition catalog.

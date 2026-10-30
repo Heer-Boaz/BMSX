@@ -58,7 +58,7 @@ local play_meter_animation<const> = function(self, timeline_id, current, target,
 end
 
 local draw_ui<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	if not owner.hud_visible then
 		return
 	end

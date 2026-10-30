@@ -24,7 +24,7 @@ function text_object_component.new(opts)
 end
 
 function text_object_component:draw_visual(draw)
-	local owner<const> = self.parent
+	local owner<const> = self.owner
 	local x<const> = owner.x + self.offset_x + self.draw_offset_x
 	local y<const> = owner.y + self.offset_y + self.draw_offset_y
 	owner:submit_highlight(draw)
@@ -67,7 +67,7 @@ function text_object_component:draw_visual(draw)
 end
 
 function text_object_component:set_font(font)
-	self.parent:set_font(font)
+	self.owner:set_font(font)
 end
 
 local highlight_move_timeline_id<const> = 'hmove'
@@ -310,8 +310,8 @@ fsm_library.register(text_object_fsm_id, {
 
 function text_object.initialize(self)
 	world_object.initialize(self)
-	self:add_component(timeline_component.new({ parent = self }))
-	self:add_component(fsm_component.new({ parent = self }, text_object_machine_ids))
+	self:add_component(timeline_component.new({ owner = self }))
+	self:add_component(fsm_component.new({ owner = self }, text_object_machine_ids))
 	self.is_text_object = true
 	if self.text == nil then
 		self.text = { '' }

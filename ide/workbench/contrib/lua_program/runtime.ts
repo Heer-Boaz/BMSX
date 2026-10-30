@@ -40,7 +40,7 @@ export function readProgramInstances(sources: RuntimeSourceState, guest: Suspend
 		}
 	} else visitRuntimeComponents(sources, guest, domain, 'cartlib/input/actioneffect/actioneffect_component', component => {
 		items.push({ label: guest.formatValue(guest.readStringMember(component, 'id')), description: 'INPUT COMPONENT',
-			detail: `Owner ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, identity: guest.identity(component) });
+			detail: `Owner ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'owner'), 'id'))}`, identity: guest.identity(component) });
 	});
 	return items;
 }

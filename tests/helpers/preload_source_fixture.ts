@@ -16,7 +16,7 @@ local function configure<init>()
 	} } })
 end
 configure()
-game.actor = component.new({ parent = { executions = 0, id = 'fixture_actor' } }, 'preload.tree')
+game.actor = component.new({ owner = { executions = 0, id = 'fixture_actor' } }, 'preload.tree')
 game.actor.id = 'fixture.tree'
 registry:register(game.actor)
 registry:index(game.actor, component)
@@ -24,7 +24,7 @@ function game.update()
 	game.ticks = game.ticks + 1
 	blua32.trace(game, 'fixture.tick', game.ticks)
 	local actor<const> = game.actor
-	actor.evaluate(actor.parent, actor, actor.operand)
+	actor.evaluate(actor.owner, actor, actor.operand)
 end
 return game
 ` },

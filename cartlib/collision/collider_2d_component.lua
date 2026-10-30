@@ -45,7 +45,7 @@ function collider_2d_component.new(opts)
 end
 
 -- Prefab collision policy is immutable definition data. The factory captures
--- it once while each instance contributes only its parent identity.
+-- it once while each instance contributes only its owner identity.
 function collider_2d_component.factory(definition)
 	local shape_asset<const> = definition.shape_asset
 	if shape_asset ~= nil then
@@ -72,14 +72,14 @@ end
 --   none - the image bounds
 function collider_2d_component.new_for_sprite(opts)
 	local self<const> = collider_2d_component.new(opts)
-	self:set_sprite(opts.parent:get_component(sprite_component))
+	self:set_sprite(opts.owner:get_component(sprite_component))
 	return self
 end
 
 function collider_2d_component.factory_for_sprite(definition)
 	return function(opts)
 		local self<const> = create(opts, definition)
-		self:set_sprite(opts.parent:get_component(sprite_component))
+		self:set_sprite(opts.owner:get_component(sprite_component))
 		return self
 	end
 end
@@ -135,8 +135,8 @@ end
 
 function collider_2d_component:on_detach()
 	self:set_sprite(nil)
-	if self.parent.collider == self then
-		self.parent.collider = nil
+	if self.owner.collider == self then
+		self.owner.collider = nil
 	end
 end
 

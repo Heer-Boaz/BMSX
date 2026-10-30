@@ -60,11 +60,11 @@ const WORLD_SOURCE = `local fsm<const> = require('cartlib/fsm/fsm_component')
 local state<const> = { definition = { on = {} }, states = {}, state_ids = {}, data = { answer = 42 } }
 local concurrent<const> = { definition = { on = {}, is_concurrent = true }, states = {}, state_ids = {} }
 local machine<const> = { localdef_id = 'same', definition = { on = {} }, states = { idle = state, concurrent = concurrent }, state_ids = { 'idle', 'concurrent' }, current_id = 'idle' }
-local component<const> = { id = 'states', enabled = true, _parent_component_index = 1, _started = true, _machines = { machine }, _machines_by_id = { same = machine } }
-local impostor<const> = { id = 'FSM states', enabled = true, _parent_component_index = 2, _machines_by_id = {} }
+local component<const> = { id = 'states', enabled = true, _owner_component_index = 1, _started = true, _machines = { machine }, _machines_by_id = { same = machine } }
+local impostor<const> = { id = 'FSM states', enabled = true, _owner_component_index = 2, _machines_by_id = {} }
 local actor<const> = { id = 1, definition_id = 'same', active = true, _components = { component, impostor }, _components_by_class = { [fsm] = { component } } }
 local second<const> = { id = '1', definition_id = 'same', active = false, _components = {}, _components_by_class = {} }
-component.parent = actor
+component.owner = actor
 actor.self = actor
 return { _objects = { actor, second } }`;
 const ENTRY = `local world<const> = require('cartlib/world/world')
@@ -158,14 +158,14 @@ function hide_pick() world._render_visuals[2].visible = false end`, true, `
 local sprite<const> = require('cartlib/component/sprite_component')
 local front<const> = { id = 1, definition_id = 'front', visible = true, x = 20, y = 10 }
 local back<const> = { id = '1', visible = 0, x = 0, y = 0 }
-local background<const> = { parent = back, draw = sprite.draw_visual, visible = true,
+local background<const> = { owner = back, draw = sprite.draw_visual, visible = true,
  offset_x = 0, offset_y = 0, draw_offset_x = 0, draw_offset_y = 0,
  source_width = 32, source_height = 24, scale_x = 1, scale_y = 1, draw_scale_x = 1, draw_scale_y = 1 }
-local foreground<const> = { parent = front, draw = sprite.draw_region_visual, visible = true,
+local foreground<const> = { owner = front, draw = sprite.draw_region_visual, visible = true,
  offset_x = -4, offset_y = -2, draw_offset_x = 0, draw_offset_y = 0,
  source_width = 99, source_height = 99, region_width = 6, region_height = 8,
  scale_x = -2, scale_y = 0.75, draw_scale_x = 1, draw_scale_y = 0.5 }
-local custom<const> = { parent = front, draw = sprite.custom, visible = true }
+local custom<const> = { owner = front, draw = sprite.custom, visible = true }
 return { _objects = { front, back }, _render_visuals = { background, foreground, custom }, _render_visual_count = 3 }`, [{
 		path: 'cartlib/component/sprite_component', source: `local sprite<const> = {}
 function sprite.draw_visual() end
@@ -985,12 +985,12 @@ local timelines<const> = require('cartlib/timeline/timeline_component')
 local left<const> = { localdef_id = 'demo.actor.left.same', states = {}, state_ids = {}, current_id = nil }
 local right<const> = { localdef_id = 'demo.actor.right.same', states = {}, state_ids = {}, current_id = nil }
 local alias<const> = { localdef_id = 'left.same', states = {}, state_ids = {}, current_id = nil }
-local timeline<const> = { id = 1, enabled = true, _parent_component_index = 1, _entries_by_id = { ['demo.actor.blank'] = { playing = true } } }
-local first<const> = { id = 2, enabled = true, _parent_component_index = 2, _started = true, _machines = { left, right, alias } }
-local second<const> = { id = 3, enabled = true, _parent_component_index = 3, _started = true, _machines = { right } }
+local timeline<const> = { id = 1, enabled = true, _owner_component_index = 1, _entries_by_id = { ['demo.actor.blank'] = { playing = true } } }
+local first<const> = { id = 2, enabled = true, _owner_component_index = 2, _started = true, _machines = { left, right, alias } }
+local second<const> = { id = 3, enabled = true, _owner_component_index = 3, _started = true, _machines = { right } }
 local actor<const> = { id = 'demo.actor', definition_id = 'demo.actor', active = true,
  _components = { timeline, first, second }, _components_by_class = { [fsm] = { first, second }, [timelines] = { timeline } } }
-first.parent = actor; second.parent = actor; timeline.parent = actor
+first.owner = actor; second.owner = actor; timeline.owner = actor
 return { _objects = { actor } }`;
 	const f = fixture(t, `local world<const> = require('cartlib/world/world')
 local fsm<const> = require('cartlib/fsm/fsm_component')
@@ -1085,7 +1085,7 @@ test('explicit Actor Lab navigation reveals a retained child through collapsed a
 
 test('history selection borrows restored objects and retires unavailable bookmarks before branching', t => {
 	const f = fixture(t, ENTRY.replace('return world', `function add()
-	probe._components[3] = { id = 'late', enabled = true, _parent_component_index = 3 }
+	probe._components[3] = { id = 'late', enabled = true, _owner_component_index = 3 }
 end
 return world`), false), cpu = f.runtime.machine.cpu;
 	const beforeBirth = cpu.captureRuntimeState();
@@ -1182,7 +1182,7 @@ local fsm<const>`).replace('actor.self = actor', `actor.self = actor
 local effect<const> = { active_count = 0 }
 local first_key<const>, second_key<const> = {}, {}
 local first_fn<const>, second_fn<const> = function() return 1 end, function() return 2 end
-local component<const> = { id = 'effects', enabled = true, _parent_component_index = 3,
+local component<const> = { id = 'effects', enabled = true, _owner_component_index = 3,
 	effects = { [first_key] = effect, [second_key] = effect, [first_fn] = effect, [second_fn] = effect } }
 actor._components[3] = component
 actor._components_by_class[effects] = { component }`);
@@ -1209,10 +1209,10 @@ local other<const> = { localdef_id = 'alpha', definition = { on = {} }, states =
 machine.localdef_id = 'zulu'
 component._machines = { machine, other }
 component._machines_by_id = { zulu = machine, alpha = other }
-local timeline<const> = { id = 'times', enabled = true, _parent_component_index = 3, _entries_by_id = {
+local timeline<const> = { id = 'times', enabled = true, _owner_component_index = 3, _entries_by_id = {
 	zulu = { playing = false }, alpha = { playing = true }, [1] = { playing = false }, ['1'] = { playing = false },
 } }
-local effect<const> = { id = 'effects', enabled = true, _parent_component_index = 4, effects = {
+local effect<const> = { id = 'effects', enabled = true, _owner_component_index = 4, effects = {
 	zulu = { active_count = 0 }, alpha = { active_count = 1 },
 } }
 actor._components[3] = timeline

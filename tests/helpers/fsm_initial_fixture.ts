@@ -45,7 +45,7 @@ fsm_initial_target = { id = 'initial-target', active = true, tags = {} }
 function fsm_initial_target:_retain_tag(tag) self.tags[tag] = true end
 function fsm_initial_target:_release_tag(tag) self.tags[tag] = nil end
 fsm_initial_target.events = events.events_of(fsm_initial_target)
-fsm_initial_component = component.factory({'fixture.initial'})({ parent = fsm_initial_target })
+fsm_initial_component = component.factory({'fixture.initial'})({ owner = fsm_initial_target })
 fsm_initial_component.id = 'initial-target-fsm'
 fsm_initial_component:on_attach()
 registry:register(fsm_initial_component)

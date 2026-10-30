@@ -44,7 +44,7 @@ export function inspectActorNode(
 		guest.visitTableEntries(value, (key, item) => {
 			const name = valueTag(key) === ValueTag.String ? guest.formatValue(key) : '';
 			if (name === 'id' || name === 'enabled') return;
-			properties.entry('member', key, item, name.startsWith('_') ? INTERNAL_MEMBER : name === 'parent' ? ACTOR_REFERENCE : undefined);
+			properties.entry('member', key, item, name.startsWith('_') ? INTERNAL_MEMBER : name === 'owner' ? ACTOR_REFERENCE : undefined);
 		});
 		properties.group('storage', 'self', 'Stored fields', value);
 	}

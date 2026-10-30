@@ -12,7 +12,7 @@ local sprite<const> = {}
 local cover<const> = {}
 
 local draw_cover<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local x<const> = owner.x + component.offset_x
 	local y<const> = owner.y + component.offset_y
 	draw:rect(x, y, x + owner.sx, y + owner.sy, owner.color)

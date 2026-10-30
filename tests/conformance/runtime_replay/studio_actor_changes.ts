@@ -21,7 +21,7 @@ local inventory<const> = setmetatable({}, { __index = base_component })
 inventory.__index = inventory
 function inventory.new(opts)
 	local self<const> = setmetatable(base_component.new(opts), inventory)
-	self.id = opts.parent.id .. '.Inventory'
+	self.id = opts.owner.id .. '.Inventory'
 	for index = 1, 12 do self[index] = index end
 	self.health = 90
 	return self

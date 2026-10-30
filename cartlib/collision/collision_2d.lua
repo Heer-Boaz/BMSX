@@ -145,7 +145,7 @@ local measure_geo_shape_bytes<const> = function(colliders, collider_count)
 	return byte_count
 end
 
-local stage_geo_aabb_shape<const> = function(collider, parent, shape_addr)
+local stage_geo_aabb_shape<const> = function(collider, owner, shape_addr)
 	local shape<const>: *geo_overlap_aabb_shape = shape_addr
 	shape->kind = 0x00000001
 	shape->data_count = 0x00000004
@@ -160,8 +160,8 @@ local stage_geo_aabb_shape<const> = function(collider, parent, shape_addr)
 	else
 		shape->bounds[0] = 0
 		shape->bounds[1] = 0
-		shape->bounds[2] = parent.sx
-		shape->bounds[3] = parent.sy
+		shape->bounds[2] = owner.sx
+		shape->bounds[3] = owner.sy
 	end
 	return shape_addr + geo_aabb_shape_bytes
 end
@@ -252,28 +252,28 @@ local stage_geo_tile_strip_shape<const> = function(collider, shape_addr)
 end
 
 local stage_geo_overlap_instance<const> = function(collider, instance_addr, aabb_shape_addr)
-	local parent<const> = collider.parent
+	local owner<const> = collider.owner
 	local sprite<const> = collider.sprite
 	local shape_ref = collider.shape_ref
 	local tx
 	local ty
 	if shape_ref ~= nil then
-		tx = parent.x + collider.shape_offset_x
-		ty = parent.y + collider.shape_offset_y
+		tx = owner.x + collider.shape_offset_x
+		ty = owner.y + collider.shape_offset_y
 	elseif sprite then
 		shape_ref = select_sprite_shape_ref(collider, sprite)
-		tx = parent.x + sprite.offset_x
-		ty = parent.y + sprite.offset_y
+		tx = owner.x + sprite.offset_x
+		ty = owner.y + sprite.offset_y
 	elseif collider.tile_strip then
 		shape_ref = aabb_shape_addr
 		aabb_shape_addr = stage_geo_tile_strip_shape(collider, aabb_shape_addr)
-		tx = parent.x
-		ty = parent.y
+		tx = owner.x
+		ty = owner.y
 	else
 		shape_ref = aabb_shape_addr
-		aabb_shape_addr = stage_geo_aabb_shape(collider, parent, aabb_shape_addr)
-		tx = parent.x + collider.shape_offset_x
-		ty = parent.y + collider.shape_offset_y
+		aabb_shape_addr = stage_geo_aabb_shape(collider, owner, aabb_shape_addr)
+		tx = owner.x + collider.shape_offset_x
+		ty = owner.y + collider.shape_offset_y
 	end
 	local instance<const>: *geo_overlap_instance = instance_addr
 	instance->shape = shape_ref

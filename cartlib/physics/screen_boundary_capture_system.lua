@@ -29,9 +29,9 @@ function screen_boundary_capture_system:update()
 	local boundary_components<const> = self._component_view.components
 	for i = 1, #boundary_components do
 		local component<const> = boundary_components[i]
-		local parent<const> = component.parent
-		component.old_x = parent.x
-		component.old_y = parent.y
+		local owner<const> = component.owner
+		component.old_x = owner.x
+		component.old_y = owner.y
 	end
 end
 

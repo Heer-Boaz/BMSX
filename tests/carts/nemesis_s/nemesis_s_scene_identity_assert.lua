@@ -63,7 +63,7 @@ return {
 					'scene-local member name replaced the Registry-owned runtime identity')
 					local component_ids<const> = {}
 					for index, component in ipairs(object._components) do
-						assert(component.parent == object and registry:get(component.id) == component,
+						assert(component.owner == object and registry:get(component.id) == component,
 						'the repeated real prefab shared or failed to register a component')
 						component_ids[index] = component.id
 					end
@@ -77,7 +77,7 @@ return {
 				assert(registry:get(placement.named_id) == original and #original._components == original_component_count,
 				'repeated placement changed the cart-owned root identity')
 				for _, component in ipairs(original._components) do
-					assert(component.parent == original and registry:get(component.id) == component,
+					assert(component.owner == original and registry:get(component.id) == component,
 					'disposing an extra placement removed an original root component')
 				end
 			end

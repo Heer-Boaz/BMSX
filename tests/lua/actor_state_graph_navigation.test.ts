@@ -22,9 +22,9 @@ local leaf<const> = { definition = {}, states = {}, state_ids = {} }
 local idle<const> = { definition = {}, states = { leaf = leaf }, state_ids = { 'leaf' }, current_id = 'leaf' }
 local parallel<const> = { definition = { is_concurrent = true }, states = {}, state_ids = {} }
 local machine<const> = { localdef_id = 'main', definition = {}, states = { idle = idle, parallel = parallel, alias = idle }, state_ids = { 'idle', 'parallel', 'alias' }, current_id = 'idle' }
-local component<const> = { id = 'states', enabled = true, _parent_component_index = 1, _started = true, _machines = { machine }, _machines_by_id = { main = machine } }
+local component<const> = { id = 'states', enabled = true, _owner_component_index = 1, _started = true, _machines = { machine }, _machines_by_id = { main = machine } }
 local actor<const> = { id = 1, active = true, _components = { component }, _components_by_class = { [fsm] = { component } } }
-component.parent = actor
+component.owner = actor
 function remove_machine() component._machines = {} component._machines_by_id.main = nil end
 function remove_state() machine.state_ids = { 'parallel', 'alias' } end
 function change_activity() machine.current_id = 'alias' end

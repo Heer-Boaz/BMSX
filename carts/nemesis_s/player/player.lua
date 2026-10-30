@@ -227,7 +227,7 @@ end
 
 local attach_projectile_collider<const> = function(owner, projectile, local_id)
 	local collider<const> = collider_2d_component.new({
-		parent = owner,
+		owner = owner,
 		id_local = local_id,
 		enabled = false,
 		layer = collision_player_projectile_layer,
@@ -412,7 +412,7 @@ function player:reset_runtime()
 end
 
 local draw_player_name_table_weapons<const> = function(component, draw)
-	local self<const> = component.parent
+	local self<const> = component.owner
 	for vessel_id = 1, player_vessel_capacity do
 		local projectile<const> = self.primary_projectiles[vessel_id]
 		if projectile.type ~= projectile_type_none
@@ -445,7 +445,7 @@ local new_name_table_weapon_visual<const> = custom_visual_component.factory({
 })
 
 local draw_player_sprite_projectiles<const> = function(component, draw)
-	local self<const> = component.parent
+	local self<const> = component.owner
 	for vessel_id = 1, player_vessel_capacity do
 		local primary<const> = self.primary_projectiles[vessel_id]
 		if primary.type == projectile_type_bullet then
@@ -477,7 +477,7 @@ local new_sprite_projectile_visual<const> = custom_visual_component.factory({
 })
 
 local draw_player_vessel<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local option_source<const> = owner.option_sources[owner.option_anim_index]
 	for i = 1, #owner.options do
 		local option<const> = owner.options[i]

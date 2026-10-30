@@ -622,7 +622,7 @@ function stage:advance_tape()
 	local followers<const> = stage_scroll_follower_view.components
 	for follower_index = 1, #followers do
 		local follower<const> = followers[follower_index]
-		follower.parent.x = follower.parent.x - self.tile_size
+		follower.owner.x = follower.owner.x - self.tile_size
 	end
 	self:advance_actor_spawns(column)
 	self.tile_steps = self.tile_steps + 1

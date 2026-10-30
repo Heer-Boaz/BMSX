@@ -13,7 +13,7 @@ local target<const> = { id = 'entry_order', active = true }
 function target:_retain_tag() end
 function target:_release_tag() end
 target.events = events.events_of(target)
-local transport<const> = timeline.new({ parent = target })
+local transport<const> = timeline.new({ owner = target })
 transport:on_attach()
 local order<const> = {}
 local record<const> = function(value) order[#order + 1] = value end
@@ -65,7 +65,7 @@ library.register('entry_order', {
 		},
 	},
 })
-local machine<const> = fsm.factory({ 'entry_order' })({ parent = target })
+local machine<const> = fsm.factory({ 'entry_order' })({ owner = target })
 machine:on_attach()
 machine:start()
 assert(order[1] == 'entry' and order[2] == 'sample', 'initial entry sampled an unconstructed target')

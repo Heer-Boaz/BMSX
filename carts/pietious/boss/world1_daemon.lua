@@ -124,7 +124,7 @@ local draw_death_parity<const> = function(draw, boss, tile, parity)
 end
 
 local draw_death_overlay<const> = function(component, draw)
-	local boss<const> = component.parent
+	local boss<const> = component.owner
 	local stage<const> = boss.death_stage
 	if stage <= death_image_count then
 		draw_death_parity(draw, boss, death_images[stage], 0)

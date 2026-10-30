@@ -132,7 +132,7 @@ function text_component:set_wrap_chars(wrap_chars)
 end
 
 function text_component:draw_visual(draw)
-	local obj<const> = self.parent
+	local obj<const> = self.owner
 	local x<const> = obj.x + self.offset_x + self.draw_offset_x
 	local y<const> = obj.y + self.offset_y + self.draw_offset_y
 	local glyphs<const> = self.glyph_lines

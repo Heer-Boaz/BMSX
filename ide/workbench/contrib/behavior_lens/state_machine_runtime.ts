@@ -33,7 +33,7 @@ export function findStateMachineState(
 
 function stateMachineInstanceChoice(guest: SuspendedGuestSession, component: Table, key: SuspendedGuestValue, machine: Table): StateMachineInstanceChoice {
 	return { label: guest.formatValue(key), description: `COMPONENT ${guest.formatValue(guest.readStringMember(component, 'id'))}`,
-		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'parent'), 'id'))}`, component, machine };
+		detail: `OWNER ${guest.formatValue(guest.readStringMember(guest.readStringMember(component, 'owner'), 'id'))}`, component, machine };
 }
 
 function stateMachineStateChoice(guest: SuspendedGuestSession, state: Table): StateMachineStateChoice {
@@ -95,7 +95,7 @@ export function inspectStateMachineState(
 ): RuntimeInspectionProperty[] {
 	properties.field('instance', 'id', 'STATE INSTANCE', guest.readStringMember(state, 'id'));
 	properties.field('component', 'id', 'COMPONENT', guest.readStringMember(machine.component, 'id'));
-	properties.field('owner', 'id', 'OWNER', guest.readStringMember(guest.readStringMember(machine.component, 'parent'), 'id'));
+	properties.field('owner', 'id', 'OWNER', guest.readStringMember(guest.readStringMember(machine.component, 'owner'), 'id'));
 	properties.field('component', '_started', 'COMPONENT STARTED', guest.readStringMember(machine.component, '_started'));
 	properties.field('component', 'enabled', 'COMPONENT ENABLED', guest.readStringMember(machine.component, 'enabled'));
 	properties.field('instance', 'current_id', 'CURRENT CHILD', guest.readStringMember(state, 'current_id'),

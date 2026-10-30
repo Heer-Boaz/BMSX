@@ -126,8 +126,8 @@ local retire_previous_pairs<const> = function(overlap, payload, prev_pairs, new_
 		local new_row<const> = new_pairs[a]
 		for b in pairs(row) do
 			if not (new_row ~= nil and new_row[b]) then
-				local owner_a<const> = a.parent
-				local owner_b<const> = b.parent
+				local owner_a<const> = a.owner
+				local owner_b<const> = b.owner
 				if owner_a.active and owner_b.active then
 					emit_overlap_event(payload, 'overlap.end', 'end', owner_a, a, owner_b, b, nil)
 					emit_overlap_event(payload, 'overlap.end', 'end', owner_b, b, owner_a, a, nil)
@@ -190,8 +190,8 @@ function overlap_2d_system:update()
 		local pair<const> = overlap_pairs.items[i]
 		local a<const> = pair.a
 		local b<const> = pair.b
-		local owner_a<const> = a.parent
-		local owner_b<const> = b.parent
+		local owner_a<const> = a.owner
+		local owner_b<const> = b.owner
 		local key_a
 		local key_b
 		if a.id < b.id then

@@ -14,7 +14,7 @@ function tile_strip_collider_2d_component.factory(definition)
 	local tile_strip_id_local<const> = definition.tile_strip_id_local
 	return function(opts)
 		local self<const> = setmetatable(create(opts), tile_strip_collider_2d_component)
-		self.tile_strip = opts.parent:get_component(tile_strip_component, tile_strip_id_local)
+		self.tile_strip = opts.owner:get_component(tile_strip_component, tile_strip_id_local)
 		return self
 	end
 end

@@ -77,7 +77,7 @@ function screen_boundary_system:update()
 	local screen_boundary_components<const> = self._component_view.components
 	for i = 1, #screen_boundary_components do
 		local component<const> = screen_boundary_components[i]
-		local obj<const> = component.parent
+		local obj<const> = component.owner
 		emit_boundary_events(event_payload, obj, component)
 	end
 end

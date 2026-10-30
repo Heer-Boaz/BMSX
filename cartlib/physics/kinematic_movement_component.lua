@@ -27,8 +27,8 @@ local sweep_x<const> = function(self, collision_world, delta_x)
 		return 0
 	end
 
-	local parent<const> = self.parent
-	local start_x<const> = parent.x
+	local owner<const> = self.owner
+	local start_x<const> = owner.x
 	local target_x = start_x + delta_x
 	local contact = 0
 	local local_left<const> = self.local_left
@@ -39,11 +39,11 @@ local sweep_x<const> = function(self, collision_world, delta_x)
 	local collision_flags_at_tile<const> = collision_world.collision_flags_at_tile
 	local collision_mask<const> = self.collision_mask
 	local include_elevators<const> = self.include_elevators
-	local first_tile_y<const> = ((parent.y + self.local_top - tile_origin_y) // tile_size) + 1
-	local last_tile_y<const> = ((parent.y + self.local_bottom - 1 - tile_origin_y) // tile_size) + 1
+	local first_tile_y<const> = ((owner.y + self.local_top - tile_origin_y) // tile_size) + 1
+	local last_tile_y<const> = ((owner.y + self.local_bottom - 1 - tile_origin_y) // tile_size) + 1
 
 	if delta_x > 0 then
-		local maximum_x<const> = self.world_right - parent.sx
+		local maximum_x<const> = self.world_right - owner.sx
 		if target_x > maximum_x then
 			target_x = maximum_x
 			contact = contact_right
@@ -54,7 +54,7 @@ local sweep_x<const> = function(self, collision_world, delta_x)
 			for tile_y = first_tile_y, last_tile_y do
 				if (collision_flags_at_tile(collision_world, tile_x, tile_y, include_elevators)
 					& collision_mask) ~= 0 then
-					parent.x = tile_origin_x + ((tile_x - 1) * tile_size) - local_right
+					owner.x = tile_origin_x + ((tile_x - 1) * tile_size) - local_right
 					return contact_right
 				end
 			end
@@ -70,14 +70,14 @@ local sweep_x<const> = function(self, collision_world, delta_x)
 			for tile_y = first_tile_y, last_tile_y do
 				if (collision_flags_at_tile(collision_world, tile_x, tile_y, include_elevators)
 					& collision_mask) ~= 0 then
-					parent.x = tile_origin_x + (tile_x * tile_size) - local_left
+					owner.x = tile_origin_x + (tile_x * tile_size) - local_left
 					return contact_left
 				end
 			end
 		end
 	end
 
-	parent.x = target_x
+	owner.x = target_x
 	return contact
 end
 
@@ -86,8 +86,8 @@ local sweep_y<const> = function(self, collision_world, delta_y)
 		return 0
 	end
 
-	local parent<const> = self.parent
-	local start_y<const> = parent.y
+	local owner<const> = self.owner
+	local start_y<const> = owner.y
 	local target_y = start_y + delta_y
 	local contact = 0
 	local local_top<const> = self.local_top
@@ -98,11 +98,11 @@ local sweep_y<const> = function(self, collision_world, delta_y)
 	local collision_flags_at_tile<const> = collision_world.collision_flags_at_tile
 	local collision_mask<const> = self.collision_mask
 	local include_elevators<const> = self.include_elevators
-	local first_tile_x<const> = ((parent.x + self.local_left - tile_origin_x) // tile_size) + 1
-	local last_tile_x<const> = ((parent.x + self.local_right - 1 - tile_origin_x) // tile_size) + 1
+	local first_tile_x<const> = ((owner.x + self.local_left - tile_origin_x) // tile_size) + 1
+	local last_tile_x<const> = ((owner.x + self.local_right - 1 - tile_origin_x) // tile_size) + 1
 
 	if delta_y > 0 then
-		local maximum_y<const> = self.world_bottom - parent.sy
+		local maximum_y<const> = self.world_bottom - owner.sy
 		if target_y > maximum_y then
 			target_y = maximum_y
 			contact = contact_down
@@ -113,7 +113,7 @@ local sweep_y<const> = function(self, collision_world, delta_y)
 			for tile_x = first_tile_x, last_tile_x do
 				if (collision_flags_at_tile(collision_world, tile_x, tile_y, include_elevators)
 					& collision_mask) ~= 0 then
-					parent.y = tile_origin_y + ((tile_y - 1) * tile_size) - local_bottom
+					owner.y = tile_origin_y + ((tile_y - 1) * tile_size) - local_bottom
 					return contact_down
 				end
 			end
@@ -129,14 +129,14 @@ local sweep_y<const> = function(self, collision_world, delta_y)
 			for tile_x = first_tile_x, last_tile_x do
 				if (collision_flags_at_tile(collision_world, tile_x, tile_y, include_elevators)
 					& collision_mask) ~= 0 then
-					parent.y = tile_origin_y + (tile_y * tile_size) - local_top
+					owner.y = tile_origin_y + (tile_y * tile_size) - local_top
 					return contact_up
 				end
 			end
 		end
 	end
 
-	parent.y = target_y
+	owner.y = target_y
 	return contact
 end
 
@@ -170,7 +170,7 @@ function kinematic_movement_component:set_local_bounds(left, top, right, bottom)
 end
 
 -- UE MovementComponent binds its UpdatedComponent once and reaches collision
--- through that component's World. Here parent is already the updated object;
+-- through that component's World. Here owner is already the updated object;
 -- cart composition binds its tile collision world once, before steady movement.
 function kinematic_movement_component:set_collision_world(collision_world)
 	self.collision_world = collision_world
@@ -200,16 +200,16 @@ end
 
 function kinematic_movement_component:has_support_ahead(direction_x, ahead, below)
 	local collision_world<const> = self.collision_world
-	local parent<const> = self.parent
+	local owner<const> = self.owner
 	local world_x
 	if direction_x < 0 then
-		world_x = parent.x + self.local_left - ahead
+		world_x = owner.x + self.local_left - ahead
 	else
-		world_x = parent.x + self.local_right + ahead
+		world_x = owner.x + self.local_right + ahead
 	end
 	local tile_size<const> = collision_world.tile_size
 	local tile_x<const> = ((world_x - collision_world.tile_origin_x) // tile_size) + 1
-	local tile_y<const> = ((parent.y + self.local_bottom + below - collision_world.tile_origin_y)
+	local tile_y<const> = ((owner.y + self.local_bottom + below - collision_world.tile_origin_y)
 		// tile_size) + 1
 	local flags<const> = collision_world.collision_flags_at_tile(
 		collision_world,

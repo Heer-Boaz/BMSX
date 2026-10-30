@@ -6,7 +6,7 @@ base_component._tick_clocks = 0
 
 function base_component.new(opts)
 	local self<const> = setmetatable({}, base_component)
-	self.parent = opts.parent
+	self.owner = opts.owner
 	self.id_local = opts.id_local
 	self.enabled = opts.enabled == nil or opts.enabled
 	self._attached = false
@@ -18,9 +18,9 @@ function base_component:set_enabled(enabled)
 		return self
 	end
 	self.enabled = enabled
-	local parent<const> = self.parent
-	if self._attached and parent._world_object_index ~= nil and parent.active then
-		parent.world:reconcile_component(self)
+	local owner<const> = self.owner
+	if self._attached and owner._world_object_index ~= nil and owner.active then
+		owner.world:reconcile_component(self)
 	end
 	return self
 end
@@ -40,9 +40,9 @@ function base_component:set_tick_clock_enabled(clock_source, enabled)
 		return self
 	end
 	self._tick_clocks = updated
-	local parent<const> = self.parent
-	if self._attached and parent._world_object_index ~= nil and parent.active then
-		parent.world:reconcile_component(self)
+	local owner<const> = self.owner
+	if self._attached and owner._world_object_index ~= nil and owner.active then
+		owner.world:reconcile_component(self)
 	end
 	return self
 end

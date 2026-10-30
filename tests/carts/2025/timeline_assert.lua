@@ -11,7 +11,7 @@ return {
 			local owner<const> = setmetatable({ id = 'timeline_linear_value_test' }, world_object)
 			world_object.initialize(owner)
 
-			local timelines<const> = timeline_component.new({ parent = owner })
+			local timelines<const> = timeline_component.new({ owner = owner })
 			timelines:on_attach()
 			local target<const> = { value = -1, method = -1 }
 			timelines:define('time_linear', {
@@ -285,7 +285,7 @@ return {
 			local owner<const> = setmetatable({ id = 'timeline_cubic_value_test' }, world_object)
 			world_object.initialize(owner)
 
-			local timelines<const> = timeline_component.new({ parent = owner })
+			local timelines<const> = timeline_component.new({ owner = owner })
 			timelines:on_attach()
 			local target<const> = { value = -1, method = -1 }
 			timelines:define('time_cubic', {
@@ -489,7 +489,7 @@ return {
 				},
 			}
 
-			local timelines<const> = timeline_component.new({ parent = owner })
+			local timelines<const> = timeline_component.new({ owner = owner })
 			timelines:on_attach()
 			timelines:define('parent', {
 				continuous = true,
@@ -776,7 +776,7 @@ return {
 			}
 
 			local camera<const> = { value = 0 }
-			local timelines<const> = timeline_component.new({ parent = owner })
+			local timelines<const> = timeline_component.new({ owner = owner })
 			timelines:on_attach()
 
 			local root_loop_count = 0
@@ -1225,7 +1225,7 @@ return {
 
 			local chain_owner<const> = setmetatable({ id = 'timeline_completion_chain_test' }, world_object)
 			world_object.initialize(chain_owner)
-			local chain_timelines<const> = timeline_component.new({ parent = chain_owner })
+			local chain_timelines<const> = timeline_component.new({ owner = chain_owner })
 			chain_timelines:on_attach()
 			chain_timelines:define('successor', {
 				continuous = true,
@@ -1248,7 +1248,7 @@ return {
 
 			local mutation_owner<const> = setmetatable({ id = 'timeline_lane_mutation_test' }, world_object)
 			world_object.initialize(mutation_owner)
-			local mutation_timelines<const> = timeline_component.new({ parent = mutation_owner })
+			local mutation_timelines<const> = timeline_component.new({ owner = mutation_owner })
 			mutation_timelines:on_attach()
 			mutation_owner.events:on({
 				event = 'timeline.replace_peer',
@@ -1291,7 +1291,7 @@ return {
 
 			local rate_owner<const> = setmetatable({ id = 'timeline_play_rate_test' }, world_object)
 			world_object.initialize(rate_owner)
-			local rate_timelines<const> = timeline_component.new({ parent = rate_owner })
+			local rate_timelines<const> = timeline_component.new({ owner = rate_owner })
 			rate_timelines:on_attach()
 			rate_timelines:define('scaled', {
 				continuous = true,

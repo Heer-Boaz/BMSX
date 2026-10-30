@@ -39,7 +39,7 @@ return {
 			intro.state_machines:transition_to('/playing/blank')
 			local logo<const> = intro.logo_sprite
 			assert(logo.imgid == 'intro_konami'
-			and logo.parent.x == 40 and logo.parent.y == 64
+			and logo.owner.x == 40 and logo.owner.y == 64
 			and logo.region_width == 168 and logo.region_height == 1
 			and not logo.visible and intro.logo_background.visible,
 			'Konami logo did not enter its source-derived white presentation')

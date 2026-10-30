@@ -53,7 +53,7 @@ function target:_release_tag(tag)
 	self.tags[tag] = nil
 end
 target.events = events.events_of(target)
-local timelines<const> = timeline_component.new({ parent = target })
+local timelines<const> = timeline_component.new({ owner = target })
 timelines.id = 'hot_target_timelines'
 timelines:on_attach()
 registry:register(timelines)
@@ -99,7 +99,7 @@ fsm_library.register('hot_machine', {
 })
 
 local make_fsm<const> = state_machine_component.factory({ 'hot_machine' })
-local state_machines<const> = make_fsm({ parent = target })
+local state_machines<const> = make_fsm({ owner = target })
 state_machines.id = 'hot_target_fsm'
 state_machines:on_attach()
 registry:register(state_machines)
@@ -231,7 +231,7 @@ local compatible<const> = pcall(function()
 end)
 assert(compatible == false)
 assert(machine.definition == published_definition)
-local future_state_machines<const> = make_fsm({ parent = target })
+local future_state_machines<const> = make_fsm({ owner = target })
 assert(future_state_machines:get_machine('hot_machine').definition == published_definition)
 
 local ticks_key<const> = blackboard.key('ticks', 0)
@@ -255,7 +255,7 @@ behaviour_tree_library.register('enemy_hot', {
 	},
 })
 local make_old_tree<const> = behaviour_tree_component.factory('enemy_hot')
-local behaviour_tree_instance<const> = make_old_tree({ parent = target })
+local behaviour_tree_instance<const> = make_old_tree({ owner = target })
 behaviour_tree_instance.id = 'hot_target_bt'
 registry:register(behaviour_tree_instance)
 registry:index(behaviour_tree_instance, behaviour_tree_component)
@@ -284,7 +284,7 @@ behaviour_tree_library.register('enemy_hot', {
 assert(behaviour_tree_instance.evaluate == new_action)
 assert(behaviour_tree_instance.blackboard == blackboard_instance and blackboard_instance:get(retained_key) == 91)
 behaviour_tree_instance.evaluate(target, behaviour_tree_instance, behaviour_tree_instance.operand)
-local future_tree<const> = make_old_tree({ parent = target })
+local future_tree<const> = make_old_tree({ owner = target })
 assert(future_tree.evaluate == new_action)
 
 return target.value, active_data.retained, blackboard_instance:get(ticks_key), blackboard_instance:get(retained_key),
@@ -327,7 +327,7 @@ fsm_library.register('trace_machine', {
 	},
 })
 
-local state_machines<const> = fsm_component.new({ parent = target }, { 'trace_machine' })
+local state_machines<const> = fsm_component.new({ owner = target }, { 'trace_machine' })
 local machine<const> = state_machines:get_machine('trace_machine')
 state_machines:start()
 local recorder<const> = transition_recorder.new(machine, 4)
@@ -373,7 +373,7 @@ for _, kind in ipairs({ 'sequence', 'selector' }) do
 	local program<const> = compiler.compile(kind, definition)
 	assert(program.evaluate == callback and program.reset == nil and program.create_execution_state() == nil)
 	library.register(kind, definition)
-	local instance<const> = component.new({ parent = {} }, kind)
+	local instance<const> = component.new({ owner = {} }, kind)
 	instance.id = kind
 	registry:register(instance)
 	registry:index(instance, component)
@@ -385,7 +385,7 @@ for _, kind in ipairs({ 'sequence', 'selector' }) do
 		{ type = 'task', task = { tick = callback, abort = function() aborts = aborts + 1 end } },
 	} } }
 	library.register(kind, stateful)
-	instance.evaluate(instance.parent, instance, instance.operand)
+	instance.evaluate(instance.owner, instance, instance.operand)
 	library.register(kind, definition)
 	assert(instance.reset == nil)
 end
@@ -614,7 +614,7 @@ function target:_retain_tag(tag) self.tags[tag]=true end
 function target:_release_tag(tag) self.tags[tag]=nil end
 target.events = events.events_of(target)
 do ${FSM_INITIAL_SOURCE} end
-local machines<const> = component.factory({'fixture.initial'})({parent=target})
+local machines<const> = component.factory({'fixture.initial'})({owner=target})
 machines.id='initial-test-fsm'
 machines:on_attach()
 registry:register(machines)
@@ -789,7 +789,7 @@ function target:_retain_tag(tag) self.tags[tag]=true end
 function target:_release_tag(tag) self.tags[tag]=nil end
 target.events = events.events_of(target)
 do ${FSM_RETARGET_EXECUTION_SOURCE} end
-local machines<const> = component.factory({'fixture.execution'})({parent=target})
+local machines<const> = component.factory({'fixture.execution'})({owner=target})
 machines.id='retarget-test-fsm'
 machines:on_attach()
 registry:register(machines)

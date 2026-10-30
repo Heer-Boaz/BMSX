@@ -155,7 +155,7 @@ local draw_hud<const> = function(game, draw)
 end
 
 function renderer.draw(component, draw)
-	local game<const> = component.parent.game
+	local game<const> = component.owner.game
 	draw:rect(0, 0, 320, 240, 0xff0b1223)
 	for index = 1, 36 do
 		local y = 28 + (index * 43) % 190

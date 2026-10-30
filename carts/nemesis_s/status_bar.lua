@@ -53,7 +53,7 @@ local sources<const> = {
 }
 
 local draw_status_bar<const> = function(component, draw)
-	local owner<const> = component.parent
+	local owner<const> = component.owner
 	local rows<const> = owner.rows
 	local x<const> = owner.x + component.offset_x
 	for player_index = 1, #rows do

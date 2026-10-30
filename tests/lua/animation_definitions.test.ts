@@ -141,7 +141,7 @@ test('a source-authored track extends a native frame builder without replacing i
 			local component = require('cartlib/timeline/timeline_component')
 			local owner = { x = -1, y = -1 }
 			local definitions = require('definitions')
-			local timelines = component.new({ parent = owner })
+			local timelines = component.new({ owner = owner })
 			timelines:define('first', definitions.first)
 			timelines:play('first', { params = { end_x = 11 }, snap_to_start = true })
 			assert(owner.x == 0 and owner.y == 10)

@@ -184,7 +184,7 @@ test('tangent direction uses both pointer axes and commits one native slope with
 		for (const optLevel of [0, 3] as const) {
 			const expected = field === 'leave' ? 20.3125 : 39.0625;
 			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component'); local owner={x=-1}
-				local timelines=component.new({parent=owner}); timelines:define('curve',require('animation')); timelines:play('curve')
+				local timelines=component.new({owner=owner}); timelines:define('curve',require('animation')); timelines:play('curve')
 				timelines:seek_time('curve',25); local delta=owner.x-${expected}; assert(delta>-1e-12 and delta<1e-12)
 			`, { optLevel, modules: [{ path: 'animation', source: changed }] });
 			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);

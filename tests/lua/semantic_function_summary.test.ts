@@ -11,7 +11,7 @@ test('function summaries retain an uncalled receiver write', () => {
 		'local attachment<const> = {}',
 		'attachment.__index = attachment',
 		'function attachment:on_attach()',
-		'\tself.parent.actioneffects = self',
+		'\tself.owner.actioneffects = self',
 		'end',
 		'return attachment',
 	].join('\n'), 'attachment.lua');
@@ -33,7 +33,7 @@ test('function summaries retain an uncalled receiver write', () => {
 	assert.equal(summaries.terms.kind(write.base), TermKind.Member);
 	assert.equal(
 		summaries.terms.operand(write.base),
-		summaries.terms.nameId('parent'),
+		summaries.terms.nameId('owner'),
 	);
 	assert.equal(summaries.terms.base(write.base), summary.parameters[0]);
 });

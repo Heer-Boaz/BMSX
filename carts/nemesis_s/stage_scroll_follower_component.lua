@@ -9,12 +9,12 @@ function stage_scroll_follower_component.new(opts)
 end
 
 function stage_scroll_follower_component:on_attach()
-	self.parent.stage_scroll_follower = self
+	self.owner.stage_scroll_follower = self
 end
 
 function stage_scroll_follower_component:on_detach()
-	if self.parent.stage_scroll_follower == self then
-		self.parent.stage_scroll_follower = nil
+	if self.owner.stage_scroll_follower == self then
+		self.owner.stage_scroll_follower = nil
 	end
 end
 

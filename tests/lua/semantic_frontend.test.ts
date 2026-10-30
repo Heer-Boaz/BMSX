@@ -1085,7 +1085,7 @@ test('LuaSemanticFrontend retains dynamic lifecycle CallFacts for both hierarchy
 		'host.__index = host',
 		'function host.new() return setmetatable({}, host) end',
 		'function host:add(extension)',
-		'\textension.parent = self',
+		'\textension.owner = self',
 		'\textension:on_attach()',
 		'end',
 		'return host',
@@ -1094,7 +1094,7 @@ test('LuaSemanticFrontend retains dynamic lifecycle CallFacts for both hierarchy
 		'local controller<const> = {}',
 		'controller.__index = controller',
 		'function controller.new() return setmetatable({}, controller) end',
-		'function controller:on_attach() self.parent.controller = self end',
+		'function controller:on_attach() self.owner.controller = self end',
 		'return controller',
 	].join('\n');
 	const noiseSource = [
