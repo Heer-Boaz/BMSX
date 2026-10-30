@@ -59,20 +59,17 @@ end
 
 local draw_ui<const> = function(component, draw)
 	local owner<const> = component.owner
-	if not owner.hud_visible then
-		return
-	end
 	local player<const> = owner.player
-	sources.header:blit(draw, owner.x, owner.y)
+	sources.header:blit(draw, 0, 0)
 	for i = 0, (owner.hud_health_level - 1) do
-		sources.health_stripe:blit(draw, owner.x + hud_health_bar_x + i, owner.y + hud_health_bar_y)
+		sources.health_stripe:blit(draw, hud_health_bar_x + i, hud_health_bar_y)
 	end
 	for i = 0, (owner.hud_weapon_level - 1) do
-		sources.weapon_stripe:blit(draw, owner.x + hud_weapon_bar_x + i, owner.y + hud_weapon_bar_y)
+		sources.weapon_stripe:blit(draw, hud_weapon_bar_x + i, hud_weapon_bar_y)
 	end
 	local equipped_source<const> = sources.secondary_weapon[player.status.secondary_weapon]
 	if equipped_source ~= nil then
-		equipped_source:blit(draw, owner.x + hud_equipped_item_x * room_tile_size, owner.y + hud_equipped_item_y * room_tile_size)
+		equipped_source:blit(draw, hud_equipped_item_x * room_tile_size, hud_equipped_item_y * room_tile_size)
 	end
 end
 
@@ -114,21 +111,22 @@ function ui:animate_weapon_change(_state, event)
 end
 
 function ui:ctor()
-	self:get_component(custom_visual_component):set_draw_function(draw_ui)
+	self.visual = self:get_component(custom_visual_component)
+	self.visual:set_draw_function(draw_ui)
 	local player<const> = self.player
 	local weapon<const> = clamp(player.status.weapon_level // 1, 0, hud_weapon_level)
-	self.hud_visible = true
+	self.visual.visible = true
 	self:sync_health()
 	self.hud_weapon_level = weapon
 	self.hud_weapon_target = weapon
 end
 
 function ui:show_hud()
-	self.hud_visible = true
+	self.visual.visible = true
 end
 
 function ui:hide_hud()
-	self.hud_visible = false
+	self.visual.visible = false
 end
 
 local define_ui_fsm<const> = function()
@@ -165,6 +163,7 @@ local define_ui_fsm<const> = function()
 		timelines = {
 			[health_animation_timeline_id] = {
 				def = {
+					phase = 'presentation',
 					frames = build_meter_frames,
 					playback_mode = 'once',
 					apply = apply_health_frame,
@@ -173,6 +172,7 @@ local define_ui_fsm<const> = function()
 			},
 			[weapon_animation_timeline_id] = {
 				def = {
+					phase = 'presentation',
 					frames = build_meter_frames,
 					playback_mode = 'once',
 					apply = apply_weapon_frame,

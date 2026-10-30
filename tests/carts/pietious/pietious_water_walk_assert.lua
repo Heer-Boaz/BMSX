@@ -39,8 +39,7 @@ return {
 			player:reset_fall_substate_sequence()
 			player:cancel_sword()
 			player.status.inventory_items.schoentjes = true
-			player.x = probe_x
-			player.y = probe_y
+			player.spatial:set_world_origin(probe_x, probe_y)
 			player.facing = 1
 			player.walk_x_fraction = 0
 			player.walk_animation_phase = 0
@@ -49,7 +48,8 @@ return {
 			player:sync_water_state()
 			assert(player.water_state == water_body, 'setup did not place player in body water')
 			test.walking_state = player.state_machines:bind_state_path('/walking_right')
-			test.start_x = player.x
+			local pose<const> = player.spatial:resolve_world()
+			test.start_x = pose.wox
 
 			t:down('ArrowRight')
 			t:wait_until('underwater walking input', function()
@@ -60,7 +60,8 @@ return {
 				assert(dx == 0 or dx == 1, 'underwater walk moved by ' .. dx .. ' pixels in one update')
 				if sample < 8 then t:wait_ticks(1) end
 			end
-			local distance<const> = player.x - test.start_x
+			player.spatial:resolve_world()
+			local distance<const> = pose.wox - test.start_x
 			assert(distance == 2, 'underwater walk moved ' .. distance .. ' pixels over four gameplay updates')
 			assert(player.walk_frame == 1, 'underwater walk animation did not advance after four updates')
 			t:up('ArrowRight')

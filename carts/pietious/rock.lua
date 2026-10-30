@@ -2,6 +2,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
@@ -13,12 +14,8 @@ rock.__index = rock
 local rock_break_timeline_id<const> = 'rock.tl.break'
 
 function rock:ctor()
-	local collider<const> = self:get_component(collider_2d_component)
-	self.collider = collider
+	self.collider = self:get_component(collider_2d_component)
 	self.last_sword_strike_id = 0
-	collider.layer = collision_enemy_layer
-	collider.mask = collision_enemy_mask
-	self:set_imgid('stone')
 end
 
 function rock:apply_damage(request)
@@ -44,6 +41,7 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
+	local pose<const> = self.spatial
 	local room<const> = self.room
 	room:mark_rock_destroyed(self.scene_member_id)
 	if self.item_type == nil then
@@ -52,14 +50,14 @@ function rock:begin_break()
 	if self.player.status.inventory_items[self.item_type] then
 		return
 	end
-	local drop_y<const> = self.y + world_item_drop_offset_y[self.item_type]
+	local drop_y<const> = pose.oy + world_item_drop_offset_y[self.item_type]
 	local id<const> = 'drop.' .. self.scene_member_id
 	local rock_drop_id = nil
 	if not world_item_inventory[self.item_type] then
 		rock_drop_id = id
 		room.castle.session.region_drops[id] = {
 			scene_id = room.scene_id,
-			x = self.x,
+			x = pose.ox,
 			y = drop_y,
 			item_type = self.item_type,
 		}
@@ -68,11 +66,10 @@ function rock:begin_break()
 		space_id = 'main',
 		room = room,
 		player = self.player,
-		pos = { x = self.x, y = drop_y, z = 130 },
 		item_id = id,
 		item_type = self.item_type,
 		rock_drop_id = rock_drop_id,
-	}, id)
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, drop_y } }, { base_sprite = { imgid = world_item_sprite[self.item_type] } })
 end
 
 local define_rock_fsm<const> = function()
@@ -121,7 +118,7 @@ local define_rock_fsm<const> = function()
 				entering_state = function(self)
 					self:begin_break()
 					self.collider:set_enabled(false)
-					self:set_imgid('stone_broken')
+					self.sprite_component:set_imgid('stone_broken')
 				end,
 			},
 		},
@@ -133,8 +130,10 @@ local register_rock_definition<const> = function()
 		def_id = 'rock',
 		class = rock,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 140, imgid = 'stone' } },
 		components = {
-			collider_2d_component.new_for_sprite,
+			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_enemy_layer, mask = collision_enemy_mask }),
 			timeline_component.new,
 			fsm_component.factory({ 'rock' }),
 		},

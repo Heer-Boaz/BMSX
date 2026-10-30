@@ -36,6 +36,7 @@ function cloud.execute_move(self, node_memory)
 end
 
 function cloud.tick_move(self, node_memory)
+	local pose<const> = self.spatial
 	local room<const> = self.room
 	local dir_modifier<const> = self.direction == 'left' and -1 or 1
 	local move_x<const>, move_accum<const> = velocity.consume_axis_accum(
@@ -44,7 +45,7 @@ function cloud.tick_move(self, node_memory)
 		enemy_cloud_horizontal_speed_den
 	)
 	node_memory.move_accum = move_accum
-	self.x = self.x + (move_x * dir_modifier)
+	local next_x<const> = pose.ox + move_x * dir_modifier
 
 	local wave_accum<const> = node_memory.wave_accum
 	local wave_phase = node_memory.wave_phase_millirad
@@ -63,7 +64,7 @@ function cloud.tick_move(self, node_memory)
 		end
 	end
 	local wave_dy<const>, next_wave_accum<const> = velocity.consume_axis_accum(wave_accum, wave_speed_num, enemy_cloud_wave_speed_den)
-	self.y = self.y + wave_dy
+	self.spatial:set_world_origin(next_x, pose.oy + wave_dy)
 	wave_phase = wave_phase + enemy_cloud_wave_phase_step_millirad
 	if wave_phase >= full_circle_milliradians then
 		wave_phase = wave_phase - full_circle_milliradians
@@ -72,11 +73,11 @@ function cloud.tick_move(self, node_memory)
 	node_memory.wave_phase_millirad = wave_phase
 
 	if self.direction == 'left' then
-		if self.x < 0 then
+		if next_x < 0 then
 			self.direction = 'right'
 		end
 	else
-		if self.x + 22 >= room.world_width then
+		if next_x + 22 >= room.world_width then
 			self.direction = 'left'
 		end
 	end
@@ -84,6 +85,7 @@ function cloud.tick_move(self, node_memory)
 end
 
 function cloud.spawn_vlok_burst(self)
+	local pose<const> = self.spatial
 	local room<const> = self.room
 	for _ = 1, 3 do
 		local random_x = 0
@@ -97,17 +99,7 @@ function cloud.spawn_vlok_burst(self)
 			room = room,
 			player = self.player,
 			direction = random_x < 0 and 'left' or 'right',
-			speed_x_num = random_x,
-			speed_y_num = random_y,
-			speed_den = 5,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
-			pos = {
-				x = self.x + 16,
-				y = self.y + 12,
-				z = 140,
-			},
-		})
+		}, { local_transform = { 1, 0, 0, 1, pose.ox + 16, pose.oy + 12 } }, { velocity = { speed_x_num = random_x, speed_y_num = random_y, speed_den = 5 } })
 	end
 	return bt_success
 end
@@ -156,16 +148,13 @@ function cloud.register()
 		def_id = 'enemy.cloud',
 		class = cloud,
 		base = enemy_base,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250 } },
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
 			damage = 2,
 			max_health = 15,
 			health = 15,dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			direction = 'right',
 			enemy_kind = 'cloud',
 		},

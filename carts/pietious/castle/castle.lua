@@ -304,12 +304,11 @@ function castle:spawn_global_elevators()
 			space_id = 'main',
 			castle = self,
 			player = self.room.player,
-			pos = { x = start.x, y = start.y, z = 21 },
 			path = route.path,
 			vertical_to_point = route.vertical_to_point,
 			going_to = route.going_to,
 			current_room_number = start.room_number,
-		})
+		}, { local_transform = { 1, 0, 0, 1, start.x, start.y } })
 	end
 end
 
@@ -345,7 +344,7 @@ function castle:sync_current_room_seal_instance()
 		seal_instance:set_space(world.active_space_id)
 	end
 
-	seal_instance:set_imgid(sprite_id)
+	seal_instance.sprite_component:set_imgid(sprite_id)
 end
 
 function castle:reset_room_encounter_tags()

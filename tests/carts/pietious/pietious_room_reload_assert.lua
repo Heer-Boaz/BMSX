@@ -23,7 +23,7 @@ return {
 			local old_level<const> = castle.level
 			local player<const> = castle.player
 			local session<const> = castle.session
-			local x<const>, y<const> = player.x, player.y
+			local x<const>, y<const> = player.spatial.ox, player.spatial.oy
 			local map_x<const>, map_y<const> = previous.map_x, previous.map_y
 			local state<const> = session.progression
 			session.player.health = 13
@@ -35,9 +35,9 @@ return {
 			-- Repeat the same definition registration performed by <init> at Hot Resume.
 			castle_map.initialize()
 			local template<const> = castle_map.definition.rooms[2]
-			local rock_options<const> = template.rocks[1].options
-			local rock_pos<const> = rock_options.pos
-			rock_options.pos = { x = 120, y = rock_pos.y, z = rock_pos.z }
+			local rock_spatial<const> = template.rocks[1].spatial
+			local rock_transform<const> = rock_spatial.local_transform
+			rock_spatial.local_transform = { 1, 0, 0, 1, 120, rock_transform[6] }
 			scene_library.register(template.scene_id, template.scene_definition)
 			castle_module.register_castle_definition()
 			assert(castle.level == old_level and old_level ~= castle_module.castle.level,
@@ -47,18 +47,18 @@ return {
 			and old_scene_plan ~= scene_library.definition(template.scene_id),
 			'old scene mixes different definition revisions')
 			assert(progression.matches(castle, old_level.filters[previous.enemies[1]]), 'old conditions became unreadable after registration')
-			assert(rock.x == 104 and previous.rocks[1].options.pos.x == 104, 'registration mutated an existing scene')
+			assert(rock.spatial.ox == 104 and previous.rocks[1].spatial.local_transform[5] == 104, 'registration mutated an existing scene')
 			assert(registry:get('d'):reload_room() == 'Room reloaded; game progress and player position retained.', 'reload method refused settled gameplay')
 			local room<const> = castle.room
 			assert(room ~= previous and previous.world == nil and #old_scene.objects.items == 0 and old_scene.closed,
 			'outgoing room/scene was retained')
 			assert(enemy.world == nil and rock.world == nil and room.scene.members.enemy_002_01 ~= enemy,
 			'reload did not reconstruct transient actors')
-			assert(room.scene.members.rock_002_01.x == 120, 'reload ignored the latest authored placement')
+			assert(room.scene.members.rock_002_01.spatial.ox == 120, 'reload ignored the latest authored placement')
 			assert(castle.level == castle_module.castle.level and room.template == castle.level.map.rooms[2], 'reload retained the old definition')
 			assert(castle.session == session and session.progression == state and castle.player == player and player.room == room,
 			'reload replaced the session or travelling player')
-			assert(player.x == x and player.y == y and room.map_x == map_x and room.map_y == map_y, 'reload moved the player or map position')
+			assert(player.spatial.ox == x and player.spatial.oy == y and room.map_x == map_x and room.map_y == map_y, 'reload moved the player or map position')
 			assert(player.status.health == 13 and player.status.inventory_items.schoentjes
 			and progression.get(castle, 'item_picked_drop.rock_002_02') and room.progress.destroyed_rocks.rock_002_02,
 			'reload reset player or room progress')

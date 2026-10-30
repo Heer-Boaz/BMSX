@@ -34,19 +34,22 @@ local draaideur<const> = {}
 draaideur.__index = draaideur
 
 function draaideur:onspawn()
-	self.tile_x = self.x // room_tile_size + 1
-	self.tile_y = (self.y - room_tile_origin_y) // room_tile_size + 1
+	local pose<const> = self.spatial
+	self.tile_x = pose.ox // room_tile_size + 1
+	self.tile_y = (pose.oy - room_tile_origin_y) // room_tile_size + 1
 end
 
 function draaideur:touches_player(player, walking_left, walking_right)
+	local pose<const> = self.spatial
+	local target<const> = player.spatial:resolve_world()
 	if walking_left then
 		return rect_overlaps(
-			player.x,
-			player.y,
+			target.wox,
+			target.woy,
 			player.width,
 			player.height,
-			self.x + room_tile_unit,
-			self.y,
+			pose.ox + room_tile_unit,
+			pose.oy,
 			room_tile_size,
 			room_tile_size2
 		)
@@ -56,20 +59,20 @@ function draaideur:touches_player(player, walking_left, walking_right)
 		return false
 	end
 	return rect_overlaps(
-		player.x,
-		player.y,
+		target.wox,
+		target.woy,
 		player.width,
 		player.height,
-		self.x - room_tile_unit,
-		self.y,
+		pose.ox - room_tile_unit,
+		pose.oy,
 		room_tile_size,
 		room_tile_size2
 	)
 end
 
 function draaideur:set_pose(next_pose)
-	self:set_imgid(sprite_id_by_kind[self.kind][next_pose.sprite])
-	self.sprite_component.offset_x = next_pose.offset_x
+	self.sprite_component:set_imgid(sprite_id_by_kind[self.kind][next_pose.sprite])
+	self.sprite_component:set_presentation_origin(next_pose.offset_x, 0)
 end
 
 function draaideur:enter_active(state)
@@ -113,6 +116,7 @@ local define_draaideur_fsm<const> = function()
 		timelines = {
 			[opening_leftward_timeline_id] = {
 				def = {
+					phase = 'presentation',
 					frames = timeline.range(draaideur_pose_steps * 4),
 					playback_mode = 'once',
 					tracks = {
@@ -133,6 +137,7 @@ local define_draaideur_fsm<const> = function()
 			},
 			[opening_rightward_timeline_id] = {
 				def = {
+					phase = 'presentation',
 					frames = timeline.range(draaideur_pose_steps * 4),
 					playback_mode = 'once',
 					tracks = {
@@ -190,6 +195,8 @@ local register_draaideur_definition<const> = function()
 		def_id = 'draaideur',
 		class = draaideur,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 22 } },
 		components = { timeline_component.new, fsm_component.factory({ 'draaideur' }) },
 		defaults = {
 			kind = 1,

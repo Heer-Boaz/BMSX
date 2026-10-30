@@ -148,10 +148,9 @@ local spawn_destroyed_rock_inventory_items<const> = function(room)
 					space_id = 'main',
 					room = room,
 					player = player,
-					pos = { x = def.options.pos.x, y = def.options.pos.y + world_item_drop_offset_y[item_type], z = 130 },
 					item_id = item_id,
 					item_type = item_type,
-				}, item_id)
+				}, { local_transform = { 1, 0, 0, 1, def.spatial.local_transform[5], def.spatial.local_transform[6] + world_item_drop_offset_y[item_type] } }, { base_sprite = { imgid = world_item_sprite[item_type] } })
 			end
 		end
 	end
@@ -164,11 +163,10 @@ local spawn_rock_drops<const> = function(room)
 				space_id = 'main',
 				room = room,
 				player = room.player,
-				pos = { x = drop.x, y = drop.y, z = 130 },
 				item_id = id,
 				item_type = drop.item_type,
 				rock_drop_id = id,
-			}, id)
+			}, { local_transform = { 1, 0, 0, 1, drop.x, drop.y } }, { base_sprite = { imgid = world_item_sprite[drop.item_type] } })
 		end
 	end
 end

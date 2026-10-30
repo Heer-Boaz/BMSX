@@ -34,17 +34,19 @@ local build_scroll_timeline<const> = function(line_count, reached_end_event)
 	local end_y<const> = screen_height
 		- end_frame * flow_narrative_scroll_pixels_num / flow_narrative_scroll_pixels_den
 	return {
+		phase = 'presentation',
 		frames = timeline.range(end_frame + 1),
 		playback_mode = 'once',
 		clock_source = timeline_clock_source.frame,
 		tracks = {
 			{
-				kind = 'value',
-				interpolation = 'linear',
-				path = { 'text_component', 'offset_y' },
-				keys = {
-					{ frame = 0, value = screen_height },
-					{ frame = end_frame, value = end_y },
+				kind = 'spatial', operation = 'presentation_origin2',
+				channels = {
+					ox = { interpolation = 'step', keys = {{ frame = 0, value = 0 }} },
+					oy = { interpolation = 'linear', keys = {
+						{ frame = 0, value = screen_height },
+						{ frame = end_frame, value = end_y },
+					} },
 				},
 			},
 			{
@@ -101,6 +103,7 @@ local define_narrative_screen_fsm<const> = function()
 				end,
 				timelines = {
 					[story_timeline_id] = {
+						target_path = { 'text_component' },
 						def = build_scroll_timeline(
 							story_line_count,
 							'narrative.story.reached_end'
@@ -130,6 +133,7 @@ local define_narrative_screen_fsm<const> = function()
 				end,
 				timelines = {
 					[epilogue_timeline_id] = {
+						target_path = { 'text_component' },
 						def = build_scroll_timeline(
 							epilogue_line_count,
 							'narrative.epilogue.reached_end'

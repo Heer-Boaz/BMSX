@@ -4,8 +4,6 @@ local world<const> = require('cartlib/world/world')
 local selected_apu_source<const>: *word = 0x0800018c
 local rotatedoor_source_address<const> = rom_dir.audio('rotatedoor').addr
 local player<const> = {
-	x = 0,
-	y = 64,
 	width = 16,
 	height = 16,
 	walking_right = false,
@@ -23,16 +21,18 @@ return {
 	kind = 'integration',
 	tests = {
 		draaideur = function(t)
-			fixture.start_game(t)
+			local _director<const>, _castle<const>, actual_player<const> = fixture.start_game(t)
+			actual_player.state_machines:set_enabled(false)
+			player.spatial = actual_player.spatial
 			local door_x<const> = 128
-			player.x = door_x - player.width + 1
+			player.spatial:set_world_origin(door_x - player.width + 1, 64)
 			registry:get('c').room.scene:spawn('draaideur', {
 				id = 'probe.draaideur',
 				space_id = 'main',
 				castle = registry:get('c'),
 				player = player,
-				pos = { x = door_x, y = player.y, z = 22 },
-			})
+			}, { local_transform = { 1, 0, 0, 1, door_x, player.spatial.oy } },
+			{ base_sprite = { order = 22 } })
 
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			local door<const> = registry:get('probe.draaideur')

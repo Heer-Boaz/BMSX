@@ -7,21 +7,20 @@ function scene.register()
 			{
 				member_id = 'background',
 				definition_id = 'pietious.sprite',
+				initial = { base_sprite = { order = 350, imgid = 'title_screen' } },
 				options = {
 					id = 'title.background',
 					space_id = 'title',
-					pos = { x = 0, y = 0, z = 350 },
-					imgid = 'title_screen',
 				},
 			},
 			{
 				member_id = 'sparkle',
 				definition_id = 'pietious.sprite',
+				spatial = { local_transform = { 1, 0, 0, 1, 96, 71 } },
+				initial = { base_sprite = { order = 351, imgid = 'tsf4' } },
 				options = {
 					id = 'title.sparkle',
 					space_id = 'title',
-					pos = { x = 96, y = 71, z = 351 },
-					imgid = 'tsf4',
 				},
 			},
 		},

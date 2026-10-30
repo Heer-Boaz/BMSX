@@ -562,7 +562,8 @@ local prepare_scene_members<const> = function(template)
 		member.member_id = member.id
 		member.definition_id = definition_id
 		options.space_id = 'main'
-		options.pos = { x = member.x, y = member.y, z = z }
+		member.spatial = { local_transform = { 1, 0, 0, 1, member.x, member.y } }
+		member.initial = { base_sprite = { order = z } }
 		member.options = options
 		objects[#objects + 1] = member
 	end
@@ -571,10 +572,17 @@ local prepare_scene_members<const> = function(template)
 		append(member, 'enemy.' .. member.kind, member.draw_z, {
 			damage = member.damage, direction = member.direction,
 			health = member.health, max_health = member.health,
-			speed_x_num = member.speedx, speed_y_num = member.speedy,
 			width_tiles = member.width_tiles, height_tiles = member.height_tiles,
 			tiletype = member.tiletype,
 		})
+		if member.blocks_room_collision then
+			member.initial = { tile_layer = { order = member.draw_z } }
+		else
+			member.initial.base_sprite.order = member.draw_z + 110
+			if member.kind == 'marspeinenaardappel' then
+				member.initial.movement = { speed_x_num = member.speedx, speed_y_num = member.speedy }
+			end
+		end
 	end
 	for i = 1, #template.rocks do
 		local member<const> = template.rocks[i]
@@ -583,6 +591,7 @@ local prepare_scene_members<const> = function(template)
 	for i = 1, #template.items do
 		local member<const> = template.items[i]
 		append(member, 'world_item', 130, { item_type = member.item_type })
+		member.initial.base_sprite.imgid = world_item_sprite[member.item_type]
 	end
 	for i = 1, #template.lithographs do
 		local member<const> = template.lithographs[i]

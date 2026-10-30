@@ -6,9 +6,7 @@ local paperfoe<const> = {}
 paperfoe.__index = paperfoe
 
 function paperfoe:ctor()
-	self:set_imgid('boekfoe_paper')
-	self.sprite_component.flip_h = self.speed_x_num < 0
-	enemy_base.setup_projectile_boundary(self)
+	self.sprite_component.flip_h = self:get_component(velocity_component).speed_x_num < 0
 end
 
 function paperfoe.choose_drop_type(_self, _random_percent_hit)
@@ -20,17 +18,14 @@ function paperfoe.register()
 		def_id = 'enemy.paperfoe',
 		class = paperfoe,
 		base = enemy_base,
-		components = { enemy_base.new_collider, velocity_component.new },
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, imgid = 'boekfoe_paper' }, boundary = { local_right = 20, local_bottom = 22 }, velocity = { speed_x_num = 0, speed_y_num = 0, speed_den = 1 } },
+		components = { enemy_base.new_collider, velocity_component.new, enemy_base.projectile_boundary },
 		defaults = {
 			damage = 2,
 			max_health = 1,
 			health = 1,
 			dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			direction = 'right',
 			enemy_kind = 'paperfoe',
 		},

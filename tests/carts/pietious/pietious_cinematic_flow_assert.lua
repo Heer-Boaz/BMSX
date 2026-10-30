@@ -38,8 +38,9 @@ return {
 			intro.state_machines:transition_to('/hidden')
 			intro.state_machines:transition_to('/playing/blank')
 			local logo<const> = intro.logo_sprite
+			local logo_pose<const> = logo.owner.spatial:resolve_world()
 			assert(logo.imgid == 'intro_konami'
-			and logo.owner.x == 40 and logo.owner.y == 64
+			and logo_pose.wox == 40 and logo_pose.woy == 64
 			and logo.region_width == 168 and logo.region_height == 1
 			and not logo.visible and intro.logo_background.visible,
 			'Konami logo did not enter its source-derived white presentation')
@@ -57,9 +58,9 @@ return {
 			== intro_logo_hold_frames * clock.frame_delta_milliseconds(),
 			'Konami logo hold did not retain its 256-VBlank duration')
 			intro:finish()
-			assert(not intro.members.logo.visible and not intro.logo_background.visible,
+			assert(not logo.visible and not intro.logo_background.visible,
 			'finishing the Konami logo retained its presentation')
-			assert(registry:get('narrative').text_component.offset_y == screen_height,
+			assert(registry:get('narrative').text_component.presentation_oy == screen_height,
 			'story did not start below the screen')
 
 			t:wait_ticks(1)

@@ -34,11 +34,12 @@ local loot_value_for_type<const> = function(loot_type)
 end
 
 function enemy_explosion:sync_explosion_sprite(imgid)
-	self:set_imgid(imgid)
-	self.visible = true
+	self.sprite_component:set_imgid(imgid)
+	self.sprite_component.visible = true
 end
 
 function enemy_explosion:spawn_loot()
+	local pose<const> = self.spatial
 	if self.loot_type == nil then
 		return
 	end
@@ -51,13 +52,7 @@ function enemy_explosion:spawn_loot()
 		player = self.player,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
-		pos = { x = self.x, y = self.y, z = 113 },
-	})
-end
-
-function enemy_explosion:ctor()
-	self:set_imgid(explosion_frames[1])
-	self:sync_explosion_sprite(explosion_frames[1])
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } }, { base_sprite = { imgid = self.loot_type == 'life' and 'item_health' or 'ammo' } })
 end
 
 local define_enemy_explosion_fsm<const> = function()
@@ -65,6 +60,7 @@ local define_enemy_explosion_fsm<const> = function()
 		timelines = {
 			[explosion_timeline_id] = {
 				def = {
+					phase = 'presentation',
 					frames = explosion_frames,
 					playback_mode = 'once',
 					apply = enemy_explosion.sync_explosion_sprite,
@@ -94,6 +90,8 @@ local register_enemy_explosion_definition<const> = function()
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 114, imgid = 'explosion_2' } },
 		components = { timeline_component.new, fsm_component.factory({ 'enemy_explosion' }) },
 		defaults = {
 			loot_type = nil,

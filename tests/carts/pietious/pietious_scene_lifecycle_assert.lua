@@ -35,8 +35,10 @@ return {
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			do
 				local members<const> = scene_library.definition('pietious.room_002').objects
-				assert(room.enemies[1] == members[1] and room.rocks[2] == members[5],
-				'room indices must reference the canonical scene members')
+				assert(room.scene.definition == scene_library.definition('pietious.room_002')
+				and room.enemies[1].member_id == members[1].member_id
+				and room.rocks[2].member_id == members[5].member_id,
+				'room gameplay placements must bind the admitted Scene member identities')
 				test.enemy = registry:get('c').room.scene.members['enemy_002_01']
 				test.rock = registry:get('c').room.scene.members['rock_002_02']
 				test.room2 = room
@@ -45,8 +47,12 @@ return {
 			end
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			do
-				local drop<const> = registry:get('c').room.scene.members['drop.rock_002_02']
-				assert(drop ~= nil, 'destroying the authored rock must still create its procedural drop')
+				local drop
+				local objects<const> = room.scene.objects.items
+				for index = 1, #objects do
+					if objects[index].item_id == 'drop.rock_002_02' then drop = objects[index]; break end
+				end
+				assert(drop ~= nil and drop.scene_member_id == nil, 'destroying the authored rock must create an independently identified procedural drop')
 				room.player:collect_item(drop.item_type, drop.item_id)
 				drop:on_collected()
 				assert(progression.get(castle, 'item_picked_drop.rock_002_02'), 'pickup must remain castle progression')
@@ -69,12 +75,15 @@ return {
 				assert(room.player.status == castle.session.player
 				and room.player.status.inventory_items.schoentjes and room.progress.destroyed_rocks[test.rock.scene_member_id],
 				'room reentry lost collected items or destroyed terrain')
-				assert(registry:get(test.rock.id) == nil and registry:get('c').room.scene.members['drop.rock_002_02'] == nil,
-				'room reentry resurrected the rock or its collected item')
+				assert(registry:get(test.rock.id) == nil, 'room reentry resurrected destroyed terrain')
+				local objects<const> = room.scene.objects.items
+				for index = 1, #objects do
+					assert(objects[index].item_id ~= 'drop.rock_002_02', 'room reentry resurrected the collected procedural pickup')
+				end
 				local enemy<const> = room.scene.members[test.enemy.scene_member_id]
 				assert(enemy ~= nil and enemy ~= test.enemy, 'ordinary enemies must receive a fresh room instance')
-				local authored<const> = room.enemies[1].options
-				assert(authored.pos.x == 112 and authored.pos.y == 56 and authored.room == nil,
+				local authored<const> = room.scene.definition.members_by_id[room.enemies[1].member_id]
+				assert(authored.local_transform[5] == 112 and authored.local_transform[6] == 56 and authored.options.room == nil,
 				'instance motion or reentry mutated authored placement')
 			end
 			t:at_boundary(world:request_mutation_boundary(), 30)

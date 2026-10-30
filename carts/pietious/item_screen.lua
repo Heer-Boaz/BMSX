@@ -56,18 +56,18 @@ end
 function item_screen:reset_for_open()
 	local members<const> = self.members
 	members.selector.sprite_component.visible = true
-	members.selector.sprite_component.offset_x = self.secondary_weapon_selection_index * 24
-	members.map.highlight = true
+	members.selector.sprite_component:set_presentation_origin(self.secondary_weapon_selection_index * 24, 0)
+	members.map.visual.highlight = true
 	local world_number<const> = self.castle.room.world_number
 	local inventory<const> = self.player.status.inventory_items
 	for i = 1, #inventory_item_order do
 		local item_type<const> = inventory_item_order[i]
-		members[item_type].visible = inventory[item_type]
+		members[item_type].sprite_component.visible = inventory[item_type]
 			and (item_type ~= 'map_world1' or world_number > 0)
 	end
 	local show_map<const> = world_number > 0 and (world_number ~= 1 or inventory.map_world1)
-	members.map.visible = show_map
-	members.map_title.visible = show_map
+	members.map.visual.visible = show_map
+	members.map_title.sprite_component.visible = show_map
 	self:apply_selected_secondary_weapon()
 end
 
@@ -93,7 +93,7 @@ function item_screen:shift_secondary_weapon_selection(direction)
 		end
 		if player.status.inventory_items[secondary_weapon_order[index + 1]] then
 			self.secondary_weapon_selection_index = index
-			self.members.selector.sprite_component.offset_x = index * 24
+			self.members.selector.sprite_component:set_presentation_origin(index * 24, 0)
 			break
 		end
 	end
@@ -108,7 +108,7 @@ local define_item_screen_fsm<const> = function()
 		['item_screen.blink_toggle'] = function(self)
 			local selector<const> = self.members.selector.sprite_component
 			selector.visible = not selector.visible
-			self.members.map.highlight = not self.members.map.highlight
+			self.members.map.visual.highlight = not self.members.map.visual.highlight
 		end,
 	}
 	for i = 1, #item_screen_mode_exit_events do
@@ -133,6 +133,7 @@ local define_item_screen_fsm<const> = function()
 				timelines = {
 					[selector_blink_timeline_id] = {
 						def = {
+							phase = 'presentation',
 							frames = timeline.range(selector_blink_frames),
 							playback_mode = 'loop',
 							tracks = {

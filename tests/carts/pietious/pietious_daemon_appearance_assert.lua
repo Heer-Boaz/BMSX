@@ -34,16 +34,15 @@ return {
 				direction = 'down',
 			}, 1, 2, 5)
 			player.state_machines:transition_to('/quiet')
-			player.x = 32
-			player.y = 96
+			player.spatial:set_world_origin(32, 96)
 			local enemy<const> = registry:get('c').room.scene:spawn('enemy.crossfoe', {
 				id = 'probe.daemon.enemy',
 				space_id = 'main',
 				castle = castle,
 				room = room,
 				player = player,
-				pos = { x = 160, y = 96, z = 110 },
-			})
+			}, { local_transform = { 1, 0, 0, 1, 160, 96 } },
+			{ base_sprite = { order = 110 } })
 			enemy.cross_state = 'flying_right'
 			local projectile<const> = registry:get('c').room.scene:spawn('pepernoot_projectile', {
 				id = 'probe.daemon.projectile',
@@ -52,14 +51,14 @@ return {
 				room_number = 100,
 				owner_id = player.id,
 				direction = 1,
-				pos = { x = 64, y = 96, z = 113 },
-			})
-			test.player_x = player.x
-			test.player_y = player.y
-			test.enemy_x = enemy.x
-			test.enemy_y = enemy.y
-			test.projectile_x = projectile.x
-			test.projectile_y = projectile.y
+			}, { local_transform = { 1, 0, 0, 1, 64, 96 } },
+			{ base_sprite = { order = 113 } })
+			test.player_x = player.spatial.ox
+			test.player_y = player.spatial.oy
+			test.enemy_x = enemy.spatial.ox
+			test.enemy_y = enemy.spatial.oy
+			test.projectile_x = projectile.spatial.ox
+			test.projectile_y = projectile.spatial.oy
 			director.events:emit('seal.incantation_completed')
 
 			t:wait_until('seal freezes gameplay', function() return not world.gameplay_clock_running end, 30)
@@ -68,17 +67,17 @@ return {
 				if not seal_timeline.playing then return true end
 				assert(not world.gameplay_clock_running,
 				'gameplay resumed before the dissolve timeline finished')
-				assert(player.x == test.player_x and player.y == test.player_y,
+				assert(player.spatial.ox == test.player_x and player.spatial.oy == test.player_y,
 				'player moved while the summon state paused gameplay')
 				local enemy<const> = registry:get('probe.daemon.enemy')
-				assert(enemy.x == test.enemy_x and enemy.y == test.enemy_y,
+				assert(enemy.spatial.ox == test.enemy_x and enemy.spatial.oy == test.enemy_y,
 				'enemy moved while the summon state paused gameplay')
 				local projectile<const> = registry:get('probe.daemon.projectile')
-				assert(projectile.x == test.projectile_x and projectile.y == test.projectile_y,
+				assert(projectile.spatial.ox == test.projectile_x and projectile.spatial.oy == test.projectile_y,
 				'projectile moved while the summon state paused gameplay')
 				local frame<const> = seal_timeline.head
 				if frame < flow_seal_flash_frames then
-					local flash<const> = director.effects.seal_backdrop.visible
+					local flash<const> = director.effects.seal_backdrop.visual.visible
 					assert(flash == ((frame & 3) < 2),
 					'daemon backdrop flash differs from the MSX two-update phase')
 				end
@@ -128,7 +127,7 @@ return {
 					test.saw_appearance_audio = true
 				end
 				local enemy<const> = registry:get('probe.daemon.enemy')
-				if enemy.x ~= test.enemy_x then
+				if enemy.spatial.ox ~= test.enemy_x then
 					test.saw_gameplay_resume = true
 				end
 				for index = 1, flow_daemon_cloud_count do
@@ -136,11 +135,11 @@ return {
 					local animation<const> = cloud.timelines:get('daemon_cloud.anim')
 					assert(animation.last_frame == flow_daemon_cloud_lifetime_frames - 1,
 					'daemon cloud lifetime differs from the MSX four-state animation')
-					if cloud.visible then
+					if cloud.sprite_component.visible then
 						if not test.seen_clouds[index] then
 							local position_index<const> = index * 2 - 1
-							assert(cloud.x == cloud_positions[position_index]
-							and cloud.y == cloud_positions[position_index + 1],
+							assert(cloud.spatial.ox == cloud_positions[position_index]
+							and cloud.spatial.oy == cloud_positions[position_index + 1],
 							'daemon cloud used the wrong fixed MSX coordinate')
 							assert(daemon_timeline.head - animation.head
 							== flow_daemon_cloud_first_spawn_frame
@@ -162,7 +161,7 @@ return {
 			assert(test.seen_cloud_count == flow_daemon_cloud_count,
 			'daemon appearance did not spawn all eight MSX clouds')
 			for index = 1, flow_daemon_cloud_count do
-				assert(not director.daemon_clouds[index].visible,
+				assert(not director.daemon_clouds[index].sprite_component.visible,
 				'daemon cloud remained visible after the appearance sequence')
 			end
 			*apu_slot = 1

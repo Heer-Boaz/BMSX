@@ -65,14 +65,14 @@ return {
 			test.saw_curtain = true
 			assert(test.dying_pose == #dying_imgids, 'death animation ended before final pose')
 			assert(castle.room.scene.members[test.item_id] == test.item, 'curtain disposed room before closing')
-			test.last_curtain_width = director.effects.curtain.width
+			test.last_curtain_width = director.effects.curtain.visual.width
 			t:wait_until('death curtain closes', function()
 				if world.active_space_id ~= 'main' then return true end
 				assert(director.state_machines:matches_state(test.death_curtain_state),
 				'death curtain stopped before entering the game-over screen')
-				assert(director.effects.curtain.width >= test.last_curtain_width,
+				assert(director.effects.curtain.visual.width >= test.last_curtain_width,
 				'death curtain moved backwards while closing')
-				test.last_curtain_width = director.effects.curtain.width
+				test.last_curtain_width = director.effects.curtain.visual.width
 				assert(registry:get('c').room.scene.members[test.item_id] == test.item,
 				'death curtain disposed the room before it finished closing')
 				return false
@@ -85,7 +85,7 @@ return {
 				assert(test.saw_curtain, 'death restart skipped the closing curtain')
 				assert(test.last_curtain_width > 0, 'death curtain never advanced')
 				local transition_screen<const> = registry:get('transition')
-				assert(transition_screen.members.death_caption.visible, 'game-over text is hidden')
+				assert(transition_screen.members.death_caption.text_component.visible, 'game-over text is hidden')
 				test.saw_transition = true
 				test.death_screen_frames = test.death_screen_frames + 1
 				assert(registry:get('c').room.scene.members[test.item_id] == nil,
@@ -102,7 +102,7 @@ return {
 			assert(castle.current_room_number == transition.world_room_number,
 			'death did not return to the current world entrance')
 			assert(room.room_number == transition.world_room_number, 'room state did not reload the world entrance')
-			assert(player.x == transition.world_spawn_x and player.y == transition.world_spawn_y,
+			assert(player.spatial.ox == transition.world_spawn_x and player.spatial.oy == transition.world_spawn_y,
 			'player did not respawn at the world entrance')
 			assert(player.facing == transition.world_spawn_facing, 'player respawn facing is wrong')
 			assert(player.status.health == player.status.max_health, 'player health was not restored after death')

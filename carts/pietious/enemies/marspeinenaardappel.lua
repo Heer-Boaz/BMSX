@@ -9,7 +9,6 @@ marspeinenaardappel.__index = marspeinenaardappel
 -- disable-next-line single_line_method_pattern -- constructor owns the local enemy sprite id at the class boundary.
 function marspeinenaardappel:ctor()
 	self:get_component(bouncing_movement_component):set_collision_world(self.room)
-	self:set_imgid('marspeinenaardappel')
 end
 
 function marspeinenaardappel.choose_drop_type(self)
@@ -29,6 +28,8 @@ function marspeinenaardappel.register()
 		def_id = 'enemy.marspeinenaardappel',
 		class = marspeinenaardappel,
 		base = enemy_base,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, imgid = 'marspeinenaardappel' } },
 		components = {
 			enemy_base.new_collider,
 			bouncing_movement_component.factory({
@@ -49,8 +50,6 @@ function marspeinenaardappel.register()
 			max_health = 1,
 			health = 1,
 			dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
 			drop_health_chance_pct = enemy_marspein_drop_health_chance_pct,
 			drop_ammo_chance_pct = enemy_marspein_drop_ammo_chance_pct,
 			direction = 'right',

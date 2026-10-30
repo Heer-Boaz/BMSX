@@ -41,8 +41,9 @@ return {
 			player.jumping_from_elevator = false
 			player.stairs_landing_sound_pending = false
 
-			player.x = selected_entrance.stair_x
-			player.y = selected_entrance.stair_y
+			player.spatial:set_world_origin(
+				selected_entrance.spatial.ox + world_entrance_trigger_x_offset,
+				selected_entrance.spatial.oy + world_entrance_trigger_y_offset)
 			player.facing = 1
 			player.events:emit('landed_to_quiet')
 
@@ -63,9 +64,9 @@ return {
 				if sprite.region_width ~= nil and sprite.region_height == 0 then
 					test.saw_hidden_player = true
 				end
-				local feet_y<const> = player.y + player.height
-				local left_x<const> = player.x + 1
-				local right_x<const> = player.x + player.width - 2
+				local feet_y<const> = player.spatial.oy + player.height
+				local left_x<const> = player.spatial.ox + 1
+				local right_x<const> = player.spatial.ox + player.width - 2
 				local player_on_floor<const> = room:has_collision_flags_at_world(left_x, feet_y + 1, collision_flags_solid_mask, true)
 				or room:has_collision_flags_at_world(right_x, feet_y + 1, collision_flags_solid_mask, true)
 
@@ -75,8 +76,8 @@ return {
 				and room.map_id == world_transition.world_number
 				and room.map_x == world_transition.world_map_x
 				and room.map_y == world_transition.world_map_y
-				and player.x == world_transition.world_spawn_x
-				and player.y == world_transition.world_spawn_y
+				and player.spatial.ox == world_transition.world_spawn_x
+				and player.spatial.oy == world_transition.world_spawn_y
 				and player.facing == world_transition.world_spawn_facing
 				and player_on_floor
 				and test.saw_hidden_player

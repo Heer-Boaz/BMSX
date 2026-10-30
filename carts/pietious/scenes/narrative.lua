@@ -10,7 +10,6 @@ function scene.register()
 				options = {
 					id = 'narrative.caption',
 					space_id = 'narrative',
-					pos = { x = 0, y = 0, z = 0 },
 				},
 			},
 		},

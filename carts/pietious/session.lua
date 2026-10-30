@@ -6,7 +6,7 @@ require('constants')
 local session<const> = {}
 session.__index = session
 
-function session.new(program, spawn, templates)
+function session.new(program, spawn_x, spawn_y, templates)
 	local rooms<const> = {}
 	local entrances<const> = {}
 	for _, template in pairs(templates) do
@@ -22,8 +22,8 @@ function session.new(program, spawn, templates)
 			health = damage_max_health,
 			max_health = damage_max_health,
 			weapon_level = 0,
-			spawn_x = spawn.x,
-			spawn_y = spawn.y,
+			spawn_x = spawn_x,
+			spawn_y = spawn_y,
 		},
 		rooms = rooms,
 		region_drops = {},

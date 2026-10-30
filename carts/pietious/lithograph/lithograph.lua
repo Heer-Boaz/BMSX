@@ -8,8 +8,9 @@ local register_lithograph_definition<const> = function()
 		def_id = 'lithograph',
 		class = lithograph,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 10, imgid = 'lithograph' } },
 		defaults = {
-			imgid = 'lithograph',
 			text = nil,
 			room_number = 0,
 		},

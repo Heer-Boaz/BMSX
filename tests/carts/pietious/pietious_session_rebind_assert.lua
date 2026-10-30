@@ -16,7 +16,7 @@ return {
 				},
 				world_entrances = { { options = { target = 'kept' } }, { options = { target = 'removed' } } },
 			}
-			local state<const> = session_model.new(program, { x = 8, y = 16 }, { room })
+			local state<const> = session_model.new(program, 8, 16, { room })
 			local player<const> = state.player
 			player.health = 13
 			state.world_boss_defeated[1] = true

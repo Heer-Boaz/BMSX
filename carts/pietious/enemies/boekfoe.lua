@@ -10,17 +10,17 @@ local boekfoe<const> = {}
 boekfoe.__index = boekfoe
 
 function boekfoe:ctor()
-	self:set_imgid('boekfoe_closed')
 	self.sprite_component.flip_h = self.direction == 'left'
 end
 
 function boekfoe.open_cover(self)
-	self:set_imgid('boekfoe_open')
+	self.sprite_component:set_imgid('boekfoe_open')
 	self.sprite_component.flip_h = self.direction == 'left'
 	return bt_success
 end
 
 function boekfoe.spawn_paper(self)
+	local pose<const> = self.spatial
 	local y_speed_num<const> = math.random(-5, 4)
 	self.castle.events:emit('paperspawn')
 	self.room.scene:spawn('enemy.paperfoe', {
@@ -28,22 +28,12 @@ function boekfoe.spawn_paper(self)
 		room = self.room,
 		player = self.player,
 		direction = self.direction == 'left' and 'left' or 'right',
-		speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5,
-		speed_y_num = y_speed_num,
-		speed_den = 5,
-		speed_accum_x = 0,
-		speed_accum_y = 0,
-		pos = {
-			x = self.x,
-			y = self.y,
-			z = 140,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } }, { velocity = { speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5, speed_y_num = y_speed_num, speed_den = 5, speed_accum_x = 0, speed_accum_y = 0 } })
 	return bt_success
 end
 
 function boekfoe.close_cover(self)
-	self:set_imgid('boekfoe_closed')
+	self.sprite_component:set_imgid('boekfoe_closed')
 	self.sprite_component.flip_h = self.direction == 'left'
 	return bt_success
 end
@@ -116,16 +106,13 @@ function boekfoe.register()
 		def_id = 'enemy.boekfoe',
 		class = boekfoe,
 		base = enemy_base,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, imgid = 'boekfoe_closed' } },
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
 			damage = 4,
 			max_health = 6,
 			health = 6,dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			direction = 'right',
 			enemy_kind = 'boekfoe',
 		},

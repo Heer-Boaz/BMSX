@@ -12,13 +12,15 @@ return {
 			local room = castle.room
 			local enemy<const> = room.scene.members[room.enemies[1].member_id]
 			assert(enemy ~= nil, 'enemy missing before shrine')
-			local test<const> = {enemy_x = enemy.x, enemy_y = enemy.y}
-			player:begin_entering_shrine({x = player.x, text_lines = {'TEST'}})
+			local test<const> = {enemy_x = enemy.spatial.ox, enemy_y = enemy.spatial.oy}
+			local shrine<const> = room.scene:spawn('room_shrine', { text_lines = {'TEST'} },
+				{ local_transform = { 1, 0, 0, 1, player.spatial.ox, player.spatial.oy } })
+			player:begin_entering_shrine(shrine)
 			t:wait_until('shrine entry preserves enemy position', function()
 				if world.active_space_id ~= 'main' then return true end
 				assert(not world.gameplay_clock_running,
 				'gameplay clock advanced during shrine entry')
-				assert(enemy.x == test.enemy_x and enemy.y == test.enemy_y,
+				assert(enemy.spatial.ox == test.enemy_x and enemy.spatial.oy == test.enemy_y,
 				'enemy moved during shrine entry')
 				local imgid<const> = player.sprite_component.imgid
 				if imgid == 'pietolon_stairs_up_1' then
@@ -43,7 +45,7 @@ return {
 			t:wait_until('shrine exit preserves enemy position', function()
 				if world.active_space_id == 'shrine' then return false end
 				if world.gameplay_clock_running then return true end
-				assert(enemy.x == test.enemy_x and enemy.y == test.enemy_y, 'enemy moved during shrine exit')
+				assert(enemy.spatial.ox == test.enemy_x and enemy.spatial.oy == test.enemy_y, 'enemy moved during shrine exit')
 				return false
 			end, 720)
 			local sprite<const> = player.sprite_component
@@ -60,19 +62,19 @@ return {
 			local destination<const> = registry:get('c').room.scene.members[destination_def.member_id]
 			assert(destination ~= nil, 'destination enemy missing')
 			test.destination_id = destination.id
-			test.destination_x = destination.x
-			test.destination_y = destination.y
+			test.destination_x = destination.spatial.ox
+			test.destination_y = destination.spatial.oy
 			player:emit_room_switched(switch.from_room_number, switch.to_room_number, switch.direction)
 
 			t:wait_until('world-leave banner', function()
 				assert(destination.world ~= nil, 'destination enemy disposed during banner')
-				assert(destination.x == test.destination_x and destination.y == test.destination_y,
+				assert(destination.spatial.ox == test.destination_x and destination.spatial.oy == test.destination_y,
 				'destination enemy moved before transition space became active')
 				return world.active_space_id == 'transition'
 			end, 720)
 			for tick = 1, 5 do
 				t:wait_ticks(1)
-				assert(destination.x == test.destination_x and destination.y == test.destination_y,
+				assert(destination.spatial.ox == test.destination_x and destination.spatial.oy == test.destination_y,
 				'destination enemy moved during world-leave transition')
 			end
 

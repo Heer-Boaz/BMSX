@@ -14,44 +14,56 @@ zakfoe.__index = zakfoe
 function zakfoe:ctor()
 	self.movement = self:get_component(kinematic_movement_component)
 	self.movement:set_collision_world(self.room)
-	self:set_imgid('zakfoe_stand')
 	self.sprite_component.flip_h = self.direction == 'left'
 end
 
 function zakfoe.execute_jump(self, node_memory)
 	node_memory.vertical_speed = enemy_zak_vertical_speed_start
-	node_memory.ground_y = self.y
+	node_memory.ground_y = self.spatial.oy
 	node_memory.remaining_ticks = enemy_zak_jump_steps
-	self:set_imgid('zakfoe_jump')
+	self.sprite_component:set_imgid('zakfoe_jump')
 	self.sprite_component.flip_h = self.direction == 'left'
 	return bt_running
 end
 
 function zakfoe.tick_jump(self, node_memory)
 	local direction_mod<const> = self.direction == 'right' and 1 or -1
-	self.y = self.y + node_memory.vertical_speed
+	local pose<const> = self.spatial
+	local candidate_y<const> = pose.oy + node_memory.vertical_speed
 	node_memory.vertical_speed = node_memory.vertical_speed + enemy_zak_vertical_speed_step
-
 	local movement<const> = self.movement
-	if movement:move_x(enemy_zak_horizontal_speed_px * direction_mod) ~= 0
-	or not movement:has_support_ahead(direction_mod, room_tile_half, room_tile_size) then
+	local x<const>, y<const>, contacts<const> = movement:test_motion(
+		pose.ox, candidate_y, enemy_zak_horizontal_speed_px * direction_mod, 0)
+	-- The authored jump changes height without a vertical terrain sweep. Its
+	-- support probe belongs to that candidate pose, before the final landing
+	-- snaps back to this jump's retained ground anchor.
+	local probe_x
+	if direction_mod < 0 then
+		probe_x = x + movement.local_left - room_tile_half
+	else
+		probe_x = x + movement.local_right + room_tile_half
+	end
+	local supported<const> = self.room:has_collision_flags_at_world(
+		probe_x, y + movement.local_bottom + room_tile_size,
+		movement.collision_mask, movement.include_elevators)
+	if contacts ~= 0 or not supported then
 		self.direction = direction_mod < 0 and 'right' or 'left'
 		self.sprite_component.flip_h = self.direction == 'left'
 	end
-
 	local remaining_ticks<const> = node_memory.remaining_ticks - 1
+	self.spatial:set_world_origin(x, remaining_ticks > 0 and y or node_memory.ground_y)
+	movement.contacts = contacts
 	if remaining_ticks > 0 then
 		node_memory.remaining_ticks = remaining_ticks
 		return bt_running
 	end
-	self.y = node_memory.ground_y
-	self:set_imgid('zakfoe_recover')
+	self.sprite_component:set_imgid('zakfoe_recover')
 	self.sprite_component.flip_h = self.direction == 'left'
 	return bt_success
 end
 
 function zakfoe.finish_recovery(self)
-	self:set_imgid('zakfoe_stand')
+	self.sprite_component:set_imgid('zakfoe_stand')
 	self.sprite_component.flip_h = self.direction == 'left'
 	return bt_success
 end
@@ -108,6 +120,8 @@ function zakfoe.register()
 		def_id = 'enemy.zakfoe',
 		class = zakfoe,
 		base = enemy_base,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, imgid = 'zakfoe_stand' } },
 		components = {
 			enemy_base.new_collider,
 			kinematic_movement_component.factory({
@@ -129,11 +143,6 @@ function zakfoe.register()
 			max_health = 2,
 			health = 2,
 			dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			drop_health_chance_pct = enemy_zak_drop_health_chance_pct,
 			drop_ammo_chance_pct = enemy_zak_drop_ammo_chance_pct,
 			direction = 'right',

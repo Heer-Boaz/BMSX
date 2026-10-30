@@ -9,40 +9,32 @@ function scene.register()
 			{
 				member_id = 'seal_backdrop',
 				definition_id = 'pietious.rectangle',
-				options = {
-					pos = { x = 0, y = 0, z = -1 },
-					width = 256, height = 192, color = 0xffcccccc,
-					visible = false,
-				},
+				initial = { rectangle = { order = -1, width = 256, height = 192, color = 0xffcccccc, visible = false } },
 			},
 			{
 				member_id = 'curtain',
 				definition_id = 'pietious.rectangle',
+				initial = { rectangle = { order = 1100, width = 256, height = 192, color = 0xff000000, visible = false } },
 				options = {
 					id = 'effects.curtain',
-					pos = { x = 0, y = 0, z = 1100 },
-					width = 256, height = 192, color = 0xff000000,
-					visible = false,
 				},
 			},
 			{
 				member_id = 'victory_cover',
 				definition_id = 'pietious.rectangle',
+				spatial = { local_transform = { 1, 0, 0, 1, 8, 64 } },
+				initial = { rectangle = { order = 1100, width = 240, height = 8, color = 0xff000000, visible = false } },
 				options = {
 					id = 'effects.victory_cover',
-					pos = { x = 8, y = 64, z = 1100 },
-					width = 240, height = 8, color = 0xff000000,
-					visible = false,
 				},
 			},
 			{
 				member_id = 'victory_caption',
 				definition_id = 'pietious.caption',
+				spatial = { local_transform = { 1, 0, 0, 1, 8, 64 } },
+				initial = { text = { order = 1101, text = game_text[0].victory_message, visible = false } },
 				options = {
 					id = 'effects.victory_caption',
-					pos = { x = 8, y = 64, z = 1101 },
-					text = game_text[0].victory_message,
-					visible = false,
 				},
 			},
 		},

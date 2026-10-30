@@ -11,8 +11,8 @@ local clear_events<const> = {
 }
 
 function transition:hide_captions()
-	self.members.banner.visible = false
-	self.members.death_caption.visible = false
+	self.members.banner.text_component.visible = false
+	self.members.death_caption.text_component.visible = false
 end
 
 function transition:ctor()
@@ -28,14 +28,14 @@ local define_transition_fsm<const> = function()
 			go = function(self, _state, lines)
 				self:hide_captions()
 				self.members.banner.text_component:set_text(lines)
-				self.members.banner.visible = lines ~= nil
+				self.members.banner.text_component.visible = lines ~= nil
 			end,
 		},
 		death_screen = {
 			emitter = 'd',
 			go = function(self)
 				self:hide_captions()
-				self.members.death_caption.visible = true
+				self.members.death_caption.text_component.visible = true
 			end,
 		},
 	}

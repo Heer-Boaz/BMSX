@@ -7,20 +7,21 @@ function scene.register()
 			{
 				member_id = 'background',
 				definition_id = 'pietious.sprite',
+				spatial = { local_transform = { 1, 0, 0, 1, 0, 32 } },
+				initial = { base_sprite = { imgid = 'shrine_inside' } },
 				options = {
 					id = 'shrine.background',
 					space_id = 'shrine',
-					pos = { x = 0, y = 32, z = 0 },
-					imgid = 'shrine_inside',
 				},
 			},
 			{
 				member_id = 'caption',
 				definition_id = 'pietious.caption',
+				spatial = { local_transform = { 1, 0, 0, 1, 48, 72 } },
+				initial = { text = { order = 1 } },
 				options = {
 					id = 'shrine.caption',
 					space_id = 'shrine',
-					pos = { x = 48, y = 72, z = 1 },
 				},
 			},
 		},

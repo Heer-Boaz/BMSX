@@ -13,6 +13,7 @@ local staff_shot_speed_x<const> = { 16, 15, 11, 6, 0, -6, -11, -15, -16, -15, -1
 local staff_shot_speed_y<const> = { 0, 6, 11, 15, 16, 15, 11, 6, 0, -6, -11, -15, -16, -15, -11, -6 }
 
 function stafffoe.spawn_burst(self)
+	local pose<const> = self.spatial
 	local player<const> = self.player
 	local bullets_dangerous<const> = not player.status.inventory_items.greenvase
 	local base_vector_index<const> = math.random(0, 15)
@@ -25,18 +26,8 @@ function stafffoe.spawn_burst(self)
 			room = self.room,
 			player = player,
 			direction = speed_x_num < 0 and 'left' or 'right',
-			speed_x_num = speed_x_num,
-			speed_y_num = speed_y_num,
-			speed_den = enemy_staff_bullet_speed_den,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			dangerous = bullets_dangerous,
-			pos = {
-				x = self.x,
-				y = self.y,
-				z = 140,
-			},
-		})
+		}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } }, { velocity = { speed_x_num = speed_x_num, speed_y_num = speed_y_num, speed_den = enemy_staff_bullet_speed_den } })
 	end
 	self.castle.events:emit('staffspawn')
 	return bt_success
@@ -92,17 +83,13 @@ function stafffoe.register()
 		def_id = 'enemy.stafffoe',
 		class = stafffoe,
 		base = enemy_base,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, imgid = 'stafffoe' } },
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
-			imgid = 'stafffoe',
 			damage = 4,
 			max_health = 10,
 			health = 10,dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			direction = 'right',
 			enemy_kind = 'stafffoe',
 		},

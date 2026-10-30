@@ -39,7 +39,7 @@ local direction_visuals<const> = {
 local set_direction_sprite<const> = function(self, direction_index)
 	self.direction_index = direction_index
 	local visual<const> = direction_visuals[visual_index_by_direction[direction_index + 1]]
-	self:set_imgid(visual.imgid)
+	self.sprite_component:set_imgid(visual.imgid)
 	local sprite<const> = self.sprite_component
 	sprite.flip_h = visual.flip_h
 	sprite.flip_v = visual.flip_v
@@ -49,17 +49,18 @@ end
 -- belongs to the enemy's flight controller; only one task activation's total
 -- flight duration belongs in node memory.
 local advance_flight_direction<const> = function(self)
+	local pose<const> = self.spatial
 	local motion<const> = self.motion
 	local direction_index = self.direction_index
 	local reflected = false
 	local velocity_y<const> = motion.velocity_y
 	if velocity_y >= 0 then
-		if self.y >= enemy_mijter_max_y then
+		if pose.oy >= enemy_mijter_max_y then
 			motion.velocity_y = -velocity_y
 			direction_index = (-direction_index) & 0x0f
 			reflected = true
 		end
-	elseif self.y < enemy_mijter_min_y then
+	elseif pose.oy < enemy_mijter_min_y then
 		motion.velocity_y = -velocity_y
 		direction_index = (-direction_index) & 0x0f
 		reflected = true
@@ -67,12 +68,12 @@ local advance_flight_direction<const> = function(self)
 
 	local velocity_x<const> = motion.velocity_x
 	if velocity_x >= 0 then
-		if self.x >= enemy_mijter_max_x then
+		if pose.ox >= enemy_mijter_max_x then
 			motion.velocity_x = -velocity_x
 			direction_index = (8 - direction_index) & 0x0f
 			reflected = true
 		end
-	elseif self.x < enemy_mijter_min_x then
+	elseif pose.ox < enemy_mijter_min_x then
 		motion.velocity_x = -velocity_x
 		direction_index = (8 - direction_index) & 0x0f
 		reflected = true
@@ -114,10 +115,9 @@ end
 
 function mijterfoe.tick_seek_ceiling(self)
 	local rm<const> = self.room
-	local x<const> = self.x
-	local y<const> = self.y
-	local tile_x<const>, tile_y<const> = rm:world_to_tile(x, y)
-	local _<const>, ceiling_tile_y<const> = rm:world_to_tile(x, y - 1)
+	local pose<const> = self.spatial
+	local tile_x<const>, tile_y<const> = rm:world_to_tile(pose.ox, pose.oy)
+	local _<const>, ceiling_tile_y<const> = rm:world_to_tile(pose.ox, pose.oy - 1)
 	if rm:has_collision_flags_at_tile(tile_x, ceiling_tile_y, collision_flags_solid_mask)
 	and rm:has_collision_flags_at_tile(tile_x + 1, ceiling_tile_y, collision_flags_solid_mask)
 	and not rm:has_collision_flags_at_tile(tile_x, tile_y, collision_flags_solid_mask)
@@ -240,6 +240,8 @@ function mijterfoe.register()
 		def_id = 'enemy.mijterfoe',
 		class = mijterfoe,
 		base = enemy_base,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, imgid = 'meijter_up' } },
 		components = {
 			enemy_base.new_collider,
 			fixed_point_velocity_component.new,

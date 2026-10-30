@@ -10,10 +10,6 @@ local enemy_base<const> = require('enemies/enemy_base')
 local vlokspawner<const> = {}
 vlokspawner.__index = vlokspawner
 
-function vlokspawner:ctor()
-	self.visible = false
-end
-
 function vlokspawner.spawn_vlok(self)
 	local room<const> = self.room
 	local random_x<const> = math.random(-5, 4)
@@ -22,17 +18,7 @@ function vlokspawner.spawn_vlok(self)
 		room = room,
 		player = self.player,
 		direction = random_x < 0 and 'left' or 'right',
-		speed_x_num = random_x * 2,
-		speed_y_num = 5,
-		speed_den = 10,
-		speed_accum_x = 0,
-		speed_accum_y = 0,
-		pos = {
-			x = math.random(2, 29) * room.tile_size,
-			y = room.world_top,
-			z = 140,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, math.random(2, 29) * room.tile_size, room.world_top } }, { velocity = { speed_x_num = random_x * 2, speed_y_num = 5, speed_den = 10, speed_accum_x = 0, speed_accum_y = 0 } })
 	return bt_success
 end
 
@@ -65,16 +51,13 @@ function vlokspawner.register()
 		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, visible = false } },
 		components = { bt_component.factory(tree_id) },
 		defaults = {
 			damage = 0,
 			max_health = 0,
 			health = 0,dangerous = false,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			direction = 'right',
 			enemy_kind = 'vlokspawner',
 		},

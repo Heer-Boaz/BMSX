@@ -1,3 +1,4 @@
+local sprite_component<const> = require('cartlib/component/sprite_component')
 local scene_library<const> = require('cartlib/world/scene_library')
 local scene<const> = require('scenes/title')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -99,8 +100,7 @@ local apply_title_sparkle_frame<const> = function(self, frame)
 	sprite:set_enabled(sprite_frame.enabled)
 	if sprite_frame.enabled then
 		sprite:set_imgid(sprite_frame.imgid)
-		sprite.offset_x = sprite_frame.offset_x
-		sprite.offset_y = sprite_frame.offset_y
+		sprite:set_presentation_origin(sprite_frame.offset_x, sprite_frame.offset_y)
 	end
 end
 
@@ -108,27 +108,23 @@ local build_title_start_frames<const> = function()
 	local frames<const> = {}
 	for _ = 1, flow_title_start_blink_cycles do
 		frames[#frames + 1] = {
-			value = { sprite_id = 'title_screen_play_start' },
+			value = 'title_screen_play_start',
 			hold = flow_title_start_blink_phase_frames,
 		}
 		frames[#frames + 1] = {
-			value = { sprite_id = 'title_screen_play_start_blink' },
+			value = 'title_screen_play_start_blink',
 			hold = flow_title_start_blink_phase_frames,
 		}
 	end
 	frames[#frames + 1] = {
-		value = { sprite_id = 'title_screen_play_start' },
+		value = 'title_screen_play_start',
 		hold = flow_title_start_blink_phase_frames,
 	}
 	frames[#frames + 1] = {
-		value = { sprite_id = 'title_screen_play_start_blink' },
+		value = 'title_screen_play_start_blink',
 		hold = flow_title_start_blink_tail_frames,
 	}
 	return timeline.build_frame_sequence(frames)
-end
-
-local apply_title_start_frame<const> = function(self, frame)
-	self.members.background:set_imgid(frame.sprite_id)
 end
 
 function title_screen:ctor()
@@ -163,11 +159,12 @@ local define_title_screen_fsm<const> = function()
 			hidden = {},
 			idle = {
 				entering_state = function(self)
-					self.members.background:set_imgid('title_screen')
+					self.members.background.sprite_component:set_imgid('title_screen')
 				end,
 				timelines = {
 					[sparkle_timeline_id] = {
 						def = {
+							phase = 'presentation',
 							frames = build_title_sparkle_frames(),
 							playback_mode = 'once',
 							apply = apply_title_sparkle_frame,
@@ -194,10 +191,12 @@ local define_title_screen_fsm<const> = function()
 			starting = {
 				timelines = {
 					[start_timeline_id] = {
+						target_path = { 'members', 'background', 'sprite_component' },
 						def = {
+							phase = 'presentation',
 							frames = build_title_start_frames(),
 							playback_mode = 'once',
-							apply = apply_title_start_frame,
+							apply = sprite_component.set_imgid,
 						},
 						autoplay = true,
 						stop_on_exit = true,

@@ -2,6 +2,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 require('constants')
 local combat_overlap<const> = require('combat/overlap')
@@ -9,25 +10,10 @@ local combat_overlap<const> = require('combat/overlap')
 local loot_drop<const> = {}
 loot_drop.__index = loot_drop
 
-local sprite_for_loot_type<const> = function(loot_type)
-	if loot_type == 'life' then
-		return 'item_health'
-	end
-	if loot_type == 'ammo' then
-		return 'ammo'
-	end
-	error('pietious loot_drop invalid loot_type=' .. tostring(loot_type))
-end
-
-function loot_drop:ctor()
-	local collider<const> = self:get_component(collider_2d_component)
-	collider.layer = collision_pickup_layer
-	collider.mask = collision_pickup_mask
-	self:set_imgid(sprite_for_loot_type(self.loot_type))
-end
-
-function loot_drop:onspawn(_pos)
-	self.x, self.y = self.room:snap_world_to_tile(self.x, self.y)
+function loot_drop:onspawn()
+	local pose<const> = self.spatial
+	local x<const>, y<const> = self.room:snap_world_to_tile(pose.ox, pose.oy)
+	self.spatial:set_world_origin(x, y)
 end
 
 local define_loot_drop_fsm<const> = function()
@@ -55,8 +41,10 @@ local register_loot_drop_definition<const> = function()
 		def_id = 'loot_drop',
 		class = loot_drop,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 113 } },
 		components = {
-			collider_2d_component.new_for_sprite,
+			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_pickup_layer, mask = collision_pickup_mask }),
 			fsm_component.factory({ 'loot_drop' }),
 		},
 		defaults = {

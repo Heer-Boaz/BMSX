@@ -246,8 +246,8 @@ local build_screen_rows<const> = function(map_rows, draaideuren)
 
 	for i = 1, #draaideuren do
 		local draaideur<const> = draaideuren[i]
-		local tx<const> = draaideur.options.pos.x // room_tile_size + 1
-		local ty<const> = (draaideur.options.pos.y - room_tile_origin_y) // room_tile_size + 1
+		local tx<const> = draaideur.x // room_tile_size + 1
+		local ty<const> = (draaideur.y - room_tile_origin_y) // room_tile_size + 1
 		for row = ty, ty + 2 do
 			local line<const> = screen_rows[row]
 			screen_rows[row] = line:sub(1, tx - 1) .. '.' .. line:sub(tx + 1)
@@ -410,8 +410,8 @@ local build_logic_rows<const> = function(room_state)
 	for i = 1, #room_state.rocks do
 		local rock<const> = room_state.rocks[i]
 		if not destroyed_rock_ids[rock.member_id] then
-			local tx0<const> = ((rock.options.pos.x - room_state.tile_origin_x) // room_state.tile_size) + 1
-			local ty0<const> = ((rock.options.pos.y - room_state.tile_origin_y) // room_state.tile_size) + 1
+			local tx0<const> = ((rock.x - room_state.tile_origin_x) // room_state.tile_size) + 1
+			local ty0<const> = ((rock.y - room_state.tile_origin_y) // room_state.tile_size) + 1
 			for dy = 1, rock_tile_height do
 				local ty<const> = ty0 + dy - 1
 				local row = logic_rows[ty]
@@ -660,8 +660,9 @@ function room_object:overlaps_active_elevator(x, y, w, h)
 	local elevators<const> = self.castle.elevators
 	for i = 1, #elevators do
 		local platform<const> = elevators[i]
+		local pose<const> = platform.spatial:resolve_world()
 		if platform.current_room_number == self.room_number
-			and rect_overlaps(x, y, w, h, platform.x, platform.y, room_tile_size4, room_tile_size2)
+			and rect_overlaps(x, y, w, h, pose.wox, pose.woy, room_tile_size4, room_tile_size2)
 		then
 			return true
 		end
@@ -678,7 +679,8 @@ function room_object:overlaps_active_breakable_wall(x, y, w, h)
 	local walls<const> = self.wall_instances
 	for i = 1, #walls do
 		local wall<const> = walls[i]
-		if rect_overlaps(x, y, w, h, wall.x, wall.y, wall.sx, wall.sy) then
+		local pose<const> = wall.spatial:resolve_world()
+		if rect_overlaps(x, y, w, h, pose.wox, pose.woy, wall.width_tiles * room_tile_size, wall.height_tiles * room_tile_size) then
 			return true
 		end
 	end
@@ -691,8 +693,9 @@ function room_object:overlaps_active_draaideur(x, y, w, h)
 	local door_height<const> = tile_size * 3
 	for i = 1, #draaideuren do
 		local draaideur<const> = draaideuren[i]
+		local pose<const> = draaideur.spatial:resolve_world()
 		if draaideur.collision_enabled
-		and rect_overlaps(x, y, w, h, draaideur.x, draaideur.y, tile_size, door_height)
+		and rect_overlaps(x, y, w, h, pose.wox, pose.woy, tile_size, door_height)
 		then
 			return true
 		end
@@ -780,17 +783,19 @@ end
 
 function room_object:find_near_lithograph(player)
 	local lithographs<const> = self.lithograph_instances
-	local player_left<const> = player.x
-	local player_top<const> = player.y
-	local player_right<const> = player.x + player.width
-	local player_bottom<const> = player.y + player.height
+	local pose<const> = player.spatial:resolve_world()
+	local player_left<const> = pose.wox
+	local player_top<const> = pose.woy
+	local player_right<const> = pose.wox + player.width
+	local player_bottom<const> = pose.woy + player.height
 
 	for i = 1, #lithographs do
 		local lithograph<const> = lithographs[i]
-		local area_left<const> = lithograph.x + lithograph_hit_left_px
-		local area_top<const> = lithograph.y + lithograph_hit_top_px
-		local area_right<const> = lithograph.x + lithograph_hit_right_px
-		local area_bottom<const> = lithograph.y + lithograph_hit_bottom_px
+		local pose<const> = lithograph.spatial:resolve_world()
+		local area_left<const> = pose.wox + lithograph_hit_left_px
+		local area_top<const> = pose.woy + lithograph_hit_top_px
+		local area_right<const> = pose.wox + lithograph_hit_right_px
+		local area_bottom<const> = pose.woy + lithograph_hit_bottom_px
 		if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
 			return lithograph
 		end
@@ -819,7 +824,7 @@ function room_object:switch_room(direction)
 	}
 end
 
-function room_object:ctor()
+function room_object:ctor(_options, _definition_id, context)
 	self.wall_instances = {}
 	self.draaideur_instances = {}
 	self.lithograph_instances = {}
@@ -832,23 +837,9 @@ function room_object:ctor()
 	self.water_surface_tile_indices = {}
 	self.water_surface_tile_count = 0
 	self.last_water_surface_frame = 1
-	self.room_tile_layer = tile_layer_component.new({
-		id_local = 'room',
-		columns = 1,
-		tile_size = room_tile_size,
-		offset_x = room_tile_origin_x,
-		offset_y = room_tile_origin_y,
-		visible = false,
-	})
+	self.room_tile_layer = tile_layer_component.new(context, 'room')
 	self:add_component(self.room_tile_layer)
-	self.water_tile_layer = tile_layer_component.new({
-		id_local = 'water',
-		columns = 1,
-		tile_size = room_tile_size,
-		offset_x = room_tile_origin_x,
-		offset_y = room_tile_origin_y,
-		visible = false,
-	})
+	self.water_tile_layer = tile_layer_component.new(context, 'water')
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
 	apply_room_template(self, self.template)
@@ -950,7 +941,7 @@ function room_object:rebuild_room_tiles()
 	self.water_rows = water_rows
 	self.water_surface_tile_count = water_surface_tile_count
 	self.last_water_surface_frame = 1
-	water_tile_layer.offset_y = self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size)
+	water_tile_layer:set_attachment_origin(self.tile_origin_x, self.tile_origin_y + ((self.water.surface_row - 1) * self.tile_size))
 	if self.tiles_visible then
 		self.water_tile_layer.visible = true
 	end
@@ -987,6 +978,7 @@ local define_room_fsm<const> = function()
 						timelines = {
 							[water_surface_timeline_id] = {
 								def = {
+									phase = 'presentation',
 									-- MoG `TBD06..TBD57`: surface char `0xB6` rotates on a 64-tick cycle.
 									frames = timeline.build_frame_sequence(water_surface_timeline_frame_defs),
 									playback_mode = 'loop',
@@ -1020,6 +1012,11 @@ local register_room_definition<const> = function()
 	prefab.define({
 		def_id = 'room',
 		class = room_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = {
+			room = { columns = 1, tile_size = room_tile_size, attachment_affine = { 1, 0, 0, 1, room_tile_origin_x, room_tile_origin_y }, visible = false },
+			water = { columns = 1, tile_size = room_tile_size, attachment_affine = { 1, 0, 0, 1, room_tile_origin_x, room_tile_origin_y }, visible = false, order = 1 },
+		},
 		components = {
 			timeline_component.new,
 			fsm_component.factory({ 'room' }),

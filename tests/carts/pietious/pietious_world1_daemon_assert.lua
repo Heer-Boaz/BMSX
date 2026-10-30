@@ -28,8 +28,7 @@ return {
 				direction = 'down',
 			}, 1, 2, 5)
 			player.state_machines:transition_to('/quiet')
-			player.x = 32
-			player.y = 96
+			player.spatial:set_world_origin(32, 96)
 			local def<const> = find_daemon_def(room)
 			assert(def ~= nil, 'room 100 has no daemon definition')
 			test.daemon_id = def.member_id
@@ -37,14 +36,14 @@ return {
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			local daemon<const> = castle.room.scene.members[test.daemon_id]
 			assert(daemon ~= nil, 'world daemon was not admitted')
-			assert(not daemon.visible, 'daemon is visible before the appearance completes')
+			assert(not daemon.sprite_component.visible, 'daemon is visible before the appearance completes')
 			assert(not daemon.collider.enabled, 'daemon collider is enabled before the fight')
 			assert(not daemon.behaviour.enabled, 'daemon behaviour is enabled before the fight')
 			director.events:emit('daemon_appearance')
 			director.events:emit('daemon_appearance_done')
 
 			t:wait_until('first daemon burst', function()
-				assert(daemon.visible and daemon.collider.enabled and daemon.behaviour.enabled, 'daemon remained inactive after appearance')
+				assert(daemon.sprite_component.visible and daemon.collider.enabled and daemon.behaviour.enabled, 'daemon remained inactive after appearance')
 				return #daemon.spawn_projectiles > 0
 			end, 1000)
 			assert(#daemon.spawn_projectiles == 12, 'first daemon burst did not contain twelve projectiles')
@@ -94,18 +93,17 @@ return {
 				assert(world.gameplay_clock_running, 'gameplay clock did not resume for the key')
 				assert(player.state_machines:matches_state(test.player_quiet_state), 'player remained locked after daemon death')
 				assert(director.state_machines:matches_state(test.director_key_state), 'director did not enter daemon key state')
-				assert(not daemon.visible, 'daemon remained visible beneath the key')
+				assert(not daemon.sprite_component.visible, 'daemon remained visible beneath the key')
 				assert(key.item_type == 'keyworld1', 'daemon dropped the wrong key')
 				player.status.inventory_items.keyworld1 = false
 				player.status.health = 1
 				player:emit_health_changed()
-				test.key_x = key.x
-				test.key_y = key.y
+				test.key_x = key.spatial.ox
+				test.key_y = key.spatial.oy
 
 			end
 			t:wait_until('HUD health drains', function() return registry:get('ui').hud_health_level ~= player.status.max_health end, 120)
-			player.x = test.key_x
-			player.y = test.key_y
+			player.spatial:set_world_origin(test.key_x, test.key_y)
 			t:wait_until('key pickup', function() return player.status.inventory_items.keyworld1 end, 120)
 			do
 				local key<const> = registry:get('world1_daemon_key')

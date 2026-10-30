@@ -31,11 +31,11 @@ function intro:ctor()
 end
 
 function intro:begin()
-	self.members.logo.visible = true
+	self.logo_sprite.visible = true
 	self.logo_background.visible = true
 	local logo<const> = self.logo_sprite
 	logo.visible = false
-	logo.region_height = 1
+	logo:set_region(0, 0, 168, 1)
 	atlas.load('intro')
 end
 
@@ -43,12 +43,8 @@ function intro:begin_reveal()
 	self.logo_sprite.visible = true
 end
 
-function intro:reveal_row(frame)
-	self.logo_sprite.region_height = frame + 1
-end
-
 function intro:finish()
-	self.members.logo.visible = false
+	self.logo_sprite.visible = false
 	self.logo_background.visible = false
 	self.events:emit('intro_done')
 	return '/hidden'
@@ -79,6 +75,7 @@ local define_intro_fsm<const> = function()
 						timelines = {
 							[logo_blank_timeline_id] = {
 								def = {
+									phase = 'presentation',
 									duration_frames = 1,
 									clock_source = timeline_clock_source.frame,
 								},
@@ -90,11 +87,14 @@ local define_intro_fsm<const> = function()
 						entering_state = intro.begin_reveal,
 						timelines = {
 							[logo_reveal_timeline_id] = {
+								target_path = { 'logo_sprite' },
 								def = {
+									phase = 'presentation',
 									frames = timeline.range(logo_height),
 									playback_mode = 'once',
 									clock_source = timeline_clock_source.frame,
-									apply = intro.reveal_row,
+									tracks = {{ kind = 'value', path = { 'region_height' }, interpolation = 'linear',
+										keys = {{ frame = 0, value = 1 }, { frame = logo_height - 1, value = logo_height }} }},
 								},
 								on_finished = '/playing/hold',
 							},
@@ -104,6 +104,7 @@ local define_intro_fsm<const> = function()
 						timelines = {
 							[logo_hold_timeline_id] = {
 								def = {
+									phase = 'presentation',
 									duration_frames = logo_hold_frames,
 									clock_source = timeline_clock_source.frame,
 								},

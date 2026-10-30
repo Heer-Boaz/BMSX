@@ -6,6 +6,7 @@ local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
+local collision_storage<const> = require('collision_storage')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 require('constants')
 local tile_collision_component<const> = require('cartlib/collision/tile_collision_component')
@@ -14,48 +15,34 @@ local world_object<const> = require('cartlib/world/world_object')
 local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile
 
-function pepernoot_projectile:ctor()
-	local collider<const> = self:get_component(collider_2d_component)
-	collider.layer = collision_projectile_layer
-	collider.mask = collision_projectile_mask
-	self:add_component(tile_collision_component.new({
-		id_local = 'world',
-		query = function(_component, owner, payload)
-			local collision_flags<const> = owner.room:collision_flags_at_world(owner.x, owner.y)
-			if collision_flags == collision_flags_none or collision_flags == collision_flags_elevator then
-				return nil
-			end
-			payload.collision_flags = collision_flags
-			payload.world_x = owner.x
-			payload.world_y = owner.y
-			return collision_flags
-		end,
-	}))
-	self:set_imgid('pepernoot_16')
+local query_terrain<const> = function(_component, owner, payload)
+	local pose<const> = owner.spatial
+	local collision_flags<const> = owner.room:collision_flags_at_world(pose.ox, pose.oy)
+	if collision_flags == collision_flags_none or collision_flags == collision_flags_elevator then
+		return nil
+	end
+	payload.collision_flags = collision_flags
+	payload.world_x = pose.ox
+	payload.world_y = pose.oy
+	return collision_flags
 end
 
-function pepernoot_projectile:onspawn(pos)
-	local room<const> = self.room
-	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
-	self.sprite_component.offset_x = snapped_x - self.x
-	self.sprite_component.offset_y = snapped_y - self.y
-end
-
-function pepernoot_projectile:refresh_tile_aligned_sprite_offset()
-	local room<const> = self.room
-	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(self.x, self.y)
-	self.sprite_component.offset_x = snapped_x - self.x
-	self.sprite_component.offset_y = snapped_y - self.y
+function pepernoot_projectile:onspawn()
+	local pose<const> = self.spatial
+	local snapped_x<const>, snapped_y<const> = self.room:snap_world_to_tile(pose.ox, pose.oy)
+	self.sprite_component:set_attachment_origin(snapped_x - pose.ox, snapped_y - pose.oy)
 end
 
 function pepernoot_projectile:update_motion()
 	local room<const> = self.room
-	self.x = self.x + (self.direction * secondary_weapon_pepernoot_speed_px)
-	self:refresh_tile_aligned_sprite_offset()
-
-	if self.x <= 0 or self.x >= room.world_width then
+	local pose<const> = self.spatial
+	local x<const> = pose.ox + self.direction * secondary_weapon_pepernoot_speed_px
+	local y<const> = pose.oy
+	self.spatial:set_world_origin(x, y)
+	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(x, y)
+	self.sprite_component:set_attachment_origin(snapped_x - x, snapped_y - y)
+	if x <= 0 or x >= room.world_width then
 		self:mark_for_disposal()
-		return
 	end
 end
 
@@ -84,8 +71,11 @@ local register_pepernoot_projectile_definition<const> = function()
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 140, imgid = 'pepernoot_16' }, tile_collision = { query = query_terrain } },
 		components = {
-			collider_2d_component.new_for_sprite,
+			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_projectile_layer, mask = collision_projectile_mask }),
+			tile_collision_component.new,
 			fsm_component.factory({ 'pepernoot_projectile' }),
 		},
 		defaults = {

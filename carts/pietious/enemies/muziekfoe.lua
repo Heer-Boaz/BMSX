@@ -35,7 +35,6 @@ end
 function muziekfoe:ctor()
 	self.movement = self:get_component(kinematic_movement_component)
 	self.movement:set_collision_world(self.room)
-	self:set_imgid('muziekfoe')
 end
 
 function muziekfoe.execute_move(self, node_memory)
@@ -58,17 +57,17 @@ function muziekfoe.tick_move(self, node_memory)
 end
 
 function muziekfoe.spawn_note(self)
+	local pose<const> = self.spatial
 	local player<const> = self.player
-	local source_x<const> = self.x + 12
-	local source_y<const> = self.y + 8
-	local target_x<const> = player.x
-	local target_y<const> = player.y + player.height
+	local source_x<const> = pose.ox + 12
+	local source_y<const> = pose.oy + 8
+	local target<const> = player.spatial:resolve_world()
 	local delta_scale<const> = 8
 	local delta_x<const>, delta_y<const> = get_delta_from_source_to_target_scaled(
 		source_x,
 		source_y,
-		target_x,
-		target_y,
+		target.wox,
+		target.woy + player.height,
 		delta_scale
 	)
 	local delta_divisor<const> = math.random(1, 2)
@@ -77,17 +76,7 @@ function muziekfoe.spawn_note(self)
 		room = self.room,
 		player = player,
 		direction = delta_x < 0 and 'left' or 'right',
-		speed_x_num = delta_x,
-		speed_y_num = delta_y,
-		speed_den = delta_scale * delta_divisor,
-		speed_accum_x = 0,
-		speed_accum_y = 0,
-		pos = {
-			x = self.x + 12,
-			y = self.y,
-			z = 140,
-		},
-	})
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + 12, pose.oy } }, { velocity = { speed_x_num = delta_x, speed_y_num = delta_y, speed_den = delta_scale * delta_divisor, speed_accum_x = 0, speed_accum_y = 0 } })
 	return bt_success
 end
 
@@ -141,6 +130,8 @@ function muziekfoe.register()
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
 		base = enemy_base,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, imgid = 'muziekfoe' } },
 		components = {
 			enemy_base.new_collider,
 			kinematic_movement_component.factory({
@@ -162,11 +153,6 @@ function muziekfoe.register()
 			max_health = 3,
 			health = 3,
 			dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			direction = 'right',
 			enemy_kind = 'muziekfoe',
 		},

@@ -16,8 +16,7 @@ return {
 				world:set_gameplay_clock_running(false)
 				room = castle:load_room(target)
 				castle:commit_room_switch({ from_room_number = from, to_room_number = target, direction = 'right' }, room.world_number, 5, 12)
-				room.player.x = 16
-				room.player.y = 96
+				room.player.spatial:set_world_origin(16, 96)
 				assert(room.room_tile_layer.visible, 'fresh room must render immediately, even while gameplay is paused')
 				t:wait_ticks(5)
 				t:capture('room-' .. tostring(rooms[index]))

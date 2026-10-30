@@ -21,14 +21,9 @@ local opening_visual_event<const> = 'world_entrance.opening.visual'
 local world_entrance<const> = {}
 world_entrance.__index = world_entrance
 
-function world_entrance:onspawn()
-	self.stair_x = self.x + world_entrance_trigger_x_offset
-	self.stair_y = self.y + world_entrance_trigger_y_offset
-end
-
 function world_entrance:set_entrance_state(entrance_state)
 	self.entrance_state = entrance_state
-	self:set_imgid(world_entrance_sprite_ids[entrance_state])
+	self.sprite_component:set_imgid(world_entrance_sprite_ids[entrance_state])
 end
 
 function world_entrance:mark_half_open()
@@ -75,6 +70,7 @@ local define_world_entrance_fsm<const> = function()
 				timelines = {
 					[opening_timeline_id] = {
 						def = {
+							phase = 'physical',
 							frames = timeline.range(world_entrance_open_phase_frames * 3),
 							playback_mode = 'once',
 							tracks = {
@@ -126,9 +122,10 @@ local register_world_entrance_definition<const> = function()
 		def_id = 'world_entrance',
 		class = world_entrance,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 22, imgid = world_entrance_sprite_ids.closed } },
 		components = { timeline_component.new, fsm_component.factory({ 'world_entrance' }) },
 		defaults = {
-			imgid = world_entrance_sprite_ids.closed,
 			target = nil,
 			entrance_state = 'closed',
 		},

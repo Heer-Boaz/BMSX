@@ -29,8 +29,7 @@ return {
 				direction = 'down',
 			}, 1, 2, 5)
 			player.state_machines:transition_to('/quiet')
-			player.x = 32
-			player.y = 96
+			player.spatial:set_world_origin(32, 96)
 			local def<const> = find_daemon_def(room)
 			assert(def ~= nil, 'room 100 has no daemon definition')
 			test.daemon_id = def.member_id
@@ -53,7 +52,7 @@ return {
 			t:press('lb', 4, 1)
 			t:wait_until('fight resumed', function() return world.active_space_id == 'main' and director.state_machines:matches_state(room_state) end, 120)
 			assert(screen.state_machines:matches_state(closed), 'inventory remained open after returning to fight')
-			assert(daemon.visible and daemon.behaviour.enabled and daemon.collider.enabled, 'daemon did not resume after inventory closed')
+			assert(daemon.sprite_component.visible and daemon.behaviour.enabled and daemon.collider.enabled, 'daemon did not resume after inventory closed')
 
 		end,
 	},

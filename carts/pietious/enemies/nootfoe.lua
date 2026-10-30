@@ -16,11 +16,8 @@ local noot_colors<const> = {
 }
 
 function nootfoe:ctor()
-	self.noot_color = noot_colors[math.random(1, #noot_colors)]
-	self:set_imgid('muzieknootfoe')
-	self.sprite_component.color = self.noot_color
+	self.sprite_component.color = noot_colors[math.random(1, #noot_colors)]
 	self.castle.events:emit('muzieknootspawn')
-	enemy_base.setup_projectile_boundary(self)
 end
 
 function nootfoe.choose_drop_type(_self)
@@ -32,16 +29,13 @@ function nootfoe.register()
 		def_id = 'enemy.nootfoe',
 		class = nootfoe,
 		base = enemy_base,
-		components = { enemy_base.new_collider, velocity_component.new },
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { order = 250, imgid = 'muzieknootfoe' }, boundary = { local_right = 8, local_bottom = 8 }, velocity = { speed_x_num = 0, speed_y_num = 0, speed_den = 1 } },
+		components = { enemy_base.new_collider, velocity_component.new, enemy_base.projectile_boundary },
 		defaults = {
 			damage = 2,
 			max_health = 1,
 			health = 1,dangerous = true,
-			speed_x_num = 0,
-			speed_y_num = 0,
-			speed_den = 1,
-			speed_accum_x = 0,
-			speed_accum_y = 0,
 			direction = 'right',
 			enemy_kind = 'nootfoe',
 		},

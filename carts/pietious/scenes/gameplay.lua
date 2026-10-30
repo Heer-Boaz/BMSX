@@ -7,19 +7,20 @@ function scene.register()
 			{
 				member_id = 'player',
 				definition_id = 'player',
+				spatial = { local_transform = { 1, 0, 0, 1, 160, 104 } },
+				initial = { base_sprite = { order = 250 } },
 				options = {
 					id = 'pietolon',
 					space_id = 'main',
-					pos = { x = 160, y = 104, z = 140 },
 				},
 			},
 			{
 				member_id = 'hud',
 				definition_id = 'ui',
+				initial = { visual = { order = 1000 } },
 				options = {
 					id = 'ui',
 					space_id = 'ui',
-					pos = { x = 0, y = 0, z = 1000 },
 				},
 			},
 		},

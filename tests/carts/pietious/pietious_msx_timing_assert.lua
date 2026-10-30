@@ -25,15 +25,15 @@ return {
 				space_id = 'main',
 				room = registry:get('c').room,
 				player = registry:get('pietolon'),
-				pos = { x = 40, y = 40, z = 113 },
-			})
+			}, { local_transform = { 1, 0, 0, 1, 40, 40 } },
+			{ base_sprite = { order = 113 } })
 			registry:get('c').room.scene:spawn('world_entrance', {
 				id = 'probe.world_entrance',
 				space_id = 'main',
 				castle = castle,
 				target = 'probe_world',
-				pos = { x = 80, y = 80, z = 22 },
-			})
+			}, { local_transform = { 1, 0, 0, 1, 80, 80 } },
+			{ base_sprite = { order = 22 } })
 			-- The explosion's poses count gameplay updates from its own spawn; the
 			-- tick on which this test observes admission depends on frame parity.
 			local explosion_time_ms = world.gameplay_time_ms

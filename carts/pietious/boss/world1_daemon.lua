@@ -1,11 +1,10 @@
 local behaviour_tree_component<const> = require('cartlib/behaviour_tree/bt_component')
 local behaviour_tree_result<const> = require('cartlib/behaviour_tree/result')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local death_visual_component<const> = require('boss/death_visual_component')
+local collision_storage<const> = require('collision_storage')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
-local gp0<const> = require('cartlib/gx/gp0')
-local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
@@ -36,7 +35,6 @@ local timeline_id<const> = world1_daemon.timeline_id
 local bt_running<const> = behaviour_tree_result.running
 local bt_success<const> = behaviour_tree_result.success
 local death_image_count<const> = 8
-local death_images<const> = {}
 local keep_current_pose<const> = false
 local poses<const> = {
 	walk_1 = {
@@ -101,38 +99,12 @@ for stage = 1, death_image_count * 2 do
 end
 local death_hidden_frame<const> = death_frame
 local new_collider<const> = collider_2d_component.factory({
+	geometry_pool = collision_storage.boss,
+	shape_asset = assets.collision_shape_world1_daemon_walk_1_body_addr,
 	layer = collision_enemy_layer,
 	mask = collision_enemy_mask,
 	enabled = false,
 })
-
-local draw_death_parity<const> = function(draw, boss, tile, parity)
-	local origin_x<const> = boss.x
-	local origin_y<const> = boss.y
-	local flip_h<const> = boss.direction == 'left'
-	for row = 0, 3 do
-		for column = (row + parity) & 1, 9, 2 do
-			local x<const> = origin_x + (column * room_tile_size)
-			local y<const> = origin_y + (row * room_tile_size)
-			if flip_h then
-				tile:draw(draw, x, y, 0xffffffff, 1, gp0.draw_mode_blend_half)
-			else
-				tile:blit(draw, x, y)
-			end
-		end
-	end
-end
-
-local draw_death_overlay<const> = function(component, draw)
-	local boss<const> = component.owner
-	local stage<const> = boss.death_stage
-	if stage <= death_image_count then
-		draw_death_parity(draw, boss, death_images[stage], 0)
-		return
-	end
-	draw_death_parity(draw, boss, death_images[death_image_count], 0)
-	draw_death_parity(draw, boss, death_images[stage - death_image_count], 1)
-end
 
 local dispose_references<const> = function(objects)
 	for index = 1, #objects do
@@ -152,16 +124,15 @@ end
 function world1_daemon:ctor()
 	self.behaviour = self:get_component(behaviour_tree_component)
 	self.collider = self:get_component(collider_2d_component)
-	self.death_visual = self:get_component(custom_visual_component)
-	self.death_visual:set_offset_z(111)
+	self.death_visual = self:get_component(death_visual_component)
 	self.spawn_projectiles = {}
 	self.potatoes = {}
 	self.zaks = {}
 	self.key = nil
-	self.death_stage = 1
+	self.death_visual.stage = 1
 	self.walk_frame = 1
 	self.current_pose = nil
-	self.visible = false
+	self.sprite_component.visible = false
 	self:set_pose(poses.walk_1)
 end
 
@@ -188,32 +159,32 @@ function world1_daemon:reset_encounter()
 	self:clear_encounter_objects()
 	self.health = self.max_health
 	self.dangerous = false
-	self.visible = false
-	self.death_stage = 1
+	self.sprite_component.visible = false
+	self.death_visual.stage = 1
 	behaviour.blackboard:reset()
 	self:set_pose(poses.walk_1)
-	self.sprite_component.offset_y = 0
+	self.sprite_component:set_presentation_origin(0, 0)
 end
 
 function world1_daemon:activate_encounter()
 	self:choose_entrance()
 	self.dangerous = true
-	self.visible = true
+	self.sprite_component.visible = true
 	self.collider:set_enabled(true)
 	self.behaviour:start()
 end
 
 function world1_daemon:execute_walk()
 	self.walk_frame = self.current_pose == poses.walk_2 and 2 or 1
-	self.visible = true
-	self.sprite_component.offset_y = 0
+	self.sprite_component.visible = true
+	self.sprite_component:set_presentation_origin(0, 0)
 	return bt_running
 end
 
 function world1_daemon:set_pose(pose)
 	if pose ~= keep_current_pose and pose ~= self.current_pose then
 		self.current_pose = pose
-		self:set_imgid(pose.imgid)
+		self.sprite_component:set_imgid(pose.imgid)
 		local flip_h<const> = self.direction == 'left'
 		local collider<const> = self.collider
 		collider:set_shape_asset(pose.shape_asset)
@@ -233,94 +204,92 @@ end
 
 function world1_daemon:tick_walk_into_room()
 	self:advance_walk_frame()
+	local pose<const> = self.spatial
+	local x
+	local done
 	if self.direction == 'right' then
-		local x<const> = self.x + room_tile_size
-		if x >= boss_world1_entry_left_x then
-			self.x = boss_world1_entry_left_x
-			return bt_success
-		end
-		self.x = x
-		return bt_running
+		x = pose.ox + room_tile_size
+		done = x >= boss_world1_entry_left_x
+		if done then x = boss_world1_entry_left_x end
+	else
+		x = pose.ox - room_tile_size
+		done = x <= boss_world1_entry_right_x
+		if done then x = boss_world1_entry_right_x end
 	end
-	local x<const> = self.x - room_tile_size
-	if x <= boss_world1_entry_right_x then
-		self.x = boss_world1_entry_right_x
-		return bt_success
-	end
-	self.x = x
-	return bt_running
+	self.spatial:set_world_origin(x, pose.oy)
+	return done and bt_success or bt_running
 end
 
 function world1_daemon:tick_walk_forward_out_of_room()
 	self:advance_walk_frame()
+	local pose<const> = self.spatial
 	local step<const> = self.direction == 'right' and room_tile_size or -room_tile_size
-	local x<const> = self.x + step
+	local x<const> = pose.ox + step
 	if x > room_width or x < -(10 * room_tile_size) then
-		self.x = -1000
-		self.y = -1000
-		self.visible = false
+		self.spatial:set_world_origin(-1000, -1000)
+		self.sprite_component.visible = false
 		return bt_success
 	end
-	self.x = x
+	self.spatial:set_world_origin(x, pose.oy)
 	return bt_running
 end
 
 function world1_daemon:tick_walk_backward_out_of_room()
 	self:advance_walk_frame()
+	local pose<const> = self.spatial
 	local step<const> = self.direction == 'right' and room_tile_size or -room_tile_size
-	local x<const> = self.x - step
+	local x<const> = pose.ox - step
 	if x > room_width or x < -(10 * room_tile_size) then
-		self.x = -1000
-		self.y = -1000
-		self.visible = false
+		self.spatial:set_world_origin(-1000, -1000)
+		self.sprite_component.visible = false
 		return bt_success
 	end
-	self.x = x
+	self.spatial:set_world_origin(x, pose.oy)
 	return bt_running
 end
 
 function world1_daemon:execute_pounce()
 	self:set_pose(poses.pounce)
-	self.sprite_component.offset_y = room_tile_size
+	self.sprite_component:set_presentation_origin(0, room_tile_size)
 	return bt_running
 end
 
 function world1_daemon:tick_pounce()
+	local pose<const> = self.spatial
+	local x
+	local done
 	if self.direction == 'right' then
-		local x<const> = self.x + boss_world1_pounce_step_px
-		if x < boss_world1_pounce_left_x then
-			self.x = x
-			return bt_running
-		end
-		self.x = boss_world1_pounce_left_x
+		x = pose.ox + boss_world1_pounce_step_px
+		done = x >= boss_world1_pounce_left_x
+		if done then x = boss_world1_pounce_left_x end
 	else
-		local x<const> = self.x - boss_world1_pounce_step_px
-		if x > boss_world1_pounce_right_x then
-			self.x = x
-			return bt_running
-		end
-		self.x = boss_world1_pounce_right_x
+		x = pose.ox - boss_world1_pounce_step_px
+		done = x <= boss_world1_pounce_right_x
+		if done then x = boss_world1_pounce_right_x end
 	end
+	self.spatial:set_world_origin(x, pose.oy)
+	if not done then return bt_running end
 	self:set_pose(poses.walk_1)
-	self.sprite_component.offset_y = 0
+	self.sprite_component:set_presentation_origin(0, 0)
 	self.events:emit('daemon.landed')
 	return bt_success
 end
 
 function world1_daemon:choose_entrance()
 	local lane
+	local x
 	if math.random(1, 2) == 1 then
-		local player<const> = self.player
-		if player.x <= boss_world1_player_side_split_x then
+		local target<const> = self.player.spatial:resolve_world()
+		if target.wox <= boss_world1_player_side_split_x then
 			self.direction = 'right'
-			self.x = boss_world1_start_left_x
+			x = boss_world1_start_left_x
 		else
 			self.direction = 'left'
-			self.x = boss_world1_start_right_x
+			x = boss_world1_start_right_x
 		end
-		if player.y <= boss_world1_lane_y[2] then
+		if target.woy <= boss_world1_lane_y[2] then
 			lane = 1
-		elseif player.y <= boss_world1_lane_y[3] then
+		elseif target.woy <= boss_world1_lane_y[3] then
 			lane = 2
 		else
 			lane = 3
@@ -328,14 +297,14 @@ function world1_daemon:choose_entrance()
 	else
 		if math.random(1, 2) == 1 then
 			self.direction = 'left'
-			self.x = boss_world1_start_right_x
+			x = boss_world1_start_right_x
 		else
 			self.direction = 'right'
-			self.x = boss_world1_start_left_x
+			x = boss_world1_start_left_x
 		end
 		lane = math.random(1, 3)
 	end
-	self.y = boss_world1_lane_y[lane]
+	self.spatial:set_world_origin(x, boss_world1_lane_y[lane])
 	local flip_h<const> = self.direction == 'left'
 	self.sprite_component.flip_h = flip_h
 	self.collider:set_shape_flip(flip_h, false)
@@ -352,13 +321,10 @@ function world1_daemon:spawn_potato(x, y)
 				castle = self.castle,
 				room = self.room,
 				player = self.player,
-				pos = { x = x, y = y, z = draw_z_enemy + 1 },
-				speed_x_num = speed_x,
-				speed_y_num = 4,
 				drop_health_chance_pct = 0,
 				drop_ammo_chance_pct = 0,
 				direction = self.direction,
-			})
+			}, { local_transform = { 1, 0, 0, 1, x, y } }, { movement = { speed_x_num = speed_x, speed_y_num = 4 } })
 			return
 		end
 	end
@@ -378,11 +344,12 @@ function world1_daemon:spawn_attack_burst(burst_count)
 		projectiles[index] = nil
 	end
 
-	local x = self.x
+	local pose<const> = self.spatial
+	local x = pose.ox
 	if self.direction == 'right' then
 		x = x + (8 * room_tile_size)
 	end
-	local y<const> = self.y
+	local y<const> = pose.oy
 	for _ = 1, boss_world1_spawn_projectiles_per_burst do
 		local speed_x = math.random(10, 19) * 2
 		if self.direction == 'left' then
@@ -393,11 +360,8 @@ function world1_daemon:spawn_attack_burst(burst_count)
 			castle = self.castle,
 			room = self.room,
 			player = self.player,
-			pos = { x = x, y = y, z = draw_z_enemy + 1 },
-			speed_x_num = speed_x,
-			speed_y_num = math.random(-12, 11) * 4,
 			direction = self.direction,
-		})
+		}, { local_transform = { 1, 0, 0, 1, x, y } }, { velocity = { speed_x_num = speed_x, speed_y_num = math.random(-12, 11) * 4 }, base_sprite = { order = 251 } })
 		projectiles[#projectiles + 1] = projectile
 	end
 
@@ -425,15 +389,10 @@ function world1_daemon:spawn_zak()
 				castle = self.castle,
 				room = self.room,
 				player = self.player,
-				pos = {
-					x = x,
-					y = boss_world1_zak_lane_y[math.random(1, 3)],
-					z = draw_z_enemy,
-				},
 				direction = direction,
 				drop_health_chance_pct = boss_world1_zak_drop_health_chance_pct,
 				drop_ammo_chance_pct = boss_world1_zak_drop_ammo_chance_pct,
-			})
+			}, { local_transform = { 1, 0, 0, 1, x, boss_world1_zak_lane_y[math.random(1, 3)] } })
 			return
 		end
 	end
@@ -510,8 +469,9 @@ function world1_daemon:begin_death()
 	self.collider:set_enabled(false)
 	self:clear_encounter_objects()
 	self:set_pose(poses.walk_1)
-	self.sprite_component.offset_y = 0
-	self.death_visual:set_draw_function(draw_death_overlay)
+	self.sprite_component:set_presentation_origin(0, 0)
+	self.death_visual.visible = true
+	self.death_visual:set_draw_function(death_visual_component.draw_overlay)
 end
 
 function world1_daemon:spawn_key()
@@ -521,10 +481,9 @@ function world1_daemon:spawn_key()
 		space_id = self.space_id,
 		room = self.room,
 		player = self.player,
-		pos = { x = boss_world1_key_x, y = boss_world1_key_y, z = draw_z_enemy },
 		item_id = 'world1_daemon_key',
 		item_type = 'keyworld1',
-	})
+	}, { local_transform = { 1, 0, 0, 1, boss_world1_key_x, boss_world1_key_y } })
 	self.events:emit('daemon.death_complete')
 end
 
@@ -538,6 +497,7 @@ local define_world1_daemon_fsm<const> = function()
 		timelines = {
 			[timeline_id.prepare_spawn] = {
 				def = {
+					phase = 'physical',
 					frames = prepare_spawn_frames,
 					frame_duration = boss_world1_pose_frame_ms,
 					playback_mode = 'once',
@@ -547,6 +507,7 @@ local define_world1_daemon_fsm<const> = function()
 			},
 			[timeline_id.unprepare_spawn] = {
 				def = {
+					phase = 'physical',
 					frames = unprepare_spawn_frames,
 					frame_duration = boss_world1_pose_frame_ms,
 					playback_mode = 'once',
@@ -556,6 +517,7 @@ local define_world1_daemon_fsm<const> = function()
 			},
 			[timeline_id.prepare_pounce] = {
 				def = {
+					phase = 'physical',
 					frames = prepare_pounce_frames,
 					frame_duration = boss_world1_pose_frame_ms,
 					playback_mode = 'once',
@@ -565,6 +527,7 @@ local define_world1_daemon_fsm<const> = function()
 			},
 			[timeline_id.unprepare_pounce] = {
 				def = {
+					phase = 'physical',
 					frames = unprepare_pounce_frames,
 					frame_duration = boss_world1_pose_frame_ms,
 					playback_mode = 'once',
@@ -574,6 +537,7 @@ local define_world1_daemon_fsm<const> = function()
 			},
 			[timeline_id.death] = {
 				def = {
+					phase = 'presentation',
 					frames = timeline.range(death_hidden_frame + boss_world1_death_hidden_frames),
 					playback_mode = 'once',
 					clock_source = timeline_clock_source.frame,
@@ -581,13 +545,21 @@ local define_world1_daemon_fsm<const> = function()
 						{
 							kind = 'value',
 							interpolation = 'step',
-							path = { 'death_stage' },
+							path = { 'death_visual', 'stage' },
 							keys = death_stage_keys,
 						},
 						{
 							kind = 'value',
 							interpolation = 'step',
-							path = { 'visible' },
+							path = { 'sprite_component', 'visible' },
+							keys = {
+								{ frame = 0, value = true },
+								{ frame = death_hidden_frame, value = false },
+							},
+						},
+						{
+							kind = 'value', interpolation = 'step',
+							path = { 'death_visual', 'visible' },
 							keys = {
 								{ frame = 0, value = true },
 								{ frame = death_hidden_frame, value = false },
@@ -643,15 +615,14 @@ local define_world1_daemon_fsm<const> = function()
 end
 
 local register_world1_daemon_definition<const> = function()
-	for index = 1, death_image_count do
-		death_images[index] = image.resolve('world1_daemon_death_' .. tostring(index))
-	end
 	prefab.define({
 		def_id = 'world1_daemon_key',
 		class = world1_daemon_key,
 		base = world_item,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = 'world_key', order = 142 } },
 		components = {
-			collider_2d_component.new_for_sprite,
+			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_pickup_layer, mask = collision_pickup_mask }),
 			fsm_component.factory({ 'world_item' }),
 		},
 	})
@@ -659,10 +630,12 @@ local register_world1_daemon_definition<const> = function()
 		def_id = 'enemy.daemon',
 		class = world1_daemon,
 		base = enemy_base,
+		spatial = { family = '2d', authority = 'root_origin' },
+		initial = { base_sprite = { imgid = 'world1_daemon_walk_1', order = 250 }, death = { order = 251 } },
 		components = {
 			new_collider,
 			behaviour_tree_component.factory(world1_daemon.tree_id),
-			custom_visual_component.new,
+			death_visual_component.new,
 			timeline_component.new,
 			fsm_component.factory({ 'world1_daemon' }),
 		},

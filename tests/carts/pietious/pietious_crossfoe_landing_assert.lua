@@ -28,22 +28,21 @@ return {
 				end
 			end
 			local cross<const> = registry:get('c').room.scene.members[test.cross_id]
-			test.cross_start_x = cross.x
-			player.x = room_tile_size * 14
-			player.y = cross.y
+			test.cross_start_x = cross.spatial.ox
+			player.spatial:set_world_origin(room_tile_size * 14, cross.spatial.oy)
 
 			for tick = 1, enemy_cross_wait_before_fly_steps / 2 do
-				player.y = cross.y
+				player.spatial:set_world_origin(player.spatial.ox, cross.spatial.oy)
 				t:wait_ticks(1)
-				assert(cross.x == test.cross_start_x, 'cross left during takeoff wait')
+				assert(cross.spatial.ox == test.cross_start_x, 'cross left during takeoff wait')
 			end
-			player.y = cross.y - player.height - 1
+			player.spatial:set_world_origin(player.spatial.ox, cross.spatial.oy - player.height - 1)
 			t:wait_ticks(1)
-			assert(cross.x == test.cross_start_x, 'cross left after takeoff condition failed')
+			assert(cross.spatial.ox == test.cross_start_x, 'cross left after takeoff condition failed')
 			local waiting_ticks = 0
 			t:wait_until('cross full takeoff wait', function()
-				player.y = cross.y
-				if cross.x ~= test.cross_start_x then return true end
+				player.spatial:set_world_origin(player.spatial.ox, cross.spatial.oy)
+				if cross.spatial.ox ~= test.cross_start_x then return true end
 				waiting_ticks = waiting_ticks + 1
 				return false
 			end, 300)
@@ -51,8 +50,8 @@ return {
 			t:wait_until('cross landing', function() return cross.cross_spin_direction == 'down' end, 300)
 			t:wait_ticks(1)
 			assert(room:has_collision_flags_at_world(
-			cross.x + room_tile_size,
-			cross.y + room_tile_size3,
+			cross.spatial.ox + room_tile_size,
+			cross.spatial.oy + room_tile_size3,
 			collision_flags_solid_mask
 			), 'crossfoe stopped without authored room support')
 
