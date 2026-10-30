@@ -91,6 +91,11 @@ export class SuspendedGuestSession {
 		return this.cpu.getSystemGlobalByKey(this.stringPool.find(name)!);
 	}
 
+	/** Decode semantic String data, without invoking value presentation. */
+	public stringText(value: StringValue): string {
+		return this.stringPool.toString(value.id);
+	}
+
 	/** UI borrowers end before execution and when restore replaces the inspected heap. */
 	public onDidInvalidate(listener: (reason: GuestInvalidationReason) => void): () => void {
 		this.invalidationListeners.add(listener);
