@@ -1,12 +1,17 @@
 import type { LuaTableConstructorExpression, LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
-import type { LuaSourceReader } from '../../../language/lua/source_reader';
+import type { LuaSourceReader, LuaWrittenProducer } from '../../../language/lua/source_reader';
 import type { AnimationKeyIndex } from './key_index';
 
 /** A written table, not the compiled program or a borrowed live instance. */
 export type AnimationTableSource = {
 	readonly file: FileSemanticData;
 	readonly table: LuaTableConstructorExpression;
+	readonly properties: readonly {
+		readonly field: LuaTableField;
+		readonly stringValue: string | undefined;
+		readonly producer: LuaWrittenProducer | undefined;
+	}[];
 	/** Structural authority includes the containing definition, not just this initializer. */
 	readonly structural: boolean;
 	readonly array: boolean;

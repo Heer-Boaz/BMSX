@@ -1,5 +1,5 @@
 import type { BFont } from '../../../machine/ts/render/shared/bitmap_font';
-import { truncateMeasuredText, writeWrappedMeasuredText, type TextRangeMeasure } from '../../common/text';
+import { firstLineTextPreview, truncateMeasuredText, writeWrappedMeasuredText, type TextRangeMeasure } from '../../common/text';
 import { clampWorkbenchListScroll, layoutWorkbenchList } from './list_view';
 import { WORKBENCH_ICON_SIZE } from './icon';
 import type { WorkbenchTreeLayout, WorkbenchTreeNode, WorkbenchTreeState } from './tree_view';
@@ -96,9 +96,9 @@ function writePropertyText<Element extends WorkbenchPropertyElement>(
 		// Deep names partition their remaining row, rather than disappearing behind the root's value column.
 		element.displayValueLeft = element.label.length === 0 ? labelLeft
 			: Math.max(layout.valueLeft + 4, labelLeft + ((layout.contentRight - labelLeft - 8) * 0.4 | 0) + 4);
-		element.displayLabel = truncateMeasuredText(element.label,
+		element.displayLabel = truncateMeasuredText(firstLineTextPreview(element.label),
 			(element.kind === 'group' && element.value.length === 0 ? layout.contentRight : element.displayValueLeft - 4) - labelLeft - 4, measure);
-		element.displayValue = truncateMeasuredText(element.value, layout.contentRight - element.displayValueLeft - 4, measure);
+		element.displayValue = truncateMeasuredText(firstLineTextPreview(element.value), layout.contentRight - element.displayValueLeft - 4, measure);
 		const childrenHaveDescription = writePropertyText(node.children, layout, measure);
 		hasDescription = hasDescription || element.description.length > 0 || childrenHaveDescription;
 	}

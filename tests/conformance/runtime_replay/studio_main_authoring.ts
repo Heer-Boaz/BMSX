@@ -13,6 +13,7 @@ import { inputFocus } from '../../../ide/input/focus';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { testProjectBrowserSession } from './studio_browser_session';
 import { testStudioBehaviorIntent } from './studio_behavior_intent';
+import { testStudioSourceValues } from './studio_source_values';
 import { registerLuaSourceRecord } from '../../../ide/runtime/source_registry';
 import type { Blua32SourceImage } from '../../../ide/runtime/sources';
 import type { CommandQuickPickItem } from '../../../ide/workbench/contrib/commands/quick_pick_provider';
@@ -45,6 +46,7 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 	await testMainSceneAuthoring(test);
 	await testMainProjectRun(test);
 	await testStudioBehaviorIntent(test);
+	await testStudioSourceValues(test);
 	await testProjectBrowserSession(test);
 	await testStudioBatchClose(test);
 	await testStudioSaveAll(test);

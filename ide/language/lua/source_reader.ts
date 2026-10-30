@@ -20,14 +20,14 @@ export class LuaSourceReader {
 		return this.resolve(this.snapshot.symbolResolver.authoredSources.trace(query.expression(file, expression)));
 	}
 
-	/** Static string proof over authored sources, without synthesizing a literal or executing Lua. */
+	/** String content over this immutable snapshot, independent of represented source ownership. */
 	public stringValue(file: FileSemanticData, expression: LuaExpression): string | undefined {
 		const source = this.snapshot.symbolResolver.writtenSources.expression(file, expression);
 		if (this.strings.has(source)) return this.strings.get(source);
 		// Recursive authored aliases remain unknown; repeated queries share this source-generation cache.
 		this.strings.set(source, undefined);
 		const trace = this.snapshot.symbolResolver.authoredSources.trace(source);
-		const resolved = this.resolve(trace)?.expression;
+		const resolved = this.selectExpression(trace)?.expression;
 		let value: string | undefined;
 		if (resolved?.kind === LuaSyntaxKind.StringLiteralExpression) value = resolved.value;
 		else if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'unknown-value') {
@@ -57,6 +57,11 @@ export class LuaSourceReader {
 				if (source.file.syntaxError !== null) this.syntaxComplete = false;
 			}
 		}
+		return this.selectExpression(trace);
+	}
+
+	/** Unique authored syntax is independent of whether the consumer represents that source. */
+	private selectExpression(trace: LuaAuthoredSourceTrace): LuaWrittenExpression | undefined {
 		if (trace.boundaries.length !== 0 || trace.terminals.length !== 1) return undefined;
 		const source = trace.terminals[0];
 		const syntax = source.value.root.kind === 'owned' ? source.value.root.syntax : writtenSourceExpression(source);

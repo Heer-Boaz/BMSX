@@ -2,7 +2,7 @@ import { clamp } from '../../../../machine/ts/common/clamp';
 import type { RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
-import { ELLIPSIS, truncateMeasuredText, writeWrappedMeasuredLine, type TextRangeMeasure } from '../../../common/text';
+import { ELLIPSIS, firstLineTextPreview, truncateMeasuredText, writeWrappedMeasuredLine, type TextRangeMeasure } from '../../../common/text';
 import type { WorkbenchPropertyElement } from '../property_tree';
 import { WorkbenchScrollViewport } from '../scroll_viewport';
 import { WORKBENCH_ICON_SIZE } from '../icon';
@@ -163,16 +163,14 @@ export class WorkbenchPropertyInspectorModel<Element extends InspectedProperty> 
 					row.disclosureLeft = padding + depth * indentWidth;
 					row.labelLeft = row.disclosureLeft + 10;
 					if (compactChanged || labelChanged) {
-						const label = row.element.label, end = label.indexOf('\n');
-						row.measured.labelPreview = end === -1 ? label : label.slice(0, end) + ELLIPSIS;
+						row.measured.labelPreview = firstLineTextPreview(row.element.label);
 					}
 					if (fontChanged || compactChanged || labelChanged) {
 						const label = row.measured.labelPreview;
 						row.measured.labelWidth = label.length === 0 ? 0 : measure(label, 0, label.length);
 					}
 					if (compactChanged || valueChanged) {
-						const value = row.element.value, end = value.indexOf('\n');
-						row.measured.valuePreview = end === -1 ? value : value.slice(0, end) + ELLIPSIS;
+						row.measured.valuePreview = firstLineTextPreview(row.element.value);
 					}
 					if (!group && (fontChanged || compactChanged || groupChanged || valueChanged)) {
 						const value = row.measured.valuePreview;

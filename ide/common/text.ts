@@ -84,6 +84,12 @@ export function uppercaseOutsideStrings(text: string): string {
 export type TextRangeMeasure = (text: string, start: number, end: number) => number;
 export const ELLIPSIS = '…';
 
+/** A one-line cell preview; the owning property retains its complete value. */
+export function firstLineTextPreview(text: string): string {
+	const end = text.indexOf('\n');
+	return end === -1 ? text : text.slice(0, end) + ELLIPSIS;
+}
+
 /** Smallest contiguous replacement between two UTF-16 source snapshots. */
 export function changedTextRange(previous: string, next: string): { start: number; previousEnd: number; nextEnd: number } | undefined {
 	if (previous === next) return undefined;

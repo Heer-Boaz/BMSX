@@ -1,6 +1,6 @@
 import type { LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { BehaviorSourceNode } from './model';
-import type { ActionEffectSourceBody, ActionEffectSourceField } from './action_effect_model';
+import type { ActionEffectSourceBody, ActionEffectSourceField, ActionEffectSourceRequirementEntry } from './action_effect_model';
 import {
 	appendBehaviorSourcePath,
 	behaviorSourceFieldSegment,
@@ -9,7 +9,6 @@ import {
 	createSourceNode,
 	describeExpression,
 	type BehaviorRecognizerContext,
-	type BehaviorSourceArrayEntry,
 	type ResolvedSourceTable,
 } from './source';
 
@@ -25,11 +24,11 @@ export function buildActionEffectBody(
 		const field = entry.field;
 		switch (entry.name) {
 			case 'required_tags': case 'blocked_tags': case 'required_state_paths': case 'blocked_state_paths': {
-				const entries: BehaviorSourceArrayEntry<BehaviorSourceNode>[] = [];
+				const entries: ActionEffectSourceRequirementEntry[] = [];
 				const source = buildTableArraySection(context, resolved.file, appendBehaviorSourcePath('', entry.name), entry.name, field.value, activeTables,
 					(childContext, file, path, expression, active, field, index) => {
 						const node = buildExpressionProperty(childContext, file, path, expression, active);
-						entries.push({ file, field, index, node });
+						entries.push({ file, field, index, node, stringValue: childContext.reader.stringValue(file, expression) });
 						return node;
 					});
 				children.push(source);
@@ -43,7 +42,7 @@ export function buildActionEffectBody(
 					authoredRange: resolved.file.chunk.locations.range(field.span), referenceRange: null, resolution: 'complete', children: [],
 				});
 				children.push(source);
-				fields.push({ kind: 'value', name: entry.name, field, source });
+				fields.push({ kind: 'value', name: entry.name, field, source, stringValue: context.reader.stringValue(resolved.file, field.value) });
 				break;
 			}
 			case null: {

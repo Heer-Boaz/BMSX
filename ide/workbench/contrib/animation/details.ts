@@ -7,7 +7,7 @@ import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows } from '../../ui/tree
 import type { AnimationTableSource } from './model';
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
-import type { LuaSourceReader, LuaWrittenProducer } from '../../../language/lua/source_reader';
+import type { LuaWrittenProducer } from '../../../language/lua/source_reader';
 
 export type AnimationProperty = WorkbenchPropertyElement & {
 	readonly source: AnimationTableSource;
@@ -17,7 +17,7 @@ export type AnimationProperty = WorkbenchPropertyElement & {
 
 /** Flat Details for the selected definition, track or key; nested producer code stays Source. */
 export function projectAnimationDetails(tree: WorkbenchPropertyTree<AnimationProperty>, source: AnimationTableSource | undefined,
-	resolveModel: (file: FileSemanticData) => EditorTextModel, reader: LuaSourceReader | undefined, excluded: readonly string[]): void {
+	resolveModel: (file: FileSemanticData) => EditorTextModel, excluded: readonly string[]): void {
 	tree.roots.length = 0;
 	tree.selectionIndex = -1;
 	if (source !== undefined) {
@@ -29,15 +29,14 @@ export function projectAnimationDetails(tree: WorkbenchPropertyTree<AnimationPro
 			if (name !== null) lastNamed.set(name, field);
 		}
 		let arrayIndex = 0;
-		for (const field of fields) {
+		for (const { field, stringValue, producer } of source.properties) {
 			const name = staticLuaTableFieldName(field);
 			if (field.kind === LuaTableFieldKind.Array) arrayIndex++;
 			if (name !== null && (excluded.includes(name) || lastNamed.get(name) !== field)) continue;
 			const range = source.file.chunk.locations.range(field.span);
-			const producer = reader!.producer(source.file, field.value);
 			if (producer !== undefined) resolveModel(producer.source.file);
 			appendWorkbenchTreeNode(tree, null, { kind: 'property', source, field, producer, label: name === null ? field.kind === LuaTableFieldKind.Array ? `[${arrayIndex}]` : '[source key]' : name,
-				value: readLuaExpressionPreview(model.buffer, source.file.chunk.locations, field.value),
+				value: stringValue ?? readLuaExpressionPreview(model.buffer, source.file.chunk.locations, field.value),
 				description: `${model.resource.path}:${range.start.line}`, warning: !source.structural, displayLabel: '', displayValue: '', displayValueLeft: 0 }, false,
 				name === null ? field.kind === LuaTableFieldKind.Array ? arrayIndex : field : name);
 		}

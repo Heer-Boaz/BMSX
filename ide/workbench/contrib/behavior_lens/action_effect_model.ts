@@ -6,6 +6,7 @@ import type { BehaviorSourceArrayEntry, BehaviorSourceTableSection, SourceTableI
 export type ActionEffectSourceValueName = 'event' | 'handler' | 'can_trigger' | 'cooldown_ms'
 	| 'calculate_cooldown_ms' | 'initial_cooldown_ms' | 'defer_cooldown_commit' | 'period_ms';
 export type ActionEffectSourceRequirementName = 'required_tags' | 'blocked_tags' | 'required_state_paths' | 'blocked_state_paths';
+export type ActionEffectSourceRequirementEntry = BehaviorSourceArrayEntry<BehaviorSourceNode> & { readonly stringValue: string | undefined };
 
 /** Authored properties and requirements, not trigger steps or evaluated callback results. */
 export type ActionEffectSourceField = {
@@ -14,11 +15,12 @@ export type ActionEffectSourceField = {
 	readonly kind: 'value';
 	readonly name: ActionEffectSourceValueName;
 	readonly source: BehaviorSourceNode;
+	readonly stringValue: string | undefined;
 } | {
 	readonly kind: 'list';
 	readonly name: ActionEffectSourceRequirementName;
 	readonly source: BehaviorSourceTableSection;
-	readonly entries: readonly BehaviorSourceArrayEntry<BehaviorSourceNode>[];
+	readonly entries: readonly ActionEffectSourceRequirementEntry[];
 } | {
 	readonly kind: 'unknown';
 	readonly source: BehaviorDynamicSourceNode;

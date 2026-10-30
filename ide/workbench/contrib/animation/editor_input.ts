@@ -1,6 +1,7 @@
 import { resourceIdentityEquals, resourceIdentityKey } from '../../../common/resource';
 import type { AbstractEditorInput } from '../../common/editor_input';
 import { editorTextModelService } from '../../../editor/model/model_service';
+import { getOrCreateSemanticProject } from '../../../editor/contrib/intellisense/semantic/workspace/state';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import { mapTrackedTextRange, type TrackedTextRange } from '../../../editor/text/text_change';
 import { CompositeTextEditorInput } from '../../common/composite_text_editor_input';
@@ -76,26 +77,28 @@ export class AnimationEditorInput extends CompositeTextEditorInput<`animation:${
 		this.sourceModels.set(resourceIdentityKey(workingCopy.resource), workingCopy);
 		this.publishModels();
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
+		const project = getOrCreateSemanticProject(editorTextModelService, projectContextId);
 		this.disposables.add({ dispose: editorTextModelService.onDidChangeContent((model, event) => {
 			const address = resourceIdentityKey(model.resource);
-			if (this.sourceModels.get(address) !== model) return;
-			const state = event.editState !== null && event.editState.is(animationPropertyEditState) && event.editSource === this.editSource
-				? event.editState.value : undefined;
-			const detail = this.detailSelection;
-			const continuing = state !== undefined && detail !== undefined && detail.path === state.previous.path
-				&& detail.range.start === state.previous.range.start && detail.range.end === state.previous.range.end;
-			if (this.workingCopy === model && this.definitionRange !== undefined) mapTrackedTextRange(this.definitionRange, event.changes);
-			if (this.trackSelection?.path === address) mapTrackedTextRange(this.trackSelection.range, event.changes);
-			if (this.keySelection?.path === address) mapTrackedTextRange(this.keySelection.range, event.changes);
-			if (this.detailSelection?.path === address) mapTrackedTextRange(this.detailSelection.range, event.changes);
-			if (state !== undefined) {
-				if (event.kind === 'edit' && continuing) {
-					detail!.range.start = state.selected.range.start; detail!.range.end = state.selected.range.end;
-				} else if (event.kind === 'undo' || event.kind === 'redo') {
-					this.detailSelection = { path: state.selected.path, range: { ...state.selected.range } };
+			if (this.sourceModels.get(address) === model) {
+				const state = event.editState !== null && event.editState.is(animationPropertyEditState) && event.editSource === this.editSource
+					? event.editState.value : undefined;
+				const detail = this.detailSelection;
+				const continuing = state !== undefined && detail !== undefined && detail.path === state.previous.path
+					&& detail.range.start === state.previous.range.start && detail.range.end === state.previous.range.end;
+				if (this.workingCopy === model && this.definitionRange !== undefined) mapTrackedTextRange(this.definitionRange, event.changes);
+				if (this.trackSelection?.path === address) mapTrackedTextRange(this.trackSelection.range, event.changes);
+				if (this.keySelection?.path === address) mapTrackedTextRange(this.keySelection.range, event.changes);
+				if (this.detailSelection?.path === address) mapTrackedTextRange(this.detailSelection.range, event.changes);
+				if (state !== undefined) {
+					if (event.kind === 'edit' && continuing) {
+						detail!.range.start = state.selected.range.start; detail!.range.end = state.selected.range.end;
+					} else if (event.kind === 'undo' || event.kind === 'redo') {
+						this.detailSelection = { path: state.selected.path, range: { ...state.selected.range } };
+					}
 				}
 			}
-			this.invalidateProjection();
+			if (model.resource.source.type === 'lua' && project.hasSourceContext(model.resource.contextId)) this.invalidateProjection();
 		}) });
 	}
 	public publishModels(): void { this.setWorkingCopies(new Set(this.sourceModels.values())); }

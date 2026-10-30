@@ -7,10 +7,9 @@ import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNo
 import { createWorkbenchPropertyTree, type WorkbenchPropertyElement, type WorkbenchPropertyTree } from '../../ui/property_tree';
 import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
 import { WORKBENCH_MENUS } from '../../ui/menu/registry';
-import type { ActionEffectSourceDefinition } from './action_effect_model';
+import type { ActionEffectSourceDefinition, ActionEffectSourceRequirementEntry } from './action_effect_model';
 import type { BehaviorSourceNode, BehaviorSourceRowKey } from './model';
 import type { BehaviorLensViewState } from './view_model';
-import type { BehaviorSourceArrayEntry } from './source';
 
 const GROUPS: Readonly<Record<EffectPropertyGroup, { label: string; description: string }>> = {
 	grant: { label: 'GRANT', description: 'INITIAL COOLDOWN STARTS WHEN THIS EFFECT IS GRANTED. REBIND DOES NOT APPLY IT AGAIN.' },
@@ -89,17 +88,19 @@ export function projectActionEffectProperties(
 				: `${field.entries.length} AUTHORED / PARTIAL`;
 			value = field.field.value.kind === LuaSyntaxKind.TableConstructorExpression ? count
 				: `${readLuaExpressionPreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations, field.field.value)} / ${count}`;
-		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations.range(field.field.span)) : readLuaExpressionPreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations, field.field.value);
+		} else value = field.kind === 'unknown' ? readLuaSourceLinePreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations.range(field.field.span))
+			: field.kind === 'value' && field.stringValue !== undefined ? field.stringValue
+				: readLuaExpressionPreview(view.source.models.get(definition.body.file.file)!.buffer, definition.body.file.chunk.locations, field.field.value);
 		const row = add(field.source, group, metadata.label, value, metadata.description);
 		if (field.kind !== 'list') continue;
-		const entries = new Map<BehaviorSourceNode, BehaviorSourceArrayEntry<BehaviorSourceNode>>();
+		const entries = new Map<BehaviorSourceNode, ActionEffectSourceRequirementEntry>();
 		for (const entry of field.entries) entries.set(entry.node, entry);
 		function children(source: BehaviorSourceNode, parent: WorkbenchTreeNode<EffectPropertyElement>): void {
 			for (const child of source.children) {
 				const entry = entries.get(child);
 				const nested = entry === undefined
 					? add(child, parent, child.label, child.detail, 'PARTIAL REQUIREMENT SOURCE. NO DENSE RUNTIME INDEX IS INFERRED.')
-					: add(child, parent, '', readLuaExpressionPreview(view.source.models.get(entry.file.file)!.buffer, entry.file.chunk.locations, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.');
+					: add(child, parent, '', entry.stringValue ?? readLuaExpressionPreview(view.source.models.get(entry.file.file)!.buffer, entry.file.chunk.locations, entry.field.value), 'AUTHORED REQUIREMENT VALUE. SOURCE OPENS THIS EXPRESSION, NOT ITS PARENT LIST.');
 				children(child, nested);
 			}
 		}

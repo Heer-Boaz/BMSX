@@ -15,7 +15,7 @@ function fixture(source: string, providers: Readonly<Record<string, string>> = {
 	return { file, files, snapshot, reader: new LuaSourceReader(snapshot), expressions: returned.expressions };
 }
 
-test('authored strings prove decoded literals, unique aliases and string-only concatenations with provider dependencies', () => {
+test('authored string content proofs do not admit their query-only providers as represented source owners', () => {
 	const f = fixture(`local names = require('names')
 local prefix<const> = '/'
 local path<const> = prefix .. names.idle
@@ -23,11 +23,27 @@ return [=[O'Brien\u0060Fx]=], names.idle, prefix .. names.idle, path, names.empt
 		'names.lua': "return { idle = 'Idle', empty = '' }",
 	});
 	assert.deepEqual(f.expressions.map(expression => f.reader.stringValue(f.file, expression)), ["O'Brien`Fx", 'Idle', '/Idle', '/Idle', '', undefined]);
-	assert.deepEqual([...f.reader.files].map(file => file.file).sort(), ['names.lua', 'strings.lua']);
+	assert.equal(f.reader.files.size, 0);
 	for (const expression of f.expressions) {
 		const first = f.reader.stringValue(f.file, expression);
 		assert.equal(f.reader.stringValue(f.file, expression), first, 'repeated cold-source queries retain the same proof');
 	}
+	f.reader.expression(f.file, f.expressions[1]);
+	assert.deepEqual([...f.reader.files].map(file => file.file).sort(), ['names.lua', 'strings.lua'],
+		'an explicit source expression still records its navigation and editing owners after a content proof');
+});
+
+test('failed string content proofs do not import unrelated callback syntax recovery into represented source', () => {
+	const file = buildLuaFileSemanticData("return require('callback')", 'strings.lua');
+	const callback = buildLuaFileSemanticData('return function() end\nlocal broken =', 'callback.lua');
+	assert.notEqual(callback.syntaxError, null);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture([file, callback].map(file => ({ path: file.file, source: file.source, analysis: file }))));
+	const reader = new LuaSourceReader(snapshot), returned = file.chunk.body.get(0);
+	assert.ok(returned.kind === LuaSyntaxKind.ReturnStatement);
+	assert.equal(reader.stringValue(file, returned.expressions[0]), undefined);
+	assert.equal(reader.files.size, 0); assert.equal(reader.syntaxComplete, true);
+	reader.expression(file, returned.expressions[0]);
+	assert.equal(reader.files.has(callback), true); assert.equal(reader.syntaxComplete, false);
 });
 
 test('authored strings retain competing writes, unknown members, calls and cycles instead of inferring values', () => {

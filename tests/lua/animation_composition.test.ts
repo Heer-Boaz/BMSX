@@ -16,7 +16,8 @@ import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { getOrCreateSemanticProject } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
-import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
+import { luaSourceRangeToTextRange, readLuaSourceRange } from '../../ide/language/lua/source_edits';
+import { parseLuaFieldValueEdit } from '../../ide/language/lua/field_value_edit';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
@@ -41,6 +42,98 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
 const resource = { contextLabel: 'Fixture project', sourceFilePath: 'parent.lua', location: { kind: 'workspace' as const, path: 'parent.lua' }, contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'parent.lua', source: { resid: 'parent.lua', type: 'lua' as const } };
 const child = "return {duration_ms=100, tracks={{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}";
+
+test('Animation Details presents proved string values without changing their authored expressions', () => {
+	for (const [expression, expected] of [
+		["'once'", 'once'], ['"once"', 'once'], ["[=[O'Brien`Fx]=]", "O'Brien`Fx"], ["''", ''],
+		['alias', 'once'], ["'pre.' .. names.mode", 'pre.once'], ['names.empty', ''],
+		['[=[first\nsecond]=]', 'first\nsecond'], ["'first\\nsecond'", 'first\nsecond'],
+		["external or 'once'", "external or 'once'"], ["make_mode('once')", "make_mode('once')"],
+	] as const) {
+		const source = `local names=require('names'); local alias=names.mode; return {playback_mode=${expression},tracks={}}`;
+		const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source),
+			createScenarioTestSourceRecord('names.lua', 2, "return {mode='once',empty=''}")]);
+		const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
+		const controller = new AnimationEditorController(sources.catalog), input = new AnimationEditorInput(model, model.resource.contextId);
+		try {
+			controller.refresh(input);
+			const property = input.details.rows.find(row => row.element.label === 'playback_mode')!.element;
+			assert.equal(property.value, expected, 'a value cell consumes proved string content, not its Lua delimiters');
+			assert.equal(readLuaSourceRange(model.buffer, property.source.file.chunk.locations.range(property.field.value.span)), expression);
+			assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
+		} finally { input.dispose(); editorTextModelService.clear(); }
+	}
+});
+
+test('hidden Animation string-proof provider edits invalidate the generation without becoming editable source participants', t => {
+	const source = "local names=require('names'); return {playback_mode='prefix.' .. names.mode,tracks={}}";
+	const names = "return {mode='once'}";
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source),
+		createScenarioTestSourceRecord('names.lua', 2, names)]);
+	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
+	const controller = new AnimationEditorController(sources.catalog), input = new AnimationEditorInput(model, model.resource.contextId);
+	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	controller.refresh(input);
+	const document = input.document;
+	const read = () => input.details.rows.find(row => row.element.label === 'playback_mode')!.element.value;
+	assert.equal(read(), 'prefix.once');
+	const provider = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: resource.contextId, path: 'names.lua' })!, 'lua', names);
+	let invalidations = 0;
+	const unbind = input.onDidInvalidateProjection(() => invalidations++); t.after(unbind);
+	provider.pushEditOperations([{ offset: names.indexOf('once'), deleteLength: 4, text: 'loop' }]);
+	assert.equal(invalidations, 1); assert.equal(input.document, document, 'hidden inputs revoke authority without rebuilding source');
+	assert.deepEqual(input.getWorkingCopies(), [model], 'query-only providers do not acquire Save/dirty/Undo participation');
+	controller.refresh(input); assert.equal(read(), 'prefix.loop');
+	provider.undo(); controller.refresh(input); assert.equal(read(), 'prefix.once');
+	assert.equal(model.buffer.getText(), source); assert.equal(model.canUndo, false);
+	input.dispose(); const retired = invalidations;
+	provider.pushEditOperations([{ offset: names.indexOf('once'), deleteLength: 4, text: 'stop' }]);
+	assert.equal(invalidations, retired, 'disposing the input retires its semantic invalidation subscription');
+});
+
+test('Animation semantic invalidation publishes only after every compound source edit has applied', t => {
+	const source = "local names=require('names'); return {playback_mode='prefix.' .. names.mode,tracks={}}", names = "return {mode='once'}";
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source), createScenarioTestSourceRecord('names.lua', 2, names)]);
+	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
+	const provider = editorTextModelService.retain(sources.catalog.resolveResource({ contextId: resource.contextId, path: 'names.lua' })!, 'lua', names);
+	const controller = new AnimationEditorController(sources.catalog), input = new AnimationEditorInput(model, model.resource.contextId);
+	t.after(() => { input.dispose(); editorTextModelService.clear(); }); controller.refresh(input);
+	const changedSource = '-- changed\n' + source, changedNames = names.replace('once', 'loop');
+	let observations = 0;
+	t.after(input.onDidInvalidateProjection(() => {
+		observations++;
+		assert.equal(model.buffer.getText(), changedSource);
+		assert.equal(provider.buffer.getText(), changedNames, 'projection retirement can run UI callbacks only after the full source batch applied');
+	}));
+	editorTextModelService.history.applyEdits(new Map([
+		[model, { version: model.version, edits: [{ offset: 0, deleteLength: 0, text: '-- changed\n' }] }],
+		[provider, { version: provider.version, edits: [{ offset: names.indexOf('once'), deleteLength: 4, text: 'loop' }] }],
+	]));
+	assert.ok(observations > 0, 'the completed source batch retires the projection');
+});
+
+test('Animation decoded values retain the written alias as their edit seed and one source Undo step', t => {
+	const source = "local mode='once'; return {playback_mode=mode,tracks={}}";
+	const sources = createScenarioTestSourceState([createScenarioTestSourceRecord(resource.path, 1, source)]);
+	const model = editorTextModelService.retain(sources.catalog.resolveResource(resource)!, 'lua', source);
+	const controller = new AnimationEditorController(sources.catalog), input = new AnimationEditorInput(model, model.resource.contextId);
+	t.after(() => { input.dispose(); editorTextModelService.clear(); });
+	controller.refresh(input);
+	const rowIndex = input.details.rows.findIndex(row => row.element.label === 'playback_mode');
+	controller.selectProperty(input, rowIndex);
+	const property = input.details.rows[rowIndex].element;
+	assert.equal(property.value, 'once');
+	assert.equal(readLuaSourceRange(model.buffer, property.source.file.chunk.locations.range(property.field.value.span)), 'mode');
+	const edit = parseLuaFieldValueEdit(model.buffer, property.source.file.chunk.locations, property.field, "[=[O'Brien`Fx]=]");
+	assert.ok('value' in edit);
+	controller.authoring.editProperty(input, property, edit.value);
+	const changed = source.replace('playback_mode=mode', "playback_mode=[=[O'Brien`Fx]=]");
+	assert.equal(model.buffer.getText(), changed);
+	assert.equal(input.details.rows[input.details.selectionIndex].element.value, "O'Brien`Fx");
+	model.undo(input.editSource); controller.refresh(input); assert.equal(model.buffer.getText(), source);
+	assert.equal(input.details.rows[input.details.selectionIndex].element.value, 'once'); assert.equal(model.canUndo, false);
+	model.redo(input.editSource); controller.refresh(input); assert.equal(model.buffer.getText(), changed);
+});
 
 test('overview key picking does not clear the active occurrence before resolving a hit', t => {
 	const source = "return {duration_ms=100,tracks={{kind='value',interpolation='linear',keys={{time_ms=50,value=0},{time_ms=50,value=0}}},{kind='event',keys={{time_ms=25,event='other'}}}}}";

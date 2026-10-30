@@ -288,7 +288,7 @@ export class AnimationEditorController {
 				if (document?.framesSource?.array) excluded.push('frames');
 			}
 		}
-		projectAnimationDetails(input.details, input.framesSelected && source === undefined ? document?.root : source, file => this.modelFor(input, file), document?.reader, excluded);
+		projectAnimationDetails(input.details, input.framesSelected && source === undefined ? document?.root : source, file => this.modelFor(input, file), excluded);
 		if (retainSelection) {
 			for (let index = 0; index < input.details.rows.length; index++) {
 				const property = input.details.rows[index].element;

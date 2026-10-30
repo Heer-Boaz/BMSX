@@ -41,7 +41,9 @@ function fixture(source = ACTIONEFFECT_SOURCE, chosen = 0, imports: Readonly<Rec
 	const view = createBehaviorLensViewState(document(), model, 'properties', path => models.get(path)!);
 	const input = new BehaviorLensInput(model, view, new Set([model.resource.contextId]), () => assert.fail('property inputs must not construct a graph-layout engine'));
 	input.onWillDispose(() => service.clear());
-	service.onDidChangeContent((model, event) => { mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation(); });
+	service.onDidChangeContent((model, event) => {
+		view.source.invalidate(); mapBehaviorLensSourceRanges(view, model.resource, event); input.invalidatePresentation();
+	});
 	selectBehaviorLensDefinition(view, view.document.definitions[chosen].rowKey);
 	const properties = view.presentation;
 	assert.ok(properties.kind === 'properties');
@@ -81,6 +83,62 @@ function propertyEditFixture(t: TestContext, f: ReturnType<typeof fixture>, pane
 	return { parent, edit, openProperty, surfaces, owner, root, pane };
 }
 
+test('Effect properties present proved output-event and requirement strings without replacing authored expressions', () => {
+	for (const [expression, expected] of [
+		["'starcatch.dashed'", 'starcatch.dashed'], ['"starcatch.dashed"', 'starcatch.dashed'],
+		["[=[O'Brien`Fx]=]", "O'Brien`Fx"], ["''", ''], ['alias', 'starcatch.dashed'],
+		["'starcatch.' .. names.event", 'starcatch.dashed'], ['names.empty', ''],
+		['[=[first\nsecond]=]', 'first\nsecond'], ["'first\\nsecond'", 'first\nsecond'],
+		["external or 'event'", "external or 'event'"], ["make_event('event')", "make_event('event')"],
+	] as const) {
+		const source = `local fx=require('cartlib/actioneffects'); local names=require('names'); local alias='starcatch.' .. names.event;
+fx.register_effect('fixture', {event=${expression},required_tags={${expression}}})`;
+		const f = fixture(source, 0, { 'names.lua': "return {event='dashed',empty=''}" });
+		try {
+			const definition = f.view.document.definitions[0];
+			assert.ok(definition.behaviorKind === 'action_effect');
+			const event = definition.body!.fields.find(field => field.kind === 'value' && field.name === 'event')!;
+			const requirements = definition.body!.fields.find(field => field.kind === 'list' && field.name === 'required_tags')!;
+			assert.ok(requirements.kind === 'list');
+			for (const node of [event.source, requirements.entries[0].node])
+				assert.equal(f.properties.nodesBySource.get(node.rowKey)!.element.value, expected,
+					'a semantic property value is distinct from its original Lua expression');
+			assert.equal(readLuaSourceRange(f.model.buffer, definition.body!.file.chunk.locations.range(event.field.value.span)), expression);
+			assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+		} finally { f.input.dispose(); }
+	}
+});
+
+test('Effect string proofs retain provider generations without admitting query-only files to source editing', t => {
+	const source = "local fx=require('cartlib/actioneffects'); local names=require('names'); fx.register_effect('fixture',{event='prefix.' .. names.event})";
+	const names = "return {event='dashed'}";
+	const f = fixture(source, 0, { 'names.lua': names });
+	const { edit, openProperty } = propertyEditFixture(t, f);
+	const definition = f.view.document.definitions[0];
+	assert.ok(definition.behaviorKind === 'action_effect');
+	const sourceFiles = f.view.document.files.slice();
+	const read = () => f.properties.tree.rows.find(row => row.element.kind === 'property')!.element.value;
+	assert.equal(read(), 'prefix.dashed');
+	assert.deepEqual(f.input.getWorkingCopies(), [f.model]);
+	assert.equal(f.view.source.models.has(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'names.lua' })), false,
+		'query-only content does not admit another canonical model merely for value display');
+	f.properties.dirty = true; f.update(); assert.deepEqual(f.view.document.files, sourceFiles, 'presentation cannot discover source dependencies after publication');
+	const provider = f.models.get(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'names.lua' }))!;
+	provider.pushEditOperations([{ offset: names.indexOf('dashed'), deleteLength: 6, text: 'changed' }]);
+	assert.equal(f.view.source.isCurrent, false); f.refresh(); assert.equal(read(), 'prefix.changed');
+	provider.undo(); f.refresh(); assert.equal(read(), 'prefix.dashed');
+	assert.deepEqual(f.input.getWorkingCopies(), [f.model]);
+	const current = f.view.document.definitions[0]; assert.ok(current.behaviorKind === 'action_effect');
+	const field = current.body!.fields[0];
+	f.properties.tree.selectionIndex = f.properties.tree.rows.indexOf(f.properties.nodesBySource.get(field.source.rowKey)!);
+	acceptEffectPropertySelection(f.view, f.properties, false); openProperty(selectedActionEffectProperty(f.view)!);
+	assert.equal(edit.control.field.text, "'prefix.' .. names.event", 'the editor seeds the original expression, not the displayed string');
+	insertValue(edit.control.field, "[=[O'Brien`Fx]=]"); assert.equal(edit.control.commit(), true);
+	assert.equal(read(), "O'Brien`Fx"); assert.equal(provider.buffer.getText(), names);
+	f.model.undo(f.view.editSource); f.refresh(); assert.equal(f.model.buffer.getText(), source); assert.equal(read(), 'prefix.dashed');
+	assert.equal(f.model.canUndo, false);
+});
+
 test('imported property cells use their written models; Save/dirty and nearest source history cover only this definition', t => {
 	const root = `local fx<const> = require('cartlib/actioneffects')
 fx.register_effect('imported', require('blueprint'))
@@ -93,6 +151,8 @@ fx.register_effect('other', require('other'))`;
 	f.model.refreshResource({ ...f.model.resource, source: { ...f.model.resource.source, generated: true } });
 	assert.equal(f.input.readOnly, false, 'a read-only registration does not make a writable provider read-only');
 	assert.deepEqual(new Set(f.input.getWorkingCopies()), new Set([f.model, provider, tags]));
+	assert.equal(f.view.source.models.has(resourceIdentityKey({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'callback.lua' })), false,
+		'a failed string proof is not a represented callback source');
 	const dirty: boolean[] = [];
 	f.input.onDidChangeDirty(() => dirty.push(f.input.isDirty()));
 	const change = (label: string, value: string) => {
@@ -263,7 +323,7 @@ test('ActionEffect property groups project one chosen registration and retain ea
 	} finally { f.input.dispose(); }
 });
 
-test('property values are exact source excerpts, not evaluation, defaults, whitespace normalization or inferred phases', () => {
+test('properties preserve proved string content and source evidence without evaluation, defaults or inferred phases', () => {
 	const f = fixture(`local fx<const> = require('cartlib/actioneffects')
 fx.register_effect('expressions', {
  period_ms = cadence() * 2,
@@ -290,11 +350,12 @@ second]=],
 			&& end === f.model.buffer.offsetAt(period.end.line - 1, period.end.column)), 'single-line previews read only their source range, not an entire potentially fragmented line');
 		assert.equal(rows.get(fields[0].source.rowKey)!.element.value, 'cadence() * 2');
 		assert.equal(rows.get(fields[1].source.rowKey)!.element.value, 'nil');
-		assert.equal(rows.get(fields[2].source.rowKey)!.element.value, "'a  b'");
+		assert.equal(rows.get(fields[2].source.rowKey)!.element.value, 'a  b');
 		assert.equal(rows.get(fields[3].source.rowKey)!.element.value, 'function()');
 		const list = fields[4]; assert.ok(list.kind === 'list');
-		assert.equal(rows.get(list.entries[0].node.rowKey)!.element.value, '[[Mixed  Case]]');
-		assert.equal(rows.get(list.entries[1].node.rowKey)!.element.value, '[=[first…');
+		assert.equal(rows.get(list.entries[0].node.rowKey)!.element.value, 'Mixed  Case');
+		const multiline = rows.get(list.entries[1].node.rowKey)!.element;
+		assert.equal(multiline.value, 'first\nsecond'); assert.equal(multiline.displayValue, 'first…');
 		assert.ok(!f.properties.tree.roots.some(root => root.element.kind === 'group' && root.element.group === 'grant'));
 	} finally { f.input.dispose(); }
 });
@@ -309,7 +370,7 @@ test('requirements appear once as full-width values while aliases and inline cal
 			if (field.kind === 'list') {
 				for (const entry of field.entries) {
 					const child = f.properties.nodesBySource.get(entry.node.rowKey)!;
-					assert.equal(child.element.value, readLuaSourceRange(f.model.buffer, entry.file.chunk.locations.range(entry.field.value.span)));
+					assert.equal(child.element.value, entry.stringValue);
 					assert.ok(child.element.displayValueLeft < f.properties.tree.layout.valueLeft);
 				}
 			} else if (field.kind === 'value') {
@@ -330,7 +391,7 @@ test('partial property presentation retains computed keys, numeric wrappers and 
 		const list = fields[2]; assert.ok(list.kind === 'list');
 		assert.ok(f.properties.nodesBySource.get(fields[1].source.rowKey)!.element.warning);
 		const fourth = f.properties.nodesBySource.get(list.entries[1].node.rowKey)!;
-		assert.equal(fourth.element.value, "'fourth'");
+		assert.equal(fourth.element.value, 'fourth');
 		assert.ok(f.properties.nodesBySource.has(list.source.children[2].rowKey), 'unresolved entry remains navigable, not lost from the typed-entry list');
 		const dynamic = f.properties.nodesBySource.get(fields[3].source.rowKey)!;
 		assert.equal(dynamic.children.length, 0);

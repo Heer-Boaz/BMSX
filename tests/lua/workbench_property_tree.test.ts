@@ -32,6 +32,16 @@ function fixture(count = 40, groupDescription = 'A GROUP, NOT A PROPERTY.', prop
 	return { state, font, group, layout, measure, measurements: () => measurements };
 }
 
+test('property-tree cells preview the first line while retaining complete semantic values', () => {
+	for (const text of ['', "O'Brien`Fx", 'first\nsecond', '\nsecond', 'first\r\nsecond']) {
+		const f = fixture(1, '', { label: text, value: text, description: '' });
+		const element = f.group.children[0].element, end = text.indexOf('\n');
+		const expected = end === -1 ? text : text.slice(0, end) + '…';
+		assert.equal(element.displayLabel, expected); assert.equal(element.displayValue, expected);
+		assert.equal(element.label, text); assert.equal(element.value, text);
+	}
+});
+
 for (const dimension of ['width', 'height'] as const) {
 	test(`an unavailable property-tree ${dimension} has no rows or hidden layout work and preserves reading intent`, () => {
 		const f = fixture(); navigateWorkbenchTree(f.state, 'right'); f.layout();

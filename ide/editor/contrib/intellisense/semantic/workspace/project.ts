@@ -109,6 +109,9 @@ export class EditorLuaSemanticProject {
 
 	public get generation(): number { return this.generationValue; }
 
+	/** Admitted import contexts, without synchronizing or querying a source generation. */
+	public hasSourceContext(contextId: string): boolean { return this.sourceContextIds.has(contextId); }
+
 	public onDidInvalidate(listener: () => void): () => void {
 		this.invalidationListeners.add(listener);
 		return () => this.invalidationListeners.delete(listener);
