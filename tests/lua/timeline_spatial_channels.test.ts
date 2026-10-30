@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { IO_APU_SAMPLE_SEQUENCE, IO_SYS_TIME_MS } from '../../machine/ts/spec/bmsx/io';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
-import { valueString } from '../../machine/ts/machine/cpu/value';
+import { valueString, type StringValue } from '../../machine/ts/machine/cpu/value';
 import { Table } from '../../machine/ts/machine/cpu/table';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
@@ -27,6 +27,93 @@ prefab.define({def_id='timeline.pose3',class={},spatial={family='3d',authority='
 `;
 
 for (const optLevel of [0, 3] as const) {
+	test(`FSM state-created timeline receivers are admitted after entry and replaced on reentry (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+local fsm<const> = require('cartlib/fsm/fsm_component')
+local library<const> = require('cartlib/fsm/library')
+return pcall(function()
+library.register('timeline.entry_binding', { initial='hidden', states={
+ hidden={}, shown={
+  entering_state=function(self) self.panel={value=0} end,
+  exiting_state=function(self) self.panel=nil end,
+  timelines={ sample={def={duration_ms=100,tracks={
+   {kind='value',path={'panel','value'},interpolation='linear',
+    keys={{time_ms=0,value=2},{time_ms=100,value=12}}},
+  }}}},
+ },
+} })
+prefab.define({def_id='timeline.state_receiver',class={},components={manual_factory,
+ fsm.factory({'timeline.entry_binding'})}})
+local owner<const> = world:spawn('timeline.state_receiver',{})
+assert(owner.panel==nil,'inactive state fabricated its entry-owned recipient')
+owner.state_machines:transition_to('/shown')
+local first<const> = owner.panel
+local entry<const> = owner.timelines:get('sample')
+local program<const> = entry.program
+assert(first.value==2 and entry.playing,'autoplay ran before entry constructed the recipient')
+owner.timelines:seek_time('sample',50)
+assert(first.value==7)
+owner.state_machines:transition_to('/hidden')
+assert(owner.panel==nil and not entry.playing,'exited state retained scheduled playback')
+owner.state_machines:transition_to('/shown')
+local second<const> = owner.panel
+assert(second~=first and second.value==2 and first.value==7
+ and owner.timelines:get('sample')==entry and entry.program==program,
+ 'reentry sampled a retired recipient or rebuilt its transport/program identity')
+owner.timelines:seek_time('sample',100)
+assert(second.value==12 and first.value==7,'new playback wrote the previous state lifetime')
+world:clear()
+return true
+end)
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		const result = materializeCpuCompletionValues(cpu);
+		assert.equal(result[0], true, result[0] ? undefined : cpu.stringPool.toString((result[1] as StringValue).id));
+		assert.equal(result[1], true);
+	});
+
+	test(`FSM timeline admission uses the constructor-published component before autoplay (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+local fsm<const> = require('cartlib/fsm/fsm_component')
+local library<const> = require('cartlib/fsm/library')
+return pcall(function()
+library.register('timeline.component_binding', { initial='active', states={ active={ timelines={
+ bound={target_path={'sample'},def={phase='presentation',duration_ms=100,tracks={
+  {kind='spatial',operation='presentation_origin2',channels={
+   ox={interpolation='linear',keys={{time_ms=0,value=3},{time_ms=100,value=13}}},oy=7}},
+ } }},
+} } } })
+local actor<const> = {}
+function actor:ctor()
+ self.sample=self:get_component(visual2)
+end
+prefab.define({def_id='timeline.constructor_alias',class=actor,
+ spatial={family='2d',authority='affine',local_transform={1,0,0,1,40,50}},
+ components={manual_factory,function(context) return visual2.new(context,'sample') end,
+ fsm.factory({'timeline.component_binding'})}})
+local owner<const> = world:spawn('timeline.constructor_alias',{})
+local visual<const> = owner.sample
+local entry<const> = owner.timelines:get('bound')
+assert(entry.playing and entry.primary_binding==visual
+ and entry.channel_writers[1]==visual2.set_presentation_origin
+ and visual.presentation_ox==3 and visual.presentation_oy==7,
+ 'autoplay admitted the WorldObject in place of its constructor-published visual')
+local physical_revision<const> = owner.spatial._origin_revision
+owner.timelines:seek_time('bound',50)
+assert(visual.presentation_ox==8 and visual.presentation_oy==7
+ and owner.spatial.ox==40 and owner.spatial.oy==50
+ and owner.spatial._origin_revision==physical_revision,
+ 'targeted presentation sampling changed the physical owner')
+world:clear()
+return true
+end)
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		const result = materializeCpuCompletionValues(cpu);
+		assert.equal(result[0], true, result[0] ? undefined : cpu.stringPool.toString((result[1] as StringValue).id));
+		assert.equal(result[1], true);
+	});
+
 	test(`grouped spatial sampling preserves real identities, interpolation and query boundaries (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local owner<const> = world:spawn('timeline.pose2',{})

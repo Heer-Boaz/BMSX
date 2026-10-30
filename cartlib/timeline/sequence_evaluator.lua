@@ -111,7 +111,6 @@ local bind_child<const> = function(parent_entry, child_entry, clip)
 	end
 	local child_program<const> = child_entry.program
 	if child_program.binding_count == 1 then
-		if child_program.frame_builder == nil then channel_binding.resolve(child_entry) end
 		return
 	end
 	local bindings<const> = child_entry.bindings
@@ -126,7 +125,6 @@ local bind_child<const> = function(parent_entry, child_entry, clip)
 			bindings[binding_index] = nil
 		end
 	end
-	if child_program.frame_builder == nil then channel_binding.resolve(child_entry) end
 end
 
 local clear_child<const> = function(child_entry, owner)
@@ -176,9 +174,24 @@ function sequence_evaluator.init_entry(entry)
 			child_entry.bindings = {}
 		end
 		state.entries[clip_index] = child_entry
-		bind_child(entry, child_entry, clip)
 		timeline_track_evaluator.init_entry(child_entry)
 		sequence_evaluator.init_entry(child_entry)
+	end
+end
+
+-- Explicit definition admits static child outputs for immediate seek, without
+-- invoking parameterized frame builders before a playback supplies parameters.
+function sequence_evaluator.resolve_entry(entry)
+	local sequence<const> = entry.program.subsequences
+	local state<const> = entry.sequence_state
+	for clip_index = 1, sequence.clip_count do
+		local clip<const> = sequence.clips[clip_index]
+		local child_entry<const> = state.entries[clip_index]
+		bind_child(entry, child_entry, clip)
+		if child_entry.program.frame_builder == nil then
+			channel_binding.resolve(child_entry)
+			sequence_evaluator.resolve_entry(child_entry)
+		end
 	end
 end
 
@@ -201,10 +214,9 @@ function sequence_evaluator.bind_entry(entry, owner)
 			child_entry:rewind()
 			timeline_track_evaluator.init_entry(child_entry)
 			sequence_evaluator.init_entry(child_entry)
-			channel_binding.resolve(child_entry)
-		else
-			sequence_evaluator.bind_entry(child_entry, owner)
 		end
+		channel_binding.resolve(child_entry)
+		sequence_evaluator.bind_entry(child_entry, owner)
 	end
 end
 

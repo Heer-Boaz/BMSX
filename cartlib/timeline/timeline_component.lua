@@ -192,7 +192,11 @@ function timeline_component:on_detach()
 	end
 end
 
-function timeline_component:define(id, definition, bindings)
+-- Programs and their transport records exist independently of the objects a
+-- playback will animate. FSM construction registers these before prefab
+-- constructors publish aliases or state entry creates presentation objects.
+-- Registration never walks output paths on a stopped transport.
+function timeline_component:register(id, definition, bindings)
 	local program = timeline_program.compile(definition)
 	local entry = self._entries_by_id[id]
 	if entry == nil then
@@ -202,8 +206,8 @@ function timeline_component:define(id, definition, bindings)
 		end
 		entry = timeline.new(id, program)
 		entry.primary_binding = primary_binding
-		entry.default_bindings = bindings and shallow_copy(bindings)
-		if bindings ~= nil then resolve_timeline_bindings(entry, program, primary_binding, bindings) end
+		entry.default_primary_binding = primary_binding
+		if bindings ~= nil then self:set_default_bindings(entry, bindings) end
 		entry.params = program.default_params
 		entry.playing = false
 		if program.has_evaluation_callbacks then
@@ -212,10 +216,8 @@ function timeline_component:define(id, definition, bindings)
 		self._entries_by_id[id] = entry
 		timeline_track_evaluator.init_entry(entry)
 		timeline_sequence_evaluator.init_entry(entry)
-		if program.binding_count == 1 or bindings ~= nil then channel_binding.resolve(entry) end
-		return
+		return entry
 	end
-	if bindings ~= nil then entry.default_bindings = shallow_copy(bindings) end
 	local previous_program<const> = entry.program
 	local playing<const> = entry.playing
 	if playing then
@@ -226,6 +228,7 @@ function timeline_component:define(id, definition, bindings)
 		program = timeline_frame_program.build(program, entry.params)
 	end
 	entry:rebind_program(program)
+	self:set_default_bindings(entry, bindings)
 	if program.has_evaluation_callbacks then
 		if entry.evaluation_context == nil then
 			entry.evaluation_context = {}
@@ -235,7 +238,9 @@ function timeline_component:define(id, definition, bindings)
 	end
 	if playing then
 		if bindings ~= nil then
-			resolve_timeline_bindings(entry, program, entry.primary_binding, bindings)
+			local primary_binding = bindings.target
+			if primary_binding == nil then primary_binding = entry.primary_binding end
+			resolve_timeline_bindings(entry, program, primary_binding, entry.default_bindings)
 		elseif program.binding_count > 1 then
 			local previous_bindings<const> = entry.bindings
 			local bindings<const> = {}
@@ -249,21 +254,14 @@ function timeline_component:define(id, definition, bindings)
 			entry.bindings = nil
 		end
 	else
-		local primary_binding = program.default_binding
-		if primary_binding == nil then
-			primary_binding = self.owner
-		end
-		entry.primary_binding = primary_binding
+		entry.primary_binding = entry.default_primary_binding
 		entry.bindings = nil
 		entry.params = program.default_params
 	end
 	timeline_track_evaluator.init_entry(entry)
 	timeline_sequence_evaluator.init_entry(entry)
-	if not playing and entry.default_bindings ~= nil then
-		resolve_timeline_bindings(entry, program, entry.primary_binding, entry.default_bindings)
-	end
-	if playing or program.binding_count == 1 or entry.default_bindings ~= nil then channel_binding.resolve(entry) end
 	if playing then
+		channel_binding.resolve(entry)
 		reconcile_timeline_schedule(self, entry, true)
 		timeline_sequence_evaluator.bind_entry(entry, self.owner)
 		if entry.head >= 0 then
@@ -280,6 +278,38 @@ function timeline_component:define(id, definition, bindings)
 			)
 		end
 	end
+	return entry
+end
+
+-- Definition defaults belong to this transport, not its shareable program.
+-- Capture the caller's binding map so later mutation cannot retarget playback.
+-- Selecting defaults does not admit outputs; the caller still owns when the
+-- referenced recipient lifetime is ready for define() or play().
+function timeline_component:set_default_bindings(entry, bindings, primary_binding)
+	if bindings ~= nil then
+		entry.default_bindings = shallow_copy(bindings)
+		if primary_binding == nil then primary_binding = bindings.target end
+		entry.default_target = primary_binding
+	elseif primary_binding ~= nil then
+		entry.default_target = primary_binding
+	end
+	local target = entry.default_target
+	if target == nil then target = entry.program.default_binding end
+	if target == nil then target = self.owner end
+	entry.default_primary_binding = target
+end
+
+-- Explicit definition is eager output admission. In contrast to registration,
+-- its concrete recipients must already exist, including nested static clips;
+-- direct seek immediately consumes those captured receivers.
+function timeline_component:define(id, definition, bindings)
+	local entry<const> = self:register(id, definition, bindings)
+	if not entry.playing then
+		resolve_timeline_bindings(entry, entry.program, entry.default_primary_binding, entry.default_bindings)
+		channel_binding.resolve(entry)
+		timeline_sequence_evaluator.resolve_entry(entry)
+	end
+	return entry
 end
 
 function timeline_component:get(id)
@@ -378,12 +408,8 @@ function timeline_component:play(id, opts, on_finished, finished_context)
 	if params == nil then
 		params = program.default_params
 	end
-	if target == nil then
-		target = program.default_binding
-		if target == nil then
-			target = owner
-		end
-	end
+	if target == nil and bindings ~= nil then target = bindings.target end
+	if target == nil then target = entry.default_primary_binding end
 	entry.params = params
 	entry.play_on_finished = on_finished
 	entry.play_finished_context = finished_context

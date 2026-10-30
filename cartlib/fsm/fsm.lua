@@ -484,7 +484,7 @@ local build_timeline_bindings<const> = function(owner, definitions)
 		local id<const> = config.id or key
 		local definition<const> = config.def
 		if definition then
-			owner.timelines:define(id, definition)
+			owner.timelines:register(id, definition)
 		end
 		local play_options = config.play_options
 		local target_path<const> = config.target_path
@@ -618,10 +618,10 @@ function state.new(definition, target, parent, frame_work_owner, frame_work_chan
 	return self
 end
 
--- Timeline object bindings are resolved once after the prefab constructor has
--- published its component aliases and before any state can autoplay. Runtime
--- play/seek therefore consumes a retained target directly instead of walking
--- authored paths in the frame path.
+-- Constructor-owned aliases become concrete default targets during binding.
+-- This does not admit outputs: entering_state may still create raw leaf
+-- recipients below those targets. Playback admits them after state entry;
+-- generated evaluation consumes the retained targets and leaf receivers.
 function state:resolve_timeline_targets()
 	local bindings<const> = self.timeline_bindings
 	if bindings ~= nil then
@@ -634,6 +634,8 @@ function state:resolve_timeline_targets()
 					target = target[path[path_index]]
 				end
 				binding.play_options.target = target
+				local timelines<const> = self.target.timelines
+				timelines:set_default_bindings(timelines:get(binding.id), binding.play_options.bindings, target)
 				binding.target_path = nil
 			end
 		end
