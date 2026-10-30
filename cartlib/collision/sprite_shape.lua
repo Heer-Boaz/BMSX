@@ -35,7 +35,6 @@ function sprite_shape.select(collider, sprite)
 		return collider._sprite_shape_ref
 	end
 	local binding<const> = collider._sprite_images[image_id]
-	if binding == nil then error('sprite image geometry was not admitted to this collider') end
 	local shape_ref
 	if flip_h then
 		shape_ref = flip_v and binding.fliphv or binding.fliph

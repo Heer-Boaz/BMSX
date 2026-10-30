@@ -7,11 +7,31 @@ local tile_strip_component<const> = {}
 tile_strip_component.__index = tile_strip_component
 setmetatable(tile_strip_component, { __index = visual_2d_component })
 
+-- Source edits admit their complete candidate before publication. Collider
+-- queries consume the retained source revision, never repeat that admission.
+function tile_strip_component:set_range(first, last)
+	if first == self.first_tile and last == self.last_tile then return self end
+	if last - first + 1 > self.maximum_tiles then error('tile-strip range exceeds its admitted source bound') end
+	self.first_tile, self.last_tile = first, last
+	self._source_revision = self._source_revision + 1
+	return self
+end
+
+function tile_strip_component:set_step(x, y)
+	if x == self.step_x and y == self.step_y then return self end
+	local collider<const> = self._collider
+	if collider ~= nil then collider:admit_strip_step(x, y) end
+	self.step_x, self.step_y = x, y
+	self._source_revision = self._source_revision + 1
+	return self
+end
+
 function tile_strip_component:draw_visual(draw)
-	self:resolve_pose()
-	local source<const> = self._source
 	local first<const> = self.first_tile
 	local last<const> = self.last_tile
+	if last < first then return end
+	self:resolve_pose()
+	local source<const> = self._source
 	local step_x<const>, step_y<const> = self.step_x, self.step_y
 	if self._translation_only then
 		local x, y = self.wox + first*step_x, self.woy + first*step_y
@@ -45,9 +65,21 @@ function tile_strip_component.factory(definition)
 		local first<const> = input.first_tile or defaults.first_tile
 		self.first_tile = first
 		self.last_tile = first - 1
+		self._source_revision = 0
 		self:set_draw_function(tile_strip_component.draw_visual)
 		return self
 	end
 end
+
+local protected<const> = shallow_copy(visual_2d_component.timeline_channels.protected)
+protected.first_tile, protected.last_tile = true, true
+protected.step_x, protected.step_y = true, true
+protected.maximum_tiles, protected._source_revision = true, true
+protected.tile_width, protected.tile_height, protected._source, protected._collider = true, true, true, true
+tile_strip_component.timeline_channels = {
+	protected = protected,
+	properties = visual_2d_component.timeline_channels.properties,
+	groups = visual_2d_component.timeline_channels.groups,
+}
 
 return tile_strip_component

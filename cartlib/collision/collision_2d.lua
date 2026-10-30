@@ -9,7 +9,6 @@ local geo_overlap_candidate_param0<const> = 0x00000001 | 0x00000000 | 0x00000000
 local geo_overlap_full_pass_param0<const> = 0x00000002 | 0x00000004 | 0x00000000 | 0x00000000
 local geo_overlap_scratch_base<const> = 0x08040000
 local geo_overlap_scratch_end<const> = geo_overlap_scratch_base + 0x00080000
-local geo_instance_bytes<const> = 0x00000014
 local geo_pair_bytes<const> = 0x0000000c
 local geo_result_bytes<const> = 0x00000024
 local geo_summary_bytes<const> = 0x00000010
@@ -19,7 +18,12 @@ struct geo_overlap_instance
 	ty: f32
 	layer: word
 	mask: word
+	-- Driver-private original input index. GEO consumes only the first 20
+	-- bytes and advances by the published stride; no guest references live here.
+	source_index: word
 end
+local geo_instance_bytes<const> = sizeof(geo_overlap_instance)
+local geo_instance_capacity<const> = (geo_overlap_scratch_end - geo_overlap_scratch_base - geo_summary_bytes) // geo_instance_bytes
 
 struct geo_overlap_pair
 	instance_a: word
@@ -90,14 +94,14 @@ end
 
 -- Exact geometry belongs to the collider's retained cache or immutable asset.
 -- Per-pass scratch owns only instance/candidate/result records.
-local stage_geo_overlap_instance<const> = function(collider, instance_addr)
-	local shape_ref<const> = collider:resolve_shape()
+local stage_geo_overlap_instance<const> = function(collider, shape_ref, instance_addr, source_index)
 	local instance<const>: *geo_overlap_instance = instance_addr
 	instance->shape = shape_ref
 	instance->tx = collider.wox
 	instance->ty = collider.woy
 	instance->layer = collider.layer
 	instance->mask = collider.mask
+	instance->source_index = source_index
 end
 
 local wait_for_geo_completion<const> = function(label)
@@ -137,7 +141,8 @@ local ensure_pair_contacts<const> = function(pair)
 	return contact, contact_other
 end
 
-local decode_overlap_results<const> = function(colliders, collider_count, result_base, summary_base, pairs)
+local decode_overlap_results<const> = function(colliders, instance_base, result_base, summary_base, pairs)
+	local instances<const>: *geo_overlap_instance = instance_base
 	local results<const>: *geo_overlap_result = result_base
 	local summary<const>: *geo_overlap_summary = summary_base
 	local result_count<const> = summary.result_count
@@ -146,8 +151,8 @@ local decode_overlap_results<const> = function(colliders, collider_count, result
 		local instance_a_index<const> = (pair_meta >> 0x00000010) & 0x0000ffff
 		local instance_b_index<const> = pair_meta & 0x0000ffff
 		local pair<const> = pairs:get(i + 1)
-		local a<const> = colliders[instance_a_index + 1]
-		local b<const> = colliders[instance_b_index + 1]
+		local a<const> = colliders[instances[instance_a_index].source_index + 1]
+		local b<const> = colliders[instances[instance_b_index].source_index + 1]
 		pair.a = a
 		pair.b = b
 		local contact<const>, contact_other<const> = ensure_pair_contacts(pair)
@@ -190,7 +195,7 @@ local submit_geo_overlap_candidate_batch<const> = function(instance_base, pair_b
 	src->count = pair_count
 	param->param0 = geo_overlap_candidate_param0
 	param->param1 = pair_count
-	param->stride0 = 0x00000014
+	param->stride0 = geo_instance_bytes
 	param->stride1 = 0x0000000c
 	param->stride2 = instance_count
 	*geo_cmd_register = 0x00000022
@@ -208,7 +213,7 @@ local submit_geo_overlap_full_pass<const> = function(instance_base, result_base,
 	src->count = instance_count
 	param->param0 = geo_overlap_full_pass_param0
 	param->param1 = result_capacity
-	param->stride0 = 0x00000014
+	param->stride0 = geo_instance_bytes
 	param->stride1 = 0
 	param->stride2 = 0
 	*geo_cmd_register = 0x00000022
@@ -226,16 +231,19 @@ init_geo_irq()
 
 function collision_2d.collect_overlaps(colliders, collider_count, pairs)
 	local instance_base<const> = geo_overlap_scratch_base
-	local instance_end<const> = instance_base + collider_count * geo_instance_bytes
-	if instance_end + geo_summary_bytes > geo_overlap_scratch_end then
-		error('GEO overlap scratch capacity exceeded')
-	end
+	local instance_count = 0
 	for i = 1, collider_count do
 		local collider<const> = colliders[i]
-		local instance_index<const> = i - 1
-		stage_geo_overlap_instance(collider, instance_base + instance_index * geo_instance_bytes)
+		local shape_ref<const> = collider:resolve_shape()
+		if shape_ref ~= nil then
+			if instance_count == geo_instance_capacity then error('GEO overlap scratch capacity exceeded') end
+			stage_geo_overlap_instance(collider, shape_ref, instance_base + instance_count * geo_instance_bytes, i - 1)
+			instance_count = instance_count + 1
+		end
 	end
-	local max_pair_count<const> = (collider_count * (collider_count - 1)) // 2
+	if instance_count < 2 then return 0 end
+	local instance_end<const> = instance_base + instance_count * geo_instance_bytes
+	local max_pair_count<const> = (instance_count * (instance_count - 1)) // 2
 	local scratch_for_results<const> = geo_overlap_scratch_end - instance_end - geo_summary_bytes
 	local scratch_result_capacity<const> = scratch_for_results // geo_result_bytes
 	local result_capacity = max_pair_count
@@ -244,19 +252,20 @@ function collision_2d.collect_overlaps(colliders, collider_count, pairs)
 	end
 	local result_base<const> = instance_end
 	local summary_base<const> = result_base + result_capacity * geo_result_bytes
-	submit_geo_overlap_full_pass(instance_base, result_base, summary_base, collider_count, result_capacity)
+	submit_geo_overlap_full_pass(instance_base, result_base, summary_base, instance_count, result_capacity)
 	wait_for_geo_completion('overlap full pass')
-	return decode_overlap_results(colliders, collider_count, result_base, summary_base, pairs)
+	return decode_overlap_results(colliders, instance_base, result_base, summary_base, pairs)
 end
 
 function collision_2d.collides(a, b)
+	local shape_a<const> = a:resolve_shape()
+	if shape_a == nil then return nil end
+	local shape_b<const> = b:resolve_shape()
+	if shape_b == nil then return nil end
 	local instance_base<const> = geo_overlap_scratch_base
 	local instance_end<const> = instance_base + geo_instance_bytes * 2
-	if instance_end + geo_pair_bytes + geo_result_bytes + geo_summary_bytes > geo_overlap_scratch_end then
-		error('GEO direct-overlap scratch capacity exceeded')
-	end
-	stage_geo_overlap_instance(a, instance_base)
-	stage_geo_overlap_instance(b, instance_base + geo_instance_bytes)
+	stage_geo_overlap_instance(a, shape_a, instance_base, 0)
+	stage_geo_overlap_instance(b, shape_b, instance_base + geo_instance_bytes, 1)
 	local pair_base<const> = instance_end
 	local result_base<const> = pair_base + geo_pair_bytes
 	local summary_base<const> = result_base + geo_result_bytes

@@ -162,4 +162,137 @@ return true
   assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
   assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
  });
+
+ test(`Tile-strip source admission precedes publication and empty geometry stays absent (O${optLevel})`, t => {
+  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+local pool<const> = require('cartlib/collision/geometry_pool')
+local collider<const> = require('cartlib/collision/collider_2d_component')
+local strip_component<const> = require('cartlib/component/tile_strip_component')
+local strip_collider<const> = require('cartlib/collision/tile_strip_collider_2d_component')
+bss strip_geometry: word[128]
+local storage<const> = pool.new(strip_geometry,256,2)
+prefab.define({def_id='collision.strip',class={},
+ spatial={family='2d',authority='affine',local_transform={1,0,0,1,10,20}},
+ initial={collider={geometry_pool=storage}},
+ components={strip_component.factory({imgid='small',first_tile=0,step_x=4,step_y=0,maximum_tiles=3}),
+ strip_collider.factory({})}})
+local actor<const> = world:spawn('collision.strip',{})
+local strip<const> = actor:get_component(strip_component)
+local body<const> = actor:get_component(collider)
+local channels<const> = require('cartlib/timeline/channel_binding')
+local raw_source_write<const> = pcall(channels.resolve,{primary_binding=strip,
+ program={output_paths={{binding_index=1,path={'first_tile'}}},writer_outputs={}}})
+assert(not raw_source_write,'raw timeline path bypassed complete strip source admission')
+assert(body:resolve_shape()==nil and body._local_flags==3 and body._strip_revision==nil,
+ 'empty source resolved a pose or fabricated geometry')
+strip:set_range(0,2)
+local address<const> = body:resolve_shape()
+local words<const>: *word = address
+assert(address==strip_geometry and words[0]==4 and words[1]==3,
+ 'gapped range did not retain exact admitted pieces')
+strip:set_range(1,1)
+assert(body:resolve_shape()==address and words[1]==1,'source shrink retained stale pieces')
+strip:set_range(1,0)
+assert(body:resolve_shape()==nil,'empty source retained its previous geometry')
+strip:set_range(0,2)
+assert(body:resolve_shape()==address and words[1]==3,'source re-expansion lost its retained slot')
+local too_many<const> = pcall(strip.set_range,strip,7,10)
+assert(not too_many and strip.first_tile==0 and strip.last_tile==2,
+ 'range overflow published a source outside its admitted capacity')
+local duplicate<const> = pcall(strip_collider.factory({}),{owner=actor,initial={}})
+assert(not duplicate and strip._collider==body and storage._next_slot==1,
+ 'second binding replaced source ownership or acquired geometry before composition admission')
+kernel=function(count)
+ for index=1,count do
+  strip:set_range(0,2)
+  assert(body:resolve_shape()==address and words[1]==3)
+  strip:set_range(1,1)
+  assert(body:resolve_shape()==address and words[1]==1)
+  strip:set_range(1,0)
+  assert(body:resolve_shape()==nil)
+ end
+end
+return true
+`,{optLevel,modules:collisionModules});
+  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+  const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+  const profile = profileWarmGuestKernel(cpu,kernel,128);
+  assert.equal(profile.reservations,0);
+  assert.equal(profile.reservedBytes,0);
+  assert.equal(profile.retainedAfter,profile.retainedBefore);
+  t.diagnostic(JSON.stringify({optLevel,sourceMutations:384,...profile}));
+ });
+
+ test(`Tile-strip candidate step and area overflow leave the admitted source unchanged (O${optLevel})`, () => {
+  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+local pool<const> = require('cartlib/collision/geometry_pool')
+local collider<const> = require('cartlib/collision/collider_2d_component')
+local strip_component<const> = require('cartlib/component/tile_strip_component')
+local strip_collider<const> = require('cartlib/collision/tile_strip_collider_2d_component')
+bss strip_geometry: word[16]
+local storage<const> = pool.new(strip_geometry,64,1)
+prefab.define({def_id='collision.contiguous_strip',class={},
+ spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
+ initial={collider={geometry_pool=storage}},
+ components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
+ strip_collider.factory({})}})
+local actor<const> = world:spawn('collision.contiguous_strip',{})
+local strip<const> = actor:get_component(strip_component)
+local body<const> = actor:get_component(collider)
+strip:set_range(0,2)
+body:resolve_shape()
+local revision<const> = strip._source_revision
+local basis<const> = body._geometry_basis_revision
+local geometry_revision<const> = body._geometry_revision
+local step_ok<const> = pcall(strip.set_step,strip,3,0)
+assert(not step_ok and strip.step_x==2 and strip.step_y==0 and strip._source_revision==revision
+ and body._strip_collapsed and body._geometry_basis_revision==basis,
+ 'failed candidate step changed the current source or its cache')
+local area_ok<const> = pcall(body.set_local_area,body,0,0,1,1)
+assert(not area_ok and body.local_right==2 and body._geometry_revision==geometry_revision
+ and body._strip_collapsed and body._geometry_basis_revision==basis,
+ 'failed candidate area changed physical geometry before capacity admission')
+strip:set_step(0,1)
+assert(strip.step_x==0 and strip.step_y==1 and body:resolve_shape()==strip_geometry,
+ 'admitted contiguous candidate did not publish')
+world:clear()
+assert(strip._collider==nil and pool.acquire(storage)==strip_geometry,
+ 'retired source binding did not release its cart-owned slot')
+return true
+`,{optLevel,modules:collisionModules});
+  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+ });
+
+ test(`Canceled strip collider factory releases its concrete source binding (O${optLevel})`, () => {
+  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+local pool<const> = require('cartlib/collision/geometry_pool')
+local strip_component<const> = require('cartlib/component/tile_strip_component')
+local strip_collider<const> = require('cartlib/collision/tile_strip_collider_2d_component')
+bss strip_geometry: word[16]
+local storage<const> = pool.new(strip_geometry,64,1)
+local construct_collider<const> = strip_collider.factory({})
+local returned_collider
+local returned_strip
+prefab.define({def_id='collision.canceled_strip',class={},
+ spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
+ initial={collider={geometry_pool=storage}},
+ components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
+ function(context)
+  returned_strip=context.owner:get_component(strip_component)
+  returned_collider=construct_collider(context)
+  context.owner.scene:dispose()
+  return returned_collider
+ end}})
+scenes.register('collision.canceled_strip.scene',{objects={{member_id='actor',definition_id='collision.canceled_strip'}}})
+local scene<const> = scenes.instantiate('collision.canceled_strip.scene')
+assert(scene.closed and returned_strip._collider==nil and returned_collider._geometry_address==nil
+ and not returned_collider._attach_notified and pool.acquire(storage)==strip_geometry,
+ 'pre-attachment cancellation retained a concrete source binding or its geometry slot')
+return true
+`,{optLevel,modules:collisionModules});
+  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+ });
 }
