@@ -102,4 +102,125 @@ function affine2.origin_from_world(node, parent, x, y)
 	return true
 end
 
+function affine2.from_world(node, parent, xx, xy, yx, yy, ox, oy)
+	if parent == nil then
+		node.xx = xx
+		node.xy = xy
+		node.yx = yx
+		node.yy = yy
+		node.ox = ox
+		node.oy = oy
+		return true
+	end
+	local pxx<const> = parent.wxx
+	local pxy<const> = parent.wxy
+	local pyx<const> = parent.wyx
+	local pyy<const> = parent.wyy
+	local determinant<const> = pxx * pyy - pyx * pxy
+	if determinant == 0 then
+		return false
+	end
+	local reciprocal<const> = 1 / determinant
+	local ixx<const> = pyy * reciprocal
+	local ixy<const> = -pxy * reciprocal
+	local iyx<const> = -pyx * reciprocal
+	local iyy<const> = pxx * reciprocal
+	local dx<const> = ox - parent.wox
+	local dy<const> = oy - parent.woy
+	node.xx = ixx * xx + iyx * xy
+	node.xy = ixy * xx + iyy * xy
+	node.yx = ixx * yx + iyx * yy
+	node.yy = ixy * yx + iyy * yy
+	node.ox = ixx * dx + iyx * dy
+	node.oy = ixy * dx + iyy * dy
+	return true
+end
+
+-- Full local affine arithmetic uses retained named-field destinations. All
+-- source operands are loaded before writes, so destination aliasing is valid.
+function affine2.compose(destination, left, right)
+	local axx<const>, axy<const>, ayx<const>, ayy<const> = left.xx, left.xy, left.yx, left.yy
+	local aox<const>, aoy<const> = left.ox, left.oy
+	local bxx<const>, bxy<const>, byx<const>, byy<const> = right.xx, right.xy, right.yx, right.yy
+	local box<const>, boy<const> = right.ox, right.oy
+	destination.xx = axx * bxx + ayx * bxy
+	destination.xy = axy * bxx + ayy * bxy
+	destination.yx = axx * byx + ayx * byy
+	destination.yy = axy * byx + ayy * byy
+	destination.ox = axx * box + ayx * boy + aox
+	destination.oy = axy * box + ayy * boy + aoy
+end
+
+function affine2.inverse(destination, source)
+	local xx<const>, xy<const>, yx<const>, yy<const> = source.xx, source.xy, source.yx, source.yy
+	local ox<const>, oy<const> = source.ox, source.oy
+	local determinant<const> = xx * yy - yx * xy
+	if determinant == 0 then
+		return false
+	end
+	local reciprocal<const> = 1 / determinant
+	local ixx<const>, ixy<const> = yy * reciprocal, -xy * reciprocal
+	local iyx<const>, iyy<const> = -yx * reciprocal, xx * reciprocal
+	destination.xx = ixx
+	destination.xy = ixy
+	destination.yx = iyx
+	destination.yy = iyy
+	destination.ox = -(ixx * ox + iyx * oy)
+	destination.oy = -(ixy * ox + iyy * oy)
+	return true
+end
+
+-- Returns coefficients in the canonical column order. Rotation is radians;
+-- scale acts on the local axes before rotation, and translation acts last.
+function affine2.trs(ox, oy, rotation, scale_x, scale_y)
+	local cosine<const> = math.cos(rotation)
+	local sine<const> = math.sin(rotation)
+	return cosine * scale_x, sine * scale_x, -sine * scale_y, cosine * scale_y, ox, oy
+end
+
+function affine2.transform_point(node, x, y)
+	return node.wxx * x + node.wyx * y + node.wox,
+		node.wxy * x + node.wyy * y + node.woy
+end
+
+function affine2.transform_vector(node, x, y)
+	return node.wxx * x + node.wyx * y, node.wxy * x + node.wyy * y
+end
+
+-- Origin-free bounds of an affine rectangle. Geometry consumers retain these
+-- offsets while their basis/source is unchanged; translation adds only origin.
+-- Project the two source intervals, not four point calls or a temporary array.
+function affine2.basis_bounds(xx, xy, yx, yy, left, top, right, bottom)
+	local xx0, xx1 = xx * left, xx * right
+	local xy0, xy1 = xy * left, xy * right
+	local yx0, yx1 = yx * top, yx * bottom
+	local yy0, yy1 = yy * top, yy * bottom
+	if xx0 > xx1 then xx0, xx1 = xx1, xx0 end
+	if xy0 > xy1 then xy0, xy1 = xy1, xy0 end
+	if yx0 > yx1 then yx0, yx1 = yx1, yx0 end
+	if yy0 > yy1 then yy0, yy1 = yy1, yy0 end
+	return xx0 + yx0, xy0 + yy0, xx1 + yx1, xy1 + yy1
+end
+
+function affine2.inverse_transform_point(node, x, y)
+	local xx<const>, xy<const>, yx<const>, yy<const> = node.wxx, node.wxy, node.wyx, node.wyy
+	local determinant<const> = xx * yy - yx * xy
+	if determinant == 0 then
+		return false
+	end
+	local reciprocal<const> = 1 / determinant
+	local dx<const>, dy<const> = x - node.wox, y - node.woy
+	return true, (yy * dx - yx * dy) * reciprocal, (xx * dy - xy * dx) * reciprocal
+end
+
+function affine2.inverse_transform_vector(node, x, y)
+	local xx<const>, xy<const>, yx<const>, yy<const> = node.wxx, node.wxy, node.wyx, node.wyy
+	local determinant<const> = xx * yy - yx * xy
+	if determinant == 0 then
+		return false
+	end
+	local reciprocal<const> = 1 / determinant
+	return true, (yy * x - yx * y) * reciprocal, (xx * y - xy * x) * reciprocal
+end
+
 return affine2

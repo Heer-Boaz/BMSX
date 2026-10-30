@@ -32,6 +32,7 @@ end
 function spatial.create2(graph, owner, xx, xy, yx, yy, ox, oy)
 	local node<const> = {
 		owner = owner, _family = affine2, _origin_only = false,
+		_retiring = false,
 		_hierarchy = graph, _flags = all_dirty,
 		_basis_revision = 0, _origin_revision = 0,
 		_parent_basis_revision = 0, _parent_origin_revision = 0,
@@ -51,6 +52,7 @@ end
 function spatial.create3(graph, owner, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
 	local node<const> = {
 		owner = owner, _family = affine3, _origin_only = false,
+		_retiring = false,
 		_hierarchy = graph, _flags = all_dirty,
 		_basis_revision = 0, _origin_revision = 0,
 		_parent_basis_revision = 0, _parent_origin_revision = 0,
@@ -127,10 +129,11 @@ function spatial.write_origin2(node, x, y)
 		node.wox = x
 		node.woy = y
 		node._origin_revision = node._origin_revision + 1
-		return
+		return true
 	end
 	node._flags = node._flags | local_origin
 	invalidate(node)
+	return true
 end
 
 function spatial.write_origin3(node, x, y, z)
@@ -142,10 +145,11 @@ function spatial.write_origin3(node, x, y, z)
 		node.woy = y
 		node.woz = z
 		node._origin_revision = node._origin_revision + 1
-		return
+		return true
 	end
 	node._flags = node._flags | local_origin
 	invalidate(node)
+	return true
 end
 
 function spatial.resolve(target)
@@ -217,6 +221,54 @@ function spatial.write_world_origin3(node, x, y, z)
 	return true
 end
 
+function spatial.write_world2(node, xx, xy, yx, yy, ox, oy)
+	local parent<const> = node.spatial_parent
+	if parent ~= nil then
+		spatial.resolve(parent)
+	end
+	if not affine2.from_world(node, parent, xx, xy, yx, yy, ox, oy) then
+		return false
+	end
+	node._flags = node._flags | local_basis | local_origin
+	invalidate(node)
+	return true
+end
+
+function spatial.write_world3(node, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
+	local parent<const> = node.spatial_parent
+	if parent ~= nil then
+		spatial.resolve(parent)
+	end
+	if not affine3.from_world(node, parent, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz) then
+		return false
+	end
+	node._flags = node._flags | local_basis | local_origin
+	invalidate(node)
+	return true
+end
+
+function spatial.write_local_trs2(node, ox, oy, rotation, scale_x, scale_y)
+	local xx<const>, xy<const>, yx<const>, yy<const> = affine2.trs(ox, oy, rotation, scale_x, scale_y)
+	spatial.write_local2(node, xx, xy, yx, yy, ox, oy)
+end
+
+function spatial.write_world_trs2(node, ox, oy, rotation, scale_x, scale_y)
+	local xx<const>, xy<const>, yx<const>, yy<const> = affine2.trs(ox, oy, rotation, scale_x, scale_y)
+	return spatial.write_world2(node, xx, xy, yx, yy, ox, oy)
+end
+
+function spatial.write_local_trs3(node, ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	local xx<const>, xy<const>, xz<const>, yx<const>, yy<const>, yz<const>, zx<const>, zy<const>, zz<const> =
+		affine3.trs(ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	spatial.write_local3(node, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
+end
+
+function spatial.write_world_trs3(node, ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	local xx<const>, xy<const>, xz<const>, yx<const>, yy<const>, yz<const>, zx<const>, zy<const>, zz<const> =
+		affine3.trs(ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	return spatial.write_world3(node, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
+end
+
 local unlink<const> = function(node)
 	local parent<const> = node.spatial_parent
 	local previous<const> = node._previous_sibling
@@ -236,9 +288,29 @@ local unlink<const> = function(node)
 	node._next_sibling = nil
 end
 
+-- The construction owner has already proved this relationship and supplies
+-- an unlinked component. Dynamic reparenting reaches the same topology commit
+-- only after its liveness, cycle and inverse-dependent work has succeeded.
+function spatial.attach_local(node, parent)
+	if parent ~= nil then
+		local previous<const> = parent._last_child
+		node.spatial_parent = parent
+		node._previous_sibling = previous
+		if previous ~= nil then
+			previous._next_sibling = node
+		else
+			parent._first_child = node
+		end
+		parent._last_child = node
+	end
+	node._flags = node._flags | parent_inputs
+	invalidate(node)
+end
+
 function spatial.reparent(node, parent, keep_world)
 	local graph<const> = node._hierarchy
-	if graph == nil or (parent ~= nil and parent._hierarchy == nil) then
+	if graph == nil or node._retiring
+	or (parent ~= nil and (parent._hierarchy == nil or parent._retiring)) then
 		return spatial.retired_target
 	end
 	if parent ~= nil then
@@ -263,39 +335,57 @@ function spatial.reparent(node, parent, keep_world)
 		end
 	end
 	unlink(node)
-	if parent ~= nil then
-		local previous<const> = parent._last_child
-		node.spatial_parent = parent
-		node._previous_sibling = previous
-		if previous ~= nil then
-			previous._next_sibling = node
-		else
-			parent._first_child = node
-		end
-		parent._last_child = node
-	end
 	-- Invalidate the moved subtree, independently of its new parent's state.
 	-- Keep World has changed local authority; parent-input invalidation forces
 	-- both parts for Keep Local as well.
-	node._flags = node._flags | parent_inputs
-	invalidate(node)
+	spatial.attach_local(node, parent)
 	return spatial.committed
 end
 
-function spatial.remove(node)
-	local graph<const> = node._hierarchy
-	if graph == nil then
-		return spatial.retired_target
+-- World marks its complete captured retirement set first, then runs each
+-- phase across that set before entering any disposal callback. This preserves
+-- surviving child poses from the old forest, independently of removal order.
+function spatial.materialize_surviving_children(node)
+	local child = node._first_child
+	while child ~= nil do
+		if not child._retiring then
+			spatial.resolve(child)
+		end
+		child = child._next_sibling
 	end
+end
+
+function spatial.detach_surviving_children(node)
 	local child = node._first_child
 	while child ~= nil do
 		local next<const> = child._next_sibling
-		spatial.reparent(child, nil, true)
+		if not child._retiring then
+			-- Materialization already finished for every survivor. Copy its
+			-- exact cached world pose; resolving here could observe earlier edits.
+			child._family.relative_world(child, nil)
+			unlink(child)
+			child._flags = child._flags | parent_inputs
+			invalidate(child)
+		end
 		child = next
 	end
+end
+
+function spatial.retire(node)
+	local graph<const> = node._hierarchy
 	unlink(node)
 	node._hierarchy = nil
 	graph._count = graph._count - 1
+end
+
+function spatial.remove(node)
+	if node._hierarchy == nil then
+		return spatial.retired_target
+	end
+	node._retiring = true
+	spatial.materialize_surviving_children(node)
+	spatial.detach_surviving_children(node)
+	spatial.retire(node)
 	return spatial.committed
 end
 

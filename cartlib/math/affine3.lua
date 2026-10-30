@@ -178,4 +178,176 @@ function affine3.origin_from_world(node, parent, x, y, z)
 	return true
 end
 
+function affine3.from_world(node, parent, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
+	if parent == nil then
+		node.xx = xx
+		node.xy = xy
+		node.xz = xz
+		node.yx = yx
+		node.yy = yy
+		node.yz = yz
+		node.zx = zx
+		node.zy = zy
+		node.zz = zz
+		node.ox = ox
+		node.oy = oy
+		node.oz = oz
+		return true
+	end
+	local pxx<const>, pxy<const>, pxz<const> = parent.wxx, parent.wxy, parent.wxz
+	local pyx<const>, pyy<const>, pyz<const> = parent.wyx, parent.wyy, parent.wyz
+	local pzx<const>, pzy<const>, pzz<const> = parent.wzx, parent.wzy, parent.wzz
+	local cxx<const> = pyy * pzz - pzy * pyz
+	local cxy<const> = pzy * pxz - pxy * pzz
+	local cxz<const> = pxy * pyz - pyy * pxz
+	local determinant<const> = pxx * cxx + pyx * cxy + pzx * cxz
+	if determinant == 0 then
+		return false
+	end
+	local reciprocal<const> = 1 / determinant
+	local ixx<const>, ixy<const>, ixz<const> = cxx * reciprocal, cxy * reciprocal, cxz * reciprocal
+	local iyx<const> = (pzx * pyz - pyx * pzz) * reciprocal
+	local iyy<const> = (pxx * pzz - pzx * pxz) * reciprocal
+	local iyz<const> = (pyx * pxz - pxx * pyz) * reciprocal
+	local izx<const> = (pyx * pzy - pzx * pyy) * reciprocal
+	local izy<const> = (pzx * pxy - pxx * pzy) * reciprocal
+	local izz<const> = (pxx * pyy - pyx * pxy) * reciprocal
+	local dx<const>, dy<const>, dz<const> = ox - parent.wox, oy - parent.woy, oz - parent.woz
+	node.xx = ixx * xx + iyx * xy + izx * xz
+	node.xy = ixy * xx + iyy * xy + izy * xz
+	node.xz = ixz * xx + iyz * xy + izz * xz
+	node.yx = ixx * yx + iyx * yy + izx * yz
+	node.yy = ixy * yx + iyy * yy + izy * yz
+	node.yz = ixz * yx + iyz * yy + izz * yz
+	node.zx = ixx * zx + iyx * zy + izx * zz
+	node.zy = ixy * zx + iyy * zy + izy * zz
+	node.zz = ixz * zx + iyz * zy + izz * zz
+	node.ox = ixx * dx + iyx * dy + izx * dz
+	node.oy = ixy * dx + iyy * dy + izy * dz
+	node.oz = ixz * dx + iyz * dy + izz * dz
+	return true
+end
+
+function affine3.compose(destination, left, right)
+	local axx<const>, axy<const>, axz<const> = left.xx, left.xy, left.xz
+	local ayx<const>, ayy<const>, ayz<const> = left.yx, left.yy, left.yz
+	local azx<const>, azy<const>, azz<const> = left.zx, left.zy, left.zz
+	local aox<const>, aoy<const>, aoz<const> = left.ox, left.oy, left.oz
+	local bxx<const>, bxy<const>, bxz<const> = right.xx, right.xy, right.xz
+	local byx<const>, byy<const>, byz<const> = right.yx, right.yy, right.yz
+	local bzx<const>, bzy<const>, bzz<const> = right.zx, right.zy, right.zz
+	local box<const>, boy<const>, boz<const> = right.ox, right.oy, right.oz
+	destination.xx = axx * bxx + ayx * bxy + azx * bxz
+	destination.xy = axy * bxx + ayy * bxy + azy * bxz
+	destination.xz = axz * bxx + ayz * bxy + azz * bxz
+	destination.yx = axx * byx + ayx * byy + azx * byz
+	destination.yy = axy * byx + ayy * byy + azy * byz
+	destination.yz = axz * byx + ayz * byy + azz * byz
+	destination.zx = axx * bzx + ayx * bzy + azx * bzz
+	destination.zy = axy * bzx + ayy * bzy + azy * bzz
+	destination.zz = axz * bzx + ayz * bzy + azz * bzz
+	destination.ox = axx * box + ayx * boy + azx * boz + aox
+	destination.oy = axy * box + ayy * boy + azy * boz + aoy
+	destination.oz = axz * box + ayz * boy + azz * boz + aoz
+end
+
+function affine3.inverse(destination, source)
+	local xx<const>, xy<const>, xz<const> = source.xx, source.xy, source.xz
+	local yx<const>, yy<const>, yz<const> = source.yx, source.yy, source.yz
+	local zx<const>, zy<const>, zz<const> = source.zx, source.zy, source.zz
+	local ox<const>, oy<const>, oz<const> = source.ox, source.oy, source.oz
+	local cxx<const> = yy * zz - zy * yz
+	local cxy<const> = zy * xz - xy * zz
+	local cxz<const> = xy * yz - yy * xz
+	local determinant<const> = xx * cxx + yx * cxy + zx * cxz
+	if determinant == 0 then
+		return false
+	end
+	local reciprocal<const> = 1 / determinant
+	local ixx<const>, ixy<const>, ixz<const> = cxx * reciprocal, cxy * reciprocal, cxz * reciprocal
+	local iyx<const> = (zx * yz - yx * zz) * reciprocal
+	local iyy<const> = (xx * zz - zx * xz) * reciprocal
+	local iyz<const> = (yx * xz - xx * yz) * reciprocal
+	local izx<const> = (yx * zy - zx * yy) * reciprocal
+	local izy<const> = (zx * xy - xx * zy) * reciprocal
+	local izz<const> = (xx * yy - yx * xy) * reciprocal
+	destination.xx = ixx
+	destination.xy = ixy
+	destination.xz = ixz
+	destination.yx = iyx
+	destination.yy = iyy
+	destination.yz = iyz
+	destination.zx = izx
+	destination.zy = izy
+	destination.zz = izz
+	destination.ox = -(ixx * ox + iyx * oy + izx * oz)
+	destination.oy = -(ixy * ox + iyy * oy + izy * oz)
+	destination.oz = -(ixz * ox + iyz * oy + izz * oz)
+	return true
+end
+
+-- Column-major T * R * S; quaternion operands are x, y, z, w. The authored
+-- rotation is a unit quaternion, as in Bevy's scale/rotation/translation
+-- affine constructor. No decomposition or quaternion repair is performed.
+-- https://github.com/bevyengine/bevy/blob/main/crates/bevy_transform/src/components/transform.rs
+function affine3.trs(ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	local x2<const>, y2<const>, z2<const> = qx + qx, qy + qy, qz + qz
+	local xx<const>, xy<const>, xz<const> = qx * x2, qx * y2, qx * z2
+	local yy<const>, yz<const>, zz<const> = qy * y2, qy * z2, qz * z2
+	local wx<const>, wy<const>, wz<const> = qw * x2, qw * y2, qw * z2
+	return (1 - (yy + zz)) * scale_x, (xy + wz) * scale_x, (xz - wy) * scale_x,
+		(xy - wz) * scale_y, (1 - (xx + zz)) * scale_y, (yz + wx) * scale_y,
+		(xz + wy) * scale_z, (yz - wx) * scale_z, (1 - (xx + yy)) * scale_z,
+		ox, oy, oz
+end
+
+function affine3.transform_point(node, x, y, z)
+	return node.wxx * x + node.wyx * y + node.wzx * z + node.wox,
+		node.wxy * x + node.wyy * y + node.wzy * z + node.woy,
+		node.wxz * x + node.wyz * y + node.wzz * z + node.woz
+end
+
+function affine3.transform_vector(node, x, y, z)
+	return node.wxx * x + node.wyx * y + node.wzx * z,
+		node.wxy * x + node.wyy * y + node.wzy * z,
+		node.wxz * x + node.wyz * y + node.wzz * z
+end
+
+function affine3.inverse_transform_point(node, x, y, z)
+	local xx<const>, xy<const>, xz<const> = node.wxx, node.wxy, node.wxz
+	local yx<const>, yy<const>, yz<const> = node.wyx, node.wyy, node.wyz
+	local zx<const>, zy<const>, zz<const> = node.wzx, node.wzy, node.wzz
+	local cxx<const> = yy * zz - zy * yz
+	local cxy<const> = zy * xz - xy * zz
+	local cxz<const> = xy * yz - yy * xz
+	local determinant<const> = xx * cxx + yx * cxy + zx * cxz
+	if determinant == 0 then
+		return false
+	end
+	local reciprocal<const> = 1 / determinant
+	local dx<const>, dy<const>, dz<const> = x - node.wox, y - node.woy, z - node.woz
+	return true,
+		(cxx * dx + (zx * yz - yx * zz) * dy + (yx * zy - zx * yy) * dz) * reciprocal,
+		(cxy * dx + (xx * zz - zx * xz) * dy + (zx * xy - xx * zy) * dz) * reciprocal,
+		(cxz * dx + (yx * xz - xx * yz) * dy + (xx * yy - yx * xy) * dz) * reciprocal
+end
+
+function affine3.inverse_transform_vector(node, x, y, z)
+	local xx<const>, xy<const>, xz<const> = node.wxx, node.wxy, node.wxz
+	local yx<const>, yy<const>, yz<const> = node.wyx, node.wyy, node.wyz
+	local zx<const>, zy<const>, zz<const> = node.wzx, node.wzy, node.wzz
+	local cxx<const> = yy * zz - zy * yz
+	local cxy<const> = zy * xz - xy * zz
+	local cxz<const> = xy * yz - yy * xz
+	local determinant<const> = xx * cxx + yx * cxy + zx * cxz
+	if determinant == 0 then
+		return false
+	end
+	local reciprocal<const> = 1 / determinant
+	return true,
+		(cxx * x + (zx * yz - yx * zz) * y + (yx * zy - zx * yy) * z) * reciprocal,
+		(cxy * x + (xx * zz - zx * xz) * y + (zx * xy - xx * zy) * z) * reciprocal,
+		(cxz * x + (yx * xz - xx * yz) * y + (xx * yy - yx * xy) * z) * reciprocal
+end
+
 return affine3

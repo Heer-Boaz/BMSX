@@ -85,6 +85,134 @@ end
 
 const behaviors = [
 	{
+		name: 'whole world-affine writes solve one parent inverse and preserve authority on failure',
+		source: `
+local p<const> = h.create2(graph, nil, 2,0,1,2, 10,20)
+local c<const> = h.create2(graph, nil, 1,0,0,1, 0,0)
+assert(h.reparent(c, p, false) == h.committed)
+assert(h.write_world2(c, 1,2,-2,0, 20,28))
+assert(c.xx == 0 and c.xy == 1 and c.yx == -1 and c.yy == 0 and c.ox == 3 and c.oy == 4)
+h.resolve(c)
+assert2(c, 1,2,-2,0, 20,28)
+h.write_local2(p, 0,0,0,0, 10,20)
+local flags<const> = c._flags
+assert(not h.write_world2(c, 3,4,5,6, 70,80))
+assert(c._flags == flags and c.xx == 0 and c.xy == 1 and c.yx == -1 and c.yy == 0
+ and c.ox == 3 and c.oy == 4 and c.spatial_parent == p)
+local p3<const> = h.create3(graph, nil, 2,0,0, 1,2,0, 0,0,4, 10,20,30)
+local c3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 0,0,0)
+assert(h.reparent(c3, p3, false) == h.committed)
+assert(h.write_world3(c3, 1,2,0, -2,0,0, 0,0,-4, 20,28,46))
+assert(c3.xx == 0 and c3.xy == 1 and c3.xz == 0 and c3.yx == -1 and c3.yy == 0 and c3.yz == 0
+ and c3.zx == 0 and c3.zy == 0 and c3.zz == -1 and c3.ox == 3 and c3.oy == 4 and c3.oz == 4)
+h.resolve(c3)
+assert3(c3, 1,2,0, -2,0,0, 0,0,-4, 20,28,46)
+h.write_local3(p3, 0,0,0, 0,0,0, 0,0,0, 1,2,3)
+local flags3<const> = c3._flags
+assert(not h.write_world3(c3, 2,0,0, 0,2,0, 0,0,2, 7,8,9))
+assert(c3._flags == flags3 and c3.xx == 0 and c3.xy == 1 and c3.yx == -1 and c3.yy == 0
+ and c3.zz == -1 and c3.ox == 3 and c3.oy == 4 and c3.oz == 4 and c3.spatial_parent == p3)
+`,
+	},
+	{
+		name: 'retained affine math permits aliasing and distinguishes points from vectors',
+		source: `
+local a2<const> = require('cartlib/math/affine2')
+local a3<const> = require('cartlib/math/affine3')
+local left<const> = { xx=2,xy=0,yx=1,yy=2,ox=10,oy=20 }
+local right<const> = { xx=0,xy=1,yx=-1,yy=0,ox=3,oy=4 }
+a2.compose(right, left, right)
+assert(right.xx == 1 and right.xy == 2 and right.yx == -2 and right.yy == 0 and right.ox == 20 and right.oy == 28)
+assert(a2.inverse(left, left))
+assert(left.xx == 0.5 and left.xy == 0 and left.yx == -0.25 and left.yy == 0.5 and left.ox == 0 and left.oy == -10)
+local node<const> = h.create2(graph, nil, 2,0,1,2, 10,20)
+h.resolve(node)
+local x<const>, y<const> = a2.transform_point(node, 3,4)
+local vx<const>, vy<const> = a2.transform_vector(node, 3,4)
+assert(x == 20 and y == 28 and vx == 10 and vy == 8)
+local success<const>, lx<const>, ly<const> = a2.inverse_transform_point(node, x,y)
+local vector_success<const>, lvx<const>, lvy<const> = a2.inverse_transform_vector(node, vx,vy)
+assert(success and vector_success and lx == 3 and ly == 4 and lvx == 3 and lvy == 4)
+local left<const>, top<const>, right<const>, bottom<const> = a2.basis_bounds(2,0,1,-3, -1,-2,4,5)
+assert(left == -4 and top == -15 and right == 13 and bottom == 6)
+local reflected_left<const>, reflected_top<const>, reflected_right<const>, reflected_bottom<const> =
+ a2.basis_bounds(0,2,-3,1, 0,0,4,5)
+assert(reflected_left == -15 and reflected_top == 0 and reflected_right == 0 and reflected_bottom == 13)
+local zero_left<const>, zero_top<const>, zero_right<const>, zero_bottom<const> = a2.basis_bounds(0,0,0,0, -1,-2,4,5)
+assert(zero_left == 0 and zero_top == 0 and zero_right == 0 and zero_bottom == 0)
+local matrix<const> = { xx=2,xy=0,xz=0,yx=1,yy=2,yz=0,zx=0,zy=0,zz=4,ox=10,oy=20,oz=30 }
+local inverse<const> = {}
+assert(a3.inverse(inverse, matrix))
+a3.compose(matrix, inverse, matrix)
+assert(matrix.xx == 1 and matrix.xy == 0 and matrix.xz == 0 and matrix.yx == 0 and matrix.yy == 1
+ and matrix.yz == 0 and matrix.zx == 0 and matrix.zy == 0 and matrix.zz == 1
+ and matrix.ox == 0 and matrix.oy == 0 and matrix.oz == 0)
+local node3<const> = h.create3(graph, nil, 2,0,0, 1,2,0, 0,0,4, 10,20,30)
+h.resolve(node3)
+local x3<const>, y3<const>, z3<const> = a3.transform_point(node3, 3,4,5)
+local vx3<const>, vy3<const>, vz3<const> = a3.transform_vector(node3, 3,4,5)
+assert(x3 == 20 and y3 == 28 and z3 == 50 and vx3 == 10 and vy3 == 8 and vz3 == 20)
+local success3<const>, lx3<const>, ly3<const>, lz3<const> = a3.inverse_transform_point(node3, x3,y3,z3)
+local vector_success3<const>, lvx3<const>, lvy3<const>, lvz3<const> = a3.inverse_transform_vector(node3, vx3,vy3,vz3)
+assert(success3 and vector_success3 and lx3 == 3 and ly3 == 4 and lz3 == 5 and lvx3 == 3 and lvy3 == 4 and lvz3 == 5)
+h.write_local3(node3, 0,0,0, 0,0,0, 0,0,0, 1,2,3)
+h.resolve(node3)
+assert(not a3.inverse_transform_point(node3, 1,2,3) and not a3.inverse_transform_vector(node3, 1,2,3))
+local xx<const>, xy<const>, xz<const>, yx<const>, yy<const>, yz<const>, zx<const>, zy<const>, zz<const>, ox<const>, oy<const>, oz<const> =
+ a3.trs(7,8,9, 0,0,1,0, 2,3,4)
+assert(xx == -2 and xy == 0 and xz == 0 and yx == 0 and yy == -3 and yz == 0
+ and zx == 0 and zy == 0 and zz == 4 and ox == 7 and oy == 8 and oz == 9)
+`,
+	},
+	{
+		name: 'bulk retirement materializes every survivor before unlinking any selected ancestor',
+		source: `
+for dimension = 2, 3 do
+ for reverse = 0, 1 do
+  local graph<const> = h.new()
+  local a, survivor, b, leaf
+  if dimension == 2 then
+   a = h.create2(graph, nil, 2,0,1,2, 10,20)
+   survivor = h.create2(graph, nil, 0,1,-1,0, 3,4)
+   b = h.create2(graph, nil, 2,0,0,3, 5,6)
+   leaf = h.create2(graph, nil, 1,0,0,1, 7,8)
+  else
+   a = h.create3(graph, nil, 2,0,0, 1,2,0, 0,0,4, 10,20,30)
+   survivor = h.create3(graph, nil, 0,1,0, -1,0,0, 0,0,1, 3,4,5)
+   b = h.create3(graph, nil, 2,0,0, 0,3,0, 0,0,-1, 5,6,7)
+   leaf = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 7,8,9)
+  end
+  assert(h.reparent(survivor, a, false) == h.committed)
+  assert(h.reparent(b, survivor, false) == h.committed)
+  assert(h.reparent(leaf, b, false) == h.committed)
+  h.resolve(leaf)
+  local saved_x<const>, saved_y<const>, saved_z<const> = leaf.wox, leaf.woy, leaf.woz
+  local saved_xx<const>, saved_xy<const>, saved_xz<const> = leaf.wxx, leaf.wxy, leaf.wxz
+  local saved_yy<const>, saved_zz<const> = leaf.wyy, leaf.wzz
+  a._retiring = true
+  b._retiring = true
+  local first<const> = reverse == 0 and a or b
+  local last<const> = reverse == 0 and b or a
+  h.materialize_surviving_children(first)
+  h.materialize_surviving_children(last)
+  h.detach_surviving_children(first)
+  h.detach_surviving_children(last)
+  h.retire(first)
+  h.retire(last)
+  assert(a._hierarchy == nil and b._hierarchy == nil and graph._count == 2)
+  assert(survivor.spatial_parent == nil and leaf.spatial_parent == nil)
+  assert(a._first_child == nil and a._last_child == nil and b._first_child == nil and b._last_child == nil)
+  h.resolve(leaf)
+  assert(leaf.wox == saved_x and leaf.woy == saved_y and leaf.woz == saved_z
+   and leaf.wxx == saved_xx and leaf.wxy == saved_xy and leaf.wxz == saved_xz
+   and leaf.wyy == saved_yy and leaf.wzz == saved_zz)
+  assert(b.xx == 2 and b.yy == 3 and b.ox == 5 and b.oy == 6)
+  assert(h.reparent(leaf, a, true) == h.retired_target)
+ end
+end
+`,
+	},
+	{
 		name: 'column-affine composition preserves nonuniform scale, shear and reflection in both families',
 		source: `
 local p2<const> = h.create2(graph, nil, 2, 0, 1, 3, 10, 20)
