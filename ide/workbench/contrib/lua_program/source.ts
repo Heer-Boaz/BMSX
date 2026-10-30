@@ -20,9 +20,10 @@ export type LuaProgramOccurrence = {
 	readonly call: LuaCallSite;
 };
 export type LuaProgramTable = { readonly file: FileSemanticData; readonly table: LuaTableConstructorExpression; readonly structural: boolean };
+export type LuaProgramPathStep = string | number | { readonly kind: 'expression-key'; readonly fieldIndex: number };
 export type LuaProgramProperty = WorkbenchPropertyElement & {
 	readonly key: string;
-	readonly path: readonly (string | number)[];
+	readonly path: readonly LuaProgramPathStep[];
 	readonly file: FileSemanticData;
 	readonly expression: LuaExpression;
 	readonly valueExpression?: LuaExpression;
@@ -73,7 +74,7 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 	const topology = { roots: [] as WorkbenchTreeNode<LuaProgramProperty>[] };
 	const active = new Set<LuaTableConstructorExpression>();
 	const query = reader.snapshot.symbolResolver;
-	const append = (file: FileSemanticData, expression: LuaExpression, label: string, path: readonly (string | number)[],
+	const append = (file: FileSemanticData, expression: LuaExpression, label: string, path: readonly LuaProgramPathStep[],
 		parent: WorkbenchTreeNode<LuaProgramProperty> | null, field?: LuaTableField, container?: LuaProgramTable,
 		rootTrace?: LuaAuthoredSourceTrace, producerTrace?: LuaAuthoredSourceTrace): void => {
 		const key = JSON.stringify(path);
@@ -106,13 +107,16 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 			const name = staticLuaTableFieldName(entry);
 			if (name !== null) lastNamed.set(name, entry);
 		}
+		let arrayIndex = 0;
 		for (let index = 0; index < table.fields.length; index++) {
 			const entry = table.fields[index];
 			const name = staticLuaTableFieldName(entry);
 			if (name !== null && lastNamed.get(name) !== entry) continue;
-			const fieldLabel = name === null ? entry.kind !== LuaTableFieldKind.ExpressionKey ? `[${index + 1}]`
+			const step: LuaProgramPathStep = name !== null ? name : entry.kind === LuaTableFieldKind.Array ? ++arrayIndex
+				: { kind: 'expression-key', fieldIndex: index };
+			const fieldLabel = name === null ? entry.kind !== LuaTableFieldKind.ExpressionKey ? `[${arrayIndex}]`
 				: readLuaSourceRange(resolveModel(owner!).buffer, owner!.chunk.locations.range(entry.key.span)) : name;
-			append(owner!, entry.value, fieldLabel, [...path, name === null ? index + 1 : name], node, entry, element.table);
+			append(owner!, entry.value, fieldLabel, [...path, step], node, entry, element.table);
 		}
 		active.delete(table);
 	};

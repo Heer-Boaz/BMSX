@@ -140,6 +140,35 @@ test('Lua Program correspondence follows the authored array occurrence across in
 	assert.ok(f.model.buffer.getText().includes("{on='land'}"));
 });
 
+for (const kind of ['progression', 'input'] as const)
+	test(`${kind} named metadata insertion preserves the selected array subject and exact source edit through Undo`, t => {
+		const source = kind === 'progression' ? PROGRAM
+			: "local p=require('cartlib/input/actioneffect/actioneffect_component'); p.factory({program={bindings={{on={press='a[jp]'},go={}},{on={press='b[jp]'},go={}}}}})";
+		const collection = kind === 'progression' ? 'rules' : 'bindings';
+		const selected = kind === 'progression' ? ['rules', 2, 'id'] : ['bindings', 2, 'on', 'press'];
+		const f = fixture(t, source, kind, [], selected), revision = f.input.sourceSelection.revision;
+		const offset = source.indexOf(`${collection}={`) + collection.length + 2;
+		f.model.pushEditOperations([{ offset, deleteLength: 0, text: "metadata='retained'," }]);
+		f.editor.luaPrograms.refresh(f.input);
+		assert.equal(f.input.sourceSelection.revision, revision);
+		assert.deepEqual(f.input.sourceSelection.property!.path, selected);
+		const property = f.input.sourceSelection.property!;
+		const edit = parseLuaFieldValueEdit(f.model.buffer, property.file.chunk.locations, property.field!, "'edited'");
+		assert.ok('value' in edit);
+		f.model.pushEditOperations([edit.value.edit]);
+		const withMetadata = source.slice(0, offset) + "metadata='retained'," + source.slice(offset);
+		assert.equal(f.model.buffer.getText(), withMetadata.replace(kind === 'progression' ? "id='second'" : "press='b[jp]'",
+			kind === 'progression' ? "id='edited'" : "press='edited'"));
+		f.model.history.undo(f.model);
+		f.editor.luaPrograms.refresh(f.input);
+		assert.equal(f.model.buffer.getText(), withMetadata);
+		assert.deepEqual(f.input.sourceSelection.property!.path, selected);
+		f.model.history.undo(f.model);
+		f.editor.luaPrograms.refresh(f.input);
+		assert.equal(f.model.buffer.getText(), source);
+		assert.deepEqual(f.input.sourceSelection.property!.path, selected);
+	});
+
 test('Lua Program removed effective duplicate fields do not select the newly exposed same-named occurrence', t => {
 	const source = PROGRAM.replace("id='first'", "id='shadowed',id='first'");
 	const f = fixture(t, source), property = f.input.sourceSelection.property!;

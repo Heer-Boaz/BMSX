@@ -24,6 +24,8 @@ const KEYBOARD: readonly FieldTemplate[] = [{ name: 'keyboard', value: "'command
 
 /** Authoring choices follow cartlib's schema; they are never runtime default values. */
 export function programFieldTemplates(kind: LuaProgramKind, property: LuaProgramProperty): readonly FieldTemplate[] {
+	// Expression-key occurrences are source addresses, not proved cartlib schema keys.
+	for (const step of property.path) if (typeof step === 'object') return [];
 	const path = property.path, field = path[path.length - 1], container = path[path.length - 2];
 	const entry = property.field?.kind === LuaTableFieldKind.Array;
 	if (path.length === 0) return kind === 'progression' ? PROGRESSION_ROOT : INPUT_ROOT;
@@ -46,6 +48,7 @@ export function programFieldTemplates(kind: LuaProgramKind, property: LuaProgram
 	return [];
 }
 export function programEntryTemplate(kind: LuaProgramKind, property: LuaProgramProperty): string | undefined {
+	for (const step of property.path) if (typeof step === 'object') return;
 	const path = property.path, field = path[path.length - 1];
 	if (kind === 'progression') {
 		if (path.length === 1 && field === 'rules') return "{ id = 'new_rule', on = 'game.event', when_all = {}, set = {}, apply = {}, apply_once = false }";

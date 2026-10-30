@@ -7,7 +7,7 @@ import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { lintCartSources } from '../../scripts/rompacker/cart_lua_linter_runtime';
 import { actionStringScenarioSource } from '../../ide/workbench/contrib/scenario_lab/actionstring';
 import { buildLuaSemanticWorkspaceSnapshot } from '../../toolchain/ts/lua/semantic/model';
-import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind, LuaTableFieldKind } from '../../toolchain/ts/lua/syntax/ast';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { LuaSourceReader } from '../../ide/language/lua/source_reader';
@@ -204,6 +204,55 @@ test('written property identities distinguish literal slash names, array entries
 	assert.deepEqual(programFieldTemplates('progression', unrelated), []);
 	assert.equal(programEntryTemplate('progression', unrelated), undefined);
 });
+
+for (const kind of ['progression', 'input'] as const) {
+	const collection = kind === 'progression' ? 'rules' : 'bindings';
+	const source = (fields: string) => kind === 'progression'
+		? `local p=require('cartlib/progression'); p.compile_program({rules={${fields}},filters={},handlers={}})`
+		: `local p=require('cartlib/input/actioneffect/actioneffect_component'); p.factory({program={bindings={${fields}}}})`;
+
+	test(`${kind} mixed constructor paths count only implicit array fields`, () => {
+		const f = project(source("metadata='x',{id='first'},['note']='y',{id='second'},[9]={id='numeric'},[lookup]={id='computed'},{id='third'}"));
+		const entries = f.tree.rows.filter(row => row.element.path.length === 2 && row.element.field?.kind === LuaTableFieldKind.Array);
+		assert.deepEqual(entries.map(row => row.element.path), [[collection, 1], [collection, 2], [collection, 3]]);
+		for (let index = 0; index < entries.length; index++) {
+			assert.equal(entries[index].element.field, entries[index].parent!.element.table!.table.fields[[1, 3, 6][index]]);
+		}
+		assert.deepEqual(f.tree.rows.find(row => row.element.field?.kind === LuaTableFieldKind.ExpressionKey
+			&& row.element.field.key.kind === LuaSyntaxKind.StringLiteralExpression)!.element.path, [collection, 'note']);
+		const expressionEntries = f.tree.rows.filter(row => row.element.path.length === 2
+			&& row.element.field?.kind === LuaTableFieldKind.ExpressionKey && row.element.field.key.kind !== LuaSyntaxKind.StringLiteralExpression);
+		assert.deepEqual(expressionEntries.map(row => row.element.path), [
+			[collection, { kind: 'expression-key', fieldIndex: 4 }], [collection, { kind: 'expression-key', fieldIndex: 5 }],
+		]);
+		assert.equal(new Set(f.tree.rows.map(row => row.element.key)).size, f.tree.rows.length);
+	});
+
+	test(`${kind} expression-key collapse belongs to its written occurrence, not the next implicit entry`, () => {
+		const f = project(source("[7]={id='numeric'},{id='first'},[lookup]={id='computed'},{id='second'}"));
+		const list = f.tree.roots[0].children.find(row => row.element.path[0] === collection)!;
+		list.children[0].collapsed = true;
+		list.children[3].collapsed = true;
+		projectLuaProgram(f.tree, f.occurrence, new LuaSourceReader(f.snapshot), file => f.models.get(file.file)!,
+			f.models, new LuaProgramSourceSelection(), () => true);
+		const next = f.tree.roots[0].children.find(row => row.element.path[0] === collection)!;
+		assert.equal(new Set(next.children.map(row => row.element.key)).size, 4);
+		assert.deepEqual(next.children.map(row => row.collapsed), [true, false, false, true]);
+		assert.deepEqual(next.children[1].element.path, [collection, 1]);
+		assert.deepEqual(next.children[3].element.path, [collection, 2]);
+	});
+
+	test(`${kind} expression-key ancestry cannot grant named cartlib schema authoring`, () => {
+		const f = project(source("[lookup]={on={},go={},when={},when_all={{}},set={{}},on={custom={{}},combo={steps={}}}}"));
+		const computed = f.tree.roots[0].children.find(row => row.element.path[0] === collection)!.children[0];
+		const visit = (node: typeof computed) => {
+			assert.deepEqual(programFieldTemplates(kind, node.element), []);
+			assert.equal(programEntryTemplate(kind, node.element), undefined);
+			for (const child of node.children) visit(child);
+		};
+		visit(computed);
+	});
+}
 
 test('filter condition authoring adds a real condition entry rather than a map property', () => {
 	const f = project(`local p=require('cartlib/progression')
