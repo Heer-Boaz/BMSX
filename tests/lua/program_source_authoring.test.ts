@@ -134,6 +134,16 @@ component.factory({program = definitions.${member}})`;
 	}
 });
 
+test('input construction projects its admitted definition argument, not the World construction context', () => {
+	const source = `local input = require('cartlib/input/actioneffect/actioneffect_component')
+local context = {owner = actor, initial = {input = {program = external}}}
+input.new(context, {program = {bindings = {{on = {press = 'a[jp]'}, go = {press = {['emit.event'] = 'hit'}}}}}})`;
+	const f = project(source);
+	assert.equal(f.occurrence.kind, 'input');
+	assert.ok(f.tree.rows.some(row => row.element.key === '["bindings",1,"on","press"]'));
+	assert.equal(f.tree.rows.some(row => row.element.path[0] === 'owner' || row.element.path[0] === 'initial'), false);
+});
+
 test('known member candidates never erase competing writes, dynamic storage or unknown base lanes', () => {
 	for (const provider of [
 		"local definitions={input={bindings={}}}; definitions.input=external; return definitions",

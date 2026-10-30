@@ -18,6 +18,7 @@ export type LuaProgramOccurrence = {
 	readonly resource: ResourceIdentity;
 	readonly file: FileSemanticData;
 	readonly call: LuaCallSite;
+	readonly argument: LuaExpression | undefined;
 };
 export type LuaProgramTable = { readonly file: FileSemanticData; readonly table: LuaTableConstructorExpression; readonly structural: boolean };
 export type LuaProgramPathStep = string | number | { readonly kind: 'expression-key'; readonly fieldIndex: number };
@@ -45,17 +46,20 @@ export function collectLuaPrograms(resource: ResourceIdentity, snapshot: LuaSema
 		if (target === null) continue;
 		const imports = snapshot.symbolResolver.moduleImports;
 		let kind: LuaProgramKind;
+		let argumentIndex = 0;
 		if (imports.matchesImport(target, { module: 'cartlib/progression', memberPath: ['compile_program'] })) kind = 'progression';
-		else if (imports.matchesImport(target, { module: 'cartlib/input/actioneffect/actioneffect_component', memberPath: ['factory'] })
-			|| imports.matchesImport(target, { module: 'cartlib/input/actioneffect/actioneffect_component', memberPath: ['new'] })) kind = 'input';
+		else if (imports.matchesImport(target, { module: 'cartlib/input/actioneffect/actioneffect_component', memberPath: ['factory'] })) kind = 'input';
+		else if (imports.matchesImport(target, { module: 'cartlib/input/actioneffect/actioneffect_component', memberPath: ['new'] })) {
+			kind = 'input'; argumentIndex = 1;
+		}
 		else continue;
-		result.push({ kind, resource, file, call });
+		result.push({ kind, resource, file, call, argument: call.expression.arguments[argumentIndex] });
 	}
 	return result;
 }
 
 export function luaProgramRoot(occurrence: LuaProgramOccurrence, reader: LuaSourceReader) {
-	const argument = occurrence.call.expression.arguments[0];
+	const argument = occurrence.argument;
 	if (argument === undefined) return;
 	return occurrence.kind === 'progression' ? reader.expression(occurrence.file, argument)
 		: reader.member(occurrence.file, argument, 'program');
@@ -122,14 +126,14 @@ export function projectLuaProgram(tree: WorkbenchPropertyTree<LuaProgramProperty
 	};
 	const root = luaProgramRoot(occurrence, reader);
 	if (root === undefined) {
-		const file = occurrence.file, expression = occurrence.call.expression.arguments[0] ?? occurrence.call.expression;
+		const file = occurrence.file, expression = occurrence.argument ?? occurrence.call.expression;
 		const element: LuaProgramProperty = { kind: 'property', key: '[]', path: [], label: 'UNRESOLVED PROGRAM',
 			value: readLuaExpressionPreview(resolveModel(file).buffer, file.chunk.locations, expression),
 			description: 'No unique written program argument. Edit the producer definition in Source.', warning: true,
 			displayLabel: '', displayValue: '', displayValueLeft: 0, file, expression, inlineEditable: false };
 		appendWorkbenchTreeNode(topology, null, element);
 	} else {
-		const argument = query.writtenSources.expression(occurrence.file, occurrence.call.expression.arguments[0]);
+		const argument = query.writtenSources.expression(occurrence.file, occurrence.argument!);
 		const rootTrace = occurrence.kind === 'progression' ? query.authoredSources.trace(argument) : query.authoredSources.member(argument, 'program');
 		const producerTrace = query.authoredSources.trace(query.writtenSources.callee(occurrence.call.call));
 		append(root.file, root.expression, occurrence.kind === 'progression' ? 'PROGRESSION PROGRAM' : 'INPUT PROGRAM', [], null,
