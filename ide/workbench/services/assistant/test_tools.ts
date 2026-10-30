@@ -15,7 +15,10 @@ import type { ScenarioTestNodeId, ScenarioTestNode, ScenarioTestRoot, ScenarioTe
 
 type RunSummary = Readonly<Pick<ScenarioRun, 'mode' | 'sequence' | 'scopeId' | 'state' | 'completedCount' | 'passedCount' | 'failedCount' | 'cancelledCount' | 'skippedCount'>>
 	& { readonly run: string; readonly testCount: number; readonly canCancel: boolean };
-type CaseSummary = Readonly<Pick<ScenarioTestResult, 'test' | 'sourceRevision' | 'state' | 'startTick' | 'endTick'>> & { readonly result: string };
+type CaseSummary = Readonly<Pick<ScenarioTestResult, 'sourceRevision' | 'state' | 'startTick' | 'endTick'>> & {
+	readonly result: string;
+	readonly test: Pick<ScenarioTestResult['test'], 'kind' | 'id' | 'parentId' | 'caseName' | 'label' | 'resource' | 'assetId' | 'sourceTimestamp' | 'range'>;
+};
 type RetainedOutput<T> = { readonly omitted: number; readonly entries: readonly T[] };
 export type ToolTestRun = RunSummary & { readonly revision: number; readonly cases: readonly CaseSummary[] };
 export type ToolTestResult = CaseSummary & Pick<ScenarioTestResult, 'source' | 'failures' | 'fault'> & {
@@ -272,7 +275,11 @@ function runSummary(handle: string, run: ScenarioRun, owned: boolean): RunSummar
 		cancelledCount: run.cancelledCount, skippedCount: run.skippedCount };
 }
 function caseSummary(handle: string, result: ScenarioTestResult): CaseSummary {
-	return { result: handle, test: result.test, sourceRevision: result.sourceRevision, state: result.state, startTick: result.startTick, endTick: result.endTick };
+	const test = result.test;
+	return { result: handle, test: {
+		kind: test.kind, id: test.id, parentId: test.parentId, caseName: test.caseName, label: test.label,
+		resource: test.resource, assetId: test.assetId, sourceTimestamp: test.sourceTimestamp, range: test.range,
+	}, sourceRevision: result.sourceRevision, state: result.state, startTick: result.startTick, endTick: result.endTick };
 }
 /** Materialize a retained ring in its public order only on an explicit evidence read. */
 function retainedOutput<T>(sequence: RetainedSequence<T>): RetainedOutput<T> {

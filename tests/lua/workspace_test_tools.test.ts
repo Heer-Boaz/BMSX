@@ -41,6 +41,20 @@ test('an explicit history read admits current observation handles, never cancell
 	assert.equal(next.state, 'running', 'a read observer never cancels a manual run');
 });
 
+test('test evidence crosses the worker boundary without exporting declaration membership', async t => {
+	const f = await fixture(t);
+	const run = await f.tools.execute('studio_read_test_run', { run: f.handle });
+	assert.ok(run.kind === 'test-run');
+	const copied = structuredClone(run);
+	assert.equal(copied.data.cases[0].test.id, f.module.children[0].id);
+	assert.equal(copied.data.cases[0].test.caseName, f.module.children[0].caseName);
+	assert.equal('membership' in copied.data.cases[0].test, false);
+	const result = await f.tools.execute('studio_read_test_result', { result: f.resultHandle });
+	assert.ok(result.kind === 'test-result');
+	assert.equal(structuredClone(result).data.source, f.source);
+	assert.equal(typeof f.module.children[0].membership, 'symbol');
+});
+
 test('catalog and case summaries do not read source/output; explicit reads cache snapshots without frame work', async t => {
 	const f = await fixture(t), result = f.run.items[0];
 	let sourceReads = 0;
