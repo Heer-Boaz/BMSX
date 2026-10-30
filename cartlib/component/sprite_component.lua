@@ -59,9 +59,9 @@ function sprite_component:_set_resolved_imgid(imgid, source)
 		self.source_width = source.width
 		self.source_height = source.height
 		if self.region_width ~= nil then
-			self:set_draw_function(sprite_component.draw_region_visual)
+			self:set_draw_function(self.draw_region_visual)
 		else
-			self:set_draw_function(sprite_component.draw_visual)
+			self:set_draw_function(self.draw_visual)
 		end
 	else
 		self._source = nil
@@ -94,7 +94,7 @@ function sprite_component:set_region(x, y, width, height)
 	self.region_width = width
 	self.region_height = height
 	if self._source ~= nil then
-		self:set_draw_function(sprite_component.draw_region_visual)
+		self:set_draw_function(self.draw_region_visual)
 	end
 	return self
 end
@@ -105,7 +105,7 @@ function sprite_component:clear_region()
 	self.region_width = nil
 	self.region_height = nil
 	if self._source ~= nil then
-		self:set_draw_function(sprite_component.draw_visual)
+		self:set_draw_function(self.draw_visual)
 	end
 	return self
 end

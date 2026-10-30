@@ -30,6 +30,7 @@ const modules = [
 		path: 'cartlib/rom_dir',
 		source: `local images<const> = {
  tile={imgmeta={width=2,height=3,gx_source_x=64,gx_source_y=32}},
+ other={imgmeta={width=3,height=2,gx_source_x=68,gx_source_y=32}},
  surface={imgmeta={width=4,height=3,gx_source_x=64,gx_source_y=32,
   gx_page_tiles={{u=64,v=32,w=2,h=3,x=0,y=0},{u=66,v=32,w=2,h=3,x=2,y=0}}}},
 }
@@ -38,6 +39,47 @@ return { image=function(id) return images[id] end }`,
 ];
 
 for (const optLevel of [0, 3] as const) {
+	test(`Sprite source changes preserve the concrete composite draw producer (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+local sprite<const> = require('cartlib/component/sprite_component')
+local commands<const> = require('cartlib/gx/command_list')
+local gp0<const> = require('cartlib/gx/gp0')
+local layered<const> = setmetatable({}, {__index=sprite})
+layered.__index=layered
+function layered:draw_visual(draw)
+ draw:rect(0,0,1,1,0xff204080)
+ sprite.draw_visual(self,draw)
+end
+prefab.define({def_id='visual.layered',class={},
+ spatial={family='2d',authority='affine',local_transform={1,0,0,1,10,20}},
+ initial={sprite={imgid='tile'}},components={function(context)
+  local part<const> = sprite.new(context,'sprite')
+  setmetatable(part,layered)
+  part:set_draw_function(layered.draw_visual)
+  return part
+ end}})
+local actor<const> = world:spawn('visual.layered',{})
+local part<const> = actor:get_component(sprite)
+part:set_imgid('other')
+assert(part.draw==layered.draw_visual and part.source_width==3 and part.source_height==2,
+ 'source admission discarded the concrete composite producer')
+bss words: word[32]
+local draw<const> = commands.new(words)
+commands.begin(draw,0x100,0)
+part.draw(part,draw)
+local output<const>: *word = words
+assert(output[1]==(gp0.draw_rectangle | gp0.argb_to_rgb(0xff204080)),
+ 'renderer lost the composite layer after changing the image')
+part:set_region(0,0,1,1)
+assert(part.draw==sprite.draw_region_visual)
+part:clear_region()
+assert(part.draw==layered.draw_visual,'clearing a region discarded the concrete producer')
+return true
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+	});
+
 	test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
 local rectangle<const> = require('cartlib/component/rectangle_component')
