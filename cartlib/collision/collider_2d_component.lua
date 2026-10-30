@@ -97,6 +97,8 @@ function collider_2d_component:set_local_origin(x, y)
 end
 
 function collider_2d_component:set_local_area(left, top, right, bottom)
+	if self.local_left == left and self.local_top == top
+	and self.local_right == right and self.local_bottom == bottom then return self end
 	self.local_left, self.local_top = left, top
 	self.local_right, self.local_bottom = right, bottom
 	self._geometry_revision = self._geometry_revision + 1

@@ -31,6 +31,41 @@ return {rectangle=rectangle,compound=compound,image=function(id) return images[i
 ];
 
 for (const optLevel of [0,3] as const) {
+ test(`Repeated area publication retains translation-only geometry (O${optLevel})`, t => {
+  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+local pool<const> = require('cartlib/collision/geometry_pool')
+local collider<const> = require('cartlib/collision/collider_2d_component')
+bss cache: word[16]
+local storage<const> = pool.new(cache,64,1)
+prefab.define({def_id='collision.moving_area',class={},
+ spatial={family='2d',authority='root_origin',local_transform={1,0,0,1,0,0}},
+ initial={collider={geometry_pool=storage,local_area={left=0,top=0,right=8,bottom=2}}},
+ components={collider.new}})
+local actor<const> = world:spawn('collision.moving_area',{})
+local body<const> = actor:get_component(collider)
+body:resolve_shape()
+local geometry_revision<const> = body._geometry_revision
+kernel=function(count)
+ for index=1,count do
+  actor.spatial:set_local_origin(index,index*2)
+  body:set_local_area(0,0,8,2)
+  assert(body:resolve_shape()==cache and body.wox==index and body.woy==index*2)
+ end
+ assert(body._geometry_revision==geometry_revision,
+  'unchanged local area invalidated the retained geometry on every position update')
+end
+return true
+`,{optLevel,modules:collisionModules});
+  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+  const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+  const profile = profileWarmGuestKernel(cpu,kernel,256);
+  assert.equal(profile.reservations,0);
+  assert.equal(profile.reservedBytes,0);
+  assert.equal(profile.retainedAfter,profile.retainedBefore);
+  t.diagnostic(JSON.stringify({optLevel,...profile}));
+ });
+
  test(`Collision basis encoding preserves exact F32 bounds, reflection and disjoint pieces (O${optLevel})`, () => {
   const {cpu} = createCartlibProgramHarness(`
 local geometry<const> = require('cartlib/collision/shape_geometry')
