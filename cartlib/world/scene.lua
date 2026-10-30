@@ -19,9 +19,7 @@ function scene:_attach(object, member_id)
 		self.members[member_id] = object
 		object.scene_member_id = member_id
 		local member<const> = self.definition.members_by_id[member_id]
-		if member ~= nil then
-			self._members_by_index[member.index] = object
-		end
+		self._members_by_index[member.index] = object
 	end
 	dense_set.add(self.objects, object)
 end
@@ -32,9 +30,7 @@ function scene:_detach(object)
 	if member_id ~= nil then
 		self.members[member_id] = nil
 		local member<const> = self.definition.members_by_id[member_id]
-		if member ~= nil then
-			self._members_by_index[member.index] = nil
-		end
+		self._members_by_index[member.index] = nil
 	end
 end
 

@@ -40,11 +40,7 @@ local dispatch_boundary_event<const> = function(payload, component, correcting, 
 	payload.previous_position = old_position
 	payload.correction_committed = component.correction_committed
 	obj.events:emit(correcting and 'screen.leaving' or 'screen.leave', payload)
-	if obj.marked_for_disposal then
-		return false
-	end
-	local spatial<const> = component:resolve_footprint()
-	return true, spatial.wox, spatial.woy
+	return not obj.marked_for_disposal
 end
 
 local emit_boundary_events<const> = function(payload, obj, component)
@@ -57,28 +53,30 @@ local emit_boundary_events<const> = function(payload, obj, component)
 	local bottom<const> = component.bottom
 	local spatial<const> = component:resolve_footprint()
 	local x, y = spatial.wox, spatial.woy
-	local continuing
 	local edge = x + component._footprint_left
 	if edge < component.old_left and edge < left then
-		continuing, x, y = dispatch_boundary_event(payload, component,
-			x + component._footprint_right >= left, 'left', component.old_x, x, y)
-		if not continuing then return end
+		if not dispatch_boundary_event(payload, component,
+			x + component._footprint_right >= left, 'left', component.old_x, x, y) then return end
+		component:resolve_footprint()
+		x, y = spatial.wox, spatial.woy
 	end
 	edge = x + component._footprint_right
 	if edge > component.old_right and (edge > right or x + component._footprint_left >= right) then
-		continuing, x, y = dispatch_boundary_event(payload, component,
-			x + component._footprint_left < right, 'right', component.old_x, x, y)
-		if not continuing then return end
+		if not dispatch_boundary_event(payload, component,
+			x + component._footprint_left < right, 'right', component.old_x, x, y) then return end
+		component:resolve_footprint()
+		x, y = spatial.wox, spatial.woy
 	end
 	edge = y + component._footprint_top
 	if edge < component.old_top and edge < top then
-		continuing, x, y = dispatch_boundary_event(payload, component,
-			y + component._footprint_bottom >= top, 'up', component.old_y, x, y)
-		if not continuing then return end
+		if not dispatch_boundary_event(payload, component,
+			y + component._footprint_bottom >= top, 'up', component.old_y, x, y) then return end
+		component:resolve_footprint()
+		x, y = spatial.wox, spatial.woy
 	end
 	edge = y + component._footprint_bottom
 	if edge > component.old_bottom and (edge > bottom or y + component._footprint_top >= bottom) then
-		continuing, x, y = dispatch_boundary_event(payload, component,
+		dispatch_boundary_event(payload, component,
 			y + component._footprint_top < bottom, 'down', component.old_y, x, y)
 	end
 end

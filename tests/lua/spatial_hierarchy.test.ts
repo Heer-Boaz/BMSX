@@ -344,6 +344,33 @@ assert3(c3, -1,-1,-1, 1,2,2, 1,2,3, 15,32,46)
 `,
 	},
 	{
+		name: 'world-origin writes reuse clean affine roots without losing dirty basis or descendant propagation',
+		source: `
+local root2<const> = h.create2(graph, nil, 2,0,1,3, 7,8)
+local root3<const> = h.create3(graph, nil, 2,0,0, 1,3,0, 0,1,-4, 7,8,9)
+h.resolve(root2)
+h.resolve(root3)
+local basis2<const>, basis3<const> = root2._basis_revision, root3._basis_revision
+local origin2<const>, origin3<const> = root2._origin_revision, root3._origin_revision
+assert(h.write_world_origin2(root2, 10,20))
+assert(h.write_world_origin3(root3, 30,40,50))
+assert(root2.wox == 10 and root2.woy == 20 and root2._flags == 0)
+assert(root3.wox == 30 and root3.woy == 40 and root3.woz == 50 and root3._flags == 0)
+assert(root2._basis_revision == basis2 and root3._basis_revision == basis3)
+assert(root2._origin_revision == origin2 + 1 and root3._origin_revision == origin3 + 1)
+h.write_local2(root2, 0,2,-3,0, 10,20)
+assert(h.write_world_origin2(root2, 60,70))
+h.resolve(root2)
+assert2(root2, 0,2,-3,0, 60,70)
+local child<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 1,2,3)
+assert(h.reparent(child, root3, false) == h.committed)
+h.resolve(child)
+assert(h.write_world_origin3(root3, 100,200,300))
+h.resolve(child)
+assert(child.wox == 104 and child.woy == 209 and child.woz == 288)
+`,
+	},
+	{
 		name: 'relationship admission rejects self, cycles, other graphs/families and parented origin-only bodies',
 		source: `
 local a<const> = h.create2(graph, nil, 1,0,0,1, 1,2)

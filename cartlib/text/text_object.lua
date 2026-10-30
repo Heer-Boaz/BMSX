@@ -52,12 +52,6 @@ function text_object_component:draw_visual(draw)
 				xx, xy, yx, yy, x, y, self.background_color)
 		end
 	end
-	local lines<const> = self.glyph_lines
-	local span_binding<const> = self.font.span_binding
-	local blit_span<const> = span_binding.writer
-	local uniform_draw_mode_source<const> = span_binding.uniform_draw_mode_source
-	local line_offsets<const> = self.line_offsets
-	local color<const> = self.color
 	if self.glyph_visible_height ~= nil then
 		if self._translation_only then
 			text_component.render_visible_glyph_rows(self, draw, x, y, 1, self.glyph_line_count)
@@ -67,15 +61,27 @@ function text_object_component:draw_visual(draw)
 		end
 		return
 	end
-	for line_index = 1, self.glyph_line_count do
-		local line<const> = lines[line_index]
-		local line_length<const> = line.visible_count
-		if line_length > 0 then
-			local line_y<const> = line_offsets[line_index]
-			if self._translation_only then
+	local lines<const> = self.glyph_lines
+	local line_offsets<const> = self.line_offsets
+	local color<const> = self.color
+	if self._translation_only then
+		local span_binding<const> = self.font.span_binding
+		local blit_span<const> = span_binding.writer
+		local uniform_draw_mode_source<const> = span_binding.uniform_draw_mode_source
+		for line_index = 1, self.glyph_line_count do
+			local line<const> = lines[line_index]
+			local line_length<const> = line.visible_count
+			if line_length > 0 then
 				blit_span(draw, line, line.x_offsets, 1, line_length,
-					x, y + line_y, color, uniform_draw_mode_source)
-			else
+					x, y + line_offsets[line_index], color, uniform_draw_mode_source)
+			end
+		end
+	else
+		for line_index = 1, self.glyph_line_count do
+			local line<const> = lines[line_index]
+			local line_length<const> = line.visible_count
+			if line_length > 0 then
+				local line_y<const> = line_offsets[line_index]
 				affine_batch.glyph_span(draw, line, line.x_offsets, 1, line_length,
 					xx, xy, yx, yy, x + yx*line_y, y + yy*line_y, color)
 			end

@@ -197,9 +197,10 @@ end
 
 function spatial.write_world_origin2(node, x, y)
 	local parent<const> = node.spatial_parent
-	if parent ~= nil then
-		spatial.resolve(parent)
+	if parent == nil then
+		return spatial.write_origin2(node, x, y)
 	end
+	spatial.resolve(parent)
 	if not affine2.origin_from_world(node, parent, x, y) then
 		return false
 	end
@@ -210,9 +211,10 @@ end
 
 function spatial.write_world_origin3(node, x, y, z)
 	local parent<const> = node.spatial_parent
-	if parent ~= nil then
-		spatial.resolve(parent)
+	if parent == nil then
+		return spatial.write_origin3(node, x, y, z)
 	end
+	spatial.resolve(parent)
 	if not affine3.origin_from_world(node, parent, x, y, z) then
 		return false
 	end

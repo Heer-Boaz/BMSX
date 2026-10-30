@@ -10,15 +10,14 @@ local sentinel<const> = {}
 local align<const> = {
 	tick = function(enemy)
 		enemy.mode = 'align'
-		local target<const> = enemy.game.player.spatial:world_origin()
-		local spatial<const> = enemy.spatial
-		local x<const>, y<const>, z<const> = spatial:world_origin()
+		local target<const> = enemy.game.player.spatial:resolve_world()
+		local pose<const> = enemy.spatial:resolve_world()
 		local next_x
-		if x < target then next_x = math.min(target, x + 1.25)
-		else next_x = math.max(target, x - 1.25) end
-		spatial:set_world_origin(next_x, y, z)
-		local actual_x<const> = spatial:world_origin()
-		if math.abs(actual_x - target) <= 4 then return bt_result.success end
+		if pose.wox < target.wox then next_x = math.min(target.wox, pose.wox + 1.25)
+		else next_x = math.max(target.wox, pose.wox - 1.25) end
+		pose:set_world_origin(next_x, pose.woy, pose.woz)
+		pose:resolve_world()
+		if math.abs(pose.wox - target.wox) <= 4 then return bt_result.success end
 		return bt_result.running
 	end,
 }

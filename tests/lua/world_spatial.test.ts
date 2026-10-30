@@ -287,8 +287,9 @@ local b<const> = outgoing:spawn('spatial.retiring',{}, {parent=s.spatial,local_t
 local leaf<const> = surviving:spawn('spatial.2d',{}, {parent=b.spatial,local_transform={1,0,0,1,7,8}})
 retired[1],retired[2] = a,b
 kept[1],kept[2] = s,leaf
-local old_x<const>,old_y<const> = leaf.spatial:world_origin()
-local old_xx<const>,old_xy<const> = leaf.spatial.wxx,leaf.spatial.wxy
+local pose<const> = leaf.spatial:resolve_world()
+local old_x<const>,old_y<const> = pose.wox,pose.woy
+local old_xx<const>,old_xy<const> = pose.wxx,pose.wxy
 s:set_space('other')
 leaf:set_space('other')
 world:set_space('other')

@@ -66,31 +66,6 @@ function transform_2d_component:set_enabled(enabled)
 	return self
 end
 
-function transform_2d_component:world_origin()
-	hierarchy.resolve(self)
-	return self.wox, self.woy
-end
-
-function transform_2d_component:transform_point(x, y)
-	hierarchy.resolve(self)
-	return affine2.transform_point(self, x, y)
-end
-
-function transform_2d_component:transform_vector(x, y)
-	hierarchy.resolve(self)
-	return affine2.transform_vector(self, x, y)
-end
-
-function transform_2d_component:inverse_transform_point(x, y)
-	hierarchy.resolve(self)
-	return affine2.inverse_transform_point(self, x, y)
-end
-
-function transform_2d_component:inverse_transform_vector(x, y)
-	hierarchy.resolve(self)
-	return affine2.inverse_transform_vector(self, x, y)
-end
-
 local origin_fields<const> = { 'ox', 'oy' }
 local affine_fields<const> = { 'xx', 'xy', 'yx', 'yy', 'ox', 'oy' }
 local protected<const> = {

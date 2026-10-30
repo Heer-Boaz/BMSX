@@ -70,31 +70,6 @@ function transform_3d_component:set_enabled(enabled)
 	return self
 end
 
-function transform_3d_component:world_origin()
-	hierarchy.resolve(self)
-	return self.wox, self.woy, self.woz
-end
-
-function transform_3d_component:transform_point(x, y, z)
-	hierarchy.resolve(self)
-	return affine3.transform_point(self, x, y, z)
-end
-
-function transform_3d_component:transform_vector(x, y, z)
-	hierarchy.resolve(self)
-	return affine3.transform_vector(self, x, y, z)
-end
-
-function transform_3d_component:inverse_transform_point(x, y, z)
-	hierarchy.resolve(self)
-	return affine3.inverse_transform_point(self, x, y, z)
-end
-
-function transform_3d_component:inverse_transform_vector(x, y, z)
-	hierarchy.resolve(self)
-	return affine3.inverse_transform_vector(self, x, y, z)
-end
-
 local origin_fields<const> = { 'ox', 'oy', 'oz' }
 local affine_fields<const> = { 'xx','xy','xz','yx','yy','yz','zx','zy','zz','ox','oy','oz' }
 local protected<const> = {

@@ -107,25 +107,24 @@ function game:next_enemy()
 	local enemy<const> = self.enemy
 	self.wave = self.wave + 1
 	enemy.brain:stop()
-	local spatial<const> = enemy.spatial
-	local _x<const>, _y<const>, z<const> = spatial:world_origin()
-	spatial:set_world_origin(48 + (self.wave * 67 + 45) % 224, 48 + (self.wave % 3) * 12, z)
+	local pose<const> = enemy.spatial:resolve_world()
+	pose:set_world_origin(48 + (self.wave * 67 + 45) % 224, 48 + (self.wave % 3) * 12, pose.woz)
 	enemy.charge = 0
 	enemy.mode = 'align'
 	enemy.brain:start()
 end
 
 function game:fire_player(ship)
-	local ship_x<const>, ship_y<const> = ship.spatial:world_origin()
+	local pose<const> = ship.spatial:resolve_world()
 	local count = 1
 	if self.twin_cannon then count = 2 end
 	for muzzle = 1, count do
 		for index = 1, #self.player_bolts do
 			local bolt<const> = self.player_bolts[index]
 			if not bolt.visible then
-				local x = ship_x
-				if count == 2 then x = ship_x - 6 + (muzzle - 1) * 12 end
-				bolt.spatial:set_world_origin(x, ship_y - 16)
+				local x = pose.wox
+				if count == 2 then x = x - 6 + (muzzle - 1) * 12 end
+				bolt.spatial:set_world_origin(x, pose.woy - 16)
 				bolt.vx = 0
 				bolt.vy = -8
 				bolt.visible = true
@@ -138,15 +137,15 @@ function game:fire_player(ship)
 end
 
 function game:fire_enemy(enemy)
-	local enemy_x<const>, enemy_y<const> = enemy.spatial:world_origin()
-	local player_x<const>, player_y<const> = self.player.spatial:world_origin()
+	local origin<const> = enemy.spatial:resolve_world()
+	local target<const> = self.player.spatial:resolve_world()
 	for index = 1, #self.enemy_bolts do
 		local bolt<const> = self.enemy_bolts[index]
 		if not bolt.visible then
-			local bolt_y<const> = enemy_y + 12
-			bolt.spatial:set_world_origin(enemy_x, bolt_y)
-			local dx<const> = player_x - enemy_x
-			local dy<const> = player_y - bolt_y
+			local bolt_y<const> = origin.woy + 12
+			bolt.spatial:set_world_origin(origin.wox, bolt_y)
+			local dx<const> = target.wox - origin.wox
+			local dy<const> = target.woy - bolt_y
 			local length<const> = math.sqrt(dx * dx + dy * dy)
 			bolt.vx = dx * 2.5 / length
 			bolt.vy = dy * 2.5 / length
@@ -166,8 +165,8 @@ function game:damage_player(ship)
 end
 
 function game:destroy_enemy()
-	local x<const>, y<const> = self.enemy.spatial:world_origin()
-	self.burst.spatial:set_world_origin(x, y)
+	local pose<const> = self.enemy.spatial:resolve_world()
+	self.burst.spatial:set_world_origin(pose.wox, pose.woy)
 	self.burst.timelines:play('burst')
 	self.score = self.score + 1
 	self:emit('starcatch.enemy_destroyed')
@@ -178,21 +177,20 @@ function game:step_bolts(bolts, hostile)
 	for index = 1, #bolts do
 		local bolt<const> = bolts[index]
 		if bolt.visible then
-			local spatial<const> = bolt.spatial
-			local before_x<const>, before_y<const> = spatial:world_origin()
-			spatial:set_world_origin(before_x + bolt.vx, before_y + bolt.vy)
-			local x<const>, y<const> = spatial:world_origin()
-			if x < 12 or x > 308 or y < 26 or y > 222 then
+			local pose<const> = bolt.spatial:resolve_world()
+			pose:set_world_origin(pose.wox + bolt.vx, pose.woy + bolt.vy)
+			pose:resolve_world()
+			if pose.wox < 12 or pose.wox > 308 or pose.woy < 26 or pose.woy > 222 then
 				bolt.visible = false
 			elseif hostile then
-				local target_x<const>, target_y<const> = self.player.spatial:world_origin()
-				if math.abs(x - target_x) <= 12 and math.abs(y - target_y) <= 14 then
+				local target<const> = self.player.spatial:resolve_world()
+				if math.abs(pose.wox - target.wox) <= 12 and math.abs(pose.woy - target.woy) <= 14 then
 					bolt.visible = false
 					self.player.actioneffects:trigger('starcatch.hurt')
 				end
 			else
-				local target_x<const>, target_y<const> = self.enemy.spatial:world_origin()
-				if math.abs(x - target_x) <= 14 and math.abs(y - target_y) <= 14 then
+				local target<const> = self.enemy.spatial:resolve_world()
+				if math.abs(pose.wox - target.wox) <= 14 and math.abs(pose.woy - target.woy) <= 14 then
 					bolt.visible = false
 					self:destroy_enemy()
 				end
@@ -223,10 +221,9 @@ function game:step()
 		if dx ~= 0 and dy ~= 0 then speed = 2.1213203435596424 end
 		local ship<const> = self.player
 		speed = speed * ship.dash_speed
-		local spatial<const> = ship.spatial
-		local x<const>, y<const>, z<const> = spatial:world_origin()
-		spatial:set_world_origin(math.max(22, math.min(298, x + dx * speed)),
-			math.max(126, math.min(202, y + dy * speed)), z)
+		local pose<const> = ship.spatial:resolve_world()
+		pose:set_world_origin(math.max(22, math.min(298, pose.wox + dx * speed)),
+			math.max(126, math.min(202, pose.woy + dy * speed)), pose.woz)
 		ship.bank = dx * 0.16
 		self:step_bolts(self.player_bolts, false)
 		if self.pending_scene == nil then self:step_bolts(self.enemy_bolts, true) end
