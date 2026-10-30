@@ -21,6 +21,7 @@ import type { EditorActionRequest } from './action_request';
 import { executeEditorSearchCommand, isEditorSearchCommand } from './search';
 import { executeEditorViewCommand, isEditorViewCommand } from './view';
 import { resolveEditorCommandGroup } from './context';
+import { executeEditorDocumentCommand, isEditorDocumentCommand, isEditorDocumentCommandEnabled } from './document';
 import { captureEditorWorkspaceCommand, isEditorWorkspaceCommand, isEditorWorkspaceCommandEnabled } from './workspace';
 import { performEditorAction } from './actions';
 import { editorTextModelService } from '../editor/model/model_service';
@@ -125,6 +126,11 @@ export class IdeCommandController {
 			invocation.run(originGroup?.focusTarget);
 			return;
 		}
+		if (isEditorDocumentCommand(command)) {
+			if (documentGroup !== undefined) executeEditorDocumentCommand(this.editor.editorParts, this.editor.quickInput, command,
+				documentGroup, input === undefined ? documentGroup.model.activeTab : input, target);
+			return;
+		}
 		// Named regions settle only their own input at the Main owner; an unrelated document draft is not their subject.
 		const activityId = this.editor.mainWorkspace.activities.idForCommand(command);
 		if (activityId !== undefined) {
@@ -179,11 +185,10 @@ export class IdeCommandController {
 		const transport = local === undefined ? selected?.transport : local.transport;
 		if (targetScope?.contextGeneration !== targetGeneration || commandScope?.contextGeneration !== contextGeneration || editorScope?.contextGeneration !== editorGeneration
 			|| invocationScope?.contextGeneration !== invocationGeneration || input !== undefined && !group.model.contains(input)) return;
-		const editor = input === undefined ? group.model.activeTab : input;
 		switch (command) {
 			case 'window.restoreMinimized': showOpenWindows(this.editor.mainWorkspace, this.editor.editorParts, this.editor.surfaces, this.editor.quickInput, true); return;
 			case 'window.showAll': showOpenWindows(this.editor.mainWorkspace, this.editor.editorParts, this.editor.surfaces, this.editor.quickInput); return;
-			case 'window.focusMain': this.editor.editorParts.main.focus(); return;
+			case 'window.focusMain': this.editor.mainWorkspace.focusTarget.focus(); return;
 			case 'workspace.focusPrimary': this.editor.mainWorkspace.focusPrimary(); return;
 			case 'workspace.clearPrimary': void this.editor.mainWorkspace.clearPrimary(this.editor.editorParts.closeController, target); return;
 			case 'window.newEditor': this.editor.editorParts.createDocument().focus(); return;
@@ -204,15 +209,6 @@ export class IdeCommandController {
 				return;
 			}
 			case 'group.maximize': part.arrangement.toggleMaximize(group); group.focus(); return;
-			case 'window.moveEditor': {
-				if (editor !== null && this.editor.editorParts.canMoveEditor(group, editor, { kind: 'window' }))
-					showMoveDestination(this.editor.editorParts, this.editor.quickInput, { kind: 'editor', model: group.model, input: editor }, target);
-				return;
-			}
-			case 'window.copyEditor': {
-				if (editor !== null) void this.editor.editorParts.copyEditor(group, editor);
-				return;
-			}
 			case 'window.systemMenu': case 'window.move': case 'window.resize':
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
@@ -269,22 +265,7 @@ export class IdeCommandController {
 				} else this.debuggerState.plans.setControlSuspended(!this.debuggerState.plans.controlSuspended);
 				if (!this.debuggerState.plans.controlSuspended) this.execution.requestExecution(false);
 				return;
-			case 'tabs.close': {
-				if (editor === null) void this.editor.editorParts.closeGroup(group, target);
-				else void group.close(editor.id, target);
-				return;
-			}
-			case 'tabs.closeOthers':
-				if (editor !== null) void this.editor.editorParts.closeEditors({ kind: 'others', group, input: editor }, target);
-				return;
-			case 'tabs.closeAll': void this.editor.editorParts.closeEditors({ kind: 'group', group }, target); return;
 			case 'editors.closeAll': void this.editor.editorParts.closeEditors({ kind: 'workspace' }, target); return;
-			case 'tabs.next': group.cycle(1); return;
-			case 'tabs.previous': group.cycle(-1); return;
-			case 'tabs.scrollLeft': case 'tabs.scrollRight':
-				group.tabStrip.scrollbar.setScroll(group.tabStrip.scrollbar.getScroll()
-					+ (command === 'tabs.scrollLeft' ? -1 : 1) * (group.tabStrip.layoutState.viewportBounds.right - group.tabStrip.layoutState.viewportBounds.left) * 0.75);
-				return;
 			case 'pause': {
 				if (selected === undefined) return;
 				const playback = selected.transport;
@@ -413,6 +394,11 @@ export class IdeCommandController {
 		if (this.editor.mainWorkspace.activities.idForCommand(command) !== undefined) return this.editor.isActive;
 		const implementation = input === undefined ? focus?.resolveCommand(command) : undefined;
 		if (implementation !== undefined) return implementation.isEnabled();
+		if (isEditorDocumentCommand(command)) {
+			const documentGroup = resolveEditorCommandGroup(this.editor, focus, input);
+			return documentGroup != null && isEditorDocumentCommandEnabled(this.editor.editorParts, command,
+				documentGroup, input === undefined ? documentGroup.model.activeTab : input);
+		}
 		const resize = WORKBENCH_VIEW_SIZING_COMMANDS[command];
 		if (resize !== undefined) return isWorkbenchViewSizingEnabled(this.editor, focus, resize);
 		const group = originGroup ?? originPart?.activeGroup ?? this.editor.editorParts.activeGroup;
@@ -420,7 +406,6 @@ export class IdeCommandController {
 		const selected = this.runTargets.selected;
 		const local = focus?.scope.runtimeOwner?.runtime?.interaction;
 		const transport = local === undefined ? selected?.transport : local.transport;
-		const editor = input === undefined ? group.model.activeTab : input;
 		if (isEditorWorkspaceCommand(command)) {
 			const documentGroup = resolveEditorCommandGroup(this.editor, focus, input);
 			if (documentGroup === null || input !== undefined && documentGroup === undefined) return false;
@@ -459,10 +444,6 @@ export class IdeCommandController {
 			case 'group.focusTabs': return group.openingAdmitted && group.model.tabs.length > 0;
 			case 'group.splitRight': case 'group.splitDown': return part.operation === 'none';
 			case 'group.focusNext': case 'group.focusPrevious': case 'group.maximize': return part.operation === 'none' && part.groups.length > 1;
-			case 'window.moveEditor': {
-				return editor !== null && this.editor.editorParts.canMoveEditor(group, editor, { kind: 'window' });
-			}
-			case 'window.copyEditor': return editor !== null && this.editor.editorParts.canCopyEditor(group, editor);
 			case 'window.systemMenu': case 'window.move': case 'window.resize':
 			case 'window.snapLeft': case 'window.snapRight': case 'window.restore':
 			case 'window.maximize': case 'window.minimize': case 'window.hide': {
@@ -507,15 +488,7 @@ export class IdeCommandController {
 				return this.editor.observedConversation.available && !this.editor.observedConversation.pending;
 			case 'debugEvaluation':
 				return this.runtimeTasks.ready && this.debuggerState.plans.workbenchControlActive && this.fault.faultSnapshot === null;
-			case 'tabs.close': {
-				return editor === null ? part.groups.length > 1 && this.editor.editorParts.canCloseGroup(group) : group.openingAdmitted && editor.closable;
-			}
-			case 'tabs.closeOthers': return editor !== null && this.editor.editorParts.canCloseEditors({ kind: 'others', group, input: editor });
-			case 'tabs.closeAll': return this.editor.editorParts.canCloseEditors({ kind: 'group', group });
 			case 'editors.closeAll': return this.editor.editorParts.canCloseEditors({ kind: 'workspace' });
-			case 'tabs.next': case 'tabs.previous': return group.model.tabs.length > 1;
-			case 'tabs.scrollLeft': return group.tabStrip.scrollbar.getScroll() > 0;
-			case 'tabs.scrollRight': return group.tabStrip.scrollbar.getScroll() < group.tabStrip.scrollbar.getMaximumScroll();
 			case 'openEditors': return true;
 			case 'pause':
 				return selected?.transport.playbackEnabled === true;
@@ -534,6 +507,7 @@ export class IdeCommandController {
 				return transport?.available === true && transport.rewind.active && transport.navigation.active === undefined
 					&& transport.playbackEnabled;
 			case 'gameView.togglePanel': {
+				const editor = input === undefined ? group.model.activeTab : input;
 				if (!this.editor.isActive || editor === null) return false;
 				group.panes.measure(editor, editorViewState.font, true, this.editorConstraints);
 				return this.editorConstraints.companionWidth !== undefined;

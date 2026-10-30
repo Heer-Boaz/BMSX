@@ -32,10 +32,11 @@ import type { WorkbenchMainAreaLayout } from '../../common/main_area_layout';
 import type { SerializedEditorPart, SerializedEditorGroupLayout } from './editor_parts_serialization';
 import type { EditorInputSerializers } from './editor_serialization';
 
-/** Main owns the scrolled document clip/reveal and the physical extent used by local modal sheets. */
+/** Main supplies document allocation, modal extent and its distinct physical-family focus entry. */
 export type MainEditorPresentation = {
 	readonly surface: WorkbenchSurface;
 	readonly scope: InputFocusScope;
+	readonly focusTarget: InputFocusTarget;
 	readonly documentClip: Readonly<RectBounds>;
 	readonly modalBounds: Readonly<RectBounds>;
 	revealDocuments(region: Readonly<RectBounds>): void;

@@ -19,6 +19,11 @@ export type EditorSymbolNavigationCommandId =
 	| 'goToDefinition'
 	| 'callHierarchy';
 
+export type EditorDocumentCommandId =
+	| 'window.copyEditor' | 'window.moveEditor'
+	| 'tabs.close' | 'tabs.closeOthers' | 'tabs.closeAll'
+	| 'tabs.next' | 'tabs.previous' | 'tabs.scrollLeft' | 'tabs.scrollRight';
+
 export type EditorViewCommandId =
 	| 'home'
 	| 'hostError'
@@ -156,10 +161,9 @@ export type EditorCommandId =
 	| 'group.focusTabs' | 'group.move' | 'group.close' | 'group.openEditors' | 'group.splitRight' | 'group.splitDown' | 'group.focusNext' | 'group.focusPrevious' | 'group.maximize'
 	| 'window.minimize' | 'window.maximize' | 'window.hide' | 'window.snapLeft' | 'window.snapRight' | 'window.restore'
 	| 'window.systemMenu' | 'window.move' | 'window.resize'
-	| 'window.showAll' | 'window.restoreMinimized' | 'window.focusMain' | 'window.newEditor' | 'window.copyEditor' | 'window.moveEditor'
+	| 'window.showAll' | 'window.restoreMinimized' | 'window.focusMain' | 'window.newEditor'
 	| 'luaProgram.edit' | 'luaProgram.add' | 'luaProgram.remove' | 'luaProgram.live' | 'luaProgram.authoring' | 'luaProgram.selectInstance' | 'luaProgram.more' | 'luaProgram.testInput'
-	| 'tabs.close' | 'tabs.closeOthers' | 'tabs.closeAll' | 'editors.closeAll' | 'tabs.next' | 'tabs.previous'
-	| 'tabs.scrollLeft' | 'tabs.scrollRight'
+	| 'editors.closeAll'
 	| 'aem.edit' | 'aem.add' | 'aem.remove' | 'aem.apply' | 'aem.testEvent'
 	| 'animation.addTrack' | 'animation.addKey'
 	| 'animation.edit' | 'animation.remove' | 'animation.producerSource' | 'animation.producerSourceToSide'
@@ -195,6 +199,7 @@ export type EditorCommandId =
 	| EditorSearchCommandId
 	| EditorSymbolNavigationCommandId
 	| EditorViewCommandId
+	| EditorDocumentCommandId
 	| EditorWorkspaceCommandId
 	| EditorDebugCommandId
 	| EditorPlayCommandId

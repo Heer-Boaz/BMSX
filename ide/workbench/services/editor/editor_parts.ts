@@ -188,7 +188,7 @@ export class EditorParts {
 		const width = this.defaultDocumentWidth, height = this.defaultDocumentHeight;
 		const offset = 8 * (this.documentParts.length % 4 + 1);
 		return new EditorPart({ ...this.options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'document', placement, minimized, initialOperation, presented: false,
-			focusReturn: this.main.focusTarget,
+			focusReturn: this.options.mainPresentation.focusTarget,
 			requestedBounds: requestedBounds === undefined ? {
 				left: area.right - width - offset, top: area.top + offset,
 				right: area.right - offset, bottom: area.top + offset + height,
@@ -210,8 +210,14 @@ export class EditorParts {
 		const next = returnFocus ? this.nextVisiblePart(part) : undefined;
 		window.minimize();
 		if (!window.model.minimized || next === undefined) return;
-		if (inputFocus.target === null || window.hasFocus) next.focus();
+		if (inputFocus.target === null || window.hasFocus) this.focusWindow(next);
 		else if (this.activePart === part) this.activate(next);
+	}
+
+	/** Physical family entry preserves Main's own client policy; document entry remains with the part. */
+	private focusWindow(part: EditorPart): void {
+		if (part === this.main) this.options.mainPresentation.focusTarget.focus();
+		else part.focus();
 	}
 
 	private nextVisiblePart(excluding: EditorPart): EditorPart {
@@ -739,7 +745,7 @@ export class EditorParts {
 		// live control keeps focus; the retiring active part's empty route returns.
 		const ownsFocus = target === null ? this.activePart === part : part.scope.contains(target.commandContext.scope);
 		const next = this.activePart === part ? this.nextVisiblePart(part) : this.activePart;
-		if (ownsFocus) next.focus();
+		if (ownsFocus) this.focusWindow(next);
 		this.partsByScope.set(part.scope, null);
 		part.dispose();
 		this.documentParts.splice(this.documentParts.indexOf(part), 1);
