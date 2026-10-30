@@ -33,7 +33,7 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 	private focusedSection = -1;
 	private focusedAction = -1;
 
-	public constructor(private readonly commands: EditorCommandRunner, scope: InputFocusScope) {
+	public constructor(commands: EditorCommandRunner, scope: InputFocusScope) {
 		super(scope);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.viewport.bounds.left < this.input.viewport.bounds.right
 			&& this.input.viewport.bounds.top < this.input.viewport.bounds.bottom;
@@ -49,7 +49,8 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 		this.scroll.focusTarget.previous = () => this.focusSection(this.actions.length, -1);
 		for (let index = 0; index < this.actions.length; index++) {
 			const target = this.actions[index].focusTarget;
-			target.canFocus = () => this.focusTarget.canFocus!() && this.input.sections[index].visibleCount > 0;
+			const canFocus = target.canFocus!;
+			target.canFocus = () => this.focusTarget.canFocus!() && canFocus();
 			target.next = () => this.focusSection(index, 1);
 			target.previous = () => this.focusSection(index, -1);
 		}
@@ -57,12 +58,12 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 
 	public override get commandTarget() {
 		for (let index = 0; index < this.actions.length; index++)
-			if (this.input.sections[index].visibleCount > 0) return this.actions[index].focusTarget;
+			if (this.actions[index].focusTarget.canFocus!()) return this.actions[index].focusTarget;
 		return this.scroll.focusTarget;
 	}
 	private focusSection(from: number, direction: number): void {
 		for (let index = from + direction; index >= 0 && index < this.actions.length; index += direction) {
-			if (this.input.sections[index].visibleCount === 0) continue;
+			if (!this.actions[index].focusTarget.canFocus!()) continue;
 			this.actions[index].focusTarget.focus();
 			return;
 		}
@@ -93,22 +94,13 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 
 	public override update(): void {
 		const input = this.input;
-		let changed = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds) || this.attachedInput !== input;
+		const changed = updateFullWidthWorkbenchLayout(input.layout, this.contentBounds) || this.attachedInput !== input;
 		this.attachedInput = input;
-		for (const section of input.sections) {
-			let count = 0;
-			for (const item of section.actions.items) {
-				const visible = this.commands.isEnabled(item.command, this.focusTarget);
-				changed ||= item.visible !== visible;
-				item.visible = visible;
-				if (visible) count++;
-			}
-			section.visibleCount = count;
-		}
 		if (changed) {
 			this.layoutCards();
 			this.focusedSection = -1; this.focusedAction = -1;
 		}
+		for (const actions of this.actions) actions.update();
 		for (const actions of this.actions) if (!actions.focusTarget.canFocus!()) {
 			pointerCapture.cancelTarget(actions); pointerHover.release(actions);
 			actions.cancelPointer(); actions.focusTarget.release();
@@ -117,7 +109,6 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 			this.scroll.cancelPointer(); this.scroll.focusTarget.release(); this.focusTarget.release();
 		} else this.revealFocusedAction();
 		if (changed || this.projectedScroll !== Math.round(input.viewport.scrollTop)) this.projectActions();
-		for (const actions of this.actions) actions.update();
 	}
 
 	private layoutCards(): void {
@@ -210,9 +201,9 @@ export class HomeEditorPane extends WorkbenchViewEditorPane<HomeInput> {
 			const rowBottom = rowTop + this.actionHeight;
 			if (rowBottom > viewport.bounds.top && rowTop < viewport.bounds.bottom) {
 				const focused = state.hasFocus && state.focusedIndex === index;
-				const pressed = state.pressedCommand === item.command;
-				const highlighted = focused || state.hoveredCommand === item.command;
-				const ink = pressed ? colors.COLOR_HEADER_BUTTON_PRESSED_TEXT
+				const pressed = item.enabled && state.pressedCommand === item.command;
+				const highlighted = item.enabled && (focused || state.hoveredCommand === item.command);
+				const ink = !item.enabled ? colors.COLOR_DISABLED_TEXT : pressed ? colors.COLOR_HEADER_BUTTON_PRESSED_TEXT
 					: highlighted ? colors.COLOR_HEADER_BUTTON_ACTIVE_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT;
 				if (pressed || highlighted) api.fill_rect(left + CARD_PADDING, rowTop, right - CARD_PADDING, rowBottom, 0,
 					pressed ? colors.COLOR_HEADER_BUTTON_PRESSED_BACKGROUND : colors.COLOR_HEADER_BUTTON_ACTIVE_BACKGROUND);

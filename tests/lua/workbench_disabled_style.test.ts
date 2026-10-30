@@ -63,10 +63,10 @@ for (const theme of ['dark', 'light']) {
 	test(`${theme} disabled control roles remain neutral and independent of syntax and diagnostic locations`, t => {
 		fixture(t, theme, 'tiny');
 		assert.equal(colors.COLOR_HEADER_BUTTON_TEXT_DISABLED, THEME_TOKEN_MUTED_GREY);
-		assert.equal(colors.COLOR_MENU_DISABLED_TEXT, THEME_TOKEN_MUTED_GREY);
+		assert.equal(colors.COLOR_DISABLED_TEXT, THEME_TOKEN_MUTED_GREY);
 		for (const role of [colors.COLOR_HEADER_BUTTON_TEXT, colors.COLOR_MENU_TEXT, colors.COLOR_MENU_SELECTION_TEXT,
 			colors.COLOR_CONTENT_ERROR_TEXT, colors.COLOR_CONTENT_WARNING_TEXT])
-			assert.notEqual(resolveThemeTokenColor(colors.COLOR_MENU_DISABLED_TEXT), resolveThemeTokenColor(role));
+			assert.notEqual(resolveThemeTokenColor(colors.COLOR_DISABLED_TEXT), resolveThemeTokenColor(role));
 		const syntaxDim = theme === 'dark' ? THEME_TOKEN_COMMENT_GREY : THEME_TOKEN_MUTED_GREY;
 		assert.equal(colors.COLOR_SYNTAX_HIGHLIGHTS.COLOR_CODE_DIM, syntaxDim);
 		assert.equal(colors.COLOR_PROBLEMS_PANEL_LOCATION, colors.COLOR_PROBLEMS_PANEL_TEXT);

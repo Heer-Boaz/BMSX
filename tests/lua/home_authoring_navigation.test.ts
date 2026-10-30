@@ -75,6 +75,55 @@ test('Home exposes the actual authored kind entrypoints rather than a generic Be
 	assert.equal(commands.includes('behaviorLens'), false);
 });
 
+for (const font of ['tiny', 'msx'] as const)
+	test(`${font} Home retains supported actions while their owning command is temporarily disabled`, t => {
+		const f = fixture(t, font), origin = f.pane.commandTarget.commandContext;
+		let enabled = false, invoked = 0;
+		origin.registerCommand('animation', { isEnabled: () => enabled, run: () => { invoked++; } });
+		t.after(() => origin.unregisterCommand('animation'));
+		f.update();
+		const section = f.home.sections.find(section => section.actions.items.some(item => item.command === 'animation'))!;
+		const action = section.actions.items.find(item => item.command === 'animation')!;
+		const membership = f.home.sections.map(section => section.visibleCount);
+		assert.equal(action.visible, true, 'supported Home entries are discoverable independently of current execution admission');
+		assert.equal(action.enabled, false);
+		f.home.viewport.scrollbar.setScroll(section.bounds.top); f.update();
+		for (const down of [true, false]) f.editor.dispatchPointer({
+			x: (action.bounds.left + action.bounds.right) / 2, y: (action.bounds.top + action.bounds.bottom) / 2,
+			buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
+			releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none,
+			spaceDown: false, timestamp: f.host.clock.now(),
+		});
+		assert.equal(invoked, 0); assert.equal(f.picker.visible, false);
+		enabled = true; f.update();
+		assert.equal(action.visible, true); assert.equal(action.enabled, true);
+		assert.deepEqual(f.home.sections.map(section => section.visibleCount), membership,
+			'command readiness changes neither the retained catalog nor card membership');
+		f.pane.focus(); f.key('Tab'); f.key('Home');
+		for (let step = 0; step < section.actions.items.length
+			&& section.actions.items[section.actions.focusedIndex].command !== 'animation'; step++) f.key('ArrowDown');
+		assert.equal(section.actions.items[section.actions.focusedIndex].command, 'animation');
+		f.key('Enter'); assert.equal(invoked, 1);
+		enabled = false; f.update();
+		assert.equal(action.visible, true); assert.equal(action.enabled, false);
+		assert.notEqual(section.actions.items[section.actions.focusedIndex]?.command, 'animation',
+			'the shared action control retires keyboard admission, not catalog membership');
+	});
+
+test('Home skips a wholly disabled section without withdrawing its supported actions', t => {
+	const f = fixture(t), origin = f.pane.commandTarget.commandContext;
+	f.key('Tab');
+	const section = f.home.sections[1], following = f.home.sections[2], previous = inputFocus.target;
+	assert.equal(section.actions.hasFocus, true);
+	for (const item of section.actions.items) origin.registerCommand(item.command, { isEnabled: () => false, run: () => assert.fail('disabled Home action executed') });
+	t.after(() => { for (const item of section.actions.items) origin.unregisterCommand(item.command); });
+	f.update();
+	for (const item of section.actions.items) { assert.equal(item.visible, true); assert.equal(item.enabled, false); }
+	assert.notEqual(inputFocus.target, previous, 'a section with no admitted actions cannot retain native focus');
+	f.pane.focus(); f.key('Tab');
+	assert.equal(section.actions.hasFocus, false); assert.equal(following.actions.hasFocus, true);
+});
+
 for (const font of ['tiny', 'msx'] as const) for (const [command, kind] of BEHAVIOR_COMMANDS)
 	test(`${font} Home ${kind} action selects an exact canonical declaration in its invoking group`, t => {
 		const f = fixture(t, font), parts = f.editor.editorParts, cycles = f.host.runtime.machine.scheduler.nowCycles;

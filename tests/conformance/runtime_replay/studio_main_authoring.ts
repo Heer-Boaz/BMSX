@@ -14,6 +14,7 @@ import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { testProjectBrowserSession } from './studio_browser_session';
 import { testStudioBehaviorIntent } from './studio_behavior_intent';
 import { testStudioSourceValues } from './studio_source_values';
+import { testStudioHomeDiscovery } from './studio_home';
 import { registerLuaSourceRecord } from '../../../ide/runtime/source_registry';
 import type { Blua32SourceImage } from '../../../ide/runtime/sources';
 import type { CommandQuickPickItem } from '../../../ide/workbench/contrib/commands/quick_pick_provider';
@@ -43,6 +44,7 @@ export async function runStudioMainAuthoring(test: StudioFixture) {
 	await test.until(() => test.ide.sources.activeCartridgeSlot === 0, 'main: dedicated test cartridge starts');
 	await test.press('ControlRight', 'ShiftRight');
 	await test.runMenuCommand('pause');
+	await testStudioHomeDiscovery(test);
 	await testMainSceneAuthoring(test);
 	await testMainProjectRun(test);
 	await testStudioBehaviorIntent(test);

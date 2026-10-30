@@ -21,7 +21,7 @@ export type HomeSection = {
 	readonly actions: WorkbenchActionBarState;
 	readonly bounds: RectBounds;
 	readonly labels: string[];
-	visibleCount: number;
+	readonly visibleCount: number;
 };
 
 /** Home observes the attached workspace; it neither selects projects nor owns a machine. */
@@ -33,7 +33,7 @@ export class HomeInput extends ReadonlyEditorInput<'home', 'home'> {
 	public readonly viewport = new WorkbenchScrollViewport();
 	public readonly sections: readonly HomeSection[] = HOME_SECTIONS.map(section => {
 		const actions = createWorkbenchActionBar(section.menu);
-		return { title: section.title, actions, bounds: create_rect_bounds(), labels: actions.items.map(item => item.label), visibleCount: 0 };
+		return { title: section.title, actions, bounds: create_rect_bounds(), labels: actions.items.map(item => item.label), visibleCount: actions.items.length };
 	});
 
 	public override canMove(destination?: AbstractEditorInput<string, string>): boolean {
