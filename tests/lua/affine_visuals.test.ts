@@ -22,6 +22,7 @@ const modules = [
 		'cartlib/component/visual_component', 'cartlib/component/visual_2d_component',
 		'cartlib/component/sprite_component', 'cartlib/component/custom_visual_component',
 		'cartlib/component/surface_component', 'cartlib/component/tile_strip_component',
+		'cartlib/component/rectangle_component',
 		'cartlib/component/tile_layer_component', 'cartlib/component/tile_layer_row',
 		'cartlib/gx/image', 'cartlib/gx/atlas', 'cartlib/gx/imgdec', 'cartlib/gx/affine_batch',
 	].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
@@ -37,6 +38,54 @@ return { image=function(id) return images[id] end }`,
 ];
 
 for (const optLevel of [0, 3] as const) {
+	test(`Rectangle geometry owns its dimensions and composes the retained visual affine (O${optLevel})`, t => {
+		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
+local rectangle<const> = require('cartlib/component/rectangle_component')
+local commands<const> = require('cartlib/gx/command_list')
+local gp0<const> = require('cartlib/gx/gp0')
+prefab.define({def_id='rectangle.actor',class={},spatial={family='2d',authority='affine',
+ local_transform={0,2,-3,0,10,20}},components={rectangle.new},initial={rectangle={
+ width=2,height=3,color=0xff204080,attachment_affine={2,0,0,1,1,2},
+ presentation_affine={1,0,0,1,3,4}}}})
+local actor<const> = world:spawn('rectangle.actor',{})
+local part<const> = actor:get_component(rectangle)
+bss words: word[32]
+local draw<const> = commands.new(words)
+commands.begin(draw,0x100,0)
+part:draw_rectangle(draw)
+local output<const>: *word = words
+-- Native packet coordinates are the actual geometry-producer contract here,
+-- not incidental UI layout. The whole local rectangle keeps its exact affine.
+assert(part.width==2 and part.height==3 and actor.x==nil and actor.sx==nil)
+assert(output[1]==(gp0.draw_quad | gp0.argb_to_rgb(part.color))
+ and output[2]==gp0.pair16(-8,34) and output[3]==gp0.pair16(-8,42)
+ and output[4]==gp0.pair16(-17,34) and output[5]==gp0.pair16(-17,42))
+part.width,part.height=4,2
+part:set_presentation_origin(0,0)
+commands.begin(draw,0x100,0)
+part:draw_rectangle(draw)
+assert(output[2]==gp0.pair16(4,22) and output[3]==gp0.pair16(4,38)
+ and output[4]==gp0.pair16(-2,22) and output[5]==gp0.pair16(-2,38)
+ and actor.spatial.wox==10 and actor.spatial.woy==20)
+kernel=function(count)
+ for index=1,count do
+  part:set_presentation_origin(index & 7,0)
+  commands.begin(draw,0x100,0)
+  part:draw_rectangle(draw)
+ end
+end
+return true
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		assert.deepEqual(materializeCpuCompletionValues(cpu), [true]);
+		const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+		const profile = profileWarmGuestKernel(cpu, kernel, 256);
+		assert.equal(profile.reservations, 0);
+		assert.equal(profile.reservedBytes, 0);
+		assert.equal(profile.retainedAfter, profile.retainedBefore);
+		t.diagnostic(JSON.stringify({ optLevel, ...profile }));
+	});
+
 	test(`Visual placement composes physical, attachment and presentation without moving the object (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(checks + WORLD_CPU_SETUP + `
 local sprite<const> = require('cartlib/component/sprite_component')
