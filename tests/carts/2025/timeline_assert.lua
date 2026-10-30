@@ -11,11 +11,11 @@ return {
 			local owner<const> = setmetatable({ id = 'timeline_linear_value_test' }, world_object)
 			world_object._initialize(owner)
 
-			local timelines<const> = timeline_component.new({ owner = owner })
+			local timelines<const> = timeline_component.new({ owner = owner, clock_mode = 'manual' })
 			timelines:on_attach()
 			local target<const> = { value = -1, method = -1 }
-			timelines:define('time_linear', {
-				continuous = true,
+			timelines:register('time_linear', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				tracks = {
 					{
@@ -48,7 +48,8 @@ return {
 			timelines:stop('time_linear')
 
 			local frame_target<const> = { nested = { value = -1, other = -1, constant = -1 } }
-			timelines:define('frame_linear', {
+			timelines:register('frame_linear', {
+				target = frame_target,
 				frames = timeline_module.range(5),
 				frame_duration = 20,
 				tracks = {
@@ -90,7 +91,8 @@ return {
 			timelines:stop('frame_linear')
 
 			local built_target<const> = { value = -1 }
-			timelines:define('built_frame_linear', {
+			timelines:register('built_frame_linear', {
+				target = built_target,
 				frames = function(params)
 					return timeline_module.range(params.frame_count)
 				end,
@@ -128,8 +130,9 @@ return {
 			timelines:stop('built_frame_linear')
 
 			local pingpong_target<const> = { value = -1 }
-			timelines:define('pingpong_linear', {
-				continuous = true,
+			timelines:register('pingpong_linear', {
+				target = pingpong_target,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				playback_mode = 'pingpong',
 				tracks = {
@@ -152,7 +155,7 @@ return {
 			timelines:stop('pingpong_linear')
 
 			local child<const> = {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				bindings = { 'camera' },
 				tracks = {
@@ -170,7 +173,7 @@ return {
 			}
 			local camera<const> = { value = -1 }
 			timelines:define('nested_linear', {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 250,
 				bindings = { 'camera' },
 				subsequences = {
@@ -182,7 +185,7 @@ return {
 						sequence = child,
 					},
 				},
-			})
+			}, { camera = camera })
 			timelines:play('nested_linear', { bindings = { camera = camera } })
 			timelines:tick_gameplay(225)
 			assert(camera.value == 25)
@@ -190,7 +193,7 @@ return {
 			assert(camera.value == 25)
 			timelines:stop('nested_linear')
 
-			timelines:define('manual_schedule', {
+			timelines:register('manual_schedule', {
 				frames = timeline_module.range(5),
 				frame_duration = 20,
 				clock_source = timeline_clock_source.manual,
@@ -201,28 +204,28 @@ return {
 			assert(manual_schedule:value() == 0)
 			timelines:advance('manual_schedule')
 			assert(manual_schedule:value() == 1)
-			timelines:define('manual_schedule', {
+			timelines:register('manual_schedule', {
 				frames = timeline_module.range(5),
 				frame_duration = 20,
 				clock_source = timeline_clock_source.gameplay,
 			})
 			timelines:tick_gameplay(20)
 			assert(manual_schedule:value() == 2)
-			timelines:define('manual_schedule', {
+			timelines:register('manual_schedule', {
 				frames = timeline_module.range(5),
 				frame_duration = 20,
 				clock_source = timeline_clock_source.manual,
 			})
 			timelines:tick_gameplay(20)
 			assert(manual_schedule:value() == 2)
-			timelines:define('manual_schedule', {
+			timelines:register('manual_schedule', {
 				frames = timeline_module.range(1),
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				clock_source = timeline_clock_source.gameplay,
 			})
 			timelines:tick_gameplay(7)
 			assert(manual_schedule.position_ms == 47)
-			timelines:define('manual_schedule', {
+			timelines:register('manual_schedule', {
 				frames = timeline_module.range(5),
 				frame_duration = 10,
 				clock_source = timeline_clock_source.gameplay,
@@ -231,15 +234,15 @@ return {
 			assert(manual_schedule:value() == 3)
 			timelines:stop('manual_schedule')
 
-			timelines:define('platform_schedule', {
+			timelines:register('platform_schedule', {
 				frames = timeline_module.range(1),
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				clock_source = timeline_clock_source.platform,
 			})
-			timelines:define('frame_schedule', {
+			timelines:register('frame_schedule', {
 				frames = timeline_module.range(1),
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				clock_source = timeline_clock_source.frame,
 			})
@@ -253,9 +256,9 @@ return {
 			timelines:stop('platform_schedule')
 			timelines:stop('frame_schedule')
 
-			timelines:define('audio_schedule', {
+			timelines:register('audio_schedule', {
 				frames = timeline_module.range(1),
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				clock_source = timeline_clock_source.audio,
 			})
@@ -264,7 +267,7 @@ return {
 			assert(timelines:get('audio_schedule').position_ms == 25)
 			timelines:stop('audio_schedule')
 
-			timelines:define('immediate_schedule', {
+			timelines:register('immediate_schedule', {
 				frames = timeline_module.range(3),
 				frame_duration = 0,
 				auto_tick = true,
@@ -285,11 +288,11 @@ return {
 			local owner<const> = setmetatable({ id = 'timeline_cubic_value_test' }, world_object)
 			world_object._initialize(owner)
 
-			local timelines<const> = timeline_component.new({ owner = owner })
+			local timelines<const> = timeline_component.new({ owner = owner, clock_mode = 'manual' })
 			timelines:on_attach()
 			local target<const> = { value = -1, method = -1 }
-			timelines:define('time_cubic', {
-				continuous = true,
+			timelines:register('time_cubic', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				tracks = {
 					{
@@ -321,7 +324,8 @@ return {
 			timelines:stop('time_cubic')
 
 			local frame_target<const> = { nested = { value = -1 } }
-			timelines:define('frame_cubic', {
+			timelines:register('frame_cubic', {
+				target = frame_target,
 				frames = timeline_module.range(5),
 				frame_duration = 20,
 				tracks = {
@@ -348,8 +352,9 @@ return {
 			timelines:stop('frame_cubic')
 
 			local pingpong_target<const> = { value = -1 }
-			timelines:define('pingpong_cubic', {
-				continuous = true,
+			timelines:register('pingpong_cubic', {
+				target = pingpong_target,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				playback_mode = 'pingpong',
 				tracks = {
@@ -372,7 +377,7 @@ return {
 			timelines:stop('pingpong_cubic')
 
 			local child<const> = {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				bindings = { 'camera' },
 				tracks = {
@@ -390,7 +395,7 @@ return {
 			}
 			local camera<const> = { value = -1 }
 			timelines:define('nested_cubic', {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 250,
 				bindings = { 'camera' },
 				subsequences = {
@@ -402,7 +407,7 @@ return {
 						sequence = child,
 					},
 				},
-			})
+			}, { camera = camera })
 			timelines:play('nested_cubic', { bindings = { camera = camera } })
 			timelines:tick_gameplay(225)
 			assert_close(camera.value, 15.625)
@@ -432,7 +437,7 @@ return {
 
 			local camera<const> = { value = 0 }
 			local nested<const> = {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 20,
 				tracks = {
 					{
@@ -448,7 +453,7 @@ return {
 				},
 			}
 			local child<const> = {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				bindings = { 'camera' },
 				subsequences = {
@@ -489,10 +494,10 @@ return {
 				},
 			}
 
-			local timelines<const> = timeline_component.new({ owner = owner })
+			local timelines<const> = timeline_component.new({ owner = owner, clock_mode = 'manual' })
 			timelines:on_attach()
-			timelines:define('parent', {
-				continuous = true,
+			timelines:register('parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 300,
 				bindings = { 'camera' },
 				subsequences = {
@@ -529,8 +534,8 @@ return {
 			timelines:tick_gameplay(200)
 			assert(camera.value == 20 and owner.tags.child_active == nil and owner.nested_value == 7 and event_count == 3)
 			timelines:stop('parent')
-			timelines:define('reverse_parent', {
-				continuous = true,
+			timelines:register('reverse_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 200,
 				playback_mode = 'pingpong',
 				bindings = { 'camera' },
@@ -555,7 +560,7 @@ return {
 			assert(owner.tags.child_active == nil)
 			timelines:stop('reverse_parent')
 			local events_before_scaled<const> = event_count
-			timelines:define('scaled_parent', {
+			timelines:register('scaled_parent', {
 				bindings = { 'camera' },
 				subsequences = {
 					{
@@ -578,7 +583,7 @@ return {
 			end
 			local position_child<const> = function(start_value, end_value, tag)
 				return {
-					continuous = true,
+					continuous = true, phase = 'presentation',
 					duration_ms = 100,
 					bindings = { 'target' },
 					tracks = {
@@ -607,8 +612,8 @@ return {
 			local overlay_child<const> = position_child(30, 30, 'overlay_active')
 			local ending_target<const> = { value = 0 }
 			local layered_target<const> = { value = 0 }
-			timelines:define('positioned_parent', {
-				continuous = true,
+			timelines:register('positioned_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 300,
 				bindings = { 'ending_target', 'layered_target' },
 				subsequences = {
@@ -710,7 +715,7 @@ return {
 			})
 
 			local nested<const> = {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 20,
 				tracks = {
 					{
@@ -734,7 +739,7 @@ return {
 				},
 			}
 			local child<const> = {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				bindings = { 'camera' },
 				subsequences = {
@@ -776,13 +781,13 @@ return {
 			}
 
 			local camera<const> = { value = 0 }
-			local timelines<const> = timeline_component.new({ owner = owner })
+			local timelines<const> = timeline_component.new({ owner = owner, clock_mode = 'manual' })
 			timelines:on_attach()
 
 			local root_loop_count = 0
-			timelines:define('root_loop', {
+			timelines:register('root_loop', {
 				frames = timeline_module.range(1),
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				playback_mode = 'loop',
 				apply = function(_target, _value, _params, evaluation)
@@ -800,8 +805,8 @@ return {
 
 			local loop_count = 0
 			local loop_finished_count = 0
-			timelines:define('loop_parent', {
-				continuous = true,
+			timelines:register('loop_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 250,
 				bindings = { 'camera' },
 				subsequences = {
@@ -832,8 +837,8 @@ return {
 			assert(loop_count == 2 and loop_finished_count == 1)
 
 			local crossed_finished_count = 0
-			timelines:define('crossed_finish_parent', {
-				continuous = true,
+			timelines:register('crossed_finish_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				subsequences = {
 					{
@@ -857,8 +862,8 @@ return {
 
 			local seek_loop_count = 0
 			local seek_finished_count = 0
-			timelines:define('seek_parent', {
-				continuous = true,
+			timelines:register('seek_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 250,
 				bindings = { 'camera' },
 				subsequences = {
@@ -893,8 +898,8 @@ return {
 
 			local backward_before_reverse<const> = backward_count
 			local nested_backward_before_reverse<const> = nested_backward_count
-			timelines:define('reverse_loop_parent', {
-				continuous = true,
+			timelines:register('reverse_loop_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 250,
 				bindings = { 'camera' },
 				subsequences = {
@@ -924,8 +929,8 @@ return {
 			local nested_backward_before_pingpong<const> = nested_backward_count
 			local pingpong_turn_count = 0
 			local pingpong_finished_count = 0
-			timelines:define('pingpong_parent', {
-				continuous = true,
+			timelines:register('pingpong_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 250,
 				bindings = { 'camera' },
 				subsequences = {
@@ -1006,8 +1011,8 @@ return {
 					},
 				},
 			}
-			timelines:define('frame_reverse_parent', {
-				continuous = true,
+			timelines:register('frame_reverse_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 250,
 				subsequences = {
 					{
@@ -1032,8 +1037,8 @@ return {
 
 			local zero_before_crossed<const> = zero_count
 			local nested_before_crossed<const> = nested_forward_count
-			timelines:define('crossed_loop_parent', {
-				continuous = true,
+			timelines:register('crossed_loop_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 250,
 				bindings = { 'camera' },
 				subsequences = {
@@ -1054,8 +1059,8 @@ return {
 
 			local zero_before_active_source<const> = zero_count
 			local nested_before_active_source<const> = nested_forward_count
-			timelines:define('active_source_parent', {
-				continuous = true,
+			timelines:register('active_source_parent', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 150,
 				bindings = { 'camera' },
 				subsequences = {
@@ -1097,7 +1102,7 @@ return {
 				end,
 			})
 			local direction_child<const> = {
-				continuous = true,
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				tracks = {
 					{
@@ -1110,8 +1115,8 @@ return {
 					},
 				},
 			}
-			timelines:define('initial_reverse_loop', {
-				continuous = true,
+			timelines:register('initial_reverse_loop', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 10,
 				subsequences = {
 					{
@@ -1128,8 +1133,8 @@ return {
 			timelines:play('initial_reverse_loop')
 			assert(initial_backward_count == 1)
 			timelines:stop('initial_reverse_loop')
-			timelines:define('initial_pingpong_turn', {
-				continuous = true,
+			timelines:register('initial_pingpong_turn', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 10,
 				subsequences = {
 					{
@@ -1145,8 +1150,8 @@ return {
 			timelines:play('initial_pingpong_turn')
 			assert(turn_backward_count == 1)
 			timelines:stop('initial_pingpong_turn')
-			timelines:define('initial_reverse_pingpong_origin', {
-				continuous = true,
+			timelines:register('initial_reverse_pingpong_origin', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 10,
 				subsequences = {
 					{
@@ -1184,8 +1189,8 @@ return {
 					scrub_policy_count = scrub_policy_count + 1
 				end,
 			})
-			timelines:define('event_update_policy', {
-				continuous = true,
+			timelines:register('event_update_policy', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				tracks = {
 					{
@@ -1225,15 +1230,15 @@ return {
 
 			local chain_owner<const> = setmetatable({ id = 'timeline_completion_chain_test' }, world_object)
 			world_object._initialize(chain_owner)
-			local chain_timelines<const> = timeline_component.new({ owner = chain_owner })
+			local chain_timelines<const> = timeline_component.new({ owner = chain_owner, clock_mode = 'manual' })
 			chain_timelines:on_attach()
-			chain_timelines:define('successor', {
-				continuous = true,
+			chain_timelines:register('successor', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 40,
 				playback_mode = 'once',
 			})
-			chain_timelines:define('predecessor', {
-				continuous = true,
+			chain_timelines:register('predecessor', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 20,
 				playback_mode = 'once',
 			})
@@ -1248,7 +1253,7 @@ return {
 
 			local mutation_owner<const> = setmetatable({ id = 'timeline_lane_mutation_test' }, world_object)
 			world_object._initialize(mutation_owner)
-			local mutation_timelines<const> = timeline_component.new({ owner = mutation_owner })
+			local mutation_timelines<const> = timeline_component.new({ owner = mutation_owner, clock_mode = 'manual' })
 			mutation_timelines:on_attach()
 			mutation_owner.events:on({
 				event = 'timeline.replace_peer',
@@ -1257,8 +1262,8 @@ return {
 					mutation_timelines:play('replacement')
 				end,
 			})
-			mutation_timelines:define('source', {
-				continuous = true,
+			mutation_timelines:register('source', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				playback_mode = 'once',
 				tracks = {
@@ -1270,13 +1275,13 @@ return {
 					},
 				},
 			})
-			mutation_timelines:define('peer', {
-				continuous = true,
+			mutation_timelines:register('peer', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				playback_mode = 'once',
 			})
-			mutation_timelines:define('replacement', {
-				continuous = true,
+			mutation_timelines:register('replacement', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				playback_mode = 'once',
 			})
@@ -1291,10 +1296,10 @@ return {
 
 			local rate_owner<const> = setmetatable({ id = 'timeline_play_rate_test' }, world_object)
 			world_object._initialize(rate_owner)
-			local rate_timelines<const> = timeline_component.new({ owner = rate_owner })
+			local rate_timelines<const> = timeline_component.new({ owner = rate_owner, clock_mode = 'manual' })
 			rate_timelines:on_attach()
-			rate_timelines:define('scaled', {
-				continuous = true,
+			rate_timelines:register('scaled', {
+				continuous = true, phase = 'presentation',
 				duration_ms = 100,
 				playback_mode = 'once',
 			})

@@ -4,6 +4,7 @@ local linear<const> = require('cartlib/easing').linear
 local ease_out_quad<const> = require('cartlib/easing').ease_out_quad
 local ease_out_back<const> = require('cartlib/easing').ease_out_back
 local smoothstep<const> = require('cartlib/easing').smoothstep
+local combat_pose<const> = require('combat_pose')
 local color<const> = require('cartlib/color')
 local timeline<const> = require('cartlib/timeline/timeline')
 local round_number<const> = math.round
@@ -76,14 +77,6 @@ local tween_u<const> = function(time, start_time, duration, ease)
 	return ease(u)
 end
 
-local pose_apply<const> = function(entry, scale, nudge)
-	local obj<const> = entry.obj
-	local sc<const> = obj.sprite_component
-	sc.scale_x = entry.base_scale_x * scale
-	sc.scale_y = entry.base_scale_y * scale
-	obj.y = entry.base_y + nudge
-end
-
 local stagger_track<const> = function(target, params, _event, time_seconds)
 	local cfg<const> = params.cfg
 	local t<const> = time_seconds
@@ -101,7 +94,7 @@ local stagger_track<const> = function(target, params, _event, time_seconds)
 	if bg then
 		local u<const> = tween_u(t, cfg.bg_start, cfg.bg_duration, bg_ease)
 		local brightness<const> = cfg.bg_from + ((cfg.bg_to - cfg.bg_from) * u)
-		bg.surface_component.color = color.mix_rgb_with_alpha(p3_black_color, params.bg_base_color, round_number(brightness * 255), 1)
+		bg.color = color.mix_rgb_with_alpha(p3_black_color, params.bg_base_color, round_number(brightness * 255), 1)
 	end
 
 	local poses<const> = params.pose_targets
@@ -110,16 +103,18 @@ local stagger_track<const> = function(target, params, _event, time_seconds)
 		local scale<const> = cfg.pose_from + ((cfg.pose_to - cfg.pose_from) * u)
 		local nudge<const> = text_active and params.pose_text_nudge or 0
 		for i = 1, #poses do
-			pose_apply(poses[i], scale, nudge)
+			local entry<const> = poses[i]
+			combat_pose.write(entry.visual, entry.base_x, entry.base_y + nudge, scale, scale,
+				entry.weight, target.combat_parallax_offset_base_y)
 		end
 	end
 
 	if not params.text_started and t >= cfg.text_start then
 		if params.text_lines then
-			text_main:set_text(params.text_lines, { typed = params.text_typed, snap = not params.text_typed })
+			text_main:set_text(params.text_lines, params.text_options)
 		end
 		if params.text_choice_lines then
-			text_choice:set_text(params.text_choice_lines, { typed = false, snap = true })
+			text_choice:set_text(params.text_choice_lines, immediate_text_opts)
 		end
 		if params.text_prompt_lines then
 			text_prompt:set_text(params.text_prompt_lines, immediate_text_opts)
@@ -149,6 +144,7 @@ local ensure_timeline<const> = function(owner, preset_id, cfg)
 	local total<const> = cfg.text_start + cfg.text_duration
 	owner.timelines:define(timeline_id, {
 		continuous = true,
+		phase = 'presentation',
 		playback_mode = 'once',
 		duration_ms = total * 1000,
 		tracks = {
@@ -158,7 +154,7 @@ local ensure_timeline<const> = function(owner, preset_id, cfg)
 	return timeline_id
 end
 
-local build_pose_targets<const> = function(pose_targets)
+local build_pose_targets<const> = function(pose_targets, owner)
 	if not pose_targets then
 		return nil
 	end
@@ -166,10 +162,10 @@ local build_pose_targets<const> = function(pose_targets)
 	for i = 1, #pose_targets do
 		local obj<const> = pose_targets[i]
 		entries[#entries + 1] = {
-			obj = obj,
-			base_scale_x = obj.sprite_component.scale_x,
-			base_scale_y = obj.sprite_component.scale_y,
-			base_y = obj.y,
+			visual = obj,
+			base_x = owner.combat_maya_a_base_x,
+			weight = (10 - owner.combat_parallax_momentum_steps) / 15,
+			base_y = owner.combat_maya_a_base_y,
 		}
 	end
 	return entries
@@ -202,7 +198,7 @@ function stagger.play(owner, preset_id, opts)
 	local text_prompt_base_color
 
 	if bg then
-		local base<const> = bg.surface_component.color
+		local base<const> = bg.color
 		timelinecfg.bg_base_color = base
 		timelinecfg.bg_from = 1
 		if opts.bg_dim ~= nil and not opts.bg_dim then
@@ -210,7 +206,7 @@ function stagger.play(owner, preset_id, opts)
 		elseif opts.bg_brightness ~= nil then
 			timelinecfg.bg_to = opts.bg_brightness
 		end
-		bg.surface_component.color = base
+		bg.color = base
 	end
 
 	if text_main then
@@ -241,7 +237,7 @@ function stagger.play(owner, preset_id, opts)
 			cfg = timelinecfg,
 			bg = bg,
 			bg_base_color = timelinecfg.bg_base_color,
-			pose_targets = build_pose_targets(opts.pose_targets),
+			pose_targets = build_pose_targets(opts.pose_targets, owner),
 			text_main = text_main,
 			text_choice = text_choice,
 			text_prompt = text_prompt,
@@ -249,6 +245,7 @@ function stagger.play(owner, preset_id, opts)
 			text_choice_lines = opts.text_choice_lines,
 			text_prompt_lines = opts.text_prompt_lines,
 			text_typed = opts.text_typed,
+			text_options = { typed = opts.text_typed, snap = not opts.text_typed },
 			text_started = false,
 			text_main_base_color = text_main_base_color,
 			text_choice_base_color = text_choice_base_color,

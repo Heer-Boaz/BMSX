@@ -33,15 +33,15 @@ return {
 			director.session.node_id = 'combat_wekker'
 			director.state_machines:transition_to('p3.director.fsm:/combat_wait')
 			combat_director:start_combat('combat_wekker', true)
-			local monster<const> = registry:get(monster_id)
+			local monster<const> = registry:get(monster_id).sprite_component
 			test.admission_visible = monster.visible
-			test.admission_scale_x = monster.sprite_component.scale_x
+			test.admission_scale_x = monster.presentation_xx
 			t:wait_ticks(1)
 
 
 			assert(not test.admission_visible,
 			'combat intro published monster before frame zero; scale=' .. tostring(test.admission_scale_x))
-			assert(not monster.visible, 'combat intro first update published monster; scale=' .. tostring(monster.sprite_component.scale_x))
+			assert(not monster.visible, 'combat intro first update published monster; scale=' .. tostring(monster.presentation_xx))
 
 		end,
 	},

@@ -6,18 +6,17 @@ require('globals')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local gp0<const> = require('cartlib/gx/gp0')
-local primitives<const> = require('cartlib/gx/primitives')
 local prefab<const> = require('cartlib/world/prefab')
 local story<const> = require('story')
 local atlas<const> = require('cartlib/gx/atlas')
 local image<const> = require('cartlib/gx/image')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
+local combat_pose<const> = require('combat_pose')
 local stagger<const> = require('stagger')
-local round_number<const> = math.round
 local input<const> = require('cartlib/input/input')
 local gameplay_clock<const> = require('cartlib/clock').gameplay
-local custom_visual_component<const> = require('cartlib/component/custom_visual_component')
+local slash_component<const> = require('slash_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local smoothstep<const> = require('cartlib/easing').smoothstep
 local pingpong01<const> = require('cartlib/easing').pingpong01
@@ -45,132 +44,49 @@ end
 combat.all_out_shake = timelinebuilders.build_all_out_shake(combat_all_out_frame_count)
 local combat_all_out_prompt_timeline_id<const> = 'combat_all_out_prompt'
 
-local build_all_out_prompt_portrait_frames<const> = function(params)
-	local frames<const> = {}
-	local in_frames<const> = params.in_frames
-	local settle_frames<const> = params.settle_frames
-	for i = 0, in_frames - 1 do
-		local u<const> = i / (in_frames - 1)
+local apply_all_out_prompt_portrait<const> = function(target, frame_index, params)
+	local x, y, scale
+	if frame_index < params.in_frames then
+		local u<const> = frame_index / (params.in_frames - 1)
 		local eased<const> = smoothstep(u)
-		local x<const> = params.from_x + ((params.to_x - params.from_x) * eased)
-		local y<const> = params.from_y + ((params.to_y - params.from_y) * eased)
-		local scale<const> = params.from_scale + ((params.overshoot_scale - params.from_scale) * smoothstep(u))
-		frames[#frames + 1] = {
-			x = x,
-			y = y,
-			sprite_component = { scale_x = scale, scale_y = scale },
-		}
+		x = params.from_x + (params.to_x - params.from_x) * eased
+		y = params.from_y + (params.to_y - params.from_y) * eased
+		scale = params.from_scale + (params.overshoot_scale - params.from_scale) * eased
+	else
+		local u<const> = (frame_index - params.in_frames) / (params.settle_frames - 1)
+		scale = params.overshoot_scale + (params.to_scale - params.overshoot_scale) * smoothstep(u)
+		x = params.to_x
+		y = params.to_y + sin(u * pi) * params.settle_bob
 	end
-	for i = 0, settle_frames - 1 do
-		local u<const> = i / (settle_frames - 1)
-		local eased<const> = smoothstep(u)
-		local scale<const> = params.overshoot_scale + ((params.to_scale - params.overshoot_scale) * eased)
-		local bob<const> = sin(u * pi) * params.settle_bob
-		frames[#frames + 1] = {
-			x = params.to_x,
-			y = params.to_y + bob,
-			sprite_component = { scale_x = scale, scale_y = scale },
-		}
-	end
-	return frames
+	target:set_presentation_affine(scale, 0, 0, scale, x - target.attachment_ox, y - target.attachment_oy)
 end
 
-local build_all_out_screen_shake_frames<const> = function(params)
-	local frames<const> = {}
-	for frame_index = 0, combat_all_out_frame_count - 1 do
-		local dx, dy = combat.all_out_shake(frame_index)
-		dx = round_number(dx)
-		dy = round_number(dy)
-		frames[#frames + 1] = {
-			bg = {
-				x = params.bg_x + dx,
-				y = params.bg_y + dy,
-			},
-			all_out = {
-				x = params.all_out_x + dx,
-				y = params.all_out_y + dy,
-			},
-			monster = {
-				x = params.monster_x + dx,
-				y = params.monster_y + dy,
-			},
-			maya_a = {
-				x = params.maya_a_x + dx,
-				y = params.maya_a_y + dy,
-			},
-			maya_b = {
-				x = params.maya_b_x + dx,
-				y = params.maya_b_y + dy,
-			},
-		}
-	end
-	return frames
+local apply_all_out_screen_shake<const> = function(target, frame_index, params)
+	local dx<const>, dy<const> = combat.all_out_shake(frame_index)
+	target.bg:set_presentation_origin(params.bg_x + dx - target.bg.attachment_ox, params.bg_y + dy - target.bg.attachment_oy)
+	target.all_out:set_presentation_origin(params.all_out_x + dx - target.all_out.attachment_ox, params.all_out_y + dy - target.all_out.attachment_oy)
+	target.monster:set_presentation_origin(params.monster_x + dx - target.monster.attachment_ox, params.monster_y + dy - target.monster.attachment_oy)
+	target.maya_a:set_presentation_origin(params.maya_a_x + dx - target.maya_a.attachment_ox, params.maya_a_y + dy - target.maya_a.attachment_oy)
+	target.maya_b:set_presentation_origin(params.maya_b_x + dx - target.maya_b.attachment_ox, params.maya_b_y + dy - target.maya_b.attachment_oy)
 end
 
 local combat_director<const> = {}
 combat_director.__index = combat_director
 
-local draw_combat_slash<const> = function(component, draw)
-	local director<const> = component.owner
-	local frame<const> = director.combat_hit_slash_frame
-	if not frame.slash_active then
-		return
-	end
-	local points<const> = frame.slash_points
-	draw:mode(gp0.draw_mode_blend_half)
-	local x0<const>, y0<const>, x1<const>, y1<const>, x2<const>, y2<const>, x3<const>, y3<const> =
-		primitives.thick_line(points[1], points[2], points[3], points[4], frame.slash_thickness)
-	draw:semitransparent_quad(x0, y0, x1, y1, x2, y2, x3, y3, frame.slash_color)
-end
-
 function combat_director:ctor()
-	self:add_component(custom_visual_component.new({
-		owner = self,
-		id_local = 'slash',
-		offset_z = combat_hit_slash_z,
-		draw = draw_combat_slash,
-	}))
-end
-
-local combat_parallax_scale<const> = function(weight)
-	if weight < 0 then
-		return 1 - (combat_parallax_scale_delta * weight)
-	end
-	return 1 + (combat_parallax_scale_delta * weight)
-end
-
-local apply_combat_parallax_sprite<const> = function(obj, weight, offset_base_y)
-	local sc<const> = obj.sprite_component
-	local parallax_scale<const> = combat_parallax_scale(weight)
-	sc.draw_offset_y = offset_base_y * weight
-	sc.draw_scale_x = parallax_scale
-	sc.draw_scale_y = parallax_scale
-end
-
-local apply_combat_parallax<const> = function(self)
-	local momentum<const> = self.combat_parallax_momentum_steps
-	local offset_base_y<const> = self.combat_parallax_offset_base_y
-	apply_combat_parallax_sprite(self.monster, -(10 + momentum) / 15, offset_base_y)
-	apply_combat_parallax_sprite(self.maya_a, (10 - momentum) / 15, offset_base_y)
-end
-
-local refresh_combat_parallax<const> = function(self)
-	local momentum<const> = self.combat_parallax_momentum_steps
-	self.combat_parallax_offset_base_y = (11 - momentum) / 10
-	if self.combat_parallax_transform_active then
-		apply_combat_parallax(self)
-	end
+	self.slash_visual = self:get_component(slash_component)
 end
 
 local combat_hover_track<const> = function(target, params, _event, time_seconds)
 	local w<const> = pingpong01((time_seconds / combat_monster_hover_period_seconds) + 0.25)
 	local hover<const> = (smoothstep(w) - 0.5) * 2 * combat_monster_hover_amp
 	local momentum<const> = target.combat_parallax_momentum_steps
-	params.monster.y = params.monster_base_y + hover
-	target.combat_parallax_offset_base_y = ((11 - momentum) / 10) - hover
-	if target.combat_parallax_transform_active then
-		apply_combat_parallax(target)
-	end
+	local camera_y<const> = (11 - momentum) / 10 - hover
+	target.combat_parallax_offset_base_y = camera_y
+	combat_pose.write(params.monster, target.combat_monster_base_x, params.monster_base_y + hover,
+	1, 1, -(10 + momentum) / 15, camera_y)
+	combat_pose.write(target.maya_a, target.combat_maya_a_base_x, target.combat_maya_a_base_y,
+	1, 1, (10 - momentum) / 15, camera_y)
 end
 
 function combat_director:start_combat(node_id, skip_fade_in)
@@ -207,34 +123,6 @@ function combat_director:apply_combat_round(node)
 	self.text_prompt:clear_text()
 end
 
-function combat_director:reset_combat_parallax()
-	self.combat_parallax_enabled = true
-	self.combat_parallax_momentum_steps = 0
-	refresh_combat_parallax(self)
-end
-
-function combat_director:disable_combat_parallax()
-	self.combat_parallax_enabled = false
-	self:clear_combat_parallax_transform()
-end
-
-function combat_director:activate_combat_parallax_transform()
-	self.combat_parallax_transform_active = true
-	apply_combat_parallax(self)
-end
-
-function combat_director:clear_combat_parallax_transform()
-	self.combat_parallax_transform_active = false
-	local monster<const> = self.monster
-	local maya_a<const> = self.maya_a
-	monster.sprite_component.draw_offset_y = 0
-	monster.sprite_component.draw_scale_x = 1
-	monster.sprite_component.draw_scale_y = 1
-	maya_a.sprite_component.draw_offset_y = 0
-	maya_a.sprite_component.draw_scale_x = 1
-	maya_a.sprite_component.draw_scale_y = 1
-end
-
 function combat_director:push_combat_momentum(side, power)
 	local delta<const> = side == 'hero' and power or -power
 	local next = self.combat_parallax_momentum_steps + delta
@@ -245,9 +133,7 @@ function combat_director:push_combat_momentum(side, power)
 		next = combat_parallax_momentum_limit_steps
 	end
 	self.combat_parallax_momentum_steps = next
-	if self.combat_parallax_enabled then
-		refresh_combat_parallax(self)
-	end
+	self.combat_parallax_offset_base_y = (11 - next) / 10
 end
 
 function combat_director:skip_typing()
@@ -264,12 +150,7 @@ function combat.define_fsm()
 
 	states.boot = {
 		entering_state = function(self)
-			self.combat_hit_slash_frame = {
-				slash_active = false,
-				slash_points = { 0, 0, 0, 0 },
-				slash_thickness = 0,
-				slash_color = p3_white_color,
-			}
+
 			return '/idle'
 		end,
 	}
@@ -292,7 +173,7 @@ function combat.define_fsm()
 
 	states.combat_done = {
 		entering_state = function(self)
-			self:disable_combat_parallax()
+
 			self.events:emit('combat.end', {
 				combat_node_id = self.combat_node_id,
 				next_node_id = self.node_id,
@@ -314,20 +195,14 @@ function combat.define_fsm()
 
 	local finish_combat_hit<const> = function(self)
 		local monster<const> = self.monster
-		monster.sprite_component.color = p3_white_color
-		monster.x = self.combat_monster_base_x
-		monster.y = self.combat_monster_base_y
-		monster.sprite_component.scale_x = 1
-		monster.sprite_component.scale_y = 1
+		monster.color = p3_white_color
+		monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
 		return '/combat_exchange_miss'
 	end
 
 	local finish_combat_dodge<const> = function(self)
 		local monster<const> = self.monster
-		monster.x = self.combat_monster_base_x
-		monster.y = self.combat_monster_base_y
-		monster.sprite_component.scale_x = 1
-		monster.sprite_component.scale_y = 1
+		monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
 		return '/combat_exchange_hit'
 	end
 
@@ -336,18 +211,18 @@ function combat.define_fsm()
 		bg.visible = true
 		bg.color = combat_results_bg_visible_color
 		local maya_b<const> = self.maya_b
-		maya_b.sprite_component.color = p3_white_color
-		maya_b.x = self.combat_results_maya_target_x
+		maya_b.color = p3_white_color
+		maya_b:set_presentation_origin(self.combat_results_maya_target_x - maya_b.attachment_ox, maya_b.presentation_oy)
 		local results<const> = self.text_results
 		results.text_component.color = p3_white_color
-		results.text_component.offset_x = self.combat_results_text_target_x
+		results.text_component:set_presentation_origin(self.combat_results_text_target_x, results.text_component.presentation_oy)
 		return '/combat_results'
 	end
 
 	local finish_combat_results_fade_out<const> = function(self)
 		local maya_b<const> = self.maya_b
 		maya_b.visible = false
-		maya_b:set_z(maya_b.home_z)
+		maya_b:set_presentation_order(0)
 		self.text_results:clear_text()
 		local bg<const> = self.combat_results_visual
 		bg.visible = false
@@ -373,7 +248,7 @@ function combat.define_fsm()
 
 	local finish_combat_exit_fade_in<const> = function(self)
 		local bg<const> = self.background
-		bg.surface_component.color = p3_white_color
+		bg.color = p3_white_color
 		return '/combat_done'
 	end
 
@@ -452,64 +327,58 @@ function combat.define_fsm()
 			atlas.load(image.atlas_id(node.monster_imgid))
 			monster:set_imgid(node.monster_imgid)
 			monster.visible = false
-			monster.sprite_component.color = p3_white_color
-			monster:set_z(monster.home_z)
-			monster.sprite_component.scale_x = 1
-			monster.sprite_component.scale_y = 1
+			monster.color = p3_white_color
+			monster:set_presentation_order(0)
+			monster:set_presentation_affine(1, 0, 0, 1, -monster.source_width / 2, -monster.source_height / 3)
 
-			monster.x = monster.home_x - (monster.sx / 2)
-			monster.y = monster.home_y - (monster.sy / 3)
-
-			self.combat_monster_base_x = monster.x
-			self.combat_monster_base_y = monster.y
-			self.combat_monster_start_x = (screen_width * 0.2) - (monster.sx / 2)
+			self.combat_monster_base_x = monster.attachment_ox - monster.source_width / 2
+			self.combat_monster_base_y = monster.attachment_oy - monster.source_height / 3
+			self.combat_monster_start_x = (screen_width * 0.2) - (monster.source_width / 2)
 			self.combat_monster_start_y = self.combat_monster_base_y + combat_intro_monster_start_y_offset
-			self.combat_monster_start_scale = math.max(1, screen_width / monster.sx, screen_height / monster.sy)
+			self.combat_monster_start_scale = math.max(1, screen_width / monster.source_width, screen_height / monster.source_height)
 
 			local maya_a<const> = self.maya_a
 			maya_a:set_imgid('maya_a')
 			maya_a.visible = false
-			maya_a.x = maya_a.home_x
-			maya_a.y = maya_a.home_y - maya_a.sy
-			maya_a:set_z(maya_a.home_z)
-			self.combat_maya_a_base_x = maya_a.x
-			self.combat_maya_a_base_y = maya_a.y
+			maya_a:set_presentation_origin(0, -maya_a.source_height)
+			maya_a:set_presentation_order(0)
+			self.combat_maya_a_base_x = (maya_a.attachment_ox + maya_a.presentation_ox)
+			self.combat_maya_a_base_y = (maya_a.attachment_oy + maya_a.presentation_oy)
 			self.combat_maya_a_start_x = screen_width
 			self.combat_maya_a_start_scale = combat_intro_maya_a_scale_ratio
 
 			local all_out<const> = self.all_out
 			all_out.visible = false
-			all_out.x = all_out.home_x
-			all_out.y = all_out.home_y
-			all_out:set_z(all_out.home_z)
+			all_out:set_presentation_origin(0, 0)
+			all_out:set_presentation_order(0)
 
 			local maya_b<const> = self.maya_b
 			maya_b:set_imgid('maya_b')
 			maya_b.visible = true
-			maya_b.sprite_component.color = p3_white_color
-			maya_b.x = maya_b.home_x - maya_b.sx
-			maya_b.y = maya_b.home_y - maya_b.sy
-			maya_b:set_z(maya_b.home_z)
-			self.combat_maya_b_start_x = maya_b.x
-			self.combat_maya_b_base_y = maya_b.y
+			maya_b.color = p3_white_color
+			maya_b:set_presentation_origin(-maya_b.source_width, -maya_b.source_height)
+			maya_b:set_presentation_order(0)
+			self.combat_maya_b_start_x = (maya_b.attachment_ox + maya_b.presentation_ox)
+			self.combat_maya_b_base_y = (maya_b.attachment_oy + maya_b.presentation_oy)
 			self.combat_maya_b_start_scale = combat_intro_maya_b_start_scale
 			self.combat_maya_b_end_scale = combat_intro_maya_b_end_scale
-			self.combat_maya_b_start_right_x = self.combat_maya_b_start_x + maya_b.sx
-			self.combat_maya_b_exit_right_x = self.combat_maya_b_start_right_x + maya_b.sx
+			self.combat_maya_b_start_right_x = self.combat_maya_b_start_x + maya_b.source_width
+			self.combat_maya_b_exit_right_x = self.combat_maya_b_start_right_x + maya_b.source_width
 
-			self:reset_combat_parallax()
+			self.combat_parallax_momentum_steps = 0
+			self.combat_parallax_offset_base_y = 1.1
 			return '/combat_intro'
 		end,
 	}
 
 	states.combat_intro = {
 		timelines = {
-				[combat_intro_timeline_id] = {
-					autoplay = false,
-					stop_on_exit = true,
-					on_finished = '/combat_round',
-				},
+			[combat_intro_timeline_id] = {
+				autoplay = false,
+				stop_on_exit = true,
+				on_finished = '/combat_round',
 			},
+		},
 		entering_state = function(self)
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
@@ -523,12 +392,16 @@ function combat.define_fsm()
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
-				params = {
-					monster_sx = monster.sx,
-					monster_sy = monster.sy,
-					maya_a_sy = maya_a.sy,
-					maya_b_sx = maya_b.sx,
-					maya_b_sy = maya_b.sy,
+				params = timelinebuilders.prepare_combat_sample('intro', {
+					enemy_weight = -(10 + self.combat_parallax_momentum_steps) / 15,
+					hero_weight = (10 - self.combat_parallax_momentum_steps) / 15,
+					camera_y = self.combat_parallax_offset_base_y,
+
+					monster_width = monster.source_width,
+					monster_height = monster.source_height,
+					maya_a_height = maya_a.source_height,
+					maya_b_width = maya_b.source_width,
+					maya_b_height = maya_b.source_height,
 					monster_start_scale = self.combat_monster_start_scale,
 					monster_start_x = self.combat_monster_start_x,
 					monster_start_y = self.combat_monster_start_y,
@@ -544,9 +417,9 @@ function combat.define_fsm()
 					maya_b_exit_right_x = self.combat_maya_b_exit_right_x,
 					maya_b_base_x = self.combat_maya_b_start_x,
 					maya_b_base_y = self.combat_maya_b_base_y,
-				},
+				}),
 			})
-			self:activate_combat_parallax_transform()
+
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -554,25 +427,17 @@ function combat.define_fsm()
 		},
 		exiting_state = function(self)
 			local monster<const> = self.monster
-			monster.sprite_component.scale_x = 1
-			monster.sprite_component.scale_y = 1
-			monster.x = self.combat_monster_base_x
-			monster.y = self.combat_monster_base_y
+			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
 			monster.visible = true
 
 			local maya_a<const> = self.maya_a
-			maya_a.sprite_component.scale_x = 1
-			maya_a.sprite_component.scale_y = 1
-			maya_a.x = self.combat_maya_a_base_x
-			maya_a.y = self.combat_maya_a_base_y
+			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
 			maya_a.visible = true
 
 			local maya_b<const> = self.maya_b
-			maya_b.sprite_component.scale_x = 1
-			maya_b.sprite_component.scale_y = 1
+			maya_b:set_presentation_affine(1, 0, 0, 1, maya_b.presentation_ox, maya_b.presentation_oy)
 			maya_b.visible = false
-			maya_b.x = self.combat_maya_b_start_x
-			maya_b.y = self.combat_maya_b_base_y
+			maya_b:set_presentation_origin(self.combat_maya_b_start_x - maya_b.attachment_ox, self.combat_maya_b_base_y - maya_b.attachment_oy)
 		end,
 	}
 
@@ -597,11 +462,12 @@ function combat.define_fsm()
 				snap_to_start = true,
 				target = self,
 				params = {
+
 					monster = monster,
 					monster_base_y = self.combat_monster_base_y,
 				},
 			})
-			self:activate_combat_parallax_transform()
+
 		end,
 		update = function(self)
 			if self.stagger_blocked then
@@ -670,8 +536,8 @@ function combat.define_fsm()
 		},
 		exiting_state = function(self)
 			self.timelines:stop(combat_hover_timeline_id)
-			self:clear_combat_parallax_transform()
-			refresh_combat_parallax(self)
+
+			self.combat_parallax_offset_base_y = (11 - self.combat_parallax_momentum_steps) / 10
 		end,
 	}
 
@@ -693,26 +559,26 @@ function combat.define_fsm()
 			self:push_combat_momentum('hero', combat_parallax_momentum_step)
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
-			monster.x = self.combat_monster_base_x
-			monster.y = self.combat_monster_base_y
-			monster.sprite_component.scale_x = 1
-			monster.sprite_component.scale_y = 1
+			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
 			local targets<const> = {
 				monster = monster,
-				slash_frame = self.combat_hit_slash_frame,
+				slash_frame = self.slash_visual,
 			}
 			self.timelines:play(combat_hit_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
-				params = {
-					base_x = monster.x,
-					base_y = monster.y,
-					monster_sx = monster.sx,
-					monster_sy = monster.sy,
-				},
+				params = timelinebuilders.prepare_combat_sample('hit', {
+					enemy_weight = -(10 + self.combat_parallax_momentum_steps) / 15,
+					camera_y = self.combat_parallax_offset_base_y,
+
+					base_x = self.combat_monster_base_x,
+					base_y = self.combat_monster_base_y,
+					monster_width = monster.source_width,
+					monster_height = monster.source_height,
+				}),
 			})
-			self:activate_combat_parallax_transform()
+
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -724,7 +590,7 @@ function combat.define_fsm()
 			},
 		},
 		exiting_state = function(self)
-			self.combat_hit_slash_frame.slash_active = false
+			self.slash_visual.slash_active = false
 		end,
 	}
 
@@ -740,24 +606,27 @@ function combat.define_fsm()
 				},
 			},
 		},
-			entering_state = function(self)
-				clear_texts(self.choice_prompt_texts)
-				self.text_main:set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
-				local monster<const> = self.monster
-				local maya_a<const> = self.maya_a
-				monster.sprite_component.scale_x = 1
-				monster.sprite_component.scale_y = 1
-				self.combat_dodge_dir = -self.combat_dodge_dir
-				self.timelines:play(combat_dodge_timeline_id, {
-					rewind = true,
-					snap_to_start = true,
-					target = monster,
-					params = {
-						dir = self.combat_dodge_dir,
-						base_x = self.combat_monster_base_x,
+		entering_state = function(self)
+			clear_texts(self.choice_prompt_texts)
+			self.text_main:set_text({ 'ONTWIJKT!' }, { typed = false, snap = true })
+			local monster<const> = self.monster
+			local maya_a<const> = self.maya_a
+			monster:set_presentation_affine(1, 0, 0, 1, monster.presentation_ox, monster.presentation_oy)
+			self.combat_dodge_dir = -self.combat_dodge_dir
+			self.timelines:play(combat_dodge_timeline_id, {
+				rewind = true,
+				snap_to_start = true,
+				target = monster,
+				params = {
+					enemy_weight = -(10 + self.combat_parallax_momentum_steps) / 15,
+					camera_y = self.combat_parallax_offset_base_y,
+
+					dir = self.combat_dodge_dir,
+					base_y = self.combat_monster_base_y,
+					base_x = self.combat_monster_base_x,
 				},
 			})
-			self:activate_combat_parallax_transform()
+
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -790,16 +659,10 @@ function combat.define_fsm()
 			self:push_combat_momentum('monster', combat_parallax_momentum_step)
 			monster.visible = true
 			maya_a.visible = true
-			monster.x = self.combat_monster_base_x
-			monster.y = self.combat_monster_base_y
-			maya_a.x = self.combat_maya_a_base_x
-			maya_a.y = self.combat_maya_a_base_y
-			monster.sprite_component.scale_x = 1
-			monster.sprite_component.scale_y = 1
-			maya_a.sprite_component.scale_x = 1
-			maya_a.sprite_component.scale_y = 1
-			monster.sprite_component.color = p3_white_color
-			maya_a.sprite_component.color = p3_white_color
+			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
+			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
+			monster.color = p3_white_color
+			maya_a.color = p3_white_color
 			overlay.visible = true
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_add
@@ -813,7 +676,10 @@ function combat.define_fsm()
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
-				params = {
+				params = timelinebuilders.prepare_combat_sample('exchange', {
+					enemy_weight = -(10 + self.combat_parallax_momentum_steps) / 15,
+					hero_weight = (10 - self.combat_parallax_momentum_steps) / 15,
+					camera_y = self.combat_parallax_offset_base_y,
 					frame_count = combat_exchange_hit_frame_count,
 					monster_base_x = self.combat_monster_base_x,
 					monster_base_y = self.combat_monster_base_y,
@@ -835,9 +701,9 @@ function combat.define_fsm()
 					cam_shake_x = combat_exchange_hit_shake_x,
 					cam_shake_y = combat_exchange_hit_shake_y,
 					overlay_strength = combat_exchange_hit_overlay_strength,
-				},
+				}),
 			})
-			self:activate_combat_parallax_transform()
+
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -852,16 +718,10 @@ function combat.define_fsm()
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
 			local overlay<const> = self.transition_visual.overlay
-			monster.x = self.combat_monster_base_x
-			monster.y = self.combat_monster_base_y
-			maya_a.x = self.combat_maya_a_base_x
-			maya_a.y = self.combat_maya_a_base_y
-			monster.sprite_component.scale_x = 1
-			monster.sprite_component.scale_y = 1
-			maya_a.sprite_component.scale_x = 1
-			maya_a.sprite_component.scale_y = 1
-			monster.sprite_component.color = p3_white_color
-			maya_a.sprite_component.color = p3_white_color
+			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
+			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
+			monster.color = p3_white_color
+			maya_a.color = p3_white_color
 			overlay.visible = false
 			overlay.color = 0
 			overlay.blend_color = 0
@@ -887,16 +747,10 @@ function combat.define_fsm()
 			clear_texts(self.choice_prompt_texts)
 			monster.visible = true
 			maya_a.visible = true
-			monster.x = self.combat_monster_base_x
-			monster.y = self.combat_monster_base_y
-			maya_a.x = self.combat_maya_a_base_x
-			maya_a.y = self.combat_maya_a_base_y
-			monster.sprite_component.scale_x = 1
-			monster.sprite_component.scale_y = 1
-			maya_a.sprite_component.scale_x = 1
-			maya_a.sprite_component.scale_y = 1
-			monster.sprite_component.color = p3_white_color
-			maya_a.sprite_component.color = p3_white_color
+			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
+			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
+			monster.color = p3_white_color
+			maya_a.color = p3_white_color
 			overlay.visible = true
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_add
@@ -910,7 +764,10 @@ function combat.define_fsm()
 				rewind = true,
 				snap_to_start = true,
 				target = targets,
-				params = {
+				params = timelinebuilders.prepare_combat_sample('exchange', {
+					enemy_weight = -(10 + self.combat_parallax_momentum_steps) / 15,
+					hero_weight = (10 - self.combat_parallax_momentum_steps) / 15,
+					camera_y = self.combat_parallax_offset_base_y,
 					frame_count = combat_exchange_miss_frame_count,
 					monster_base_x = self.combat_monster_base_x,
 					monster_base_y = self.combat_monster_base_y,
@@ -932,9 +789,9 @@ function combat.define_fsm()
 					cam_shake_x = 0,
 					cam_shake_y = 0,
 					overlay_strength = 0,
-				},
+				}),
 			})
-			self:activate_combat_parallax_transform()
+
 		end,
 		input_eval = 'first',
 		input_event_handlers = {
@@ -949,16 +806,10 @@ function combat.define_fsm()
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
 			local overlay<const> = self.transition_visual.overlay
-			monster.x = self.combat_monster_base_x
-			monster.y = self.combat_monster_base_y
-			maya_a.x = self.combat_maya_a_base_x
-			maya_a.y = self.combat_maya_a_base_y
-			monster.sprite_component.scale_x = 1
-			monster.sprite_component.scale_y = 1
-			maya_a.sprite_component.scale_x = 1
-			maya_a.sprite_component.scale_y = 1
-			monster.sprite_component.color = p3_white_color
-			maya_a.sprite_component.color = p3_white_color
+			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
+			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
+			monster.color = p3_white_color
+			maya_a.color = p3_white_color
 			overlay.visible = false
 			overlay.color = 0
 			overlay.blend_color = 0
@@ -977,17 +828,17 @@ function combat.define_fsm()
 			local portrait<const> = self.all_out_portrait
 			portrait:set_imgid('maya_v_s')
 			portrait.visible = true
-			portrait:set_z(portrait.home_z)
-			portrait.sprite_component.scale_x = 1
-			portrait.sprite_component.scale_y = 1
-			local target_x<const> = portrait.home_x
-			local target_y<const> = portrait.home_y - portrait.sy
+			portrait:set_presentation_order(0)
+			portrait:set_presentation_affine(1, 0, 0, 1, portrait.presentation_ox, portrait.presentation_oy)
+			local target_x<const> = portrait.attachment_ox
+			local target_y<const> = portrait.attachment_oy - portrait.source_height
 			self.timelines:play(combat_all_out_prompt_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
 				target = portrait,
 				params = {
-					from_x = -portrait.sx * 0.6,
+
+					from_x = -portrait.source_width * 0.6,
 					from_y = target_y + 20,
 					to_x = target_x,
 					to_y = target_y,
@@ -1004,11 +855,12 @@ function combat.define_fsm()
 				snap_to_start = true,
 				target = self,
 				params = {
+
 					monster = monster,
 					monster_base_y = self.combat_monster_base_y,
 				},
 			})
-			self:activate_combat_parallax_transform()
+
 		end,
 		update = function(self)
 			local main<const> = self.text_main
@@ -1043,11 +895,10 @@ function combat.define_fsm()
 		exiting_state = function(self)
 			self.timelines:stop(combat_hover_timeline_id)
 			self.timelines:stop(combat_all_out_prompt_timeline_id)
-			self:clear_combat_parallax_transform()
+
 			local portrait<const> = self.all_out_portrait
 			portrait.visible = false
-			portrait.sprite_component.scale_x = 1
-			portrait.sprite_component.scale_y = 1
+			portrait:set_presentation_affine(1, 0, 0, 1, portrait.presentation_ox, portrait.presentation_oy)
 			self.text_choice:set_highlight_jitter_enabled(false)
 		end,
 	}
@@ -1061,28 +912,27 @@ function combat.define_fsm()
 			},
 		},
 		entering_state = function(self)
-			self:disable_combat_parallax()
+
 			clear_texts(self.texts)
 			local all_out<const> = self.all_out
 			atlas.load('all_out')
 			all_out.visible = true
-			all_out.x = all_out.home_x
-			all_out.y = all_out.home_y
-			all_out:set_z(all_out.home_z)
+			all_out:set_presentation_origin(0, 0)
+			all_out:set_presentation_order(0)
 			local monster<const> = self.monster
 			local maya_a<const> = self.maya_a
 			local maya_b<const> = self.maya_b
 			local bg<const> = self.background
-			self.all_out_shake_all_out_x = all_out.x
-			self.all_out_shake_all_out_y = all_out.y
-			self.all_out_shake_monster_x = monster.x
-			self.all_out_shake_monster_y = monster.y
-			self.all_out_shake_maya_a_x = maya_a.x
-			self.all_out_shake_maya_a_y = maya_a.y
-			self.all_out_shake_maya_b_x = maya_b.x
-			self.all_out_shake_maya_b_y = maya_b.y
-			self.all_out_shake_bg_x = bg.x
-			self.all_out_shake_bg_y = bg.y
+			self.all_out_shake_all_out_x = (all_out.attachment_ox + all_out.presentation_ox)
+			self.all_out_shake_all_out_y = (all_out.attachment_oy + all_out.presentation_oy)
+			self.all_out_shake_monster_x = (monster.attachment_ox + monster.presentation_ox)
+			self.all_out_shake_monster_y = (monster.attachment_oy + monster.presentation_oy)
+			self.all_out_shake_maya_a_x = (maya_a.attachment_ox + maya_a.presentation_ox)
+			self.all_out_shake_maya_a_y = (maya_a.attachment_oy + maya_a.presentation_oy)
+			self.all_out_shake_maya_b_x = (maya_b.attachment_ox + maya_b.presentation_ox)
+			self.all_out_shake_maya_b_y = (maya_b.attachment_oy + maya_b.presentation_oy)
+			self.all_out_shake_bg_x = (bg.attachment_ox + bg.presentation_ox)
+			self.all_out_shake_bg_y = (bg.attachment_oy + bg.presentation_oy)
 			monster.visible = false
 			maya_a.visible = false
 			maya_b.visible = false
@@ -1097,6 +947,7 @@ function combat.define_fsm()
 					maya_b = maya_b,
 				},
 				params = {
+
 					bg_x = self.all_out_shake_bg_x,
 					bg_y = self.all_out_shake_bg_y,
 					all_out_x = self.all_out_shake_all_out_x,
@@ -1123,17 +974,12 @@ function combat.define_fsm()
 			local maya_a<const> = self.maya_a
 			local maya_b<const> = self.maya_b
 			local bg<const> = self.background
-			all_out.x = self.all_out_shake_all_out_x
-			all_out.y = self.all_out_shake_all_out_y
+			all_out:set_presentation_origin(self.all_out_shake_all_out_x - all_out.attachment_ox, self.all_out_shake_all_out_y - all_out.attachment_oy)
 			all_out.visible = false
-			monster.x = self.all_out_shake_monster_x
-			monster.y = self.all_out_shake_monster_y
-			maya_a.x = self.all_out_shake_maya_a_x
-			maya_a.y = self.all_out_shake_maya_a_y
-			maya_b.x = self.all_out_shake_maya_b_x
-			maya_b.y = self.all_out_shake_maya_b_y
-			bg.x = self.all_out_shake_bg_x
-			bg.y = self.all_out_shake_bg_y
+			monster:set_presentation_origin(self.all_out_shake_monster_x - monster.attachment_ox, self.all_out_shake_monster_y - monster.attachment_oy)
+			maya_a:set_presentation_origin(self.all_out_shake_maya_a_x - maya_a.attachment_ox, self.all_out_shake_maya_a_y - maya_a.attachment_oy)
+			maya_b:set_presentation_origin(self.all_out_shake_maya_b_x - maya_b.attachment_ox, self.all_out_shake_maya_b_y - maya_b.attachment_oy)
+			bg:set_presentation_origin(self.all_out_shake_bg_x - bg.attachment_ox, self.all_out_shake_bg_y - bg.attachment_oy)
 		end,
 	}
 
@@ -1146,12 +992,13 @@ function combat.define_fsm()
 				rewind = true,
 				snap_to_start = true,
 				target = monster,
-				params = {
+				params = timelinebuilders.prepare_combat_sample('focus', {
+
 					base_x = self.combat_monster_base_x,
 					base_y = self.combat_monster_base_y,
-					monster_sx = monster.sx,
-					monster_sy = monster.sy,
-				},
+					monster_width = monster.source_width,
+					monster_height = monster.source_height,
+				}),
 			})
 		end,
 		input_eval = 'first',
@@ -1180,7 +1027,7 @@ function combat.define_fsm()
 
 	states.combat_results_setup = {
 		entering_state = function(self)
-			self:disable_combat_parallax()
+
 			local node<const> = story[self.node_id]
 			local rewards<const> = node.rewards[self.combat_points + 1]
 			self.combat_rewards = rewards
@@ -1205,12 +1052,11 @@ function combat.define_fsm()
 			local maya_b<const> = self.maya_b
 			maya_b:set_imgid('maya_b')
 			maya_b.visible = true
-			maya_b:set_z(combat_results_maya_z)
-			self.combat_results_maya_target_x = maya_b.home_x - maya_b.sx
+			maya_b:set_presentation_order(combat_results_maya_order - maya_b.order)
+			self.combat_results_maya_target_x = maya_b.attachment_ox - maya_b.source_width
 			self.combat_results_maya_start_x = screen_width
-			maya_b.x = self.combat_results_maya_start_x
-			maya_b.y = maya_b.home_y - maya_b.sy
-			maya_b.sprite_component.color = p3_black_color
+			maya_b:set_presentation_origin(self.combat_results_maya_start_x - maya_b.attachment_ox, -maya_b.source_height)
+			maya_b.color = p3_black_color
 
 			local lines<const> = { 'Combat Results:' }
 			for i = 1, #rewards do
@@ -1220,9 +1066,9 @@ function combat.define_fsm()
 			self.text_results:set_text(lines, { typed = false, snap = true })
 			local results<const> = self.text_results
 			results.text_component.color = p3_black_color
-			self.combat_results_text_target_x = results.text_component.offset_x / 2 + results.results_offset_x
-			self.combat_results_text_start_x = -screen_width
-			results.text_component.offset_x = self.combat_results_text_start_x
+			self.combat_results_text_target_x = -results.text_component.layout_x / 2 + results.results_offset_x
+			self.combat_results_text_start_x = -screen_width - results.text_component.layout_x
+			results.text_component:set_presentation_origin(self.combat_results_text_start_x, results.text_component.presentation_oy)
 			return '/combat_results_fade_in'
 		end,
 	}
@@ -1249,6 +1095,7 @@ function combat.define_fsm()
 					results = self.text_results,
 				},
 				params = {
+
 					maya_start_x = self.combat_results_maya_start_x,
 					maya_target_x = self.combat_results_maya_target_x,
 					text_start_x = self.combat_results_text_start_x,
@@ -1330,7 +1177,7 @@ function combat.define_fsm()
 		},
 		entering_state = function(self)
 			local bg<const> = show_background(self.background, self.combat_exit_target_bg)
-			bg.surface_component.color = p3_black_color
+			bg.color = p3_black_color
 			self.timelines:play(combat_exit_fade_in_timeline_id, { rewind = true, snap_to_start = true, target = bg })
 		end,
 		input_eval = 'first',
@@ -1344,14 +1191,14 @@ function combat.define_fsm()
 		},
 		exiting_state = function(self)
 			local bg<const> = self.background
-			bg.surface_component.color = p3_white_color
+			bg.color = p3_white_color
 		end,
 	}
 
 	-- ARCHITECTURE: Engineering guidelines for FSM states that use timelines.
 	--
 	-- DEFINING timelines
-	--   All timelines are declared once here, at the FSM root, using `def = { ... }`.
+	--   Timelines are declared once at the FSM root; states bind their targets.
 	--   The dictionary key is the timeline identity; `def` contains only authored
 	--   evaluation data and is compiled by the owner's timeline component.
 	--   autoplay = false at root level: registration only, no automatic playback.
@@ -1370,6 +1217,7 @@ function combat.define_fsm()
 			-- Track-driven timelines (no frames, driven by wave/parallax tracks)
 			[combat_hover_timeline_id] = {
 				def = {
+					phase = 'presentation',
 					playback_mode = 'loop',
 					tracks = {
 						{ kind = 'sample', apply = combat_hover_track },
@@ -1377,15 +1225,16 @@ function combat.define_fsm()
 				},
 				autoplay = false,
 			},
-			-- Frame-driven applied animation timelines (frames built by builder fns)
+			-- Range-driven AOT samples share scalar kernels and immutable frame counts.
 			-- These require a `target` and optional `params` at play time, so
 			-- individual states use autoplay = false + entering_state play calls.
 			[combat_focus_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_focus_frames,
+					phase = 'presentation',
+					frames = timeline.range(combat_focus_zoom_frames + combat_focus_vanish_frames),
 					frame_duration = combat_focus_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_focus_frames,
 					tracks = {
 						{
 							kind = 'event',
@@ -1400,101 +1249,112 @@ function combat.define_fsm()
 			},
 			[combat_intro_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_intro_frames,
+					phase = 'presentation',
+					frames = timeline.range(combat_intro_maya_b_frames + combat_intro_reveal_frames),
 					frame_duration = combat_intro_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_intro_frames,
 				},
 				autoplay = false,
 			},
 			[combat_hit_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_hit_frames,
+					phase = 'presentation',
+					frames = timeline.range(combat_hit_frame_count),
 					frame_duration = combat_hit_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_hit_frames,
 				},
 				autoplay = false,
 			},
 			[combat_exchange_hit_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_exchange_frames,
+					phase = 'presentation',
+					frames = timeline.range(combat_exchange_hit_frame_count),
 					frame_duration = combat_exchange_hit_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_exchange_frames,
 				},
 				autoplay = false,
 			},
 			[combat_exchange_miss_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_exchange_frames,
+					phase = 'presentation',
+					frames = timeline.range(combat_exchange_miss_frame_count),
 					frame_duration = combat_exchange_miss_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_exchange_frames,
 				},
 				autoplay = false,
 			},
 			[combat_all_out_prompt_timeline_id] = {
 				def = {
-					frames = build_all_out_prompt_portrait_frames,
+					phase = 'presentation',
+					frames = timeline.range(16),
 					frame_duration = 16,
 					playback_mode = 'once',
-					apply = true,
+					apply = apply_all_out_prompt_portrait,
 				},
 				autoplay = false,
 			},
 			[combat_dodge_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_dodge_frames,
+					phase = 'presentation',
+					frames = timeline.range(combat_dodge_frame_count),
 					frame_duration = combat_dodge_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_dodge_frames,
 				},
 				autoplay = false,
 			},
 			[combat_all_out_timeline_id] = {
 				def = {
-					frames = build_all_out_screen_shake_frames,
+					phase = 'presentation',
+					frames = timeline.range(combat_all_out_frame_count),
 					frame_duration = combat_all_out_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = apply_all_out_screen_shake,
 				},
 				autoplay = false,
 			},
 			-- Fade timelines bind their retained targets when the state starts.
 			[combat_fade_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_fade_frames(),
+					phase = 'presentation',
+					frames = timeline.range(combat_fade_frame_count),
 					frame_duration = combat_fade_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_fade_frames,
 				},
 				autoplay = false,
 			},
 			[combat_results_fade_in_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_results_fade_in_frames,
+					phase = 'presentation',
+					frames = timeline.range(combat_results_fade_in_frames),
 					frame_duration = combat_results_fade_in_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_results_fade_in_frames,
 				},
 				autoplay = false,
 			},
 			[combat_results_fade_out_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_results_fade_out_frames(),
+					phase = 'presentation',
+					frames = timeline.range(combat_results_fade_out_frames),
 					frame_duration = combat_results_fade_out_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_results_fade_out_frames,
 				},
 				autoplay = false,
 			},
 			[combat_exit_fade_in_timeline_id] = {
 				def = {
-					frames = timelinebuilders.build_combat_exit_fade_in_frames(),
+					phase = 'presentation',
+					frames = timeline.range(combat_exit_fade_in_frames),
 					frame_duration = combat_exit_fade_in_frame_duration,
 					playback_mode = 'once',
-					apply = true,
+					apply = timelinebuilders.apply_combat_exit_fade_in_frames,
 				},
 				autoplay = false,
 			},
@@ -1508,9 +1368,11 @@ function combat.register_director()
 		def_id = director_definition_id,
 		class = combat_director,
 		components = {
+			slash_component.new,
 			timeline_component.new,
 			fsm_component.factory({ combat_director_fsm_id }),
 		},
+		initial = { slash = { order = combat_hit_slash_order } },
 		defaults = {
 			player_index = 1,
 			node_id = nil,
@@ -1534,8 +1396,6 @@ function combat.register_director()
 			combat_maya_b_start_right_x = 0,
 			combat_maya_b_exit_right_x = 0,
 			combat_dodge_dir = 1,
-			all_out_origin_x = 0,
-			all_out_origin_y = 0,
 			all_out_shake_all_out_x = 0,
 			all_out_shake_all_out_y = 0,
 			all_out_shake_monster_x = 0,
@@ -1551,8 +1411,6 @@ function combat.register_director()
 			combat_results_maya_start_x = 0,
 			combat_results_text_target_x = 0,
 			combat_results_text_start_x = 0,
-			combat_parallax_enabled = false,
-			combat_parallax_transform_active = false,
 			combat_parallax_momentum_steps = 0,
 			combat_parallax_offset_base_y = 0,
 			skip_combat_fade_in = false,

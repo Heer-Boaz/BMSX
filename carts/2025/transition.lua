@@ -8,8 +8,8 @@ local story<const> = require('story')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timelinebuilders<const> = require('timelinebuilders')
 local apply_transition_frame<const> = timelinebuilders.apply_transition_frame
-local build_transition_fade_in_frames<const> = timelinebuilders.build_transition_fade_in_frames
-local build_fade_frames<const> = timelinebuilders.build_fade_frames
+local apply_transition_fade_in_frames<const> = timelinebuilders.apply_transition_fade_in_frames
+local apply_fade_frames<const> = timelinebuilders.apply_fade_frames
 local background_binding_ids<const> = { 'background' }
 
 function transition.register_states(states)
@@ -52,15 +52,15 @@ function transition.register_states(states)
 		for i = 1, #visuals.panels do
 			local member<const> = visuals.panels[i]
 			panels[i] = {
-				color = palette[member.palette_key],
-				x_hold = member.x, y = member.y,
-				x_in = member.enter_x, x_out = member.exit_x, offset = member.delay,
+				color = palette[member.owner.palette_key],
+				x_hold = member.attachment_ox, y = member.attachment_oy,
+				x_in = member.owner.enter_x, x_out = member.owner.exit_x, offset = member.owner.delay,
 			}
 		end
 		local accent<const> = visuals.accent
 		return panels, {
-			color = palette.accent, x_hold = accent.x, y = accent.y,
-			x_in = accent.enter_x, x_out = accent.exit_x,
+			color = palette.accent, x_hold = accent.attachment_ox, y = accent.attachment_oy,
+			x_in = accent.owner.enter_x, x_out = accent.owner.exit_x,
 			offset = overgang_fade_out_frames - 1 - transition_accent_in_frames,
 		}
 	end
@@ -82,7 +82,7 @@ function transition.register_states(states)
 	end
 
 	local finish_transition_fade_in<const> = function(self)
-		self.background.surface_component.color = p3_white_color
+		self.background.color = p3_white_color
 		hide_transition_layers(self.transition_visual)
 		return '/run_node'
 	end
@@ -121,10 +121,10 @@ function transition.register_states(states)
 			self.text_transition:set_text({ node.label }, { typed = false, snap = true })
 			reset_text_colors(self)
 			local transition_text<const> = self.text_transition
-			self.transition_center_x = transition_text.text_component.offset_x
+			self.transition_center_x = 0
 			local next_node<const> = story[node.next]
 			self.transition_target_bg = next_node.bg
-			transition_text.text_component.offset_x = screen_width
+			transition_text.text_component:set_presentation_origin(screen_width - transition_text.text_component.layout_x, transition_text.text_component.presentation_oy)
 			self.transition_needs_post_fade = false
 			if not self.skip_transition_fade and self.transition_target_bg ~= nil then
 				atlas.load(image.atlas_id(next_node.bg))
@@ -175,18 +175,18 @@ function transition.register_states(states)
 				local panel<const> = self.transition_panels[i]
 				local visual<const> = self.transition_visual.panels[i]
 				visual.visible = true
-				visual.visual.offset_x = panel.x_in - visual.x
+				visual:set_presentation_origin(panel.x_in - visual.attachment_ox, 0)
 				visual.color = 0
 			end
 			local accent<const> = self.transition_visual.accent
 			accent.visible = true
-			accent.visual.offset_x = self.transition_accent.x_in - accent.x
+			accent:set_presentation_origin(self.transition_accent.x_in - accent.attachment_ox, 0)
 			accent.color = 0
 			if self.skip_transition_fade then
 				apply_background(self.background, self.transition_target_bg)
-				background.surface_component.color = p3_black_color
+				background.color = p3_black_color
 			else
-				background.surface_component.color = p3_white_color
+				background.color = p3_white_color
 			end
 			local w<const> = screen_width
 			local target<const> = {
@@ -205,22 +205,23 @@ function transition.register_states(states)
 				panels = self.transition_panels,
 				accent = self.transition_accent,
 				center_x = self.transition_center_x,
-					start_x = w,
-					end_x = -w,
+				start_x = w - transition_text.text_component.layout_x,
+				end_x = -w - transition_text.text_component.layout_x,
+			}
+			local tracks<const> = {}
+			if self.transition_target_bg ~= nil then
+				tracks[1] = {
+					kind = 'value',
+					interpolation = 'step',
+					binding = 'background',
+					apply = surface_component.set_imgid,
+					keys = {
+						{ frame = overgang_fade_out_frames - 1, value = self.transition_target_bg },
+					},
 				}
-				local tracks<const> = {}
-				if self.transition_target_bg ~= nil then
-					tracks[1] = {
-						kind = 'value',
-						interpolation = 'step',
-						binding = 'background',
-						apply = surface_component.set_imgid,
-						keys = {
-							{ frame = overgang_fade_out_frames - 1, value = self.transition_target_bg },
-						},
-					}
-				end
-				self.timelines:define(overgang_timeline_id, {
+			end
+			self.timelines:define(overgang_timeline_id, {
+				phase = 'presentation',
 				frames = timeline.range(self.transition_finish_frame + 1),
 				frame_duration = overgang_frame_duration,
 				playback_mode = 'once',
@@ -228,14 +229,13 @@ function transition.register_states(states)
 				target = target,
 				params = transition_params,
 				apply = apply_transition_frame,
-					tracks = tracks,
-			})
+				tracks = tracks,
+			}, { background = background })
 			-- Keep the playhead at -1: the first scheduled tick must apply frame 0.
 			-- Snapping here consumes that frame during state entry and shifts the authored cadence.
 			self.timelines:play(overgang_timeline_id, {
 				rewind = true,
 				snap_to_start = false,
-				bindings = { background = background.surface_component },
 			}, finish_transition_timeline, state)
 		end,
 		input_eval = 'first',
@@ -264,20 +264,21 @@ function transition.register_states(states)
 			self.text_transition:clear_text()
 			local background<const> = show_background(self.background, nil)
 			hide_transition_layers(self.transition_visual)
-			background.surface_component.color = p3_black_color
-			local frames<const> = build_transition_fade_in_frames()
+			background.color = p3_black_color
+
 			self.timelines:define(overgang_post_fade_in_timeline_id, {
-				frames = frames,
+				phase = 'presentation',
+				frames = timeline.range(overgang_fade_in_frames),
 				frame_duration = overgang_frame_duration,
 				playback_mode = 'once',
 				target = background,
-				apply = true,
+				apply = apply_transition_fade_in_frames,
 			})
 			self.timelines:play(
-				overgang_post_fade_in_timeline_id,
-				{ rewind = true, snap_to_start = true },
-				finish_transition_fade_in_timeline,
-				state
+			overgang_post_fade_in_timeline_id,
+			{ rewind = true, snap_to_start = true },
+			finish_transition_fade_in_timeline,
+			state
 			)
 		end,
 		input_eval = 'first',
@@ -292,7 +293,7 @@ function transition.register_states(states)
 		},
 		exiting_state = function(self)
 			self.timelines:stop(overgang_post_fade_in_timeline_id)
-			self.background.surface_component.color = p3_white_color
+			self.background.color = p3_white_color
 			hide_transition_layers(self.transition_visual)
 		end,
 	}
@@ -327,12 +328,12 @@ function transition.register_states(states)
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
-			background.surface_component.color = p3_white_color
+			background.color = p3_white_color
 			local target<const> = { bg = background, overlay = overlay }
-			local frames<const> = build_fade_frames({
+			local fade_params<const> = {
 				hold_black = self.fade_hold_black,
 				frame_count = next_kind == 'transition' and fade_out_frames or fade_frame_count,
-			})
+			}
 			local tracks<const> = {}
 			if not self.fade_hold_black then
 				tracks[1] = {
@@ -346,18 +347,19 @@ function transition.register_states(states)
 				}
 			end
 			self.timelines:define(fade_timeline_id, {
-				frames = frames,
+				phase = 'presentation',
+				frames = timeline.range(fade_params.frame_count),
 				frame_duration = fade_frame_duration,
 				playback_mode = 'once',
 				bindings = background_binding_ids,
 				target = target,
-				apply = true,
+				apply = apply_fade_frames,
+				params = fade_params,
 				tracks = tracks,
-			})
+			}, { background = background })
 			self.timelines:play(fade_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
-				bindings = { background = background.surface_component },
 			}, finish_fade_timeline, state)
 		end,
 		input_eval = 'first',

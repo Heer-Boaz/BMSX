@@ -92,8 +92,8 @@ combat_hit_slash_thickness_ratio = 0.06
 combat_hit_slash_peak_scale = 1.45
 combat_hit_slash_visibility = 0.9
 combat_hit_slash_taper_floor = 0.3
-combat_hit_slash_z = 650
-combat_results_maya_z = 900
+combat_hit_slash_order = 650
+combat_results_maya_order = 900
 
 combat_dodge_timeline_id = 'combat_dodge'
 combat_dodge_frame_count = 22
@@ -202,15 +202,15 @@ function apply_background(background, id)
 	if id == nil then
 		return
 	end
-	background.surface_component:set_imgid(id)
+	background:set_imgid(id)
 end
 
 function show_background(background, id)
 	if id ~= nil then
-		background.surface_component:set_imgid(id)
+		background:set_imgid(id)
 	end
 	background.visible = true
-	background.surface_component.color = p3_white_color
+	background.color = p3_white_color
 	return background
 end
 
