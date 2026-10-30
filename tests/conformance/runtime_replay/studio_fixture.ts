@@ -191,7 +191,7 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		}
 		throw new Error('The embedded preview has no unobscured pointer target');
 	};
-	const click = async (bounds: RectBounds, heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux' = 'pointer_primary') => {
+	const click = async (target: Readonly<RectBounds> | (() => Readonly<RectBounds>), heldFrames = 1, button: 'pointer_primary' | 'pointer_secondary' | 'pointer_aux' = 'pointer_primary') => {
 		// Like Playwright's stable-position actionability check, resolve pointer
 		// coordinates after browser layout, not just our accelerated machine tick.
 		// BrowserVideoOutput can still have a canvas resize queued on rAF.
@@ -207,10 +207,12 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 		// expiry of the status message moves a pane's action bar by one row.
 		// Follow the actual target through hover layout before pressing it.
 		for (let stableFrames = 0; stableFrames < 2;) {
+			const bounds = typeof target === 'function' ? target() : target;
 			const { left, top, right, bottom } = bounds;
 			movePointer(bounds);
 			await frame();
-			if (bounds.left === left && bounds.top === top && bounds.right === right && bounds.bottom === bottom) stableFrames++;
+			const current = typeof target === 'function' ? target() : target;
+			if (current.left === left && current.top === top && current.right === right && current.bottom === bottom) stableFrames++;
 			else { stableFrames = 0; console.info('STUDIO: pointer waits for workbench target layout'); }
 		}
 		setPointerButton(button, true);
@@ -242,8 +244,9 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			check(titlePoint !== undefined, `tab ${id} has an unobscured owning window title`);
 			await click(titlePoint!);
 		}
-		const bounds = group.tabStrip.layoutState.items.peek(group.model.indexOf(group.model.findById(id)!)).bounds;
-		const viewport = group.tabStrip.layoutState.viewportBounds;
+		const tab = group.model.findById(id)!, strip = group.tabStrip;
+		const bounds = strip.layoutState.items.peek(group.model.indexOf(tab)).bounds;
+		const viewport = strip.layoutState.viewportBounds;
 		const delta = bounds.left < viewport.left ? bounds.left - viewport.left
 			: bounds.right > viewport.right ? bounds.right - viewport.right : 0;
 		if (delta !== 0) {
@@ -252,9 +255,16 @@ export async function createStudioFixture(canvas: HTMLCanvasElement, backend: GP
 			remote.apply([{ type: 'wheel', deltaY: steps }]);
 			await frame();
 		}
-		const left = Math.max(viewport.left, bounds.left), right = Math.min(viewport.right, bounds.right);
-		check(right > left, `tab ${id} is reachable through horizontal scrolling`);
-		await click({ left, right, top: bounds.top, bottom: bounds.bottom }, heldFrames);
+		const target = { left: 0, right: 0, top: 0, bottom: 0 };
+		await click(() => {
+			const item = strip.layoutState.items.peek(group!.model.indexOf(tab));
+			const labelRight = item.closeBounds.right > item.closeBounds.left ? item.closeBounds.left : item.bounds.right;
+			target.left = Math.max(viewport.left, item.bounds.left);
+			target.right = Math.min(viewport.right, labelRight);
+			target.top = item.bounds.top; target.bottom = item.bounds.bottom;
+			check(target.right > target.left, `tab ${id} has a visible label target after scrolling and hover`);
+			return target;
+		}, heldFrames);
 		check(ide.editor.editorParts.activeGroup === group && group.model.activeTab.id === id, `tab ${id} opens through its owning visible strip`);
 	};
 	const runMenuCommand = async (command: EditorCommandId) => {

@@ -325,6 +325,18 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		if (this.visible) this.layout(this.measuredFont!, this.measure!, this.measureText!);
 	}
 
+	/** Reset only chrome intent; the same content attachment produces its current defaults. */
+	public resetPlacement(defaultBounds?: Readonly<RectBounds>): number {
+		const generation = this.model.placementGeneration;
+		this.capture.cancelTarget(this);
+		this.cancelPointer();
+		this.capture.cancelTarget(this.actions);
+		this.actions.cancelPointer();
+		if (this.model.placementGeneration !== generation) return generation;
+		return defaultBounds === undefined ? this.model.requestDefaultPlacement()
+			: this.model.setState({ requestedBounds: defaultBounds, placement: 'normal', minimized: false });
+	}
+
 	/** Font, producer revisions and work-area changes are the only chrome layout triggers. */
 	public layout(font: BFont, measure: TextRangeMeasure, measureText: (text: string) => number): boolean {
 		if (!this.presented || !this.model.open || this.model.minimized) return false;

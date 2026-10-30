@@ -68,6 +68,7 @@ export class WorkbenchMainWorkspaceLayout {
 		this.activitySash.onDidResize(() => this.changed());
 	}
 	public get hierarchyVisible(): boolean { return this.hierarchyVisibleValue; }
+	public get revision(): number { return this.stateRevision; }
 	public set hierarchyVisible(value: boolean) {
 		if (value === this.hierarchyVisibleValue) return;
 		this.hierarchyVisibleValue = value; this.changed();

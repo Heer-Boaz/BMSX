@@ -260,11 +260,10 @@ export class GpuDetailsWindow {
 		if (!model.open) { this.window.detach(); return; }
 		const font = editorViewState.font;
 		model.setMinimumSize(editorViewState.charAdvance * 28 + 12, font.lineHeight * 12 + 44);
-		if (!input.detailsPlacementInitialized) {
+		if (!model.placementInitialized) {
 			const area = this.workArea, width = Math.max(model.minimumWidth, Math.round((area.right - area.left) * 0.70));
 			const height = Math.max(model.minimumHeight, Math.round((area.bottom - area.top) * 0.72)), bottom = input.layout.bottom - 4;
 			model.setRequestedBounds({ left: area.right - width - 4, top: bottom - height, right: area.right - 4, bottom });
-			input.detailsPlacementInitialized = true;
 		}
 		const record = input.selected, expired = record.sequence >= 0 && (record.sequence < input.history.firstSequence || record.sequence >= input.history.endSequence);
 		if (this.captionRevision !== input.selectionRevision || this.expired !== expired) {

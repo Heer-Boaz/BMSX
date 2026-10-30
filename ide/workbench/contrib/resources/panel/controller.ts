@@ -301,6 +301,14 @@ export class ResourcePanelController implements PointerHoverTarget {
 	getFilterMode(): 'lua_only' | 'all' { return this.filterMode; }
 
 	togglePanel(): void { this.visible ? this.hide() : this.show(); }
+	/** Allocation is independent of the retained browser's visibility, selection and expansion. */
+	public resetLayout(): boolean {
+		const revision = this.split.revision;
+		this.restoreRevision++;
+		this.drag?.cancel(); this.sash.cancelInteraction();
+		if (this.split.revision !== revision) return false;
+		this.split.reset(); return true;
+	}
 
 	show(): void {
 		this.restoreRevision++;

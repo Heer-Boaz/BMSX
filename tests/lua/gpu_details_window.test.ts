@@ -70,6 +70,23 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'msx') {
 	return { runtime, input, history, emit, write, area, surfaces, owner, origin, details, createDetails, picker, menu, choose, formats: () => formats, press };
 }
 
+for (const variant of ['tiny', 'msx'] as const) test(`GPU ${variant} defaults are reproduced in the same font and deferred while the retained view is hidden`, t => {
+	const f = fixture(t, variant), { input, details } = f;
+	details.show();
+	const model = input.detailsWindow, defaults = { ...model.requestedBounds }, selected = input.selected;
+	const sequence = selected.sequence;
+	assert.ok(input.windowPlacements[0] === model); assert.equal(input.windowPlacements.length, 1);
+	model.setRequestedBounds({ left: 10, top: 30, right: 210, bottom: 150 }); model.setPlacement('right');
+	details.window.resetPlacement(); details.update();
+	assert.equal(model.placementInitialized, true); assert.equal(model.placement, 'normal'); assert.deepEqual(model.requestedBounds, defaults);
+	assert.ok(input.selected === selected); assert.equal(input.selected.sequence, sequence);
+	details.window.hide();
+	for (const placement of input.windowPlacements) placement.requestDefaultPlacement();
+	details.update(); assert.equal(model.placementInitialized, false); assert.equal(model.open, false);
+	details.show(); assert.equal(model.placementInitialized, true); assert.deepEqual(model.requestedBounds, defaults);
+	assert.ok(input.selected === selected); assert.equal(input.selected.sequence, sequence);
+});
+
 for (const variant of ['tiny', 'msx'] as const) test(`GPU ${variant} Details is an owned modeless client with icon chrome and no idle formatting or measurements`, t => {
 	const f = fixture(t, variant), { input, details } = f;
 	assert.equal(input.detailsWindow.open, false); details.update(); assert.equal(f.formats(), 0);

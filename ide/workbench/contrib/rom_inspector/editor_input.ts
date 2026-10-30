@@ -20,11 +20,11 @@ export class RomInspectorInput extends ReadonlyEditorInput<`rom-inspector:${numb
 	public readonly model: RomInspectorModel;
 	public readonly reader: RomInspectorContentModel;
 	public readonly actions = createWorkbenchActionBar('romInspector.title', true);
-	public readonly keyWindow = new WorkbenchWindowModel({ left: 0, top: 0, right: 0, bottom: 0 }, 0, 0);
+	public readonly keyWindow = new WorkbenchWindowModel(undefined, 0, 0);
 	public readonly keyActions = createWorkbenchActionBar('window.title');
 	public readonly keyViewport = new WorkbenchScrollViewport();
-	public keyPlacementInitialized = false;
-	public readonly readerWindow = new WorkbenchWindowModel({ left: 0, top: 0, right: 0, bottom: 0 }, 0, 0);
+	public readonly readerWindow = new WorkbenchWindowModel(undefined, 0, 0);
+	public override readonly windowPlacements: readonly WorkbenchWindowModel[] = [this.keyWindow, this.readerWindow];
 	public readonly readerActions = createWorkbenchActionBar('romInspector.reader.title');
 	public readonly readerViewActions: WorkbenchActionBarState;
 	public readonly readerBytes = new WorkbenchScrollViewport();
@@ -33,7 +33,6 @@ export class RomInspectorInput extends ReadonlyEditorInput<`rom-inspector:${numb
 	public readonly readerHorizontalTrack = create_rect_bounds();
 	public readonly readerContentBounds = create_rect_bounds();
 	public readonly readerInfoView: PropertyInspectorViewState = { selectionIndex: -1, selectionVisible: false, anchorIndex: -1, anchorOffset: 0 };
-	public readerPlacementInitialized = false;
 	public readerHeld = false;
 	public readonly list = new WorkbenchScrollViewport();
 	public readonly filterBounds = create_rect_bounds();

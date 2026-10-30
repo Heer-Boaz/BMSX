@@ -34,6 +34,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'workspace.focusPrimary': { category: 'Workspace', title: 'Focus Primary Authoring' },
 	'sceneEditor.chooseMain': { category: 'Workspace', title: 'Choose Main Scene', shortTitle: 'Main Scene' },
 	'workspace.clearPrimary': { category: 'Workspace', title: 'Clear Primary Authoring' },
+	'workspace.resetLayout': { category: 'Workspace', title: 'Reset Layout' },
 	'workspace.hierarchy.focus': { category: 'Workspace', title: 'Focus Hierarchy' },
 	'workspace.details.focus': { category: 'Workspace', title: 'Focus Details' },
 	'workspace.hierarchy.toggle': { category: 'Workspace', title: 'Show Hierarchy', activeTitle: 'Hide Hierarchy' },

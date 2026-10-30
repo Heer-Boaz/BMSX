@@ -46,7 +46,6 @@ export class MainWorkspaceRegionPart {
 	private windowMenu: WorkbenchCompositeMenu;
 	private view: MainWorkspaceRegionClient | undefined;
 	private placementValue: MainWorkspaceRegionPlacement = 'dockedMain';
-	private initialized = false;
 	private visible = false;
 	private stateRevision = 0;
 	private readonly unbindPlacement: () => void;
@@ -68,7 +67,7 @@ export class MainWorkspaceRegionPart {
 			{ type: 'command', command: id === 'hierarchy' ? 'workspace.hierarchy.dock' : 'workspace.details.dock', when: region => !region.docked },
 		], this);
 		this.windowMenu = new WorkbenchCompositeMenu([this.actions, this.windowActions]);
-		const model = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
+		const model = new WorkbenchWindowModel(undefined, 0, 0);
 		model.title = options.title;
 		const part = this;
 		this.window = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, options.commands, options.contextMenu, {
@@ -107,14 +106,13 @@ export class MainWorkspaceRegionPart {
 		const view = this.view;
 		view?.setHeaderVisible(this.docked);
 		if (this.view !== view || this.placementValue !== placement) return;
-		if (!this.docked && !this.initialized && view !== undefined) {
+		if (!this.docked && !this.window.model.placementInitialized && view !== undefined) {
 			view.measure(editorViewState.font, this.constraints);
 			const width = Math.max(this.constraints.minimumWidth, this.constraints.preferredWidth) + WINDOW_RESIZE_MARGIN * 2;
 			const area = this.options.workArea, attached = view.attached;
 			const left = attached ? this.bounds.left : this.options.id === 'hierarchy' ? area.left : area.right - width;
 			const top = attached ? this.bounds.top : area.top;
 			const height = attached ? this.bounds.bottom - this.bounds.top : area.bottom - area.top;
-			this.initialized = true;
 			this.window.model.setRequestedBounds({ left, top, right: left + width, bottom: top + height });
 		}
 	}
@@ -159,13 +157,22 @@ export class MainWorkspaceRegionPart {
 	}
 
 	public restore(state: MainWorkspaceRegionState): void {
-		this.placementValue = state.placement; this.initialized = state.window !== undefined; this.stateRevision++;
-		this.window.model.setState(state.window ?? { requestedBounds: { left: 0, top: 0, right: 0, bottom: 0 }, placement: 'normal', minimized: false });
+		this.placementValue = state.placement; this.stateRevision++;
+		if (state.window === undefined) this.window.model.requestDefaultPlacement(); else this.window.model.setState(state.window);
 		this.view?.setHeaderVisible(this.docked);
+	}
+	/** Restore the named allocation, leaving this same content and its future floating default intact. */
+	public resetLayout(): boolean {
+		const view = this.view;
+		this.placementValue = 'dockedMain'; this.stateRevision++;
+		this.view?.setHeaderVisible(true);
+		if (this.view !== view || !this.docked) return false;
+		const generation = this.window.resetPlacement();
+		return this.docked && this.window.model.placementGeneration === generation;
 	}
 	public serialize(previous?: MainWorkspaceRegionState): MainWorkspaceRegionState {
 		const model = this.window.model, bounds = model.requestedBounds, prior = previous?.window;
-		const window = !this.initialized ? undefined : prior !== undefined && prior.placement === model.placement && prior.minimized === model.minimized
+		const window = !model.placementInitialized ? undefined : prior !== undefined && prior.placement === model.placement && prior.minimized === model.minimized
 			&& prior.requestedBounds.left === bounds.left && prior.requestedBounds.top === bounds.top
 			&& prior.requestedBounds.right === bounds.right && prior.requestedBounds.bottom === bounds.bottom
 			? prior : { requestedBounds: { ...bounds }, placement: model.placement, minimized: model.minimized };

@@ -191,12 +191,11 @@ export class GteDetailsWindow {
 		const input = this.input, model = input.detailsWindow, font = editorViewState.font;
 		const minimumWidth = editorViewState.charAdvance * 32 + 12, minimumHeight = font.lineHeight * 12 + 48;
 		model.setMinimumSize(minimumWidth, minimumHeight);
-		if (input.detailsPlacementInitialized) return;
+		if (model.placementInitialized) return;
 		const area = this.workArea, width = Math.max(minimumWidth, Math.round((area.right - area.left) * 0.80));
 		const height = Math.max(minimumHeight, Math.round((area.bottom - area.top) * 0.60));
 		const bottom = this.input.layout.bottom - 4, right = area.right - 4;
 		model.setRequestedBounds({ left: right - width, top: bottom - height, right, bottom });
-		input.detailsPlacementInitialized = true;
 	}
 
 	private updateCaption(): void {

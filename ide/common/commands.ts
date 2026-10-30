@@ -105,6 +105,7 @@ export type EditorCommandId =
 	| 'resources.newFolder' | 'resources.refresh'
 	| 'resources.open' | 'resources.openToSide' | 'resources.source' | 'resources.sourceToSide' | 'resources.disclosure' | 'resources.editInMain'
 	| 'workspace.focusPrimary' | 'workspace.clearPrimary'
+	| 'workspace.resetLayout'
 	| 'workspace.hierarchy.focus' | 'workspace.details.focus' | 'workspace.hierarchy.toggle' | 'workspace.details.toggle'
 	| 'workspace.hierarchy.float' | 'workspace.details.float' | 'workspace.hierarchy.dock' | 'workspace.details.dock'
 	| 'projects.createCartridge'

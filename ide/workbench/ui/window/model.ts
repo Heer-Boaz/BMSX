@@ -32,6 +32,7 @@ export class WorkbenchWindowModel {
 	public revision = 0;
 	private titleValue = '';
 	private placementRevision = 0;
+	private placementInitializedValue: boolean;
 	private placementListeners: Set<() => void> | undefined;
 	private arrangedRevision = -1;
 	private headerHeight = 0;
@@ -39,11 +40,25 @@ export class WorkbenchWindowModel {
 	private readonly workArea = create_rect_bounds();
 	private readonly arrangedRequest = create_rect_bounds();
 
-	public constructor(requestedBounds: Readonly<RectBounds>, private contributionMinimumWidth: number, public minimumHeight: number) {
-		copy_rect_bounds(this.requestedBounds, requestedBounds);
+	public constructor(requestedBounds: Readonly<RectBounds> | undefined, private contributionMinimumWidth: number, public minimumHeight: number) {
+		this.placementInitializedValue = requestedBounds !== undefined;
+		if (requestedBounds !== undefined) copy_rect_bounds(this.requestedBounds, requestedBounds);
 	}
 
 	public get minimumWidth(): number { return Math.max(this.contributionMinimumWidth, this.chromeMinimumWidth); }
+	public get placementInitialized(): boolean { return this.placementInitializedValue; }
+	/** Placement authority is independent of title and derived minimum-size changes. */
+	public get placementGeneration(): number { return this.placementRevision; }
+
+	/** The owning content produces current default geometry before its next presentation. */
+	public requestDefaultPlacement(): number {
+		if (!this.placementInitializedValue && this.placement === 'normal' && !this.minimized) return this.placementRevision;
+		this.placementInitializedValue = false;
+		this.placement = 'normal'; this.minimized = false;
+		this.revision += 1; this.placementRevision += 1;
+		const generation = this.placementRevision;
+		this.publishPlacement(); return generation;
+	}
 
 	public get title(): string { return this.titleValue; }
 	public set title(value: string) {
@@ -58,15 +73,17 @@ export class WorkbenchWindowModel {
 		return () => listeners.delete(listener);
 	}
 
-	public setRequestedBounds(bounds: Readonly<RectBounds>, placement = this.placement): void {
+	public setRequestedBounds(bounds: Readonly<RectBounds>, placement = this.placement): number {
 		const requested = this.requestedBounds;
-		if (this.placement === placement && requested.left === bounds.left && requested.top === bounds.top
-			&& requested.right === bounds.right && requested.bottom === bounds.bottom) return;
+		if (this.placementInitializedValue && this.placement === placement && requested.left === bounds.left && requested.top === bounds.top
+			&& requested.right === bounds.right && requested.bottom === bounds.bottom) return this.placementRevision;
+		this.placementInitializedValue = true;
 		copy_rect_bounds(this.requestedBounds, bounds);
 		this.placement = placement;
 		this.revision += 1;
 		this.placementRevision += 1;
-		this.publishPlacement();
+		const generation = this.placementRevision;
+		this.publishPlacement(); return generation;
 	}
 
 	public setMinimized(minimized: boolean): void {
@@ -78,17 +95,19 @@ export class WorkbenchWindowModel {
 	}
 
 	/** Restore one persisted placement before observers arrange or publish its presentation. */
-	public setState(state: WorkbenchWindowPlacementState): void {
+	public setState(state: WorkbenchWindowPlacementState): number {
 		const requested = this.requestedBounds, bounds = state.requestedBounds;
-		if (this.placement === state.placement && this.minimized === state.minimized
+		if (this.placementInitializedValue && this.placement === state.placement && this.minimized === state.minimized
 			&& requested.left === bounds.left && requested.top === bounds.top
-			&& requested.right === bounds.right && requested.bottom === bounds.bottom) return;
+			&& requested.right === bounds.right && requested.bottom === bounds.bottom) return this.placementRevision;
+		this.placementInitializedValue = true;
 		copy_rect_bounds(requested, bounds);
 		this.placement = state.placement;
 		this.minimized = state.minimized;
 		this.revision += 1;
 		this.placementRevision += 1;
-		this.publishPlacement();
+		const generation = this.placementRevision;
+		this.publishPlacement(); return generation;
 	}
 
 	public setPlacement(placement: WindowPlacement): void {
@@ -150,7 +169,7 @@ export class WorkbenchWindowModel {
 		if (this.contributionMinimumWidth === width && this.minimumHeight === height) return;
 		this.contributionMinimumWidth = width; this.minimumHeight = height;
 		this.revision += 1;
-		this.placementRevision += 1;
+		this.arrangedRevision = -1;
 	}
 
 	/** Source-owned action changes explicitly invalidate retained chrome. */

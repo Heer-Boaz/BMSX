@@ -165,6 +165,100 @@ test('resetting a constrained group boundary restores requested default and publ
 	assert.equal(arrangement.root, root); assert.equal(arrangement.topologyRevision, topology); assert.deepEqual(arrangement.leaves, leaves);
 });
 
+test('Reset Layout restores every retained split default without replacing restored topology or publishing native sash gestures', () => {
+	const first = {}, second = {}, third = {}, arrangement = new EditorGroupArrangement(first);
+	arrangement.setRoot({ kind: 'split', orientation: 'horizontal', ratio: 0.3,
+		first: { kind: 'group', group: first }, second: { kind: 'split', orientation: 'vertical', ratio: 0.7,
+			first: { kind: 'group', group: second }, second: { kind: 'group', group: third } } });
+	arrangement.layout({ left: 0, top: 0, right: 1000, bottom: 500 });
+	const root = arrangement.root, groups = [...arrangement.groups], leaves = [...arrangement.leaves], splits = [...arrangement.splits];
+	const topology = arrangement.topologyRevision;
+	let nativeResizes = 0;
+	for (const branch of splits) branch.split.onDidResize(() => nativeResizes++);
+	assert.equal(arrangement.resetLayout(), true);
+	assert.ok(arrangement.root === root); assert.equal(arrangement.topologyRevision, topology);
+	assert.ok(groups.every((group, index) => arrangement.groups[index] === group));
+	assert.ok(leaves.every((leaf, index) => arrangement.leaves[index] === leaf));
+	assert.ok(splits.every((split, index) => arrangement.splits[index] === split));
+	assert.deepEqual(splits.map(branch => branch.split.ratio), [0.5, 0.5]);
+	assert.equal(nativeResizes, 0, 'the layout owner publishes one completed reset instead of separate native resize commands');
+	assert.equal(arrangement.layout(arrangement.bounds), true);
+});
+
+for (const maximized of [false, true])
+	test(`Reset Layout clears ${maximized ? 'maximized and saved normal' : 'normal'} overflow intent while retaining every group`, () => {
+		const first = {}, second = {}, arrangement = new EditorGroupArrangement(first);
+		arrangement.split(first, second, 'right');
+		arrangement.setMinimum(first, 300, 300); arrangement.setMinimum(second, 300, 300);
+		arrangement.layout({ left: 0, top: 0, right: 100, bottom: 100 });
+		assert.equal(arrangement.setScroll(180, 40), true); arrangement.layout(arrangement.bounds);
+		if (maximized) { arrangement.toggleMaximize(second); arrangement.layout(arrangement.bounds); arrangement.setScroll(30, 20); }
+		const root = arrangement.root, topology = arrangement.topologyRevision;
+		assert.equal(arrangement.resetLayout(), true); arrangement.layout(arrangement.bounds);
+		assert.equal(arrangement.maximized, undefined);
+		assert.equal(arrangement.scrollX, 0); assert.equal(arrangement.scrollY, 0);
+		assert.equal(arrangement.normalScrollX, 0); assert.equal(arrangement.normalScrollY, 0);
+		assert.ok(arrangement.root === root); assert.equal(arrangement.topologyRevision, topology);
+		assert.ok(arrangement.groups.length === 2 && arrangement.groups[0] === first && arrangement.groups[1] === second);
+		arrangement.toggleMaximize(first); arrangement.layout(arrangement.bounds); arrangement.toggleMaximize(first); arrangement.layout(arrangement.bounds);
+		assert.equal(arrangement.scrollX, 0); assert.equal(arrangement.scrollY, 0);
+	});
+
+test('unchanged Reset Layout retains warmed geometry and drop projections without publishing another layout revision', () => {
+	const first = {}, second = {}, arrangement = new EditorGroupArrangement(first);
+	arrangement.split(first, second, 'right'); arrangement.splits[0].split.ratio = 0.8;
+	arrangement.layout({ left: 0, top: 0, right: 500, bottom: 300 });
+	assert.equal(arrangement.resetLayout(), true); assert.equal(arrangement.layout(arrangement.bounds), true);
+	const projection = arrangement.projectSplit(first, 'down', 40, 40, undefined);
+	const revision = arrangement.revision, layout = arrangement.layoutRevision, topology = arrangement.topologyRevision;
+	for (let repeat = 0; repeat < 3; repeat++) {
+		assert.equal(arrangement.resetLayout(), false); assert.equal(arrangement.layout(arrangement.bounds), false);
+		assert.ok(arrangement.projectSplit(first, 'down', 40, 40, undefined) === projection);
+	}
+	assert.equal(arrangement.revision, revision); assert.equal(arrangement.layoutRevision, layout); assert.equal(arrangement.topologyRevision, topology);
+});
+
+test('a newer maximize and scroll request from split publication is not overwritten by Reset Layout completion', () => {
+	const first = {}, second = {}, arrangement = new EditorGroupArrangement(first);
+	arrangement.split(first, second, 'right'); arrangement.splits[0].split.ratio = 0.8;
+	arrangement.setMinimum(first, 300, 300); arrangement.setMinimum(second, 300, 300);
+	arrangement.layout({ left: 0, top: 0, right: 100, bottom: 100 });
+	const release = arrangement.splits[0].split.onDidChangeRatio(() => {
+		release(); arrangement.toggleMaximize(second); arrangement.setScroll(30, 20);
+	});
+	assert.equal(arrangement.resetLayout(), true); arrangement.layout(arrangement.bounds);
+	assert.ok(arrangement.maximized === second); assert.equal(arrangement.scrollX, 30); assert.equal(arrangement.scrollY, 20);
+});
+
+for (const target of ['same', 'later'] as const)
+	test(`a newer ${target}-split ratio published during Reset Layout retains its own intent`, () => {
+		const first = {}, second = {}, third = {}, arrangement = new EditorGroupArrangement(first);
+		arrangement.split(first, second, 'right'); arrangement.split(second, third, 'down');
+		const root = arrangement.root, topology = arrangement.topologyRevision, [earlier, later] = arrangement.splits;
+		earlier.split.ratio = 0.8; later.split.ratio = 0.7;
+		const newer = target === 'same' ? earlier : later;
+		const release = earlier.split.onDidChangeRatio(() => { release(); newer.split.ratio = 0.23; });
+		assert.equal(arrangement.resetLayout(), true);
+		assert.equal(newer.split.ratio, 0.23); assert.ok(arrangement.root === root);
+		assert.equal(arrangement.topologyRevision, topology);
+		if (target === 'same') assert.equal(later.split.ratio, 0.7, 'newer same-split intent stops the older reset before its later targets');
+	});
+
+test('a newer topology published from a reset split keeps its own ratio intent instead of joining the older reset', () => {
+	const first = {}, second = {}, third = {}, newer = {}, arrangement = new EditorGroupArrangement(first);
+	arrangement.split(first, second, 'right'); arrangement.split(second, third, 'down');
+	arrangement.splits[0].split.ratio = 0.8; arrangement.splits[1].split.ratio = 0.7;
+	arrangement.layout({ left: 0, top: 0, right: 500, bottom: 300 });
+	const release = arrangement.splits[0].split.onDidChangeRatio(() => {
+		release(); arrangement.setRoot({ kind: 'split', orientation: 'horizontal', ratio: 0.2,
+			first: { kind: 'group', group: first }, second: { kind: 'split', orientation: 'vertical', ratio: 0.3,
+				first: { kind: 'group', group: second }, second: { kind: 'group', group: newer } } });
+	});
+	assert.equal(arrangement.resetLayout(), true);
+	assert.ok(arrangement.groups.length === 3 && arrangement.groups[0] === first && arrangement.groups[1] === second && arrangement.groups[2] === newer);
+	assert.deepEqual(arrangement.splits.map(branch => branch.split.ratio), [0.2, 0.3]);
+});
+
 test('nested hard minima aggregate along each split axis and overflow the viewport without invalid sash intervals', () => {
 	const first = {}, second = {}, third = {}, arrangement = new EditorGroupArrangement(first);
 	arrangement.split(first, second, 'right'); arrangement.split(second, third, 'down');

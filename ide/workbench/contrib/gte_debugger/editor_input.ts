@@ -21,9 +21,9 @@ export class GteDebuggerInput extends ReadonlyEditorInput<GteDebuggerTabId, 'gte
 	public override readonly serializable = false;
 	public get resource(): undefined { return undefined; }
 	public readonly actions = createWorkbenchActionBar('gte.title', true, WORKBENCH_MENUS['gte.context']);
-	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
+	public readonly detailsWindow = new WorkbenchWindowModel(undefined, 0, 0);
+	public override readonly windowPlacements: readonly WorkbenchWindowModel[] = [this.detailsWindow];
 	public readonly detailsActions = createWorkbenchActionBar('gte.details.title');
-	public detailsPlacementInitialized = false;
 	public readonly detailsView: PropertyInspectorViewState = { selectionIndex: 0, selectionVisible: false, anchorIndex: 0, anchorOffset: 0 };
 	public readonly list = new WorkbenchScrollViewport();
 	public readonly projection = new GteCommandProjection();

@@ -517,6 +517,17 @@ return world`), true, WORLD_SOURCE, []);
 	commands.execute('actorLab.lockDetails', pane.inspector.focusTarget);
 	assert.equal(pane.inspector.visible, true); assert.equal(input.detailsWindow.open, true);
 	assert.deepEqual(input.previewBounds, preview, 'floating Details never reserve a preview split');
+	const defaultBounds = { ...input.detailsWindow.requestedBounds }, retainedSubject = input.details!.subject;
+	assert.ok(input.windowPlacements[0] === input.detailsWindow); assert.equal(input.windowPlacements.length, 1);
+	input.detailsWindow.setRequestedBounds({ left: 10, top: 30, right: 210, bottom: 150 });
+	pane.detailsWindow.resetPlacement(); pane.update();
+	assert.equal(input.detailsWindow.placementInitialized, true); assert.deepEqual(input.detailsWindow.requestedBounds, defaultBounds);
+	assert.ok(input.details!.subject === retainedSubject); assert.equal(input.details!.locked, true);
+	pane.detailsWindow.hide(); for (const placement of input.windowPlacements) placement.requestDefaultPlacement();
+	pane.update(); assert.equal(input.detailsWindow.placementInitialized, false); assert.equal(input.detailsWindow.open, false);
+	input.detailsWindow.open = true; pane.update();
+	assert.equal(input.detailsWindow.placementInitialized, true); assert.deepEqual(input.detailsWindow.requestedBounds, defaultBounds);
+	assert.ok(input.details!.subject === retainedSubject); assert.equal(input.details!.locked, true);
 	for (const target of [pane.detailsWindow.focusTarget, pane.inspector.focusTarget]) {
 		assert.equal(commands.isEnabled('actorLab.select', target), true);
 		assert.equal(commands.isEnabled('actorLab.find', target), true);

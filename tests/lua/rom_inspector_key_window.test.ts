@@ -86,6 +86,20 @@ function fixture(t: TestContext, variant: FontVariant = 'tiny', theme = 'light')
 		recreate() { key.dispose(); key = new RomMapKeyWindow(input, commands, contextMenu, surfaces, owner, origin, area); } };
 }
 
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} ROM key default placement is independent of the font measurement cache`, t => {
+	const f = fixture(t, variant); f.key.show();
+	const model = f.input.keyWindow, defaults = { ...model.requestedBounds }, selection = f.input.model.selection;
+	assert.ok(f.input.windowPlacements[0] === model); assert.ok(f.input.windowPlacements[1] === f.input.readerWindow);
+	model.setRequestedBounds({ left: 10, top: 30, right: 210, bottom: 150 }); model.setPlacement('right');
+	f.key.window.resetPlacement(); f.key.update();
+	assert.equal(model.placementInitialized, true); assert.equal(model.placement, 'normal'); assert.deepEqual(model.requestedBounds, defaults);
+	assert.ok(f.input.model.selection === selection);
+	f.key.window.hide(); for (const placement of f.input.windowPlacements) placement.requestDefaultPlacement();
+	f.recreate();
+	f.key.update(); assert.equal(model.placementInitialized, false); assert.equal(model.open, false);
+	f.key.show(); assert.equal(model.placementInitialized, true); assert.deepEqual(model.requestedBounds, defaults);
+});
+
 for (const variant of ['tiny', 'msx'] as const) for (const theme of ['light', 'dark']) {
 	test(`${variant}/${theme} key paints actual category swatches, complete labels, sizes and a separate total`, t => {
 		const f = fixture(t, variant, theme); f.key.show();
@@ -180,7 +194,7 @@ test('controller recreation retains placement and open state per snapshot withou
 	f.recreate(); f.key.update(); assert.equal(model.open, false); assert.equal(f.key.window.surface, undefined);
 	f.key.show(); assert.deepEqual(model.requestedBounds, requested); assert.equal(f.input.keyViewport.scrollTop, scroll);
 	const other = new RomInspectorInput({ ...f.input.snapshot, rom: f.input.snapshot.rom.slice() }); t.after(() => other.dispose());
-	assert.equal(other.keyWindow.open, false); assert.equal(other.keyPlacementInitialized, false);
+	assert.equal(other.keyWindow.open, false); assert.equal(other.keyWindow.placementInitialized, false);
 });
 
 test('closed keys do no label measurement or hidden client painting before or after their first attachment', t => {

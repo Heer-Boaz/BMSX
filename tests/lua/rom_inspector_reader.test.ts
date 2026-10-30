@@ -199,6 +199,21 @@ function fixture(t: TestContext, variant: 'tiny' | 'msx' = 'tiny', theme = 'ligh
 		get reader() { return reader; }, recreate() { reader.dispose(); reader = createReader(); } };
 }
 
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} ROM reader default placement is independent of the font cache and its held subject`, t => {
+	const f = fixture(t, variant); f.select('a-image'); f.reader.show();
+	const model = f.input.readerWindow, defaults = { ...model.requestedBounds }, subject = f.input.reader.subject, bitmap = f.input.reader.preview;
+	assert.ok(f.input.windowPlacements[1] === model);
+	model.setRequestedBounds({ left: 10, top: 30, right: 210, bottom: 150 }); model.setPlacement('right');
+	f.reader.window.resetPlacement(); f.reader.update();
+	assert.equal(model.placementInitialized, true); assert.equal(model.placement, 'normal'); assert.deepEqual(model.requestedBounds, defaults);
+	assert.ok(f.input.reader.subject === subject); assert.ok(f.input.reader.preview === bitmap);
+	f.reader.window.hide(); for (const placement of f.input.windowPlacements) placement.requestDefaultPlacement();
+	f.recreate();
+	f.reader.update(); assert.equal(model.placementInitialized, false); assert.equal(model.open, false);
+	f.reader.show(); assert.equal(model.placementInitialized, true); assert.deepEqual(model.requestedBounds, defaults);
+	assert.ok(f.input.reader.subject === subject); assert.ok(f.input.reader.preview === bitmap);
+});
+
 test('reader More retires preview membership on popup update before the reader lays out its changed document', t => {
 	const f = fixture(t); f.select('a-image'); f.reader.show();
 	const state = f.input.readerViewActions, bounds = state.bounds;

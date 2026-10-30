@@ -276,6 +276,7 @@ export type CartEditor = TextInputHost & {
 	shutdown: () => Promise<void>;
 	updateViewport: (viewport: Viewport) => void;
 	setFontVariant: (variant: FontVariant) => void;
+	resetLayout: () => boolean;
 	showRuntimeErrorInChunk: (resource: ResourceIdentity, line: number, column: number, message: string, details?: RuntimeErrorDetails) => void;
 	renderFaultOverlay: () => void;
 	renderRuntimeFaultOverlay: (options: RenderRuntimeFaultOverlayOptions) => boolean;
@@ -892,6 +893,22 @@ export class RuntimeCartEditor implements CartEditor {
 		this.mainWorkspace.layoutClients();
 		this.gamePanel.update();
 		if (layoutChanged) this.surfaces.changed();
+	}
+
+	/** Each retained presentation owner restores placement without replacing workspace content. */
+	public resetLayout(): boolean {
+		if (!this.acceptsInput) return false;
+		const editors = this.editorParts.captureLayoutReset();
+		const files = this.resourcePanel.split.revision, companion = this.editorParts.mainArea.split.revision;
+		if (!this.mainWorkspace.resetLayout()) return false;
+		if (!editors.isCurrent() || files !== this.resourcePanel.split.revision || companion !== this.editorParts.mainArea.split.revision) return false;
+		if (!this.resourcePanel.resetLayout()) return false;
+		if (!editors.isCurrent() || companion !== this.editorParts.mainArea.split.revision) return false;
+		if (!this.gamePanel.resetLayout()) return false;
+		if (!editors.reset()) return false;
+		this.layoutMainEditor();
+		requestWorkspaceAutosave(WorkspaceAutosaveChange.EditorSession | WorkspaceAutosaveChange.FilesBrowser);
+		return true;
 	}
 
 	public update(deltaSeconds: number): void {

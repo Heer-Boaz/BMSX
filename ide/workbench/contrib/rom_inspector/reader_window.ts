@@ -348,12 +348,11 @@ export class RomEntryInspectorWindow {
 			this.measuredFont = font; this.rowHeight = font.lineHeight; this.bytes.lineStep = font.lineHeight;
 			const width = editorViewState.charAdvance * 24 + 16;
 			model.setMinimumSize(width, font.lineHeight * 7 + 32);
-			if (!input.readerPlacementInitialized) {
-				const area = this.workArea, requestedWidth = Math.max(width, Math.round((area.right - area.left) * 0.65));
-				const height = Math.max(model.minimumHeight, Math.round((area.bottom - area.top) * 0.75));
-				model.setRequestedBounds({ left: area.right - requestedWidth - 4, top: area.bottom - height - 4, right: area.right - 4, bottom: area.bottom - 4 });
-				input.readerPlacementInitialized = true;
-			}
+		}
+		if (!model.placementInitialized) {
+			const area = this.workArea, requestedWidth = Math.max(model.minimumWidth, Math.round((area.right - area.left) * 0.65));
+			const height = Math.max(model.minimumHeight, Math.round((area.bottom - area.top) * 0.75));
+			model.setRequestedBounds({ left: area.right - requestedWidth - 4, top: area.bottom - height - 4, right: area.right - 4, bottom: area.bottom - 4 });
 		}
 		if (!this.window.visible) this.window.show(false);
 		this.refreshClient();

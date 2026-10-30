@@ -7,6 +7,8 @@ import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { WorkbenchSplitControl } from '../../ide/workbench/ui/split_control';
 import { WorkbenchFixedEdgeSplitView, WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
+import type { PointerInputSnapshot } from '../../ide/common/models';
 
 function fixture(t: TestContext) {
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
@@ -159,4 +161,28 @@ test('clearing an old sash input cannot withdraw a newer input and keyboard inte
 	f.key('ArrowRight');
 	assert.ok(replacement.ratio > replacement.defaultRatio); assert.equal(f.split.ratio, oldRatio);
 	f.key('Escape'); assert.ok(f.focus.admittedTarget === f.origin);
+});
+
+test('layout cancellation drains a sash hold so its late release cannot restore the old sizing', t => {
+	const f = fixture(t);
+	const down: PointerInputSnapshot = { modifiers: KeyModifier.none, spaceDown: false, valid: true, insideViewport: true,
+		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0,
+		viewportX: f.split.position, viewportY: f.area.top + 20 };
+	f.capture.beginRoute(f.sashSurface.captureScope, down);
+	assert.equal(f.control.handlePointer(down), true); assert.equal(f.capture.active, true);
+	const held = { ...down, viewportX: down.viewportX + 70, justPressedButtons: 0 };
+	f.capture.dispatch(held, false, 1, f.sashSurface.captureScope); assert.notEqual(f.split.ratio, f.split.defaultRatio);
+	f.control.cancelInteraction(); f.split.reset();
+	assert.equal(f.capture.active, false); assert.equal(f.capture.draining, true);
+	f.capture.dispatch({ ...held, viewportX: held.viewportX + 50, pressedButtons: 0, justReleasedButtons: PointerButton.Primary }, false, 2, f.sashSurface.captureScope);
+	assert.equal(f.split.ratio, f.split.defaultRatio); assert.ok(f.focus.admittedTarget === f.origin);
+});
+
+test('layout cancellation returns only its own keyboard resize focus and retains the content attachment', t => {
+	const f = fixture(t), generation = f.origin.scope.contextGeneration;
+	assert.equal(f.control.focusForResize(f.origin), true); f.key('ArrowRight');
+	f.control.cancelInteraction(); f.split.reset();
+	assert.equal(f.control.interactionActive, false); assert.ok(f.focus.admittedTarget === f.origin);
+	assert.equal(f.origin.scope.contextGeneration, generation); assert.equal(f.originSurface.retired, false);
+	f.sibling.focus(); f.control.cancelInteraction(); assert.ok(f.focus.admittedTarget === f.sibling);
 });

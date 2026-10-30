@@ -93,6 +93,50 @@ function titlePoint(model: WorkbenchWindowModel) {
 	return { x: model.header.left + 16, y: (model.header.top + model.header.bottom) / 2 };
 }
 
+test('reset requests owner defaults without retiring body input or a sibling capture', t => {
+	const f = fixture(), a = f.window('RESET'); a.show(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const generation = a.control.clientScope.contextGeneration, retires = a.retires(), restores = a.restores();
+	const down = pointer(400, 300, PointerButton.Primary, PointerButton.Primary);
+	let cancelled = 0;
+	const body = { handleCapturedPointer() {}, releaseCapturedPointer() {}, cancelPointer() { cancelled++; } };
+	f.capture.beginRoute(a.control.clientScope.surfaceScope, down);
+	f.capture.capture(body, PointerButton.Primary, a.control.clientScope.surfaceScope);
+	a.control.resetPlacement();
+	assert.equal(a.model.placementInitialized, false); assert.equal(a.model.open, true);
+	assert.ok(f.focus.target === a.client); assert.equal(a.input(), true);
+	assert.equal(a.retires(), retires); assert.equal(a.restores(), restores);
+	assert.equal(a.control.clientScope.contextGeneration, generation); assert.equal(f.capture.active, true); assert.equal(cancelled, 0);
+});
+
+for (const gesture of ['title', 'button'] as const) test(`reset cancels a held ${gesture} gesture before its later release`, t => {
+	const f = fixture(), a = f.window('RESET'); a.show(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const point = titlePoint(a.model);
+	if (gesture === 'button') {
+		const bounds = a.actions.items.find(item => item.command === 'window.hide')!.bounds;
+		point.x = (bounds.left + bounds.right) / 2; point.y = (bounds.top + bounds.bottom) / 2;
+	}
+	f.dispatch(pointer(point.x, point.y, PointerButton.Primary, PointerButton.Primary), 0);
+	if (gesture === 'title') f.dispatch(pointer(point.x + 20, point.y + 10, PointerButton.Primary), 1);
+	a.control.resetPlacement();
+	assert.equal(a.model.placementInitialized, false); assert.equal(f.capture.active, false); assert.equal(f.capture.draining, true);
+	f.dispatch(pointer(point.x + 20, point.y + 10, 0, 0, PointerButton.Primary), 2);
+	assert.equal(a.model.open, true); assert.equal(a.model.placementInitialized, false); assert.equal(f.capture.draining, false);
+});
+
+test('reset ends prospective keyboard placement without accepting its later Enter', t => {
+	const f = fixture(), a = f.window('RESET'); a.show(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.control.focusTarget.focus(); f.focus.executeCommand('window.move', a.control.focusTarget);
+	f.focus.handleKeyboard(new KeyInputEvent('ArrowRight', KeyModifier.none));
+	assert.equal(a.control.interactionActive, true);
+	a.control.resetPlacement();
+	assert.equal(a.control.interactionActive, false); assert.equal(a.model.placementInitialized, false);
+	f.focus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	assert.equal(a.model.placementInitialized, false); assert.equal(a.model.open, true);
+});
+
 test('window identity follows moved native controls without borrowing their semantic Main ancestry', t => {
 	const f = fixture(), a = f.window('ACTIVITY'); a.show();
 	const semanticScope = new InputFocusScope(Symbol('retained activity'), f.parent.scope);

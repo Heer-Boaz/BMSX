@@ -234,6 +234,27 @@ export class EditorGroupArrangement<T> {
 		this.reindex();
 	}
 
+	/** Reset presentation intent over the same retained topology, not another group arrangement. */
+	public resetLayout(): boolean {
+		const topology = this.topologyRevision;
+		const splitRevisions = this.splitValues.map(branch => branch.split.revision);
+		let changed = this.maximizedValue !== undefined || this.scrollXValue !== 0 || this.scrollYValue !== 0
+			|| this.normalScrollXValue !== 0 || this.normalScrollYValue !== 0;
+		this.maximizedValue = undefined; this.scrollXValue = this.scrollYValue = 0;
+		this.normalScrollXValue = this.normalScrollYValue = 0;
+		if (changed) { this.dirty = true; this.revision++; }
+		for (let index = 0; index < this.splitValues.length; index++) {
+			const branch = this.splitValues[index], revision = splitRevisions[index];
+			if (branch.split.revision !== revision) return changed;
+			if (branch.split.ratio === branch.split.defaultRatio) continue;
+			if (!changed) { changed = true; this.dirty = true; this.revision++; }
+			branch.split.ratio = branch.split.defaultRatio;
+			if (this.topologyRevision !== topology || branch.split.revision !== revision + 1) return true;
+			branch.arrangedRevision = revision + 1;
+		}
+		return changed;
+	}
+
 	public toggleMaximize(group: T): void {
 		if (this.maximizedValue === group) {
 			this.maximizedValue = undefined;

@@ -490,6 +490,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'workspace.details.dock' },
 		{ type: 'command', command: 'window.showAll' },
 		{ type: 'command', command: 'window.restoreMinimized' },
+		{ type: 'command', command: 'workspace.resetLayout' },
 		{ type: 'separator' },
 		{ type: 'command', command: 'window.newEditor' },
 		{ type: 'command', command: 'window.copyEditor' },

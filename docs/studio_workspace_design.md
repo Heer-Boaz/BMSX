@@ -246,7 +246,7 @@ not an editable asset schema or an isolated preview contract.
 | Source control and comparison | Working-copy dirty state, Undo/Redo, Save conflicts, recovery and proposed-edit review with before/after hunks have existing owners. | Repository status/history, staging/commit and general file/revision comparison and merge are separate Studio/host workflows. Proposal review is not version control, and rejecting a stale Save is not a conflict-resolution editor. VS Code's [SCM contribution](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/scm/browser/scm.contribution.ts) separates that workspace activity from document editing; adopting it would not require a cartlib feature. |
 | Contextual UI commands | Shared context menus, command registration and captured invocation contexts serve window chrome, exact editor tabs, group backgrounds, Files rows and contribution subjects. Scene outlines and Actor outlines/live graphs expose their existing subject actions through both pointer and keyboard context menus. The tab list has individual keyboard focus, independently of its group-action toolbar. | Coverage of other tool surfaces remains a separate UX task. Right-click and keyboard Context Menu expose owner-admitted actions without duplicating command state or borrowing the later active editor. |
 | Editor/project settings | Theme/font commands, session placement and source-backed cart configuration exist at separate owners. | A searchable settings model and UI with explicit defaults, scopes and persistence are missing. Editor preferences are not gameplay configuration. Go to File needs a configurable project-only versus BIOS/shared-library inclusion policy based on admitted provenance; folder-name guesses and isolated tool toggles are not a settings system. |
-| Region placement and layout recovery | Main Hierarchy and Details retain their own controls and move independently between their named allocation and a shared floating window. Main owns region membership and recovery; the window container owns physical placement and chrome. Documents support group transfer; the activity area can move its retained subtree between Main and a floating shell. | A whole-workspace Reset Layout command still needs an explicit baseline and retention contract. It must preserve source, subjects and working-copy history, independently of workspace/source replacement and the existing per-view width/height reset. |
+| Region placement and layout recovery | Main Hierarchy and Details retain their own controls and move independently between their named allocation and a shared floating window. Main owns region membership and recovery; the window container owns physical placement and chrome. Reset Layout restores allocation and window defaults over the retained working set. | Joining document groups or gathering document windows into Main is a separate membership operation, not an implicit side effect of resetting geometry. Saved user layout presets remain a separate product choice. |
 
 This mapping records prerequisites and product choices, not approval to build
 every missing Unreal subsystem. Complete the main/document workspace using
@@ -430,6 +430,48 @@ independently of dock width and visibility. Recovery restores this intent
 separately from the primary subject and never replaces newer user placement
 or focus. Binding a different primary client retires old shell invocations;
 it does not create another semantic selection or another window registry.
+
+### Reset Layout
+
+**Workspace: Reset Layout** restores the workbench's requested presentation over
+the current working set. It leaves document parts, group topology, tab order,
+active inputs, preview/pin state, canonical models, primary/activity subjects and
+working-copy history intact. Separate views of the same source remain separate
+views. This is neither workspace replacement nor a join-all-editors operation.
+
+The baseline is explicit:
+
+- Hierarchy and Details return to Main and are shown when a primary subject is
+  bound. Their width requests and Main's allocation scroll return to defaults.
+- The selected activity returns to its bottom allocation with default height.
+  Its selected client and open/closed intent survive; no other activity is opened.
+- Files returns to its default width without changing visibility, filter,
+  directory expansion, selection or reading position. The Game companion's split
+  returns to its default without changing whether the companion is requested.
+- Each existing editor part retains its group tree. Split preferences return to
+  their defaults and group maximization/arrangement overflow scroll are cleared.
+  Existing document windows become normal and non-minimized in the same default
+  cascade used for new document windows. Their memberships and MRU are unchanged.
+- Retained utility windows request a fresh owner-produced default placement.
+  Closed utilities stay closed. Inactive tabs retain this request until their
+  real content owner is attached; reset does not instantiate hidden panes.
+
+The window model distinguishes a pending default request from produced requested
+bounds. Each contribution computes its actual default from current font, work
+area and content measurements, using the same producer as first presentation.
+The shared window container ends its own chrome gesture; the contribution still
+owns its subject, lock, observed data and client controls. Constructor zero bounds
+are not a placement policy, and font-cache validity does not imply that pending
+placement has been produced.
+
+A retained body keeps its concrete focus and unpublished draft during a pure
+layout operation. If a floating titlebar disappears, focus returns to that
+region's retained control. Ordinary Palette/menu focus departure follows the
+control's existing edit admission; reset does not add an implicit Save or commit.
+Only native geometry interactions are cancelled. Newer focus and placement
+intent supersede older recovery work, without discarding its recovered subject.
+Tool zoom, timeline/frame selection and document content scroll are not workbench
+allocation and remain unchanged.
 
 ### First authored consumer
 

@@ -75,6 +75,10 @@ It does not resize the physical viewport or encode allocation as a chrome inset.
 `main_region.ts` owns each named region's retained native placement and floating
 shell, independently of the primary subject. Header allocation belongs to the
 container; moving its subtree preserves the contribution's content attachment.
+Layout reset is coordinated by the workbench composition root and applied by
+the existing placement owners, independently of document membership or source
+recovery. Retained inputs enumerate their auxiliary window placement models;
+their content owners materialize pending defaults on actual presentation.
 Each `EditorGroupView` owns its tabs, panes, content/timeline geometry and input
 scope. Pane contributions measure retained inputs with the supplied font without
 constructing or attaching controls. Groups add their actual attached chrome;

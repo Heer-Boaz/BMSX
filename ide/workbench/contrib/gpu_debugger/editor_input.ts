@@ -32,9 +32,9 @@ export class GpuDebuggerInput extends ReadonlyEditorInput<GpuDebuggerTabId, 'gpu
 	public readonly inspectorBounds = create_rect_bounds();
 	public readonly inspectorActions = createWorkbenchActionBar('gpu.inspector.content', true);
 	public inspectorPage: GpuInspectorPage = 'properties';
-	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
+	public readonly detailsWindow = new WorkbenchWindowModel(undefined, 0, 0);
+	public override readonly windowPlacements: readonly WorkbenchWindowModel[] = [this.detailsWindow];
 	public readonly detailsActions = createWorkbenchActionBar('window.title');
-	public detailsPlacementInitialized = false;
 	public readonly detailsView: PropertyInspectorViewState = { selectionIndex: 0, selectionVisible: false, anchorIndex: 0, anchorOffset: 0 };
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public following = true;

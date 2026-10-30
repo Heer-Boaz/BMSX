@@ -81,13 +81,12 @@ export class RomMapKeyWindow {
 			}
 			const minimumWidth = WORKBENCH_ICON_SIZE + labelWidth + sizeWidth + 30;
 			model.setMinimumSize(minimumWidth, font.lineHeight + 8 + this.rowHeight * 3 + 9);
-			if (!input.keyPlacementInitialized) {
-				const width = Math.max(minimumWidth, editorViewState.charAdvance * 30 + 16);
-				const height = font.lineHeight + 8 + this.rowHeight * (Math.min(input.model.keyEntries.length, 10) + 1) + 9;
-				model.setRequestedBounds({ left: input.layout.right - width - 4, top: input.layout.bottom - height - 4,
-					right: input.layout.right - 4, bottom: input.layout.bottom - 4 });
-				input.keyPlacementInitialized = true;
-			}
+		}
+		if (!model.placementInitialized) {
+			const width = Math.max(model.minimumWidth, editorViewState.charAdvance * 30 + 16);
+			const height = font.lineHeight + 8 + this.rowHeight * (Math.min(input.model.keyEntries.length, 10) + 1) + 9;
+			model.setRequestedBounds({ left: input.layout.right - width - 4, top: input.layout.bottom - height - 4,
+				right: input.layout.right - 4, bottom: input.layout.bottom - 4 });
 		}
 		if (!this.window.visible) this.window.show(false);
 		this.window.layout(font.renderFont(), measureTextRange, measureText);

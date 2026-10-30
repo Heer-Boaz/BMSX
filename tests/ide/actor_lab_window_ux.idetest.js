@@ -136,7 +136,7 @@ for (let fontIndex = 0; fontIndex < 2; fontIndex++) {
 // Details belongs to the same selected subject independently of client arrangement.
 // Its actions are exercised through their real hit bounds.
 await press('ControlLeft', 'KeyB');
-t.assert(!input.detailsPlacementInitialized, 'Details placement was initialized before the first inspection');
+t.assert(!input.detailsWindow.placementInitialized, 'Details placement was initialized before the first inspection');
 const firstDetailsTree = input.outline.layout;
 await click(firstDetailsTree.contentRight - 4, firstDetailsTree.contentTop + firstDetailsTree.rowHeight / 2);
 await press('Enter');

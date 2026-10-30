@@ -249,13 +249,12 @@ export class ActorLabEditorPane extends WorkbenchViewEditorPane<ActorLabInput> {
 		const input = this.input, model = input.detailsWindow, font = editorViewState.font.renderFont();
 		const minimumWidth = editorViewState.charAdvance * 32 + 12, minimumHeight = font.lineHeight * 7 + 16;
 		model.setMinimumSize(minimumWidth, minimumHeight);
-		if (input.detailsPlacementInitialized) return;
+		if (model.placementInitialized) return;
 		const area = this.workArea;
 		const width = Math.max(minimumWidth, (area.right - area.left) / 2);
 		const height = Math.max(minimumHeight, (area.bottom - area.top) / 2);
 		model.setRequestedBounds({ left: area.right - 4 - width, top: area.bottom - 4 - height,
 			right: area.right - 4, bottom: area.bottom - 4 });
-		input.detailsPlacementInitialized = true;
 	}
 	private updateDetailsWindow(): void {
 		const input = this.input, model = input.detailsWindow, details = input.details!;

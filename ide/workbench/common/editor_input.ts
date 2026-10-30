@@ -2,6 +2,9 @@ import type { EditorTextModel } from '../../editor/model/text_model';
 import { DisposableStore, type IDisposable } from '../../common/lifecycle';
 import type { ResourceIdentity } from '../../common/resource';
 import type { TextFileSaveService } from '../services/working_copy/text_file_save';
+import type { WorkbenchWindowModel } from '../ui/window/model';
+
+const EMPTY_WINDOW_PLACEMENTS: readonly WorkbenchWindowModel[] = [];
 
 export type ResourceEditorIdentity = {
 	readonly resource: ResourceIdentity;
@@ -25,6 +28,8 @@ export abstract class AbstractEditorInput<
 	public toResourceEditor?(): ResourceEditorIdentity;
 	/** A live physical session or host diagnostic cannot be reconstructed from editor-session storage. */
 	public readonly serializable: boolean = true;
+	/** Retained utility placement belongs to this input even while its native pane is detached. */
+	public readonly windowPlacements: readonly WorkbenchWindowModel[] = EMPTY_WINDOW_PLACEMENTS;
 	public onDidChangeDirty?(listener: () => void): () => void;
 
 	public get title(): string { return this.inputTitle; }

@@ -9,6 +9,7 @@ import type { WorkbenchSurfaceService } from '../windows/service';
 import type { EditorTabStripRenderContext } from '../../render/tab_bar';
 import type { EditorPaneContributions } from './editor_panes';
 import { WorkbenchWindowModel, WINDOW_HEADER_VERTICAL_PADDING, WINDOW_RESIZE_MARGIN, type WindowPlacement } from '../../ui/window/model';
+import { workbenchWindowForSurface, type WorkbenchFloatingWindow } from '../../ui/window/control';
 import { EditorCloseController, type EditorCloseTarget, type WorkingCopyConsumer } from './editor_close';
 import type { TextFileSaveService } from '../working_copy/text_file_save';
 import type { EditorTextModelService } from '../../../editor/model/model_service';
@@ -74,6 +75,11 @@ export type EditorPartsRestoreRequest = {
 	dispose(): void;
 };
 
+export type EditorPartsLayoutResetRequest = {
+	isCurrent(): boolean;
+	reset(): boolean;
+};
+
 /** Frontend membership and opening destinations over one shared workspace. */
 export class EditorParts {
 	public readonly mainArea = new WorkbenchMainAreaLayout();
@@ -91,6 +97,7 @@ export class EditorParts {
 	private readonly closing = new Map<EditorPart, Promise<boolean>>();
 	private readonly closingGroups = new Map<EditorGroupView, Promise<boolean>>();
 	private restoreGeneration = 0;
+	private layoutResetRevision = 0;
 	private readonly newDocumentRequest = create_rect_bounds();
 	private readonly newDocumentPlacement = new WorkbenchWindowModel(this.newDocumentRequest, 0, 0);
 	public activePart: EditorPart;
@@ -101,6 +108,11 @@ export class EditorParts {
 	public get mostRecentlyActive(): readonly EditorPart[] { return this.mru; }
 	private get defaultDocumentWidth(): number { return Math.round((this.options.workArea.right - this.options.workArea.left) * 0.86); }
 	private get defaultDocumentHeight(): number { return Math.round((this.options.workArea.bottom - this.options.workArea.top) * 0.86); }
+	private writeDefaultDocumentBounds(index: number, target: RectBounds): void {
+		const area = this.options.workArea, width = this.defaultDocumentWidth, height = this.defaultDocumentHeight;
+		const offset = 8 * (index % 4 + 1);
+		write_rect_bounds(target, area.right - width - offset, area.top + offset, area.right - offset, area.top + offset + height);
+	}
 
 	public constructor(private readonly options: EditorPartsOptions) {
 		this.closeController = new EditorCloseController(() => this.workingCopyConsumers(), options.saves, options.prompt, options.models);
@@ -184,15 +196,10 @@ export class EditorParts {
 	/** A drop owns construction until paired membership is ready for workspace publication. */
 	private constructDocument({ requestedBounds, placement = 'normal', minimized = false }: EditorDocumentOptions,
 		initialOperation: 'none' | 'move'): EditorPart {
-		const area = this.options.workArea;
-		const width = this.defaultDocumentWidth, height = this.defaultDocumentHeight;
-		const offset = 8 * (this.documentParts.length % 4 + 1);
+		if (requestedBounds === undefined) this.writeDefaultDocumentBounds(this.documentParts.length, this.newDocumentRequest);
 		return new EditorPart({ ...this.options, closeEditors: this.closeController.close, dropTarget: this.dropTarget, kind: 'document', placement, minimized, initialOperation, presented: false,
 			focusReturn: this.options.mainPresentation.focusTarget,
-			requestedBounds: requestedBounds === undefined ? {
-				left: area.right - width - offset, top: area.top + offset,
-				right: area.right - offset, bottom: area.top + offset + height,
-			} : requestedBounds,
+			requestedBounds: requestedBounds === undefined ? this.newDocumentRequest : requestedBounds,
 			onDidActivate: next => this.activate(next), onDidChange: () => this.changed(),
 			onDidChangeGroupMembership: next => this.syncGroupMembership(next),
 			requestClose: next => { void this.close(next); },
@@ -201,6 +208,61 @@ export class EditorParts {
 	}
 	private publishDocument(part: EditorPart): void {
 		this.documentParts.push(part); this.register(part); part.present(); this.changed();
+	}
+
+	/** Capture presentation owners before another workspace client can publish newer editor membership. */
+	public captureLayoutReset(): EditorPartsLayoutResetRequest {
+		const generation = this.restoreGeneration;
+		const windows = new Map<WorkbenchWindowModel, WorkbenchFloatingWindow>();
+		for (const surface of this.options.surfaces.windowSurfaces) {
+			const window = workbenchWindowForSurface(surface);
+			if (window !== undefined) windows.set(window.model, window);
+		}
+		const targets = [this.main, ...this.documentParts].map(part => ({ part, topology: part.arrangement.topologyRevision,
+			splits: part.arrangement.splits.map(branch => ({ split: branch.split, revision: branch.split.revision })),
+			placement: part.window?.model.placementGeneration, bounds: part.window === undefined ? undefined : create_rect_bounds(),
+			groups: part.groups.map(group => ({ group, inputs: [...group.model.tabs] })),
+			windows: [] as { model: WorkbenchWindowModel; window: WorkbenchFloatingWindow | undefined; generation: number }[] }));
+		for (const target of targets) for (const { inputs } of target.groups) for (const input of inputs) for (const model of input.windowPlacements) {
+			target.windows.push({ model, window: windows.get(model), generation: model.placementGeneration });
+		}
+		const current = (): boolean => {
+			if (this.main.retired || generation !== this.restoreGeneration || this.documentParts.length !== targets.length - 1) return false;
+			for (let index = 0; index < targets.length; index++) {
+				const target = targets[index], part = target.part;
+				if (part.retired || part.surface.retired || index > 0 && this.documentParts[index - 1] !== part
+					|| part.arrangement.topologyRevision !== target.topology || part.groups.length !== target.groups.length) return false;
+				for (let groupIndex = 0; groupIndex < target.groups.length; groupIndex++) {
+					const { group, inputs } = target.groups[groupIndex];
+					if (part.groups[groupIndex] !== group || this.owners.get(group) !== part || group.model.tabs.length !== inputs.length) return false;
+					for (let inputIndex = 0; inputIndex < inputs.length; inputIndex++) if (group.model.tabs[inputIndex] !== inputs[inputIndex]) return false;
+				}
+			}
+			return true;
+		};
+		return { isCurrent: current, reset: () => {
+			if (!current()) return false;
+			this.layoutResetRevision++;
+			for (let index = 0; index < targets.length; index++) {
+				if (!current()) return false;
+				const target = targets[index], { part } = target;
+				if (target.splits.some(({ split, revision }) => split.revision !== revision)) return false;
+				for (const { model, window, generation } of target.windows) {
+					if (model.placementGeneration !== generation) return false;
+					const receipt = window === undefined ? model.requestDefaultPlacement() : window.resetPlacement();
+					if (model.placementGeneration !== receipt || !current()) return false;
+				}
+				if (part.window !== undefined) {
+					if (part.window.model.placementGeneration !== target.placement) return false;
+					this.writeDefaultDocumentBounds(index - 1, target.bounds!);
+					const receipt = part.window.resetPlacement(target.bounds!);
+					if (part.window.model.placementGeneration !== receipt || !current()) return false;
+				}
+				if (target.splits.some(({ split, revision }) => split.revision !== revision) || !part.resetLayout() || !current()) return false;
+			}
+			this.changed();
+			return current();
+		} };
 	}
 
 	public minimize(part: EditorPart): void {
@@ -794,6 +856,7 @@ export class EditorParts {
 	/** Reserve recovery without retiring the current document membership or its controls. */
 	public beginRestore(): EditorPartsRestoreRequest {
 		const generation = ++this.restoreGeneration;
+		const layoutRevision = this.layoutResetRevision;
 		const interaction = inputFocus.interactionRevision;
 		const departingParts = this.documentParts.map(part => ({ part, groups: [...part.groups] }));
 		let disposed = false, prepared = false;
@@ -825,7 +888,7 @@ export class EditorParts {
 			// The part's own restore lifetime now owns topology/model invalidation;
 			// unresolved openings on its departing groups still supersede publication.
 			for (const unsubscribe of subscriptions.pending) unsubscribe();
-			if (!await part.restore(state, serializers, isCurrent) || !isCurrent()) return false;
+			if (!await part.restore(state, serializers, isCurrent, layoutRevision === this.layoutResetRevision) || !isCurrent()) return false;
 			untrack(part); track(part);
 			return true;
 		};
@@ -877,7 +940,7 @@ export class EditorParts {
 				prepared = true;
 				if (!await restorePart(this.main, state.main, serializers)) return false;
 				for (const document of state.documents) {
-					const part = this.constructDocument(document, 'none'); this.publishDocument(part); track(part);
+					const part = this.constructDocument(layoutRevision === this.layoutResetRevision ? document : {}, 'none'); this.publishDocument(part); track(part);
 					if (!isCurrent() || !await restorePart(part, document, serializers)) return false;
 				}
 				disposeSubscriptions();

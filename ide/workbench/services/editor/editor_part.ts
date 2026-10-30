@@ -91,6 +91,7 @@ export class EditorPart {
 	public get mostRecentlyActiveGroups(): readonly EditorGroupView[] { return this.groupMru; }
 	private readonly groupListeners = new Set<() => void>();
 	private restoreLifetime: AbortController | undefined;
+	private layoutResetRevision = 0;
 	private presented: boolean;
 	private operationValue: 'none' | 'close' | 'move';
 	public get operation(): 'none' | 'close' | 'move' { return this.operationValue; }
@@ -377,6 +378,27 @@ export class EditorPart {
 	}
 
 	public raise(): void { this.options.surfaces.raise(this.options.kind === 'main' ? this.options.mainPresentation.surface : this.surface); }
+	/** Normalize the retained group's geometry without retiring any editor attachment. */
+	public resetLayout(): boolean {
+		if (this.retired || this.surface.retired) return false;
+		this.layoutResetRevision++;
+		const topology = this.arrangement.topologyRevision;
+		const splits = this.arrangement.splits.map(branch => ({ split: branch.split, revision: branch.split.revision }));
+		for (const sash of this.sashes.values()) {
+			sash.control.cancelInteraction();
+			if (this.retired || this.surface.retired || this.arrangement.topologyRevision !== topology
+				|| splits.some(({ split, revision }) => split.revision !== revision)) return false;
+		}
+		this.scrollbarControl.cancel();
+		if (this.retired || this.surface.retired || this.arrangement.topologyRevision !== topology
+			|| splits.some(({ split, revision }) => split.revision !== revision)) return false;
+		const changed = this.arrangement.resetLayout();
+		if (this.retired || this.surface.retired || this.arrangement.topologyRevision !== topology) return false;
+		if (this.window === undefined || !this.window.layout(editorViewState.font.renderFont(), measureTextRange, measureText)) this.relayout();
+		if (this.retired || this.surface.retired || this.arrangement.topologyRevision !== topology) return false;
+		if (changed) this.options.onDidChange();
+		return !this.retired && !this.surface.retired && this.arrangement.topologyRevision === topology;
+	}
 	public setOperation(operation: 'none' | 'close' | 'move'): void {
 		if (operation !== 'none') this.restoreLifetime?.abort();
 		const previous = this.operationValue;
@@ -564,8 +586,10 @@ export class EditorPart {
 		this.options.onDidChangeGroupMembership(this);
 		return departing;
 	}
-	public async restore(state: SerializedEditorPart, serializers: EditorInputSerializers, isCurrent?: () => boolean): Promise<boolean> {
+	public async restore(state: SerializedEditorPart, serializers: EditorInputSerializers, isCurrent?: () => boolean, restoreLayout = true): Promise<boolean> {
 		if (this.retired || this.surface.retired || this.operationValue !== 'none') return false;
+		const layoutRevision = this.layoutResetRevision;
+		const layoutCurrent = () => restoreLayout && this.layoutResetRevision === layoutRevision;
 		this.restoreLifetime?.abort();
 		const lifetime = new AbortController(); this.restoreLifetime = lifetime;
 		const candidates: EditorGroupView[] = [], retired: EditorGroupView[] = [];
@@ -586,12 +610,23 @@ export class EditorPart {
 		try {
 			const layout = await restore(state.layout);
 			if (layout === undefined || lifetime.signal.aborted || isCurrent?.() === false) return false;
+			if (!layoutCurrent()) {
+				const placements: { model: WorkbenchWindowModel; generation: number }[] = [];
+				for (const group of candidates) for (const input of group.model.tabs) for (const model of input.windowPlacements)
+					placements.push({ model, generation: model.placementGeneration });
+				for (const { model, generation } of placements) {
+					if (model.placementGeneration === generation) model.requestDefaultPlacement();
+					if (lifetime.signal.aborted || isCurrent?.() === false) return false;
+				}
+			}
 			for (const group of this.groups) {
 				retired.push(group); group.setOpenAdmission(false);
 				for (const unbind of this.groupSubscriptions.get(group)!) unbind();
 				this.groupSubscriptions.delete(group);
 			}
-			this.arrangement.setRoot(layout); published = true; this.groupMru.length = 0;
+			this.arrangement.setRoot(layout);
+			if (!layoutCurrent()) this.arrangement.resetLayout();
+			published = true; this.groupMru.length = 0;
 			for (const index of state.mru) this.groupMru.push(this.groups[index]);
 			this.activeGroup = this.groups[state.active];
 			this.options.onDidChangeGroupMembership(this);
@@ -601,12 +636,12 @@ export class EditorPart {
 			if (lifetime.signal.aborted) return false;
 			this.relayout();
 			if (lifetime.signal.aborted) return false;
-			this.arrangement.setScroll(state.scrollX, state.scrollY); this.arrange(this.clientBounds);
+			if (layoutCurrent()) { this.arrangement.setScroll(state.scrollX, state.scrollY); this.arrange(this.clientBounds); }
 			if (lifetime.signal.aborted) return false;
-			if (state.maximized !== undefined) {
+			if (layoutCurrent() && state.maximized !== undefined) {
 				this.arrangement.toggleMaximize(this.groups[state.maximized.group]); this.relayout();
 				if (lifetime.signal.aborted) return false;
-				this.arrangement.setScroll(state.maximized.scrollX, state.maximized.scrollY); this.arrange(this.clientBounds);
+				if (layoutCurrent()) { this.arrangement.setScroll(state.maximized.scrollX, state.maximized.scrollY); this.arrange(this.clientBounds); }
 			}
 		} finally {
 			for (const group of retired) group.dispose();

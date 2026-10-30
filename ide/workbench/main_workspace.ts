@@ -1,4 +1,4 @@
-import { copy_rect_bounds, create_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
+import { copy_rect_bounds, create_rect_bounds, write_rect_bounds, type RectBounds } from '../../machine/ts/common/rect';
 import { COLOR_FRAME, SCROLLBAR_WIDTH, SCROLLBAR_THUMB_COLOR } from '../common/constants';
 import type { EditorCommandRunner } from '../common/commands';
 import { InputFocusScope, inputFocus, type InputFocusTarget } from '../input/focus';
@@ -112,6 +112,8 @@ export class MainWorkspace {
 	private sourceOpeningRevision = 0;
 	private activityPlacementValue: MainWorkspaceActivityPlacement = 'dockedMain';
 	private activityPlacementRevision = 0;
+	private layoutResetRevision = 0;
+	private readonly defaultActivityBounds = create_rect_bounds();
 	public get primary(): MainWorkspaceClient | undefined { return this.primaryValue; }
 	public get activity(): MainWorkspaceActivityClient | undefined { return this.activities.client; }
 	public get activityPlacement(): MainWorkspaceActivityPlacement { return this.activityPlacementValue; }
@@ -192,9 +194,8 @@ export class MainWorkspace {
 		this.activities = new MainWorkspaceActivityPart(surfaces, this.surface, this.scope, this.focusTarget,
 			contextMenu, commands, id => this.openActivity(id), () => this.setActivityVisible(false),
 			() => this.presented && !this.surface.retired && !this.resetting, () => this.changed());
-		const windowBounds = { left: workArea.left + 8, top: workArea.top + 8,
-			right: workArea.right - 8, bottom: workArea.top + Math.round((workArea.bottom - workArea.top) / 2) };
-		const activityWindow = new WorkbenchWindowModel(windowBounds, 0, 0);
+		this.writeDefaultActivityBounds(workArea);
+		const activityWindow = new WorkbenchWindowModel(this.defaultActivityBounds, 0, 0);
 		activityWindow.title = 'Main Activity';
 		this.activityWindow = new WorkbenchFloatingWindow(inputFocus, pointerCapture, pointerHover, surfaces, commands, contextMenu, {
 			model: activityWindow, actionBar: createWorkbenchActionBar('window.minimizable.title'), lifetimeOwner: this.surface,
@@ -347,6 +348,7 @@ export class MainWorkspace {
 	/** Reserve primary recovery before departing controls can publish callbacks. */
 	public beginRestore(): MainWorkspaceRestoreRequest {
 		const interaction = inputFocus.interactionRevision;
+		const layoutReset = this.layoutResetRevision;
 		const visibility = this.visibilityRevision, placement = this.activityPlacementRevision;
 		const regionRevisions = { hierarchy: this.regions.hierarchy.revision, details: this.regions.details.revision };
 		let pending = this.request;
@@ -390,19 +392,21 @@ export class MainWorkspace {
 				if (!current()) return false;
 				state = snapshot;
 				for (const region of REGIONS) if (this.regions[region].revision === regionRevisions[region]) this.regions[region].restore(snapshot.regions[region]);
-				this.restoredScroll = snapshot.scrollX; this.restoredScrollY = snapshot.scrollY;
+				if (layoutReset === this.layoutResetRevision) {
+					this.restoredScroll = snapshot.scrollX; this.restoredScrollY = snapshot.scrollY;
+				}
 				const restoreActivity = visibility === this.visibilityRevision && placement === this.activityPlacementRevision;
 				if (inputFocus.interactionRevision === interaction && restoreActivity) {
 					this.activeClient = snapshot.activeClient; this.activeRegion = snapshot.activeRegion;
 					if (snapshot.activityId !== undefined) this.activities.select(snapshot.activityId);
 				}
 				activityRevision = this.activities.revision;
-				if (restoreActivity && visibility === this.visibilityRevision && placement === this.activityPlacementRevision) {
+				if (layoutReset === this.layoutResetRevision && restoreActivity && visibility === this.visibilityRevision && placement === this.activityPlacementRevision) {
 					this.activityPlacementValue = snapshot.activityPlacement;
 					this.activities.contextMenu = WORKBENCH_MENUS[snapshot.activityPlacement === 'dockedMain' ? 'activity.context' : 'activity.window.context'];
 					this.activityWindow.model.setState(snapshot.activityWindow);
 					if (visibility === this.visibilityRevision) this.regionLayout.setState(snapshot);
-				} else {
+				} else if (layoutReset === this.layoutResetRevision) {
 					this.regionLayout.setState({ ...snapshot, activityVisible: this.regionLayout.activityVisible, activityHeight: this.regionLayout.activityHeight });
 				}
 				if (!current()) return false;
@@ -814,6 +818,52 @@ export class MainWorkspace {
 		return true;
 	}
 	public toggleRegion(region: MainWorkspaceRegionId): boolean { return this.setRegionVisible(region, !this.regions[region].displayed); }
+	private writeDefaultActivityBounds(area: Readonly<RectBounds>): void {
+		write_rect_bounds(this.defaultActivityBounds, area.left + 8, area.top + 8,
+			area.right - 8, area.top + Math.round((area.bottom - area.top) / 2));
+	}
+
+	/** Reset native allocation, not the retained subject, its controls or their unpublished edits. */
+	public resetLayout(): boolean {
+		if (!this.presented || this.surface.retired || this.resetting) return false;
+		const client = this.primaryValue, activity = this.activity, revision = ++this.visibilityRevision;
+		const allocation = this.regionLayout.revision;
+		const placements = { hierarchy: this.regions.hierarchy.window.model.placementGeneration,
+			details: this.regions.details.window.model.placementGeneration, activity: this.activityWindow.model.placementGeneration };
+		for (const region of REGIONS) this.sashes[region].cancelInteraction();
+		this.activitySash.cancelInteraction(); this.scrollControl.cancel();
+		if (allocation !== this.regionLayout.revision || this.visibilityRevision !== revision || this.primaryValue !== client || this.activity !== activity) return false;
+		const focused = inputFocus.target;
+		let destination = focused;
+		if (focused !== null) {
+			if (client !== undefined) for (const region of REGIONS) if (this.regions[region].isTarget(focused)
+				&& !client[region].scope.contains(focused.scope)) destination = client[region].commandTarget;
+			if (this.activityWindow.scope.contains(focused.scope)) destination = activity?.commandTarget ?? this.focusTarget;
+		}
+		const current = () => this.visibilityRevision === revision && this.primaryValue === client && this.activity === activity
+			&& this.presented && !this.surface.retired && !this.resetting;
+		let completed = false;
+		const reset = () => {
+			if (!current()) return;
+			this.layoutResetRevision++; this.activityPlacementRevision++;
+			this.restoredScroll = 0; this.restoredScrollY = 0;
+			this.scrollbar.setScroll(0); this.verticalScrollbar.setScroll(0);
+			this.regionLayout.setState({ hierarchyVisible: true, detailsVisible: true, activityVisible: this.regionLayout.activityVisible });
+			if (!current()) return;
+			for (const region of REGIONS) if (this.regions[region].window.model.placementGeneration !== placements[region]
+				|| !this.regions[region].resetLayout() || !current()) return;
+			if (this.activityWindow.model.placementGeneration !== placements.activity) return;
+			this.activityPlacementValue = 'dockedMain'; this.activities.contextMenu = WORKBENCH_MENUS['activity.context'];
+			this.writeDefaultActivityBounds(this.bounds);
+			const generation = this.activityWindow.resetPlacement(this.defaultActivityBounds);
+			if (!current() || this.activityWindow.model.placementGeneration !== generation) return;
+			this.requestLayout();
+			if (current()) { this.surfaces.changed(); this.changed(); completed = current(); }
+		};
+		if (destination === focused) reset();
+		else if (!inputFocus.setTarget(destination, reset)) return false;
+		return completed && current();
+	}
 
 	/** Relocate the existing control; only a real focus departure may submit its draft. */
 	public setRegionPlacement(region: MainWorkspaceRegionId, placement: MainWorkspaceRegionPlacement): boolean {

@@ -45,8 +45,8 @@ export class ActorLabInput extends ReadonlyEditorInput<ActorLabTabId, 'actor_lab
 	public readonly timelineLayout = new ActorTimelineLayout();
 	public readonly split = new WorkbenchSplitView(0.4);
 	public readonly rowSplit = new WorkbenchSplitView(0.4, 'vertical');
-	public readonly detailsWindow = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
-	public detailsPlacementInitialized = false;
+	public readonly detailsWindow = new WorkbenchWindowModel(undefined, 0, 0);
+	public override readonly windowPlacements: readonly WorkbenchWindowModel[] = [this.detailsWindow];
 	public readonly detailsActions = createWorkbenchActionBar('actorLab.details.title');
 	public readonly previewBounds = create_rect_bounds();
 	public readonly actionBar = createWorkbenchActionBar('actorLab.title');

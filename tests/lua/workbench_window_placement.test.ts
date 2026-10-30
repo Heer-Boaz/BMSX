@@ -3,6 +3,56 @@ import test from 'node:test';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import { WorkbenchWindowModel, WindowResizeEdge, type WindowPlacement } from '../../ide/workbench/ui/window/model';
 
+for (const publication of ['default', 'bounds', 'state'] as const) test(`${publication} placement publication returns its own generation rather than a newer callback request`, () => {
+	const model = new WorkbenchWindowModel({ left: 10, top: 20, right: 200, bottom: 180 }, 0, 0);
+	const chosen = { left: 30, top: 40, right: 240, bottom: 210 };
+	const release = model.onDidChangePlacement(() => { release(); model.setRequestedBounds(chosen, 'maximized'); });
+	const generation = publication === 'default' ? model.requestDefaultPlacement()
+		: publication === 'bounds' ? model.setRequestedBounds(create_rect_bounds())
+			: model.setState({ requestedBounds: create_rect_bounds(), placement: 'normal', minimized: false });
+	assert.notEqual(model.placementGeneration, generation);
+	assert.equal(model.placement, 'maximized'); assert.deepEqual(model.requestedBounds, chosen);
+});
+
+test('derived minimum changes invalidate arranged geometry without replacing placement authority', () => {
+	const model = new WorkbenchWindowModel({ left: 10, top: 20, right: 100, bottom: 80 }, 0, 0);
+	const area = { left: 0, top: 0, right: 800, bottom: 600 };
+	model.arrange(area, 16); const generation = model.placementGeneration;
+	model.setMinimumSize(200, 100);
+	assert.equal(model.placementGeneration, generation); assert.equal(model.arrange(area, 16), true);
+	assert.equal(model.bounds.right - model.bounds.left, 200); assert.equal(model.bounds.bottom - model.bounds.top, 100);
+	assert.equal(model.arrange(area, 16), false);
+});
+
+test('default placement is explicit unresolved intent, distinct from genuine zero bounds', () => {
+	const pending = new WorkbenchWindowModel(undefined, 0, 0);
+	const zero = new WorkbenchWindowModel(create_rect_bounds(), 0, 0);
+	assert.equal(pending.placementInitialized, false); assert.equal(zero.placementInitialized, true);
+	let publications = 0;
+	pending.onDidChangePlacement(() => publications++);
+	pending.setRequestedBounds(create_rect_bounds());
+	assert.equal(pending.placementInitialized, true); assert.equal(publications, 1);
+	const revision = pending.revision;
+	pending.setRequestedBounds(create_rect_bounds()); assert.equal(pending.revision, revision);
+	pending.requestDefaultPlacement(); assert.equal(pending.placementInitialized, false);
+	pending.setState({ requestedBounds: create_rect_bounds(), placement: 'normal', minimized: false });
+	assert.equal(pending.placementInitialized, true); assert.equal(publications, 3);
+});
+
+test('requesting defaults preserves retained geometry and visibility while resetting placement intent once', () => {
+	const bounds = { left: 50, top: 60, right: 330, bottom: 240 };
+	const model = new WorkbenchWindowModel(bounds, 80, 60), retained = model.requestedBounds;
+	model.open = true; model.setPlacement('right'); model.setMinimized(true);
+	let publications = 0;
+	model.onDidChangePlacement(() => {
+		publications++;
+		assert.equal(model.placementInitialized, false); assert.equal(model.placement, 'normal'); assert.equal(model.minimized, false);
+		assert.ok(model.requestedBounds === retained); assert.deepEqual(model.requestedBounds, bounds); assert.equal(model.open, true);
+	});
+	model.requestDefaultPlacement(); const revision = model.revision;
+	model.requestDefaultPlacement(); assert.equal(model.revision, revision); assert.equal(publications, 1);
+});
+
 test('restored placement publishes all window state together without replacing retained geometry', () => {
 	const model = new WorkbenchWindowModel({ left: 0, top: 0, right: 200, bottom: 120 }, 100, 70);
 	const requested = model.requestedBounds;

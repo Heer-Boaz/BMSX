@@ -51,6 +51,11 @@ export class WorkbenchSplitControl implements PointerCaptureTarget, PointerHover
 		else this.focusTarget.release();
 	}
 	public dispose(): void { this.clearInput(); this.unbindKeyboard(); }
+	/** A layout command ends this sash's gesture without retiring the retained content beside it. */
+	public cancelInteraction(): void {
+		this.capture.cancelTarget(this); this.cancelPointer(); this.hover.release(this); this.hovered = false;
+		this.finishKeyboardResize(true);
+	}
 	/** Explicit keyboard entry keeps only this invoking attachment's return authority. */
 	public focusForResize(origin: InputFocusTarget): boolean {
 		if (origin === this.focusTarget) return this.focus.admittedTarget === origin;

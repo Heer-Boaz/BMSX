@@ -30,6 +30,13 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 
 /** A workbench part displaying the existing scanout, never another editor or runtime. */
 export class GamePanel {
+	/** Restore the companion allocation without opening, closing or refocusing its game input. */
+	public resetLayout(): boolean {
+		const revision = this.area.split.revision;
+		this.sash.cancelInteraction();
+		if (this.area.split.revision !== revision) return false;
+		this.area.split.reset(); return true;
+	}
 	public get enabled(): boolean { return this.area.enabled; }
 	public get visible(): boolean { return this.presented && this.area.enabled && this.area.visible; }
 	private presented = false;

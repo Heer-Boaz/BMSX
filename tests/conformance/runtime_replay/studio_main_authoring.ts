@@ -32,6 +32,7 @@ import { testStudioSaveAll } from './studio_save_all';
 import { testStudioFilesOperations } from './studio_files_operations';
 import { testStudioMainScenePicker } from './studio_main_scene_picker';
 import { testStudioMainRegions } from './studio_main_regions';
+import { testStudioLayoutReset } from './studio_layout_reset';
 
 const SOURCE_READING_FIXTURE = `local function read_authoring_source()
     local readable_value = alpha_beta_gamma_delta_epsilon_zeta_eta_theta_iota_kappa_lambda_mu_nu_xi_omicron_pi_rho_sigma_tau_upsilon_phi_chi_psi_omega
@@ -170,6 +171,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 			await testStudioSashSizing(test, restored, input, theme);
 			await testPrimaryRegionVisibility(test, restored, input, theme);
 			await testStudioMainRegions(test, restored, input, theme);
+			await testStudioLayoutReset(test, restored, input, theme);
 			await test.capture?.(`main-${editor.fontVariant}-theme-${theme}-source`);
 			await press('ControlLeft', 'AltLeft', 'KeyT');
 		}
