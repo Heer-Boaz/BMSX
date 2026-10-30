@@ -652,30 +652,28 @@ function scalar_channel_syntax.build_spatial(group, analysis)
 	body[#body + 1] = local_statement(reference(state), target, true)
 	local arguments<const> = { reference(state) }
 	for index = 1, #group.fields do
-		local field<const> = group.fields[index]
 		local output<const> = generated_symbol('coefficient')
 		local channel<const> = group.channels[index]
-		local initial
 		if channel == nil then
-			initial = member_expression(reference(state), group.members[index])
+			body[#body + 1] = local_statement(reference(output),
+				member_expression(reference(state), group.members[index]), false)
 		elseif channel.keys == nil then
-			initial = numeric_literal(channel.constant)
+			body[#body + 1] = local_statement(reference(output), numeric_literal(channel.constant), false)
 		else
-			initial = member_expression(reference(state), group.members[index])
-		end
-		body[#body + 1] = local_statement(reference(output), initial, false)
-		if channel ~= nil and channel.keys ~= nil then
 			local samples<const> = {}
 			samples[#samples + 1] = assignment_statement(reference(symbols.keys), index_expression(reference(source), numeric_literal(index)))
 			local position_key<const> = channel.time_domain and 'time_ms' or 'frame'
 			samples[#samples + 1] = assignment_statement(reference(symbols.position),
 				reference(channel.time_domain and symbols.time_ms or symbols.frame))
 			emit_track_sample(samples, channel, position_key, channel.interpolation == 'cubic', nil)
-			samples[#samples + 1] = assignment_statement(reference(output), reference(symbols.value))
 			if group.mixed_domain and not channel.time_domain then
+				body[#body + 1] = local_statement(reference(output),
+					member_expression(reference(state), group.members[index]), false)
+				samples[#samples + 1] = assignment_statement(reference(output), reference(symbols.value))
 				body[#body + 1] = if_statement({ if_clause(reference(symbols.sample), block(samples)) })
 			else
 				for sample_index = 1, #samples do body[#body + 1] = samples[sample_index] end
+				body[#body + 1] = local_statement(reference(output), reference(symbols.value), false)
 			end
 		end
 		arguments[#arguments + 1] = reference(output)

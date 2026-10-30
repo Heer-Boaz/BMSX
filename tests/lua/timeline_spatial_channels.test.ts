@@ -75,6 +75,37 @@ assert(pose.ox==0 and second.spatial.ox==10, 'explicit play override replaced th
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	});
 
+	test(`nested mixed-domain groups retain unsampled frame coefficients while time channels advance (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+local range<const> = require('cartlib/timeline/timeline').range
+local owner<const> = world:spawn('timeline.pose2',{})
+local pose<const> = owner.spatial
+owner.timelines:define('mixed',{phase='physical',bindings={'pose'},duration_ms=30,subsequences={{
+	duration_ms=30,sequence={phase='physical',bindings={'pose'},frames=range(3),frame_duration=10,tracks={{
+		kind='spatial',binding='pose',operation='local_origin2',channels={
+			ox={interpolation='linear',keys={{frame=0,value=0},{frame=1,value=10},{frame=2,value=20}}},
+			oy={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=20}}},
+		},
+	}}},
+}}}, {pose=pose})
+owner.timelines:play('mixed')
+pose:set_local_origin(7,pose.oy)
+owner.timelines:tick_gameplay(5)
+observed={pose.ox,pose.oy}
+owner.timelines:tick_gameplay(5)
+observed[3]=pose.ox
+observed[4]=pose.oy
+pose:set_local_origin(17,pose.oy)
+owner.timelines:tick_gameplay(5)
+observed[5]=pose.ox
+observed[6]=pose.oy
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		const observed = cpu.getGlobalByKey(cpu.stringPool.find('observed')!) as Table;
+		assert.deepEqual(Array.from({ length: 6 }, (_, index) => observed.getInteger(index + 1)),
+			[7, 1, 10, 2, 17, 3]);
+	});
+
 	test(`cold writer admission protects every generic lowering and retains exact leaf receivers (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local owner<const> = world:spawn('timeline.pose2',{})
@@ -181,6 +212,44 @@ end)
 assert(not mixed, 'nested sequence acquired a second incompatible execution phase')
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	});
+	test(`manual clock transport remains exclusive when attached to an updating World (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+local timeline_system<const> = require('cartlib/timeline/timeline_system')
+prefab.define({def_id='timeline.world',class={},components={timeline_component.new}})
+local manual<const> = world:spawn('timeline.pose2',{})
+local automatic<const> = world:spawn('timeline.world',{})
+for _, phase in ipairs({'physical','presentation'}) do
+	local definition<const> = {phase=phase,duration_ms=100,tracks={{kind='value',path={phase},
+		interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}}
+	manual.timelines:define(phase,definition)
+	manual.timelines:play(phase)
+	automatic.timelines:define(phase,definition)
+	automatic.timelines:play(phase)
+end
+manual.timelines:tick_gameplay(20)
+local update<const> = world._system_manager:configure({timeline_system},20,20)
+update()
+observed={manual.physical,manual.presentation,automatic.physical,automatic.presentation}
+for _, phase in ipairs({'physical','presentation'}) do
+	manual.timelines:stop(phase)
+	manual.timelines:play(phase)
+end
+observed[5]=manual.timelines._tick_clocks
+update()
+observed[6]=manual.physical
+observed[7]=manual.presentation
+observed[8]=automatic.physical
+observed[9]=automatic.presentation
+manual.timelines:tick_gameplay(20)
+observed[10]=manual.physical
+observed[11]=manual.presentation
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		const observed = cpu.getGlobalByKey(cpu.stringPool.find('observed')!) as Table;
+		assert.deepEqual(Array.from({ length: 11 }, (_, index) => observed.getInteger(index + 1)),
+			[20, 20, 20, 20, 0, 0, 0, 40, 40, 20, 20],
+			'manual playback must retain its explicit driver without joining World clock views');
 	});
 	test(`external-clock phases retain unconsumed elapsed time across a schedule abort and freeze inactive Spaces (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `

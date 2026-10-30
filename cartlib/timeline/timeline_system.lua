@@ -2,6 +2,7 @@
 -- once before physics; late programs consume the same retained scalar delta.
 local apu<const> = require('cartlib/apu')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
+local tick_lane<const> = timeline_component._tick_lane
 local timeline_clock_source<const> = require('cartlib/timeline/clock_source')
 local base_system<const> = require('cartlib/world/base_system')
 local clock<const> = require('cartlib/clock')
@@ -43,19 +44,28 @@ end
 function timeline_system:update_physical(delta_time)
 	local revision<const> = self._world._update_revision
 	local components<const> = self._physical_gameplay_tick_view.components
-	for index = 1, #components do components[index]:tick_gameplay_physical(delta_time, revision) end
+	for index = 1, #components do
+		local component<const> = components[index]
+		tick_lane(component, component._physical_gameplay_tick_lane, delta_time, revision)
+	end
 end
 
 function timeline_system:update(delta_time)
 	local revision<const> = self._world._update_revision
 	local components<const> = self._gameplay_tick_view.components
-	for index = 1, #components do components[index]:tick_gameplay_presentation(delta_time, revision) end
+	for index = 1, #components do
+		local component<const> = components[index]
+		tick_lane(component, component._gameplay_tick_lane, delta_time, revision)
+	end
 end
 
 function timeline_system:update_frame_physical(delta_time)
 	local revision<const> = self._world._update_revision
 	local components<const> = self._physical_frame_tick_view.components
-	for index = 1, #components do components[index]:tick_frame_physical(delta_time, revision) end
+	for index = 1, #components do
+		local component<const> = components[index]
+		tick_lane(component, component._physical_frame_tick_lane, delta_time, revision)
+	end
 	local space<const> = self._world._active_space
 	local platform<const> = self._physical_platform_tick_view.components
 	local presentation_platform<const> = self._platform_tick_view.components
@@ -75,7 +85,10 @@ function timeline_system:update_frame_physical(delta_time)
 		self._physical_platform_space = space
 		if previous ~= nil and previous_space == space and current ~= previous then
 			local delta<const> = clock.elapsed_milliseconds(previous, current)
-			for index = 1, #platform do platform[index]:tick_platform_physical(delta, revision) end
+			for index = 1, #platform do
+				local component<const> = platform[index]
+				tick_lane(component, component._physical_platform_tick_lane, delta, revision)
+			end
 		end
 	end
 	local audio<const> = self._physical_audio_tick_view.components
@@ -96,7 +109,10 @@ function timeline_system:update_frame_physical(delta_time)
 		self._physical_audio_space = space
 		if previous ~= nil and previous_space == space and current ~= previous then
 			local delta<const> = apu.elapsed_milliseconds(previous, current)
-			for index = 1, #audio do audio[index]:tick_audio_physical(delta, revision) end
+			for index = 1, #audio do
+				local component<const> = audio[index]
+				tick_lane(component, component._physical_audio_tick_lane, delta, revision)
+			end
 		end
 	end
 end
@@ -104,7 +120,10 @@ end
 function timeline_system:update_frame(delta_time)
 	local revision<const> = self._world._update_revision
 	local components<const> = self._frame_tick_view.components
-	for index = 1, #components do components[index]:tick_frame_presentation(delta_time, revision) end
+	for index = 1, #components do
+		local component<const> = components[index]
+		tick_lane(component, component._frame_tick_lane, delta_time, revision)
+	end
 	local space<const> = self._world._active_space
 	local platform<const> = self._platform_tick_view.components
 	if #platform == 0 then
@@ -117,7 +136,10 @@ function timeline_system:update_frame(delta_time)
 		self._presentation_platform_space = space
 		if previous ~= nil and previous_space == space and current ~= previous then
 			local delta<const> = clock.elapsed_milliseconds(previous, current)
-			for index = 1, #platform do platform[index]:tick_platform_presentation(delta, revision) end
+			for index = 1, #platform do
+				local component<const> = platform[index]
+				tick_lane(component, component._platform_tick_lane, delta, revision)
+			end
 		end
 	end
 	local audio<const> = self._audio_tick_view.components
@@ -131,7 +153,10 @@ function timeline_system:update_frame(delta_time)
 		self._presentation_audio_space = space
 		if previous ~= nil and previous_space == space and current ~= previous then
 			local delta<const> = apu.elapsed_milliseconds(previous, current)
-			for index = 1, #audio do audio[index]:tick_audio_presentation(delta, revision) end
+			for index = 1, #audio do
+				local component<const> = audio[index]
+				tick_lane(component, component._audio_tick_lane, delta, revision)
+			end
 		end
 	end
 end

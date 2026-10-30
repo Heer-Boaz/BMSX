@@ -47,7 +47,7 @@ local remove_timeline_schedule<const> = function(self, entry)
 			pending_entries[pending_index] = last_entry
 			last_entry.pending_tick_index = pending_index
 		end
-		if scheduled_timeline_count(lane) == 0 then
+		if self._clock_mode == 'world' and scheduled_timeline_count(lane) == 0 then
 			self:set_tick_clock_enabled(lane.tick_clock_mask, false)
 		end
 		return
@@ -61,7 +61,7 @@ local remove_timeline_schedule<const> = function(self, entry)
 		lane.removed_count = lane.removed_count + 1
 		entry.tick_index = nil
 		entry.tick_lane = nil
-		if scheduled_timeline_count(lane) == 0 then
+		if self._clock_mode == 'world' and scheduled_timeline_count(lane) == 0 then
 			self:set_tick_clock_enabled(lane.tick_clock_mask, false)
 		end
 		return
@@ -76,7 +76,7 @@ local remove_timeline_schedule<const> = function(self, entry)
 		lane[tick_index] = last_entry
 		last_entry.tick_index = tick_index
 	end
-	if scheduled_timeline_count(lane) == 0 then
+	if self._clock_mode == 'world' and scheduled_timeline_count(lane) == 0 then
 		self:set_tick_clock_enabled(lane.tick_clock_mask, false)
 	end
 end
@@ -131,7 +131,7 @@ local reconcile_timeline_schedule<const> = function(self, entry, admit)
 		entry.tick_index = tick_count
 		entry.tick_lane = lane
 	end
-	if scheduled_timeline_count(lane) == 1 then
+	if self._clock_mode == 'world' and scheduled_timeline_count(lane) == 1 then
 		self:set_tick_clock_enabled(lane.tick_clock_mask, true)
 	end
 end
@@ -476,20 +476,12 @@ local tick_lane<const> = function(self, entries, delta_time, revision)
 end
 
 -- Explicit manual clock drivers execute the selected complete programs. World
--- schedules use the phase-specific entrypoints and an admission revision.
+-- schedules execute their retained phase lanes using an admission revision.
 function timeline_component:tick_gameplay(delta_time)
 	local physical<const> = self._physical_gameplay_tick_lane
 	if physical ~= nil then tick_lane(self, physical, delta_time, 0) end
 	local presentation<const> = self._gameplay_tick_lane
 	if presentation ~= nil then tick_lane(self, presentation, delta_time, 0) end
-end
-
-function timeline_component:tick_gameplay_physical(delta_time, revision)
-	tick_lane(self, self._physical_gameplay_tick_lane, delta_time, revision)
-end
-
-function timeline_component:tick_gameplay_presentation(delta_time, revision)
-	tick_lane(self, self._gameplay_tick_lane, delta_time, revision)
 end
 
 function timeline_component:tick_frame(delta_time)
@@ -499,27 +491,11 @@ function timeline_component:tick_frame(delta_time)
 	if presentation ~= nil then tick_lane(self, presentation, delta_time, 0) end
 end
 
-function timeline_component:tick_frame_physical(delta_time, revision)
-	tick_lane(self, self._physical_frame_tick_lane, delta_time, revision)
-end
-
-function timeline_component:tick_frame_presentation(delta_time, revision)
-	tick_lane(self, self._frame_tick_lane, delta_time, revision)
-end
-
 function timeline_component:tick_platform(delta_time)
 	local physical<const> = self._physical_platform_tick_lane
 	if physical ~= nil then tick_lane(self, physical, delta_time, 0) end
 	local presentation<const> = self._platform_tick_lane
 	if presentation ~= nil then tick_lane(self, presentation, delta_time, 0) end
-end
-
-function timeline_component:tick_platform_physical(delta_time, revision)
-	tick_lane(self, self._physical_platform_tick_lane, delta_time, revision)
-end
-
-function timeline_component:tick_platform_presentation(delta_time, revision)
-	tick_lane(self, self._platform_tick_lane, delta_time, revision)
 end
 
 function timeline_component:tick_audio(delta_time)
@@ -529,12 +505,6 @@ function timeline_component:tick_audio(delta_time)
 	if presentation ~= nil then tick_lane(self, presentation, delta_time, 0) end
 end
 
-function timeline_component:tick_audio_physical(delta_time, revision)
-	tick_lane(self, self._physical_audio_tick_lane, delta_time, revision)
-end
-
-function timeline_component:tick_audio_presentation(delta_time, revision)
-	tick_lane(self, self._audio_tick_lane, delta_time, revision)
-end
+timeline_component._tick_lane = tick_lane
 
 return timeline_component
