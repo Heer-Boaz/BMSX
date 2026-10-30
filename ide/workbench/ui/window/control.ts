@@ -59,10 +59,11 @@ export function minimizedWorkbenchWindowCount(surfaces: WorkbenchSurfaceService)
 /** Resolve the actual native window, including unframed Main, without borrowing a semantic parent. */
 export function findWorkbenchWindowSurface(target: InputFocusTarget | null, surfaces: WorkbenchSurfaceService): WorkbenchSurface | null | undefined {
 	if (target === null) return undefined;
-	const surface = surfaces.findByScope(target.commandContext.scope.surfaceScope);
+	const surface = surfaces.findByScope(target.scope.surfaceScope);
 	if (surface === undefined) return null;
 	let window: WorkbenchSurface | undefined;
-	for (let current: WorkbenchSurface | null | undefined = surface; current != null; current = current.presentationParent) {
+	for (let current: WorkbenchSurface | null | undefined = surface; current != null;
+		current = current.role === 'transient' && current.lifetimeOwner !== undefined ? current.lifetimeOwner : current.presentationParent) {
 		if (current.retired) return null;
 		if (window === undefined && current.role === 'window') window = current;
 	}
@@ -75,6 +76,8 @@ export type WorkbenchWindowOptions = {
 	readonly contextMenu?: WorkbenchMenuPresentation | readonly WorkbenchMenuItem[];
 	readonly lifetimeOwner: WorkbenchSurface;
 	readonly presentationParent: WorkbenchSurface | null;
+	/** Explicit modal family for a window promoted out of its content's paint branch. */
+	readonly admissionParent?: WorkbenchSurface | null;
 	/** Logical command and interaction ancestry, independent of current focus return. */
 	readonly focusScope: InputFocusScope;
 	/** Current concrete return control, not the window's ownership ancestry. */
@@ -225,6 +228,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		windowsByScope.set(this.scope.surfaceScope, this);
 		this.surface = this.surfaces.prepare({
 			role: 'window', lifetimeOwner: options.lifetimeOwner, presentationParent: options.presentationParent,
+			admissionParent: options.admissionParent,
 			captureScope: this.scope.surfaceScope,
 			getBounds: () => options.model.bounds, getClip: () => options.workArea,
 			isVisible: () => this.presented && options.model.open && !options.model.minimized,

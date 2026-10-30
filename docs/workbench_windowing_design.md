@@ -175,6 +175,12 @@ its admission boundary. A backdrop covers exactly the blocked scope, so blocked
 input cannot reach a visibly uncovered lower branch accidentally.
 
 The blocked scope and presentation parent are explicit, independent references.
+An owned window can also name its modal admission parent independently of its
+lifetime owner. Floating Main regions use the primary family for admission and
+Main's window band for presentation. An independently admitted owned tool keeps
+its own native window context; lifetime ownership alone does not make it part
+of the owner's blocked content. Presentation reparenting preserves an explicit
+admission parent.
 The main **editorclient family** and floating editor families share an ordered
 host band inside the editor area. Main includes its own groups, tabstrips and
 owned overlays, not the permanent shell's full background, navigation, menu or

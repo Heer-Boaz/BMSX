@@ -48,9 +48,9 @@ export function executeEditorSearchCommand(editor: CartEditor, sources: RuntimeS
 			const picker = editor.quickInput;
 			const invoking = target === null ? inputFocus.target : target;
 			const main = editor.mainWorkspace;
-			const contextOrigin = main.isPrimaryTarget(invoking) || main.isActivityTarget(invoking);
-			const client = main.isActivityTarget(invoking) ? main.activity : main.primary;
-			if (contextOrigin && (client === undefined || !client.scope.contains(invoking!.commandContext.scope))) return;
+			const client = main.clientForTarget(invoking);
+			const contextOrigin = client !== undefined || main.isPrimaryTarget(invoking) || main.isActivityTarget(invoking);
+			if (contextOrigin && client === undefined) return;
 			const editorTarget = contextOrigin ? client!.commandTarget : group.panes.activePane?.commandTarget ?? group.tabFocusTarget;
 			const origin = target === null ? editorTarget
 				: target === inputFocus.target || target === picker.field.focusTarget ? undefined : target;

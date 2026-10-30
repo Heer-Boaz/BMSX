@@ -3,7 +3,7 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { inputFocus } from '../../../input/focus';
 import type { MainWorkspaceClient, MainWorkspaceRegionId } from '../../common/main_workspace_client';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
-import { WorkbenchMenu, type WorkbenchMenuDefinition } from '../../ui/menu/model';
+import { WorkbenchCompositeMenu, WorkbenchMenu, type WorkbenchMenuDefinition } from '../../ui/menu/model';
 import { WorkbenchViewPanel } from '../../ui/view_panel/control';
 import { WorkbenchViewMessageControl, type WorkbenchViewMessage } from '../../ui/view_panel/message';
 import { measureSceneHierarchy } from './hierarchy_layout';
@@ -53,11 +53,11 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 			workArea: options.workArea, scope: this.scope, commandTarget: this.commandTarget, focusReturn: options.focusReturn,
 			description: snapshot.source.resource.path, isPresented: () => options.main.primary === this,
 			createControl: (_scope: typeof this.scope, target: typeof this.commandTarget) => new WorkbenchViewMessageControl(target) };
-		const hierarchyActions = new WorkbenchMenu(HIERARCHY_CONTEXT, model);
+		const hierarchyActions = new WorkbenchCompositeMenu([new WorkbenchMenu(HIERARCHY_CONTEXT, model), options.main.regions.hierarchy.actions]);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', surface: options.regions.hierarchy,
 			view: { paragraphs: ['Scene unavailable', snapshot.source.resource.path], warning: true },
 			actions: createWorkbenchActionBar(new WorkbenchMenu(SOURCE_PRIMARY, model), true, hierarchyActions), contextActions: hierarchyActions, measureContent: measureSceneHierarchy });
-		const detailsActions = new WorkbenchMenu(DETAILS_CONTEXT, model);
+		const detailsActions = new WorkbenchCompositeMenu([new WorkbenchMenu(DETAILS_CONTEXT, model), options.main.regions.details.actions]);
 		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', surface: options.regions.details,
 			view: { paragraphs: ['No available Scene selection'], warning: true },
 			actions: createWorkbenchActionBar(new WorkbenchMenu(SOURCE_PRIMARY, model), true, detailsActions), contextActions: detailsActions, measureContent: measureSceneDetails });

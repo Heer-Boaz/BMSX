@@ -33,7 +33,12 @@ interface PresentedSurface extends SurfaceAttachment {
 }
 
 export type WorkbenchSurfaceOptions =
-	| PresentedSurface & { readonly role: 'content' | 'window' | 'feedback' }
+	| PresentedSurface & { readonly role: 'content' | 'feedback' }
+	| PresentedSurface & {
+		readonly role: 'window';
+		/** A promoted window may retain another modal family independently of paint and lifetime. */
+		readonly admissionParent?: WorkbenchSurface | null;
+	}
 	| PresentedSurface & { readonly role: 'subwindow'; readonly presentationParent: WorkbenchSurface }
 	| PresentedSurface & { readonly role: 'transient'; readonly outsidePress: 'consume' | 'owner' }
 	| SurfaceAttachment & {

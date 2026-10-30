@@ -12,7 +12,7 @@ import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runt
 import type { TextFileSaveService } from '../../services/working_copy/text_file_save';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
-import { WorkbenchMenu, type WorkbenchMenuCommandDefinition, type WorkbenchMenuDefinition } from '../../ui/menu/model';
+import { WorkbenchCompositeMenu, WorkbenchMenu, type WorkbenchMenuCommandDefinition, type WorkbenchMenuDefinition } from '../../ui/menu/model';
 import { WorkbenchViewPanel } from '../../ui/view_panel/control';
 import { SceneAuthoringContext, type SceneAuthoredSubject } from './authoring_context';
 import { SceneAuthoringCommands } from './authoring_commands';
@@ -98,13 +98,13 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		const common = { commands: options.commands, contextMenu: options.contextMenu, surfaces: options.surfaces,
 			workArea: options.workArea, scope: this.scope, commandTarget: this.commandTarget, focusReturn: options.focusReturn,
 			description: consumer.workingCopy.resource.path, onDidOpenActions: observeActions, isPresented: () => options.main.primary === this };
-		const hierarchyMenu = new WorkbenchMenu(HIERARCHY_CONTEXT, undefined);
+		const hierarchyMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(HIERARCHY_CONTEXT, undefined), options.main.regions.hierarchy.actions]);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', view: this.view.hierarchy,
 			surface: options.regions.hierarchy, actions: createWorkbenchActionBar(new WorkbenchMenu(PRIMARY_ACTIONS, undefined), true, hierarchyMenu),
 			contextActions: hierarchyMenu, measureContent: measureSceneHierarchy,
 			createControl: (scope, _target, surface) => new SceneHierarchyControl(options.commands, options.contextMenu, options.surfaces,
 				surface, options.workArea, scope, this.commandTarget, sections) });
-		const detailsMenu = new WorkbenchMenu(DETAILS_CONTEXT, undefined);
+		const detailsMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(DETAILS_CONTEXT, undefined), options.main.regions.details.actions]);
 		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', view: this.view.details,
 			surface: options.regions.details, actions: createWorkbenchActionBar(new WorkbenchMenu(PRIMARY_ACTIONS, undefined), true, detailsMenu),
 			contextActions: detailsMenu, measureContent: measureSceneDetails,

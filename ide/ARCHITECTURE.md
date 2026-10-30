@@ -72,6 +72,9 @@ budget, not only its active group. `common/main_area_layout.ts` owns the nested
 allocation between Main's document arrangement and optional Game companion,
 including their shared sash.
 It does not resize the physical viewport or encode allocation as a chrome inset.
+`main_region.ts` owns each named region's retained native placement and floating
+shell, independently of the primary subject. Header allocation belongs to the
+container; moving its subtree preserves the contribution's content attachment.
 Each `EditorGroupView` owns its tabs, panes, content/timeline geometry and input
 scope. Pane contributions measure retained inputs with the supplied font without
 constructing or attaching controls. Groups add their actual attached chrome;

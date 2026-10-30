@@ -413,7 +413,8 @@ function payload(
 	return {
 		dirtyFiles,
 		editorParts: { main: { layout: { kind: 'group', group: editorGroup }, active: 0, mru: [0], scrollX: 0, scrollY: 0 }, documents: [], active: 0, mru: [0] },
-		mainWorkspace: { primary: null, activityId: undefined, hierarchyVisible: true, detailsVisible: true, activityVisible: false,
+		mainWorkspace: { primary: null, regions: { hierarchy: { placement: 'dockedMain', window: undefined }, details: { placement: 'dockedMain', window: undefined } },
+			activityId: undefined, hierarchyVisible: true, detailsVisible: true, activityVisible: false,
 			activityPlacement: 'dockedMain', activityWindow: { requestedBounds: { left: 0, top: 0, right: 640, bottom: 240 },
 				placement: 'normal', minimized: false },
 			scrollX: 0, scrollY: 0, activeClient: 'documents', activeRegion: 'hierarchy' },

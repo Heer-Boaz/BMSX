@@ -11,7 +11,7 @@ import { PointerHoverService } from '../../ide/input/pointer/hover';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { createWorkbenchActionBar, layoutWorkbenchActionBar, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, type WorkbenchActionBarItem } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchActionBarControl } from '../../ide/workbench/ui/action_bar_control';
-import { WorkbenchMenu, type WorkbenchMenuDefinition, type WorkbenchMenuProjection } from '../../ide/workbench/ui/menu/model';
+import { WorkbenchCompositeMenu, WorkbenchMenu, type WorkbenchMenuDefinition, type WorkbenchMenuProjection } from '../../ide/workbench/ui/menu/model';
 import type { WorkbenchMenuItem } from '../../ide/workbench/ui/menu/registry';
 import { Font } from '../../machine/ts/render/shared/bmsx_font';
 
@@ -128,6 +128,75 @@ test('conditional projection removes empty groups without leading, adjacent or t
 	menu.refresh();
 	assert.deepEqual(menu.visibleItems.map(item => item.type), ['command', 'separator', 'command', 'separator', 'command']);
 	assert.equal(menu.visibleItems[2], menu.entries[4].item);
+});
+
+test('composite menus preserve owner order and separate only nonempty groups', () => {
+	const context = { feature: false, placement: false };
+	const feature = new WorkbenchMenu([
+		{ type: 'separator' },
+		{ type: 'command', command: 'undo', when: value => value.feature },
+		{ type: 'separator' }, { type: 'separator' },
+		{ type: 'command', command: 'redo', when: value => value.feature },
+		{ type: 'separator' },
+	], context);
+	const placement = new WorkbenchMenu([
+		{ type: 'command', command: 'save', when: value => value.placement },
+	], context);
+	const system = new WorkbenchMenu([
+		{ type: 'command', command: 'window.restore' },
+		{ type: 'separator' },
+		{ type: 'command', command: 'window.hide' },
+	], undefined);
+	system.refresh();
+	const menu = new WorkbenchCompositeMenu([new WorkbenchMenu([], undefined), feature, placement, system]);
+	const topology = () => menu.visibleItems.map(item => item.type === 'command' ? item.command : item.type);
+	menu.refresh();
+	assert.deepEqual(topology(), ['window.restore', 'separator', 'window.hide']);
+	context.feature = true; menu.refresh();
+	assert.deepEqual(topology(), ['undo', 'separator', 'redo', 'separator', 'window.restore', 'separator', 'window.hide']);
+	context.placement = true; menu.refresh();
+	assert.deepEqual(topology(), ['undo', 'separator', 'redo', 'separator', 'save', 'separator', 'window.restore', 'separator', 'window.hide']);
+	assert.equal(menu.visibleItems[0], feature.entries[1].item);
+	assert.equal(menu.visibleItems[2], feature.entries[4].item);
+	assert.equal(menu.visibleItems[4], placement.entries[0].item);
+	context.feature = false; context.placement = false; menu.refresh();
+	assert.deepEqual(topology(), ['window.restore', 'separator', 'window.hide']);
+	const empty = new WorkbenchCompositeMenu([feature, placement]);
+	empty.refresh(); assert.deepEqual(empty.visibleItems, []);
+});
+
+test('nested composite menus retain storage and observe externally refreshed owner revisions', () => {
+	const context: MenuContext = { showUndo: true, showRedo: false };
+	const source = new WorkbenchMenu(DEFINITIONS, context);
+	const region = new WorkbenchCompositeMenu([source]);
+	const system = new WorkbenchMenu([{ type: 'command', command: 'window.hide' }], undefined);
+	const window = new WorkbenchCompositeMenu([region, system]);
+	assert.equal(window.refresh(), true);
+	const visible = window.visibleItems, sourceItems = region.visibleItems, separator = visible[1], revision = window.revision;
+	for (let frame = 0; frame < 100; frame++) assert.equal(window.refresh(), false);
+	assert.equal(window.visibleItems, visible); assert.equal(region.visibleItems, sourceItems);
+	assert.equal(window.revision, revision); assert.equal(window.visibleItems[1], separator);
+	context.showUndo = false; region.refresh();
+	assert.equal(window.refresh(), true);
+	assert.equal(window.visibleItems, visible); assert.deepEqual(window.visibleItems, system.visibleItems);
+	context.showUndo = true; source.refresh();
+	assert.equal(window.refresh(), true);
+	assert.equal(window.visibleItems[0], source.entries[0].item);
+	assert.equal(window.visibleItems[1], separator);
+});
+
+test('composite owner membership retirement revokes an open native menu even after identical membership returns', t => {
+	const f = fixture(t);
+	const container = new WorkbenchMenu([{ type: 'command', command: 'save' }], undefined);
+	const menu = new WorkbenchCompositeMenu([f.menu, container]);
+	const lifetime = f.popup.show(20, 30, menu, f.commands, { selectFirst: true });
+	f.key('Enter', true);
+	f.context.showUndo = false; f.menu.refresh();
+	f.context.showUndo = true; f.menu.refresh();
+	f.popup.update();
+	assert.equal(lifetime.isDisposed, true); assert.equal(f.popup.visible, false);
+	assert.equal(f.focus.target, f.origin);
+	f.key('Enter', false); assert.deepEqual(f.executed, []);
 });
 
 test('layout observes membership before hit testing and unchanged frames retain measured action state', t => {

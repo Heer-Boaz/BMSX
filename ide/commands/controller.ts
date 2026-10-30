@@ -155,6 +155,10 @@ export class IdeCommandController {
 			case 'workspace.activity.dock': this.editor.mainWorkspace.setActivityPlacement('dockedMain'); return;
 			case 'workspace.hierarchy.focus': this.editor.mainWorkspace.focusPrimary('hierarchy'); return;
 			case 'workspace.details.focus': this.editor.mainWorkspace.focusPrimary('details'); return;
+			case 'workspace.hierarchy.float': this.editor.mainWorkspace.setRegionPlacement('hierarchy', 'floatingWindow'); return;
+			case 'workspace.details.float': this.editor.mainWorkspace.setRegionPlacement('details', 'floatingWindow'); return;
+			case 'workspace.hierarchy.dock': this.editor.mainWorkspace.setRegionPlacement('hierarchy', 'dockedMain'); return;
+			case 'workspace.details.dock': this.editor.mainWorkspace.setRegionPlacement('details', 'dockedMain'); return;
 			case 'workspace.hierarchy.toggle': this.editor.mainWorkspace.toggleRegion('hierarchy'); return;
 			case 'workspace.details.toggle': this.editor.mainWorkspace.toggleRegion('details'); return;
 		}
@@ -432,6 +436,14 @@ export class IdeCommandController {
 				&& this.editor.mainWorkspace.activityPlacement === 'dockedMain';
 			case 'workspace.activity.dock': return this.editor.isActive && this.editor.mainWorkspace.regionLayout.activityVisible
 				&& this.editor.mainWorkspace.activityPlacement === 'floatingWindow';
+			case 'workspace.hierarchy.float': return this.editor.isActive && this.editor.mainWorkspace.primary !== undefined
+				&& this.editor.mainWorkspace.regions.hierarchy.placement === 'dockedMain';
+			case 'workspace.details.float': return this.editor.isActive && this.editor.mainWorkspace.primary !== undefined
+				&& this.editor.mainWorkspace.regions.details.placement === 'dockedMain';
+			case 'workspace.hierarchy.dock': return this.editor.isActive && this.editor.mainWorkspace.primary !== undefined
+				&& this.editor.mainWorkspace.regions.hierarchy.placement === 'floatingWindow';
+			case 'workspace.details.dock': return this.editor.isActive && this.editor.mainWorkspace.primary !== undefined
+				&& this.editor.mainWorkspace.regions.details.placement === 'floatingWindow';
 			case 'findGlobal': return workspaceState.context !== null;
 			case 'workspace.focusPrimary': case 'workspace.clearPrimary':
 			case 'workspace.hierarchy.focus': case 'workspace.details.focus':
@@ -567,8 +579,8 @@ export class IdeCommandController {
 				return window?.focusTarget.getCommand(command)?.isChecked?.() === true;
 			}
 			case 'group.maximize': return part.arrangement.maximized === group;
-			case 'workspace.hierarchy.toggle': return this.editor.mainWorkspace.regionLayout.hierarchyVisible;
-			case 'workspace.details.toggle': return this.editor.mainWorkspace.regionLayout.detailsVisible;
+			case 'workspace.hierarchy.toggle': return this.editor.mainWorkspace.regions.hierarchy.displayed;
+			case 'workspace.details.toggle': return this.editor.mainWorkspace.regions.details.displayed;
 			case 'runtime.toggleTimeline': return group.timeline.requested;
 			case 'gameView.togglePanel': return this.editor.gamePanel.enabled;
 			case 'debugEvaluation':

@@ -27,6 +27,8 @@ export class WorkbenchWindowModel {
 	public minimized = false;
 	public font: BFont | undefined;
 	public displayTitle = '';
+	/** Full native window identity for discovery, independently of its compact title. */
+	public description = '';
 	public revision = 0;
 	private titleValue = '';
 	private placementRevision = 0;

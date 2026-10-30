@@ -246,7 +246,7 @@ not an editable asset schema or an isolated preview contract.
 | Source control and comparison | Working-copy dirty state, Undo/Redo, Save conflicts, recovery and proposed-edit review with before/after hunks have existing owners. | Repository status/history, staging/commit and general file/revision comparison and merge are separate Studio/host workflows. Proposal review is not version control, and rejecting a stale Save is not a conflict-resolution editor. VS Code's [SCM contribution](https://github.com/microsoft/vscode/blob/main/src/vs/workbench/contrib/scm/browser/scm.contribution.ts) separates that workspace activity from document editing; adopting it would not require a cartlib feature. |
 | Contextual UI commands | Shared context menus, command registration and captured invocation contexts serve window chrome, exact editor tabs, group backgrounds, Files rows and contribution subjects. Scene outlines and Actor outlines/live graphs expose their existing subject actions through both pointer and keyboard context menus. The tab list has individual keyboard focus, independently of its group-action toolbar. | Coverage of other tool surfaces remains a separate UX task. Right-click and keyboard Context Menu expose owner-admitted actions without duplicating command state or borrowing the later active editor. |
 | Editor/project settings | Theme/font commands, session placement and source-backed cart configuration exist at separate owners. | A searchable settings model and UI with explicit defaults, scopes and persistence are missing. Editor preferences are not gameplay configuration. Go to File needs a configurable project-only versus BIOS/shared-library inclusion policy based on admitted provenance; folder-name guesses and isolated tool toggles are not a settings system. |
-| Region placement and layout recovery | Main Hierarchy and Details retain independent controls, width and hide/reveal intent over one primary context. Documents support group transfer; the activity area can move its retained subtree between Main and a floating shell. | Independent Hierarchy/Details floating placement and a whole-workspace Reset Layout command are absent. Region placement must retain the same primary context and region presentation, not create a Scene document or another primary subject. The shared window container owns chrome and physical placement; Main owns region membership and recovery. A layout-reset contract must define its baseline and preserve source, subjects and working-copy history; it is not workspace/source replacement or the existing per-view width/height reset. |
+| Region placement and layout recovery | Main Hierarchy and Details retain their own controls and move independently between their named allocation and a shared floating window. Main owns region membership and recovery; the window container owns physical placement and chrome. Documents support group transfer; the activity area can move its retained subtree between Main and a floating shell. | A whole-workspace Reset Layout command still needs an explicit baseline and retention contract. It must preserve source, subjects and working-copy history, independently of workspace/source replacement and the existing per-view width/height reset. |
 
 This mapping records prerequisites and product choices, not approval to build
 every missing Unreal subsystem. Complete the main/document workspace using
@@ -404,6 +404,32 @@ Only the admitted replacement retires the old context's controls, popups,
 gestures and captured command subjects. Source/authority retirement instead
 revokes invalid drafts and actions immediately; no stale edit is applied to
 another occurrence or revived on returning space or rights.
+
+### Region placement
+
+Hierarchy and Details each retain their named dock allocation and their own
+floating placement. Main's region owner moves the same native subtree; the
+primary context, content controls, selection, canonical source and working-copy
+consumer remain unchanged. The shared window titlebar replaces the embedded
+panel header. Feature and placement actions compose with the ordinary window
+system menu; they remain available through keyboard context menus and the
+palette without a duplicate toolbar or a fabricated document input.
+
+Float and return-to-Main change presentation, not authored values. A focused
+body control keeps its exact pending draft, including invalid input; a real
+focus departure follows that control's ordinary blur policy. Close hides the
+region in its current placement. Minimize retains its discoverable window;
+Focus or Show restores that same presentation. Hidden/minimized input retires
+through the existing region attachment contract. Both region windows belong
+to the primary modal family, independently of their source-command context.
+
+The first floating placement uses the current dock allocation as its anchor
+and the content's font-derived preferred/minimum extents. Subsequent placement
+retains its own requested bounds, snap/maximize state and minimization,
+independently of dock width and visibility. Recovery restores this intent
+separately from the primary subject and never replaces newer user placement
+or focus. Binding a different primary client retires old shell invocations;
+it does not create another semantic selection or another window registry.
 
 ### First authored consumer
 

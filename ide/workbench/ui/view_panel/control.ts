@@ -71,7 +71,10 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 	private revision = 0;
 	private titleHovered = false;
 	private focusMembership = -1;
+	private headerVisible = true;
 	public get attached(): boolean { return this.attachedValue; }
+	public get contextActions(): WorkbenchMenuPresentation { return this.options.contextActions; }
+	public get description(): string { return this.options.description; }
 
 	public constructor(private readonly options: WorkbenchViewPanelOptions<View, Content>) {
 		this.scope = new InputFocusScope(Symbol('view panel'), options.scope);
@@ -90,12 +93,13 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 			consumeIdeKey('Escape', event); options.focusReturn.focus();
 		});
 		this.commandTarget.registerCommand('contextMenu', { isEnabled: () => this.attached,
-			run: () => this.openContextMenu(this.layoutState.header.left + 4, this.layoutState.header.bottom, true) });
+			run: () => this.openContextMenu(this.layoutState.client.left + 4,
+				this.headerVisible ? this.layoutState.header.bottom : this.layoutState.client.top, true) });
 		this.actionBar = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, options.commands,
 			this.commandTarget, () => {
 				if (this.control.canFocus) this.control.focus(); else this.commandTarget.focus();
 			}, options.contextMenu);
-		this.actionBar.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.attached,
+		this.actionBar.focusTarget.registerCommand('contextMenu', { isEnabled: () => this.attached && this.headerVisible,
 			run: () => this.openContextMenu(this.layoutState.header.left + 4, this.layoutState.header.bottom, true, this.actionBar.focusTarget) });
 		this.actionBar.onDidOpenOverflow = lifetime => {
 			this.tooltip.hide(); this.titleHovered = false;
@@ -106,9 +110,25 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 	}
 	public measure(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
 		this.options.measureContent(font, target);
-		target.minimumHeight += font.lineHeight + 4;
-		target.minimumWidth = Math.max(target.minimumWidth, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH + font.advance('…') + 12);
-		target.preferredWidth = Math.max(target.minimumWidth, target.preferredWidth);
+		if (this.headerVisible) {
+			target.minimumHeight += font.lineHeight + 4;
+			target.minimumWidth = Math.max(target.minimumWidth, WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH + font.advance('…') + 12);
+			target.preferredWidth = Math.max(target.minimumWidth, target.preferredWidth);
+		}
+	}
+	/** The container changes chrome allocation without retiring its content attachment. */
+	public setHeaderVisible(visible: boolean): void {
+		if (this.headerVisible === visible) return;
+		this.headerVisible = visible;
+		const revision = ++this.revision;
+		if (!this.attached) return;
+		this.tooltip.hide(); this.titleHovered = false; pointerHover.release(this);
+		const focused = this.actionBar.focusTarget.hasFocus;
+		if (visible) this.actionBar.setInput(this.options.actions, this.options.commandTarget);
+		else this.actionBar.clearInput();
+		if (revision !== this.revision) return;
+		this.layout(this.layoutState);
+		if (revision === this.revision && focused && this.commandTarget.hasFocus) this.focus();
 	}
 	public attach(bounds: Readonly<RectBounds>): void {
 		if (this.attached) { this.layout(bounds); return; }
@@ -116,10 +136,10 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 		this.attachedValue = true; this.focusMembership = -1;
 		this.actionBar.clearInput();
 		if (revision !== this.revision) return;
-		this.actionBar.setInput(this.options.actions, this.options.commandTarget);
+		if (this.headerVisible) this.actionBar.setInput(this.options.actions, this.options.commandTarget);
 		if (revision !== this.revision) return;
-		layoutWorkbenchViewPanel(this.layoutState, bounds, this.options.title, this.options.actions);
-		this.actionBar.update();
+		layoutWorkbenchViewPanel(this.layoutState, bounds, this.options.title, this.options.actions, this.headerVisible);
+		if (this.headerVisible) this.actionBar.update();
 		if (revision !== this.revision) return;
 		this.control.setView(this.options.view, this.layoutState.client);
 		if (revision !== this.revision) return;
@@ -129,8 +149,8 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 	public layout(bounds: Readonly<RectBounds>): void {
 		if (!this.attached) return;
 		const revision = this.revision;
-		if (!layoutWorkbenchViewPanel(this.layoutState, bounds, this.options.title, this.options.actions)) return;
-		this.actionBar.update();
+		if (!layoutWorkbenchViewPanel(this.layoutState, bounds, this.options.title, this.options.actions, this.headerVisible)) return;
+		if (this.headerVisible) this.actionBar.update();
 		if (revision !== this.revision) return;
 		this.control.layout(this.layoutState.client);
 		if (revision === this.revision) this.bindFocusOrder();
@@ -138,9 +158,9 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 	public update(): void {
 		if (!this.attached) return;
 		const revision = this.revision;
-		this.actionBar.update();
+		if (this.headerVisible) this.actionBar.update();
 		if (revision !== this.revision) return;
-		if (layoutWorkbenchViewPanel(this.layoutState, this.layoutState, this.options.title, this.options.actions)) this.control.layout(this.layoutState.client);
+		if (layoutWorkbenchViewPanel(this.layoutState, this.layoutState, this.options.title, this.options.actions, this.headerVisible)) this.control.layout(this.layoutState.client);
 		else this.control.update?.();
 		if (revision !== this.revision) return;
 		this.bindFocusOrder();
@@ -178,7 +198,7 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 	public handlePointer(snapshot: PointerInputSnapshot): void {
 		if (!this.attached) return;
 		const interaction = inputFocus.interactionRevision;
-		const header = snapshot.valid && snapshot.insideViewport
+		const header = this.headerVisible && snapshot.valid && snapshot.insideViewport
 			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layoutState.header);
 		// The panel owns its complete header context, including the toolbar's Source and More targets.
 		if (header && (snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
@@ -186,7 +206,7 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 			if (interaction === inputFocus.interactionRevision) this.commandTarget.activate();
 			return;
 		}
-		if (this.actionBar.handlePointer(snapshot)) return;
+		if (this.headerVisible && this.actionBar.handlePointer(snapshot)) return;
 		if (!snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layoutState)) return;
 		this.titleHovered = header && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layoutState.titleBounds);
 		if (this.titleHovered) pointerHover.visit(this); else pointerHover.release(this);

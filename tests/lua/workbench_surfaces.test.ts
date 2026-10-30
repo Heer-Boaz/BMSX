@@ -25,6 +25,26 @@ function controller(name: string, painted: string[], bounds = extent) {
 
 const painter: WorkbenchSurfacePainter = { pushClipRect() {}, popClipRect() {} };
 
+test('an owned utility window uses the host window band without escaping its primary modal owner', () => {
+	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
+	const main = surfaces.attach({ ...controller('main', painted), role: 'window' });
+	const primary = surfaces.attach({ ...controller('primary', painted), role: 'content', lifetimeOwner: main, presentationParent: main });
+	const documents = surfaces.attach({ ...controller('documents', painted), role: 'content', lifetimeOwner: main, presentationParent: main });
+	const utility = surfaces.attach({ ...controller('utility', painted), role: 'window', lifetimeOwner: primary, presentationParent: main, admissionParent: primary });
+	surfaces.draw(painter);
+	assert.deepEqual(painted, ['main', 'primary', 'documents', 'utility'], 'native role order applies at the actual host, not inside an earlier content sibling');
+	assert.ok(surfaces.hitTest(100, 100) === utility);
+	const prompt = surfaces.attach({ ...controller('decision', painted), role: 'modal', blockedScope: primary, lifetimeOwner: primary, presentationParent: main });
+	assert.equal(surfaces.isFocusAdmitted(utility), false);
+	assert.equal(surfaces.isFocusAdmitted(documents), true);
+	assert.ok(surfaces.hitTest(100, 100) === prompt);
+	const otherHost = surfaces.attach({ ...controller('other host', painted), role: 'window' });
+	surfaces.reparent(utility, otherHost);
+	assert.equal(surfaces.isFocusAdmitted(utility), false, 'presentation relocation does not replace the window admission owner');
+	prompt.dispose(); assert.equal(surfaces.isFocusAdmitted(utility), true);
+	surfaces.dispose();
+});
+
 test('native attachment observers survive presentation moves and release on that exact attachment retirement', () => {
 	const surfaces = new WorkbenchSurfaceService(), painted: string[] = [];
 	const main = surfaces.attach({ ...controller('main', painted), role: 'window' });

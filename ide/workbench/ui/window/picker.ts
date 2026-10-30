@@ -30,7 +30,7 @@ export function showOpenWindows(main: MainWorkspace, parts: EditorParts, surface
 				const part = parts.documents.find(part => part.surface === surface), group = part?.activeGroup, input = group?.model.activeTab;
 				lifetime.add({ dispose: surface.onDidRetire(() => picker.hide()) });
 				const item = { surface, window, label: input === undefined || input === null ? window.model.title : input.title,
-					description: input?.shortDescription ?? '',
+					description: input?.shortDescription ?? window.model.description,
 					detail: `${input?.description ?? ''}${window.hasFocus ? ' / active' : ''}${input?.isDirty() ? ' / unsaved changes' : ''}${window.model.minimized ? ' / minimized' : ''}${part?.closing ? ' / close decision' : ''}` };
 				items.push(item);
 				if (input !== undefined && input !== null) editorWindows.push({ input, item, preview: group!.model.previewTab === input });

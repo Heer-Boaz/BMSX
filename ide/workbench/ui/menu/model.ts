@@ -25,6 +25,45 @@ export interface WorkbenchMenuProjection extends WorkbenchMenuPresentation {
 	readonly entries: readonly WorkbenchMenuEntry[];
 }
 
+const COMPOSITE_GROUP_SEPARATOR: WorkbenchMenuSeparator = { type: 'separator' };
+
+/** Independent menu owners publish one ordered presentation and structural lifetime. */
+export class WorkbenchCompositeMenu implements WorkbenchMenuPresentation {
+	public readonly visibleItems: WorkbenchMenuItem[] = [];
+	public revision = 0;
+	private readonly groupRevisions: number[];
+
+	public constructor(private readonly groups: readonly WorkbenchMenuPresentation[]) {
+		this.groupRevisions = groups.map(() => -1);
+	}
+
+	public refresh(): boolean {
+		let changed = false;
+		for (let index = 0; index < this.groups.length; index++) {
+			const group = this.groups[index];
+			group.refresh();
+			if (this.groupRevisions[index] !== group.revision) {
+				this.groupRevisions[index] = group.revision;
+				changed = true;
+			}
+		}
+		if (!changed) return false;
+		let count = 0;
+		let separator: WorkbenchMenuSeparator | undefined;
+		for (const group of this.groups) {
+			if (count !== 0) separator = COMPOSITE_GROUP_SEPARATOR;
+			for (const item of group.visibleItems) {
+				if (item.type === 'separator') { if (count !== 0) separator = item; continue; }
+				if (separator !== undefined) { this.visibleItems[count++] = separator; separator = undefined; }
+				this.visibleItems[count++] = item;
+			}
+		}
+		this.visibleItems.length = count;
+		this.revision++;
+		return true;
+	}
+}
+
 /** Immutable placement definitions bound to one retained input or view lifetime. */
 export class WorkbenchMenu<Context> implements WorkbenchMenuProjection {
 	public readonly entries: readonly WorkbenchMenuEntry[];

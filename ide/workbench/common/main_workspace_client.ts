@@ -8,6 +8,7 @@ import type { WorkbenchSurface } from '../services/windows/model';
 import type { WorkbenchViewSizeConstraints } from './layout';
 import type { SerializedPrimaryClient } from './main_workspace_serialization';
 import type { WorkbenchStatusSource } from './status_bar';
+import type { WorkbenchMenuPresentation } from '../ui/menu/model';
 
 export type MainWorkspaceRegionId = 'hierarchy' | 'details';
 export type MainWorkspaceRegionSurfaces = Readonly<Record<MainWorkspaceRegionId, WorkbenchSurface>>;
@@ -17,6 +18,9 @@ export interface MainWorkspaceRegionClient {
 	readonly scope: InputFocusScope;
 	readonly commandTarget: InputFocusTarget;
 	readonly attached: boolean;
+	readonly contextActions: WorkbenchMenuPresentation;
+	readonly description: string;
+	setHeaderVisible(visible: boolean): void;
 	measure(font: EditorFont, target: WorkbenchViewSizeConstraints): void;
 	attach(bounds: Readonly<RectBounds>): void;
 	detach(): void;

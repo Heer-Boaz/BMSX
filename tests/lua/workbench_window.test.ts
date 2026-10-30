@@ -119,6 +119,30 @@ test('window identity follows moved native controls without borrowing their sema
 	retained.dispose(); assert.equal(findWorkbenchWindowSurface(target, f.surfaces), null); assert.equal(findWorkbenchWindowSurface(popupTarget, f.surfaces), null);
 });
 
+test('native window discovery follows the invoking control and promoted popup owner rather than their shared semantic context', t => {
+	const f = fixture(), a = f.window('ACTUAL'), b = f.window('PAINT CONTEXT', 100, 80);
+	a.show(); b.show();
+	const scope = new InputFocusScope(Symbol('native region'), f.parent.scope);
+	const region = f.surfaces.attach({ role: 'content', captureScope: scope.surfaceScope, lifetimeOwner: f.owner,
+		presentationParent: a.control.clientSurface!, isVisible: () => true, getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
+	const target = f.focus.createTarget(f.parent, scope); target.commandContext = f.parent;
+	const popup = f.surfaces.attach({ role: 'transient', outsidePress: 'consume', captureScope: Symbol('promoted region popup'),
+		lifetimeOwner: region, presentationParent: b.control.clientSurface!, isVisible: () => true,
+		getBounds: () => f.workArea, getClip: () => f.workArea, draw() {} });
+	const popupTarget = f.focus.createTarget(target, new InputFocusScope(popup.captureScope)); popupTarget.commandContext = f.parent;
+	t.after(() => { a.control.dispose(); b.control.dispose(); f.surfaces.dispose(); });
+	assert.ok(findWorkbenchWindowSurface(target, f.surfaces) === a.control.surface);
+	assert.ok(findWorkbenchWindowSurface(popupTarget, f.surfaces) === a.control.surface);
+	assert.equal(f.surfaces.isInWindowFamily(popup.captureScope, a.control.surface!.captureScope), true);
+	assert.equal(f.surfaces.isInWindowFamily(popup.captureScope, b.control.surface!.captureScope), false);
+	f.surfaces.reparent(region, b.control.clientSurface!);
+	assert.ok(findWorkbenchWindowSurface(target, f.surfaces) === b.control.surface);
+	assert.ok(findWorkbenchWindowSurface(popupTarget, f.surfaces) === b.control.surface);
+	region.dispose();
+	assert.ok(findWorkbenchWindowSurface(target, f.surfaces) === null);
+	assert.ok(findWorkbenchWindowSurface(popupTarget, f.surfaces) === null);
+});
+
 test('retiring presentation ancestry cannot lend its still-registered child a surviving window', t => {
 	const f = fixture(); let checked = 0;
 	const a = f.window('RETIRING', 40, 40, () => {

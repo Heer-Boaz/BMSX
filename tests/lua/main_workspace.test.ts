@@ -20,6 +20,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { editorGroupChromeMinimumWidth } from '../../ide/workbench/services/editor/editor_group';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 
 /** Concrete independently attached controls; composition and lifecycle are the subjects under test. */
 class FixtureMainRegion implements MainWorkspaceRegionClient {
@@ -27,6 +28,9 @@ class FixtureMainRegion implements MainWorkspaceRegionClient {
 	public readonly scope;
 	public readonly bounds = create_rect_bounds();
 	public readonly minimumWidth = 160;
+	public readonly description = 'Fixture Main region';
+	public readonly contextActions = new WorkbenchMenu([], undefined);
+	public headerVisible = true;
 	public attached = false;
 	public attachCount = 0;
 	public detachCount = 0;
@@ -42,6 +46,7 @@ class FixtureMainRegion implements MainWorkspaceRegionClient {
 	public detach(): void { this.detachCount++; this.attached = false; this.scope.retireContext(); this.commandTarget.release(); }
 	public layout(bounds: Readonly<RectBounds>): void { copy_rect_bounds(this.bounds, bounds); }
 	public update(): void {}
+	public setHeaderVisible(visible: boolean): void { this.headerVisible = visible; }
 	public draw(): void {}
 	public focus(): void { this.commandTarget.focus(); }
 	public handlePointer(): void { this.focus(); }

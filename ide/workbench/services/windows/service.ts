@@ -34,6 +34,7 @@ class Surface implements WorkbenchSurface {
 		// modal blocks or the invoking attachment whose authority a popup borrows.
 		this.admissionParent = (options.role === 'modal' ? options.blockedScope
 			: options.role === 'transient' && options.lifetimeOwner !== undefined ? options.lifetimeOwner
+				: options.role === 'window' && options.admissionParent !== undefined ? options.admissionParent
 				: options.presentationParent) as Surface | null | undefined;
 		this.getBounds = options.getBounds;
 		this.getClip = options.getClip;
@@ -116,7 +117,8 @@ export class WorkbenchSurfaceService implements IDisposable {
 		const siblings = node.presentationParent == null ? this.roots : node.presentationParent.children;
 		siblings.splice(siblings.indexOf(node), 1);
 		node.presentationParent = parent as Surface | null | undefined;
-		if (node.role !== 'modal' && !(node.role === 'transient' && node.lifetimeOwner !== undefined))
+		if (node.options.role !== 'modal' && !(node.options.role === 'transient' && node.lifetimeOwner !== undefined)
+			&& !(node.options.role === 'window' && node.options.admissionParent !== undefined))
 			node.admissionParent = node.presentationParent;
 		this.insert(node);
 		const published = node.published;
