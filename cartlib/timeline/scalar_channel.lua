@@ -87,6 +87,7 @@ local compile_runner_factory<const> = function(channels)
 	local cubic_tracks<const> = channels.cubic_tracks
 	local cubic_time_tracks<const> = channels.cubic_time_tracks
 	local analysis<const> = {
+		segment_member = 'cached_scalar_segments',
 		has_primary_binding = false,
 		has_secondary_binding = false,
 		frame_max_key_count = 0,
@@ -279,6 +280,56 @@ function scalar_channel.compile(program, length)
 		cubic_time_track = cubic_time_track,
 		cubic_time_tracks = cubic_time_tracks,
 	}
+end
+
+-- Group channels share the numeric key compiler and interpolation lowering.
+-- Their cache addresses are independent of ordinary scalar-track families.
+function scalar_channel.prepare_spatial(source, operation, binding_index, writer_index, cache_offset)
+	local channels<const> = {}
+	local has_frame = false
+	local has_time = false
+	local analysis<const> = {
+		has_key_arrays = true, has_primary_binding = false, has_secondary_binding = false,
+		max_key_count = 0, cached_segment_count = cache_offset,
+		segment_member = 'cached_spatial_segments', has_cubic_tracks = false,
+	}
+	for index = 1, #operation.fields do
+		local authored<const> = source.channels[operation.fields[index]]
+		if authored ~= nil then
+			local channel
+			if type(authored) == 'table' then
+				channel = { keys = authored.keys, interpolation = authored.interpolation,
+					time_domain = authored.keys[1].time_ms ~= nil }
+				if channel.time_domain then has_time = true else has_frame = true end
+				local key_count<const> = #channel.keys
+				if key_count > analysis.max_key_count then analysis.max_key_count = key_count end
+				if key_count > 2 then
+					analysis.cached_segment_count = analysis.cached_segment_count + 1
+					channel.cached_segment_index = analysis.cached_segment_count
+				end
+				if channel.interpolation == 'cubic' then analysis.has_cubic_tracks = true end
+			else
+				channel = { constant = authored }
+			end
+			channels[index] = channel
+		end
+	end
+	local group<const> = { fields = operation.fields, members = operation.members, channels = channels,
+		binding_index = binding_index, writer_index = writer_index, mixed_domain = has_frame and has_time }
+	group.runner_factory = compile_syntax(scalar_channel_syntax.build_spatial(group, analysis), '[timeline.spatial_channel]')()
+	return group, analysis.cached_segment_count
+end
+
+function scalar_channel.compile_spatial(group, length, initial_segments)
+	local channels<const> = {}
+	for index = 1, #group.fields do
+		local channel<const> = group.channels[index]
+		if channel ~= nil and channel.keys ~= nil then
+			channels[index] = compile_track(channel, length, channel.time_domain,
+				channel.interpolation == 'cubic', initial_segments)
+		end
+	end
+	return group.runner_factory(channels)
 end
 
 return scalar_channel

@@ -15,9 +15,9 @@ local screen_width<const> = 256
 local screen_height<const> = 192
 
 function portrait:set_image(imgid)
-	self:set_imgid(imgid)
-	self.x = screen_width - self.sx
-	self.y = screen_height - self.sy
+	local visual<const> = self.sprite_component
+	visual:set_imgid(imgid)
+	self.spatial:set_local_origin(screen_width - visual.source_width, screen_height - visual.source_height)
 end
 
 local define_fsm<const> = function()
@@ -83,6 +83,8 @@ local register_definition<const> = function()
 		def_id = portrait_def_id,
 		class = portrait,
 		base = sprite_object,
+		spatial = { family = '2d', authority = 'affine', local_transform = { 1,0,0,1,0,0 } },
+		initial = { base_sprite = { imgid = 'quiz' } },
 		components = {
 			fsm_component.factory({ portrait_fsm_id }),
 		},

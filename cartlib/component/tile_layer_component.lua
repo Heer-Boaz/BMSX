@@ -2,11 +2,12 @@ local image<const> = require('cartlib/gx/image')
 local command_list<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
 local tile_layer_row<const> = require('cartlib/component/tile_layer_row')
-local visual_component<const> = require('cartlib/component/visual_component')
+local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
+local affine_batch<const> = require('cartlib/gx/affine_batch')
 
 local tile_layer_component<const> = {}
 tile_layer_component.__index = tile_layer_component
-setmetatable(tile_layer_component, { __index = visual_component })
+setmetatable(tile_layer_component, { __index = visual_2d_component })
 
 local resolve_source<const> = function(self, imgid)
 	local sources_by_imgid<const> = self._sources_by_imgid
@@ -48,8 +49,9 @@ local configure_rows<const> = function(self, previous_tile_count)
 	self._coordinate_domain_columns = gp0.signed_coordinate_extent // self._tile_size
 end
 
-function tile_layer_component.new(opts)
-	local self<const> = setmetatable(visual_component.new(opts), tile_layer_component)
+function tile_layer_component.new(context, id_local)
+	local self<const>, input<const> = visual_2d_component.new(context, id_local or 'tile_layer')
+	setmetatable(self, tile_layer_component)
 	self._sources = {}
 	-- Semantic image ids resolve once. Ordered row views retain the source
 	-- records themselves, so texture admission may publish live VRAM placement
@@ -64,13 +66,13 @@ function tile_layer_component.new(opts)
 	self._view_revision = 1
 	self._selected_view_revision = 0
 	self.tile_count = 0
-	self.columns = opts.columns or 1
-	self._tile_size = opts.tile_size or 0
+	self.columns = input.columns or 1
+	self._tile_size = input.tile_size or 0
 	self._first_visible_column = 1
 	self._last_visible_column = self.columns
-	local imgids<const> = opts.imgids
+	local imgids<const> = input.imgids
 	if imgids then
-		local tile_count<const> = opts.tile_count or #imgids
+		local tile_count<const> = input.tile_count or #imgids
 		self:resize(tile_count, self.columns)
 		for index = 1, tile_count do
 			self:set_tile(index, imgids[index])
@@ -209,7 +211,12 @@ function tile_layer_component:draw_visual(draw)
 		end
 		self._selected_view_revision = view_revision
 	end
-	local owner<const> = self.owner
+	self:resolve_pose()
+	if not self._translation_only then
+		affine_batch.tile_layer(draw, rows, self._row_count, first_visible_column, self._tile_size,
+			self.wxx, self.wxy, self.wyx, self.wyy, self.wox, self.woy)
+		return
+	end
 	command_list.tile_layer(
 		draw,
 		rows,
@@ -218,8 +225,8 @@ function tile_layer_component:draw_visual(draw)
 		last_visible_column,
 		self._coordinate_domain_columns,
 		self._tile_size,
-		owner.x + self.offset_x + self.draw_offset_x,
-		owner.y + self.offset_y + self.draw_offset_y
+		self.wox,
+		self.woy
 	)
 end
 

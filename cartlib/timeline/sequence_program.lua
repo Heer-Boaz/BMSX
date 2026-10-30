@@ -50,7 +50,7 @@ local compare_end<const> = function(left, right)
 	return left.end_time_ms < right.end_time_ms
 end
 
-function sequence_program.compile(definitions, parent_binding_index_by_id, playback_mode_by_name, compile_timeline)
+function sequence_program.compile(definitions, parent_binding_index_by_id, playback_mode_by_name, compile_timeline, parent_phase)
 	if #definitions == 0 then
 		return sequence_program.empty
 	end
@@ -62,6 +62,7 @@ function sequence_program.compile(definitions, parent_binding_index_by_id, playb
 	for index = 1, #definitions do
 		local definition<const> = definitions[index]
 		local program<const> = compile_timeline(definition.sequence)
+		if program.phase ~= parent_phase then error('nested timeline phase differs from its parent') end
 		if program.requires_frame_sampling then
 			requires_frame_sampling = true
 		end

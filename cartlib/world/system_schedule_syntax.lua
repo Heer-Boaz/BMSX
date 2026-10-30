@@ -10,6 +10,7 @@ local block<const> = syntax_factory.block
 local generated_symbol<const> = syntax_factory.generated_symbol
 local reference<const> = syntax_factory.reference
 local numeric_literal<const> = syntax_factory.number_literal
+local nil_literal<const> = syntax_factory.nil_literal
 local member_expression<const> = syntax_factory.member_expression
 local binary_expression<const> = syntax_factory.binary_expression
 local index_expression<const> = syntax_factory.index_expression
@@ -36,6 +37,10 @@ local append_group<const> = function(
 	gameplay_delta_milliseconds,
 	frame_delta_milliseconds
 )
+	body[#body + 1] = assignment_statement(
+		member_expression(reference(symbols.world), '_executing_tick_group'),
+		numeric_literal(tick_functions[first].definition.group)
+	)
 	body[#body + 1] = call_statement(call_expression(
 		reference(symbols.world),
 		{},
@@ -61,6 +66,10 @@ local append_group<const> = function(
 				'_commit_mutation_barrier'
 			),
 			block({
+				assignment_statement(
+					member_expression(reference(symbols.world), '_executing_tick_group'),
+					nil_literal()
+				),
 				call_statement(call_expression(reference(symbols.world), {}, '_publish_mutation_boundary')),
 				return_statement({}),
 			})
@@ -76,8 +85,13 @@ local build_runner<const> = function(
 	advances_gameplay
 )
 	local body<const> = {}
+	body[1] = assignment_statement(
+		member_expression(reference(symbols.world), '_update_revision'),
+		binary_expression(syntax.binary_add,
+			member_expression(reference(symbols.world), '_update_revision'), numeric_literal(1))
+	)
 	if advances_gameplay then
-		body[1] = assignment_statement(
+		body[#body + 1] = assignment_statement(
 			member_expression(reference(symbols.world), 'gameplay_time_ms'),
 			binary_expression(
 				syntax.binary_add,
@@ -104,6 +118,10 @@ local build_runner<const> = function(
 		)
 		first = last + 1
 	end
+	body[#body + 1] = assignment_statement(
+		member_expression(reference(symbols.world), '_executing_tick_group'),
+		nil_literal()
+	)
 	body[#body + 1] = call_statement(call_expression(reference(symbols.world), {}, '_publish_mutation_boundary'))
 	return function_expression({}, block(body))
 end

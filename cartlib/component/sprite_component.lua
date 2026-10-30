@@ -1,53 +1,51 @@
 local gp0<const> = require('cartlib/gx/gp0')
 local image<const> = require('cartlib/gx/image')
-local visual_component<const> = require('cartlib/component/visual_component')
+local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local sprite_component<const> = {}
 sprite_component.__index = sprite_component
-setmetatable(sprite_component, { __index = visual_component })
+setmetatable(sprite_component, { __index = visual_2d_component })
 
-function sprite_component.new(opts)
-	local self<const> = setmetatable(visual_component.new(opts), sprite_component)
-	self.flip_h = false
-	self.flip_v = false
-	self.color = opts.color or 0xffffffff
-	self.scale_x = opts.scale_x or 1
-	self.scale_y = opts.scale_y or 1
-	self.draw_scale_x = opts.draw_scale_x or 1
-	self.draw_scale_y = opts.draw_scale_y or 1
+function sprite_component.new(context, id_local, defaults, default_source)
+	local self<const>, input<const> = visual_2d_component.new(context, id_local or 'sprite', defaults)
+	setmetatable(self, sprite_component)
+	local color = input.color
+	if color == nil then color = defaults and defaults.color end
+	self.color = color or 0xffffffff
+	local flip_h = input.flip_h
+	if flip_h == nil then flip_h = defaults and defaults.flip_h end
+	self.flip_h = flip_h or false
+	local flip_v = input.flip_v
+	if flip_v == nil then flip_v = defaults and defaults.flip_v end
+	self.flip_v = flip_v or false
 	self.imgid = nil
 	self._source = nil
 	self.source_width = 0
 	self.source_height = 0
-	self:set_imgid(opts.imgid)
-	return self
+	local imgid = input.imgid
+	local source
+	if imgid ~= nil then
+		source = image.resolve(imgid)
+	else
+		imgid = defaults and defaults.imgid
+		source = default_source
+	end
+	self:_set_resolved_imgid(imgid, source)
+	local region<const> = input.region or (defaults and defaults.region)
+	if region ~= nil then
+		self:set_region(region.x, region.y, region.width, region.height)
+	end
+	return self, input
 end
 
 function sprite_component.factory(definition)
-	local imgid<const> = definition.imgid
+	local defaults<const> = shallow_copy(definition)
+	local imgid<const> = defaults.imgid
 	local source<const> = imgid and image.resolve(imgid)
-	local id_local<const> = definition.id_local
-	local enabled<const> = definition.enabled
-	local offset_x<const> = definition.offset_x or 0
-	local offset_y<const> = definition.offset_y or 0
-	local offset_z<const> = definition.offset_z or 0
-	local color<const> = definition.color or 0xffffffff
-	local scale_x<const> = definition.scale_x or 1
-	local scale_y<const> = definition.scale_y or 1
-	return function(opts)
-		local self<const> = sprite_component.new(opts)
-		self.id_local = id_local
-		self.offset_x = offset_x
-		self.offset_y = offset_y
-		self.offset_z = offset_z
-		self.color = color
-		self.scale_x = scale_x
-		self.scale_y = scale_y
-		if enabled ~= nil then
-			self.enabled = enabled
-		end
-		self:_set_resolved_imgid(imgid, source)
-		return self
+	local default_id<const> = defaults.id_local
+	return function(context, id_local)
+		return sprite_component.new(context, id_local or default_id, defaults, source)
 	end
 end
 
@@ -78,6 +76,8 @@ function sprite_component:set_imgid(imgid)
 	if self.imgid == imgid then
 		return false
 	end
+	local collider<const> = self._collider
+	if collider ~= nil then collider:admit_sprite_image(imgid) end
 	local source
 	if imgid then
 		source = image.resolve(imgid)
@@ -121,29 +121,26 @@ end
 
 function sprite_component:draw_visual(draw)
 	local source<const> = self._source
-	local obj<const> = self.owner
-	local x<const> = obj.x + self.offset_x + self.draw_offset_x
-	local y<const> = obj.y + self.offset_y + self.draw_offset_y
-	local scale_x<const> = self.scale_x * self.draw_scale_x
-	local scale_y<const> = self.scale_y * self.draw_scale_y
+	self:resolve_pose()
+	local x<const>, y<const> = self.wox, self.woy
 	local color<const> = self.color
-	local unit_scale<const> = scale_x == 1 and scale_y == 1
-	if unit_scale
+	local translation_only<const> = self._translation_only
+	if translation_only
 	and not self.flip_h and not self.flip_v
 	and (color & 0x00ffffff) == 0x00ffffff then
 		source:blit(draw, x, y)
 		return
 	end
 	local flip_flags<const> = (self.flip_h and 1 or 0) | (self.flip_v and 2 or 0)
-	if unit_scale then
+	if translation_only then
 		source:draw(draw, x, y, color, flip_flags, gp0.draw_mode_blend_half)
 		return
 	end
 	source:draw_affine(
 		draw,
 		x, y,
-		self.source_width * scale_x, 0.0,
-		0.0, self.source_height * scale_y,
+		self.source_width * self.wxx, self.source_width * self.wxy,
+		self.source_height * self.wyx, self.source_height * self.wyy,
 		flip_flags,
 		color,
 		gp0.draw_mode_blend_half)
@@ -151,18 +148,15 @@ end
 
 function sprite_component:draw_region_visual(draw)
 	local source<const> = self._source
-	local obj<const> = self.owner
-	local x<const> = obj.x + self.offset_x + self.draw_offset_x
-	local y<const> = obj.y + self.offset_y + self.draw_offset_y
+	self:resolve_pose()
+	local x<const>, y<const> = self.wox, self.woy
 	local source_x<const> = self.region_x
 	local source_y<const> = self.region_y
 	local width<const> = self.region_width
 	local height<const> = self.region_height
-	local scale_x<const> = self.scale_x * self.draw_scale_x
-	local scale_y<const> = self.scale_y * self.draw_scale_y
 	local color<const> = self.color
 	local flip_flags<const> = (self.flip_h and 1 or 0) | (self.flip_v and 2 or 0)
-	if scale_x == 1 and scale_y == 1 then
+	if self._translation_only then
 		source:draw_source_rect(
 			draw,
 			source_x, source_y,
@@ -185,8 +179,8 @@ function sprite_component:draw_region_visual(draw)
 		source_y0 = source_y1
 		source_y1 = source_y
 	end
-	local right<const> = x + width * scale_x
-	local bottom<const> = y + height * scale_y
+	local ax<const>, ay<const> = width * self.wxx, width * self.wxy
+	local bx<const>, by<const> = height * self.wyx, height * self.wyy
 	source:draw_quad(
 		draw,
 		source_x0, source_y0,
@@ -194,9 +188,9 @@ function sprite_component:draw_region_visual(draw)
 		source_x0, source_y1,
 		source_x1, source_y1,
 		x, y,
-		right, y,
-		x, bottom,
-		right, bottom,
+		x + ax, y + ay,
+		x + bx, y + by,
+		x + ax + bx, y + ay + by,
 		color,
 		gp0.draw_mode_blend_half)
 end

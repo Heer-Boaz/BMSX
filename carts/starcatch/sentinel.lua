@@ -10,10 +10,15 @@ local sentinel<const> = {}
 local align<const> = {
 	tick = function(enemy)
 		enemy.mode = 'align'
-		local target<const> = enemy.game.player.x
-		if enemy.x < target then enemy.x = math.min(target, enemy.x + 1.25)
-		else enemy.x = math.max(target, enemy.x - 1.25) end
-		if math.abs(enemy.x - target) <= 4 then return bt_result.success end
+		local target<const> = enemy.game.player.spatial:world_origin()
+		local spatial<const> = enemy.spatial
+		local x<const>, y<const>, z<const> = spatial:world_origin()
+		local next_x
+		if x < target then next_x = math.min(target, x + 1.25)
+		else next_x = math.max(target, x - 1.25) end
+		spatial:set_world_origin(next_x, y, z)
+		local actual_x<const> = spatial:world_origin()
+		if math.abs(actual_x - target) <= 4 then return bt_result.success end
 		return bt_result.running
 	end,
 }
@@ -50,6 +55,7 @@ function sentinel_module.install()
 		} },
 	})
 	prefab.define({ def_id = 'starcatch.sentinel', class = sentinel,
+		spatial = { family = '3d', authority = 'affine', local_transform = { 1,0,0,0,1,0,0,0,1,0,0,512 } },
 		components = { timeline_component.new, bt_component.factory('starcatch.sentinel') } })
 end
 

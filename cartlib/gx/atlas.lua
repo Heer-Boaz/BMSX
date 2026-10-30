@@ -23,6 +23,10 @@ local refresh_direct16_source<const> = function(texture, source)
 	source._blit_draw_mode = gp0.direct16_draw_mode(
 		source_x, source_y, gp0.draw_mode_blend_half)
 	source._blit_uv_word = gp0.uv(source_x, source_y)
+	source._quad_uv0 = source._blit_uv_word
+	source._quad_uv1 = gp0.uv_texpage(source_x + source.width - 1, source_y, source._blit_draw_mode)
+	source._quad_uv2 = gp0.uv(source_x, source_y + source.height - 1)
+	source._quad_uv3 = gp0.uv(source_x + source.width - 1, source_y + source.height - 1)
 end
 
 local refresh_palette4_source<const> = function(texture, source)
@@ -32,6 +36,10 @@ local refresh_palette4_source<const> = function(texture, source)
 		texture.x, source_x, source_y, gp0.draw_mode_blend_half)
 	source._blit_uv_word = gp0.uv_clut(
 		source_x, source_y, texture.clut_x, texture.clut_y)
+	source._quad_uv0 = source._blit_uv_word
+	source._quad_uv1 = gp0.uv_texpage(source_x + source.width - 1, source_y, source._blit_draw_mode)
+	source._quad_uv2 = gp0.uv(source_x, source_y + source.height - 1)
+	source._quad_uv3 = gp0.uv(source_x + source.width - 1, source_y + source.height - 1)
 end
 
 local refresh_draw_mode_span_binding<const> = function(binding)

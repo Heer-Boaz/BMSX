@@ -25,21 +25,27 @@ return {
 			end, 6)
 			local intro<const> = starcatch.scene
 			local ship<const> = starcatch.player
-			assert(ship.y > 240 and ship.z > 512, 'arrival starts offscreen in depth')
+			local _start_x<const>, start_y<const>, start_z<const> = ship.spatial:world_origin()
+			assert(start_y > 240 and start_z > 512, 'arrival starts offscreen in depth')
+			assert(ship.x == nil and ship.y == nil and ship.z == nil, '3D actor retains a mirrored position')
 			t:wait_ticks(35)
-			assert(ship.y < 420 and ship.y > 198 and ship.z < 896 and ship.z > 512)
+			local _arrival_x<const>, arrival_y<const>, arrival_z<const> = ship.spatial:world_origin()
+			assert(arrival_y < 420 and arrival_y > 198 and arrival_z < 896 and arrival_z > 512)
 			assert(starcatch.shots_fired == 0, 'intro has no gameplay fire')
 			assert((*apu_active & 8) ~= 0 and (*apu_status & 1) == 0)
 			t:capture('arrival')
 			t:wait_until('gameplay scene', function() return starcatch.phase == 'play' end, 180)
 			assert(intro.closed and #intro.objects.items == 0)
 			assert(starcatch.player ~= ship)
-			assert(starcatch.player.x == 160 and starcatch.player.y == 198 and starcatch.player.z == 512)
+			local play_x<const>, play_y<const>, play_z<const> = starcatch.player.spatial:world_origin()
+			assert(play_x == 160 and play_y == 198 and play_z == 512)
 			assert(#starcatch.player_bolts == 8 and #starcatch.enemy_bolts == 4)
 			t:press('ArrowUp', 8)
-			assert(starcatch.player.y < 198)
+			local _after_up_x<const>, after_up_y<const> = starcatch.player.spatial:world_origin()
+			assert(after_up_y < 198)
 			t:press('ArrowRight', 6)
-			assert(starcatch.player.x > 160)
+			local after_right_x<const> = starcatch.player.spatial:world_origin()
+			assert(after_right_x > 160)
 			assert((*apu_active & 8) == 0, 'arrival voice retires before gameplay fire')
 			t:down('Space')
 			t:wait_until('player shot audio', function()
@@ -63,8 +69,10 @@ return {
 				if match.phase ~= 'play' then break end
 				saw_charge = saw_charge or match.enemy.charge > 0
 				local desired = ''
-				if match.player.x < match.enemy.x - 2 then desired = 'ArrowRight'
-				elseif match.player.x > match.enemy.x + 2 then desired = 'ArrowLeft' end
+				local player_x<const> = match.player.spatial:world_origin()
+				local enemy_x<const> = match.enemy.spatial:world_origin()
+				if player_x < enemy_x - 2 then desired = 'ArrowRight'
+				elseif player_x > enemy_x + 2 then desired = 'ArrowLeft' end
 				if desired ~= held then
 					if held ~= '' then t:up(held) end
 					if desired ~= '' then t:down(desired) end

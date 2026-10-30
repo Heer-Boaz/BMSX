@@ -29,9 +29,13 @@ function screen_boundary_capture_system:update()
 	local boundary_components<const> = self._component_view.components
 	for i = 1, #boundary_components do
 		local component<const> = boundary_components[i]
-		local owner<const> = component.owner
-		component.old_x = owner.x
-		component.old_y = owner.y
+		local spatial<const> = component:resolve_footprint()
+		component.old_x = spatial.wox
+		component.old_y = spatial.woy
+		component.old_left = spatial.wox + component._footprint_left
+		component.old_top = spatial.woy + component._footprint_top
+		component.old_right = spatial.wox + component._footprint_right
+		component.old_bottom = spatial.woy + component._footprint_bottom
 	end
 end
 

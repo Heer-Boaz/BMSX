@@ -93,6 +93,9 @@ function evaluation_program.compile(program)
 		has_scalar_frame_channels = has_scalar_frame_channels,
 		has_scalar_time_channels = has_scalar_time_channels,
 		has_sample_tracks = has_sample_tracks,
+		has_time_sample_tracks = prepared_tracks.sample_time_track_count > 0,
+		has_spatial_frame_channels = prepared_tracks.has_spatial_frame_channels,
+		has_spatial_time_channels = prepared_tracks.has_spatial_time_channels,
 		value_has_evaluation_context = value_has_evaluation_context,
 	}
 	local play_operands<const>, play_signature<const>

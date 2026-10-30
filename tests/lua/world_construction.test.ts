@@ -1,40 +1,11 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
-import { GX_DISPLAY_PRESET_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_display_preset_module';
-import { GX_REGISTER_MODULE_SOURCE } from '../../toolchain/ts/rompack/gx_register_module';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { WORLD_CPU_MODULES as modules, WORLD_CPU_SETUP as setup } from '../helpers/world_cpu';
 
 // Real World, Scene, Registry, components and GPU dependencies, not a host-made
 // lifecycle model. These tests exercise guest construction, not rendering.
-const modules = [
-	'cartlib/dma', 'cartlib/irq', 'cartlib/irq/source',
-	'cartlib/gx/command_list', 'cartlib/gx/display', 'cartlib/gx/gpu', 'cartlib/gx/gp0', 'cartlib/gx/vram',
-	'cartlib/util/shallow_copy', 'cartlib/world/prefab', 'cartlib/world/scene', 'cartlib/world/scene_library',
-	'cartlib/world/space', 'cartlib/world/system_manager', 'cartlib/world/system_schedule_syntax',
-	'cartlib/world/tick_schedule', 'cartlib/world/scene_plan', 'cartlib/world/world', 'cartlib/world/world_object',
-].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') }));
-modules.push(
-	...['gpu/system_vram_region', 'tty/layout'].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
-	{ path: 'bmsx/gx_display_presets', source: GX_DISPLAY_PRESET_MODULE_SOURCE },
-	{ path: 'bmsx/gx_registers', source: GX_REGISTER_MODULE_SOURCE },
-	{ path: 'bmsx/system_assets', source: `module<const>
-rodata texture: word[3] = { 0xa0000000, 0x02d002c0, 0x00fc0140 }
-return { bin_gx_system_texture_addr = texture }` },
-);
-
-const setup = `
-local world<const> = require('cartlib/world/world')
-local world_object<const> = require('cartlib/world/world_object')
-local prefab<const> = require('cartlib/world/prefab')
-local scenes<const> = require('cartlib/world/scene_library')
-local registry<const> = require('cartlib/registry')
-local base_component<const> = require('cartlib/component/base_component')
-world:_add_space('main')
-world:set_space('main')
-`;
-
 for (const optLevel of [0, 3] as const) {
 	test(`World prepares batch identities and poses before constructors, then publishes, wires and activates (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
@@ -57,9 +28,9 @@ function base.initialize(self)
 		'custom initializer ran before World basic setup')
 	assert(peer ~= nil and peer.world == world and peer.events ~= nil and peer._components ~= nil,
 		'custom initializer ran before every batch shell was prepared')
-	assert(self.x == self.expected_x and self.y == self.expected_y and self.z == self.expected_z,
+	assert(self.spatial.wox == self.expected_x and self.spatial.woy == self.expected_y and self.spatial.woz == self.expected_z,
 		'custom initializer did not see the requested construction pose')
-	assert(peer.x == peer.expected_x and peer.y == peer.expected_y and peer.z == peer.expected_z,
+	assert(peer.spatial.wox == peer.expected_x and peer.spatial.woy == peer.expected_y and peer.spatial.woz == peer.expected_z,
 		'peer construction pose was not prepared with its shell')
 	assert(registry:get(self.id) == nil and registry:get(peer.id) == nil,
 		'constructor observed partially published identities')
@@ -68,21 +39,21 @@ end
 function component:on_attach()
 	local owner<const> = self.owner
 	assert(owner == owner.scene.members[owner.scene_member_id], 'component received a replacement owner shell')
-	assert(owner.x == owner.expected_x and owner.y == owner.expected_y and owner.z == owner.expected_z,
+	assert(owner.spatial.wox == owner.expected_x and owner.spatial.woy == owner.expected_y and owner.spatial.woz == owner.expected_z,
 		'component attachment ran before the construction pose')
 	attached = attached + 1
 	owner.part = self
 	order[#order + 1] = 'component:' .. owner.scene_member_id
 end
 function actor:ctor(options, definition_id)
-	assert(self.part.owner == self and self.x == self.expected_x and self.y == self.expected_y
-		and self.z == self.expected_z, 'constructor did not receive final identity and pose')
+	assert(self.part.owner == self and self.spatial.wox == self.expected_x and self.spatial.woy == self.expected_y
+		and self.spatial.woz == self.expected_z, 'constructor did not receive final identity and pose')
 	assert(definition_id == 'batch.actor' and options.expected_x == self.expected_x,
 		'constructor arguments changed')
 	constructed = constructed + 1
 	order[#order + 1] = 'ctor:' .. self.scene_member_id
 end
-function actor:onspawn(pos)
+function actor:onspawn()
 	local peer<const> = self.scene.members[self.peer_id]
 	assert(constructed == 2 and attached == 2, 'onspawn ran before every batch constructor')
 	assert(registry:get(self.id) == self and registry:get(peer.id) == peer
@@ -91,7 +62,8 @@ function actor:onspawn(pos)
 	assert(not self.active and not peer.active and #view.objects == 0,
 		'published batch entered active scheduling before ready callbacks')
 	assert(bound == 0 and activated == 0, 'onspawn ran after binding or activation began')
-	assert(pos == self.expected_pos, 'onspawn lost the supplied position argument')
+	assert(self.x == nil and self.y == nil and self.z == nil and self.sx == nil,
+		'World retained a mirrored object position or invented geometry dimensions')
 	spawned = spawned + 1
 	order[#order + 1] = 'spawn:' .. self.scene_member_id
 end
@@ -117,15 +89,15 @@ function component:on_activate()
 	order[#order + 1] = 'activate:' .. self.owner.scene_member_id
 end
 prefab.define({ def_id = 'batch.actor', class = actor, base = base,
-	defaults = { x = -1, y = -2, z = -3 },
+	spatial = { family = '3d', authority = 'affine', local_transform = { 1,0,0, 0,1,0, 0,0,1, -1,-2,-3 } },
 	components = { function(options) return setmetatable(base_component.new(options), component) end } })
-local left_pos<const> = { x = 11, y = 12, z = 13 }
-local right_pos<const> = { x = 21, y = 22, z = 23 }
 scenes.register('batch', { objects = {
-	{ member_id = 'left', definition_id = 'batch.actor', options = {
-		peer_id = 'right', pos = left_pos, expected_pos = left_pos, expected_x = 11, expected_y = 12, expected_z = 13 } },
-	{ member_id = 'right', definition_id = 'batch.actor', options = {
-		peer_id = 'left', pos = right_pos, expected_pos = right_pos, expected_x = 21, expected_y = 22, expected_z = 23 } },
+	{ member_id = 'left', definition_id = 'batch.actor',
+		spatial = { local_transform = { 1,0,0, 0,1,0, 0,0,1, 11,12,13 } },
+		options = { peer_id = 'right', expected_x = 11, expected_y = 12, expected_z = 13 } },
+	{ member_id = 'right', definition_id = 'batch.actor',
+		spatial = { local_transform = { 1,0,0, 0,1,0, 0,0,1, 21,22,23 } },
+		options = { peer_id = 'left', expected_x = 21, expected_y = 22, expected_z = 23 } },
 } })
 local scene<const> = scenes.instantiate('batch')
 assert(order[1] == 'initialize:left' and order[2] == 'component:left' and order[3] == 'ctor:left'
@@ -139,24 +111,25 @@ assert(scene.members.left.part.owner == scene.members.left and scene.members.rig
 	'World replaced a constructed identity')
 scene:dispose()
 local single_base<const> = setmetatable({ initialize = function(self)
-	assert(self.x == 0 and self.y == 0 and self.z == 0 and self.events ~= nil and self.world == world,
+	assert(self.spatial.wox == 0 and self.spatial.woy == 0 and self.spatial.woz == 0 and self.events ~= nil and self.world == world,
 		'procedural initializer ran before basic setup and the requested zero pose')
 	self.initial_events = self.events
 end }, { __index = world_object })
-prefab.define({ def_id = 'single.actor', base = single_base, defaults = { x = 11, y = 12, z = 13 },
+prefab.define({ def_id = 'single.actor', base = single_base,
+	spatial = { family = '3d', authority = 'affine', local_transform = { 1,0,0, 0,1,0, 0,0,1, 11,12,13 } },
 	class = { ctor = function(self)
-		assert(self.x == 0 and self.y == 0 and self.z == 0 and self.events == self.initial_events,
+		assert(self.spatial.wox == 0 and self.spatial.woy == 0 and self.spatial.woz == 0 and self.events == self.initial_events,
 			'procedural constructor used a different initialization or position path')
 	end, onspawn = function(self)
 		assert(registry:get(self.id) == self and not self.active,
 			'procedural ready callback ran before publication or after activation')
 	end },
 	components = { function(options)
-		assert(options.owner.x == 0 and options.owner.y == 0 and options.owner.z == 0,
+		assert(options.owner.spatial.wox == 0 and options.owner.spatial.woy == 0 and options.owner.spatial.woz == 0,
 			'procedural component factory ran before its requested position')
 		return base_component.new(options)
 	end } })
-local single<const> = world:spawn('single.actor', { pos = { x = 0, y = 0, z = 0 } })
+local single<const> = world:spawn('single.actor', {}, { local_transform = { 1,0,0, 0,1,0, 0,0,1, 0,0,0 } })
 assert(single.active and single._bound, 'procedural spawn did not finish the common lifecycle')
 single:mark_for_disposal()
 `, { optLevel, modules });

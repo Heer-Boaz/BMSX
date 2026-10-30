@@ -465,6 +465,9 @@ prefab.define({
         authority = 'affine',
         local_transform = { 1, 0, 0, 1, 0, 0 },
     },
+    initial = {
+        base_sprite = { imgid = 'ship', order = 10 },
+    },
     components = { ship_sprite_factory },
 })
 
@@ -474,6 +477,7 @@ scene_library.register('hangar', {
             member_id = 'ship',
             definition_id = 'ship',
             spatial = { local_transform = { 1, 0, 0, 1, 160, 120 } },
+            initial = { base_sprite = { order = 20 } },
             options = { team = 'player' },
         },
         {
@@ -504,6 +508,32 @@ authored parent IDs cannot reach into another Scene's namespace. The current
 prefab still constructs one WorldObject with ordered components. Nested
 prefab graphs, internal ID remapping and overrides are a separate composition
 capability, not an accidental second Scene format.
+
+### Constructor inputs and gameplay state
+
+`initial` contains constructor-owned input records keyed by stable component
+local identity. It is separate from gameplay `options`: World does not spread
+an initial image, render order or attachment affine onto the WorldObject.
+The actual visual owns its mutable order and geometry state. Multi-visual
+objects name and initialize each visual independently; there is no owner-wide
+order proxy or inherited spatial depth.
+
+Component constructor defaults, prefab `initial`, and Scene-member `initial`
+form the input precedence. Cold admission snapshots each supplied record's
+fields and merges overrides once. Nested authored values and asset references
+retain their declared immutable identity. An attachment/presentation affine
+replaces the complete input value; it is never merged coefficient by
+coefficient. The owning constructor copies coefficients into its flat mutable
+state. Procedural spawn admits its explicit initial overrides through this
+same boundary, rather than adding runtime property reflection.
+
+World supplies one construction context containing the final `owner` and the
+admitted `initial` map. Custom initialization, primary Sprite/Text composition,
+additional component factories and the object constructor consume that same
+context. A constructor selects its actual local slot once. There is no request
+table or bound closure per component, and no cleanup that deletes incorrectly
+spread visual fields afterward. The context is construction-only; retaining
+ordinary gameplay references remains the object's responsibility.
 
 ### Compilation and staged construction
 

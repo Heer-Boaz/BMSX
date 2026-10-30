@@ -39,8 +39,9 @@ retain_frame_shape = function(cache, frame)
 	return cache
 end
 
-function timeline_apply.compile_frames(frames)
+function timeline_apply.compile_frames(frames, path_offset)
 	local frame_appliers<const> = {}
+	local output_paths<const> = {}
 	local applier_by_frame<const> = {}
 	local shape_cache<const> = {}
 	for i = 1, #frames do
@@ -50,8 +51,10 @@ function timeline_apply.compile_frames(frames)
 			local shape<const> = retain_frame_shape(shape_cache, frame)
 			apply_frame = shape[complete_shape]
 			if apply_frame == nil then
+				local syntax_tree<const>, paths<const> = apply_syntax.build_frame(frame, path_offset + #output_paths)
+				for index = 1, #paths do output_paths[#output_paths + 1] = paths[index] end
 				apply_frame = compile_syntax(
-					apply_syntax.build_frame(frame),
+					syntax_tree,
 					'[timeline.apply.frame]'
 				)()
 				shape[complete_shape] = apply_frame
@@ -60,12 +63,12 @@ function timeline_apply.compile_frames(frames)
 		end
 		frame_appliers[i] = apply_frame
 	end
-	return frame_appliers
+	return frame_appliers, output_paths
 end
 
 -- Step bindings are fixed by the compiled sequence program. Resolve that
 -- binding once here instead of branching for every crossed key at runtime.
-function timeline_apply.compile_step_apply(path, apply, binding_index)
+function timeline_apply.compile_step_apply(path, apply, binding_index, writer_index, output_index)
 	if apply ~= nil then
 		if binding_index == 1 then
 			return function(entry, value, params, evaluation)
@@ -78,7 +81,7 @@ function timeline_apply.compile_step_apply(path, apply, binding_index)
 	end
 
 	return compile_syntax(
-		apply_syntax.build_step(path, binding_index),
+		apply_syntax.build_step(path, binding_index, writer_index, output_index),
 		'[timeline.apply.step]'
 	)()
 end

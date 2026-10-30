@@ -1,40 +1,79 @@
+-- Immutable image geometry bindings are shared by their actual ROM address.
+-- A collider admits the complete image set before normal animation samples.
 local rom_dir<const> = require('cartlib/rom_dir')
 local collision_shape<const> = require('cartlib/collision/collision_shape')
+local shape_geometry<const> = require('cartlib/collision/shape_geometry')
+local sprite_shape<const> = {}
+local bindings<const> = {}
 
-local select_sprite_shape_ref<const> = function(collider, sprite)
-	local image_id<const> = sprite.imgid
-	local flip_h<const> = sprite.flip_h
-	local flip_v<const> = sprite.flip_v
-	if collider._sprite_shapeimage_id == image_id then
-		if collider._sprite_shapeflip_h == flip_h and collider._sprite_shapeflip_v == flip_v then
-			return collider._sprite_shaperef
-		end
-	else
-		local image<const> = rom_dir.image(image_id)
-		local bin_base<const> = image.collision_addr
-		collider._sprite_shapeimage_id = image_id
-		collider._sprite_shaperef_original,
-			collider._sprite_shaperef_fliph,
-			collider._sprite_shaperef_flipv,
-			collider._sprite_shaperef_fliphv = collision_shape.variant_addresses(bin_base)
+function sprite_shape.image(image_id)
+	if image_id == nil then
+		error('sprite-derived collider requires an admitted image geometry source')
 	end
+	local address<const> = rom_dir.image(image_id).collision_addr
+	local retained<const> = bindings[address]
+	if retained ~= nil then return retained end
+	local original<const>, fliph<const>, flipv<const>, fliphv<const> = collision_shape.variant_addresses(address)
+	local maximum = shape_geometry.measure(original)
+	local bytes = shape_geometry.measure(fliph)
+	if bytes > maximum then maximum = bytes end
+	bytes = shape_geometry.measure(flipv)
+	if bytes > maximum then maximum = bytes end
+	bytes = shape_geometry.measure(fliphv)
+	if bytes > maximum then maximum = bytes end
+	local binding<const> = { original = original, fliph = fliph, flipv = flipv,
+		fliphv = fliphv, bytes = maximum }
+	bindings[address] = binding
+	return binding
+end
 
+function sprite_shape.select(collider, sprite)
+	local image_id<const> = sprite.imgid
+	local flip_h<const>, flip_v<const> = sprite.flip_h, sprite.flip_v
+	if collider._sprite_image_id == image_id
+	and collider._sprite_flip_h == flip_h and collider._sprite_flip_v == flip_v then
+		return collider._sprite_shape_ref
+	end
+	local binding<const> = collider._sprite_images[image_id]
+	if binding == nil then error('sprite image geometry was not admitted to this collider') end
 	local shape_ref
 	if flip_h then
-		if flip_v then
-			shape_ref = collider._sprite_shaperef_fliphv
-		else
-			shape_ref = collider._sprite_shaperef_fliph
-		end
-	elseif flip_v then
-		shape_ref = collider._sprite_shaperef_flipv
+		shape_ref = flip_v and binding.fliphv or binding.fliph
 	else
-		shape_ref = collider._sprite_shaperef_original
+		shape_ref = flip_v and binding.flipv or binding.original
 	end
-	collider._sprite_shapeflip_h = flip_h
-	collider._sprite_shapeflip_v = flip_v
-	collider._sprite_shaperef = shape_ref
+	collider._sprite_image_id = image_id
+	collider._sprite_flip_h = flip_h
+	collider._sprite_flip_v = flip_v
+	collider._sprite_shape_ref = shape_ref
 	return shape_ref
 end
 
-return select_sprite_shape_ref
+function sprite_shape.admit(sprite)
+	local images<const> = {}
+	local maximum = 0
+	if sprite.animations ~= nil then
+		for _, animation in pairs(sprite.animations) do
+			for index = 1, animation.frame_count do
+				local id<const> = animation.frames[index]
+				local binding<const> = sprite_shape.image(id)
+				images[id] = binding
+				if binding.bytes > maximum then maximum = binding.bytes end
+			end
+		end
+	elseif sprite.frames ~= nil then
+		for index = 1, sprite.frame_count do
+			local id<const> = sprite.frames[index]
+			local binding<const> = sprite_shape.image(id)
+			images[id] = binding
+			if binding.bytes > maximum then maximum = binding.bytes end
+		end
+	else
+		local binding<const> = sprite_shape.image(sprite.imgid)
+		images[sprite.imgid] = binding
+		maximum = binding.bytes
+	end
+	return images, maximum
+end
+
+return sprite_shape

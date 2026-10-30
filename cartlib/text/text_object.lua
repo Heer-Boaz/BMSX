@@ -10,6 +10,9 @@ local wrap_text_lines<const> = require('cartlib/util/text').wrap_text_lines
 local gp0<const> = require('cartlib/gx/gp0')
 local font_module<const> = require('cartlib/font')
 local smoothstep<const> = require('cartlib/easing').smoothstep
+local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
+local affine_batch<const> = require('cartlib/gx/affine_batch')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local text_object<const> = {}
 text_object.__index = text_object
@@ -19,28 +22,35 @@ local text_object_component<const> = {}
 text_object_component.__index = text_object_component
 setmetatable(text_object_component, { __index = text_component })
 
-function text_object_component.new(opts)
-	return setmetatable(text_component.new(opts), text_object_component)
+function text_object_component.new(context)
+	local self<const>, input<const> = visual_2d_component.new(context, 'text')
+	setmetatable(self, text_object_component)
+	text_component._initialize(self, input)
+	return self, input
 end
 
 function text_object_component:draw_visual(draw)
 	local owner<const> = self.owner
-	local x<const> = owner.x + self.offset_x + self.draw_offset_x
-	local y<const> = owner.y + self.offset_y + self.draw_offset_y
-	owner:submit_highlight(draw)
+	self:resolve_pose()
+	local xx<const>, xy<const>, yx<const>, yy<const> = self.wxx, self.wxy, self.wyx, self.wyy
+	local ox<const>, oy<const> = self.wox, self.woy
+	owner:submit_highlight(draw, xx, xy, yx, yy, ox, oy)
+	local x<const> = ox + xx*self.layout_x + yx*self.layout_y
+	local y<const> = oy + xy*self.layout_x + yy*self.layout_y
 	if self.background_color ~= nil then
 		-- Text objects retain their wrapped, left-aligned background line view
 		-- at layout, typing and highlight mutations. The command batch consumes
 		-- that view without rediscovering logical-line state during presentation.
-		draw:horizontal_rect_span(
-			owner._background_line_indices,
-			owner._background_line_count,
-			owner.wrapped_line_y_offsets,
-			self.line_widths,
-			x,
-			y,
-			self.font.line_height,
-			self.background_color)
+		if self._translation_only then
+			draw:horizontal_rect_span(
+				owner._background_line_indices, owner._background_line_count,
+				owner.wrapped_line_y_offsets, self.line_widths,
+				x, y, self.font.line_height, self.background_color)
+		else
+			affine_batch.rect_span(draw, owner._background_line_indices, owner._background_line_count,
+				owner.wrapped_line_y_offsets, self.line_widths, self.font.line_height,
+				xx, xy, yx, yy, x, y, self.background_color)
+		end
 	end
 	local lines<const> = self.glyph_lines
 	local span_binding<const> = self.font.span_binding
@@ -48,20 +58,27 @@ function text_object_component:draw_visual(draw)
 	local uniform_draw_mode_source<const> = span_binding.uniform_draw_mode_source
 	local line_offsets<const> = self.line_offsets
 	local color<const> = self.color
+	if self.glyph_visible_height ~= nil then
+		if self._translation_only then
+			text_component.render_visible_glyph_rows(self, draw, x, y, 1, self.glyph_line_count)
+		else
+			text_component.render_visible_affine_glyph_rows(self, draw,
+				xx, xy, yx, yy, x, y, 1, self.glyph_line_count)
+		end
+		return
+	end
 	for line_index = 1, self.glyph_line_count do
 		local line<const> = lines[line_index]
 		local line_length<const> = line.visible_count
 		if line_length > 0 then
-			blit_span(
-				draw,
-				line,
-				line.x_offsets,
-				1,
-				line_length,
-				x,
-				y + line_offsets[line_index],
-				color,
-				uniform_draw_mode_source)
+			local line_y<const> = line_offsets[line_index]
+			if self._translation_only then
+				blit_span(draw, line, line.x_offsets, 1, line_length,
+					x, y + line_y, color, uniform_draw_mode_source)
+			else
+				affine_batch.glyph_span(draw, line, line.x_offsets, 1, line_length,
+					xx, xy, yx, yy, x + yx*line_y, y + yy*line_y, color)
+			end
 		end
 	end
 end
@@ -69,6 +86,28 @@ end
 function text_object_component:set_font(font)
 	self.owner:set_font(font)
 end
+
+function text_object_component:set_text(text)
+	self.owner:set_text(text)
+end
+
+function text_object_component:set_wrap_chars(wrap_chars)
+	self.owner:set_wrap_chars(wrap_chars)
+end
+
+local text_properties<const> = shallow_copy(text_component.timeline_channels.properties)
+text_properties.text = text_object_component.set_text
+text_properties.font = text_object_component.set_font
+text_properties.wrap_chars = text_object_component.set_wrap_chars
+-- Rich layout owns paragraph advances and whole-block centering. Ordinary
+-- text's independently adjustable row-height/centering channels do not apply.
+text_properties.line_height = nil
+text_properties.center_block_width = nil
+text_object_component.timeline_channels = {
+	protected = text_component.timeline_channels.protected,
+	properties = text_properties,
+	groups = text_component.timeline_channels.groups,
+}
 
 local highlight_move_timeline_id<const> = 'hmove'
 local highlight_vibe_timeline_id<const> = 'hvibe'
@@ -237,6 +276,7 @@ fsm_library.register(text_object_fsm_id, {
 	timelines = {
 		[highlight_move_timeline_id] = {
 			def = {
+				phase = 'presentation',
 				frames = build_highlight_move_frames,
 				frame_duration = highlight_move_frame_duration,
 				playback_mode = 'once',
@@ -246,6 +286,7 @@ fsm_library.register(text_object_fsm_id, {
 		},
 		[highlight_vibe_timeline_id] = {
 			def = {
+				phase = 'presentation',
 				playback_mode = 'loop',
 				tracks = {
 					{
@@ -308,13 +349,14 @@ fsm_library.register(text_object_fsm_id, {
 	},
 })
 
-function text_object.initialize(self)
-	self:add_component(timeline_component.new({ owner = self }))
-	self:add_component(fsm_component.new({ owner = self }, text_object_machine_ids))
+function text_object.initialize(self, context)
+	self:add_component(timeline_component.new(context))
+	self:add_component(fsm_component.new(context, text_object_machine_ids))
+	local component<const>, input<const> = text_object_component.new(context)
+	self.text_component = component
 	self.is_text_object = true
-	if self.text == nil then
-		self.text = { '' }
-	end
+	self.text = input.text
+	if self.text == nil then self.text = empty_text end
 	self.full_text_lines = { '' }
 	self.full_text_line_widths = { 0 }
 	self.full_glyph_lines = {}
@@ -330,42 +372,33 @@ function text_object.initialize(self)
 	self.highlight_target_y = nil
 	self.highlight_target_h = nil
 	self.highlight_last_line_index = nil
-	if self.highlight_move_enabled == nil then
-		self.highlight_move_enabled = false
-	end
-	if self.highlight_pulse_enabled == nil then
-		self.highlight_pulse_enabled = false
-	end
-	if self.highlight_jitter_enabled == nil then
-		self.highlight_jitter_enabled = false
-	end
+	self.highlight_move_enabled = input.highlight_move_enabled
+	if self.highlight_move_enabled == nil then self.highlight_move_enabled = false end
+	self.highlight_pulse_enabled = input.highlight_pulse_enabled
+	if self.highlight_pulse_enabled == nil then self.highlight_pulse_enabled = false end
+	self.highlight_jitter_enabled = input.highlight_jitter_enabled
+	if self.highlight_jitter_enabled == nil then self.highlight_jitter_enabled = false end
 	self.highlight_vibe_scale = 1
 	self.highlight_vibe_offset_x = 0
 	self.highlight_vibe_offset_y = 0
 	self.wrapped_line_to_logical_line = {}
 	self.wrapped_line_y_offsets = { 0 }
-	self.highlight_bg_color = self.highlight_bg_color or 0xff000080
-	local font<const> = self.font or font_module.get('default')
-	local dimensions<const> = self.dimensions
-	self.dimensions = dimensions
-	self.char_width_uses_font = self.char_width == nil
-	self.char_width = self.char_width or font.items[0x61].width
-	self.blank_lines = self.blank_lines or 0
+	self.highlight_bg_color = input.highlight_bg_color
+	if self.highlight_bg_color == nil then self.highlight_bg_color = 0xff000080 end
+	local font<const> = component.font
+	self.char_width_uses_font = input.char_width == nil
+	self.char_width = input.char_width
+	if self.char_width == nil then self.char_width = font.items[0x61].width end
+	self.blank_lines = input.blank_lines
+	if self.blank_lines == nil then self.blank_lines = 0 end
 	local line_height<const> = line_advance(font, self.blank_lines)
-	self.text_component = text_object_component.new({
-		text = nil,
-		font = font,
-		line_height = line_height,
-		line_offsets = self.wrapped_line_y_offsets,
-		color = self.text_color or 0xffffffff,
-		background_color = self.normal_bg_color or 0xff000000,
-		offset_y = self.dimensions.top,
-		offset_z = 1,
-	})
+	component.line_height = line_height
+	component.line_offsets = self.wrapped_line_y_offsets
+	if component.background_color == nil then component.background_color = 0xff000000 end
 	self.displayed_line_widths = self.text_component.layout_line_widths
 	self.text_component.line_widths = self.displayed_line_widths
 	self:add_component(self.text_component)
-	self:set_dimensions(self.dimensions)
+	self:set_layout_rect(input.layout_rect)
 end
 
 -- The attached component remains addressable while the text object admits it
@@ -395,19 +428,25 @@ local rebuild_background_line_view<const> = function(self)
 	self._background_line_count = count
 end
 
-function text_object:onspawn(_pos)
-	self:position_text_component()
-end
-
-function text_object:set_dimensions(rect)
-	self.dimensions = rect
-	self.maximum_characters_per_line = (rect.right - rect.left) // self.char_width
+function text_object:set_layout_rect(rect)
+	self.text_component.layout_rect = rect
+	local wrap_chars<const> = self.text_component.wrap_chars
+	self.maximum_characters_per_line = wrap_chars
+	if wrap_chars == nil then
+		self.maximum_characters_per_line = (rect.right - rect.left) // self.char_width
+	end
 	self:rebuild_text_layout()
 	if self:is_typing() then
 		self:reset_typing_buffer()
 	else
 		self:apply_full_text()
 	end
+end
+
+function text_object:set_wrap_chars(wrap_chars)
+	if self.text_component.wrap_chars == wrap_chars then return end
+	self.text_component.wrap_chars = wrap_chars
+	self:set_layout_rect(self.text_component.layout_rect)
 end
 
 function text_object:position_text_component()
@@ -419,9 +458,9 @@ function text_object:position_text_component()
 			longest = width
 		end
 	end
-	local dimensions<const> = self.dimensions
-	self.text_component.offset_x = ((dimensions.right - dimensions.left) - longest) / 2 + dimensions.left - self.x
-	self.text_component.offset_y = dimensions.top - self.y
+	local rect<const> = self.text_component.layout_rect
+	self.text_component.layout_x = ((rect.right - rect.left) - longest) / 2 + rect.left
+	self.text_component.layout_y = rect.top
 end
 
 function text_object:rebuild_text_layout()
@@ -456,7 +495,7 @@ function text_object:compute_highlight_block()
 	local highlight_padding_y<const> = (self.text_component.line_height - font.line_height) / 2
 	local first_y<const> = self.wrapped_line_y_offsets[first]
 	local last_y<const> = self.wrapped_line_y_offsets[last]
-	local y<const> = self.dimensions.top + first_y - highlight_padding_y
+	local y<const> = self.text_component.layout_rect.top + first_y - highlight_padding_y
 	local h<const> = (last_y - first_y) + font.line_height + (highlight_padding_y * 2)
 	return y, h
 end
@@ -580,7 +619,11 @@ function text_object:set_font(font)
 	if self.char_width_uses_font then
 		self.char_width = font.items[0x61].width
 	end
-	self.maximum_characters_per_line = (self.dimensions.right - self.dimensions.left) // self.char_width
+	local rect<const> = self.text_component.layout_rect
+	self.maximum_characters_per_line = self.text_component.wrap_chars
+	if self.maximum_characters_per_line == nil then
+		self.maximum_characters_per_line = (rect.right - rect.left) // self.char_width
+	end
 	self:rebuild_text_layout()
 	if self:is_typing() then
 		self:reset_typing_buffer()
@@ -606,6 +649,7 @@ function text_object:reset_typing_buffer()
 	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
+	self.text_component:_rebuild_layout_bounds()
 	self._background_line_count = 0
 	update_text_component_draw_function(self)
 end
@@ -625,6 +669,7 @@ function text_object:apply_full_text()
 	self.text_component.glyph_lines = self.full_glyph_lines
 	self.text_component.line_widths = self.full_text_line_widths
 	self.text_component.glyph_line_count = #self.full_text_lines
+	self.text_component:_rebuild_layout_bounds()
 	rebuild_background_line_view(self)
 	update_text_component_draw_function(self)
 end
@@ -682,8 +727,8 @@ function text_object:type_next()
 	self.state_machines:dispatch(typing_command_step)
 end
 
-function text_object:submit_highlight(draw)
-	local dims<const> = self.dimensions
+function text_object:submit_highlight(draw, xx, xy, yx, yy, ox, oy)
+	local rect<const> = self.text_component.layout_rect
 	local highlighted_logical_line<const> = self.highlighted_line_index
 	if highlighted_logical_line ~= nil and self.highlight_anim_y ~= nil then
 		local horizontal_margin<const> = self.char_width / 2
@@ -692,7 +737,10 @@ function text_object:submit_highlight(draw)
 		local offset_y<const> = self.highlight_jitter_enabled and self.highlight_vibe_offset_y or 0
 		local padded_x<const> = horizontal_margin * scale
 		draw:mode(gp0.draw_mode_blend_half)
-		draw:semitransparent_rect(dims.left - padded_x + offset_x, self.highlight_anim_y + offset_y, dims.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y, self.highlight_bg_color)
+		affine_batch.semitransparent_rect(draw,
+			rect.left - padded_x + offset_x, self.highlight_anim_y + offset_y,
+			rect.right + padded_x + offset_x, self.highlight_anim_y + self.highlight_anim_h + offset_y,
+			xx, xy, yx, yy, ox, oy, self.highlight_bg_color)
 	end
 end
 

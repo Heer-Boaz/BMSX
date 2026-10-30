@@ -46,23 +46,6 @@ local consume_axis_fraction<const> = function(fraction, speed_num, speed_den)
 	return delta, value - delta * speed_den
 end
 
-local move_with_velocity<const> = function(target)
-	local speed_den<const> = target.speed_den
-	if speed_den == 1 then
-		target.x = target.x + target.speed_accum_x + target.speed_x_num
-		target.y = target.y + target.speed_accum_y + target.speed_y_num
-		target.speed_accum_x = 0
-		target.speed_accum_y = 0
-		return
-	end
-	local dx<const>, next_accum_x<const> = consume_axis_accum(target.speed_accum_x, target.speed_x_num, speed_den)
-	local dy<const>, next_accum_y<const> = consume_axis_accum(target.speed_accum_y, target.speed_y_num, speed_den)
-	target.speed_accum_x = next_accum_x
-	target.speed_accum_y = next_accum_y
-	target.x = target.x + dx
-	target.y = target.y + dy
-end
-
 return {
 	configure_gameplay_delta = configure_gameplay_delta,
 	pixels_per_second_to_pixels_per_tick = pixels_per_second_to_pixels_per_tick,
@@ -70,5 +53,4 @@ return {
 	pixels_per_second_squared_to_acceleration_q8 = pixels_per_second_squared_to_acceleration_q8,
 	consume_axis_accum = consume_axis_accum,
 	consume_axis_fraction = consume_axis_fraction,
-	move_with_velocity = move_with_velocity,
 }

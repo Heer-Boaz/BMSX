@@ -16,31 +16,10 @@ setmetatable(sprite_object, { __index = world_object })
 
 local base_sprite_id<const> = 'base_sprite'
 
-function sprite_object.initialize(self)
-	self.sprite_component = self.primary_sprite_factory({
-		owner = self,
-		imgid = self.imgid,
-		id_local = base_sprite_id,
-	})
+function sprite_object.initialize(self, context)
+	self.sprite_component = self.primary_sprite_factory(context, base_sprite_id)
 
 	self:add_component(self.sprite_component)
-	if self.imgid ~= nil then
-		self.sx = self.sprite_component.source_width
-		self.sy = self.sprite_component.source_height
-	end
-end
-
--- Sets the sprite component's semantic image id and updates the object's size
--- from the resolved image owned by that component.
-function sprite_object:set_imgid(id)
-	if not self.sprite_component:set_imgid(id) then
-		return
-	end
-	if id == nil then
-		return
-	end
-	self.sx = self.sprite_component.source_width
-	self.sy = self.sprite_component.source_height
 end
 
 return sprite_object

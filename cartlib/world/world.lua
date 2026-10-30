@@ -40,10 +40,12 @@ local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_vram<const> = require('cartlib/gx/vram')
 local gp0<const> = require('cartlib/gx/gp0')
 local component_class_chain<const> = require('cartlib/component/component_class').chain
+local component_inputs<const> = require('cartlib/world/component_inputs')
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
 local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local space<const> = require('cartlib/world/space')
+local spatial_hierarchy<const> = require('cartlib/world/spatial_hierarchy')
 local system_manager<const> = require('cartlib/world/system_manager')
 local world_object<const> = require('cartlib/world/world_object')
 
@@ -62,6 +64,7 @@ local mutation_disposal<const> = 0x80
 local mutation_clear<const> = 0x100
 local mutation_gameplay_clock<const> = 0x200
 local mutation_unload<const> = 0x400
+local mutation_reparent<const> = 0x800
 local structural_mutation_mask<const> = mutation_admission
 	| mutation_component_attach
 	| mutation_object
@@ -70,17 +73,18 @@ local structural_mutation_mask<const> = mutation_admission
 	| mutation_component_detach
 	| mutation_active_space
 	| mutation_gameplay_clock
+	| mutation_reparent
 
 bss cartlib_render_commands: word[render_command_capacity]
 
 local world_class<const> = {}
 world_class.__index = world_class
 
-local visual_depth_less<const> = function(a, b)
-	local a_depth<const> = a.owner.z + a.offset_z + a.draw_offset_z
-	local b_depth<const> = b.owner.z + b.offset_z + b.draw_offset_z
-	if a_depth ~= b_depth then
-		return a_depth < b_depth
+local visual_order_less<const> = function(a, b)
+	local a_order<const> = a.order + a.presentation_order
+	local b_order<const> = b.order + b.presentation_order
+	if a_order ~= b_order then
+		return a_order < b_order
 	end
 	return a._visual_sequence < b._visual_sequence
 end
@@ -112,6 +116,7 @@ function world_class.new()
 	self._space_order = {}
 	self._pending_disposals = {}
 	self._pending_disposal_count = 0
+	self._pending_disposal_first = 1
 	self._pending_admissions = {}
 	self._pending_admission_count = 0
 	self._pending_admission_first = 1
@@ -131,6 +136,14 @@ function world_class.new()
 	self._pending_tag_names = {}
 	self._pending_tag_count = 0
 	self._pending_mutation_mask = 0
+	self._spatial_hierarchy = spatial_hierarchy.new()
+	self._pending_reparent_targets = {}
+	self._pending_reparent_parents = {}
+	self._pending_reparent_modes = {}
+	self._pending_reparent_callbacks = {}
+	self._pending_reparent_contexts = {}
+	self._pending_reparent_count = 0
+	self._pending_reparent_first = 1
 	self._active_definition_views = {}
 	self._active_definition_view_list = {}
 	self._active_component_views_by_class = {}
@@ -146,6 +159,9 @@ function world_class.new()
 	self.gameplay_clock_running = true
 	self.gameplay_time_ms = 0
 	self._mutation_barrier_open = false
+	self._clearing = false
+	self._update_revision = 0
+	self._executing_tick_group = nil
 	self._visual_sequence = 0
 	self._visual_revision = 0
 	self._draw_commands = command_list.new(cartlib_render_commands)
@@ -640,16 +656,8 @@ function world_class:_flush_tags()
 	self._pending_tag_count = 0
 end
 
-function world_class:visual_depth_changed()
+function world_class:visual_order_changed()
 	self._visual_revision = self._visual_revision + 1
-end
-
-local apply_spawn_values<const> = function(target, values)
-	for key, value in pairs(values) do
-		if key ~= 'pos' then
-			target[key] = value
-		end
-	end
 end
 
 function world_class:_commit_spawn(obj)
@@ -677,6 +685,17 @@ function world_class:_flush_admissions()
 	local pending<const> = self._pending_admissions
 	local first<const> = self._pending_admission_first
 	local last<const> = self._pending_admission_count
+	-- A pending descendant of a terminal parent has never been a live child
+	-- eligible for keep-world detachment. Parent-first batches propagate that
+	-- cancellation before publishing any identity.
+	for index = first, last do
+		local obj<const> = pending[index]
+		local spatial<const> = obj.spatial
+		local parent<const> = spatial and spatial.spatial_parent
+		if parent ~= nil and parent.owner.marked_for_disposal then
+			self:mark_for_disposal(obj)
+		end
+	end
 	-- Keep this span retained through all lifecycle phases. Reentrant spawns
 	-- append their constructed shells for the next batch at this same barrier.
 	for index = first, last do
@@ -688,7 +707,7 @@ function world_class:_flush_admissions()
 	for index = first, last do
 		local obj<const> = pending[index]
 		if not obj.marked_for_disposal then
-			obj:onspawn(obj._construction_options.pos)
+			obj:onspawn()
 		end
 	end
 	for index = first, last do
@@ -709,9 +728,7 @@ function world_class:_flush_admissions()
 		self._pending_admission_first = index + 1
 		obj._construction_definition = nil
 		obj._construction_options = nil
-		if obj.marked_for_disposal and obj._world_object_index == nil then
-			self:_commit_disposal(obj)
-		end
+		obj._construction_initial = nil
 	end
 	if self._pending_admission_count == last then
 		self._pending_admission_count = 0
@@ -723,15 +740,10 @@ end
 
 -- Allocate the final object identity and all common metadata before entering
 -- any initializer, component factory or constructor.
-function world_class:_prepare_spawn(definition, options, scene, member_id)
-	local obj<const> = setmetatable({}, definition.instance_metatable)
-	apply_spawn_values(obj, definition.defaults)
-	apply_spawn_values(obj, options)
-	local pos<const> = options.pos
-	if pos ~= nil then
-		obj.x = pos.x or obj.x
-		obj.y = pos.y or obj.y
-		obj.z = pos.z or obj.z
+function world_class:_prepare_spawn(definition, options, local_transform, initial, scene, member_id)
+	local obj<const> = setmetatable(shallow_copy(definition.defaults), definition.instance_metatable)
+	for key, value in pairs(options) do
+		obj[key] = value
 	end
 	obj.definition_id = definition.definition_id
 	obj.id = obj.id or registry:next_id()
@@ -742,12 +754,24 @@ function world_class:_prepare_spawn(definition, options, scene, member_id)
 		obj.scene = scene
 		scene:_attach(obj, member_id)
 	end
+	local spatial_constructor<const> = definition.spatial_constructor
+	if spatial_constructor ~= nil then
+		local spatial<const> = spatial_constructor(self._spatial_hierarchy, obj, local_transform)
+		obj.spatial = spatial
+		obj:_attach_component(spatial)
+	end
 	obj._construction_definition = definition
 	obj._construction_options = options
+	obj._construction_initial = initial
 	local index<const> = self._pending_admission_count + 1
 	self._pending_admission_count = index
 	self._pending_admissions[index] = obj
 	self._pending_mutation_mask = self._pending_mutation_mask | mutation_admission
+	-- Clear closes this structural generation. Teardown may request a birth,
+	-- but it cannot restart gameplay in the generation being dismantled.
+	if self._clearing then
+		self:mark_for_disposal(obj)
+	end
 	return obj
 end
 
@@ -757,18 +781,25 @@ function world_class:_construct_spawn(obj)
 	end
 	local definition<const> = obj._construction_definition
 	local options<const> = obj._construction_options
+	if obj.spatial ~= nil then
+		spatial_hierarchy.resolve(obj.spatial)
+	end
 	local initialize<const> = definition.initialize
+	local component_factories<const> = definition.components
+	local ctor<const> = definition.ctor
+	local context
+	if initialize ~= nil or ctor ~= nil or #component_factories > 0 then
+		context = { owner = obj, initial = obj._construction_initial }
+	end
 	if initialize ~= nil then
-		initialize(obj)
+		initialize(obj, context)
 	end
 	if obj.marked_for_disposal then
 		return
 	end
-	local component_factories<const> = definition.components
 	if #component_factories > 0 then
-		local component_options<const> = { owner = obj }
 		for index = 1, #component_factories do
-			local component<const> = component_factories[index](component_options)
+			local component<const> = component_factories[index](context)
 			-- A factory may close the Scene. Its returned component still belongs
 			-- to this shell and is torn down through the common disposal path.
 			obj:add_component(component)
@@ -777,9 +808,8 @@ function world_class:_construct_spawn(obj)
 			end
 		end
 	end
-	local ctor<const> = definition.ctor
 	if ctor ~= nil then
-		ctor(obj, options, definition.definition_id)
+		ctor(obj, options, definition.definition_id, context)
 	end
 	obj._constructed = true
 	obj._construction_definition = nil
@@ -787,16 +817,52 @@ end
 
 -- Procedural requests resolve once; retained Scene rows call the concrete
 -- definition boundary without re-resolving an identifier.
-function world_class:spawn(definition_id, options, scene, member_id)
-	return self:_spawn_definition(prefab.definition(definition_id), options, scene, member_id)
+function world_class:spawn(definition_id, options, spatial_input, initial, scene)
+	local definition<const> = prefab.definition(definition_id)
+	local local_transform = definition.default_local_transform
+	local parent
+	if spatial_input ~= nil then
+		if definition.spatial_constructor == nil then
+			error('nonspatial prefab cannot receive spatial construction input')
+		end
+		local supplied_transform<const> = spatial_input.local_transform
+		if supplied_transform ~= nil then
+			local validate<const> = definition.spatial_validate_local
+			if validate ~= nil then
+				validate(supplied_transform)
+			end
+			local_transform = supplied_transform
+		end
+		parent = spatial_input.parent
+	end
+	return self:_spawn_definition(definition, options, local_transform, parent,
+		component_inputs.merge(definition.initial, initial), scene)
 end
 
-function world_class:_spawn_definition(definition, options, scene, member_id)
+function world_class:_spawn_definition(definition, options, local_transform, parent, initial, scene, member_id)
+	if scene ~= nil then
+		assert(not scene.closed, 'cannot spawn into an unloaded scene')
+		if member_id ~= nil and scene.members[member_id] ~= nil then
+			error('scene member already instantiated: ' .. member_id)
+		end
+	end
+	if parent ~= nil then
+		if parent._hierarchy ~= self._spatial_hierarchy or parent.owner.marked_for_disposal
+		or parent.owner._world_object_index == nil then
+			error('spatial construction parent is not live in this World')
+		end
+		if definition.spatial_root_origin or parent._family ~= definition.spatial_family then
+			error('incompatible spatial construction parent')
+		end
+	end
 	local own_barrier<const> = not self._mutation_barrier_open
 	if own_barrier then
 		self:_open_mutation_barrier()
 	end
-	local obj<const> = self:_prepare_spawn(definition, options, scene, member_id)
+	local obj<const> = self:_prepare_spawn(definition, options, local_transform, initial, scene, member_id)
+	if parent ~= nil then
+		spatial_hierarchy.attach_local(obj.spatial, parent)
+	end
 	self:_construct_spawn(obj)
 	if own_barrier then
 		self:_commit_mutation_barrier()
@@ -805,6 +871,25 @@ function world_class:_spawn_definition(definition, options, scene, member_id)
 end
 
 function world_class:spawn_members(scene, members, overrides)
+	assert(not scene.closed, 'cannot spawn into an unloaded scene')
+	local selected<const> = {}
+	for index = 1, #members do
+		local member<const> = members[index]
+		if scene.members[member.member_id] ~= nil then
+			error('scene member already instantiated: ' .. member.member_id)
+		end
+		selected[member.index] = true
+	end
+	for index = 1, #members do
+		local member<const> = members[index]
+		local parent_index<const> = member.parent_index
+		if parent_index ~= nil and not selected[parent_index] then
+			local parent<const> = scene._members_by_index[parent_index]
+			if parent == nil or parent.marked_for_disposal or parent._world_object_index == nil then
+				error('required spatial parent is not live or selected: ' .. member.member_id)
+			end
+		end
+	end
 	local own_barrier<const> = not self._mutation_barrier_open
 	if own_barrier then
 		self:_open_mutation_barrier()
@@ -820,12 +905,32 @@ function world_class:spawn_members(scene, members, overrides)
 				options[key] = value
 			end
 		end
-		self:_prepare_spawn(member.definition, options, scene, member.member_id)
+		self:_prepare_spawn(member.definition, options, member.local_transform, member.initial, scene, member.member_id)
 	end
 	local last<const> = self._pending_admission_count
 	local pending<const> = self._pending_admissions
+	local by_index<const> = scene._members_by_index
+	for index = 1, #members do
+		local member<const> = members[index]
+		if member.parent_index ~= nil then
+			spatial_hierarchy.attach_local(by_index[member.index].spatial, by_index[member.parent_index].spatial)
+		end
+	end
+	-- Every shell's authored pose is available before the first user hook.
 	for index = first, last do
-		self:_construct_spawn(pending[index])
+		local spatial<const> = pending[index].spatial
+		if spatial ~= nil then
+			spatial_hierarchy.resolve(spatial)
+		end
+	end
+	for index = first, last do
+		local obj<const> = pending[index]
+		local spatial<const> = obj.spatial
+		local parent<const> = spatial and spatial.spatial_parent
+		if parent ~= nil and parent.owner.marked_for_disposal then
+			self:mark_for_disposal(obj)
+		end
+		self:_construct_spawn(obj)
 	end
 	if own_barrier then
 		self:_commit_mutation_barrier()
@@ -870,9 +975,6 @@ function world_class:mark_for_disposal(obj)
 	end
 	obj.marked_for_disposal = true
 	obj.active = false
-	if obj._world_object_index == nil then
-		return
-	end
 	local own_barrier<const> = not self._mutation_barrier_open
 	if own_barrier then
 		self:_open_mutation_barrier()
@@ -888,14 +990,135 @@ end
 
 function world_class:_flush_disposals()
 	local pending<const> = self._pending_disposals
-	local index = 1
-	while index <= self._pending_disposal_count do
+	local first<const> = self._pending_disposal_first
+	local last<const> = self._pending_disposal_count
+	-- Establish the complete retirement set before deriving any surviving pose.
+	for index = first, last do
+		local spatial<const> = pending[index].spatial
+		if spatial ~= nil then
+			spatial._retiring = true
+		end
+	end
+	for index = first, last do
+		local spatial<const> = pending[index].spatial
+		if spatial ~= nil then
+			spatial_hierarchy.materialize_surviving_children(spatial)
+		end
+	end
+	for index = first, last do
+		local spatial<const> = pending[index].spatial
+		if spatial ~= nil then
+			spatial_hierarchy.detach_surviving_children(spatial)
+		end
+	end
+	for index = first, last do
+		local spatial<const> = pending[index].spatial
+		if spatial ~= nil then
+			spatial_hierarchy.retire(spatial)
+		end
+	end
+	-- All topology is retired before hooks can append another removal batch.
+	for index = first, last do
 		local obj<const> = pending[index]
 		pending[index] = nil
 		self:_commit_disposal(obj)
-		index = index + 1
 	end
-	self._pending_disposal_count = 0
+	if self._pending_disposal_count == last then
+		self._pending_disposal_first = 1
+		self._pending_disposal_count = 0
+	else
+		self._pending_disposal_first = last + 1
+	end
+end
+
+-- Capture one explicit spatial subtree. Normal single-object/Scene/Space
+-- removal deliberately does not inherit this destruction policy.
+function world_class:dispose_spatial_subtree(root)
+	if root._hierarchy ~= self._spatial_hierarchy then
+		error('spatial subtree is not live in this World')
+	end
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
+	end
+	local node = root
+	while true do
+		self:mark_for_disposal(node.owner)
+		if node._first_child ~= nil then
+			node = node._first_child
+		else
+			while node ~= root and node._next_sibling == nil do
+				node = node.spatial_parent
+			end
+			if node == root then
+				break
+			end
+			node = node._next_sibling
+		end
+	end
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
+end
+
+-- Completion reports the committed topology, not acceptance into the queue.
+-- The queue retains concrete instances and caller bindings, never a name to
+-- resolve again after destruction or a command/promise object per request.
+function world_class:reparent(target, parent, keep_world, on_completed, context)
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then
+		self:_open_mutation_barrier()
+	end
+	local index<const> = self._pending_reparent_count + 1
+	self._pending_reparent_count = index
+	self._pending_reparent_targets[index] = target
+	self._pending_reparent_parents[index] = parent
+	self._pending_reparent_modes[index] = keep_world
+	self._pending_reparent_callbacks[index] = on_completed
+	self._pending_reparent_contexts[index] = context
+	self._pending_mutation_mask = self._pending_mutation_mask | mutation_reparent
+	if own_barrier then
+		self:_commit_mutation_barrier()
+	end
+end
+
+function world_class:_flush_reparents()
+	local targets<const> = self._pending_reparent_targets
+	local parents<const> = self._pending_reparent_parents
+	local modes<const> = self._pending_reparent_modes
+	local callbacks<const> = self._pending_reparent_callbacks
+	local contexts<const> = self._pending_reparent_contexts
+	local first<const> = self._pending_reparent_first
+	local last<const> = self._pending_reparent_count
+	for index = first, last do
+		local target<const> = targets[index]
+		local parent<const> = parents[index]
+		local result
+		if self._clearing
+		or target.owner.world == nil or target.owner.marked_for_disposal
+		or (parent ~= nil and (parent.owner.world == nil or parent.owner.marked_for_disposal)) then
+			result = spatial_hierarchy.retired_target
+		elseif target._hierarchy ~= self._spatial_hierarchy then
+			result = spatial_hierarchy.invalid_relationship
+		else
+			result = spatial_hierarchy.reparent(target, parent, modes[index])
+		end
+		local callback<const> = callbacks[index]
+		local context<const> = contexts[index]
+		targets[index] = nil
+		parents[index] = nil
+		modes[index] = nil
+		callbacks[index] = nil
+		contexts[index] = nil
+		self._pending_reparent_first = index + 1
+		callback(context, result)
+	end
+	if self._pending_reparent_count == last then
+		self._pending_reparent_first = 1
+		self._pending_reparent_count = 0
+	else
+		self._pending_reparent_first = last + 1
+	end
 end
 
 function world_class:_open_mutation_barrier()
@@ -939,6 +1162,10 @@ function world_class:_flush_structural_mutations()
 		if (self._pending_mutation_mask & mutation_admission) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_admission
 			self:_flush_admissions()
+		end
+		if (self._pending_mutation_mask & mutation_reparent) ~= 0 then
+			self._pending_mutation_mask = self._pending_mutation_mask - mutation_reparent
+			self:_flush_reparents()
 		end
 		if (self._pending_mutation_mask & mutation_object) ~= 0 then
 			self._pending_mutation_mask = self._pending_mutation_mask - mutation_object
@@ -1014,6 +1241,7 @@ function world_class:_commit_mutation_barrier()
 		end
 	end
 	self._mutation_barrier_open = false
+	self._clearing = false
 	return schedule_changed
 end
 
@@ -1032,7 +1260,7 @@ function world_class:_rebuild_render_visuals()
 	for i = visual_count + 1, self._render_visual_count do
 		visuals[i] = nil
 	end
-	table.sort(visuals, visual_depth_less)
+	table.sort(visuals, visual_order_less)
 	self._render_visual_count = visual_count
 	self._render_visual_revision = revision
 end
@@ -1184,6 +1412,7 @@ function world_class:clear()
 	if own_barrier then
 		self:_open_mutation_barrier()
 	end
+	self._clearing = true
 	local objects<const> = self._objects
 	for index = #objects, 1, -1 do
 		self:mark_for_disposal(objects[index])

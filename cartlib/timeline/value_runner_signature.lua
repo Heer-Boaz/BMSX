@@ -24,7 +24,7 @@ function value_runner_signature.compile(values, position)
 		operands[#operands + 1] = operand.previous_frame
 		mask = mask | 0x01
 	end
-	if values.has_frame_steps or values.has_scalar_frame_channels then
+	if values.has_frame_steps or values.has_scalar_frame_channels or values.has_spatial_frame_channels then
 		operands[#operands + 1] = operand.frame
 		mask = mask | 0x02
 	end
@@ -32,7 +32,7 @@ function value_runner_signature.compile(values, position)
 		operands[#operands + 1] = operand.previous_time_ms
 		mask = mask | 0x04
 	end
-	if values.has_time_steps or values.has_scalar_time_channels or values.has_sample_tracks then
+	if values.has_time_steps or values.has_scalar_time_channels or values.has_time_sample_tracks or values.has_spatial_time_channels then
 		operands[#operands + 1] = operand.time_ms
 		mask = mask | 0x08
 	end

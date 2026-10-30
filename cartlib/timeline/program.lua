@@ -79,13 +79,16 @@ function timeline_program.compile(definition)
 	if type(frame_source) == 'function' then
 		frame_builder = frame_source
 	end
+	local phase<const> = definition.phase or 'presentation'
+	if phase ~= 'physical' and phase ~= 'presentation' then error('unknown timeline phase: ' .. phase) end
 	local binding_ids<const>, binding_index_by_id<const> = compile_bindings(definition.bindings or empty_defs)
-	local prepared_tracks<const> = timeline_track_program.prepare(track_defs, binding_index_by_id)
+	local prepared_tracks<const> = timeline_track_program.prepare(track_defs, binding_index_by_id, phase)
 	local subsequences<const> = timeline_sequence_program.compile(
 		subsequence_defs,
 		binding_index_by_id,
 		playback_mode_by_name,
-		timeline_program.compile
+		timeline_program.compile,
+		phase
 	)
 	local apply_function
 	if type(definition.apply) == 'function' then
@@ -94,10 +97,16 @@ function timeline_program.compile(definition)
 	local apply_frames<const> = definition.apply ~= nil and apply_function == nil
 	local has_evaluation_callbacks<const> = apply_function ~= nil
 		or prepared_tracks.has_evaluation_callbacks
+	if has_evaluation_callbacks and definition.phase == nil then
+		error('callback-bearing timeline requires an explicit phase')
+	end
 	local requires_frame_sampling<const> = has_evaluation_callbacks
 		or subsequences.requires_frame_sampling
 	local playback_mode<const> = playback_mode_by_name[definition.playback_mode or 'once']
 	local program<const> = {
+		phase = phase,
+		output_paths = prepared_tracks.output_paths,
+		writer_outputs = prepared_tracks.writer_outputs,
 		repetitions = definition.repetitions or 1,
 		frame_builder = frame_builder,
 		frame_duration = frame_duration,

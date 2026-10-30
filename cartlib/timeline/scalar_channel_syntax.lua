@@ -125,7 +125,7 @@ local emit_locals<const> = function(statements, analysis, has_cubic_tracks)
 	if analysis.cached_segment_count > 0 then
 		statements[#statements + 1] = local_statement(
 			reference(symbols.cached_segments),
-			member_expression(reference(symbols.entry), 'cached_scalar_segments'),
+			member_expression(reference(symbols.entry), analysis.segment_member),
 			false
 		)
 	end
@@ -333,7 +333,12 @@ local emit_track_sample<const> = function(statements, track, position_key, cubic
 		emit_segment_search(final_segment, track, position_key, key_count)
 		interpolation_key_symbol = symbols.key
 	end
-	emit_interpolation(final_segment, position_key, cubic, interpolation_key_symbol)
+	if track.interpolation == 'step' then
+		final_segment[#final_segment + 1] = assignment_statement(reference(symbols.value),
+			member_expression(reference(interpolation_key_symbol), 'value'))
+	else
+		emit_interpolation(final_segment, position_key, cubic, interpolation_key_symbol)
+	end
 	local last_key_source
 	if resolved_track_symbols == nil then
 		last_key_source = index_expression(reference(symbols.keys), numeric_literal(key_count))
@@ -401,7 +406,11 @@ local emit_track<const> = function(
 	else
 		binding = index_expression(reference(symbols.bindings), numeric_literal(track.binding_index))
 	end
-	if track.apply ~= nil then
+	if track.writer_index ~= nil then
+		statements[#statements + 1] = call_statement(call_expression(
+			index_expression(member_expression(reference(symbols.entry), 'channel_writers'), numeric_literal(track.writer_index)),
+			{ binding, reference(symbols.value) }))
+	elseif track.apply ~= nil then
 		statements[#statements + 1] = call_statement(call_expression(
 			reference(callback_symbols[track.callback_index]),
 			{
@@ -413,7 +422,8 @@ local emit_track<const> = function(
 		))
 	else
 		statements[#statements + 1] = assignment_statement(
-			index_path(binding, track.path),
+			index_path(index_expression(member_expression(reference(symbols.entry), 'output_receivers'),
+				numeric_literal(track.output_index)), { track.path[#track.path] }),
 			reference(symbols.value)
 		)
 	end
@@ -621,6 +631,62 @@ function scalar_channel_syntax.build(channels, analysis, sample_flag)
 		),
 	})
 	return syntax_factory.chunk(block(statements))
+end
+
+-- One explicit group owns its scalar sampling and one publication. All target
+-- and coefficient names below are cooked syntax, never runtime property paths.
+function scalar_channel_syntax.build_spatial(group, analysis)
+	local source<const> = generated_symbol('group_channels')
+	local state<const> = generated_symbol('state')
+	local body<const> = {}
+	if analysis.max_key_count > 0 then
+		emit_locals(body, analysis, analysis.has_cubic_tracks)
+		body[#body + 1] = local_statement(reference(symbols.position), nil, false)
+	end
+	local target
+	if group.binding_index == 1 then
+		target = member_expression(reference(symbols.entry), 'primary_binding')
+	else
+		target = index_expression(member_expression(reference(symbols.entry), 'bindings'), numeric_literal(group.binding_index))
+	end
+	body[#body + 1] = local_statement(reference(state), target, true)
+	local arguments<const> = { reference(state) }
+	for index = 1, #group.fields do
+		local field<const> = group.fields[index]
+		local output<const> = generated_symbol('coefficient')
+		local channel<const> = group.channels[index]
+		local initial
+		if channel == nil then
+			initial = member_expression(reference(state), group.members[index])
+		elseif channel.keys == nil then
+			initial = numeric_literal(channel.constant)
+		else
+			initial = member_expression(reference(state), group.members[index])
+		end
+		body[#body + 1] = local_statement(reference(output), initial, false)
+		if channel ~= nil and channel.keys ~= nil then
+			local samples<const> = {}
+			samples[#samples + 1] = assignment_statement(reference(symbols.keys), index_expression(reference(source), numeric_literal(index)))
+			local position_key<const> = channel.time_domain and 'time_ms' or 'frame'
+			samples[#samples + 1] = assignment_statement(reference(symbols.position),
+				reference(channel.time_domain and symbols.time_ms or symbols.frame))
+			emit_track_sample(samples, channel, position_key, channel.interpolation == 'cubic', nil)
+			samples[#samples + 1] = assignment_statement(reference(output), reference(symbols.value))
+			if group.mixed_domain and not channel.time_domain then
+				body[#body + 1] = if_statement({ if_clause(reference(symbols.sample), block(samples)) })
+			else
+				for sample_index = 1, #samples do body[#body + 1] = samples[sample_index] end
+			end
+		end
+		arguments[#arguments + 1] = reference(output)
+	end
+	body[#body + 1] = call_statement(call_expression(
+		index_expression(member_expression(reference(symbols.entry), 'channel_writers'), numeric_literal(group.writer_index)), arguments))
+	local parameters<const> = { reference(symbols.entry), reference(symbols.frame), reference(symbols.time_ms) }
+	if group.mixed_domain then parameters[#parameters + 1] = reference(symbols.sample) end
+	return syntax_factory.chunk(block({ return_statement({ function_expression({ reference(source) }, block({
+		return_statement({ function_expression(parameters, block(body)) }),
+	})) }) }))
 end
 
 return scalar_channel_syntax

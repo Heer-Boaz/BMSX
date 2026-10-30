@@ -1,3 +1,4 @@
+local channel_binding<const> = require('cartlib/timeline/channel_binding')
 local clamp<const> = require('cartlib/util/clamp')
 local timeline_frame_program<const> = require('cartlib/timeline/frame_program')
 local timeline_module<const> = require('cartlib/timeline/timeline')
@@ -110,6 +111,7 @@ local bind_child<const> = function(parent_entry, child_entry, clip)
 	end
 	local child_program<const> = child_entry.program
 	if child_program.binding_count == 1 then
+		if child_program.frame_builder == nil then channel_binding.resolve(child_entry) end
 		return
 	end
 	local bindings<const> = child_entry.bindings
@@ -124,6 +126,7 @@ local bind_child<const> = function(parent_entry, child_entry, clip)
 			bindings[binding_index] = nil
 		end
 	end
+	if child_program.frame_builder == nil then channel_binding.resolve(child_entry) end
 end
 
 local clear_child<const> = function(child_entry, owner)
@@ -198,6 +201,7 @@ function sequence_evaluator.bind_entry(entry, owner)
 			child_entry:rewind()
 			timeline_track_evaluator.init_entry(child_entry)
 			sequence_evaluator.init_entry(child_entry)
+			channel_binding.resolve(child_entry)
 		else
 			sequence_evaluator.bind_entry(child_entry, owner)
 		end

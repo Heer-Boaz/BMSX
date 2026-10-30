@@ -6,7 +6,7 @@
 --
 -- 1. OBJECT LIFECYCLE ORDER.
 --    _initialize() — World-owned common setup before custom initialization,
---                    component factories and ctor; position and identity exist.
+--                    component factories and ctor; identity/storage exist.
 --    initialize()  — optional custom initialization; no subscriptions here.
 --    onspawn()     — called after every batch object is constructed and its
 --                    identity published. No super call needed.
@@ -65,14 +65,9 @@ local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local world_object<const> = {}
 world_object.__index = world_object
+world_object.timeline_channels = { protected = { spatial = true } }
 
 function world_object._initialize(self)
-	self.x = self.x or 0
-	self.y = self.y or 0
-	self.z = self.z or 0
-	self.sx = self.sx or 0
-	self.sy = self.sy or 0
-	self.sz = self.sz or 0
 	self.visible = self.visible == nil or self.visible
 	self.active = false
 	self.tags = self.tags and shallow_copy(self.tags) or {}
@@ -83,23 +78,6 @@ function world_object._initialize(self)
 	self._bound = false
 	self._constructed = false
 	self.events = event_emitter.events_of(self)
-end
-
--- set_pos(x, y, z?): sets world position. Each component falls back to the
--- current value when nil, so set_pos(x, y) preserves the current z.
-function world_object:set_pos(x, y, z)
-	self.x = x or self.x
-	self.y = y or self.y
-	if z ~= nil then
-		self:set_z(z)
-	end
-end
-
-function world_object:set_z(z)
-	self.z = z
-	if self._world_object_index ~= nil then
-		self.world:visual_depth_changed()
-	end
 end
 
 -- set_space(space_id): moves this object into the named world space.
@@ -114,6 +92,9 @@ end
 -- group the object's component storage, lifecycle hooks, Registry identity and
 -- active system views all commit together at the group barrier.
 function world_object:add_component(comp)
+	if comp.is_spatial then
+		error('spatial capability is installed by the prefab')
+	end
 	comp.owner = self
 	if self._world_object_index ~= nil then
 		return self.world:attach_component(comp)
@@ -179,6 +160,9 @@ function world_object:get_component(component_class, id_local)
 end
 
 function world_object:remove_component(comp)
+	if comp == self.spatial then
+		error('spatial capability belongs to the object lifetime')
+	end
 	comp._attached = false
 	if self._world_object_index ~= nil then
 		self.world:detach_component(comp)
@@ -404,10 +388,10 @@ function world_object:deactivate()
 	end
 end
 
--- onspawn(pos): the ready/wiring boundary for a published construction batch.
+-- onspawn(): the ready/wiring boundary for a published construction batch.
 -- Every peer is constructed and addressable; subscriptions bind afterward,
 -- before any object or component activation. No super call needed.
-function world_object:onspawn(pos)
+function world_object:onspawn()
 end
 
 -- ondespawn(): called after world, space, Registry, and active membership have

@@ -44,6 +44,14 @@ struct gp0_rectangle_packet
 	size: word
 end
 
+struct gp0_quad_packet
+	command: word
+	position0: word
+	position1: word
+	position2: word
+	position3: word
+end
+
 local textured_rectangle_packet_size<const> = sizeof(gp0_textured_rectangle_packet)
 local fixed_textured_rectangle_packet_size<const> = sizeof(gp0_fixed_textured_rectangle_packet)
 local rectangle_packet_size<const> = sizeof(gp0_rectangle_packet)
@@ -71,6 +79,8 @@ local reserve_atomic<const> = function(draw, command_words)
 	word_count = word_count + padding
 	return word_count
 end
+
+command_list.reserve_atomic = reserve_atomic
 
 function command_list.new(words)
 	return setmetatable({
@@ -221,6 +231,17 @@ function draw_list:triangle_words(command_word, sxy0_word, sxy1_word, sxy2_word)
 	words[index + 2] = sxy1_word
 	words[index + 3] = sxy2_word
 	self.word_count = index + 4
+end
+
+function draw_list:quad_words(command_word, sxy0_word, sxy1_word, sxy2_word, sxy3_word)
+	local index<const> = reserve_atomic(self, 5)
+	local packet<const>: *gp0_quad_packet = self.words + index * sizeof(word)
+	packet.command = command_word
+	packet.position0 = sxy0_word
+	packet.position1 = sxy1_word
+	packet.position2 = sxy2_word
+	packet.position3 = sxy3_word
+	self.word_count = index + 5
 end
 
 function draw_list:gouraud_triangle(x0, y0, color0, x1, y1, color1, x2, y2, color2)

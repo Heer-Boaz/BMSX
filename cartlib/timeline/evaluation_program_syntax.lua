@@ -317,7 +317,7 @@ local emit_sample<const> = function(statements, values)
 				)
 			),
 			{
-				member_expression(reference(symbols.entry), 'primary_binding'),
+				reference(symbols.entry),
 				frame_value,
 			}
 		))

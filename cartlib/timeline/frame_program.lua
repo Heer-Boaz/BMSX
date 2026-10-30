@@ -50,7 +50,12 @@ function frame_program.compile(program, frame_source)
 		compiled.duration_ms
 	)
 	if program.apply_frames then
-		compiled.frame_appliers = timeline_apply.compile_frames(compiled.frames)
+		local frame_paths
+		compiled.frame_appliers, frame_paths = timeline_apply.compile_frames(compiled.frames, #program.output_paths)
+		local output_paths<const> = {}
+		for index = 1, #program.output_paths do output_paths[index] = program.output_paths[index] end
+		for index = 1, #frame_paths do output_paths[#output_paths + 1] = frame_paths[index] end
+		compiled.output_paths = output_paths
 	else
 		compiled.frame_appliers = nil
 	end

@@ -177,7 +177,7 @@ test('clip trim edits the written parent once, preserves child time and imported
 	assert.ok(model.buffer.getText().startsWith('-- untouched\n'));
 	for (const optLevel of [0, 3] as const) {
 		const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component')
-			local owner={x=-1}; local timelines=component.new({owner=owner})
+			local owner={x=-1}; local timelines=component.new({owner=owner,clock_mode='manual'})
 			timelines:define('clip',require('parent')); timelines:play('clip')
 			timelines:seek_time('clip',50); assert(owner.x==50)
 		`, { optLevel, modules: [{ path: 'parent', source: model.buffer.getText() }, { path: 'child', source: child }] });
@@ -237,7 +237,7 @@ test('a multiline clip trim inserts missing transport fields as one syntax batch
 		assert.ok(changed.includes('-- child stays here'));
 		for (const optLevel of [0, 3] as const) {
 			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component')
-				local owner={x=-1}; local timeline=component.new({owner=owner})
+				local owner={x=-1}; local timeline=component.new({owner=owner,clock_mode='manual'})
 				timeline:define('clip',require('parent')); timeline:play('clip')
 				timeline:seek_time('clip',50); assert(owner.x==50)
 			`, { optLevel, modules: [{ path: 'parent', source: changed }, { path: 'child', source: child }] });
@@ -270,7 +270,7 @@ test('sprite frame definitions are admitted by their imported factory and retain
 
 test('all authored track templates compile through the actual native program and preserve event and tag key domains', () => {
 	const tracks = ANIMATION_TRACK_TEMPLATES.map(item => item.create("{'x'}")).join(',');
-	const source = `return {duration_ms=1000,tracks={${tracks}}}`;
+	const source = `return {phase='presentation',duration_ms=1000,tracks={${tracks}}}`;
 	const document = buildAnimationSourceDocument(resource, buildLuaSemanticWorkspaceSnapshot(...createResourceModuleProjectFixture([buildResourceLuaSemanticFixtureFile(source, resource)], [])))!;
 	assert.equal(document.tracks.length, 7);
 	const tag = document.tracks.find(track => track.kind === 'tag')!;

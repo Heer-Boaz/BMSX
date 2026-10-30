@@ -502,6 +502,10 @@ function track_evaluator.compile_values(program, sample_tracks)
 		has_scalar_frame_channels = has_scalar_frame_channels,
 		has_scalar_time_channels = has_scalar_time_channels,
 		has_sample_tracks = has_sample_tracks,
+		has_time_sample_tracks = program.sample_time_track_count > 0,
+		has_time_spatial_tracks = program.has_spatial_time_channels,
+		has_spatial_frame_channels = program.has_spatial_frame_channels,
+		has_spatial_time_channels = program.has_spatial_time_channels,
 		value_has_evaluation_context = value_has_evaluation_context,
 		has_primary_sample_binding = has_primary_sample_binding,
 		has_secondary_sample_binding = has_secondary_sample_binding,
@@ -545,6 +549,15 @@ function track_evaluator.init_entry(entry)
 	local tracks<const> = entry.program.tracks
 	local steps<const> = tracks.steps
 	position_time_step_cursor(entry, steps, entry.position_ms)
+	local spatial_count<const> = tracks.spatial_cache_count
+	if spatial_count > 0 then
+		local segments = entry.cached_spatial_segments
+		if segments == nil then segments = {}; entry.cached_spatial_segments = segments end
+		for index = 1, spatial_count do segments[index] = tracks.spatial_initial_segments[index] end
+		for index = spatial_count + 1, #segments do segments[index] = nil end
+	else
+		entry.cached_spatial_segments = nil
+	end
 	local scalar_channels<const> = tracks.scalar_channels
 	local cached_segment_count<const> = scalar_channels.cached_segment_count
 	if cached_segment_count == 0 then

@@ -1,4 +1,6 @@
 local base_component<const> = require('cartlib/component/base_component')
+local affine2<const> = require('cartlib/math/affine2')
+local spatial_hierarchy<const> = require('cartlib/world/spatial_hierarchy')
 
 -- Synchronous axis-aligned movement for objects whose collision world is a
 -- tile grid. The component owns the updated object, its collision bounds and
@@ -22,13 +24,11 @@ kinematic_movement_component.contact_right = contact_right
 kinematic_movement_component.contact_up = contact_up
 kinematic_movement_component.contact_down = contact_down
 
-local sweep_x<const> = function(self, collision_world, delta_x)
+local sweep_x<const> = function(self, collision_world, start_x, start_y, delta_x)
 	if delta_x == 0 then
-		return 0
+		return start_x, 0
 	end
 
-	local owner<const> = self.owner
-	local start_x<const> = owner.x
 	local target_x = start_x + delta_x
 	local contact = 0
 	local local_left<const> = self.local_left
@@ -39,11 +39,11 @@ local sweep_x<const> = function(self, collision_world, delta_x)
 	local collision_flags_at_tile<const> = collision_world.collision_flags_at_tile
 	local collision_mask<const> = self.collision_mask
 	local include_elevators<const> = self.include_elevators
-	local first_tile_y<const> = ((owner.y + self.local_top - tile_origin_y) // tile_size) + 1
-	local last_tile_y<const> = ((owner.y + self.local_bottom - 1 - tile_origin_y) // tile_size) + 1
+	local first_tile_y<const> = ((start_y + self.local_top - tile_origin_y) // tile_size) + 1
+	local last_tile_y<const> = ((start_y + self.local_bottom - 1 - tile_origin_y) // tile_size) + 1
 
 	if delta_x > 0 then
-		local maximum_x<const> = self.world_right - owner.sx
+		local maximum_x<const> = self.world_right - local_right
 		if target_x > maximum_x then
 			target_x = maximum_x
 			contact = contact_right
@@ -54,14 +54,14 @@ local sweep_x<const> = function(self, collision_world, delta_x)
 			for tile_y = first_tile_y, last_tile_y do
 				if (collision_flags_at_tile(collision_world, tile_x, tile_y, include_elevators)
 					& collision_mask) ~= 0 then
-					owner.x = tile_origin_x + ((tile_x - 1) * tile_size) - local_right
-					return contact_right
+					return tile_origin_x + ((tile_x - 1) * tile_size) - local_right, contact_right
 				end
 			end
 		end
 	else
-		if target_x < self.world_left then
-			target_x = self.world_left
+		local minimum_x<const> = self.world_left - local_left
+		if target_x < minimum_x then
+			target_x = minimum_x
 			contact = contact_left
 		end
 		local first_tile_x<const> = ((start_x + local_left - tile_origin_x) // tile_size)
@@ -70,24 +70,20 @@ local sweep_x<const> = function(self, collision_world, delta_x)
 			for tile_y = first_tile_y, last_tile_y do
 				if (collision_flags_at_tile(collision_world, tile_x, tile_y, include_elevators)
 					& collision_mask) ~= 0 then
-					owner.x = tile_origin_x + (tile_x * tile_size) - local_left
-					return contact_left
+					return tile_origin_x + (tile_x * tile_size) - local_left, contact_left
 				end
 			end
 		end
 	end
 
-	owner.x = target_x
-	return contact
+	return target_x, contact
 end
 
-local sweep_y<const> = function(self, collision_world, delta_y)
+local sweep_y<const> = function(self, collision_world, start_x, start_y, delta_y)
 	if delta_y == 0 then
-		return 0
+		return start_y, 0
 	end
 
-	local owner<const> = self.owner
-	local start_y<const> = owner.y
 	local target_y = start_y + delta_y
 	local contact = 0
 	local local_top<const> = self.local_top
@@ -98,11 +94,11 @@ local sweep_y<const> = function(self, collision_world, delta_y)
 	local collision_flags_at_tile<const> = collision_world.collision_flags_at_tile
 	local collision_mask<const> = self.collision_mask
 	local include_elevators<const> = self.include_elevators
-	local first_tile_x<const> = ((owner.x + self.local_left - tile_origin_x) // tile_size) + 1
-	local last_tile_x<const> = ((owner.x + self.local_right - 1 - tile_origin_x) // tile_size) + 1
+	local first_tile_x<const> = ((start_x + self.local_left - tile_origin_x) // tile_size) + 1
+	local last_tile_x<const> = ((start_x + self.local_right - 1 - tile_origin_x) // tile_size) + 1
 
 	if delta_y > 0 then
-		local maximum_y<const> = self.world_bottom - owner.sy
+		local maximum_y<const> = self.world_bottom - local_bottom
 		if target_y > maximum_y then
 			target_y = maximum_y
 			contact = contact_down
@@ -113,14 +109,14 @@ local sweep_y<const> = function(self, collision_world, delta_y)
 			for tile_x = first_tile_x, last_tile_x do
 				if (collision_flags_at_tile(collision_world, tile_x, tile_y, include_elevators)
 					& collision_mask) ~= 0 then
-					owner.y = tile_origin_y + ((tile_y - 1) * tile_size) - local_bottom
-					return contact_down
+					return tile_origin_y + ((tile_y - 1) * tile_size) - local_bottom, contact_down
 				end
 			end
 		end
 	else
-		if target_y < self.world_top then
-			target_y = self.world_top
+		local minimum_y<const> = self.world_top - local_top
+		if target_y < minimum_y then
+			target_y = minimum_y
 			contact = contact_up
 		end
 		local first_tile_y<const> = ((start_y + local_top - tile_origin_y) // tile_size)
@@ -129,19 +125,19 @@ local sweep_y<const> = function(self, collision_world, delta_y)
 			for tile_x = first_tile_x, last_tile_x do
 				if (collision_flags_at_tile(collision_world, tile_x, tile_y, include_elevators)
 					& collision_mask) ~= 0 then
-					owner.y = tile_origin_y + (tile_y * tile_size) - local_top
-					return contact_up
+					return tile_origin_y + (tile_y * tile_size) - local_top, contact_up
 				end
 			end
 		end
 	end
 
-	owner.y = target_y
-	return contact
+	return target_y, contact
 end
 
-function kinematic_movement_component.new(opts, profile)
-	local self<const> = setmetatable(base_component.new(opts), kinematic_movement_component)
+function kinematic_movement_component.new(context, profile)
+	local self<const> = setmetatable(base_component.new(context), kinematic_movement_component)
+	self.id_local = profile.id_local
+	if self.id_local == nil then self.id_local = 'movement' end
 	self.local_left = profile.local_left
 	self.local_top = profile.local_top
 	self.local_right = profile.local_right
@@ -152,8 +148,36 @@ function kinematic_movement_component.new(opts, profile)
 	self.world_bottom = profile.world_bottom
 	self.collision_mask = profile.collision_mask
 	self.include_elevators = profile.include_elevators
+	local initial<const> = context.initial[self.id_local]
+	if initial ~= nil then
+		if initial.local_left ~= nil then self.local_left = initial.local_left end
+		if initial.local_top ~= nil then self.local_top = initial.local_top end
+		if initial.local_right ~= nil then self.local_right = initial.local_right end
+		if initial.local_bottom ~= nil then self.local_bottom = initial.local_bottom end
+		if initial.world_left ~= nil then self.world_left = initial.world_left end
+		if initial.world_top ~= nil then self.world_top = initial.world_top end
+		if initial.world_right ~= nil then self.world_right = initial.world_right end
+		if initial.world_bottom ~= nil then self.world_bottom = initial.world_bottom end
+		if initial.collision_mask ~= nil then self.collision_mask = initial.collision_mask end
+		if initial.include_elevators ~= nil then self.include_elevators = initial.include_elevators end
+		self.collision_world = initial.collision_world
+	end
 	self.contacts = 0
 	return self
+end
+
+function kinematic_movement_component:on_attach()
+	local spatial<const> = self.owner.spatial
+	if spatial == nil or spatial._family ~= affine2 or not spatial._origin_only then
+		error('tile kinematic movement requires root_origin Transform2D')
+	end
+	self.spatial = spatial
+	self._write_world_origin = spatial.set_world_origin
+end
+
+function kinematic_movement_component:on_detach()
+	self.spatial = nil
+	self._write_world_origin = nil
 end
 
 function kinematic_movement_component.factory(profile)
@@ -178,38 +202,66 @@ end
 
 function kinematic_movement_component:move_x(delta_x)
 	local collision_world<const> = self.collision_world
-	local contacts<const> = sweep_x(self, collision_world, delta_x)
+	local spatial<const> = self.spatial
+	if spatial._flags ~= 0 then
+		spatial_hierarchy.resolve(spatial)
+	end
+	local start_x<const>, start_y<const> = spatial.wox, spatial.woy
+	local x<const>, contacts<const> = sweep_x(self, collision_world, start_x, start_y, delta_x)
+	if x ~= start_x then
+		self._write_world_origin(spatial, x, start_y)
+	end
 	self.contacts = contacts
 	return contacts
 end
 
 function kinematic_movement_component:move_y(delta_y)
 	local collision_world<const> = self.collision_world
-	local contacts<const> = sweep_y(self, collision_world, delta_y)
+	local spatial<const> = self.spatial
+	if spatial._flags ~= 0 then
+		spatial_hierarchy.resolve(spatial)
+	end
+	local start_x<const>, start_y<const> = spatial.wox, spatial.woy
+	local y<const>, contacts<const> = sweep_y(self, collision_world, start_x, start_y, delta_y)
+	if y ~= start_y then
+		self._write_world_origin(spatial, start_x, y)
+	end
 	self.contacts = contacts
 	return contacts
 end
 
 function kinematic_movement_component:move(delta_x, delta_y)
 	local collision_world<const> = self.collision_world
-	local contacts<const> = sweep_x(self, collision_world, delta_x)
-		| sweep_y(self, collision_world, delta_y)
+	local spatial<const> = self.spatial
+	if spatial._flags ~= 0 then
+		spatial_hierarchy.resolve(spatial)
+	end
+	local start_x<const>, start_y<const> = spatial.wox, spatial.woy
+	local x<const>, horizontal_contacts<const> = sweep_x(self, collision_world, start_x, start_y, delta_x)
+	local y<const>, vertical_contacts<const> = sweep_y(self, collision_world, x, start_y, delta_y)
+	if x ~= start_x or y ~= start_y then
+		self._write_world_origin(spatial, x, y)
+	end
+	local contacts<const> = horizontal_contacts | vertical_contacts
 	self.contacts = contacts
 	return contacts
 end
 
 function kinematic_movement_component:has_support_ahead(direction_x, ahead, below)
 	local collision_world<const> = self.collision_world
-	local owner<const> = self.owner
+	local spatial<const> = self.spatial
+	if spatial._flags ~= 0 then
+		spatial_hierarchy.resolve(spatial)
+	end
 	local world_x
 	if direction_x < 0 then
-		world_x = owner.x + self.local_left - ahead
+		world_x = spatial.wox + self.local_left - ahead
 	else
-		world_x = owner.x + self.local_right + ahead
+		world_x = spatial.wox + self.local_right + ahead
 	end
 	local tile_size<const> = collision_world.tile_size
 	local tile_x<const> = ((world_x - collision_world.tile_origin_x) // tile_size) + 1
-	local tile_y<const> = ((owner.y + self.local_bottom + below - collision_world.tile_origin_y)
+	local tile_y<const> = ((spatial.woy + self.local_bottom + below - collision_world.tile_origin_y)
 		// tile_size) + 1
 	local flags<const> = collision_world.collision_flags_at_tile(
 		collision_world,

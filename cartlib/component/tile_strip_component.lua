@@ -1,24 +1,27 @@
 local image<const> = require('cartlib/gx/image')
-local visual_component<const> = require('cartlib/component/visual_component')
+local visual_2d_component<const> = require('cartlib/component/visual_2d_component')
+local affine_batch<const> = require('cartlib/gx/affine_batch')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local tile_strip_component<const> = {}
 tile_strip_component.__index = tile_strip_component
-setmetatable(tile_strip_component, { __index = visual_component })
+setmetatable(tile_strip_component, { __index = visual_2d_component })
 
 function tile_strip_component:draw_visual(draw)
-	local owner<const> = self.owner
-	local origin_x<const> = owner.x + self.offset_x + self.draw_offset_x
-	local origin_y<const> = owner.y + self.offset_y + self.draw_offset_y
-	local step_x<const> = self.step_x
-	local step_y<const> = self.step_y
+	self:resolve_pose()
 	local source<const> = self._source
-	local first_tile<const> = self.first_tile
-	local x = origin_x + first_tile * step_x
-	local y = origin_y + first_tile * step_y
-	for _ = first_tile, self.last_tile do
-		source:blit(draw, x, y)
-		x = x + step_x
-		y = y + step_y
+	local first<const> = self.first_tile
+	local last<const> = self.last_tile
+	local step_x<const>, step_y<const> = self.step_x, self.step_y
+	if self._translation_only then
+		local x, y = self.wox + first*step_x, self.woy + first*step_y
+		for _ = first, last do
+			source:blit(draw, x, y)
+			x, y = x + step_x, y + step_y
+		end
+	else
+		affine_batch.repeated_image(draw, source, first, last, step_x, step_y,
+			self.wxx, self.wxy, self.wyx, self.wyy, self.wox, self.woy, 0xffffffff)
 	end
 end
 
@@ -26,31 +29,22 @@ end
 -- visual owns both endpoints; gameplay changes the range without duplicating
 -- derived world coordinates or rebuilding draw commands.
 function tile_strip_component.factory(definition)
-	local source<const> = image.resolve(definition.imgid)
-	local step_x<const> = definition.step_x
-	local step_y<const> = definition.step_y
-	local first_tile<const> = definition.first_tile
-	local id_local<const> = definition.id_local
-	local enabled<const> = definition.enabled
-	local offset_x<const> = definition.offset_x or 0
-	local offset_y<const> = definition.offset_y or 0
-	local offset_z<const> = definition.offset_z or 0
-	return function(opts)
-		local self<const> = setmetatable(visual_component.new(opts), tile_strip_component)
-		self.id_local = id_local
-		self._source = source
-		self.tile_width = source.width
-		self.tile_height = source.height
-		self.step_x = step_x
-		self.step_y = step_y
-		self.first_tile = first_tile
-		self.last_tile = first_tile - 1
-		self.offset_x = offset_x
-		self.offset_y = offset_y
-		self.offset_z = offset_z
-		if enabled ~= nil then
-			self.enabled = enabled
-		end
+	local defaults<const> = shallow_copy(definition)
+	local source<const> = image.resolve(defaults.imgid)
+	local id_local<const> = defaults.id_local or 'tile_strip'
+	return function(context)
+		local self<const>, input<const> = visual_2d_component.new(context, id_local, defaults)
+		setmetatable(self, tile_strip_component)
+		local selected_source<const> = input.imgid and image.resolve(input.imgid) or source
+		self._source = selected_source
+		self.tile_width = selected_source.width
+		self.tile_height = selected_source.height
+		self.maximum_tiles = input.maximum_tiles or defaults.maximum_tiles
+		self.step_x = input.step_x or defaults.step_x
+		self.step_y = input.step_y or defaults.step_y
+		local first<const> = input.first_tile or defaults.first_tile
+		self.first_tile = first
+		self.last_tile = first - 1
 		self:set_draw_function(tile_strip_component.draw_visual)
 		return self
 	end

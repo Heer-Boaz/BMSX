@@ -10,13 +10,18 @@ ballistic_movement_component.__index = ballistic_movement_component
 ballistic_movement_component._tick_clocks = clock.gameplay
 setmetatable(ballistic_movement_component, { __index = fixed_point_velocity_component })
 
-function ballistic_movement_component.new(opts)
+function ballistic_movement_component.new(context, id_local)
 	local self<const> = setmetatable(
-		fixed_point_velocity_component.new(opts),
+		fixed_point_velocity_component.new(context, id_local),
 		ballistic_movement_component
 	)
 	self.acceleration_x = 0
 	self.acceleration_y = 0
+	local initial<const> = context.initial[self.id_local]
+	if initial ~= nil then
+		if initial.acceleration_x ~= nil then self.acceleration_x = initial.acceleration_x end
+		if initial.acceleration_y ~= nil then self.acceleration_y = initial.acceleration_y end
+	end
 	return self
 end
 

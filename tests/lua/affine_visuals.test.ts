@@ -1,0 +1,198 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { test } from 'node:test';
+import type { Closure } from '../../machine/ts/machine/cpu/closure';
+import type { Table } from '../../machine/ts/machine/cpu/table';
+import { profileWarmGuestKernel } from '../helpers/guest_kernel';
+import type { StringValue } from '../../machine/ts/machine/cpu/value';
+import { RunResult } from '../../machine/ts/machine/cpu/cpu';
+import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { WORLD_CPU_MODULES, WORLD_CPU_SETUP } from '../helpers/world_cpu';
+import { materializeCpuCompletionValues } from './cpu_test_harness';
+
+const checks = `local assertion_failed
+local assert<const> = function(condition, message)
+ if not condition and assertion_failed == nil then assertion_failed = message end
+end
+`;
+
+const modules = [
+	...WORLD_CPU_MODULES,
+	...[
+		'cartlib/component/visual_component', 'cartlib/component/visual_2d_component',
+		'cartlib/component/sprite_component', 'cartlib/component/custom_visual_component',
+		'cartlib/component/surface_component', 'cartlib/component/tile_strip_component',
+		'cartlib/component/tile_layer_component', 'cartlib/component/tile_layer_row',
+		'cartlib/gx/image', 'cartlib/gx/atlas', 'cartlib/gx/imgdec', 'cartlib/gx/affine_batch',
+	].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') })),
+	{
+		path: 'cartlib/rom_dir',
+		source: `local images<const> = {
+ tile={imgmeta={width=2,height=3,gx_source_x=64,gx_source_y=32}},
+ surface={imgmeta={width=4,height=3,gx_source_x=64,gx_source_y=32,
+  gx_page_tiles={{u=64,v=32,w=2,h=3,x=0,y=0},{u=66,v=32,w=2,h=3,x=2,y=0}}}},
+}
+return { image=function(id) return images[id] end }`,
+	},
+];
+
+for (const optLevel of [0, 3] as const) {
+	test(`Visual placement composes physical, attachment and presentation without moving the object (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(checks + WORLD_CPU_SETUP + `
+local sprite<const> = require('cartlib/component/sprite_component')
+local visual<const> = require('cartlib/component/visual_component')
+local custom<const> = require('cartlib/component/custom_visual_component')
+prefab.define({def_id='visual.parent',class={},spatial={family='2d',authority='affine',
+ local_transform={0,2,-3,0,10,20}}})
+prefab.define({def_id='visual.child',class={},spatial={family='2d',authority='affine',
+ local_transform={1,0,1,1,4,5}},components={sprite.new},initial={sprite={imgid='tile',
+ attachment_affine={2,0,0,1,1,2},presentation_affine={1,0,0,1,3,4}}}})
+local parent<const> = world:spawn('visual.parent', {})
+local child<const> = world:spawn('visual.child',{},{parent=parent.spatial})
+local part<const> = child:get_component(sprite)
+part:resolve_pose()
+assert(part.wxx==0 and part.wxy==4 and part.wyx==-3 and part.wyy==2
+ and part.wox==-23 and part.woy==54,'visual composed the three owners in a different order')
+assert(child.spatial.wox==-5 and child.spatial.woy==28
+ and child.x==nil and child.y==nil and part.offset_x==nil,'presentation became a second object pose')
+local basis<const> = part._visual_basis_revision
+local origin<const> = part._visual_origin_revision
+part:set_presentation_origin(5,6)
+part:resolve_pose()
+assert(part._visual_basis_revision==basis and part._visual_origin_revision==origin+1
+ and part.wox==-29 and part.woy==66,'presentation translation rebuilt the basis or missed the affine')
+parent.spatial:set_local_origin(100,200)
+part:resolve_pose()
+assert(part._visual_basis_revision==basis and part.wox==61 and part.woy==246,
+ 'ancestor translation rebuilt the visual basis')
+local physical<const> = child.spatial._origin_revision
+part:set_order(9)
+part:set_presentation_order(-2)
+assert(part.order==9 and part.presentation_order==-2 and child.spatial._origin_revision==physical,
+ 'render ordering invalidated physical pose')
+prefab.define({def_id='visual.nonspatial',class={},components={custom.factory({draw=function() end})}})
+local nonspatial<const> = world:spawn('visual.nonspatial', {})
+assert(nonspatial.spatial==nil and nonspatial:get_component(visual)~=nil,
+ 'generic custom geometry fabricated a spatial capability')
+return assertion_failed
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		const [failure] = materializeCpuCompletionValues(cpu);
+		assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+	});
+
+	// These coordinates/words are the subject of the GX affine producer contract,
+	// not incidental Workbench layout. Every source keeps its admitted UV/CLUT
+	// representation while a whole batch transforms its retained local geometry.
+	test(`GX affine batches preserve source records and native atomic packets (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(checks + `
+local commands<const> = require('cartlib/gx/command_list')
+local batch<const> = require('cartlib/gx/affine_batch')
+local image<const> = require('cartlib/gx/image')
+bss words: word[512]
+local draw<const> = commands.new(words)
+commands.begin(draw,0x100,0)
+local source<const> = image.resolve('tile')
+local surface<const> = image.resolve('surface')
+batch.offset_span(draw,surface._tiles, 0,2,-3,1, 10,20, 0xffffffff)
+local output<const>: *word = words
+assert(draw.word_count==25 and output[1]==0x2d808080
+ and output[2]==0x0014000a and output[4]==0x0018000a
+ and output[6]==0x00170001 and output[8]==0x001b0001,
+ 'first affine surface tile lost shear or native quad order')
+assert(output[17]==0x0018000a and output[19]==0x001c000a
+ and output[21]==0x001b0001 and output[23]==0x001f0001,
+ 'surface batch reconstructed or ignored source offsets')
+assert(output[3]==source._quad_uv0 and output[5]==source._quad_uv1
+ and output[7]==source._quad_uv2 and output[9]==source._quad_uv3,
+ 'affine packet changed admitted image addressing')
+commands.begin(draw,0x100,0)
+batch.repeated_image(draw,source,-1,1, 4,5, 1,1,-1,2, 10,20, 0xffffffff)
+assert(draw.word_count==41 and output[2]==0x0006000b and output[17]==0x0014000a
+ and output[33]==0x00220009,'strip endpoints were replaced with generated shadow positions')
+commands.begin(draw,0x100,0)
+local glyphs<const> = {source,source}
+local offsets<const> = {0,4}
+batch.glyph_span(draw,glyphs,offsets,1,2, -1,0,2,1, 10,20, 0xffffffff)
+assert(output[2]==0x0014000a and output[17]==0x00140006,
+ 'glyph span ignored local x offsets under reflection')
+commands.begin(draw,0x100,0)
+local rows<const> = {{row_index=2,sources=glyphs,columns={3,5},first_visible_source=1,last_visible_source=2}}
+batch.tile_layer(draw,rows,1,3,4, 0,1,-1,0, 10,20)
+assert(output[2]==0x00140006 and output[17]==0x001c0006,
+ 'affine tile view failed to retain source columns or selected view origin')
+commands.begin(draw,0x100,0)
+draw.word_count=14
+batch.glyph_span(draw,glyphs,offsets,1,1, 1,0,0,1, 0,0, 0xff204080)
+assert(output[14]==0 and output[15]==0 and output[16]==0x2c402010 and draw.word_count==25,
+ 'native textured quad crossed a DMA packet block or lost modulation')
+commands.begin(draw,0x100,0)
+batch.glyph_rows(draw,glyphs,offsets,1,1,1, 0,1,-2,0,10,20,0xffffffff)
+assert(output[2]==0x0014000a and output[4]==0x0016000a
+ and output[6]==0x00140008 and output[8]==0x00160008
+ and output[7]==0x2040 and output[9]==0x2041,
+ 'cropped glyph rows changed source addressing or retained the full source height')
+commands.begin(draw,0x100,0)
+batch.glyph_rect_span(draw,glyphs,offsets,1,1, 0,1,-2,0,10,20,0xff102030)
+assert(draw.word_count==6 and output[1]==0x28302010 and output[2]==0x0014000a
+ and output[3]==0x0016000a and output[4]==0x00140004 and output[5]==0x00160004,
+ 'glyph backgrounds lost the actual glyph geometry or raw color command')
+commands.begin(draw,0x100,0)
+batch.semitransparent_rect(draw,0,0,2,3,0,1,-2,0,10,20,0xff102030)
+assert(output[1]==0x2a302010 and output[4]==0x00140004,
+ 'affine highlight lost its semitransparent primitive')
+commands.begin(draw,0x100,0)
+batch.semitransparent_rect(draw,1,2,3,4,1,0,0,1,5,6,0xff102030)
+assert(draw.word_count==4 and output[1]==0x62302010 and output[2]==0x00080006 and output[3]==0x00020002,
+ 'ordinary highlights stopped using the native rectangle packet')
+return assertion_failed
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		const [failure] = materializeCpuCompletionValues(cpu);
+		assert.equal(failure, null, failure === null ? undefined : cpu.stringPool.toString((failure as StringValue).id));
+	});
+}
+
+test('Retained affine image batches allocate nothing warm and preserve the native rectangle lane', t => {
+	const { cpu } = createCartlibProgramHarness(`
+local commands<const> = require('cartlib/gx/command_list')
+local batch<const> = require('cartlib/gx/affine_batch')
+local image<const> = require('cartlib/gx/image')
+bss words: word[1024]
+local draw<const> = commands.new(words)
+local tile<const> = image.resolve('tile')
+local surface<const> = image.resolve('surface')
+local glyphs<const> = {tile,tile,tile,tile}
+local offsets<const> = {0,4,8,12}
+probe = {
+ translation=function(iterations)
+  for index=1,iterations do
+   commands.begin(draw,0x100,0)
+   commands.blit_offset_span(draw,surface._tiles,index%7,0,0xffffffff)
+   commands.blit_span(draw,glyphs,offsets,1,4,index%7,0,0xffffffff)
+   for i=0,3 do tile:blit(draw,index%7+i*4,0) end
+  end
+  return draw.word_count
+ end,
+ affine=function(iterations)
+  for index=1,iterations do
+   commands.begin(draw,0x100,0)
+   batch.offset_span(draw,surface._tiles,1,0.25,0.5,1,index%7,0,0xffffffff)
+   batch.glyph_span(draw,glyphs,offsets,1,4,1,0.25,0.5,1,index%7,0,0xffffffff)
+   batch.repeated_image(draw,tile,0,3,4,0,1,0.25,0.5,1,index%7,0,0xffffffff)
+  end
+  return draw.word_count
+ end,
+}
+`, { optLevel: 3, modules });
+	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
+	for (const lane of ['translation', 'affine']) {
+		const kernel = probe.getStringKey(cpu.stringPool.find(lane)!) as Closure;
+		const profile = profileWarmGuestKernel(cpu, kernel, 256);
+		assert.equal(profile.reservations, 0);
+		assert.equal(profile.reservedBytes, 0);
+		assert.equal(profile.retainedAfter, profile.retainedBefore);
+		t.diagnostic(`${lane}: ${JSON.stringify(profile)}`);
+	}
+});

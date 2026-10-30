@@ -1,25 +1,49 @@
 local base_component<const> = require('cartlib/component/base_component')
 local clock<const> = require('cartlib/clock')
+local affine2<const> = require('cartlib/math/affine2')
 local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 local velocity<const> = require('cartlib/velocity')
 
--- Signed Q8.8 velocity with the fractional bytes of the X/Y position retained
--- on the component. The owner owns the visible integer position; the motion
--- system advances that position exactly like a two's-complement fixed-point
--- accumulator.
+-- Signed Q8.8 displacement and fractional integration state belong to this
+-- component. Transform2D is the only pose authority; scheduled motion publishes
+-- one achieved world-origin vector after the word integration succeeds.
 local fixed_point_velocity_component<const> = {}
 fixed_point_velocity_component.__index = fixed_point_velocity_component
 fixed_point_velocity_component.unique = true
 fixed_point_velocity_component._tick_clocks = clock.gameplay
 setmetatable(fixed_point_velocity_component, { __index = base_component })
 
-function fixed_point_velocity_component.new(opts)
-	local self<const> = setmetatable(base_component.new(opts), fixed_point_velocity_component)
+function fixed_point_velocity_component.new(context, id_local)
+	local self<const> = setmetatable(base_component.new(context), fixed_point_velocity_component)
+	if id_local == nil then id_local = 'fixed_velocity' end
+	self.id_local = id_local
 	self.velocity_x = 0
 	self.velocity_y = 0
 	self.fraction_x = 0
 	self.fraction_y = 0
+	local initial<const> = context.initial[self.id_local]
+	if initial ~= nil then
+		if initial.velocity_x ~= nil then self.velocity_x = initial.velocity_x end
+		if initial.velocity_y ~= nil then self.velocity_y = initial.velocity_y end
+		if initial.fraction_x ~= nil then self.fraction_x = initial.fraction_x end
+		if initial.fraction_y ~= nil then self.fraction_y = initial.fraction_y end
+	end
+	self.motion_committed = true
 	return self
+end
+
+function fixed_point_velocity_component:on_attach()
+	local spatial<const> = self.owner.spatial
+	if spatial == nil or spatial._family ~= affine2 then
+		error('fixed-point velocity component requires Transform2D')
+	end
+	self.spatial = spatial
+	self._write_world_origin = spatial.set_world_origin
+end
+
+function fixed_point_velocity_component:on_detach()
+	self.spatial = nil
+	self._write_world_origin = nil
 end
 
 -- Converts authored wall-clock velocity once at the fixed-point owner. Runtime

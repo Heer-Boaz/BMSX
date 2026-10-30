@@ -1,5 +1,8 @@
 local world_object<const> = require('cartlib/world/world_object')
 local shallow_copy<const> = require('cartlib/util/shallow_copy')
+local transform_2d<const> = require('cartlib/component/transform_2d_component')
+local transform_3d<const> = require('cartlib/component/transform_3d_component')
+local component_inputs<const> = require('cartlib/world/component_inputs')
 
 local definitions<const> = {}
 local prefab<const> = {}
@@ -11,6 +14,40 @@ local empty_components<const> = {}
 -- constructors. World owns identity, construction and publication.
 
 function prefab.define(source)
+	local spatial_constructor
+	local spatial_prototype
+	local spatial_family
+	local spatial_root_origin
+	local spatial_validate_local
+	local default_local_transform
+	local spatial_source<const> = source.spatial
+	if spatial_source ~= nil then
+		local transform
+		if spatial_source.family == '2d' then
+			transform = transform_2d
+		elseif spatial_source.family == '3d' then
+			transform = transform_3d
+		else
+			error('unsupported prefab spatial family: ' .. source.def_id)
+		end
+		spatial_family = transform.family
+		if spatial_source.authority == 'affine' then
+			spatial_constructor = transform.new
+			spatial_prototype = transform.affine
+		elseif spatial_source.authority == 'root_origin' then
+			spatial_prototype = transform.root_origin
+			spatial_constructor = spatial_prototype.new
+			spatial_root_origin = true
+			spatial_validate_local = spatial_prototype.validate_local
+		else
+			error('unsupported prefab spatial authority: ' .. source.def_id)
+		end
+		default_local_transform = shallow_copy(spatial_source.local_transform)
+		if spatial_validate_local ~= nil then
+			spatial_validate_local(default_local_transform)
+		end
+	end
+
 	local prototype<const> = source.base or world_object
 	local class<const> = source.class
 	-- A concrete library base may itself be the instantiated class. That
@@ -48,6 +85,13 @@ function prefab.define(source)
 		initialize = methods.initialize,
 		defaults = shallow_copy(source.defaults or empty_values),
 		components = components,
+		initial = component_inputs.merge(component_inputs.empty, source.initial),
+		spatial_constructor = spatial_constructor,
+		spatial_prototype = spatial_prototype,
+		spatial_family = spatial_family,
+		spatial_root_origin = spatial_root_origin,
+		spatial_validate_local = spatial_validate_local,
+		default_local_transform = default_local_transform,
 	}
 end
 

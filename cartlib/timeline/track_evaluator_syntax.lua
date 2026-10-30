@@ -125,7 +125,16 @@ local sample_target<const> = function(track)
 	return index_expression(reference(runner_symbols.bindings), numeric_literal(track.binding_index))
 end
 
-local emit_sample_track<const> = function(statements, track, tau, sample_function_symbols)
+local emit_sample_track<const> = function(statements, track, tau, sample_function_symbols, sample_condition)
+	if track.kind == 'spatial' then
+		local arguments<const> = { reference(runner_symbols.entry),
+			track.has_frame and reference(runner_symbols.frame) or numeric_literal(0),
+			track.has_time and reference(runner_symbols.time_ms) or numeric_literal(0) }
+		if track.mixed_domain then arguments[#arguments + 1] = sample_condition end
+		statements[#statements + 1] = call_statement(call_expression(
+			index_expression(member_expression(reference(runner_symbols.tracks), 'spatial_runners'), numeric_literal(track.group_index)), arguments))
+		return
+	end
 	local target<const> = sample_target(track)
 	if track.kind == 'sample' then
 		statements[#statements + 1] = call_statement(call_expression(
@@ -188,9 +197,7 @@ local emit_sample_track<const> = function(statements, track, tau, sample_functio
 	else
 		base = index_expression(reference(runner_symbols.params), string_literal(track.base_param))
 	end
-	statements[#statements + 1] = assignment_statement(
-		index_path(target, track.path),
-		binary_expression(
+	local value<const> = binary_expression(
 			syntax.binary_add,
 			base,
 			binary_expression(
@@ -207,7 +214,14 @@ local emit_sample_track<const> = function(statements, track, tau, sample_functio
 				numeric_literal(track.amp)
 			)
 		)
-	)
+	if track.writer_index ~= nil then
+		statements[#statements + 1] = call_statement(call_expression(index_expression(
+			member_expression(reference(runner_symbols.entry), 'channel_writers'), numeric_literal(track.writer_index)), { target, value }))
+	else
+		statements[#statements + 1] = assignment_statement(index_path(index_expression(
+			member_expression(reference(runner_symbols.entry), 'output_receivers'), numeric_literal(track.output_index)),
+			{ track.path[#track.path] }), value)
+	end
 end
 
 local emit_sample<const> = function(statements, values, sample_function_symbols)
@@ -236,7 +250,8 @@ local emit_sample<const> = function(statements, values, sample_function_symbols)
 			true
 		)
 	end
-	body[#body + 1] = local_statement(
+	if values.has_time_sample_tracks then
+		body[#body + 1] = local_statement(
 		reference(runner_symbols.time_seconds),
 		binary_expression(
 			syntax.binary_multiply,
@@ -245,34 +260,39 @@ local emit_sample<const> = function(statements, values, sample_function_symbols)
 		),
 		true
 	)
+	end
 	if values.has_wave_tracks then
 		body[#body + 1] = local_statement(reference(runner_symbols.wave_value), nil, false)
-	end
-	for index = 1, #values.sample_tracks do
-		emit_sample_track(
-			body,
-			values.sample_tracks[index],
-			values.tau,
-			sample_function_symbols
-		)
 	end
 	local sample_condition
 	if values.value_has_evaluation_context then
 		sample_condition = reference(runner_symbols.sample)
 	else
-		sample_condition = binary_expression(
-			syntax.binary_not_equal,
-			binary_expression(
-				syntax.binary_bitwise_and,
-				reference(runner_symbols.flags),
-				numeric_literal(values.sample_flag)
-			),
-			numeric_literal(0)
-		)
+		sample_condition = binary_expression(syntax.binary_not_equal,
+			binary_expression(syntax.binary_bitwise_and, reference(runner_symbols.flags), numeric_literal(values.sample_flag)), numeric_literal(0))
 	end
-	statements[#statements + 1] = if_statement({
-		if_clause(sample_condition, block(body)),
-	})
+	if values.has_time_spatial_tracks then
+		for index = 1, #body do statements[#statements + 1] = body[index] end
+		local pending = {}
+		for index = 1, #values.sample_tracks do
+			local track<const> = values.sample_tracks[index]
+			if track.kind == 'spatial' and track.has_time then
+				if #pending > 0 then
+					statements[#statements + 1] = if_statement({ if_clause(sample_condition, block(pending)) })
+					pending = {}
+				end
+				emit_sample_track(statements, track, values.tau, sample_function_symbols, sample_condition)
+			else
+				emit_sample_track(pending, track, values.tau, sample_function_symbols, sample_condition)
+			end
+		end
+		if #pending > 0 then statements[#statements + 1] = if_statement({ if_clause(sample_condition, block(pending)) }) end
+	else
+		for index = 1, #values.sample_tracks do
+			emit_sample_track(body, values.sample_tracks[index], values.tau, sample_function_symbols, sample_condition)
+		end
+		statements[#statements + 1] = if_statement({ if_clause(sample_condition, block(body)) })
+	end
 end
 
 local emit_value_runner<const> = function(

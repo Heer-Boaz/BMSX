@@ -9,42 +9,42 @@ function scenes.register()
 	scene_library.register(scenes.title, {
 		name = 'title', launchable = true,
 		objects = {
-			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'title', z = -1000 } },
-			{ member_id = 'ship', definition_id = 'starcatch.preview', options = { space_id = 'title', x = 160, y = 130, z = 512 } },
-			{ member_id = 'title', definition_id = 'starcatch.caption', options = { space_id = 'title', y = 48, z = 1000, text = 'STAR CATCH', center_block_width = 320, color = 0xffa5f5ef } },
-			{ member_id = 'subtitle', definition_id = 'starcatch.caption', options = { space_id = 'title', y = 66, z = 1000, text = 'ORBITAL DEFENSE', center_block_width = 320, color = 0xffa893e3 } },
+			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'title' } },
+			{ member_id = 'ship', definition_id = 'starcatch.preview', options = { space_id = 'title' }, spatial = { local_transform = { 1,0,0,0,1,0,0,0,1,160,130,512 } } },
+			{ member_id = 'title', definition_id = 'starcatch.caption', options = { space_id = 'title' }, spatial = { local_transform = { 1,0,0,1,0,48 } }, initial = { text = { text = 'STAR CATCH', color = 0xffa5f5ef } } },
+			{ member_id = 'subtitle', definition_id = 'starcatch.caption', options = { space_id = 'title' }, spatial = { local_transform = { 1,0,0,1,0,66 } }, initial = { text = { text = 'ORBITAL DEFENSE', color = 0xffa893e3 } } },
 		},
 	})
 	scene_library.register(scenes.intro, {
 		name = 'intro', scrolling = true,
 		objects = {
-			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'intro', z = -1000 } },
-			{ member_id = 'ship', definition_id = 'starcatch.preview', options = { space_id = 'intro', x = 160, y = 420, z = 896 } },
-			{ member_id = 'caption', definition_id = 'starcatch.caption', options = { space_id = 'intro', y = 38, z = 1000, text = 'ENTERING THE SECTOR', center_block_width = 320, color = 0xffa5f5ef } },
+			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'intro' } },
+			{ member_id = 'ship', definition_id = 'starcatch.preview', options = { space_id = 'intro' }, spatial = { local_transform = { 1,0,0,0,1,0,0,0,1,160,420,896 } } },
+			{ member_id = 'caption', definition_id = 'starcatch.caption', options = { space_id = 'intro' }, spatial = { local_transform = { 1,0,0,1,0,38 } }, initial = { text = { text = 'ENTERING THE SECTOR', color = 0xffa5f5ef } } },
 		},
 	})
 	scene_library.register(scenes.play, {
 		name = 'play', scrolling = true,
 		objects = {
-			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'play', z = -1000 } },
-			{ member_id = 'ship', definition_id = 'starcatch.ship', options = { player_index = 1, space_id = 'play', x = 160, y = 198, z = 512 } },
-			{ member_id = 'enemy', definition_id = 'starcatch.sentinel', options = { space_id = 'play', x = 160, y = 56, z = 512 } },
-			{ member_id = 'burst', definition_id = 'starcatch.burst', options = { space_id = 'play', z = 512 } },
+			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'play' } },
+			{ member_id = 'ship', definition_id = 'starcatch.ship', options = { player_index = 1, space_id = 'play' }, spatial = { local_transform = { 1,0,0,0,1,0,0,0,1,160,198,512 } } },
+			{ member_id = 'enemy', definition_id = 'starcatch.sentinel', options = { space_id = 'play' }, spatial = { local_transform = { 1,0,0,0,1,0,0,0,1,160,56,512 } } },
+			{ member_id = 'burst', definition_id = 'starcatch.burst', options = { space_id = 'play' } },
 		},
 	})
 	scene_library.register(scenes.won, {
 		name = 'won', launchable = true,
 		objects = {
-			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'won', z = -1000 } },
-			{ member_id = 'ship', definition_id = 'starcatch.preview', options = { space_id = 'won', x = 160, y = 130, z = 512 } },
-			{ member_id = 'caption', definition_id = 'starcatch.caption', options = { space_id = 'won', y = 62, z = 1000, text = 'SECTOR CLEAR', center_block_width = 320, color = 0xff64dcb0 } },
+			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'won' } },
+			{ member_id = 'ship', definition_id = 'starcatch.preview', options = { space_id = 'won' }, spatial = { local_transform = { 1,0,0,0,1,0,0,0,1,160,130,512 } } },
+			{ member_id = 'caption', definition_id = 'starcatch.caption', options = { space_id = 'won' }, spatial = { local_transform = { 1,0,0,1,0,62 } }, initial = { text = { text = 'SECTOR CLEAR', color = 0xff64dcb0 } } },
 		},
 	})
 	scene_library.register(scenes.over, {
 		name = 'over', launchable = true,
 		objects = {
-			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'over', z = -1000 } },
-			{ member_id = 'caption', definition_id = 'starcatch.caption', options = { space_id = 'over', y = 96, z = 1000, text = 'SHIP LOST', center_block_width = 320, color = 0xffed627b } },
+			{ member_id = 'backdrop', definition_id = 'starcatch.backdrop', options = { space_id = 'over' } },
+			{ member_id = 'caption', definition_id = 'starcatch.caption', options = { space_id = 'over' }, spatial = { local_transform = { 1,0,0,1,0,96 } }, initial = { text = { text = 'SHIP LOST', color = 0xffed627b } } },
 		},
 	})
 end

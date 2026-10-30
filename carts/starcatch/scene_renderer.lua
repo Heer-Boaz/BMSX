@@ -1,6 +1,9 @@
 local meshes<const> = require('scene_meshes')
 local gte<const> = require('cartlib/gx/gte')
+local gte_transform<const> = require('cartlib/gx/gte_transform')
 local gp0<const> = require('cartlib/gx/gp0')
+local affine3<const> = require('cartlib/math/affine3')
+local affine_batch<const> = require('cartlib/gx/affine_batch')
 local data<const>: *word = gte.data
 local control<const>: *word = gte.control
 local command<const>: *word = gte.command
@@ -19,31 +22,32 @@ local face_commands<const> = {}
 local face_depth<const> = {}
 local face_order<const> = {}
 local face_count
+local model_reflected
 
--- Rotation belongs to each part's local frame. Articulated hinge translations
--- are composed by the scene, like a matrix hierarchy, without creating matrices.
-local queue_mesh<const> = function(mesh_id, x, y, z, yaw, roll, palette_id)
-    local cy = 1
-    local sy = 0
-    local cr = 1
-    local sr = 0
-    if yaw ~= 0 then
-        cy = math.cos(yaw)
-        sy = math.sin(yaw)
-    end
-    if roll ~= 0 then
-        cr = math.cos(roll)
-        sr = math.sin(roll)
-    end
-    control[gte.control_r11r12] = gte.pack_i16_pair(math.round(cr * cy * 4096), math.round(-sr * 4096))
-    control[gte.control_r13r21] = gte.pack_i16_pair(math.round(cr * sy * 4096), math.round(sr * cy * 4096))
-    control[gte.control_r22r23] = gte.pack_i16_pair(math.round(cr * 4096), math.round(sr * sy * 4096))
-    control[gte.control_r31r32] = gte.pack_i16_pair(math.round(-sy * 4096), 0)
-    control[gte.control_r33] = math.round(cy * 4096)
-    control[gte.control_trx] = math.round(x)
-    control[gte.control_try] = math.round(y)
-    control[gte.control_trz] = math.round(z)
+-- A retained model-local frame is renderer scratch, not another object pose
+-- or World hierarchy node. Compose the complete model once per actor and keep
+-- its articulated parts in that frame until the GTE operand boundary.
+local model_affine<const> = {
+	xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0,
+}
+local place_model<const> = function(spatial, yaw, roll)
+	spatial:resolve_world()
+	local cy, sy, cr, sr = 1, 0, 1, 0
+	if yaw ~= 0 then cy, sy = math.cos(yaw), math.sin(yaw) end
+	if roll ~= 0 then cr, sr = math.cos(roll), math.sin(roll) end
+	local model<const> = model_affine
+	model.xx, model.xy, model.xz = cr*cy, sr*cy, -sy
+	model.yx, model.yy, model.yz = -sr, cr, 0
+	model.zx, model.zy, model.zz = cr*sy, sr*sy, cy
+	affine3.evaluate(model, spatial, true, true)
+	model_reflected = model.wxx*(model.wyy*model.wzz-model.wzy*model.wyz)
+		+ model.wyx*(model.wzy*model.wxz-model.wxy*model.wzz)
+		+ model.wzx*(model.wxy*model.wyz-model.wyy*model.wxz) < 0
+	gte_transform.write_affine(model.wxx,model.wxy,model.wxz,model.wyx,model.wyy,model.wyz,
+		model.wzx,model.wzy,model.wzz,model.wox-160,model.woy-120,model.woz)
+end
 
+local queue_mesh<const> = function(mesh_id, palette_id)
     local mesh<const> = prepared_meshes[mesh_id]
     local xy<const> = mesh.xy
     local zs<const> = mesh.z
@@ -72,8 +76,8 @@ local queue_mesh<const> = function(mesh_id, x, y, z, yaw, roll, palette_id)
         while (*cycles & 0x80000000) ~= 0 do end
         local area_word<const> = data[gte.data_mac0]
         -- MAC0 is read as a raw unsigned word; its sign is a bit, not a Lua
-        -- comparison with zero. Clockwise screen winding faces the camera.
-        if area_word ~= 0 and (area_word & 0x80000000) == 0 then
+        -- comparison with zero. Mirroring the model reverses its front winding.
+        if area_word ~= 0 and ((area_word & 0x80000000) ~= 0) == model_reflected then
             face_count = face_count + 1
             face_sxy0[face_count] = s0
             face_sxy1[face_count] = s1
@@ -167,20 +171,28 @@ function renderer.draw(component, draw)
 	face_count = 0
 	local ship<const> = game.player
 	if ship ~= nil and ship.visible then
-		local x<const> = ship.x - 160
-		local y<const> = ship.y - 120
 		local style = meshes.cyan
 		if ship.hit_flash > 0 then style = meshes.red
 		elseif ship.dash_shield > 0 then style = meshes.jade end
-		queue_mesh(meshes.ship, x, y, ship.z, ship.spin, ship.bank, style)
-		queue_mesh(meshes.head, x, y - 3 + ship.bob + ship.recoil, ship.z - 4, ship.spin, ship.bank, meshes.gold)
+		place_model(ship.spatial, ship.spin, ship.bank)
+		queue_mesh(meshes.ship, style)
+		local model<const> = model_affine
+		local head_y<const> = -3 + ship.bob + ship.recoil
+		gte_transform.write_origin(model.wox + model.wyx*head_y - model.wzx*4 - 160,
+			model.woy + model.wyy*head_y - model.wzy*4 - 120,
+			model.woz + model.wyz*head_y - model.wzz*4)
+		queue_mesh(meshes.head, meshes.gold)
 	end
 	local enemy<const> = game.enemy
 	if enemy ~= nil and enemy.visible then
 		local style = meshes.violet
 		if enemy.charge > 0.65 then style = meshes.red end
-		queue_mesh(meshes.drone, enemy.x - 160, enemy.y - 120, enemy.z, 0, 0, style)
-		queue_mesh(meshes.head, enemy.x - 160, enemy.y - 120, enemy.z - 5, 0, 0, meshes.red)
+		place_model(enemy.spatial, 0, 0)
+		queue_mesh(meshes.drone, style)
+		local model<const> = model_affine
+		gte_transform.write_origin(model.wox - model.wzx*5 - 160, model.woy - model.wzy*5 - 120,
+			model.woz - model.wzz*5)
+		queue_mesh(meshes.head, meshes.red)
 	end
 	sort_faces()
 	for index = 1, face_count do
@@ -190,21 +202,32 @@ function renderer.draw(component, draw)
 	for index = 1, #game.player_bolts do
 		local bolt<const> = game.player_bolts[index]
 		if bolt.visible then
-			draw:rect(bolt.x - 1, bolt.y - 5, bolt.x + 2, bolt.y + 4, 0xffa5f5ef)
-			draw:rect(bolt.x, bolt.y - 8, bolt.x + 1, bolt.y - 5, 0xff55c7db)
+			local pose<const> = bolt.spatial
+			pose:resolve_world()
+			affine_batch.rect(draw, -1,-5,2,4, pose.wxx,pose.wxy,pose.wyx,pose.wyy,pose.wox,pose.woy, 0xffa5f5ef)
+			affine_batch.rect(draw, 0,-8,1,-5, pose.wxx,pose.wxy,pose.wyx,pose.wyy,pose.wox,pose.woy, 0xff55c7db)
 		end
 	end
 	for index = 1, #game.enemy_bolts do
 		local bolt<const> = game.enemy_bolts[index]
-		if bolt.visible then draw:rect(bolt.x - 2, bolt.y - 3, bolt.x + 3, bolt.y + 4, 0xffed627b) end
+		if bolt.visible then
+			local pose<const> = bolt.spatial
+			pose:resolve_world()
+			affine_batch.rect(draw, -2,-3,3,4, pose.wxx,pose.wxy,pose.wyx,pose.wyy,pose.wox,pose.woy, 0xffed627b)
+		end
 	end
 	local burst<const> = game.burst
 	if burst ~= nil and burst.pulse > 0 then
 		local r<const> = burst.pulse
-		draw:line(burst.x, burst.y - r, burst.x + r, burst.y, 0xffffd866)
-		draw:line(burst.x + r, burst.y, burst.x, burst.y + r, 0xffffd866)
-		draw:line(burst.x, burst.y + r, burst.x - r, burst.y, 0xffffd866)
-		draw:line(burst.x - r, burst.y, burst.x, burst.y - r, 0xffffd866)
+		local pose<const> = burst.spatial
+		pose:resolve_world()
+		local x<const>, y<const> = pose.wox, pose.woy
+		local ax<const>, ay<const> = pose.wxx*r, pose.wxy*r
+		local bx<const>, by<const> = pose.wyx*r, pose.wyy*r
+		draw:line(x-bx,y-by, x+ax,y+ay, 0xffffd866)
+		draw:line(x+ax,y+ay, x+bx,y+by, 0xffffd866)
+		draw:line(x+bx,y+by, x-ax,y-ay, 0xffffd866)
+		draw:line(x-ax,y-ay, x-bx,y-by, 0xffffd866)
 	end
 	draw_hud(game, draw)
 end

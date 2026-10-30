@@ -108,11 +108,18 @@ function font_catalog.write_glyph_range(resolved_font, text, first_byte, last_by
 		target.x_offsets = x_offsets
 	end
 	local width = 0
+	local geometry_left = 0
+	local geometry_right = 0
+	local geometry_bottom = 0
 	for index = 1, length do
 		local codepoint<const> = byte(text, first_byte + index - 1)
 		local glyph<const> = items[codepoint] or fallback
 		target[index] = glyph
 		x_offsets[index] = width
+		if width < geometry_left then geometry_left = width end
+		local right<const> = width + glyph.width
+		if right > geometry_right then geometry_right = right end
+		if glyph.height > geometry_bottom then geometry_bottom = glyph.height end
 		width = width + (advances[codepoint] or fallback_advance)
 	end
 	for index = length + 1, #target do
@@ -120,6 +127,9 @@ function font_catalog.write_glyph_range(resolved_font, text, first_byte, last_by
 	end
 	target.glyph_count = length
 	target.visible_count = length
+	target.geometry_left = geometry_left
+	target.geometry_right = geometry_right
+	target.geometry_bottom = geometry_bottom
 	return width
 end
 

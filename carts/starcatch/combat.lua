@@ -24,10 +24,8 @@ function ship:ctor(options)
 	self.dash_speed = 1
 	self.dash_shield = 0
 	self.hit_flash = 0
-	self.width = 28
-	self.height = 30
 	self.timelines:define('idle', poses.ship_idle)
-	self.timelines:define('arrival', poses.arrival)
+	self.timelines:define('arrival', poses.arrival, { pose = self.spatial })
 	self.timelines:define('fire', poses.fire)
 	self.timelines:define('hurt', poses.hurt)
 	self.timelines:define('dash', poses.dash)
@@ -49,25 +47,25 @@ function burst:ctor()
 	self.timelines:define('burst', poses.burst)
 end
 
-function caption:ctor()
-	local text<const> = self:get_component(text_component)
-	text.color = self.color
-	text.center_block_width = 320
-	text:set_text(self.text)
-end
 
 function combat.install()
 	actions.register()
-	prefab.define({ def_id = 'starcatch.ship', class = ship,
+	local spatial3<const> = { family = '3d', authority = 'affine',
+		local_transform = { 1,0,0,0,1,0,0,0,1,0,0,512 } }
+	local spatial2<const> = { family = '2d', authority = 'affine',
+		local_transform = { 1,0,0,1,0,0 } }
+	prefab.define({ def_id = 'starcatch.ship', class = ship, spatial = spatial3,
 		components = { timeline_component.new,
 			actioneffect_component.factory(actions.effect_ids),
 			input_component.factory({ program = actions.input }) } })
-	prefab.define({ def_id = 'starcatch.preview', class = ship, components = { timeline_component.new } })
-	prefab.define({ def_id = 'starcatch.bolt', class = bolt })
-	prefab.define({ def_id = 'starcatch.burst', class = burst, components = { timeline_component.new } })
+	prefab.define({ def_id = 'starcatch.preview', class = ship, spatial = spatial3, components = { timeline_component.new } })
+	prefab.define({ def_id = 'starcatch.bolt', class = bolt, spatial = spatial2 })
+	prefab.define({ def_id = 'starcatch.burst', class = burst, spatial = spatial2, components = { timeline_component.new } })
 	prefab.define({ def_id = 'starcatch.backdrop', class = backdrop,
-		components = { custom_visual.factory({ draw = renderer.draw }) } })
-	prefab.define({ def_id = 'starcatch.caption', class = caption, defaults = { text = '', color = 0xffffffff }, components = { text_component.new } })
+		components = { custom_visual.factory({ draw = renderer.draw, order = -1000 }) } })
+	prefab.define({ def_id = 'starcatch.caption', class = caption, spatial = spatial2,
+		initial = { text = { text = '', color = 0xffffffff, center_block_width = 320, order = 1000 } },
+		components = { text_component.new } })
 end
 
 return combat

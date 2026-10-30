@@ -19,56 +19,67 @@ function screen_boundary_system.new(world)
 	self._component_view = world:active_component_view(screen_boundary_component)
 	-- Boundary payloads are synchronous system scratch, like overlap payloads.
 	-- Handlers consume their fields during dispatch rather than retaining them.
-	self._event_payload = { direction = false, previous_position = 0 }
+	self._event_payload = { direction = false, previous_position = 0, correction_committed = true }
 	return self
 end
 
-local emit_boundary_event<const> = function(payload, obj, event_type, direction, old_position)
+-- Correction and notification are one synchronous event boundary. A callback
+-- can move the body or change its basis; subsequent edge decisions consume
+-- that current pose, not coordinates captured before the callback.
+local dispatch_boundary_event<const> = function(payload, component, correcting, direction, old_position, x, y)
+	local obj<const> = component.owner
+	if correcting then
+		component.correction_committed = component:resolve_leaving(direction, old_position, x, y)
+		if obj.marked_for_disposal then
+			return false
+		end
+	else
+		component.correction_committed = true
+	end
 	payload.direction = direction
 	payload.previous_position = old_position
-	obj.events:emit(event_type, payload)
+	payload.correction_committed = component.correction_committed
+	obj.events:emit(correcting and 'screen.leaving' or 'screen.leave', payload)
+	if obj.marked_for_disposal then
+		return false
+	end
+	local spatial<const> = component:resolve_footprint()
+	return true, spatial.wox, spatial.woy
 end
 
 local emit_boundary_events<const> = function(payload, obj, component)
+	if obj.marked_for_disposal then
+		return
+	end
 	local left<const> = component.left
 	local top<const> = component.top
 	local right<const> = component.right
 	local bottom<const> = component.bottom
-	local oldx<const> = component.old_x
-	local oldy<const> = component.old_y
-	local newx<const> = obj.x
-	local newy<const> = obj.y
-	local sx<const> = obj.sx
-	local sy<const> = obj.sy
-	if newx < oldx then
-		if newx + sx < left then
-			emit_boundary_event(payload, obj, 'screen.leave', 'left', oldx)
-		elseif newx < left then
-			component:resolve_leaving('left', oldx)
-			emit_boundary_event(payload, obj, 'screen.leaving', 'left', oldx)
-		end
-	elseif newx > oldx then
-		if newx >= right then
-			emit_boundary_event(payload, obj, 'screen.leave', 'right', oldx)
-		elseif newx + sx > right then
-			component:resolve_leaving('right', oldx)
-			emit_boundary_event(payload, obj, 'screen.leaving', 'right', oldx)
-		end
+	local spatial<const> = component:resolve_footprint()
+	local x, y = spatial.wox, spatial.woy
+	local continuing
+	local edge = x + component._footprint_left
+	if edge < component.old_left and edge < left then
+		continuing, x, y = dispatch_boundary_event(payload, component,
+			x + component._footprint_right >= left, 'left', component.old_x, x, y)
+		if not continuing then return end
 	end
-	if newy < oldy then
-		if newy + sy < top then
-			emit_boundary_event(payload, obj, 'screen.leave', 'up', oldy)
-		elseif newy < top then
-			component:resolve_leaving('up', oldy)
-			emit_boundary_event(payload, obj, 'screen.leaving', 'up', oldy)
-		end
-	elseif newy > oldy then
-		if newy >= bottom then
-			emit_boundary_event(payload, obj, 'screen.leave', 'down', oldy)
-		elseif newy + sy > bottom then
-			component:resolve_leaving('down', oldy)
-			emit_boundary_event(payload, obj, 'screen.leaving', 'down', oldy)
-		end
+	edge = x + component._footprint_right
+	if edge > component.old_right and (edge > right or x + component._footprint_left >= right) then
+		continuing, x, y = dispatch_boundary_event(payload, component,
+			x + component._footprint_left < right, 'right', component.old_x, x, y)
+		if not continuing then return end
+	end
+	edge = y + component._footprint_top
+	if edge < component.old_top and edge < top then
+		continuing, x, y = dispatch_boundary_event(payload, component,
+			y + component._footprint_bottom >= top, 'up', component.old_y, x, y)
+		if not continuing then return end
+	end
+	edge = y + component._footprint_bottom
+	if edge > component.old_bottom and (edge > bottom or y + component._footprint_top >= bottom) then
+		continuing, x, y = dispatch_boundary_event(payload, component,
+			y + component._footprint_top < bottom, 'down', component.old_y, x, y)
 	end
 end
 

@@ -17,4 +17,5 @@ return {
 	platform = platform,
 	audio = audio,
 	manual = manual,
+	physical = { [gameplay] = 0x10, [frame] = 0x20, [platform] = 0x40, [audio] = 0x80 },
 }

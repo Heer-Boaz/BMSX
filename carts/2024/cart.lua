@@ -48,23 +48,18 @@ function new_game()
 	world:clear()
 	world:spawn(sint.portrait_def_id, {
 		id = sint.portrait_instance_id,
-		imgid = 'quiz',
-		pos = { x = 0, y = 0, z = 0 },
 	})
-	local text<const> = world:spawn(quiz.text_def_id, {
-		id = quiz.text_instance_id,
-		font = font.get(sint_font.font_id),
-		dimensions = { left = 0, right = 256, top = 16, bottom = 192 },
-		blank_lines = 0,
-		text_color = 0xffffffff,
-		normal_bg_color = 0xff000000,
-		pos = { x = 0, y = 0, z = 0 },
+	local text<const> = world:spawn(quiz.text_def_id, { id = quiz.text_instance_id }, nil, {
+		text = {
+			font = font.get(sint_font.font_id),
+			layout_rect = { left = 0, right = 256, top = 16, bottom = 192 },
+			blank_lines = 0, wrap_chars = 28,
+			color = 0xffffffff, background_color = 0xff000000,
+		},
 	})
-	text.maximum_characters_per_line = 28
 	world:spawn(quiz.controller_def_id, {
 		id = quiz.controller_instance_id,
 		text = text,
-		pos = { x = 0, y = 0, z = 0 },
 	})
 end
 

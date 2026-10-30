@@ -1,6 +1,7 @@
 local clock<const> = require('cartlib/clock')
 local image<const> = require('cartlib/gx/image')
 local sprite_component<const> = require('cartlib/component/sprite_component')
+local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local sprite_animation_component<const> = {}
 sprite_animation_component.__index = sprite_animation_component
@@ -13,6 +14,8 @@ setmetatable(sprite_animation_component, { __index = sprite_component })
 -- construction resolves frame runs after world cadence configuration. Every
 -- instance and the animation-system hot loop then retain direct milliseconds.
 function sprite_animation_component.factory(definition)
+	local defaults<const> = shallow_copy(definition)
+	local default_source<const> = defaults.imgid and image.resolve(defaults.imgid)
 	local animation_definitions<const> = definition.animations
 	if animation_definitions == nil then
 		-- Single-sequence sprites retain the original compact instance shape.
@@ -27,23 +30,13 @@ function sprite_animation_component.factory(definition)
 		local frame_duration_ms = definition.frame_duration_ms
 		local frame_run<const> = definition.frame_run or 1
 		local loop<const> = definition.loop
-		local id_local<const> = definition.id_local
-		local offset_x<const> = definition.offset_x or 0
-		local offset_y<const> = definition.offset_y or 0
-		local offset_z<const> = definition.offset_z or 0
-		local enabled<const> = definition.enabled
-		return function(opts)
+		local default_id<const> = defaults.id_local
+		return function(context, id_local)
 			if frame_duration_ms == nil then
 				frame_duration_ms = frame_run * clock.gameplay_delta_milliseconds()
 			end
-			local self<const> = setmetatable(sprite_component.new(opts), sprite_animation_component)
-			self.id_local = id_local
-			self.offset_x = offset_x
-			self.offset_y = offset_y
-			self.offset_z = offset_z
-			if enabled ~= nil then
-				self.enabled = enabled
-			end
+			local self<const> = sprite_component.new(context, id_local or default_id, defaults, default_source)
+			setmetatable(self, sprite_animation_component)
 			self.frames = frames
 			self.frame_sources = frame_sources
 			self.frame_count = frame_count
@@ -76,13 +69,8 @@ function sprite_animation_component.factory(definition)
 	end
 	local durations_resolved = false
 	local initial_animation_name<const> = definition.animation
-	local initial_animation<const> = animations[initial_animation_name]
-	local id_local<const> = definition.id_local
-	local offset_x<const> = definition.offset_x or 0
-	local offset_y<const> = definition.offset_y or 0
-	local offset_z<const> = definition.offset_z or 0
-	local enabled<const> = definition.enabled
-	return function(opts)
+	local default_id<const> = defaults.id_local
+	return function(context, id_local)
 		if not durations_resolved then
 			local gameplay_delta_milliseconds<const> = clock.gameplay_delta_milliseconds()
 			for _, animation in pairs(animations) do
@@ -92,16 +80,12 @@ function sprite_animation_component.factory(definition)
 			end
 			durations_resolved = true
 		end
-		local self<const> = setmetatable(sprite_component.new(opts), sprite_animation_component)
-		self.id_local = id_local
+		local self<const>, input<const> = sprite_component.new(context, id_local or default_id, defaults, default_source)
+		setmetatable(self, sprite_animation_component)
+		local animation_name<const> = input.animation or initial_animation_name
+		local initial_animation<const> = animations[animation_name]
 		self.animations = animations
-		self.animation = initial_animation_name
-		self.offset_x = offset_x
-		self.offset_y = offset_y
-		self.offset_z = offset_z
-		if enabled ~= nil then
-			self.enabled = enabled
-		end
+		self.animation = animation_name
 		self.frames = initial_animation.frames
 		self.frame_sources = initial_animation.frame_sources
 		self.frame_count = initial_animation.frame_count

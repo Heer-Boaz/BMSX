@@ -53,7 +53,7 @@ function target:_release_tag(tag)
 	self.tags[tag] = nil
 end
 target.events = events.events_of(target)
-local timelines<const> = timeline_component.new({ owner = target })
+local timelines<const> = timeline_component.new({ owner = target, clock_mode = 'manual' })
 timelines.id = 'hot_target_timelines'
 timelines:on_attach()
 registry:register(timelines)
@@ -75,6 +75,7 @@ fsm_library.register('hot_machine', {
 			timelines = {
 				hot_timeline = {
 					def = {
+						phase = 'presentation',
 						frames = function(params)
 							return { params.offset, params.offset + 1, params.offset + 2 }
 						end,
@@ -143,6 +144,7 @@ fsm_library.register('hot_machine', {
 			timelines = {
 				hot_timeline = {
 					def = {
+						phase = 'presentation',
 						frames = function(params)
 							return { params.offset + 10, params.offset + 11, params.offset + 12 }
 						end,

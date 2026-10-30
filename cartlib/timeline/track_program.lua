@@ -1,3 +1,4 @@
+local channel_binding<const> = require('cartlib/timeline/channel_binding')
 local timeline_apply<const> = require('cartlib/timeline/apply')
 local event_lane_shape<const> = require('cartlib/timeline/event_lane_shape')
 local timeline_playback<const> = require('cartlib/timeline/playback')
@@ -50,7 +51,8 @@ local empty_steps<const> = {
 	time_track_count = 0,
 }
 local empty_prepared<const> = {
-	sample_track_count = 0,
+	sample_track_count = 0, sample_time_track_count = 0,
+	has_spatial_frame_channels = false, has_spatial_time_channels = false,
 	value_track_count = 0,
 	value_runner_factory = nil,
 	has_frame_steps = false,
@@ -64,6 +66,7 @@ local empty_prepared<const> = {
 	tag_defs = empty_defs,
 	step_defs = empty_defs,
 	scalar_program = scalar_channel.empty_program,
+	output_paths = {}, writer_outputs = {}, spatial_groups = {}, spatial_cache_count = 0,
 }
 track_program.empty = {
 	value_track_count = 0,
@@ -73,6 +76,7 @@ track_program.empty = {
 	tags = empty_tags,
 	steps = empty_steps,
 	scalar_channels = scalar_channel.empty,
+	spatial_runners = {}, spatial_initial_segments = {}, spatial_cache_count = 0,
 }
 local event_forward_directions<const> = { forward = true, both = true }
 local event_backward_directions<const> = { backward = true, both = true }
@@ -155,11 +159,17 @@ local compile_sample_track<const> = function(track, binding_index_by_id)
 	}
 end
 
-function track_program.prepare(track_defs, binding_index_by_id)
+function track_program.prepare(track_defs, binding_index_by_id, phase)
 	if #track_defs == 0 then
 		return empty_prepared
 	end
 	local sample_tracks<const> = {}
+	local output_paths<const> = {}
+	local writer_outputs<const> = {}
+	local spatial_groups<const> = {}
+	local spatial_cache_count = 0
+	local has_spatial_frame_channels = false
+	local has_spatial_time_channels = false
 	local event_defs<const> = {}
 	local tag_defs<const> = {}
 	local step_defs<const> = {}
@@ -175,11 +185,43 @@ function track_program.prepare(track_defs, binding_index_by_id)
 		event_defs = event_defs,
 		tag_defs = tag_defs,
 		step_defs = step_defs,
+		output_paths = output_paths, writer_outputs = writer_outputs, spatial_groups = spatial_groups,
 	}
 	for index = 1, #track_defs do
 		local track<const> = track_defs[index]
 		local kind<const> = track.kind
-		if kind == 'event' then
+		local binding_index<const> = track.binding ~= nil and binding_index_by_id[track.binding] or 1
+		local writer_index
+		local output_index
+		if track.property ~= nil then
+			writer_index = #writer_outputs + 1
+			writer_outputs[writer_index] = { binding_index = binding_index, property = track.property }
+		elseif track.path ~= nil and track.apply == nil then
+			output_index = #output_paths + 1
+			output_paths[output_index] = { binding_index = binding_index, path = track.path }
+		end
+		if kind == 'spatial' then
+			local operation<const> = channel_binding.operation(track.operation)
+			if phase == 'presentation' and operation.phase == 'physical' then
+				error('presentation timeline cannot write a physical transform')
+			end
+			local slot<const> = #writer_outputs + 1
+			writer_outputs[slot] = { binding_index = binding_index, operation = track.operation }
+			local group_frame = false
+			local group_time = false
+			local group<const>, cache_count<const> = scalar_channel.prepare_spatial(track, operation, binding_index, slot, spatial_cache_count)
+			spatial_cache_count = cache_count
+			for field_index = 1, #group.fields do
+				local channel<const> = group.channels[field_index]
+				if channel ~= nil and channel.keys ~= nil then
+					if channel.time_domain then group_time = true; has_spatial_time_channels = true
+					else group_frame = true; has_spatial_frame_channels = true end
+				end
+			end
+			local group_index<const> = #spatial_groups + 1
+			spatial_groups[group_index] = group
+			sample_tracks[#sample_tracks + 1] = { kind = 'spatial', binding_index = binding_index, group_index = group_index, has_frame = group_frame, has_time = group_time, mixed_domain = group.mixed_domain }
+		elseif kind == 'event' then
 			event_defs[#event_defs + 1] = track
 			local fire_on_seek<const> = track.fire_on_seek
 			local fire_on_scrub<const> = track.fire_on_scrub
@@ -236,7 +278,7 @@ function track_program.prepare(track_defs, binding_index_by_id)
 					step_has_evaluation_callbacks = true
 				end
 				step_defs[#step_defs + 1] = {
-					apply = timeline_apply.compile_step_apply(track.path, track.apply, binding_index),
+					apply = timeline_apply.compile_step_apply(track.path, track.apply, binding_index, writer_index, output_index),
 					keys = track.keys,
 				}
 				if track.keys[1].time_ms ~= nil then
@@ -252,6 +294,8 @@ function track_program.prepare(track_defs, binding_index_by_id)
 					binding_index = binding_index,
 					apply = track.apply,
 					path = track.path,
+					writer_index = writer_index,
+					output_index = output_index,
 					interpolation = interpolation,
 					keys = track.keys,
 				}
@@ -260,10 +304,17 @@ function track_program.prepare(track_defs, binding_index_by_id)
 			if kind == 'sample' then
 				has_evaluation_callbacks = true
 			end
-			sample_tracks[#sample_tracks + 1] = compile_sample_track(track, binding_index_by_id)
+			local sample_track<const> = compile_sample_track(track, binding_index_by_id)
+			sample_track.writer_index = writer_index
+			sample_track.output_index = output_index
+			sample_tracks[#sample_tracks + 1] = sample_track
 		end
 	end
-	prepared.sample_track_count = #track_defs - #event_defs - #tag_defs - #step_defs - #scalar_defs
+	prepared.sample_track_count = #sample_tracks
+	prepared.sample_time_track_count = #sample_tracks - #spatial_groups
+	prepared.spatial_cache_count = spatial_cache_count
+	prepared.has_spatial_frame_channels = has_spatial_frame_channels
+	prepared.has_spatial_time_channels = has_spatial_time_channels
 	prepared.value_track_count = prepared.sample_track_count + #step_defs + #scalar_defs
 	prepared.has_frame_steps = has_frame_steps
 	prepared.has_time_steps = has_time_steps
@@ -634,7 +685,14 @@ function track_program.compile(prepared, length, duration_ms)
 		return track_program.empty
 	end
 	local scalar_channels<const> = scalar_channel.compile(prepared.scalar_program, length)
+	local spatial_runners<const> = {}
+	local spatial_initial_segments<const> = {}
+	for index = 1, #prepared.spatial_groups do
+		spatial_runners[index] = scalar_channel.compile_spatial(prepared.spatial_groups[index], length, spatial_initial_segments)
+	end
 	local tracks<const> = {
+		spatial_runners = spatial_runners, spatial_initial_segments = spatial_initial_segments,
+		spatial_cache_count = prepared.spatial_cache_count,
 		value_track_count = prepared.value_track_count,
 		play_value_runner = nil,
 		position_value_runner = nil,

@@ -8,19 +8,20 @@ local scene<const> = {}
 scene.__index = scene
 
 function scene.new(plan)
-	return setmetatable({ definition = plan, members = {}, objects = dense_set.new(), closed = false }, scene)
+	return setmetatable({ definition = plan, members = {}, _members_by_index = {},
+		objects = dense_set.new(), closed = false }, scene)
 end
 
 -- World calls these at construction and final teardown, including objects
 -- whose admission is cancelled at the current structural barrier.
 function scene:_attach(object, member_id)
-	assert(not self.closed, 'cannot spawn into an unloaded scene')
 	if member_id ~= nil then
-		if self.members[member_id] ~= nil then
-			error('scene member already instantiated: ' .. member_id)
-		end
 		self.members[member_id] = object
 		object.scene_member_id = member_id
+		local member<const> = self.definition.members_by_id[member_id]
+		if member ~= nil then
+			self._members_by_index[member.index] = object
+		end
 	end
 	dense_set.add(self.objects, object)
 end
@@ -30,11 +31,15 @@ function scene:_detach(object)
 	local member_id<const> = object.scene_member_id
 	if member_id ~= nil then
 		self.members[member_id] = nil
+		local member<const> = self.definition.members_by_id[member_id]
+		if member ~= nil then
+			self._members_by_index[member.index] = nil
+		end
 	end
 end
 
-function scene:spawn(definition_id, options, member_id)
-	return world:spawn(definition_id, options, self, member_id)
+function scene:spawn(definition_id, options, spatial_input, initial)
+	return world:spawn(definition_id, options, spatial_input, initial, self)
 end
 
 -- Admission policy belongs to the cart. It may instantiate an authored member
@@ -48,20 +53,44 @@ function scene:spawn_member(member_id, overrides)
 			options[key] = value
 		end
 	end
-	return world:_spawn_definition(member.definition, options, self, member_id)
+	local parent
+	if member.parent_index ~= nil then
+		local parent_object<const> = self._members_by_index[member.parent_index]
+		if parent_object == nil then
+			error('scene spatial parent is not live: ' .. member_id)
+		end
+		parent = parent_object.spatial
+	end
+	return world:_spawn_definition(member.definition, options, member.local_transform, parent, member.initial, self, member_id)
 end
 
 function scene:spawn_members(member_ids, overrides)
+	local selected<const> = {}
 	local members<const> = {}
 	local by_id<const> = self.definition.members_by_id
 	for index = 1, #member_ids do
-		members[index] = by_id[member_ids[index]]
+		local member_id<const> = member_ids[index]
+		local member<const> = by_id[member_id]
+		if member == nil then
+			error('scene member is not declared: ' .. member_id)
+		end
+		if selected[member.index] then
+			error('scene member selected twice: ' .. member_id)
+		end
+		selected[member.index] = true
+	end
+	local construction_order<const> = self.definition.construction_order
+	for index = 1, #construction_order do
+		local member<const> = construction_order[index]
+		if selected[member.index] then
+			members[#members + 1] = member
+		end
 	end
 	world:spawn_members(self, members, overrides)
 end
 
 function scene:spawn_all(overrides)
-	world:spawn_members(self, self.definition.objects, overrides)
+	world:spawn_members(self, self.definition.construction_order, overrides)
 end
 
 function scene:dispose(on_unloaded, context)
