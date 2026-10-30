@@ -1,14 +1,15 @@
 # Cartlib spatial hierarchy
 
-This target design adds authored and runtime spatial hierarchies for Studio's
-Scene work area. It replaces the flat object-position contract; it does not
-describe an implemented feature. Existing carts migrate with their consumers.
-Compatibility aliases and duplicate position storage are outside this design.
+Cartlib owns authored and runtime spatial hierarchies for Studio's Scene work
+area. Transforms replace flat object positions; the same concrete components
+serve gameplay, rendering, collision and read-only inspection. There are no
+compatibility aliases or duplicate position stores.
 
 Cartlib remains independent gameplay software. Transforms require no new
 hardware, BIOS or cartridge format. The [Studio workspace design](studio_workspace_design.md)
-owns presentation; this document owns the proposed cartlib domain and the
-source contract needed to edit it.
+owns presentation; this document owns cartlib spatial boundaries and the
+canonical-source contract for editing them. Runtime hierarchy does not itself
+provide an authored viewport or its manipulation tools.
 
 ## Production precedents and deliberate differences
 
@@ -63,9 +64,9 @@ implicitly add a visual, collider, tick function or visibility policy.
 The implementation separates real responsibilities rather than adding a
 service facade: affine arithmetic lives in the shared math modules;
 `component/transform_2d_component.lua` and `transform_3d_component.lua` own
-instance identity and mutation authority; a selected typed layout has its
-central declarations in `world/spatial_storage.lua`; `world/spatial_hierarchy.lua` owns
-forest traversal, invalidation and world evaluation; and `world/scene_plan.lua`
+instance identity, flat scalar state and mutation authority;
+`world/spatial_hierarchy.lua` owns forest traversal, invalidation and world
+evaluation; and `world/scene_plan.lua`
 owns cold authored-graph compilation. World retains admission, the existing
 mutation drain and public structural commands. Spatial hierarchy algorithms
 do not introduce another identity registry or lifecycle scheduler.
@@ -89,9 +90,9 @@ The coefficient order is basis columns followed by origin:
 `(x, y)` to `(xx*x + yx*y + ox, xy*x + yy*y + oy)`.
 There is no stored homogeneous perspective row.
 
-The central math owners are `cartlib/math/affine2.lua` and `affine3.lua`,
-introduced with their first consumers. They own composition, inversion,
-point/vector transformation and explicit TRS builders. These operations use
+The central math owners, `cartlib/math/affine2.lua` and `affine3.lua`, own
+composition, inversion, point/vector transformation and explicit TRS builders.
+These operations use
 retained destinations and scalar Number arithmetic; a clean read allocates
 nothing. Device operands are produced separately at the existing GX/GTE/GEO
 boundary. Game-unit affines are not packed GTE register matrices. Numeric
@@ -202,91 +203,34 @@ The concrete precedents are already in the library:
 
 ### Storage and allocation budget
 
-The binding requirements are one component identity, flat retained state and
-zero hot allocation. Named scalar fields on that actual component are a valid
-candidate: they do not create a separate table per matrix or vector. A typed
-arena is the other candidate, specified below. Choose the concrete layout
-through the implementation acceptance gate, not presumed superiority of typed
-memory. This is a build/design decision, not two runtime backends, an adapter
-interface, a fallback or permission to store the same local pose twice.
+Each spatial WorldObject has one actual Transform component identity. Its
+local/world coefficients, revisions and intrusive hierarchy links are flat
+fields on that component. Nonspatial objects allocate no transform. There is
+no matrix/vector table per instance, separate numeric arena, pretend-pointer
+facade or alternate storage backend. Prototypes and executable kernels are
+shared; registry/class-index admission has its own allocation cost.
 
-The typed candidate uses a cart-owned BSS arena per spatial
-family, configured into World with its base address, capacity and ancestor
-scratch. Central `spatial_storage.lua` owns the struct declarations and sizes;
-carts declare storage using those types, not a private spatial ABI. The current
-library has fixed BSS/explicit scratch owners, not a general dynamically growing
-raw-memory allocator. This design does not invent one or silently substitute
-Lua tables when storage fills.
-
-An arena slot contains the following named fields, with numeric fields first:
-
-| Retained fields | 2D bytes | 3D bytes |
-| --- | ---: | ---: |
-| Local and world affine coefficients, `f64` | 96 | 192 |
-| World basis/origin revisions and last consumed parent basis/origin revisions, four `f64` Numbers | 32 | 32 |
-| Parent, first/last child and next/previous sibling addresses, five raw words | 20 | 20 |
-| Dirty/local-write/parent-input flags, one word | 4 | 4 |
-| **State per slot** | **152** | **248** |
-| One raw-address ancestor-scratch entry per slot | 4 | 4 |
-
-Thus state plus ancestor scratch reserves `156*C2 + 252*C3` bytes for configured
-capacities `C2` and `C3`; component identities, managed bindings, compiled plans
-and geometry buffers have separate reported costs. A 2D-only cart reserves no
-3D arena. Runtime states do not contain nested matrix, row, basis, origin or
-vector tables. `f64` retains the chosen Number semantics; pose `f32` would be
-a representation change. Revision Numbers are not narrowed to wrapping words.
-
-Slots have stable addresses while admitted. An intrusive free list reuses
-retired slots without compacting live records or allocating free-list nodes.
-World keeps the bounded slot-to-component identity binding separately from raw
-numeric data; guest Table references are not encoded into raw word fields.
-Public parent references and queued commands retain actual component identities;
-the raw parent/sibling addresses are live traversal indices. A delayed command
-checks its original target's lifetime before deriving its slot, not the other
-way around. Reusing an address cannot retarget a request to a new object.
-Removal first retires consumers, detaches surviving children and revokes the
-component's storage binding, then releases the slot. Borrowed addresses expire
-with that attachment/observation lifetime; slot reuse never means identity reuse.
-There is no liveness/generation lookup on every scalar load.
-
-The managed allocation budget applies to either candidate:
-
-- One actual Transform component identity table per spatial WorldObject,
-  alongside the already existing object/component storage; none for nonspatial
-  objects. Numeric state/topology use its named scalar fields or its arena
-  slot, never child tables or both representations.
-  Prototypes and executable kernels are shared, not fresh metatables/functions
-  attached to each instance. Registry/class-index admission can have additional
-  bucket costs; measure those separately rather than claiming that the identity
-  table is the entire managed-memory increment.
-- Cold authored input/compiled-plan arrays are shared per retained definition,
-  not copied into a per-instance graph of descriptor objects. Construction
-  copies only mutable coefficients into retained state and binds instance identities.
+- Cold authored inputs and compiled plans are shared per retained definition.
+  Construction copies mutable coefficients and binds concrete identities,
+  rather than copying an instance graph of descriptors.
 - Ordinary pose writes, world reads, traversal and stable-frame consumers make
   **zero guest heap reservations**: no temporary tables, closures, iterators,
   strings or wrapped multiple returns.
-- Spawn/disposal are not falsely advertised as allocation-free: new public
-  gameplay/component identities retain their actual allocation cost. Retained
-  scratch and geometry reuse must not reconstruct their numeric storage.
-- Structural requests use World's retained queues with scalar mode/result
-  values and caller-owned callback/context bindings. There is no fresh command
-  table or closure per coefficient, edge notification or ordinary pose write.
-  Drained managed queue entries release references.
+- Spawn/disposal retain the real cost of their public gameplay/component
+  identities. Retained ancestor scratch clears consumed references so its
+  high-water storage cannot keep retired components alive.
+- Structural requests use World's retained queues and caller-owned
+  callback/context bindings. Drained entries release their references; an
+  ordinary pose write does not allocate a command or edge notification.
+- Collision geometry uses cart-owned bounded output storage. The shared
+  collision-source binding measures all reflected descriptors once; consumers
+  reserve their actual source bound at admission and reuse that output.
+  Arbitrary constructors are not executed to discover a bound. Exhaustion is
+  an admission error, not hidden growth or an alternative representation.
 
-A typed-arena spawn batch reserves its known slots before user constructors run.
-The geometry producer reserves its actual source bound at binding/admission,
-before publishing that binding; it can reserve before constructors only when
-the prefab's producer already declares the bound. Arbitrary factories are not
-executed speculatively to discover it. Exhaustion is an explicit admission
-error, not partial publication, a larger hidden heap or a fallback
-representation. Capacities belong to cart composition.
-
-Typed arenas provide bounded compact storage, not an automatic speed proof.
-Before fixing the layout, compare actual execution and retained/GC costs against
-the flat-scalar component baseline. A slower candidate must demonstrate a
-measured total-workload advantage or be corrected/rejected; it is not accepted
-merely because its source looks data-oriented. A flat choice retains the same
-dirty/authority/lifetime contracts without a pretend-pointer facade.
+The emitted-code/cycle regressions own performance evidence. Layout or kernel
+changes need measured comparisons there, not an assumed advantage from their
+source shape or a historical benchmark table in this document.
 
 ### Compiler-aware kernels, not accessor chains
 
@@ -341,8 +285,7 @@ not a full-world pass before drawing:
 2. Construction and all attach/detach/reparent operations invalidate the moved
    subtree, including Keep Local beneath an already dirty parent, and invalidate
    that node's consumed parent inputs.
-3. A query pushes only dirty ancestors into retained scratch (raw slot addresses
-   for typed storage, actual component references for flat storage)
+3. A query pushes only dirty ancestors into retained component-reference scratch
    until reaching a clean ancestor/root, then evaluates downward without Lua
    recursion, callbacks or yielding.
 4. Local-write bits, parent-input invalidation and consumed parent revisions
@@ -388,9 +331,8 @@ exercise generated closures. Apply those actual execution owners here.
 | --- | --- |
 | Emitted, linked code for both compilation paths | No `NEWT`/closure construction in steady-state kernels; no property/method chain or call per coefficient. Any remaining coarse calls have named owners and measured cost. Inspect actual generated code too, not only an O3 source fixture. |
 | Warm allocation window | Zero successful guest heap reservations for pose/query/consumer work, plus stable retained heap and bounded stack after warmup. Net `usedBytes` alone cannot hide allocate-then-collect churn. Instrument the test run through the existing [heap-reservation profiling pattern](../hardware/tools/cpu_boot_profile.ts); add no production API solely for tests. |
-| Storage/access baseline | Compare configured BSS records with direct flat scalar fields for clean reads, root motion, affine composition and traversal. Record guest cycles, not a presumption that typed memory is faster. |
 | Scaling | Clean reads stay constant with depth; unchanged World size does not affect a changed leaf; ancestor updates scale with the affected subtree; origin-only updates perform no basis/shape rebuild. Cover deep chains, broad siblings and multiple consumers. |
-| Structural churn | Repeated spawn/dispose/reparent reuses bounded numeric/scratch/queue storage, retires bindings correctly and does not compile new topology-specific code. Report public-identity allocations separately. |
+| Structural churn | Retired identities are released; reused ancestor scratch and queues do not retain retired objects or compile topology-specific code. Report public-identity allocations separately. |
 | Cold and steady-state cost | Report configured RAM, admission/compile cycles, allocated/retained bytes, object counts, emitted text size and warm guest cycles separately. Include flat-root/no-hierarchy scenes so adding hierarchy cannot hide a regression in the common case. |
 
 Correctness runs cover O0/O3, while performance acceptance uses the actual
@@ -461,7 +403,7 @@ Scenes retain an ordered member list with stable scene-local identities and
 explicit parent references. Reparenting need not move or reserialize the
 member's Lua source block.
 
-The target source shape is:
+The source shape is:
 
 ```lua
 prefab.define({
@@ -600,9 +542,9 @@ published half-batches. Scene closure retires its pending as well as live owned
 set. There is no arbitrary constructor rollback; a thrown constructor error is
 a failed construction, not a recoverable partial scene.
 
-The current position-after-constructor and activation-before-publication
-behavior is replaced. Single-object spawn uses this same lifecycle; it is not
-a second path with different spatial timing.
+Single-object spawn uses this same lifecycle; it is not a second path with
+different spatial timing. Constructors see their admitted pose, and activation
+follows publication through the existing component lifecycle.
 
 ## Studio correspondence
 
@@ -639,25 +581,23 @@ An authored viewport still needs asset/proxy resolution, an authoring renderer,
 camera navigation, picking, framing and gizmos. None follows automatically from
 runtime hierarchy or an image captured from a running game.
 
-The [read-only inspection contract](cartlib_inspection_contract.md) continues
-to describe the implemented layout until migration. The new observation path
-projects poses from coherently captured local affines and concrete parent
-links using shared host math; it does not execute a guest getter to refresh a
-dirty cache. That captured projection is not another live runtime forest.
+The [read-only inspection contract](cartlib_inspection_contract.md) describes
+the concrete guest layout and observation lifetimes. Inspection projects poses
+from coherently captured local affines and concrete parent links using shared
+host math; it does not execute a guest getter to refresh a dirty cache. That
+captured projection is not another live runtime forest.
 
-## Delivery boundaries and evidence
+## Scope and regression evidence
 
-The target is deliberately broader than its first implementation. Admission
-requires working producers and consumers; merely reserving an API is not a
-completed capability.
+The 2D/3D affine families, World forest, Scene compilation and staged lifecycle
+are runtime boundaries. Visuals, physical consumers and inspectors consume the
+same concrete transforms. Starcatch's model renderer is a concrete 3D visual
+and GX/GTE consumer; a reusable mesh component is a separate library feature.
 
-| Boundary | Concrete first consumer and acceptance |
-| --- | --- |
-| 2D math, World forest and lifecycle | Empty spatial parent plus sprite/collider children in a dedicated fixture; same pose in construction, synchronous query and render. Migrate all existing position producers, consumers and read-only inspection proofs together; no old-field mirror. |
-| Authored hierarchy | Cold Scene compiler and source-backed outline/reparent editing; explicit staged batches and stable instance identity. Existing carts migrate to the authored shape. |
-| Main authored viewport | The actual Scene authoring context supplies asset correspondence, selection and source edits; visible picking/manipulation evidence supplements domain tests. |
-| 3D affine family | Mathematical contract specified here; integrate with a concrete 3D visual consumer and GX producer before calling 3D support complete. A reusable mesh component is currently a separate cartlib gap. |
-| Later domain extensions | Nested prefab graphs, attachment sockets/bones, transform constraints, moving-platform motion and inherited visibility are separate product contracts, not hidden behavior of the parent edge. |
+An authored viewport still requires its own renderer, asset correspondence,
+camera, picking and manipulation controls. Nested prefab graphs, sockets/bones,
+constraints, moving-platform motion and inherited visibility are separate
+product contracts, not hidden behavior of a spatial parent edge.
 
 Regression evidence uses synthetic fixtures or dedicated test carts, never the
 changing contents of ordinary carts:
