@@ -337,6 +337,12 @@ There is no stored normal array, center, transform matrix or vertex-stride
 field. The image's `centerpoint` belongs to metadata, not an
 implicit subtraction from these coordinates.
 
+Image-derived geometry uses pixel sample coordinates: zero through width minus
+one and zero through height minus one. Reflection maps an X coordinate to
+`width - 1 - x`, and a Y coordinate to `height - 1 - y`, for both polygon
+vertices and bounding-box endpoints. These endpoints are geometry coordinates,
+not the exclusive right/bottom edges of a bitmap storage rectangle.
+
 #### Using packed geometry with GEO
 
 The `cartlib/collision/collision_shape` function `variant_addresses(C)` returns
@@ -1919,12 +1925,3 @@ end
   Hold our unrestricted lookup-API acceptance; do not turn this into a permanent
   hardware name restriction. Raw TOC spans and the existing ASCII examples are
   unaffected. No runtime fix is part of this documentation change.
-
-### CSF01: collision-asset reflection origin
-
-- [ ] Resolve the polygon versus bounding-box reflection conventions before
-  promising uniform image/geometry flip equivalence. Exact producer locations
-  and compound-bound implications are in the existing
-  [cartridge facts](../docs/book3/facts/cartridge.md#csf01-reflection-origin-boundary-remains-unresolved).
-  The raw G2D2 layout and GEO descriptors are separate contracts. Do not turn
-  the producer question into a hardware quirk or fix it in this writing slice.

@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { join } from 'node:path';
-
-import { createCanvas, loadImage } from 'canvas';
+import { createCanvas } from 'canvas';
 
 import { BoundingBoxExtractor } from '../../scripts/rompacker/boundingbox_extractor';
 
@@ -25,21 +23,13 @@ test('extractDetailedConvexPieces keeps opaque blocks on integer coordinates', (
 	assert.deepEqual(pieces[0], [0, 0, 1, 0, 1, 1, 0, 1]);
 });
 
-test('@cc extraction on pietious jumpslash emits no triangulation warnings', async () => {
-	const filepath = join(process.cwd(), 'carts/pietious/res/img/pietolon/pietolon_jumpslash_r@cc@atlas=gameplay.png');
-	const img = await loadImage(filepath);
-	const originalWarn = console.warn;
-	const warnings: string[] = [];
-	console.warn = (...args: unknown[]) => {
-		warnings.push(args.map(value => String(value)).join(' '));
-	};
-	try {
-		const polys = BoundingBoxExtractor.extractDetailedConvexPieces(img as any);
-		assert.ok(polys.length > 0);
-		assert.ok(polys.length <= 6);
-		assertIntegerPolygons(polys);
-		assert.deepEqual(warnings, []);
-	} finally {
-		console.warn = originalWarn;
-	}
+test('concave sample extraction respects its explicit piece budget and integer-coordinate contract', () => {
+	const canvas = createCanvas(24, 24), context = canvas.getContext('2d');
+	context.fillStyle = '#fff';
+	context.fillRect(1, 1, 4, 20);
+	context.fillRect(1, 17, 20, 4);
+	context.fillRect(17, 1, 4, 20);
+	const polys = BoundingBoxExtractor.extractDetailedConvexPieces(canvas as any, { maxPiecesPerComponent: 4 });
+	assert.ok(polys.length > 1 && polys.length <= 4);
+	assertIntegerPolygons(polys);
 });

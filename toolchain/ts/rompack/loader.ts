@@ -10,7 +10,6 @@ import type {
 	SourceMeta,
 } from './assets';
 import type { GLTFMaterial, GLTFModel } from './gltf';
-import type { Polygon, RectBounds } from '../../../machine/ts/common/rect';
 import type { vec4arr } from '../../../machine/ts/common/vector';
 import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../../../machine/ts/common/serializer/binencoder';
 import { parseCartHeader, type CartRomHeader } from '../../../machine/ts/rompack/format';
@@ -49,51 +48,6 @@ async function loadRomAssetListFromHeader(
 		? parseRomMetadataSection(rom.subarray(header.metadataOffset, header.metadataOffset + header.metadataLength))
 		: null;
 
-	function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
-		return polys.map(poly => {
-			const res: number[] = [];
-			for (let i = 0; i < poly.length; i += 2) {
-				const x = poly[i];
-				const y = poly[i + 1];
-				res.push(flipH ? imgW - 1 - x : x, flipV ? imgH - 1 - y : y);
-			}
-			return res;
-		});
-	}
-
-	function flipBoundingBoxHorizontally(box: RectBounds, width: number): RectBounds {
-		return {
-			left: width - box.right,
-			right: width - box.left,
-			top: box.top,
-			bottom: box.bottom,
-			z: box.z
-		};
-	}
-
-	function flipBoundingBoxVertically(box: RectBounds, height: number): RectBounds {
-		return {
-			left: box.left,
-			right: box.right,
-			top: height - box.bottom,
-			bottom: height - box.top,
-			z: box.z
-		};
-	}
-
-	function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number) {
-		const originalBoundingBox = extractedBoundingBox;
-		const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, imgW);
-		const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, imgH);
-		const bothFlipped = flipBoundingBoxHorizontally(flipBoundingBoxVertically(originalBoundingBox, imgH), imgW);
-		return {
-			original: originalBoundingBox,
-			fliph: horizontalFlipped,
-			flipv: verticalFlipped,
-			fliphv: bothFlipped
-		};
-	}
-
 	for (const asset of entryList) {
 		asset.payload_id = domain;
 		if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
@@ -106,20 +60,6 @@ async function loadRomAssetListFromHeader(
 			switch (asset.type) {
 				case 'image':
 					asset.imgmeta = decodedMeta as ImgMeta;
-					if (asset.imgmeta.hitpolygons?.original && (!asset.imgmeta.hitpolygons.fliph || !asset.imgmeta.hitpolygons.flipv || !asset.imgmeta.hitpolygons.fliphv)) {
-						const extracted_hitpolygon = asset.imgmeta.hitpolygons.original;
-						asset.imgmeta.hitpolygons = {
-							original: extracted_hitpolygon,
-							fliph: flipPolygons(extracted_hitpolygon, true, false, asset.imgmeta.width, asset.imgmeta.height),
-							flipv: flipPolygons(extracted_hitpolygon, false, true, asset.imgmeta.width, asset.imgmeta.height),
-							fliphv: flipPolygons(extracted_hitpolygon, true, true, asset.imgmeta.width, asset.imgmeta.height)
-						};
-					}
-					if (asset.imgmeta.width && asset.imgmeta.height) {
-						if (asset.imgmeta.boundingbox && (!asset.imgmeta.boundingbox.fliph || !asset.imgmeta.boundingbox.flipv || !asset.imgmeta.boundingbox.fliphv)) {
-							asset.imgmeta.boundingbox = generateFlippedBoundingBox(asset.imgmeta.boundingbox.original, asset.imgmeta.width, asset.imgmeta.height);
-						}
-					}
 					break;
 				case 'texture':
 					asset.texturemeta = decodedMeta as TextureMeta;

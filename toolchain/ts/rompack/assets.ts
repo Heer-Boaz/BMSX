@@ -49,16 +49,16 @@ export interface AudioMeta {
 
 export interface BoundingBoxPrecalc {
 	original: RectBounds;
-	fliph?: RectBounds;
-	flipv?: RectBounds;
-	fliphv?: RectBounds;
+	fliph: RectBounds;
+	flipv: RectBounds;
+	fliphv: RectBounds;
 }
 
 export interface HitPolygonsPrecalc {
 	original: Polygon[];
-	fliph?: Polygon[];
-	flipv?: Polygon[];
-	fliphv?: Polygon[];
+	fliph: Polygon[];
+	flipv: Polygon[];
+	fliphv: Polygon[];
 }
 
 export interface GxTexturePageTile {

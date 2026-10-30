@@ -123,22 +123,10 @@ const { createHash } = require('crypto');
 
 const ROM_ZERO_FILL_CHUNK = Buffer.alloc(64 * 1024);
 const ADPCM_NO_LOOP = 0xffffffff;
-type CompleteBoundingBoxPrecalc = BoundingBoxPrecalc & {
-	fliph: RectBounds;
-	flipv: RectBounds;
-	fliphv: RectBounds;
-};
-
-type CompleteHitPolygonsPrecalc = HitPolygonsPrecalc & {
-	fliph: Polygon[];
-	flipv: Polygon[];
-	fliphv: Polygon[];
-};
-
 type ImageCollisionBuild = {
-	boundingbox: CompleteBoundingBoxPrecalc;
+	boundingbox: BoundingBoxPrecalc;
 	centerpoint: vec2arr;
-	hitpolygons: CompleteHitPolygonsPrecalc | undefined;
+	hitpolygons: HitPolygonsPrecalc | undefined;
 	collisionbin: Buffer;
 };
 
@@ -275,11 +263,10 @@ function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: nu
 
 function flipBoundingBoxHorizontally(box: RectBounds, width: number): RectBounds {
 	return {
-		left: width - box.right,
-		right: width - box.left,
+		left: width - 1 - box.right,
+		right: width - 1 - box.left,
 		top: box.top,
 		bottom: box.bottom,
-		z: box.z,
 	};
 }
 
@@ -287,13 +274,12 @@ function flipBoundingBoxVertically(box: RectBounds, height: number): RectBounds 
 	return {
 		left: box.left,
 		right: box.right,
-		top: height - box.bottom,
-		bottom: height - box.top,
-		z: box.z,
+		top: height - 1 - box.bottom,
+		bottom: height - 1 - box.top,
 	};
 }
 
-function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number): CompleteBoundingBoxPrecalc {
+function generateFlippedBoundingBox(extractedBoundingBox: RectBounds, imgW: number, imgH: number): BoundingBoxPrecalc {
 	const originalBoundingBox = extractedBoundingBox;
 	const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, imgW);
 	const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, imgH);

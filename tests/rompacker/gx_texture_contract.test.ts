@@ -385,6 +385,8 @@ return imgdec
 		assert.deepEqual(loadedTexture.texturemeta, texture.texturemeta);
 		assert.equal(loadedFirst.imgmeta!.gx_atlas_id, textureId);
 		assert.equal(loadedSecond.imgmeta!.gx_atlas_id, textureId);
+		assert.deepEqual(loadedFirst.imgmeta!.boundingbox, assets[1].imgmeta!.boundingbox);
+		assert.deepEqual(loadedSecond.imgmeta!.boundingbox, assets[2].imgmeta!.boundingbox);
 
 		const decodedTexture = {};
 		const modalContext = {
