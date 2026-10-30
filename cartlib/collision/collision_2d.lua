@@ -94,11 +94,11 @@ end
 
 -- Exact geometry belongs to the collider's retained cache or immutable asset.
 -- Per-pass scratch owns only instance/candidate/result records.
-local stage_geo_overlap_instance<const> = function(collider, shape_ref, instance_addr, source_index)
+local stage_geo_overlap_instance<const> = function(collider, shape_ref, tx, ty, instance_addr, source_index)
 	local instance<const>: *geo_overlap_instance = instance_addr
 	instance->shape = shape_ref
-	instance->tx = collider.wox
-	instance->ty = collider.woy
+	instance->tx = tx
+	instance->ty = ty
 	instance->layer = collider.layer
 	instance->mask = collider.mask
 	instance->source_index = source_index
@@ -237,7 +237,8 @@ function collision_2d.collect_overlaps(colliders, collider_count, pairs)
 		local shape_ref<const> = collider:resolve_shape()
 		if shape_ref ~= nil then
 			if instance_count == geo_instance_capacity then error('GEO overlap scratch capacity exceeded') end
-			stage_geo_overlap_instance(collider, shape_ref, instance_base + instance_count * geo_instance_bytes, i - 1)
+			stage_geo_overlap_instance(collider, shape_ref, collider.wox, collider.woy,
+				instance_base + instance_count * geo_instance_bytes, i - 1)
 			instance_count = instance_count + 1
 		end
 	end
@@ -257,15 +258,19 @@ function collision_2d.collect_overlaps(colliders, collider_count, pairs)
 	return decode_overlap_results(colliders, instance_base, result_base, summary_base, pairs)
 end
 
-function collision_2d.collides(a, b)
+-- Optional world displacement applies to A in this query only. Geometry and
+-- published transforms stay owned by their existing components.
+function collision_2d.collides(a, b, delta_x, delta_y)
 	local shape_a<const> = a:resolve_shape()
 	if shape_a == nil then return nil end
 	local shape_b<const> = b:resolve_shape()
 	if shape_b == nil then return nil end
+	local tx, ty = a.wox, a.woy
+	if delta_x ~= nil then tx, ty = tx + delta_x, ty + delta_y end
 	local instance_base<const> = geo_overlap_scratch_base
 	local instance_end<const> = instance_base + geo_instance_bytes * 2
-	stage_geo_overlap_instance(a, shape_a, instance_base, 0)
-	stage_geo_overlap_instance(b, shape_b, instance_base + geo_instance_bytes, 1)
+	stage_geo_overlap_instance(a, shape_a, tx, ty, instance_base, 0)
+	stage_geo_overlap_instance(b, shape_b, b.wox, b.woy, instance_base + geo_instance_bytes, 1)
 	local pair_base<const> = instance_end
 	local result_base<const> = pair_base + geo_pair_bytes
 	local summary_base<const> = result_base + geo_result_bytes

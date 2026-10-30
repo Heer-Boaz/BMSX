@@ -105,7 +105,7 @@ physical capabilities expose only their admitted writers:
 | --- | --- |
 | Set local affine | Replace the full local authority and invalidate derived world poses. |
 | Set local origin | Edit translation only, retaining the local basis. |
-| Read world affine/origin | Resolve current ancestors and return borrowed retained state or scalar coordinates. |
+| Resolve world affine | Resolve current ancestors and return the actual retained Transform; consumers read only the coefficients they need. |
 | Set world origin | Apply the current parent inverse to the desired origin; retain the local basis. |
 | Set world affine | Compute `L = inverse(W(parent)) * desiredWorld`. |
 | Transform point/vector | Points include translation; vectors do not. |
@@ -431,6 +431,13 @@ A rotated or sheared rectangle becomes a polygon, not an AABB pretending to be
 exact geometry. AABB bounds remain broadphase data. Reflections preserve the
 producer's polygon ordering convention. Degenerate geometry goes through the
 documented overlap rules; the producer does not inflate it or fabricate hits.
+
+Candidate overlap queries may supply a world displacement for the first shape.
+Only its staged GEO instance origin changes; the query preserves the actual
+shape, component attachment and live transform. This tests the endpoint, not a
+swept path. The tile motor separately tests explicit start/motion coordinates
+without publishing a pose or contact latch. Gameplay commits the selected
+result through the admitted spatial writer, not temporary state writes.
 
 The existing tile-grid kinematic motor remains a world-axis-aligned rectangular
 sweep with an explicitly supplied footprint. Its prefab declares an
