@@ -13,12 +13,12 @@ local surface<const> = {}
 local rectangle<const> = {}
 local overlay<const> = {}
 local spatial<const> = {
-	family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 0, 0 },
+	family = '2d', authority = 'affine',
 }
 
 function presentation.register()
-	prefab.define({ def_id = presentation.sprite, class = sprite_object, base = sprite_object, spatial = spatial })
-	prefab.define({ def_id = presentation.text, class = text_object, base = text_object, spatial = spatial })
+	prefab.define({ def_id = presentation.sprite, class = sprite_object, spatial = spatial })
+	prefab.define({ def_id = presentation.text, class = text_object, spatial = spatial })
 	prefab.define({ def_id = presentation.surface, class = surface, spatial = spatial,
 		components = { surface_component.new } })
 	prefab.define({ def_id = presentation.rectangle, class = rectangle, spatial = spatial,

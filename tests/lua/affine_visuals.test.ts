@@ -184,11 +184,10 @@ assert(part.wxx==0 and part.wxy==4 and part.wyx==-3 and part.wyy==2
 assert(child.spatial.wox==-5 and child.spatial.woy==28
  and child.x==nil and child.y==nil and part.offset_x==nil,'presentation became a second object pose')
 local basis<const> = part._visual_basis_revision
-local origin<const> = part._visual_origin_revision
 part:set_presentation_origin(5,6)
 part:resolve_pose()
-assert(part._visual_basis_revision==basis and part._visual_origin_revision==origin+1
- and part.wox==-29 and part.woy==66,'presentation translation rebuilt the basis or missed the affine')
+assert(part._visual_basis_revision==basis and part.wox==-29 and part.woy==66,
+ 'presentation translation rebuilt the basis or missed the affine')
 parent.spatial:set_local_origin(100,200)
 part:resolve_pose()
 assert(part._visual_basis_revision==basis and part.wox==61 and part.woy==246,

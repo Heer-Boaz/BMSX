@@ -12,7 +12,7 @@ setmetatable(visual_2d_component, { __index = visual_component })
 local basis_dirty<const> = 1
 local origin_dirty<const> = 2
 local all_dirty<const> = basis_dirty | origin_dirty
-local identity<const> = { 1, 0, 0, 1, 0, 0 }
+local identity<const> = affine2.identity
 
 function visual_2d_component.new(context, id_local, defaults)
 	local self<const>, input<const> = visual_component.new(context, id_local, defaults)
@@ -54,7 +54,6 @@ function visual_2d_component.new(context, id_local, defaults)
 	self._owner_basis_revision = -1
 	self._owner_origin_revision = -1
 	self._visual_basis_revision = 0
-	self._visual_origin_revision = 0
 	self._translation_only = false
 	return self, input
 end
@@ -164,7 +163,6 @@ function visual_2d_component:resolve_pose()
 		local ox<const>, oy<const> = self._local_ox, self._local_oy
 		self.wox = xx * ox + yx * oy + spatial.wox
 		self.woy = xy * ox + yy * oy + spatial.woy
-		self._visual_origin_revision = self._visual_origin_revision + 1
 	end
 	self._owner_basis_revision = owner_basis
 	self._owner_origin_revision = owner_origin
@@ -187,7 +185,7 @@ visual_2d_component.timeline_channels = {
 		wxx = true, wxy = true, wyx = true, wyy = true, wox = true, woy = true,
 		_pose_flags = true, spatial = true,
 		_owner_basis_revision = true, _owner_origin_revision = true,
-		_visual_basis_revision = true, _visual_origin_revision = true,
+		_visual_basis_revision = true,
 		_translation_only = true,
 	},
 	properties = visual_component.timeline_channels.properties,

@@ -15,7 +15,6 @@ local empty_components<const> = {}
 
 function prefab.define(source)
 	local spatial_constructor
-	local spatial_prototype
 	local spatial_family
 	local spatial_root_origin
 	local spatial_validate_local
@@ -33,18 +32,22 @@ function prefab.define(source)
 		spatial_family = transform.family
 		if spatial_source.authority == 'affine' then
 			spatial_constructor = transform.new
-			spatial_prototype = transform.affine
 		elseif spatial_source.authority == 'root_origin' then
-			spatial_prototype = transform.root_origin
-			spatial_constructor = spatial_prototype.new
+			local root_origin<const> = transform.root_origin
+			spatial_constructor = root_origin.new
 			spatial_root_origin = true
-			spatial_validate_local = spatial_prototype.validate_local
+			spatial_validate_local = root_origin.validate_local
 		else
 			error('unsupported prefab spatial authority: ' .. source.def_id)
 		end
-		default_local_transform = shallow_copy(spatial_source.local_transform)
-		if spatial_validate_local ~= nil then
-			spatial_validate_local(default_local_transform)
+		local authored_transform<const> = spatial_source.local_transform
+		if authored_transform == nil then
+			default_local_transform = spatial_family.identity
+		else
+			default_local_transform = shallow_copy(authored_transform)
+			if spatial_validate_local ~= nil then
+				spatial_validate_local(default_local_transform)
+			end
 		end
 	end
 
@@ -87,7 +90,6 @@ function prefab.define(source)
 		components = components,
 		initial = component_inputs.merge(component_inputs.empty, source.initial),
 		spatial_constructor = spatial_constructor,
-		spatial_prototype = spatial_prototype,
 		spatial_family = spatial_family,
 		spatial_root_origin = spatial_root_origin,
 		spatial_validate_local = spatial_validate_local,

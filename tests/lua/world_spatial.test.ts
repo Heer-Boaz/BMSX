@@ -15,6 +15,40 @@ prefab.define({ def_id = 'spatial.body', class = {},
 `;
 
 for (const optLevel of [0, 3] as const) {
+	test(`Spatial declarations default to identity without sharing mutable instance state (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+for _, family in ipairs({'2d','3d'}) do
+ for _, authority in ipairs({'affine','root_origin'}) do
+  local id<const> = family..'.'..authority
+  prefab.define({def_id=id,class={},spatial={family=family,authority=authority}})
+  local first<const>, second<const> = world:spawn(id,{}),world:spawn(id,{})
+  local pose<const> = first.spatial:resolve_world()
+  assert(pose.xx==1 and pose.xy==0 and pose.yx==0 and pose.yy==1 and pose.ox==0 and pose.oy==0,
+   'omitted spatial default did not supply an identity basis and zero origin')
+  if family=='3d' then
+   assert(pose.xz==0 and pose.yz==0 and pose.zx==0 and pose.zy==0 and pose.zz==1 and pose.oz==0)
+   pose:set_world_origin(8,12,16)
+  else
+   pose:set_world_origin(8,12)
+  end
+  local other<const> = second.spatial:resolve_world()
+  local later<const> = world:spawn(id,{}).spatial:resolve_world()
+  assert(other.wox==0 and other.woy==0 and later.wox==0 and later.woy==0,
+   'one instance changed another instance or the admitted identity default')
+  if family=='3d' then assert(other.woz==0 and later.woz==0) end
+ end
+end
+local authored<const> = {2,0,1,3,4,5}
+prefab.define({def_id='spatial.explicit-default',class={},
+ spatial={family='2d',authority='affine',local_transform=authored}})
+authored[5]=99
+local supplied<const> = world:spawn('spatial.explicit-default',{}).spatial:resolve_world()
+assert(supplied.wxx==2 and supplied.wyx==1 and supplied.wyy==3 and supplied.wox==4 and supplied.woy==5,
+ 'default identity displaced or failed to snapshot an authored nonidentity affine')
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+	});
+
 	test(`Constructor-only inputs are pinned by local slot and share one final-owner context (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local component<const> = setmetatable({}, {__index=base_component})
@@ -180,6 +214,9 @@ local scene<const> = scenes.create('staged')
 local missing<const> = pcall(function() scene:spawn_member('child') end)
 assert(not missing and #scene.objects.items == 0 and world._spatial_hierarchy._count == 0,
  'one staged child implicitly spawned or guessed an absent parent')
+local repeated<const> = pcall(function() scene:spawn_members({'child','child'}) end)
+assert(not repeated and #scene.objects.items == 0 and world._spatial_hierarchy._count == 0,
+ 'duplicate selected member entered World construction')
 scene:spawn_members({'child','parent'})
 assert(scene.members.child.spatial.spatial_parent == scene.members.parent.spatial
  and scene.members.child.spatial.wox == 13 and scene.members.child.spatial.woy == 24,
@@ -187,7 +224,8 @@ assert(scene.members.child.spatial.spatial_parent == scene.members.parent.spatia
 scene:dispose()
 local separate<const> = scenes.create('staged')
 local parent<const> = separate:spawn_member('parent')
-local child<const> = separate:spawn_member('child')
+separate:spawn_members({'child'})
+local child<const> = separate.members.child
 assert(child.spatial.spatial_parent == parent.spatial, 'staged child did not bind its already-live parent')
 local duplicate<const> = pcall(function() separate:spawn_member('child') end)
 assert(not duplicate and #separate.objects.items == 2 and not world._mutation_barrier_open,

@@ -12,7 +12,7 @@ local collider_2d_component<const> = {}
 collider_2d_component.__index = collider_2d_component
 setmetatable(collider_2d_component, { __index = base_component })
 local empty_input<const> = {}
-local identity<const> = { 1, 0, 0, 1, 0, 0 }
+local identity<const> = affine2.identity
 
 function collider_2d_component:reserve_geometry(required)
 	local pool<const> = self.geometry_pool
@@ -169,7 +169,6 @@ function collider_2d_component:admit_sprite_image(image_id)
 	if binding.bytes > self.geometry_pool.slot_bytes then error('sprite image exceeds the admitted collider geometry slot') end
 	self._sprite_images[image_id] = binding
 	self._sprite_image_id = nil
-	if binding.bytes > self._sprite_required_bytes then self._sprite_required_bytes = binding.bytes end
 end
 
 function collider_2d_component:set_sprite(sprite)
@@ -186,7 +185,6 @@ function collider_2d_component:set_sprite(sprite)
 	self.sprite = sprite
 	self._sprite_image_id = nil
 	self._sprite_images = images
-	self._sprite_required_bytes = required
 	if sprite == nil then return self end
 	sprite._collider = self
 	self._shape_asset = nil
@@ -212,27 +210,20 @@ end
 
 function collider_2d_component:set_shape_asset(asset_address)
 	if self._shape_asset == asset_address then return self end
-	local original<const>, fliph<const>, flipv<const>, fliphv<const> = collision_shape.variant_addresses(asset_address)
-	local maximum = shape_geometry.measure(original)
-	local bytes = shape_geometry.measure(fliph)
-	if bytes > maximum then maximum = bytes end
-	bytes = shape_geometry.measure(flipv)
-	if bytes > maximum then maximum = bytes end
-	bytes = shape_geometry.measure(fliphv)
-	if bytes > maximum then maximum = bytes end
-	self:reserve_geometry(maximum)
+	local binding<const> = collision_shape.bind(asset_address)
+	self:reserve_geometry(binding.bytes)
 	self:set_sprite(nil)
 	self._shape_asset = asset_address
-	self._shape_ref_original, self._shape_ref_fliph = original, fliph
-	self._shape_ref_flipv, self._shape_ref_fliphv = flipv, fliphv
-	self.shape_ref = original
+	self._shape_binding = binding
+	self.shape_ref = binding.original
 	self._resolve_geometry = resolve_asset
 	return self
 end
 
 function collider_2d_component:set_shape_flip(flip_h, flip_v)
-	if flip_h then self.shape_ref = flip_v and self._shape_ref_fliphv or self._shape_ref_fliph
-	else self.shape_ref = flip_v and self._shape_ref_flipv or self._shape_ref_original end
+	local binding<const> = self._shape_binding
+	if flip_h then self.shape_ref = flip_v and binding.fliphv or binding.fliph
+	else self.shape_ref = flip_v and binding.flipv or binding.original end
 	return self
 end
 

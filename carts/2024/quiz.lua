@@ -181,7 +181,7 @@ local register_definitions<const> = function()
 		def_id = text_def_id,
 		class = text_object,
 		base = text_object,
-		spatial = { family = '2d', authority = 'affine', local_transform = { 1,0,0,1,0,0 } },
+		spatial = { family = '2d', authority = 'affine' },
 		initial = { text = { order = 1 } },
 	})
 	prefab.define({

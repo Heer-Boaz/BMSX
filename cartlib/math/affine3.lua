@@ -1,7 +1,7 @@
 -- Column-major local basis/origin and retained world basis/origin share one
 -- spatial record. These kernels write coefficients only; the hierarchy owns
 -- dirty propagation, revisions and structural links.
-local affine3<const> = {}
+local affine3<const> = { identity = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 } }
 
 function affine3.evaluate(node, parent, basis_changed, origin_changed)
 	if parent == nil then

@@ -21,8 +21,13 @@ rodata rectangle: word[16] = {0x32443247,2,32,32,32,32,0,0, 1,4,16,16,0,0,0x4000
 rodata compound: word[32] = {0x32443247,2,32,32,32,32,0,0,
  4,2,32,16,0,0,0x40a00000,0x3f800000,
  1,4,32,32,1,4,32,32,0,0,0x40000000,0x3f800000,0x40400000,0,0x40a00000,0x3f800000}
-local images<const> = {small={collision_addr=rectangle},wide={collision_addr=compound}}
-return {rectangle=rectangle,compound=compound,image=function(id) return images[id] end}`},
+rodata reflected: word[40] = {0x32443247,2,32,32,32,64,0,0,
+ 1,4,16,16,0,0,0x40000000,0x3f800000,
+ 4,2,32,16,0,0,0x40a00000,0x3f800000,
+ 1,4,32,32,1,4,32,32,0,0,0x40000000,0x3f800000,0x40400000,0,0x40a00000,0x3f800000}
+local images<const> = {small={collision_addr=rectangle},wide={collision_addr=compound},
+ reflected={collision_addr=reflected},reflected_alias={collision_addr=reflected}}
+return {rectangle=rectangle,compound=compound,reflected=reflected,image=function(id) return images[id] end}`},
  {path:'cartlib/rom_dir',source:"return {image=require('fixture_shapes').image}"},
  // Image packet production is not under test here. Actual Sprite/animation
  // owners still supply concrete geometry identities and the admitted frame set.
@@ -31,6 +36,58 @@ return {rectangle=rectangle,compound=compound,image=function(id) return images[i
 ];
 
 for (const optLevel of [0,3] as const) {
+ test(`Packed source admission shares image bindings and reserves reflected variant capacity (O${optLevel})`, t => {
+  const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
+local shapes<const> = require('cartlib/collision/collision_shape')
+local sprite_shapes<const> = require('cartlib/collision/sprite_shape')
+local pool<const> = require('cartlib/collision/geometry_pool')
+local collider<const> = require('cartlib/collision/collider_2d_component')
+local assets<const> = require('fixture_shapes')
+bss geometry: word[40]
+local source<const> = shapes.bind(assets.reflected)
+assert(source.bytes==160 and source.original==assets.reflected+32
+ and source.fliph==assets.reflected+32 and source.flipv==assets.reflected+32
+ and source.fliphv==assets.reflected+64,
+ 'complete source binding omitted the larger reflected variant')
+assert(sprite_shapes.image('reflected')==source and sprite_shapes.image('reflected_alias')==source,
+ 'image aliases and explicit assets duplicated immutable source bindings')
+prefab.define({def_id='collision.reflected',class={},spatial={family='2d',authority='affine'}})
+local actor<const> = world:spawn('collision.reflected',{})
+local undersized<const> = pool.new(geometry,64,1)
+local admitted<const> = pcall(collider.new,{owner=actor,
+ initial={collider={geometry_pool=undersized,shape_asset=assets.reflected}}})
+assert(not admitted and undersized._next_slot==0,
+ 'asset admission reserved only the original variant or consumed an undersized slot')
+local storage<const> = pool.new(geometry,160,1)
+local body<const> = collider.new({owner=actor,
+ initial={collider={geometry_pool=storage,shape_asset=assets.reflected}}})
+actor:add_component(body)
+assert(body:resolve_shape()==source.original,'translation-only binding copied its original descriptor')
+body:set_shape_flip(true,true)
+assert(body:resolve_shape()==source.fliphv,'reflected binding lost its exact compound descriptor')
+actor.spatial:set_local_affine(2,0,0,1,0,0)
+assert(body:resolve_shape()==geometry,'reflected compound did not fit its admitted output slot')
+local words<const>: *word = geometry
+assert(words[0]==4 and words[1]==2,'reflected source binding lost disjoint pieces')
+kernel=function(count)
+ for index=1,count do
+  assert(shapes.bind(assets.reflected)==source and sprite_shapes.image('reflected_alias')==source)
+  body:set_shape_flip(true,true)
+  assert(body:resolve_shape()==geometry)
+ end
+end
+return true
+`,{optLevel,modules:collisionModules});
+  assert.equal(cpu.runUntilDepth(0,20_000_000),RunResult.Halted);
+  assert.deepEqual(materializeCpuCompletionValues(cpu),[true]);
+  const kernel = cpu.getGlobalByKey(cpu.stringPool.find('kernel')!) as Closure;
+  const profile = profileWarmGuestKernel(cpu,kernel,256);
+  assert.equal(profile.reservations,0);
+  assert.equal(profile.reservedBytes,0);
+  assert.equal(profile.retainedAfter,profile.retainedBefore);
+  t.diagnostic(JSON.stringify({optLevel,...profile}));
+ });
+
  test(`Repeated area publication retains translation-only geometry (O${optLevel})`, t => {
   const {cpu} = createCartlibProgramHarness(WORLD_CPU_SETUP+`
 local pool<const> = require('cartlib/collision/geometry_pool')
@@ -129,8 +186,7 @@ prefab.define({def_id='collision.actor',class={},
 local actor<const> = world:spawn('collision.actor',{})
 local body<const> = actor:get_component(collider)
 local visual<const> = actor:get_component(sprite)
-assert(body._sprite_required_bytes==160 and body._geometry_address==caches,
- 'animation admission sized only the first current frame')
+assert(body._geometry_address==caches,'sprite admission did not reserve its cart-owned geometry slot')
 assert(body:resolve_shape()==assets.rectangle+32 and body.wox==10 and body.woy==20,
  'translation-only collider copied geometry or lost physical origin')
 actor.spatial:set_local_affine(0,2,-3,0,10,20)

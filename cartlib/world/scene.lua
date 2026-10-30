@@ -73,7 +73,7 @@ function scene:spawn_members(member_ids, overrides)
 		if selected[member.index] then
 			error('scene member selected twice: ' .. member_id)
 		end
-		selected[member.index] = true
+		selected[member.index] = member
 	end
 	local construction_order<const> = self.definition.construction_order
 	for index = 1, #construction_order do
@@ -82,11 +82,11 @@ function scene:spawn_members(member_ids, overrides)
 			members[#members + 1] = member
 		end
 	end
-	world:spawn_members(self, members, overrides)
+	world:spawn_members(self, members, selected, overrides)
 end
 
 function scene:spawn_all(overrides)
-	world:spawn_members(self, self.definition.construction_order, overrides)
+	world:spawn_members(self, self.definition.construction_order, self.definition.objects, overrides)
 end
 
 function scene:dispose(on_unloaded, context)

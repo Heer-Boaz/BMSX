@@ -1,6 +1,6 @@
 -- Column-major local and cached-world affine arithmetic. The caller owns
 -- identity, dirty propagation and revisions; these kernels allocate nothing.
-local affine2<const> = {}
+local affine2<const> = { identity = { 1, 0, 0, 1, 0, 0 } }
 
 function affine2.evaluate(node, parent, basis_changed, origin_changed)
 	if parent == nil then

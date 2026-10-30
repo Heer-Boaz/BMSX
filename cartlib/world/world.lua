@@ -870,15 +870,13 @@ function world_class:_spawn_definition(definition, options, local_transform, par
 	return obj
 end
 
-function world_class:spawn_members(scene, members, overrides)
+function world_class:spawn_members(scene, members, selected, overrides)
 	assert(not scene.closed, 'cannot spawn into an unloaded scene')
-	local selected<const> = {}
 	for index = 1, #members do
 		local member<const> = members[index]
 		if scene.members[member.member_id] ~= nil then
 			error('scene member already instantiated: ' .. member.member_id)
 		end
-		selected[member.index] = true
 	end
 	for index = 1, #members do
 		local member<const> = members[index]
