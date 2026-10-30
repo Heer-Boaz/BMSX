@@ -5,7 +5,7 @@ import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Table } from '../../machine/ts/machine/cpu/table';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
-import { runCompletionClosure } from './cpu_test_harness';
+import { profileWarmGuestKernel } from '../helpers/guest_kernel';
 
 // Synthetic real-component owners exercise the actual motion and boundary
 // kernels, not ordinary carts or a second host-side physics implementation.
@@ -85,6 +85,14 @@ m:set_collision_world({tile_size=8,tile_origin_x=0,tile_origin_y=0,
  collision_flags_at_tile=function(_,x,y) return x == 2 and y <= 2 and 1 or 0 end})
 mover.spatial:resolve_world()
 local revision<const> = mover.spatial._origin_revision
+local candidate_x<const>,candidate_y<const>,candidate_contacts<const> = m:test_motion(0,24,12,0)
+assert(candidate_x == 12 and candidate_y == 24 and candidate_contacts == 0,
+ 'an authored candidate axis was silently replaced by a vertical tile sweep')
+local swept_x<const>,swept_y<const>,swept_contacts<const> = m:test_motion(0,0,12,12)
+assert(swept_x == 4 and swept_y == 12 and swept_contacts == motor.contact_right)
+assert(mover.spatial.ox == 0 and mover.spatial.oy == 0
+ and mover.spatial._origin_revision == revision and m.contacts == 0,
+ 'candidate sweep published live pose/contact state')
 local contacts<const> = m:move(12,12)
 assert(contacts == motor.contact_right and mover.spatial.wox == 4 and mover.spatial.woy == 12)
 assert(mover.spatial._origin_revision == revision + 1)
@@ -163,7 +171,16 @@ terminal_actor.spatial:set_world_origin(-1,95)
 boundary_system.update({_component_view=terminal_view,_event_payload={}})
 assert(terminal_events == 1, 'terminal boundary dispatch continued into another axis')
 
-probe={run=function(count)
+probe={run_candidates=function(count)
+ local before_x<const>,before_y<const> = mover.spatial.ox,mover.spatial.oy
+ local before_revision<const>,before_contacts<const> = mover.spatial._origin_revision,m.contacts
+ for index=1,count do
+  local x<const>,y<const>,contacts<const> = m:test_motion(12,24,index & 7,0)
+  assert(x==12+(index & 7) and y==24 and contacts==0)
+ end
+ assert(mover.spatial.ox==before_x and mover.spatial.oy==before_y
+  and mover.spatial._origin_revision==before_revision and m.contacts==before_contacts)
+end,run=function(count)
  for index=1,count do
   r:move()
   velocity_system.update_fixed_point(system)
@@ -187,27 +204,13 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 		if (optLevel === 3) {
 			const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
-			for (const lane of ['run', 'run_callbacks']) {
+			for (const lane of ['run_candidates', 'run', 'run_callbacks']) {
 				const run = probe.getStringKey(cpu.stringPool.find(lane)!) as Closure;
-				runCompletionClosure(cpu, run, [32]);
-				const heap = cpu.luaHeap;
-				const reserve = heap.reserve;
-				let reservations = 0;
-				let reservedBytes = 0;
-				heap.reserve = function (bytes, tag0, scalar0, reference0, tag1, scalar1, reference1, tag2, scalar2, reference2) {
-					reserve.call(heap, bytes, tag0, scalar0, reference0, tag1, scalar1, reference1, tag2, scalar2, reference2);
-					reservations += 1;
-					reservedBytes += bytes;
-				};
-				let cycles: number;
-				try {
-					cycles = runCompletionClosure(cpu, run, [512]);
-				} finally {
-					heap.reserve = reserve;
-				}
-				assert.equal(reservations, 0);
-				assert.equal(reservedBytes, 0);
-				t.diagnostic(JSON.stringify({ lane, iterations: 512, cycles, reservations, reservedBytes }));
+				const profile = profileWarmGuestKernel(cpu, run, 512);
+				assert.equal(profile.reservations, 0);
+				assert.equal(profile.reservedBytes, 0);
+				assert.equal(profile.retainedAfter, profile.retainedBefore);
+				t.diagnostic(JSON.stringify({ lane, ...profile }));
 			}
 		}
 	});

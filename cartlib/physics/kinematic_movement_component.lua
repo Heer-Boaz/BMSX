@@ -200,6 +200,15 @@ function kinematic_movement_component:set_collision_world(collision_world)
 	self.collision_world = collision_world
 end
 
+-- Evaluate an explicit candidate without publishing a pose or contact latch.
+-- Scripted axes may supply a new start coordinate and a zero sweep on that axis.
+function kinematic_movement_component:test_motion(start_x, start_y, delta_x, delta_y)
+	local collision_world<const> = self.collision_world
+	local x<const>, horizontal<const> = sweep_x(self, collision_world, start_x, start_y, delta_x)
+	local y<const>, vertical<const> = sweep_y(self, collision_world, x, start_y, delta_y)
+	return x, y, horizontal | vertical
+end
+
 function kinematic_movement_component:move_x(delta_x)
 	local collision_world<const> = self.collision_world
 	local spatial<const> = self.spatial
