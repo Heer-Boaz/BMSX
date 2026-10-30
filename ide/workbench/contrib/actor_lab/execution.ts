@@ -24,7 +24,7 @@ export type ActorInvocation =
 	| { readonly kind: 'event'; readonly target: ActorTarget; readonly name: string; readonly payload: PreparedLuaLiteral }
 	| { readonly kind: 'scrub'; readonly target: ActorTarget; readonly programHashId: number; readonly time: number }
 	| { readonly kind: 'spawn'; readonly domain: ResourceDomain; readonly worldHashId: number; readonly definitionId: SuspendedValueIdentity;
-		readonly definition: SuspendedValueIdentity; readonly options: PreparedLuaLiteral };
+		readonly definition: SuspendedValueIdentity; readonly args: readonly PreparedLuaLiteral[] };
 export type ActorExecutionResult = { readonly status: 'completed' | 'interrupted' | 'rejected' | 'host-error'; readonly values: readonly string[];
 	readonly tags: readonly ValueTag[]; readonly reason?: string; readonly spawnedActorHashId?: number };
 export type ActorExecutionLifetime = { readonly isCurrent?: () => boolean; readonly signal?: AbortSignal };
@@ -146,7 +146,12 @@ export class ActorExecutionService {
 				if (guest.matchesIdentity(key, request.definitionId) && guest.matchesIdentity(definition, request.definition)) id = key;
 			});
 			if (id === null) return;
-			return { domain: request.domain, closure: guest.readStringMember(world, 'spawn') as Closure, args: () => [world, id, request.options(cpu)] };
+			return { domain: request.domain, closure: guest.readStringMember(world, 'spawn') as Closure,
+				args: () => {
+					const args: Value[] = [world, id];
+					for (const literal of request.args) args.push(literal(cpu));
+					return args;
+				} };
 		}
 		const { target } = request, tree = this.tree;
 		tree.update(this.sources, guest, target.domain, findRuntimeActor(this.sources, guest, target.domain, target.actorHashId));

@@ -38,8 +38,9 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	check(service.active!.invoked && service.active!.result === undefined, 'a breakpoint retains the actual Actor call');
 	ide.debugger.breakpoints.set({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' }, []);
 	await until(() => conversation.state === 'ready', 'Actor execution: model continues and reads live state');
-	check(guest.readStringMember(guest.global('actor_tool_first'), 'x') === 17 && guest.readStringMember(guest.global('actor_tool_second'), 'x') === 40,
-		'only the actual requested actor moved');
+	check(guest.readStringMember(guest.readStringMember(guest.global('actor_tool_first'), 'tags'), 'inspected') === true
+		&& guest.readStringMember(guest.readStringMember(guest.global('actor_tool_second'), 'tags'), 'inspected') === null,
+		'only the actual requested actor received the tag');
 	check(guest.readStringMember(guest.global('actor_tool_first'), 'probe_count') === 3, 'stored method receives the selected object as self');
 	check(guest.readStringMember(guest.global('actor_tool_first'), 'timeline_value') === 2, 'keyed timeline scrub samples the real target');
 	check(source.version === version && ide.sources.currentBlua32Media === media && test.execution.userPaused,
@@ -71,18 +72,20 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 		'continuation completes the original bounded loop');
 	await test.clickTab(lab.id); await frame();
 	await runPaletteCommand('Actor Lab: Spawn Registered Prefab'); await press('Enter');
-	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText("{ id = 'manual', pos = { x = 123, y = 456 } }");
+	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText("{ id = 'manual', health = 123, energy = 456 }, { local_transform = { 1, 0, 0, 1, 64, 96 } }");
 	await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary spawn finishes');
 	await frame();
-	check(lab.runtime.roots[0].label === 'manual' && guest.readStringMember(lab.runtime.roots[0].value, 'x') === 123,
+	check(lab.runtime.roots[0].label === 'manual' && guest.readStringMember(lab.runtime.roots[0].value, 'health') === 123
+		&& guest.readStringMember(guest.readStringMember(lab.runtime.roots[0].value, 'spatial'), 'ox') === 64
+		&& guest.readStringMember(guest.readStringMember(lab.runtime.roots[0].value, 'spatial'), 'oy') === 96,
 		'ordinary spawn uses the selected definition and returns the actual World member');
 	await runPaletteCommand('Actor Lab: Instance Actions'); await press('Enter');
-	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText('124, 457, 0'); await press('ControlLeft', 'KeyV'); await press('Enter');
+	await press('ControlLeft', 'KeyA'); await test.clipboard.writeText("'manual-tag'"); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => service.active === undefined && test.tasks.ready && !ide.debugger.plans.mutationActive, 'Actor execution: ordinary action returns');
 	await frame();
-	check(guest.readStringMember(lab.runtime.roots[0].value, 'x') === 124 && guest.readStringMember(lab.runtime.roots[0].value, 'y') === 457
-		&& guest.readStringMember(guest.global('actor_tool_first'), 'x') === 17, 'ordinary action picker executes the shared catalog on its own target');
+	check(guest.readStringMember(guest.readStringMember(lab.runtime.roots[0].value, 'tags'), 'manual-tag') === true
+		&& guest.readStringMember(guest.readStringMember(guest.global('actor_tool_first'), 'tags'), 'manual-tag') === null, 'ordinary action picker executes the shared catalog on its own target');
 	const eventLine = ACTOR_EXECUTION_SOURCE.split('\n').findIndex(line => line.includes('on_probe = function')) + 1;
 	ide.debugger.breakpoints.set({ contextId: test.ide.sources.currentBlua32Media.cartridgeSlots[0]!.sourceContextId, path: 'cart.lua' }, [eventLine]);
 	await runPaletteCommand('Actor Lab: Emit Event');
@@ -147,7 +150,7 @@ export async function runAssistantActorExecution(kind: StudioRendererKind, canva
 	check(scrub.result!.status === 'rejected' && !scrub.invoked, 'old slider samples cannot seek a replacement program');
 
 	service.start(invocation('first', 'method', 'arm', "'world'")); await settle('Actor execution: arm World binding replacement');
-	const world = service.start(invocation('first', 'action', 'set_pos', '900, 900, 0'));
+	const world = service.start(invocation('first', 'action', 'add_tag', "'retired-world'"));
 	await settle('Actor execution: replaced World rejects admission');
 	check(world.result!.status === 'rejected' && !world.invoked && test.tasks.failure === undefined,
 		'World expiry is not a host failure or a fallback to the previous object');

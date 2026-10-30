@@ -191,10 +191,10 @@ export class ActorLabEditorActions {
 				lifetime.add({ dispose: controller.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
 			}, choice => {
-				this.quickInput.input('SPAWN OPTIONS', 'Lua table; current world owns construction and assets', '{ pos = { x = 0, y = 0 } }',
-				async text => prepareLuaLiteral(text), options => this.run(input, { kind: 'spawn', domain: input.domain,
-					worldHashId: runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId,
-					definitionId: choice.id, definition: choice.definition, options }, result => {
+				this.quickInput.input('SPAWN ARGUMENTS', 'World.spawn: options, optional spatial input, optional component inputs', '{}',
+					async text => prepareLuaArguments(text), args => this.run(input, { kind: 'spawn', domain: input.domain,
+						worldHashId: runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId,
+						definitionId: choice.id, definition: choice.definition, args }, result => {
 					if (result.status !== 'completed') return;
 					input.stateGraph = undefined; input.presentation = 'outline'; input.follow.stop(); input.historical = false;
 					input.actorHashId = result.spawnedActorHashId!;

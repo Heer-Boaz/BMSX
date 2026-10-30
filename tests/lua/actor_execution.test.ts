@@ -105,9 +105,9 @@ test('heap replacement settles Actor observers and rejects old controls without 
 });
 
 test('Actor wire inputs admit only explicit operations, literal source and operation IDs', () => {
-	assert.deepEqual(decodeActorToolRequest('studio_actor_action', { node: 'node', method: 'set_pos', arguments: '1, 2, 3' }),
-		{ name: 'studio_actor_action', node: 'node', method: 'set_pos', arguments: '1, 2, 3' });
+	assert.deepEqual(decodeActorToolRequest('studio_actor_action', { node: 'node', method: 'add_tag', arguments: "'inspected'" }),
+		{ name: 'studio_actor_action', node: 'node', method: 'add_tag', arguments: "'inspected'" });
 	for (const operation of [0, -1, 1.5, '1']) assert.throws(() => decodeActorToolRequest('studio_control_actor', { target: 'target', operation, action: 'continue' }));
-	assert.throws(() => decodeActorToolRequest('studio_actor_action', { node: 'node', method: 'set_pos', arguments: [1, 2, 3] }));
+	assert.throws(() => decodeActorToolRequest('studio_actor_action', { node: 'node', method: 'add_tag', arguments: ['inspected'] }));
 	assert.throws(() => decodeActorToolRequest('studio_control_actor', { target: 'target', operation: 1, action: 'discard' }));
 });

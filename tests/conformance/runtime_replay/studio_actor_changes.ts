@@ -28,7 +28,7 @@ function inventory.new(opts)
 end
 prefab.define({ def_id`)
 		.replace("tree_component.factory('rover'),", "tree_component.factory('rover'), inventory.new,")
-		.replace('pos = { x = 4, y = 8 }', 'pos = { x = 9, y = 8 }')
+		.replace('health = 4, energy = 8', 'health = 9, energy = 8')
 		.replace('actor_tool_ready = true', `input.add_player(1)
 local move<const> = input.bind(1, clock.gameplay, 'a[jp]')
 local change_members<const> = input.bind(1, clock.gameplay, 'b[jp]')
@@ -36,7 +36,11 @@ actor_tool_inventory = actor_tool_first:get_component(inventory)
 actor_tool_membership_actions = 0
 actor_tool_ready = true`)
 		.replace('\tworld:update()', `\tworld:update()
-	if move() then actor_tool_first.x = actor_tool_first.x + 1 end
+	if move() then
+		actor_tool_first.health = actor_tool_first.health + 1
+		local pose<const> = actor_tool_first.spatial:resolve_world()
+		pose:set_world_origin(pose.wox + 1, pose.woy)
+	end
 	if change_members() then
 		actor_tool_inventory.health = actor_tool_inventory.health - 1
 		actor_tool_first:get_component(tree_component).blackboard:set(count, actor_tool_inventory.health)
@@ -44,7 +48,7 @@ actor_tool_ready = true`)
 		if actor_tool_inventory[1] == nil then actor_tool_inventory[1] = 101 else actor_tool_inventory[1] = nil end
 		actor_tool_membership_actions = actor_tool_membership_actions + 1
 	end`)
-		.replace('\tworld:render()', '\tworld:render()\n\tgpu.fill_rect_color(actor_tool_first.x, 16, 80, 80, 0xff26a3bb)\n\tgpu.fill_rect_color(112, 64, 208, 160, 0xffbd7841)') }]);
+		.replace('\tworld:render()', '\tworld:render()\n\tgpu.fill_rect_color(actor_tool_first.spatial:resolve_world().wox, 16, 80, 80, 0xff26a3bb)\n\tgpu.fill_rect_color(112, 64, 208, 160, 0xffbd7841)') }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
 	await until(() => guest.global('actor_tool_ready') === true && test.tasks.ready, 'actor changes: real World and player input ready');
 	const ready = runtime.frameScheduler.lastTickSequence;
@@ -60,8 +64,8 @@ actor_tool_ready = true`)
 	let inspector = pane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	check(inspector.model.rows.every(row => !row.element.valueChanged), 'initial instance observation is not a value change');
-	const xIndex = inspector.model.rows.findIndex(row => row.element.label === 'x');
-	check(xIndex >= 0 && inspector.model.rows[xIndex].element.value === '9', 'real actor starts with the displayed x coordinate 9');
+	const xIndex = inspector.model.rows.findIndex(row => row.element.label === 'health');
+	check(xIndex >= 0 && inspector.model.rows[xIndex].element.value === '9', 'real actor starts with the displayed health value 9');
 	for (let index = 0; index < xIndex; index++) await press('ArrowDown');
 	await press('ShiftLeft', 'F10'); await press('Enter'); await frame();
 	const pin = lab.details!.watches.pins[0], firstActor = lab.actorHashId;
@@ -69,15 +73,15 @@ actor_tool_ready = true`)
 		'new pin establishes its own undecorated initial baseline');
 	await test.capture?.('initial-baseline');
 	await runPaletteCommand('Actor Lab: Select Running Actor'); await press('ArrowDown'); await press('Enter'); await frame();
-	check(lab.actorHashId !== firstActor && inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'x')!.element.value === '40'
+	check(lab.actorHashId !== firstActor && inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'health')!.element.value === '40'
 		&& inspector.model.rows.every(row => !row.element.valueChanged),
-		'switching actors does not compare unrelated coordinates or alter the pinned baseline');
+		'switching actors does not compare unrelated gameplay values or alter the pinned baseline');
 	await test.runMenuCommand('pause');
 	await click(test.visiblePreviewPoint(lab.previewBounds));
 	check(inputFocus.target?.guestInput?.bounds === lab.previewBounds && ide.editor.guestInputRecipient !== null && inspector.visible,
 		'ordinary embedded preview receives gameplay input through the unobscured preview beside floating Details');
 	test.setKey('KeyX', true);
-	await until(() => guest.readStringMember(guest.global('actor_tool_first'), 'x') === 10, 'actor changes: ordinary player action moves first actor from 9 to 10');
+	await until(() => guest.readStringMember(guest.global('actor_tool_first'), 'health') === 10, 'actor changes: ordinary player action changes health from 9 to 10');
 	test.setKey('KeyX', false);
 	await press('ShiftLeft', 'F1');
 	await test.runMenuCommand('pause');
@@ -89,21 +93,21 @@ actor_tool_ready = true`)
 		await until(() => ide.frameNavigation.active === undefined && cycles() < before, 'actor changes: previous completed frame');
 		previousFrames++;
 	}
-	check(pin.item.value === '9' && pin.item.valueChanged, 'rewind marks the restored pinned coordinate, even with another actor selected');
+	check(pin.item.value === '9' && pin.item.valueChanged, 'rewind marks the restored pinned gameplay value, even with another actor selected');
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Home');
 	check(inspector.model.rows[inspector.model.selectionIndex].element.watch === pin, 'Reveal targets the pinned property in focused Details, not the tree selection');
 	await runPaletteCommand('Actor Lab: Reveal Pinned Instance'); await frame();
-	let property = inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'x')!.element;
+	let property = inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'health')!.element;
 	check(lab.actorHashId === firstActor && property.value === '9' && !property.valueChanged && pin.item.valueChanged,
 		'revealing the owner establishes fresh Details without resetting the pin history');
 	const beforeForward = cycles();
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined && cycles() > beforeForward, 'actor changes: forward over the recorded gameplay input');
-	property = inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'x')!.element;
+	property = inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'health')!.element;
 	check(property.value === '10' && property.valueChanged && pin.item.value === '10' && pin.item.valueChanged,
-		'Next Frame marks both the selected Details coordinate and its independent pin');
-	check(inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'y')!.element.valueChanged !== true,
-		'unchanged coordinates are not decorated');
+		'Next Frame marks both the selected Details gameplay value and its independent pin');
+	check(inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'energy')!.element.valueChanged !== true,
+		'unchanged gameplay values are not decorated');
 	await test.capture?.('next-frame-property-light');
 	await press('Home');
 	await test.capture?.('next-frame-changed-light');
@@ -129,15 +133,15 @@ actor_tool_ready = true`)
 	await runPaletteCommand('Run: Previous Frame');
 	await until(() => ide.frameNavigation.active === undefined && cycles() < beforeRewind, 'actor changes: rewind the input boundary');
 	check(pin.item.value === '9' && pin.item.valueChanged
-		&& inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'x')!.element.valueChanged !== true,
+		&& inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'health')!.element.valueChanged !== true,
 		'Previous Frame marks the 10 to 9 pin transition without marking the unchanged selected actor');
 	await test.capture?.('previous-frame-changed');
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Home');
 	await runPaletteCommand('Actor Lab: Reveal Pinned Instance'); await frame();
 	const rewound = cycles();
 	await runPaletteCommand('Run: Next Frame');
-	await until(() => ide.frameNavigation.active === undefined && cycles() > rewound, 'actor changes: return to moved coordinate');
-	property = inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'x')!.element;
+	await until(() => ide.frameNavigation.active === undefined && cycles() > rewound, 'actor changes: return to moved gameplay value');
+	property = inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'health')!.element;
 	check(pin.item.value === '10' && pin.item.valueChanged && property.value === '10' && property.valueChanged,
 		'replaying the same recorded transition remains observable in Details and pins');
 	const changed = cycles();

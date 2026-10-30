@@ -24,16 +24,27 @@ without their cross-library-version recovery heuristics.
 | Producer | Read surface and meaning |
 |---|---|
 | `cartlib/registry` | `_entries_by_key[class].items` is the dense, one-based membership array for the actual class-table key. An absent bucket has no members. It is not a source-name index. |
-| `cartlib/world/world` | The exported singleton's `_objects` is admitted world membership, not pending spawns or a heap census. It is a dense one-based array of objects. `_render_visuals[1.._render_visual_count]` is the retained, depth-sorted render lane, not `_objects` order. |
-| `cartlib/world/world_object` | `_components` preserves owner component ordering; `_components_by_class[class]` contains the components of that class. Each component's `_owner_component_index` indexes `_components`. `id` and `active` are the object's stored identity/activity. |
-| `cartlib/component/visual_component` | `owner`, `draw`, `visible`, `offset_x/y` and `draw_offset_x/y` describe the stored visual dispatch. Owner `visible` participates in draw admission. |
-| `cartlib/component/sprite_component` | `draw_visual` and `draw_region_visual` are actual guest function identities. `source_width/height`, `region_width/height`, `scale_x/y` and `draw_scale_x/y` describe their rectangular geometry at owner `x/y` plus offsets. These are not collider bounds or an ABI for arbitrary custom draw functions. |
+| `cartlib/world/world` | The exported singleton's `_objects` is admitted world membership, not pending spawns or a heap census. It is a dense one-based array of objects. `_render_visuals[1.._render_visual_count]` is the retained, visual-order-sorted render lane, not `_objects` order. |
+| `cartlib/world/world_object` | `_components` preserves owner component ordering; `_components_by_class[class]` contains the components of that class. Each component's `_owner_component_index` indexes `_components`. `id` and `active` are the object's stored identity/activity. Optional `spatial` is its actual Transform component, not a position record beside that component. |
+| `cartlib/component/transform_2d_component` | `xx,xy,yx,yy,ox,oy` store the column-major local affine. `spatial_parent` is the concrete parent Transform or nil. `owner` is the WorldObject. No object `x/y/z` aliases exist. |
+| `cartlib/component/transform_3d_component` | `xx,xy,xz,yx,yy,yz,zx,zy,zz,ox,oy,oz` store the column-major local affine with the same concrete parent/owner relationship. 2D/3D family admission belongs to prefab/World, not a field-shape probe in Studio. |
+| `cartlib/component/visual_component` | `owner`, `draw`, `visible`, `order` and `presentation_order` describe visual dispatch and ordering. Owner `visible` participates in draw admission; it does not supply a spatial depth or visual offset. |
+| `cartlib/component/visual_2d_component` | `spatial` binds the actual Transform2D. Flat `attachment_xx/xy/yx/yy/ox/oy` and `presentation_xx/xy/yx/yy/ox/oy` compose as `objectWorld * (attachment * presentation)`, preserving the guest owner's Number-operation grouping. |
+| `cartlib/component/sprite_component` | `draw_visual` and `draw_region_visual` are actual guest function identities. `source_width/height` and `region_width/height` describe local rectangular geometry through the 2D visual affine. These are not collider bounds or an ABI for arbitrary custom draw functions. |
 | `cartlib/fsm/fsm_component` | `_machines[1.._machine_count]` retains construction order; each machine's `localdef_id` is its component-local key in `_machines_by_id`. These are actual retained machines; `_started` is its execution state. It is not the global definition registry. |
 | `cartlib/fsm/fsm` | Each instance owns `definition`, `states`, `state_ids`, `current_id`, `data`, `id` and its retained hierarchy. Follow `state_ids` into `states`, never parent/root backlinks. Definition fields describe loaded configuration, not unsaved editor text. |
 | `cartlib/behaviour_tree/bt_component` | `tree_id`, `blackboard`, `_execution_state`, `_active_services`, `_active_service_count`, `_execution_waiting` and `_execution_request_pending` belong to this instance. Execution slot indices are compiler-owned, not authored node IDs. |
 | `cartlib/behaviour_tree/blackboard` | `_layout.keys[slot]` names `_values[slot]`; `_layout.initial_values[slot]` is the loaded default. `_layout.slots_by_key[key]` resolves the semantic key that survives rebind; pins follow that key, not its former dense slot. The final declaration wins for repeated keys, as in `compile` and `rebind`. Shadowed declarations remain separately identified display rows, not independent logical watch targets. Nil `_layout`/`_values` during construction/rebinding is an observable intermediate state, not permission to manufacture defaults. |
 | `cartlib/timeline/timeline_component` | `_entries_by_id[id]` contains retained playback entries; their `playing` value is instance state. |
 | `cartlib/actioneffects/actioneffect_component` | `effects[id]` contains granted instances; `active_count` is instance activity. The instance's loaded definition is distinct from an editable registration. |
+
+Transform and visual `w*` fields are derived guest caches; suspension does not
+execute their refresh. A read-only geometric projection captures local
+coefficients and concrete parent links within one observation, composes them
+with the host affine kernels, and releases borrowed guest identities before
+execution resumes. It does not call guest getters, populate guest caches or
+retain an authoritative host World. Geometric hover is not pixel-accurate or
+completed-frame render provenance.
 
 Constructors and world structural barriers own these invariants. A generic
 value viewer can show arbitrary values; a cartlib-specific inspector consumes

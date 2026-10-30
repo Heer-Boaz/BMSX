@@ -151,51 +151,6 @@ for (const action of ['open', 'audition'] as const) test(`Actor Lab ${action} st
 	assert.equal(model.buffer.getText(), 'return 1'); assert.equal(model.dirty, false);
 });
 
-test('viewport picking follows render order and cropped negative scale, using cached typed guest identities', t => {
-	const f = fixture(t, `local world<const> = require('cartlib/world/world')
-function rename_pick() world._objects[1].id = 'renamed' end
-function hide_pick() world._render_visuals[2].visible = false end`, true, `
-local sprite<const> = require('cartlib/component/sprite_component')
-local front<const> = { id = 1, definition_id = 'front', visible = true, x = 20, y = 10 }
-local back<const> = { id = '1', visible = 0, x = 0, y = 0 }
-local background<const> = { owner = back, draw = sprite.draw_visual, visible = true,
- offset_x = 0, offset_y = 0, draw_offset_x = 0, draw_offset_y = 0,
- source_width = 32, source_height = 24, scale_x = 1, scale_y = 1, draw_scale_x = 1, draw_scale_y = 1 }
-local foreground<const> = { owner = front, draw = sprite.draw_region_visual, visible = true,
- offset_x = -4, offset_y = -2, draw_offset_x = 0, draw_offset_y = 0,
- source_width = 99, source_height = 99, region_width = 6, region_height = 8,
- scale_x = -2, scale_y = 0.75, draw_scale_x = 1, draw_scale_y = 0.5 }
-local custom<const> = { owner = front, draw = sprite.custom, visible = true }
-return { _objects = { front, back }, _render_visuals = { background, foreground, custom }, _render_visual_count = 3 }`, [{
-		path: 'cartlib/component/sprite_component', source: `local sprite<const> = {}
-function sprite.draw_visual() end
-function sprite.draw_region_visual() end
-function sprite.custom() end
-return sprite`,
-	}]);
-	t.after(() => f.stop.dispose());
-	const controller = f.controller;
-	const picker = controller.viewportPicker, cpu = f.runtime.machine.cpu;
-	const world = runtimeWorld(f.sources, f.guest, -1)!, objects = f.guest.readStringMember(world, '_objects') as Table;
-	const front = (objects.getInteger(1) as Table).hashId, back = (objects.getInteger(2) as Table).hashId;
-	const before = [f.runtime.machine.scheduler.currentNowCycles(), cpu.luaHeap.usedBytes()];
-	const hit = picker.pick(-1, 8, 9)!;
-	assert.equal(hit.hashId, front);
-	assert.deepEqual([hit.left, hit.top, hit.right, hit.bottom], [4, 8, 16, 11]);
-	const read = t.mock.method(f.guest, 'readStringMember'), format = t.mock.method(f.guest, 'formatValue');
-	for (let frame = 0; frame < 1000; frame++) assert.equal(picker.pick(-1, 8, 9), hit);
-	assert.equal(read.mock.callCount(), 0);
-	assert.equal(picker.pick(-1, 128, 128), undefined);
-	assert.equal(picker.pick(-1, 8, 9)!.hashId, front);
-	assert.equal(format.mock.callCount(), 0, 'crossing empty space does not allocate the same label again');
-	assert.equal(picker.pick(-1, 0, 9)!.hashId, back, 'cropping, not full-source extent; numeric zero remains guest-truthy');
-	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), cpu.luaHeap.usedBytes()], before);
-	const original = picker.pick(-1, 8, 9)!.label;
-	f.guest.invalidate(); runCompletionClosure(cpu, f.guest.global('rename_pick') as Closure, []);
-	assert.notEqual(picker.pick(-1, 8, 9)!.label, original, 'renaming retains identity but refreshes presentation');
-	f.guest.invalidate(); runCompletionClosure(cpu, f.guest.global('hide_pick') as Closure, []);
-	assert.equal(picker.pick(-1, 8, 9)!.hashId, back);
-});
 
 test('Actor Lab history restores the typed member and Details after choosing another actor without guest execution', t => {
 	const f = fixture(t); t.after(() => f.stop.dispose());
@@ -943,16 +898,16 @@ test('operation discovery is read-only and rejects absent actions, methods and e
 	const actor = f.actors.list(0, 1).actors![0].reference, nodes = f.actors.tree(actor, 0, 100).nodes;
 	const root = nodes[0], state = nodes.find(node => node.kind === 'state')!;
 	const before = [f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()];
-	assert.equal(f.actors.operations(root.reference).actions[0].name, 'set_pos');
+	assert.equal(f.actors.operations(root.reference).actions[0].name, 'add_tag');
 	assert.equal(f.actors.operations(state.reference).actions[0].name, 'transition_to');
-	assert.equal(f.actors.invocation(root.reference, 'action', 'set_pos', '1, 2, 3').kind, 'action');
+	assert.equal(f.actors.invocation(root.reference, 'action', 'add_tag', "'inspected'").kind, 'action');
 	assert.throws(() => f.actors.invocation(root.reference, 'action', 'transition_to', ''), /not available/);
 	assert.throws(() => f.actors.invocation(root.reference, 'method', 'absent', ''), /not a stored/);
-	assert.throws(() => f.actors.invocation(root.reference, 'action', 'set_pos', 'os.exit()'));
+	assert.throws(() => f.actors.invocation(root.reference, 'action', 'add_tag', 'os.exit()'));
 	assert.deepEqual([f.runtime.machine.scheduler.currentNowCycles(), f.runtime.machine.cpu.luaHeap.usedBytes()], before);
 	f.guest.invalidate();
 	assert.throws(() => f.actors.operations(root.reference), /expired/);
-	assert.throws(() => f.actors.invocation(root.reference, 'action', 'set_pos', '1, 2, 3'), /expired/);
+	assert.throws(() => f.actors.invocation(root.reference, 'action', 'add_tag', "'inspected'"), /expired/);
 });
 
 test('unloaded, uninitialized and actually empty World are distinct observations', t => {

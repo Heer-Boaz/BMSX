@@ -26,18 +26,20 @@ fsm.register('walker', { initial = 'nest', states = {
 local count<const> = blackboard.key('count', 10)
 trees.register('rover', { blackboard = { count, blackboard.key('vacant'), blackboard.key('ready', false) },
 	root = { type = 'sequence', children = {} } })
-prefab.define({ def_id = 'tool_actor', class = {}, components = {
+prefab.define({ def_id = 'tool_actor', class = {
+ set_vitals = function(self, health, energy) self.health, self.energy = health, energy end,
+}, spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 0, 0 } }, components = {
 	timelines.new, effect_component.factory({ 'pulse' }), fsm_component.factory({ 'walker' }), tree_component.factory('rover'),
 } })
-actor_tool_first = world:spawn('tool_actor', { id = 'first', pos = { x = 4, y = 8 } })
-actor_tool_second = world:spawn('tool_actor', { id = 'second', pos = { x = 40, y = 80 } })
+actor_tool_first = world:spawn('tool_actor', { id = 'first', health = 4, energy = 8 }, { local_transform = { 1, 0, 0, 1, 16, 24 } })
+actor_tool_second = world:spawn('tool_actor', { id = 'second', health = 40, energy = 80 }, { local_transform = { 1, 0, 0, 1, 80, 96 } })
 actor_tool_first.state_machines:get_machine('walker'):transition_to('/parked')
 actor_tool_first.state_machines:get_machine('walker').states.nest.data.revision = 111
 actor_tool_second.state_machines:get_machine('walker').states.nest.data.revision = 222
 actor_tool_first.actioneffects:activate('pulse')
 actor_tool_first:get_component(tree_component).blackboard:set(count, 111)
 actor_tool_second:get_component(tree_component).blackboard:set(count, 222)
-actor_tool_first.timelines:define('motion', { frames = { 0, 1, 2 }, frame_duration = 1,
+actor_tool_first.timelines:define('motion', { phase = 'presentation', frames = { 0, 1, 2 }, frame_duration = 1,
 	apply = function(target, value) target.timeline_value = value end })
 actor_tool_first.timelines:play('motion')
 actor_tool_first.timelines:scrub_time('motion', 1)
@@ -54,7 +56,7 @@ const ACTOR_EXECUTION_RACE = `	if actor_tool_race == 'remove' then
 	elseif actor_tool_race == 'method' then
 		actor_tool_first.probe = function(self) self.probe_count = 1000 end
 	elseif actor_tool_race == 'program' then
-		actor_tool_first.timelines:define('motion', { frames = { 8, 9 }, frame_duration = 2,
+		actor_tool_first.timelines:define('motion', { phase = 'presentation', frames = { 8, 9 }, frame_duration = 2,
 			apply = function(target, value) target.timeline_value = value end })
 	elseif actor_tool_race == 'world' then
 		setglobal('cartlib__world__world', world.new())
@@ -64,7 +66,7 @@ const ACTOR_EXECUTION_RACE = `	if actor_tool_race == 'remove' then
 
 /** Same real World fixture, with explicit guest-owned mutation races and bounded calls. */
 export const ACTOR_EXECUTION_SOURCE = ACTOR_TOOLS_SOURCE
-	.replace('class = {}', `class = {
+	.replace('class = {', `class = {
 	probe_count = 0,
 	bind = function(self) self.events:on({ event = 'probe_event', handler = self.on_probe }) end,
 	on_probe = function(self, event_type, emitter, payload) self.event_value = payload.value end,
@@ -78,7 +80,7 @@ export const ACTOR_EXECUTION_SOURCE = ACTOR_TOOLS_SOURCE
 		return self.probe_count
 	end,
 	arm = function(self, mode) actor_tool_race = mode end,
-}`)
+`)
 	.replace('} }, parked = {},', '} }, parked = {}, blocked = { transition_guards = { can_enter = function() return false end } },')
 	.replace('while true do', `local function apply_actor_race()\n${ACTOR_EXECUTION_RACE}end\nwhile true do`)
 	.replace('\tworld:update()', '\tapply_actor_race()\n\tworld:update()')

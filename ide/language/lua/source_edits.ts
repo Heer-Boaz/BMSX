@@ -103,13 +103,6 @@ export function readLuaExpressionPreview(buffer: TextBuffer, locations: LuaSourc
 	return signature + ')';
 }
 
-/** Reads an authored literal accepted by the integer control, never evaluates Lua. */
-export function readLuaTableFieldInteger(field: LuaTableField): number | null {
-	const value = readLuaNumberLiteral(field.value);
-	if (value === null) return null;
-	return value === (value | 0) ? value : null;
-}
-
 /** Literal syntax only: editor projections must not evaluate arbitrary Lua. */
 export function readLuaNumberLiteral(expression: LuaExpression): number | null {
 	const literal = numericLiteral(expression);

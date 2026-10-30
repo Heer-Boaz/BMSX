@@ -96,28 +96,28 @@ export async function runAssistantActors(kind: StudioRendererKind, canvas: HTMLC
 	// The inspection refactor must preserve ordinary World-bound method execution.
 	await press('Home');
 	await press('Enter'); await press('Home');
-	const positionRow = inspector.model.rows.findIndex(row => row.element.label === 'x');
-	check(positionRow >= 0, 'actor Details expose the stored position');
+	const positionRow = inspector.model.rows.findIndex(row => row.element.label === 'health');
+	check(positionRow >= 0, 'actor Details expose stored gameplay state');
 	for (let i = 0; i < positionRow; i++) await press('ArrowDown');
 	await press('ArrowDown'); await press('ArrowUp');
 	const positionDetails = lab.details, positionItems = lab.details!.items;
 	check(inspector.model.rows[positionRow].element.value === '4'
-		&& inspector.model.rows.find(row => row.element.label === 'y')!.element.value === '8',
-		'open Details display the actor position before the ordinary method call');
+		&& inspector.model.rows.find(row => row.element.label === 'energy')!.element.value === '8',
+		'open Details display the actor vitals before the ordinary method call');
 	await renderer.capture!('details-position-before');
 	await press('Escape');
 	await runPaletteCommand('Actor Lab: Call Lua Method');
-	await test.clipboard.writeText('set_pos'); await press('ControlLeft', 'KeyV'); await press('Enter');
-	await test.clipboard.writeText('12, 34, 0'); await press('ControlLeft', 'KeyV'); await press('Enter');
+	await test.clipboard.writeText('set_vitals'); await press('ControlLeft', 'KeyV'); await press('Enter');
+	await test.clipboard.writeText('12, 34'); await press('ControlLeft', 'KeyV'); await press('Enter');
 	await until(() => test.tasks.ready && !runtime.completionCallPending() && !ide.debugger.plans.mutationActive,
 		'actor tools: ordinary method completes at the World mutation rendezvous');
-	check(guest.readStringMember(guest.global('actor_tool_first'), 'x') === 12 && guest.readStringMember(guest.global('actor_tool_first'), 'y') === 34,
+	check(guest.readStringMember(guest.global('actor_tool_first'), 'health') === 12 && guest.readStringMember(guest.global('actor_tool_first'), 'energy') === 34,
 		'ordinary Actor Lab reacquires its receiver after boundary execution');
 	check(inspector.visible && lab.details === positionDetails && lab.details!.items === positionItems
-		&& inspector.model.rows[inspector.model.selectionIndex].element.label === 'x'
-		&& inspector.model.rows.find(row => row.element.label === 'x')!.element.value === '12'
-		&& inspector.model.rows.find(row => row.element.label === 'y')!.element.value === '34',
-		'the same open Details document displays the changed guest position and preserves selected x');
+		&& inspector.model.rows[inspector.model.selectionIndex].element.label === 'health'
+		&& inspector.model.rows.find(row => row.element.label === 'health')!.element.value === '12'
+		&& inspector.model.rows.find(row => row.element.label === 'energy')!.element.value === '34',
+		'the same open Details document displays the changed guest vitals and preserves selected health');
 	await renderer.capture!('details-position-after');
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Escape');
 

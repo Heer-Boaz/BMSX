@@ -24,10 +24,11 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 		call('status', 'studio_runtime_status', {}),
 		...refresh('initial'),
 		(body: Body) => ['actor', 'state', 'timeline'].flatMap(kind => call(`operations-${kind}`, 'studio_list_actor_operations', { node: node(body, 'initial', kind) })),
-		(body: Body) => call('move', 'studio_actor_action', { node: node(body, 'initial', 'actor'), method: 'set_pos', arguments: '17, 29, 0' }),
+		(body: Body) => call('move', 'studio_actor_action', { node: node(body, 'initial', 'actor'), method: 'add_tag', arguments: "'inspected'" }),
 		(body: Body) => call('expired', 'studio_list_actor_operations', { node: node(body, 'initial', 'actor') }),
 		...refresh('moved'),
 		(body: Body) => call('position', 'studio_read_runtime_values', { reference: tree(body, 'moved').nodes[0].object.reference, start: 0, count: 100 }),
+		(body: Body) => call('tags', 'studio_read_runtime_values', { reference: output(body, 'position').entries.find((entry: { key: { display: string } }) => entry.key.display === 'tags').value.reference, start: 0, count: 100 }),
 		(body: Body) => call('probe', 'studio_call_actor_method', { node: node(body, 'moved', 'actor'), method: 'probe', arguments: '3' }),
 		(body: Body) => call('paused', 'studio_actor_execution_status', { target: target(body) }),
 		(body: Body) => call('continue', 'studio_control_actor', { target: target(body), operation: output(body, 'probe').id, action: 'continue' }),
@@ -62,7 +63,7 @@ for (const backend of ['software', 'webgl2', 'webgpu'] as const) test(`Studio ${
 	assert.ok(output(body, 'operations-timeline').actions.some(action => action.name === 'scrub_time'));
 	assert.equal(output(body, 'move').status, 'completed'); assert.equal(output(body, 'move').invoked, true);
 	assert.match(text(body, 'expired'), /expired/);
-	assert.equal(output(body, 'position').entries.find(entry => entry.key.display === 'x').value.display, '17');
+	assert.equal(output(body, 'tags').entries.find(entry => entry.key.display === 'inspected').value.display, 'true');
 	assert.equal(output(body, 'probe').status, 'paused'); assert.equal(output(body, 'paused').active.status, 'paused');
 	assert.deepEqual(output(body, 'continue').values, ['first', 'nil', 'false', 'false', '3']);
 	assert.deepEqual(output(body, 'continue').tags, [ValueTag.String, ValueTag.Nil, ValueTag.False, ValueTag.String, ValueTag.Number]);

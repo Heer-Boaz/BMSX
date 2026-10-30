@@ -17,7 +17,6 @@ const ACTIVE_EFFECT_OPERATIONS: readonly ActorAction[] = [...EFFECT_OPERATIONS,
 	{ label: 'Deactivate', method: 'deactivate', keyed: true, description: 'Removes one activation' }];
 const OPERATIONS: Readonly<Record<ActorNode['kind'], readonly ActorAction[]>> = {
 	actor: [
-		{ label: 'Set position', method: 'set_pos', payload: '0, 0, 0', description: 'x, y, z in cart world units' },
 		{ label: 'Add tag', method: 'add_tag', payload: "'tag'", description: '' },
 		{ label: 'Remove tag', method: 'remove_tag', payload: "'tag'", description: '' },
 		{ label: 'Despawn', method: 'mark_for_disposal', description: 'World-owned disposal and component teardown' },

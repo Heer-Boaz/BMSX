@@ -11,7 +11,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	harness.openLuaSource('cart.lua');
 	const sourceTab = ide.editor.editorParts.activeGroup.model.activeTab, source = harness.getActiveEditorDocument().model;
 	source.pushEditOperations([{ offset: 0, deleteLength: source.buffer.length,
-		text: ACTOR_TOOLS_SOURCE.replace('\tworld:update()', '\tactor_tool_first.x = actor_tool_first.x + 1\n\tworld:update()') }]);
+		text: ACTOR_TOOLS_SOURCE.replace('\tworld:update()', '\tactor_tool_first.health = actor_tool_first.health + 1\n\tworld:update()') }]);
 	await runPaletteCommand('Run: Reboot'); await press('Enter');
 	await until(() => guest.global('actor_tool_ready') === true && test.tasks.ready, 'actor pins: real World constructs two actors');
 	const ready = runtime.frameScheduler.lastTickSequence;
@@ -31,7 +31,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	let inspector = pane.inspector;
 	await runPaletteCommand('Actor Lab: Inspect Instance');
 	const inspectionCycles = cycles(), inspectionHeap = runtime.machine.cpu.luaHeap.usedBytes(), callbacks = guest.global('actor_tool_callbacks');
-	const x = inspector.model.rows.findIndex(row => row.element.label === 'x');
+	const x = inspector.model.rows.findIndex(row => row.element.label === 'health');
 	check(x >= 0, 'actor position has a live Details property');
 	for (let index = 0; index < x; index++) await press('ArrowDown');
 	await press('ShiftLeft', 'F10');
@@ -50,7 +50,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	check(lab.actorHashId !== firstActor && lab.outline.rows[0].element.node.label === 'second'
 		&& inspector.model.rows[0].element.watch === pin && pin.item.value === initial,
 		'selecting another actor preserves the first actor pin instead of retargeting its x');
-	check(inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'x')!.element.value === '40',
+	check(inspector.model.rows.find(row => row.element.watch === undefined && row.element.label === 'health')!.element.value === '40',
 		'current actor Details remain separate from pinned values');
 	check(cycles() === inspectionCycles && runtime.machine.cpu.luaHeap.usedBytes() === inspectionHeap && guest.global('actor_tool_callbacks') === callbacks,
 		'pinning and selecting another actor do not execute guest Lua or allocate guest values');
@@ -58,7 +58,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	const held = cycles();
 	await runPaletteCommand('Run: Next Frame');
 	await until(() => ide.frameNavigation.active === undefined && cycles() > held, 'actor pins: forward guest frame settles');
-	const guestPosition = guest.formatValue(guest.readStringMember(guest.global('actor_tool_first'), 'x'));
+	const guestPosition = guest.formatValue(guest.readStringMember(guest.global('actor_tool_first'), 'health'));
 	check(pin.item.value !== initial && pin.item.value === guestPosition,
 		`a pinned nonselected actor property reads the newly executed frame: initial=${initial} pin=${pin.item.value} guest=${guestPosition}`);
 	check(lab.actorHashId !== firstActor && inspector.visible && inspector.model.rows[0].element.watch === pin,
@@ -68,7 +68,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 	await runPaletteCommand('Run: Previous Frame');
 	await until(() => ide.frameNavigation.active === undefined && cycles() < forward, 'actor pins: historical guest frame settles');
 	check(pin.item.value === initial && pin.item.value !== advanced
-		&& pin.item.value === guest.formatValue(guest.readStringMember(guest.global('actor_tool_first'), 'x')),
+		&& pin.item.value === guest.formatValue(guest.readStringMember(guest.global('actor_tool_first'), 'health')),
 		'rewind reads the restored pin owner rather than retaining its future value');
 	await test.capture?.('pin-rewound-other-actor');
 	await runPaletteCommand('Actor Lab: Inspect Instance'); await press('Home');
@@ -81,7 +81,7 @@ export async function runStudioActorPins(test: StudioFixture) {
 		top: restoredView.offsetTop + restoredRow.top + 4, bottom: restoredView.offsetTop + restoredRow.top + 5 });
 	await runPaletteCommand('Actor Lab: Reveal Pinned Instance');
 	check(lab.actorHashId === firstActor && inspector.model.rows[inspector.model.selectionIndex].element.watch === undefined
-		&& inspector.model.rows[inspector.model.selectionIndex].element.label === 'x',
+		&& inspector.model.rows[inspector.model.selectionIndex].element.label === 'health',
 		'Reveal returns to the pin owner and its original current property');
 	await press('Home');
 	const view = inspector.model.viewport, row = inspector.model.rows[0];

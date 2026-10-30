@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldNumberEdits, luaSourcePositionMatchesTextRange, luaSourcePositionToTextRange,
-	luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaSourceRange, readLuaTableFieldInteger, readLuaExpressionPreview } from '../../ide/language/lua/source_edits';
+	luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaSourceRange, readLuaNumberLiteral, readLuaExpressionPreview } from '../../ide/language/lua/source_edits';
 import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import {
 	LuaSyntaxKind,
@@ -149,16 +149,14 @@ test('numeric key edits support fractional coordinates without replacing groupin
 	assert.equal(model.buffer.getText(), source);
 });
 
-test('source numeric control reads literal values only, preserving source ranges and integer eligibility', () => {
+test('source numeric projection reads Number literals without evaluating expressions or coercing signed words', () => {
 	const source = 'local values = { zero = -(0), max = 2147483647, min = -( --[[keep]]\r\n2147483648), hex = 0X11, exponent = 1e3, fraction = 1.5, outside = 2147483648, dynamic = origin + 1 }';
 	const { fields, locations } = parseFields(source);
 	const model = new EditorTextModel(resource, 'lua', source);
-	assert.equal(readLuaTableFieldInteger(fields.get('zero')!), -0);
-	assert.equal(readLuaTableFieldInteger(fields.get('max')!), 0x7fffffff);
-	assert.equal(readLuaTableFieldInteger(fields.get('min')!), -0x80000000);
-	assert.equal(readLuaTableFieldInteger(fields.get('hex')!), 17);
-	assert.equal(readLuaTableFieldInteger(fields.get('exponent')!), 1000);
-	for (const key of ['fraction', 'outside', 'dynamic']) assert.equal(readLuaTableFieldInteger(fields.get(key)!), null);
+	for (const [key, value] of [['zero', -0], ['max', 0x7fffffff], ['min', -0x80000000], ['hex', 17], ['exponent', 1000],
+		['fraction', 1.5], ['outside', 2147483648], ['dynamic', null]] as const) {
+		assert.equal(readLuaNumberLiteral(fields.get(key)!.value), value);
+	}
 	assert.equal(readLuaSourceRange(model.buffer, locations.range(fields.get('dynamic')!.value.span)), 'origin + 1');
 	assert.equal(model.buffer.getText(), source);
 });
