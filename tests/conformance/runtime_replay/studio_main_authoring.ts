@@ -125,7 +125,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	await press('F6');
 	check(inputFocus.admittedTarget !== null && client.details.scope.contains(inputFocus.admittedTarget.scope),
 		'main: forward outer navigation returns to the same retained Details presentation');
-	const accepted = original.replace('x = 1,', 'x = 12,');
+	const accepted = original.replace('0, 0, 1, 1,', '0, 0, 1, 12,');
 	check(model.buffer.getText() === accepted && !field.pending && model.dirty,
 		'main: acceptance publishes one canonical coordinate edit');
 	await press('ControlLeft', 'ShiftLeft', 'KeyP');
@@ -375,7 +375,7 @@ async function testMainProjectRun(test: StudioFixture): Promise<void> {
 	await test.until(() => editor.editorParts.main.activeGroup.model.activeTab?.resource?.contextId === 'fixture-studio-scene-main',
 		'main run: Go to File presents the independent document without changing Main');
 	const group = editor.editorParts.main.activeGroup, independent = group.model.activeTab;
-	const model = client.consumer.workingCopy, original = model.buffer.getText(), accepted = original.replace('x = 1,', 'x = 12,');
+	const model = client.consumer.workingCopy, original = model.buffer.getText(), accepted = original.replace('0, 0, 1, 1,', '0, 0, 1, 12,');
 	const field = client.details.control.controls[0];
 	for (let font = 0; font < 2; font++) {
 		for (let theme = 0; theme < 2; theme++) {

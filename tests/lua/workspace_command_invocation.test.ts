@@ -49,7 +49,7 @@ for (const valid of [true, false]) test(`Save presentation and execution address
 		assert.equal(inputFocus.target, f.control.field.focusTarget);
 	} else {
 		assert.ok(saved !== undefined);
-		assert.equal(saved.snapshot.source, SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+		assert.equal(saved.snapshot.source, SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 		await saved.completion;
 		assert.equal(f.ide.textFileSaves.latestOperation(f.firstInput.workingCopy), undefined);
 	}
@@ -78,7 +78,7 @@ test('Save cannot reacquire an implicit subject after acceptance activates anoth
 	}));
 	f.editor.commands.execute('save', f.target);
 	assert.equal(armed, false); assert.equal(f.control.pending, false);
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 	assert.equal(f.ide.textFileSaves.latestOperation(f.model), undefined);
 	assert.equal(f.ide.textFileSaves.latestOperation(f.firstInput.workingCopy), undefined);
 	assert.equal(f.firstGroup.model.activeTab, subject);
@@ -98,7 +98,7 @@ for (const explicit of [false, true]) test(`Save accepts its ${explicit ? 'expli
 	other.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated unsaved receiver\n' }]);
 	f.editor.commands.execute('save', f.target, explicit ? f.firstGroup.model.activeTab! : undefined, f.second.commandTarget);
 	const saved = f.ide.textFileSaves.latestOperation(f.model); assert.ok(saved !== undefined);
-	assert.equal(saved.snapshot.source, SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+	assert.equal(saved.snapshot.source, SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 	assert.equal(f.control.pending, false); await saved.completion;
 	assert.equal(f.ide.textFileSaves.latestOperation(other), undefined); assert.equal(other.dirty, true);
 	assert.equal(f.ide.textFileSaves.latestOperation(f.firstInput.workingCopy), undefined);
@@ -116,7 +116,7 @@ for (const command of ['reboot', 'hot-resume'] as const) for (const valid of [tr
 			assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 			return;
 		}
-		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 		f.editor.actionPrompt.close('secondary'); await setImmediate();
 		const operation = command === 'reboot' ? f.ide.boots.latestOperation : f.ide.hotResumes.latestOperation;
 		assert.ok(operation !== null);

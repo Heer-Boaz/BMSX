@@ -16,7 +16,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 const SCENE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('activity-context', { objects = {
- { member_id = 'selected', definition_id = 'actor', options = { pos = { x = 1, y = 2, z = 3 } } },
+ { member_id = 'selected', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
 } })
 return {}
 `;

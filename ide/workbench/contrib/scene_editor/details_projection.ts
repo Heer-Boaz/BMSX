@@ -1,6 +1,6 @@
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
-import { readLuaExpressionPreview, readLuaSourceRange, readLuaTableFieldInteger } from '../../../language/lua/source_edits';
+import { readLuaExpressionPreview, readLuaSourceRange, readLuaNumberLiteral } from '../../../language/lua/source_edits';
 import type { SceneAuthoredSelection, SceneAuthoringContext } from './authoring_context';
 import type { SceneSourceDocument, SceneSourceDefinition } from './model';
 import { collectSceneOptionProperties, type SceneOptionProperty } from './option_properties';
@@ -10,9 +10,9 @@ export const POSITION_AXES = ['x', 'y', 'z'] as const;
 /** Written source facts, independent of any field control or measured presentation. */
 export type ScenePositionProperty = {
 	readonly axis: typeof POSITION_AXES[number];
-	readonly field: LuaTableField | null;
+	readonly field: LuaTableField;
 	readonly value: number | null;
-	readonly sourceText: string | undefined;
+	readonly sourceText: string;
 };
 
 export type SceneDetailsSubject = {
@@ -65,11 +65,10 @@ export class SceneDetailsProjection {
 				preserveDetailCase = definitionId !== undefined;
 				optionProperties = collectSceneOptionProperties(buffer, locations, entry);
 			} else { detail = 'Dynamic Lua composition'; preserveDetailCase = false; }
-			properties = POSITION_AXES.map(axis => {
-				const field = entry.kind === 'object' && entry.position !== null ? entry.position[axis] : null;
-				return { axis, field, value: field === null ? null : readLuaTableFieldInteger(field),
-					sourceText: field === null ? undefined : readLuaSourceRange(buffer, locations.range(field.value.span)) };
-			});
+			properties = entry.kind !== 'object' || entry.spatial === null ? NO_PROPERTIES : entry.spatial.origin.map((field, index) => ({
+				axis: POSITION_AXES[index], field, value: readLuaNumberLiteral(field.value),
+				sourceText: readLuaSourceRange(buffer, locations.range(field.value.span)),
+			}));
 		}
 		this.subject = { selection, document, sourceVersion: version, label, preserveLabelCase, detail, preserveDetailCase,
 			resolution: scene.resolution, properties, optionProperties };

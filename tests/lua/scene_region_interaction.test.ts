@@ -14,8 +14,8 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
- { member_id = 'first', definition_id = 'actor.first', options = { pos = { x = 1, y = 2, z = 3 }, strength = 5 } },
- { member_id = 'second', definition_id = 'actor.second', options = { pos = { x = 4, y = 5, z = 6 }, strength = 8 } },
+ { member_id = 'first', definition_id = 'actor.first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = { strength = 5 } },
+ { member_id = 'second', definition_id = 'actor.second', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } }, options = { strength = 8 } },
 } })
 return {}
 `;
@@ -81,7 +81,7 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (co
 		assert.ok(control.details.inputScope.contains(field.field.focusTarget.scope)
 			&& !control.details.inputScope.contains(field.field.focusTarget.commandContext.scope),
 			'draft ownership is the Details attachment, not its broader semantic command context');
-		const expected = kind === 'position' ? SOURCE.replace('x = 1,', 'x = 31,') : SOURCE.replace('strength = 5', 'strength = 31');
+		const expected = kind === 'position' ? SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,') : SOURCE.replace('strength = 5', 'strength = 31');
 		const read = view.authoring.getSourceLocation.bind(view.authoring);
 		let produced: EditorSourceLocation | undefined;
 		const producer = t.mock.method(view.authoring, 'getSourceLocation', () => {
@@ -124,7 +124,7 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (co
 		const selected = view.authoring.selection;
 		assert.ok(selected?.kind === 'member' && selected.entry === view.authoring.document!.scenes[0].objects[1]);
 		assert.equal(model.buffer.getText(), kind === 'position'
-			? SOURCE.replace('x = 1,', 'x = 31,') : SOURCE.replace('strength = 5', 'strength = 31'));
+			? SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,') : SOURCE.replace('strength = 5', 'strength = 31'));
 	});
 
 for (const retirement of ['detach', 'zero extent'] as const)
@@ -167,7 +167,7 @@ test('document hierarchy detachment preserves the exact live Details draft throu
 	assert.ok(inputFocus.admittedTarget === field.field.focusTarget);
 	assert.equal(field.pending, true); assert.equal(field.field.text, '31'); assert.equal(f.model.buffer.getText(), SOURCE);
 	f.key('Enter');
-	assert.equal(field.pending, false); assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(field.pending, false); assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 	assert.equal(control.hierarchy.hasView, false); assert.equal(control.details.inputScope.contextGeneration, detailsGeneration);
 	const selected = view.authoring.selection;
 	assert.ok(selected?.kind === 'member' && selected.entry === view.authoring.document!.scenes[0].objects[0]);

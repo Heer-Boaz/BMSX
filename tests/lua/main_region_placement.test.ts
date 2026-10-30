@@ -10,7 +10,7 @@ import { findWorkbenchWindowSurface } from '../../ide/workbench/ui/window/contro
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
-scenes.register('room',{objects={{member_id='unit',definition_id='actor',options={pos={x=1,y=2,z=3}}}}})
+scenes.register('room',{objects={{member_id='unit',definition_id='actor',spatial={local_transform={1,0,0,0,1,0,0,0,1,1,2,3}}}}})
 return {}`;
 
 async function fixture(t: TestContext) {
@@ -65,7 +65,7 @@ for (const draft of ['31', '('])
 			assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 		}
 		if (draft === '31') {
-			f.key('Enter'); assert.equal(f.model.buffer.getText(), SOURCE.replace('x=1,', 'x=31,'));
+			f.key('Enter'); assert.equal(f.model.buffer.getText(), SOURCE.replace('0,0,1,1,', '0,0,1,31,'));
 			assert.equal(control.pending, false); f.model.undo(); assert.equal(f.model.buffer.getText(), SOURCE);
 		} else {
 			assert.equal(control.commit(), false); assert.equal(f.model.buffer.getText(), SOURCE);

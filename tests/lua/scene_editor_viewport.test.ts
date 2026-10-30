@@ -176,7 +176,7 @@ test('replacing selected Scene source with the same member name retires the Deta
 	const snapshot = captureSceneEditorView(input.view), selected = snapshot.selected!;
 	const originalLabel = input.view.hierarchy.outline.rows[input.view.hierarchy.outline.selectionIndex].element.label;
 	const source = input.workingCopy.buffer.getText();
-	const replacement = source.slice(selected.span.start, selected.span.end).replace('x = 11', 'x = 12');
+	const replacement = source.slice(selected.span.start, selected.span.end).replace('0, 0, 1, 11,', '0, 0, 1, 12,');
 	const changes = [{ offset: selected.span.start, deletedLength: selected.span.end - selected.span.start, insertedLength: replacement.length }];
 	input.workingCopy.pushEditOperations([{ offset: selected.span.start, deleteLength: replacement.length, text: replacement }]);
 	mapSceneReading(snapshot, changes);

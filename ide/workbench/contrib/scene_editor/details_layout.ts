@@ -46,15 +46,15 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 	let top = appendText(view, subject.preserveLabelCase ? subject.label : uppercaseOutsideStrings(subject.label), textWidth, PADDING);
 	top = appendText(view, subject.preserveDetailCase ? subject.detail : uppercaseOutsideStrings(subject.detail), textWidth, top);
 	if (subject.selection.kind === 'scene') return top;
-	top = appendText(view, 'POSITION / WORLD UNITS', textWidth, top);
+	if (view.properties.length > 0) top = appendText(view, 'LOCAL ORIGIN', textWidth, top);
 	const fieldHeight = view.layout.rowHeight + PADDING;
 	const fieldLeft = PADDING * 2 + editorViewState.font.advance('X');
 	for (const property of view.properties) {
 		write_rect_bounds(property.contentBounds, fieldLeft, top, Math.max(fieldLeft, width - PADDING), top + fieldHeight);
-		property.text = truncateTextToWidth(uppercaseOutsideStrings(property.descriptor.sourceText ?? 'Lua source'), width - PADDING - fieldLeft - 6);
+		property.text = truncateTextToWidth(uppercaseOutsideStrings(property.descriptor.sourceText), width - PADDING - fieldLeft - 6);
 		top += fieldHeight + PADDING;
 	}
-	if (view.optionProperties.length > 0) top = appendText(view, 'OPTIONS / LUA VALUES', textWidth, top);
+	if (view.optionProperties.length > 0) top = appendText(view, 'AUTHORED VALUES', textWidth, top);
 	for (const property of view.optionProperties) {
 		top = appendText(view, uppercaseOutsideStrings(property.descriptor.label), textWidth, top);
 		write_rect_bounds(property.contentBounds, PADDING, top, Math.max(PADDING, width - PADDING), top + fieldHeight);

@@ -60,7 +60,7 @@ for (const target of ['definition', 'member'] as const) test(`Scene pointer ${ta
 			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 42'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 42,'));
 	const selection = input.view.authoring.selection!;
 	if (target === 'definition') {
 		assert.equal(selection.kind, 'scene');
@@ -96,7 +96,7 @@ test('an incoming Scene click cannot replace a newer selection made by its depar
 	}
 	f.update();
 	assert.equal(input.view.authoring.selection?.kind, 'scene');
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 42'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 42,'));
 });
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} Scene secondary selects the exact row without expanding its disclosure or modifying canonical source`, t => {
@@ -242,7 +242,7 @@ for (const rebind of [false, true]) test(`Scene retained member command ${rebind
 		const unbind = f.model.onDidChangeContent(() => { unbind(); rebound = true; f.firstGroup.openEditor(new HostErrorInput('newer attachment')); }); t.after(unbind);
 	}
 	f.editor.commands.execute('sceneEditor.moveMemberDown', commandTarget);
-	const text = f.model.buffer.getText(); assert.equal(field.focusTarget.edit!.pending, false); assert.ok(text.includes('x = 77'));
+	const text = f.model.buffer.getText(); assert.equal(field.focusTarget.edit!.pending, false); assert.ok(text.includes('0, 0, 1, 77,'));
 	assert.equal(rebound, rebind); assert.equal(f.model.canUndo, true);
 	assert.equal(text.indexOf("member_id = 'source only'") < text.indexOf("member_id = 'subject'"), !rebind);
 	if (rebind) assert.ok(f.firstGroup.model.activeTab instanceof HostErrorInput);

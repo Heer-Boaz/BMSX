@@ -3,12 +3,11 @@ import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
-import { INTEGER_INPUT_FORMAT } from '../../../editor/ui/inline/integer_input';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
-import { createLuaTableFieldNumberEdits } from '../../../language/lua/source_edits';
+import { createLuaTableFieldNumberEdits, parseLuaNumberInput } from '../../../language/lua/source_edits';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { WorkbenchMenu } from '../../ui/menu/model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
@@ -69,10 +68,10 @@ export class SceneDetailsControl {
 		});
 		this.controls = POSITION_AXES.map((_axis, index) => {
 			const control = new ValueInput<ScenePositionInputValue>(this.scroll.focusTarget, {
-				options: INTEGER_INPUT_FORMAT.options, invalidBlurMessage: INTEGER_INPUT_FORMAT.invalidBlurMessage,
-				format: value => INTEGER_INPUT_FORMAT.format(value.value),
+				options: { allowSpace: false, singleLine: true }, invalidBlurMessage: 'Invalid local-origin edit cancelled; source unchanged.',
+				format: value => String(value.value),
 				parse: text => {
-					const result = INTEGER_INPUT_FORMAT.parse(text);
+					const result = parseLuaNumberInput(text);
 					return 'error' in result ? result : { value: { value: result.value, ...this.fields[index]! } };
 				},
 			}, value => {
@@ -193,7 +192,7 @@ export class SceneDetailsControl {
 		this.fields.length = 0;
 		for (let index = 0; index < view.properties.length; index++) {
 			const property = view.properties[index].descriptor;
-			if (property.field !== null && property.value !== null) {
+			if (property.value !== null) {
 				this.fields[index] = { binding, field: property.field };
 				this.controls[index].setValue({ value: property.value, field: property.field, binding });
 				if (!binding.isCurrent()) return false;

@@ -159,7 +159,7 @@ for (const command of ['runCurrentFile', 'runProject'] as const) {
 		f.editor.commands.execute(command, target); f.update();
 		if (command === 'runProject') {
 			assert.equal(parts.main.quickInput.visible, true); assert.equal(parts.main.quickInput.model.items.length, 1);
-			assert.equal(model.version, version + 1); assert.equal(model.buffer.getText(), text.replace('x = 11', 'x = 17'));
+			assert.equal(model.version, version + 1); assert.equal(model.buffer.getText(), text.replace('0, 0, 1, 11,', '0, 0, 1, 17,'));
 			assert.equal(control.pending, false); assert.equal(f.part.quickInput.visible, false);
 			await parts.main.quickInput.accept(); assert.equal(f.editor.actionPrompt.visible, true);
 			f.editor.actionPrompt.close('secondary'); await setImmediate();

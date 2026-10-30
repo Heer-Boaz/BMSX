@@ -7,8 +7,8 @@ import { createLuaTableFieldRemovalEdits } from '../../ide/language/lua/source_e
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'actor', options = { pos = { x = 1, y = 2, z = 3 } } },
- { member_id = 'same', definition_id = 'actor', options = { pos = { x = 4, y = 5, z = 6 } } },
+ { member_id = 'same', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
+ { member_id = 'same', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } } },
 } })
 scenes.register('same', { objects = {
  { member_id = 'same', definition_id = 'actor' },
@@ -153,7 +153,7 @@ test('member removal preserves a newer selection admitted during canonical conte
 	assert.equal(f.first.removeSelectedMember(), true);
 	assert.equal(f.first.selection?.kind, 'scene');
 	assert.equal(f.first.selection?.scene, f.first.document!.scenes[1]);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace(" { member_id = 'same', definition_id = 'actor', options = { pos = { x = 1, y = 2, z = 3 } } },", ' '));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace(" { member_id = 'same', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },", ' '));
 });
 
 for (const change of ['selection', 'source', 'provider'] as const) test(`admission cannot retarget through a newer ${change} change published by selection retirement`, t => {

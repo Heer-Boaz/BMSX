@@ -24,8 +24,8 @@ import { parseLuaChunk } from './cpu_test_harness';
 
 const SCENE_SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
-    { member_id = 'actor', definition_id = 'sprite', options = {
-        pos = { x = 1, y = 2, z = 3 }, color = 0xff00aabb, visible = true,
+    { member_id = 'actor', definition_id = 'sprite', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = {
+        color = 0xff00aabb, visible = true,
     } },
 } })`;
 const PROGRAM_SOURCE = `local progression = require('cartlib/progression')

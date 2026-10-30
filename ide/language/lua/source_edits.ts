@@ -18,6 +18,9 @@ import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
 import type { TrackedTextRange } from '../../editor/text/text_change';
 import { ELLIPSIS } from '../../common/text';
+import { LuaSyntaxError } from '../../../toolchain/ts/lua/errors';
+import { LuaLexer } from '../../../toolchain/ts/lua/syntax/lexer';
+import { LuaParser } from '../../../toolchain/ts/lua/syntax/parser';
 
 /** Lua ranges are one-based and inclusive; text markers are half-open UTF-16 offsets. */
 export function luaSourceRangeToTextRange(buffer: TextBuffer, range: LuaSourceRange): TrackedTextRange {
@@ -111,6 +114,20 @@ export function readLuaTableFieldInteger(field: LuaTableField): number | null {
 export function readLuaNumberLiteral(expression: LuaExpression): number | null {
 	const literal = numericLiteral(expression);
 	return literal === null ? null : expression.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
+}
+
+/** Human scalar entry uses the language's numeric syntax and range, not a host word parser. */
+export function parseLuaNumberInput(text: string): { readonly value: number } | { readonly error: string } {
+	try {
+		const path = '<number input>';
+		const tokens = new LuaLexer(text, path).scanTokens();
+		const fragment = new LuaParser(tokens, path, text).parseExpressionOnly();
+		const value = readLuaNumberLiteral(fragment.expression);
+		return value === null ? { error: 'Enter a Lua number literal' } : { value };
+	} catch (error) {
+		if (!(error instanceof LuaSyntaxError)) throw error;
+		return { error: error.message };
+	}
 }
 
 function numericLiteral(expression: LuaExpression): LuaNumericLiteralExpression | null {

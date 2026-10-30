@@ -140,8 +140,8 @@ test('Scene pane source production and member commands retain their input when a
 
 function definitionOpeningFixture(t: TestContext, height = 288) {
 	const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('same', { objects = { { member_id = 'one', definition_id = 'actor', options = { visible = true, pos = { x = 11, y = 12, z = 13 } } } } })
-scenes.register('same', { objects = { { member_id = 'two', definition_id = 'actor', options = { pos = { x = 22, y = 23, z = 24 } } } } })
+scenes.register('same', { objects = { { member_id = 'one', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 11, 12, 13 } }, options = { visible = true } } } })
+scenes.register('same', { objects = { { member_id = 'two', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 22, 23, 24 } } } } })
 scenes.register('incomplete', {})
 `;
 	const sources = createScenarioTestSourceState([
@@ -213,8 +213,8 @@ test('Scene definition opening selects the exact table among duplicate semantic 
 	assert.equal(pane.control.details.controls[0].field.text, '22');
 	setFieldText(pane.control.details.controls[0].field, '123', false);
 	assert.equal(pane.control.details.controls[0].commit(), true);
-	assert.ok(f.model.buffer.getText().includes('x = 123, y = 23'));
-	assert.ok(f.model.buffer.getText().includes('x = 11, y = 12'));
+	assert.ok(f.model.buffer.getText().includes('0, 0, 1, 123, 23'));
+	assert.ok(f.model.buffer.getText().includes('0, 0, 1, 11, 12'));
 	f.model.undo(); pane.update();
 	assert.equal(pane.control.details.controls[0].field.text, '22');
 	assert.equal(f.group.model.tabs.length, 1);
@@ -264,7 +264,7 @@ test('Scene opening settles the attached field draft before consuming its tracke
 	const input = f.group.model.activeTab;
 	assert.ok(input instanceof SceneEditorInput);
 	assert.deepEqual(input.view.authoring.selectionRange, f.ranges[1]);
-	assert.ok(f.model.buffer.getText().includes('x = 123456, y = 12'));
+	assert.ok(f.model.buffer.getText().includes('0, 0, 1, 123456, 12'));
 	assert.equal(pane.control.details.controls[0].pending, false);
 });
 
@@ -347,7 +347,7 @@ test('domain admission cannot hide a revoked provider generation from its retain
 	assert.equal(input.view.hierarchy.outlineDocument, input.view.authoring.document);
 	assert.equal(input.view.hierarchy.outline.rows.length, 0);
 	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
-	assert.ok(input.view.details.properties.every(property => property.descriptor.field === null));
+	assert.equal(input.view.details.properties.length, 0);
 	assert.equal(f.model.buffer.getText(), source);
 });
 
@@ -365,7 +365,7 @@ test('same-byte replacement retires a row receipt even when its source projectio
 	input.view.refresh();
 	assert.notEqual(input.view.hierarchy.outline.rows[1], row);
 	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
-	assert.ok(input.view.details.properties.every(property => property.descriptor.field === null));
+	assert.equal(input.view.details.properties.length, 0);
 	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 });
 
@@ -386,5 +386,5 @@ test('Scene removal projects rather than clears a newer source selection from it
 	assert.equal(selected.kind, 'scene');
 	assert.equal(selected.scene, input.view.authoring.document!.scenes[1]);
 	assert.equal(input.view.authoring.selection?.scene, selected.scene);
-	assert.ok(input.view.details.properties.every(property => property.descriptor.field === null));
+	assert.equal(input.view.details.properties.length, 0);
 });

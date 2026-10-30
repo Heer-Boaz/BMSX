@@ -143,7 +143,7 @@ for (const valid of [true, false]) test(`Save All ${valid ? 'accepts' : 'refuses
 	}
 	const ownSave = f.saves.latestOperation(f.model), otherSave = f.saves.latestOperation(other);
 	assert.ok(ownSave !== undefined); assert.equal(otherSave, undefined);
-	assert.equal(ownSave.snapshot.source, SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+	assert.equal(ownSave.snapshot.source, SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 	assert.equal((await ownSave.completion).status, 'saved');
 	assert.equal(f.editor.commands.isEnabled('saveAll', f.field.field.focusTarget), false);
 });

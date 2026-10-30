@@ -84,7 +84,7 @@ for (const retirement of ['scope', 'model'] as const)
 		assert.equal(f.editor.commands.isEnabled('runProject', primary.commandTarget), true);
 		f.editor.commands.execute('runProject', primary.commandTarget); await setImmediate();
 		assert.equal(retired, true); assert.equal(field.pending, false);
-		assert.equal(model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+		assert.equal(model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 		assert.equal(f.editor.editorParts.main.quickInput.visible, false); assert.equal(f.part.quickInput.visible, false);
 		assert.equal(f.editor.actionPrompt.visible, false); assert.equal(f.requests.length, 0);
 	});

@@ -70,7 +70,7 @@ test('a Scene document cannot reacquire retired Save authority after its accepte
 	assert.ok(f.pane.inputScope.contextGeneration > context);
 	assert.equal(f.firstGroup.panes.activePane, f.pane); assert.equal(f.firstGroup.model.activeTab, tab);
 	assert.equal(f.firstGroup.panes.openGeneration, generation);
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 	assert.equal(f.model.dirty, true); assert.equal(f.saves.canSave(f.model), false);
 	assert.equal(f.editor.commands.isEnabled('save', target), false);
 	f.editor.commands.execute('save', target); await setImmediate();

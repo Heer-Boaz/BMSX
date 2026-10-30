@@ -17,7 +17,7 @@ export async function testStudioMainScenePicker(test: StudioFixture): Promise<vo
 	const root = 'tests/fixtures/studio/main-scene-picker', contextId = 'fixture-studio-main-scene-picker';
 	const first = SCENE_AUTHORING_SOURCE.replace("'fixture.room'", "'picker.same'").replace('return {}\n', '');
 	const second = SCENE_AUTHORING_SOURCE.replace("'fixture.room'", "'picker.same'");
-	const alphaSource = first + second, betaSource = second.replace('x = 1,', 'x = 9,');
+	const alphaSource = first + second, betaSource = second.replace('0, 0, 1, 1,', '0, 0, 1, 9,');
 	const registry = createLuaSourceRegistry(root, 'alpha.lua');
 	for (const [path, source] of [['alpha.lua', alphaSource], ['beta.lua', betaSource], ['cartlib/world/scene_library.lua', 'return {}']] as const)
 		registerLuaSourceRecord(registry, createTestSourceOnlyLuaRecord(path, source, `${root}/${path}`));
@@ -82,7 +82,7 @@ export async function testStudioMainScenePicker(test: StudioFixture): Promise<vo
 			const value = 20 + font * 2 + theme;
 			await test.click(client.view.details.properties[0].bounds); await test.press('ControlLeft', 'KeyA');
 			await test.clipboard.writeText(String(value)); await test.press('ControlLeft', 'KeyV'); await test.press('Enter');
-			const accepted = first + second.replace('x = 1,', `x = ${value},`);
+			const accepted = first + second.replace('0, 0, 1, 1,', `0, 0, 1, ${value},`);
 			check(model.dirty && model.buffer.getText() === accepted,
 				'Main chooser: actual Details editing changes only the chosen second Scene occurrence');
 			await test.runPaletteCommand('Workspace: Choose Main Scene'); await choose(beta, 0);

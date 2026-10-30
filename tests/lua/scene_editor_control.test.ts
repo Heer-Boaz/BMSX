@@ -52,7 +52,7 @@ test('source-consuming intrinsic command settles its concrete standalone Scene f
 	assert.equal(f.context.selection, undefined);
 	assert.equal(field.pending, false, 'the issuing control settles its own field, not the active document group');
 	f.model.undo(); f.context.refresh();
-	assert.ok(f.model.buffer.getText().includes('x = 123'), 'Undo of removal restores the already accepted coordinate edit');
+	assert.ok(f.model.buffer.getText().includes('0, 0, 1, 123,'), 'Undo of removal restores the already accepted coordinate edit');
 	f.model.undo();
 	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE);
 });

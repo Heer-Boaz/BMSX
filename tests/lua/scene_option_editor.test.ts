@@ -13,8 +13,7 @@ import type { EditorCommandRunner } from '../../ide/common/commands';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
-	{ member_id = 'actor', definition_id = 'sprite', options = {
-		pos = { x = 1, y = 2, z = 3 },
+	{ member_id = 'actor', definition_id = 'sprite', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = {
 		color = 0xff00aabb; -- keep the scene artist's comment
 		visible = true,
 		imgid = 'hero',
@@ -52,10 +51,11 @@ function fixture(t: TestContext, source = SOURCE) {
 test('scene inspector projects written leaves, expressions and arrays without evaluating them', t => {
 	const f = fixture(t);
 	assert.deepEqual(f.view.optionProperties.map(property => property.descriptor.label),
-		['color', 'visible', 'imgid', 'region.x', 'region.width', 'items[1]', 'items[2]', "['custom-key']", 'callback']);
+		['color', 'visible', 'imgid', 'region.x', 'region.width', 'items[1]', 'items[2]', "['custom-key']", 'callback',
+			...Array.from({ length: 9 }, (_, index) => `spatial.local_transform[${index + 1}]`)]);
 	assert.equal(f.control("['custom-key']").field.text, 'math.max(1, 2)');
 	assert.equal(f.control('callback').field.readOnly, true, 'multiline implementation remains source-owned');
-	assert.equal(f.view.optionProperties.at(-1)!.descriptor.preview, 'function()');
+	assert.equal(f.view.optionProperties.find(property => property.descriptor.label === 'callback')!.descriptor.preview, 'function()');
 	assert.equal(f.model.dirty, false);
 });
 

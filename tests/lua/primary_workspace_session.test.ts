@@ -29,7 +29,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('viewport proof with a deliberately long scene name', {
-	objects = { { member_id = 'other', definition_id = 'actor', options = { pos = { x = 7, y = 8, z = 9 } } } },
+	objects = { { member_id = 'other', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } } },
 })\n`;
 
 function fixture(t: TestContext) {

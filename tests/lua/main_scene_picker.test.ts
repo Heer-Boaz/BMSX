@@ -27,7 +27,7 @@ import { createTestRuntimeSourceState, createTestSourceOnlyLuaRecord, TEST_CARTR
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 const FIRST = `local scenes = require('cartlib/world/scene_library')
-scenes.register('same', { objects = { { member_id = 'first', definition_id = 'actor', options = { pos = { x = 1, y = 2, z = 3 } } } } })
+scenes.register('same', { objects = { { member_id = 'first', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } } } })
 scenes.register('same', { objects = { { member_id = 'second', definition_id = 'actor' } } })
 `;
 const SECOND = `local scenes = require('cartlib/world/scene_library')
@@ -188,7 +188,7 @@ test('a chooser invoked from a real pending Main Details field starts its source
 	assert.equal(field.pending, true);
 	const picker = openPicker(f);
 	assert.equal(field.pending, false); assert.equal(model.version, version + 1); assert.equal(model.dirty, true);
-	assert.ok(model.buffer.getText().includes('x = 123'));
+	assert.ok(model.buffer.getText().includes('0, 0, 1, 123,'));
 	for (const item of picker.model.items as readonly ScenePick[]) assert.equal(f.editor.projectContent.isCurrent(item.entry), true);
 	f.press('Escape');
 	assert.ok(f.editor.mainWorkspace.primary === client && client.consumer.isCurrent);

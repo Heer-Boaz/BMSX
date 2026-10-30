@@ -7,10 +7,13 @@ import type {
 import type { ResourceIdentity } from '../../../common/resource';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 
-export type SceneSourcePosition = {
-	readonly x: LuaTableField;
-	readonly y: LuaTableField;
-	readonly z: LuaTableField;
+export type SceneSourceSpatial = {
+	readonly field: LuaTableField;
+	readonly parentId: LuaTableField | null;
+	readonly localTransform: LuaTableField | null;
+	/** Direct full-affine declaration only; a referenced/built value stays Lua. */
+	readonly coefficients: readonly LuaTableField[] | null;
+	readonly origin: readonly LuaTableField[];
 };
 
 export type SceneSourceObject = {
@@ -19,7 +22,8 @@ export type SceneSourceObject = {
 	readonly memberId: LuaExpression;
 	readonly definitionId: LuaExpression;
 	readonly options: LuaTableField | null;
-	readonly position: SceneSourcePosition | null;
+	readonly initial: LuaTableField | null;
+	readonly spatial: SceneSourceSpatial | null;
 };
 
 export type SceneSourceDynamicObject = {

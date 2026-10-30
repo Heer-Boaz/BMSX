@@ -27,8 +27,8 @@ function luaResource(path: string): RuntimeResource {
 
 const POSITION_SOURCE = `local scenes<const> = require('cartlib/world/scene_library')
 scenes.register(ids.room, { objects = {
-	{ member_id = 'first', definition_id = 'sprite', options = { pos = { x = 0, y = 0, z = 0 } } },
-	{ member_id = 'second', definition_id = 'sprite', options = { pos = { x = 4, y = 5, z = 6 } } },
+	{ member_id = 'first', definition_id = 'sprite', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 } } },
+	{ member_id = 'second', definition_id = 'sprite', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } } },
 } })`;
 
 test('scene discovery and projection share unchanged member-alias admission', () => {
@@ -100,9 +100,9 @@ test('scene source adapter retains independently authored registration and order
 	assert.deepEqual(scene.objects.map(object => object.field), scene.objectsTable.fields,
 		'a complete projection retains the actual ordered parent fields');
 	assert.ok(scene.objects.every(object => object.kind === 'object'
-		&& object.position!.x.value.kind === LuaSyntaxKind.NumericLiteralExpression
-		&& object.position!.y.value.kind === LuaSyntaxKind.NumericLiteralExpression
-		&& object.position!.z.value.kind === LuaSyntaxKind.NumericLiteralExpression));
+		&& object.spatial!.origin[0].value.kind === LuaSyntaxKind.NumericLiteralExpression
+		&& object.spatial!.origin[1].value.kind === LuaSyntaxKind.NumericLiteralExpression
+		&& object.spatial!.origin[2].value.kind === LuaSyntaxKind.NumericLiteralExpression));
 });
 
 test('scene projection retains empty and keyed-only definitions as distinct source roots', () => {
@@ -151,12 +151,12 @@ test('scene position edit changes only its canonical written coordinate and shar
 	const object = document.scenes[0].objects[0];
 	assert.equal(object.kind, 'object');
 	if (object.kind === 'object') {
-		const edits = createLuaTableFieldNumberEdits(model.buffer, document.analysis.chunk.locations, object.position!.x, 65536);
+		const edits = createLuaTableFieldNumberEdits(model.buffer, document.analysis.chunk.locations, object.spatial!.origin[0], 65536);
 		assert.notEqual(edits, null);
 		model.pushEditOperations(edits!);
 	}
 
-	const changed = source.replace('pos = { x = 0, y = 0, z = 0 }', 'pos = { x = 65536, y = 0, z = 0 }');
+	const changed = source.replace('local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 }', 'local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 65536, 0, 0 }');
 	assert.equal(model.buffer.getText(), changed);
 	const reparsed = buildSceneSourceDocument(
 		{ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path },
@@ -165,9 +165,9 @@ test('scene position edit changes only its canonical written coordinate and shar
 	const reparsedObject = reparsed.scenes[0].objects[0];
 	assert.equal(reparsedObject.kind, 'object');
 	if (reparsedObject.kind === 'object') {
-		assert.equal(reparsedObject.position!.x.value.kind, LuaSyntaxKind.NumericLiteralExpression);
-		if (reparsedObject.position!.x.value.kind === LuaSyntaxKind.NumericLiteralExpression) {
-			assert.equal(reparsedObject.position.x.value.value, 65536);
+		assert.equal(reparsedObject.spatial!.origin[0].value.kind, LuaSyntaxKind.NumericLiteralExpression);
+		if (reparsedObject.spatial!.origin[0].value.kind === LuaSyntaxKind.NumericLiteralExpression) {
+			assert.equal(reparsedObject.spatial!.origin[0].value.value, 65536);
 		}
 	}
 	model.undo();
@@ -179,7 +179,7 @@ test('scene source adapter accepts direct definitions through unchanged local mo
 		"local scenes<const> = require('cartlib/world/scene_library')",
 		"local mutable = require('cartlib/world/scene_library')",
 		"scenes.register('direct', { objects = {",
-		"\t{ member_id = 'hero', definition_id = 'player', options = { pos = { x = 1, y = offset, z = -3 } } },",
+		"\t{ member_id = 'hero', definition_id = 'player', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, offset, -3 } } },",
 		'\tbuild_object(),',
 		"\t[4] = { member_id = 'hidden', definition_id = 'hidden' },",
 		'} })',
@@ -201,9 +201,9 @@ test('scene source adapter accepts direct definitions through unchanged local mo
 	const object = document.scenes[0].objects[0];
 	assert.equal(object.kind, 'object');
 	if (object.kind === 'object') {
-		assert.equal(object.position!.x.value.kind, LuaSyntaxKind.NumericLiteralExpression);
-		assert.equal(object.position!.y.value.kind, LuaSyntaxKind.IdentifierExpression);
-		assert.equal(object.position!.z.value.kind, LuaSyntaxKind.UnaryExpression);
+		assert.equal(object.spatial!.origin[0].value.kind, LuaSyntaxKind.NumericLiteralExpression);
+		assert.equal(object.spatial!.origin[1].value.kind, LuaSyntaxKind.IdentifierExpression);
+		assert.equal(object.spatial!.origin[2].value.kind, LuaSyntaxKind.UnaryExpression);
 	}
 	assert.equal(document.scenes[0].objects[1].kind, 'dynamic');
 });

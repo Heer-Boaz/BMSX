@@ -78,7 +78,7 @@ for (const invocation of ['command', 'toolbar pointer', 'compact command'] as co
 	assert.equal(field.focusTarget.focus(), true);
 	assert.equal(field.replaceText(0, field.readText().text.length, '789'), true);
 	assert.equal(field.focusTarget.edit!.pending, true);
-	const accepted = original.replace('x = 11', 'x = 789');
+	const accepted = original.replace('0, 0, 1, 11,', '0, 0, 1, 789,');
 
 	if (invocation !== 'toolbar pointer') f.editor.commands.execute('sceneEditor.removeMember', field.focusTarget.commandContext);
 	else {

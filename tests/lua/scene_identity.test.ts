@@ -20,11 +20,11 @@ import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
-	{ member_id = 'same  member', definition_id = 'actor', options = { pos = { x = 1, y = 2, z = 3 } } },
-	{ member_id = 'same  member', definition_id = 'actor', options = { pos = { x = 4, y = 5, z = 6 } } },
+	{ member_id = 'same  member', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
+	{ member_id = 'same  member', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } } },
 } })
 scenes.register('other room', { objects = {
-	{ member_id = 'same  member', definition_id = 'actor', options = { pos = { x = 7, y = 8, z = 9 } } },
+	{ member_id = 'same  member', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } },
 } })
 `;
 

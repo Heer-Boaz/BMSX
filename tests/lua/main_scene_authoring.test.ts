@@ -19,7 +19,7 @@ import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { applyWorkspaceAutosavePayload } from '../../ide/workbench/workspace/restore';
 import type { ScenePrimarySnapshot } from '../../ide/workbench/contrib/scene_editor/primary_snapshot';
 
-const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('same', { objects = { { member_id = 'other', definition_id = 'actor', options = { pos = { x = 7, y = 8, z = 9 } } } } })\n`;
+const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('same', { objects = { { member_id = 'other', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } } } })\n`;
 
 function fixture(t: TestContext) {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
@@ -115,7 +115,7 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const)
 		const navigation = t.mock.method(f.editor.navigation, 'openResource');
 		const groups = [...f.editor.editorParts.groups];
 		f.editor.commands.execute(command, client.commandTarget);
-		assert.ok(f.model.buffer.getText().includes('x = 123'));
+		assert.ok(f.model.buffer.getText().includes('0, 0, 1, 123,'));
 		assert.equal(client.view.hierarchy.outline.selectionIndex, 2);
 		assert.equal(navigation.mock.callCount(), 0);
 		assert.deepEqual(f.editor.editorParts.groups, groups);
@@ -224,7 +224,7 @@ test('Main Ctrl+S accepts its concrete pending field and saves its own canonical
 	f.key('KeyS', KeyModifier.ctrl);
 	const operation = f.ide.textFileSaves.latestOperation(f.model);
 	assert.ok(operation !== undefined, 'Save addresses the actual Main working-copy consumer');
-	assert.ok(operation.snapshot.source.includes('x = 123'), 'the Save producer captures the accepted field, not its earlier canonical value');
+	assert.ok(operation.snapshot.source.includes('0, 0, 1, 123,'), 'the Save producer captures the accepted field, not its earlier canonical value');
 	assert.equal((await operation.completion).status, 'saved');
 	assert.equal(f.model.dirty, false); assert.equal(field.pending, false);
 	assert.equal(f.ide.textFileSaves.latestOperation(f.firstInput.workingCopy), undefined);
@@ -263,7 +263,7 @@ for (const route of ['application', 'native'] as const) for (const valid of [fal
 			assert.equal(model.version, version + 2);
 			// Exact canonical source is the edit/history integrity contract, not UI wording.
 			assert.ok(model.history.undo(model) !== null);
-			assert.equal(model.buffer.getText(), SOURCE.replace('x = 11,', 'x = 123,'));
+			assert.equal(model.buffer.getText(), SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 			assert.ok(model.history.undo(model) !== null);
 			assert.equal(model.buffer.getText(), SOURCE); assert.equal(model.canUndo, false);
 			assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);
@@ -279,7 +279,7 @@ for (const route of ['application', 'native'] as const)
 		t.after(release);
 		if (route === 'application') f.editor.commands.execute('sceneEditor.removeMember', client.commandTarget);
 		else inputFocus.executeCommand('sceneEditor.removeMember', client.commandTarget);
-		assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 11,', 'x = 123,'));
+		assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 		assert.equal(field.pending, false); assert.equal(client.consumer.subject!.objects.length, 2);
 		assert.equal(client.view.hierarchy.outline.selectionIndex, 2);
 	});

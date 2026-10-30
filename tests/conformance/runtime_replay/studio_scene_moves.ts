@@ -29,9 +29,10 @@ export async function testSceneMemberMoves(test: StudioFixture): Promise<void> {
 	check(selection?.kind === 'member' && selection.index === 1 && scene.view.details.properties[0].descriptor.value === 18,
 		'move: one held action accepts the draft and follows the original member to its sibling position');
 	const moved = model.buffer.getText();
-	check(moved.includes(grouped.replace('x = 0', 'x = 18')), 'move: complete grouped syntax and its comment move together');
+	const editedMember = grouped.replace('local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 }', 'local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 18, 0, 0 }');
+	check(moved.includes(editedMember), 'move: complete grouped syntax and its comment move together');
 	await click(down.bounds);
-	check(model.buffer.getText() === authored.replace(grouped, grouped.replace('x = 0', 'x = 18')),
+	check(model.buffer.getText() === authored.replace(grouped, editedMember),
 		'move: moving the member back restores its original surrounding source order');
 	const beforeLocalUndo = model.buffer.getText();
 	await press('ControlLeft', 'KeyZ');

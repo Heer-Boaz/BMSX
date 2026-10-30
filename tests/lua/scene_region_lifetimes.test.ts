@@ -9,8 +9,8 @@ import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
- { member_id = 'ship', definition_id = 'actor', options = { pos = { x = 11, y = 2, z = 3 } } },
- { member_id = 'ship', definition_id = 'actor', options = { pos = { x = 22, y = 5, z = 6 } } },
+ { member_id = 'ship', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 11, 2, 3 } } },
+ { member_id = 'ship', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 22, 5, 6 } } },
 } })`;
 
 test('constructing and refreshing a Scene hierarchy never admits a semantic selection', t => {

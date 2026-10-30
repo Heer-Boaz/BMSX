@@ -64,7 +64,7 @@ test('independent Scene contexts share source but not semantic selection or cont
 	assert.equal(other.selection?.kind, 'member');
 	assert.equal(other.selection?.kind === 'member' ? other.selection.entry : undefined, other.document!.scenes[0].objects[2]);
 	assert.equal(other.selection?.kind === 'member' ? other.selection.index : -1, 2);
-	assert.equal(f.model.buffer.getText(), SCENE_AUTHORING_SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(f.model.buffer.getText(), SCENE_AUTHORING_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 });
 
 test('a missing primary declaration revokes pending field edits and cannot retarget the control after Undo', t => {

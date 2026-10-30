@@ -17,11 +17,11 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'first', options = { pos = { x = 1, y = 2, z = 3 } } },
- { member_id = 'same', definition_id = 'second', options = { pos = { x = 4, y = 5, z = 6 } } },
+ { member_id = 'same', definition_id = 'first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
+ { member_id = 'same', definition_id = 'second', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } } },
 } })
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'other', options = { pos = { x = 7, y = 8, z = 9 } } },
+ { member_id = 'same', definition_id = 'other', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } },
 } })`;
 const INVENTORY = ["local scenes = require('cartlib/world/scene_library')",
 	...Array.from({ length: 32 }, (_, index) => `scenes.register('inventory_${index}_${'long_'.repeat(20)}', { objects = {} })`)].join('\n');
@@ -130,7 +130,7 @@ test('Main Source to Side retains its exact document neighbor across draft settl
 	assert.ok(origin.model.activeTab instanceof CodeEditorInput && origin.model.activeTab.workingCopy === f.secondInput.workingCopy);
 	assert.ok(inputFocus.admittedTarget !== null && side.focusScope.contains(inputFocus.admittedTarget.scope));
 	assert.equal(input.context.view.cursorRow, expected.row); assert.equal(input.context.view.cursorColumn, expected.column);
-	assert.equal(field.pending, false); assert.ok(f.model.buffer.getText().includes('x = 123'));
+	assert.equal(field.pending, false); assert.ok(f.model.buffer.getText().includes('0, 0, 1, 123,'));
 	assert.equal(f.parts.groups.length, groups.length); assert.ok(groups.every((group, index) => f.parts.groups[index] === group));
 	const selected = f.primary.consumer.selection;
 	assert.ok(selected?.kind === 'member' && selected.entry === f.primary.consumer.subject!.objects[1] && f.main.primary === f.primary);
@@ -159,7 +159,7 @@ test('Main Source accepts the invoking member draft before computing its exact u
 	const request = t.mock.method(f.editor.navigation, 'openSource');
 	f.editor.commands.execute('editor.source', field.field.focusTarget);
 	assert.equal(request.mock.callCount(), 1); assert.ok(await request.mock.calls[0].result !== undefined);
-	assert.equal(field.pending, false); assert.ok(f.model.buffer.getText().includes('x = 123'));
+	assert.equal(field.pending, false); assert.ok(f.model.buffer.getText().includes('0, 0, 1, 123,'));
 	const selected = f.primary.consumer.selection;
 	assert.ok(selected?.kind === 'member' && selected.entry === f.primary.consumer.subject!.objects[1]);
 	const input = f.parts.main.activeGroup.model.activeTab; assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);

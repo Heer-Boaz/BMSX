@@ -60,11 +60,11 @@ test('copy command accepts the actual Scene field before refreshing and capturin
 	f.editor.commands.execute('window.copyEditor', f.pane.commandTarget); await setImmediate(); f.update();
 	const copied = f.editor.editorParts.activeGroup.model.activeTab;
 	assert.ok(copied instanceof SceneEditorInput && copied !== f.scene && copied.workingCopy === model);
-	assert.equal(model.buffer.getText(), original.replace('x = 11', 'x = 123456789')); assert.equal(model.version, version + 1);
+	assert.equal(model.buffer.getText(), original.replace('0, 0, 1, 11,', '0, 0, 1, 123456789,')); assert.equal(model.version, version + 1);
 	assert.equal(f.control.pending, false); assert.equal(copied.view.details.properties[0].descriptor.value, 123456789);
 	assert.deepEqual(copied.view.authoring.selectionRange, f.scene.view.authoring.selectionRange);
 	model.undo(); assert.equal(model.buffer.getText(), original);
-	model.redo(); assert.equal(model.buffer.getText(), original.replace('x = 11', 'x = 123456789'));
+	model.redo(); assert.equal(model.buffer.getText(), original.replace('0, 0, 1, 11,', '0, 0, 1, 123456789,'));
 });
 
 test('invalid native sender draft vetoes copying before view production or prospective window construction', async t => {
@@ -102,7 +102,7 @@ test('accepted sender draft cannot copy a newer attachment selected by its sourc
 	assert.equal(await parts.copyEditor(f.firstGroup, f.scene), undefined);
 	assert.equal(create.mock.callCount(), 0); assert.equal(parts.documents.length, documents);
 	assert.ok(f.firstGroup.model.activeTab === newer && f.firstGroup.panes.activePane?.input === newer);
-	assert.ok(f.scene.workingCopy.buffer.getText().includes('x = 17'));
+	assert.ok(f.scene.workingCopy.buffer.getText().includes('0, 0, 1, 17,'));
 });
 
 test('reentrant sender replacement during createView disposes its offer and all unpublished window controls', async t => {

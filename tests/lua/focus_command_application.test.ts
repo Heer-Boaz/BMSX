@@ -139,8 +139,8 @@ test('application capture retirement prevents publication of the revoked invokin
 
 const SCENE_SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
- { member_id = 'first', definition_id = 'actor.first', options = { pos = { x = 1, y = 2, z = 3 } } },
- { member_id = 'second', definition_id = 'actor.second', options = { pos = { x = 4, y = 5, z = 6 } } },
+ { member_id = 'first', definition_id = 'actor.first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
+ { member_id = 'second', definition_id = 'actor.second', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } } },
 } })
 return {}
 `;
@@ -162,15 +162,15 @@ test('actual Scene keyboard Undo and Redo use application exports while a disabl
 	const f = sceneFixture(t), field = f.control.details.controls[0];
 	field.field.focusTarget.focus(); setFieldText(field.field, '31', true); assert.equal(field.commit(), true);
 	f.control.update();
-	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 	f.control.hierarchy.focus();
 	assert.equal(f.control.hierarchy.focusTarget.getCommand('undo'), undefined);
 	f.key('KeyZ', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), SCENE_SOURCE);
-	f.key('KeyY', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('x = 1,', 'x = 31,'));
+	f.key('KeyY', KeyModifier.ctrl); assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 	field.field.focusTarget.focus(); setFieldText(field.field, '32', true);
 	assert.equal(field.field.focusTarget.getCommand('undo')!.isEnabled(), false);
 	f.key('KeyZ', KeyModifier.ctrl);
-	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 	assert.equal(field.pending, true);
 });
 
@@ -187,7 +187,7 @@ test('Scene field draft settlement can detach its invoking Details without movin
 	f.editor.commands.execute('sceneEditor.moveMemberDown', field.field.focusTarget);
 	assert.equal(f.control.inputScope.contextGeneration, rootGeneration);
 	assert.equal(f.control.details.hasView, false);
-	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(f.model.buffer.getText(), SCENE_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 	assert.equal(f.context.selection?.kind === 'member' ? f.context.selection.index : -1, 0);
 });
 

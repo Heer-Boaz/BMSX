@@ -15,8 +15,8 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
- { member_id = 'first', definition_id = 'actor.first', options = { pos = { x = 1, y = 2, z = 3 }, strength = 5 } },
- { member_id = 'second', definition_id = 'actor.second', options = { pos = { x = 4, y = 5, z = 6 }, strength = 8 } },
+ { member_id = 'first', definition_id = 'actor.first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = { strength = 5 } },
+ { member_id = 'second', definition_id = 'actor.second', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } }, options = { strength = 8 } },
 } })
 return {}
 `;
@@ -66,13 +66,13 @@ test('Details fields edit and undo canonical source with no hierarchy or documen
 	position.field.focusTarget.focus(); setFieldText(position.field, '19', true);
 	assert.equal(position.commit(), true);
 	f.control.update();
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 19,'));
 	setFieldText(f.control.options.controls[0].field, 'math.max(7, 9)', true);
 	assert.equal(f.control.options.controls[0].commit(), true);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,').replace('strength = 5', 'strength = math.max(7, 9)'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 19,').replace('strength = 5', 'strength = math.max(7, 9)'));
 	inputFocus.executeCommand('undo', position.field.focusTarget.commandContext);
 	f.control.update();
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 19,'));
 	inputFocus.executeCommand('undo', f.parent);
 	assert.equal(f.model.buffer.getText(), SOURCE);
 });
@@ -166,7 +166,7 @@ test('a Details detach callback may attach a new presentation without outgoing c
 	assert.equal(f.control.controls[0].field.text, '1');
 	setFieldText(f.control.controls[0].field, '23', true);
 	assert.equal(f.control.controls[0].commit(), true);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 23,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 23,'));
 });
 
 test('old model disposal cannot clear the Details presentation attached by an earlier disposal observer', t => {
@@ -222,7 +222,7 @@ test('outgoing field cancellation cannot make a reattached Details field read-on
 	assert.equal(field.field.readOnly, false);
 	setFieldText(field.field, '23', true);
 	assert.equal(field.commit(), true);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 23,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 23,'));
 });
 
 test('scroll-focus departure can attach another Details view without clearing its new scroll input', t => {

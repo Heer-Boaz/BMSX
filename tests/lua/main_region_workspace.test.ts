@@ -16,11 +16,11 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'first', options = { pos = { x = 1, y = 2, z = 3 }, strength = 5 } },
- { member_id = 'same', definition_id = 'second', options = { pos = { x = 4, y = 5, z = 6 }, strength = 8 } },
+ { member_id = 'same', definition_id = 'first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = { strength = 5 } },
+ { member_id = 'same', definition_id = 'second', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } }, options = { strength = 8 } },
 } })
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'other', options = { pos = { x = 7, y = 8, z = 9 } } },
+ { member_id = 'same', definition_id = 'other', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } },
 } })
 return {}
 `;
@@ -80,7 +80,7 @@ test('hiding Main hierarchy preserves the exact pending Details field and its so
 	assert.ok(inputFocus.admittedTarget === field.field.focusTarget && primary.consumer.selection === selected);
 	assert.equal(field.pending, true); assert.equal(field.field.text, '31'); assert.equal(f.model.buffer.getText(), SOURCE);
 	f.key('Enter');
-	assert.equal(field.pending, false); assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(field.pending, false); assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 	assert.equal(primary.hierarchy.control.hasView, false); assert.equal(primary.details.scope.contextGeneration, detailsGeneration);
 	assert.ok(primary.consumer.selection?.kind === 'member' && primary.consumer.selection.entry === primary.consumer.subject!.objects[0]);
 	const consumers = [...f.main.workingCopyConsumers()]; assert.equal(consumers.length, 1); assert.ok(consumers[0] === primary.consumer);
@@ -251,7 +251,7 @@ test('hiding the focused Main Details region requires its actual draft acceptanc
 	assert.equal(f.main.setRegionVisible('details', false), true); f.update();
 	assert.equal(field.pending, false); assert.equal(primary.details.attached, false);
 	assert.ok(primary.hierarchy.attached && primary.details.scope.contextGeneration > generation);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 	assert.ok(inputFocus.admittedTarget !== null && f.parts.main.activeGroup.focusScope.contains(inputFocus.admittedTarget.scope));
 });
 
@@ -283,7 +283,7 @@ test('a Main region hide cannot steal a newer document interaction published by 
 	const release = f.model.onDidChangeContent(() => { release(); published = true; f.second.focus(); }); t.after(release);
 	assert.equal(f.main.setRegionVisible('details', false), false); f.update();
 	assert.equal(published, true); assert.equal(field.pending, false);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 31,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
 	assert.equal(f.main.regionLayout.detailsVisible, true); assert.ok(primary.details.attached && f.main.primary === primary);
 	assert.ok(inputFocus.admittedTarget !== null && f.secondPart.scope.contains(inputFocus.admittedTarget.scope));
 	assert.ok(navigationState.activeOwner === f.secondGroup);

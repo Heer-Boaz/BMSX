@@ -23,7 +23,7 @@ import { createWorkbenchViewPanelLayout, layoutWorkbenchViewPanel } from '../../
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
- { member_id = 'first', definition_id = 'actor', options = { pos = { x = 1, y = 2, z = 3 }, strength = 5 } },
+ { member_id = 'first', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = { strength = 5 } },
 } })`;
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	configureFontVariant(font);

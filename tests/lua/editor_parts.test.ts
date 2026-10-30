@@ -1,3 +1,4 @@
+import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { setImmediate } from 'node:timers/promises';
@@ -246,8 +247,9 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	assert.equal(parts.documents.length, 0, 'ordinary Source navigation does not invent a floating host');
 	assert.equal(sceneGroup.model.activeTab, scene); assert.equal(sceneGroup.panes.activePane, scenePane);
 	assert.deepEqual(scene.view.authoring.selectionRange, selection);
-	const model = source.input.workingCopy, offset = model.buffer.getText().indexOf('x = 11') + 4;
-	assert.equal(source.code.focusTarget.textInput!.replaceText(offset, offset + 2, '17'), true);
+	const model = source.input.workingCopy, property = scene.view.details.properties[0].descriptor;
+	const range = luaSourceRangeToTextRange(model.buffer, scene.view.authoring.document!.analysis.chunk.locations.range(property.field.value.span));
+	assert.equal(source.code.focusTarget.textInput!.replaceText(range.start, range.end, '17'), true);
 	f.update();
 	assert.equal(scene.view.details.properties[0].descriptor.value, 17, 'the sibling Scene inspector consumes the same edited working copy');
 	assert.equal(scene.isDirty(), true); assert.equal(source.input.isDirty(), true);

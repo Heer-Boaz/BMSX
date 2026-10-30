@@ -10,8 +10,8 @@ import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('first', { objects = {
- { member_id = 'same', definition_id = 'actor.first', options = {
-   pos = { x = 11, y = -2, z = 3 }, enabled = true, title = 'Keep Exact Case',
+ { member_id = 'same', definition_id = 'actor.first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 11, -2, 3 } }, options = {
+   enabled = true, title = 'Keep Exact Case',
    nested = { amount = evaluate_amount() }, message = [[line one
 line two]],
  } },
@@ -39,8 +39,8 @@ test('Details projects the exact semantic member with no hierarchy, view or cont
 	assert.equal(subject.label, 'same'); assert.equal(subject.detail, 'actor.first');
 	assert.equal(subject.preserveLabelCase, true); assert.equal(subject.preserveDetailCase, true);
 	assert.deepEqual(subject.properties.map(property => [property.axis, property.value, property.sourceText]), [['x', 11, '11'], ['y', -2, '-2'], ['z', 3, '3']]);
-	const member = scene.objects[0]; assert.ok(member.kind === 'object' && member.position !== null);
-	assert.ok(subject.properties[0].field === member.position.x);
+	const member = scene.objects[0]; assert.ok(member.kind === 'object' && member.spatial !== null);
+	assert.ok(subject.properties[0].field === member.spatial!.origin[0]);
 	const title = subject.optionProperties.find(property => property.label === 'title')!;
 	assert.equal(title.sourceText, "'Keep Exact Case'"); assert.equal(title.editable, true);
 	const amount = subject.optionProperties.find(property => property.label === 'nested.amount')!;
@@ -85,7 +85,7 @@ test('Details follows its own context selection, not another source view or a sa
 	f.authoring.select(f.document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
 	assert.equal(f.projection.refresh(), true); assert.equal(f.projection.subject!.detail, 'actor.second');
 	assert.ok(f.projection.subject!.selection.kind === 'member' && f.projection.subject!.selection.entry === scene.objects[1]);
-	assert.equal(f.projection.subject!.properties.every(property => property.field === null && property.value === null && property.sourceText === undefined), true);
+	assert.equal(f.projection.subject!.properties.length, 0);
 	assert.equal(f.projection.subject!.optionProperties.length, 0);
 });
 
@@ -112,7 +112,7 @@ test('Details can project a Scene root or dynamic member directly without buildi
 	f.authoring.select(f.document, f.model.version, { kind: 'member', scene, entry: dynamic, index: 2 }); f.projection.refresh();
 	const member = f.projection.subject!;
 	assert.ok(member.selection.kind === 'member' && member.selection.entry === dynamic);
-	assert.equal(member.properties.every(property => property.field === null && property.sourceText === undefined), true);
+	assert.equal(member.properties.length, 0);
 	assert.equal(member.optionProperties.length, 0); assert.equal(f.model.dirty, false);
 });
 

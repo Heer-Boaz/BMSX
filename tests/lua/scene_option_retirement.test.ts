@@ -5,11 +5,16 @@ import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_in
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
+const SOURCE = `local scenes = require('cartlib/world/scene_library')
+scenes.register('root', { objects = {
+ { member_id = 'first', definition_id = 'fixture.actor', spatial = { local_transform = { 1, 0, 0, 1, 11, 22 } }, options = { color = 0xffabcdef } },
+ { member_id = 'second', definition_id = 'fixture.controller' },
+} })`;
+
 for (const reattach of [false, true]) test(`Scene option retirement stops its old update after ${reattach ? 'same-kind reattachment' : 'a blur callback opens another editor'}`, t => {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny');
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.sceneEditor.openResource(f.firstGroup, resource);
@@ -20,7 +25,7 @@ for (const reattach of [false, true]) test(`Scene option retirement stops its ol
 	assert.ok(pane instanceof SceneEditorPane);
 	selectSceneOutlineRow(input.view.hierarchy, 1); pane.update();
 	f.editor.commands.execute('sceneEditor.details', pane.commandTarget);
-	const option = pane.control.details.controls[pane.control.details.controls.length - 1].field.focusTarget.next;
+	const option = pane.control.details.options.controls[0].field.focusTarget;
 	assert.ok(option instanceof InputFocusTarget);
 	assert.equal(option.focus(), true);
 	const source = input.workingCopy.buffer.getText(), version = input.workingCopy.version;
@@ -33,7 +38,7 @@ for (const reattach of [false, true]) test(`Scene option retirement stops its ol
 		f.firstGroup.openEditor(input);
 		assert.ok(f.firstGroup.panes.activePane === pane);
 		selectSceneOutlineRow(input.view.hierarchy, 1); pane.update();
-		const target = pane.control.details.controls[pane.control.details.controls.length - 1].field.focusTarget.next;
+		const target = pane.control.details.options.controls[0].field.focusTarget;
 		assert.ok(target instanceof InputFocusTarget && target !== option);
 		reattachedOption = target;
 		assert.equal(target.focus(), true);

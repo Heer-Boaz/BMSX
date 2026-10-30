@@ -12,17 +12,15 @@ export type SceneOptionProperty = {
 	readonly editable: boolean;
 };
 
-/** The written options are the inspector schema. Never evaluate referenced Lua. */
+/** Written gameplay, spatial and component inputs are the schema; referenced Lua stays source. */
 export function collectSceneOptionProperties(buffer: TextBuffer, locations: LuaSourceLocations, member: SceneSourceObject): SceneOptionProperty[] {
 	const properties: SceneOptionProperty[] = [];
-	const options = member.options;
-	if (options === null) return properties;
 	const append = (field: LuaTableField, label: string): void => {
 		if (field.value.kind === LuaSyntaxKind.TableConstructorExpression && field.value.fields.length > 0) {
 			let arrayIndex = 0;
 			for (const child of field.value.fields) {
-				// Positional fields already have their dedicated world-unit controls.
-				if (member.position !== null && (child === member.position.x || child === member.position.y || child === member.position.z)) continue;
+				// These exact source fields already have local-origin controls.
+				if (member.spatial !== null && member.spatial.origin.includes(child)) continue;
 				const key = child.kind === LuaTableFieldKind.IdentifierKey ? child.name
 					: child.kind === LuaTableFieldKind.ExpressionKey ? `[${readLuaSourceRange(buffer, locations.range(child.key.span))}]` : `[${++arrayIndex}]`;
 				append(child, label === '' ? key : `${label}${key[0] === '[' ? '' : '.'}${key}`);
@@ -33,6 +31,9 @@ export function collectSceneOptionProperties(buffer: TextBuffer, locations: LuaS
 				preview: readLuaExpressionPreview(buffer, locations, field.value) });
 		}
 	};
-	append(options, options.value.kind === LuaSyntaxKind.TableConstructorExpression ? '' : 'options');
+	const options = member.options;
+	if (options !== null) append(options, options.value.kind === LuaSyntaxKind.TableConstructorExpression ? '' : 'options');
+	if (member.spatial !== null) append(member.spatial.field, 'spatial');
+	if (member.initial !== null) append(member.initial, 'initial');
 	return properties;
 }

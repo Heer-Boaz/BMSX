@@ -149,7 +149,7 @@ for (const draft of ['123', '-'] as const) test(`ordinary region blur ${draft ==
 	assert.equal(field.pending, false);
 	assert.equal(changes, draft === '123' ? 1 : 0);
 	assert.equal(f.model.version, version + changes);
-	assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('x = 11,', 'x = 123,') : source);
+	assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('0, 0, 1, 11,', '0, 0, 1, 123,') : source);
 });
 
 test('direct sibling-primary focus applies the actual invalid-field blur policy instead of a universal commit veto', async t => {
@@ -171,7 +171,7 @@ for (const command of ['workspace.hierarchy.focus', 'sceneEditor.outline'] as co
 		assert.ok(f.primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
 		assert.equal(field.pending, false);
 		assert.equal(f.model.version, version + (draft === '123' ? 1 : 0));
-		assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('x = 11,', 'x = 123,') : source);
+		assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('0, 0, 1, 11,', '0, 0, 1, 123,') : source);
 	});
 
 test('actual empty Problems makes status ineligible while Files restores its own native status destination', async t => {
@@ -192,7 +192,7 @@ test('a newer real focus selected during departing draft publication wins withou
 	const release = f.model.onDidChangeContent(() => { release(); f.secondPart.focus(); }); t.after(release);
 	f.key('F6');
 	assert.ok(inputFocus.admittedTarget === f.second.code.focusTarget && f.parts.activePart === f.secondPart);
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11,', 'x = 123,'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 	assert.equal(field.pending, false);
 });
 
@@ -206,7 +206,7 @@ test('replacing the selected activity during blur revokes the captured destinati
 	assert.notEqual(inputFocus.admittedTarget, f.editor.statusBar.focusTarget);
 	assert.notEqual(inputFocus.admittedTarget, f.editor.resourcePanel.focusTarget);
 	assert.equal(f.editor.problems.attached, false);
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11,', 'x = 123,'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 });
 
 test('root and part-local modal origins cannot escape with either region key while sibling regions honor local admission', async t => {

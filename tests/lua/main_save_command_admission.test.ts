@@ -63,7 +63,7 @@ for (const route of ['keyboard', 'application', 'native'] as const)
 			else inputFocus.executeCommand('save', f.primary.commandTarget);
 		});
 		assert.ok(closing !== undefined); await closing; await setImmediate();
-		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 		assert.equal(f.field.pending, false); assert.equal(f.model.dirty, true);
 		assert.equal(save.mock.callCount(), 0); assert.equal(f.files.records.size, 0);
 		assert.equal(f.saves.latestOperation(f.model), undefined);
@@ -120,7 +120,7 @@ for (const route of ['application', 'native'] as const) for (const retirement of
 		else inputFocus.executeCommand('save', f.primary.commandTarget);
 		await setImmediate();
 		assert.equal(retired, true); assert.equal(save.mock.callCount(), 0); assert.equal(f.files.records.size, 0);
-		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 		assert.equal(f.model.dirty, true);
 		assert.equal(f.field.pending, false);
 		if (retirement === 'readonly') assert.equal(f.model.readOnly, true);
@@ -183,7 +183,7 @@ test('failed Main persistence retains its own dirty source without saving an unr
 	inputFocus.executeCommand('save', f.primary.commandTarget);
 	const operation = f.saves.latestOperation(f.model); assert.ok(operation !== undefined);
 	assert.equal((await operation.completion).status, 'failed'); await setImmediate();
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11', 'x = 123'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
 	assert.equal(f.model.dirty, true); assert.equal(f.field.pending, false);
 	assert.equal(f.files.records.size, 0); assert.equal(f.saves.latestOperation(f.secondInput.workingCopy), undefined);
 	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);

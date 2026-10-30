@@ -22,7 +22,7 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 const SCENE = `local scenes=require('cartlib/world/scene_library')
-scenes.register('room',{objects={{member_id='unit',definition_id='actor',options={pos={x=1,y=2,z=3}}}}})
+scenes.register('room',{objects={{member_id='unit',definition_id='actor',spatial={local_transform={1,0,0,0,1,0,0,0,1,1,2,3}}}}})
 `;
 const BEHAVIOR = `local trees=require('cartlib/behaviour_tree/library')
 trees.register('tree',{root={type='sequence',children={{type='wait',duration_ticks=1}}}})
