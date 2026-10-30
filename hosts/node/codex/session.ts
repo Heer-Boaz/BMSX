@@ -62,6 +62,7 @@ export class CodexSession {
 	public readonly models: CodexModels;
 	public configuration: AssistantConfiguration;
 	private defaults: AssistantConfiguration;
+	private readonly initialization: Promise<{ codexHome: string; userAgent: string }>;
 	private newThreadSelection: AssistantModelSelection | undefined;
 	private readonly usage = new CodexUsage();
 	private readonly activity = new Map<string, string>();
@@ -97,6 +98,21 @@ export class CodexSession {
 			this.options.onEvent({ type: 'closed', error });
 			return { ...exit, error };
 		});
+		this.initialization = this.initialize();
+	}
+
+	private async initialize(): Promise<{ codexHome: string; userAgent: string }> {
+		const initialized = await this.rpc.request<{ codexHome: string; userAgent: string }>('initialize', {
+			clientInfo: { name: 'bmsx_studio', title: 'BMSX Studio', version: '1' },
+			capabilities: { experimentalApi: true, requestAttestation: false },
+		});
+		if (initialized.codexHome !== this.profile.codexHome) throw new CodexAdmissionError('Codex did not use the Studio account profile');
+		this.rpc.send({ method: 'initialized', params: {} });
+		const read = await this.rpc.request<Parameters<CodexPolicy['admit']>[0]>('config/read', { includeLayers: true, cwd: this.profile.cwd });
+		this.policy.admit(read);
+		this.defaults = { agent: 'Codex', model: read.config.model as string | null, provider: read.config.model_provider as string | null,
+			effort: read.config.model_reasoning_effort as string | null, serviceTier: read.config.service_tier as string | null };
+		return initialized;
 	}
 
 	public static async open(options: CodexSessionOptions): Promise<CodexSession> {
@@ -107,16 +123,7 @@ export class CodexSession {
 			const policy = new CodexPolicy(options.provider);
 			options.signal.throwIfAborted();
 			session = new CodexSession(profile, options, policy);
-			const initialized = await session.rpc.request<{ codexHome: string; userAgent: string }>('initialize', {
-				clientInfo: { name: 'bmsx_studio', title: 'BMSX Studio', version: '1' },
-				capabilities: { experimentalApi: true, requestAttestation: false },
-			});
-			if (initialized.codexHome !== profile.codexHome) throw new CodexAdmissionError('Codex did not use the Studio account profile');
-			session.rpc.send({ method: 'initialized', params: {} });
-			const read = await session.rpc.request<Parameters<CodexPolicy['admit']>[0]>('config/read', { includeLayers: true, cwd: profile.cwd });
-			policy.admit(read);
-			session.defaults = { agent: 'Codex', model: read.config.model as string | null, provider: read.config.model_provider as string | null,
-				effort: read.config.model_reasoning_effort as string | null, serviceTier: read.config.service_tier as string | null };
+			const initialized = await session.initialization;
 			await session.models.list();
 			while (session.accountRefresh) await session.accountRefresh;
 			session.configuration = session.models.resolve(session.defaults, true);
@@ -221,6 +228,8 @@ export class CodexSession {
 
 	private async refreshAccount(): Promise<CodexAccount> {
 		const revision = ++this.accountRevision;
+		// Native account notifications may precede the config/read response.
+		await this.initialization;
 		await this.history.select(undefined);
 		const account = await this.rpc.request<CodexAccount>('account/read', { refreshToken: false });
 		await this.models.list();
