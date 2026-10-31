@@ -14,8 +14,7 @@ import { openTerminal } from '../workbench/contrib/terminal/editor_input';
 import type { CartEditor } from '../cart_editor';
 import type { EditorCommandId, EditorViewCommandId } from '../common/commands';
 import type { RuntimeSourceState } from '../runtime/sources';
-import { captureSourceViewOpening, openSourceView } from '../workbench/contrib/source_views/quick_access';
-import { hasSceneSourceDefinitions } from '../workbench/contrib/scene_editor/source';
+import { captureSourceViewOpening } from '../workbench/contrib/source_views/quick_access';
 import { openGameView } from '../workbench/contrib/game_view/editor_input';
 import { showOpenEditors } from '../workbench/services/editor/open_editors';
 
@@ -45,7 +44,6 @@ export function isEditorViewCommand(command: EditorCommandId): command is Editor
 		case 'inputBindings':
 		case 'scenarioLab':
 		case 'cartMap':
-		case 'sceneEditor':
 		case 'actorLab':
 		case 'gameView':
 		case 'filter':
@@ -113,15 +111,6 @@ export function executeEditorViewCommand(editor: CartEditor, sources: RuntimeSou
 		case 'scenarioLab':
 			editor.scenarioLab.open(group);
 			return;
-		case 'sceneEditor': {
-			const source = document === undefined ? undefined : captureSourceViewOpening(document.group, document.input, group);
-			if (source === null) return;
-			openSourceView(group, sources.catalog, picker, {
-				title: 'SCENE EDITOR', accepts: hasSceneSourceDefinitions,
-				openResource: (resource, options) => editor.sceneEditor.openResource(group, resource, options),
-			}, source?.model.mode === 'lua' ? source : undefined);
-			return;
-		}
 		case 'filter':
 			editor.resourcePanel.toggleFilterMode();
 			return;

@@ -34,6 +34,9 @@ export type ProjectContentEntry = ProjectContentSource & (
 	| { readonly kind: 'scene'; readonly document: SceneSourceDocument; readonly definition: SceneSourceDefinition }
 );
 
+/** Contributions whose visual presentations are document editors, rather than Main subjects. */
+export type ProjectDocumentContentEntry = Exclude<ProjectContentEntry, { kind: 'scene' }>;
+
 /** Persisted declaration correspondence, never a name, semantic pointer or command capability. */
 export type ProjectContentReference = {
 	readonly projectContextId: string;

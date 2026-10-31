@@ -3,11 +3,14 @@ import { editorViewState } from '../../../ide/editor/ui/view/state';
 import { getCodeAreaBounds } from '../../../ide/editor/ui/view/view';
 import { editorChromeState } from '../../../ide/workbench/ui/chrome_state';
 import { selectedBehaviorLensSourceRange } from '../../../ide/workbench/contrib/behavior_lens/navigation';
-import type { EditorViewCommandId } from '../../../ide/common/commands';
+import type { EditorCommandId } from '../../../ide/common/commands';
+import { ScenePrimaryClient } from '../../../ide/workbench/contrib/scene_editor/primary_client';
+import type { ProjectContentEntry } from '../../../ide/workbench/contrib/resources/content_index';
+import type { QuickPickItem } from '../../../ide/workbench/services/quick_input/provider';
 import { sourcePane, check, type StudioFixture } from './studio_fixture';
 import { chooseBehavior } from './studio_behavior_picker';
 
-async function openView(test: StudioFixture, command: EditorViewCommandId): Promise<void> {
+async function openView(test: StudioFixture, command: EditorCommandId): Promise<void> {
 	await test.click(editorChromeState.menuEntryBounds.view);
 	const item = test.ide.editor.contextMenu.model.rows.find(row => row.command === command)!;
 	check(item.enabled, `navigation: ${command} is enabled from ${test.ide.editor.editorParts.activeGroup.model.activeTab.kind}`);
@@ -15,13 +18,17 @@ async function openView(test: StudioFixture, command: EditorViewCommandId): Prom
 }
 
 async function chooseSource(test: StudioFixture, path: string): Promise<void> {
-	const picker = test.ide.editor.editorParts.main.quickInput;
+	const picker = test.ide.editor.quickInput;
 	check(picker.visible, 'navigation: source choice uses the workbench picker');
 	await test.clipboard.writeText(path);
 	await test.press('ControlLeft', 'KeyV');
-	check(picker.model.list.rows.length === 1 && picker.model.list.rows[0].item.label === path,
-		'navigation: the actual source declaration is discoverable without an open code pane');
+	const rows = picker.model.list.rows;
+	const selected = rows.findIndex(row => (row.item as QuickPickItem & { entry: Extract<ProjectContentEntry, { kind: 'scene' }> }).entry.ownerResource.path === path);
+	check(selected >= 0, 'navigation: the actual Scene occurrence is discoverable without an open code pane');
+	await test.press('ControlLeft', 'Home'); for (let row = 0; row < selected; row++) await test.press('ArrowDown');
 	await test.press('Enter');
+	await test.until(() => test.ide.editor.mainWorkspace.primary instanceof ScenePrimaryClient,
+		'navigation: the accepted Scene is presented in visual Main');
 }
 
 export async function testStudioNavigation(test: StudioFixture): Promise<void> {
@@ -54,16 +61,15 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	check(!ide.editor.editorParts.main.quickInput.model.items.some(row => row.label === 'cart.lua'),
 		'navigation: the catalog contains scene registrations, not every Lua file');
 	await chooseSource(test, 'scenes/root.lua');
-	const scene = ide.editor.editorParts.activeGroup.model.activeTab;
-	if (scene.kind !== 'scene_editor') throw new Error('navigation: selected scene input missing');
-	check(scene.workingCopy.resource.path === 'scenes/root.lua',
+	const scene = ide.editor.mainWorkspace.primary;
+	if (!(scene instanceof ScenePrimaryClient)) throw new Error('navigation: selected visual Scene missing');
+	check(scene.consumer.workingCopy.resource.path === 'scenes/root.lua' && scene.viewport.attached,
 		'navigation: tool title and exact source identity are separate');
 	const selected = scene.view.hierarchy.outline.rows[scene.view.hierarchy.outline.selectionIndex].element.source;
-	await click(scene.view.actionBar.items[0].bounds);
-	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === scene.workingCopy
+	await test.runPaletteCommand('Editor: Open Source');
+	check(ide.editor.editorParts.activeGroup.model.activeTab.kind === 'code_editor' && sourcePane(test).code.model === scene.consumer.workingCopy
 		&& sourcePane(test).code.view.cursorRow === selected.start.line - 1,
 		'navigation: Source reveals the selected scene syntax in root.lua, not cart.lua');
-	await openView(test, 'sceneEditor');
 	await openView(test, 'behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');
 	const lens = ide.editor.editorParts.activeGroup.model.activeTab;
@@ -84,7 +90,9 @@ export async function testStudioNavigation(test: StudioFixture): Promise<void> {
 	await openView(test, 'scenarioLab');
 	await openView(test, 'sceneEditor');
 	await chooseSource(test, 'scenes/root.lua');
-	check(ide.editor.editorParts.activeGroup.model.activeTab === scene, 'navigation: Scenario Lab opens the same retained scene model');
+	const reopened = ide.editor.mainWorkspace.primary;
+	check(reopened instanceof ScenePrimaryClient && reopened.consumer.workingCopy === scene.consumer.workingCopy
+		&& reopened.consumer.subject === reopened.consumer.document!.scenes[0], 'navigation: Scene authoring reuses canonical source outside document groups');
 	await openView(test, 'scenarioLab');
 	await openView(test, 'behaviorLens');
 	await chooseBehavior(test, 'FSM nemesis_s.title_screen.fsm');

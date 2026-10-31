@@ -36,7 +36,7 @@ async function testMainActivity(test: StudioFixture): Promise<void> {
 	const files = editor.resourcePanel;
 	files.show(); files.queuePendingSelection(resource); files.applyPendingSelection(); await frame();
 	await press('ArrowRight'); await press('ArrowDown'); await press('ContextMenu');
-	await test.clickContextCommand('resources.editInMain');
+	await test.clickContextCommand('resources.open');
 	const primary = editor.mainWorkspace.primary;
 	if (!(primary instanceof ScenePrimaryClient)) throw new Error('activity: Files must admit the real Scene primary');
 	await press('ControlLeft', 'KeyB');

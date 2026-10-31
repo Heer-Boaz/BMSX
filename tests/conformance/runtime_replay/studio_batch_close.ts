@@ -31,7 +31,7 @@ export async function testStudioBatchClose(test: StudioFixture): Promise<void> {
 	await close();
 	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
 	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
-	await test.clickContextCommand('resources.editInMain');
+	await test.clickContextCommand('resources.open');
 	const primary = editor.mainWorkspace.primary;
 	if (!(primary instanceof ScenePrimaryClient)) throw new Error('batch close: the synthetic Scene must own its real Main presentation');
 	await test.press('ContextMenu'); await test.clickContextCommand('editor.source');

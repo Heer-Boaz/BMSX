@@ -27,6 +27,8 @@ import { createTestRuntimeSourceState, createTestSourceOnlyLuaRecord, TEST_CARTR
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 const FIRST = `local scenes = require('cartlib/world/scene_library')
+local prefab = require('cartlib/world/prefab')
+prefab.define({def_id='actor',class={},spatial={family='3d',authority='affine'}})
 scenes.register('same', { objects = { { member_id = 'first', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } } } })
 scenes.register('same', { objects = { { member_id = 'second', definition_id = 'actor' } } })
 `;
@@ -39,6 +41,7 @@ async function fixture(t: TestContext) {
 	configureFontVariant('tiny'); editorViewState.viewportWidth = 800; editorViewState.viewportHeight = 320;
 	const system = createLuaSourceRegistry('fixture/system', ''), project = createLuaSourceRegistry('fixture/project', '');
 	registerLuaSourceRecord(system, createTestSourceOnlyLuaRecord('cartlib/world/scene_library.lua', 'return {}', 'cartlib/world/scene_library.lua'));
+	registerLuaSourceRecord(system, createTestSourceOnlyLuaRecord('cartlib/world/prefab.lua', 'return {define=function() end}', 'cartlib/world/prefab.lua'));
 	for (const [path, text] of [['first.lua', FIRST], ['second.lua', SECOND], ['notes.lua', 'local value = 1\nreturn missing_from_notes\n']]) {
 		registerLuaSourceRecord(project, createTestSourceOnlyLuaRecord(path, text, `fixture/project/${path}`));
 	}
@@ -69,7 +72,7 @@ type Fixture = Awaited<ReturnType<typeof fixture>>;
 type ScenePick = QuickPickItem & { entry: Extract<ProjectContentEntry, { kind: 'scene' }> };
 
 function openPicker(f: Fixture) {
-	f.editor.commands.execute('sceneEditor.chooseMain', inputFocus.admittedTarget);
+	f.editor.commands.execute('sceneEditor', inputFocus.admittedTarget);
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true); assert.equal(picker.inputBox, false);
 	return picker;
@@ -91,8 +94,8 @@ test('Main Scene chooser is available before any document or working copy exists
 	assert.equal(f.editor.editorParts.documents.length, 0);
 	assert.ok(f.editor.editorParts.groups.every(group => group.model.tabs.length === 0));
 	assert.deepEqual([...editorTextModelService.models], []);
-	assert.equal(f.editor.commands.isEnabled('sceneEditor.chooseMain', inputFocus.target), true);
-	f.editor.commands.execute('sceneEditor.chooseMain', inputFocus.target);
+	assert.equal(f.editor.commands.isEnabled('sceneEditor', inputFocus.target), true);
+	f.editor.commands.execute('sceneEditor', inputFocus.target);
 	assert.equal(f.editor.quickInput.visible, true); assert.equal(f.editor.quickInput.inputBox, false);
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
 	assert.deepEqual([...editorTextModelService.models], []);

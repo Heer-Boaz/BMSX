@@ -11,6 +11,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { NodeGraphLayoutEngine } from '../../ide/node/graph_layout';
 import { registerLuaSourceRecord } from '../../ide/runtime/source_registry';
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import type { EditorGroupView } from '../../ide/workbench/services/editor/editor_group';
@@ -184,17 +185,31 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} registered YAML defau
 	assert.ok(input.workingCopy === editorTextModelService.get(resource)); assert.equal(input.isDirty(), false);
 });
 
-for (const font of ['tiny', 'msx'] as const) test(`${font} declaration drop preserves its tracked exact Scene and canonical model after a prefix edit during the hold`, async t => {
+for (const font of ['tiny', 'msx'] as const) test(`${font} Scene activation retains its exact occurrence through a held prefix edit and opens visual Main, not a document`, async t => {
 	const f = fixture(t, font, [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]), { node: file } = reveal(f, 'definitions.lua');
 	f.panel.toggleFileDisclosure(file); f.update(); const node = file.children[1];
 	assert.ok(node !== undefined && node.element.kind === 'definition'); const entry = node.element.content;
-	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, entry.ownerResource), target = body(f.secondGroup);
-	pointer(f, rowPoint(f, node), 'press'); pointer(f, target, 'move');
+	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, entry.ownerResource), point = rowPoint(f, node);
+	const open = t.mock.method(f.editor, 'openSceneInMain');
+	pointer(f, point, 'press');
+	assert.equal(open.mock.callCount(), 0); assert.equal(pointerCapture.active, true);
 	model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- tracked prefix\n' }]); f.update();
 	const text = model.buffer.getText(), version = model.version;
-	pointer(f, target, 'release'); assert.equal(f.open.mock.callCount(), 1); const input = await f.open.mock.calls[0].result;
-	assert.ok(input?.kind === 'scene_editor' && input.workingCopy === model && input.view.authoring.selectionRange.start === entry.range.start && input.view.authoring.selectionRange.end === entry.range.end);
+	pointer(f, rowPoint(f, node), 'release'); assert.equal(open.mock.callCount(), 1); await open.mock.calls[0].result;
+	f.update(); const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+	assert.ok(entry.kind === 'scene' && client.consumer.subject === entry.definition && client.consumer.workingCopy === model);
+	assert.equal(client.viewport.attached, true); assert.equal(f.open.mock.callCount(), 0);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
 	assert.equal(model.buffer.getText(), text); assert.equal(model.version, version); assert.equal(model.canUndo, true);
+});
+
+test('Scene subjects do not advertise a document drop or turn a dragged hold into activation', t => {
+	const f = fixture(t, 'tiny', [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]), { node: file } = reveal(f, 'definitions.lua');
+	f.panel.toggleFileDisclosure(file); f.update(); const node = file.children[0];
+	const open = t.mock.method(f.editor, 'openSceneInMain'), target = body(f.secondGroup);
+	pointer(f, rowPoint(f, node), 'press'); pointer(f, target, 'move'); pointer(f, target, 'release');
+	assert.equal(open.mock.callCount(), 0); assert.equal(f.open.mock.callCount(), 0);
+	assert.equal(f.editor.mainWorkspace.primary, undefined); assert.equal(f.editor.editorParts.documents.length, 2);
 });
 
 test('deleting and equally recreating an authored declaration during a hold cannot redirect it to the replacement', t => {

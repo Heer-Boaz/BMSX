@@ -5,7 +5,7 @@ import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
-import { editProjectContentInMain } from '../../ide/workbench/contrib/resources/panel/open_actions';
+import { openProjectScene } from '../../ide/workbench/contrib/scene_editor/opening';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
@@ -14,7 +14,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 import { openWorkspaceRecords, closeWorkspaceRecords } from '../../ide/workspace/records';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_SOURCE, SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { applyWorkspaceAutosavePayload } from '../../ide/workbench/workspace/restore';
 import type { ScenePrimarySnapshot } from '../../ide/workbench/contrib/scene_editor/primary_snapshot';
@@ -22,7 +22,7 @@ import type { ScenePrimarySnapshot } from '../../ide/workbench/contrib/scene_edi
 const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('same', { objects = { { member_id = 'other', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } } } })\n`;
 
 function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);
 	const open = (index: number) => {
@@ -296,7 +296,7 @@ test('Main native Save vetoes its invalid draft without borrowing a receiving do
 });
 
 test('Files primary admission cannot outlive its captured origin generation during canonical-model admission', async t => {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const index = new ProjectContentIndex(editorTextModelService, f.sources.catalog,
 		f.editor.behaviorLens.documents.registrations, f.ide.sceneSources);
 	t.after(() => index.dispose()); index.sync();
@@ -308,7 +308,7 @@ test('Files primary admission cannot outlive its captured origin generation duri
 		if (model.identity.path !== resource.path) return;
 		release(); origin.scope.retireContext();
 	}); t.after(release);
-	assert.equal(await editProjectContentInMain(f.editor, index, entry, origin), false);
+	assert.equal(await openProjectScene(f.editor, index, entry, origin), false);
 	assert.ok(origin.scope.contextGeneration !== before);
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
 });

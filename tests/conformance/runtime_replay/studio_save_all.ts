@@ -15,7 +15,7 @@ export async function testStudioSaveAll(test: StudioFixture): Promise<void> {
 	await close();
 	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
 	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
-	await test.clickContextCommand('resources.editInMain');
+	await test.clickContextCommand('resources.open');
 	const primary = editor.mainWorkspace.primary;
 	if (!(primary instanceof ScenePrimaryClient)) throw new Error('Save All: the synthetic Scene must own its actual Main presentation');
 	await test.press('ArrowDown'); await test.press('Enter'); await test.press('Home');

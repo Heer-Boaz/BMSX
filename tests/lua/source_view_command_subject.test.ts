@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_SOURCE, SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
 import { captureSourceViewOpening } from '../../ide/workbench/contrib/source_views/quick_access';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
@@ -13,7 +13,7 @@ import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_in
 
 function fixture(t: Parameters<typeof createActualSourcePanes>[0]) {
 	const f = createActualSourcePanes(t, false, [
-		['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
+		...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
 	]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const input = resolveLuaCodeEditorInput(f.sources.catalog, resource);
@@ -30,13 +30,14 @@ for (const explicit of [false, true]) test(`Animation receives its ${explicit ? 
 	assert.equal(source!.model, f.input.workingCopy);
 });
 
-for (const explicit of [false, true]) test(`Scene opens its ${explicit ? 'explicit' : 'implicit'} source subject rather than the receiver document`, t => {
+for (const explicit of [false, true]) test(`Scene authoring chooses a Main subject independently of an ${explicit ? 'explicit' : 'implicit'} document opening`, async t => {
 	const f = fixture(t), open = t.mock.method(f.editor.sceneEditor, 'openResource', () => {});
 	f.editor.commands.execute('sceneEditor', f.first.commandTarget, explicit ? f.input : undefined, f.second.commandTarget);
-	assert.equal(open.mock.callCount(), 1);
-	const [destination, resource] = open.mock.calls[0].arguments;
-	assert.equal(destination, f.secondGroup);
-	assert.equal(resource, f.resource);
+	assert.equal(open.mock.callCount(), 0); assert.equal(f.editor.quickInput.visible, true);
+	await f.editor.quickInput.accept(); await new Promise<void>(resolve => setImmediate(resolve)); f.update();
+	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+	assert.equal(client.consumer.workingCopy, f.input.workingCopy); assert.equal(client.viewport.attached, true);
+	assert.ok(f.firstGroup.model.activeTab === f.input && f.secondGroup.model.activeTab === f.secondInput);
 });
 
 for (const command of ['animation', 'sceneEditor'] as const) test(`${command} from Main has no implicit background document subject`, async t => {
@@ -54,7 +55,7 @@ for (const command of ['animation', 'sceneEditor'] as const) test(`${command} fr
 		const open = t.mock.method(f.editor.sceneEditor, 'openResource', () => {});
 		f.editor.commands.execute(command, main.commandTarget, undefined, f.second.commandTarget);
 		assert.equal(open.mock.callCount(), 0);
-		assert.equal(f.secondPart.quickInput.visible, true, 'without an authored document subject, opening is an explicit source choice');
+		assert.equal(f.editor.quickInput.visible, true, 'Scene authoring chooses an exact Main subject, not a background document');
 	}
 });
 
@@ -81,13 +82,14 @@ test('Animation source acquisition cannot publish into a receiver after the invo
 	assert.ok(f.secondGroup.model.activeTab === f.secondInput, 'retired source authority cannot publish into an independent receiver');
 });
 
-test('a seeded Scene opening hands authority to its own group without retaining the departed Source control', t => {
+test('Scene activation retains its source in Main after the originating Source tab closes', async t => {
 	const f = fixture(t);
 	f.editor.commands.execute('sceneEditor', f.first.commandTarget);
-	const input = f.firstGroup.model.activeTab;
-	assert.ok(input?.kind === 'scene_editor');
-	assert.equal(input.workingCopy, f.input.workingCopy);
-	assert.equal(f.firstGroup.panes.activePane!.input, input);
+	await f.editor.quickInput.accept(); await new Promise<void>(resolve => setImmediate(resolve)); f.update();
+	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+	assert.equal(await f.firstGroup.close(f.input.id), true); f.update();
+	assert.equal(client.consumer.workingCopy, f.input.workingCopy); assert.equal(client.consumer.isCurrent, true);
+	assert.equal(client.viewport.attached, true); assert.ok(f.editor.mainWorkspace.primary === client);
 });
 
 test('a seeded Animation opening consumes its same-group sender receipt', t => {

@@ -60,7 +60,7 @@ export async function testStudioMainScenePicker(test: StudioFixture): Promise<vo
 			await test.until(() => parts.activeGroup.model.activeTab?.kind === 'home', 'Main chooser: Home is an ordinary retained document');
 			const home = parts.activeGroup.model.activeTab;
 			if (home?.kind !== 'home') throw new Error('Main chooser: the real Home action page is required');
-			const action = home.sections.flatMap(section => section.actions.items).find(item => item.command === 'sceneEditor.chooseMain')!;
+			const action = home.sections.flatMap(section => section.actions.items).find(item => item.command === 'sceneEditor')!;
 			check(action.visible && action.enabled, 'Main chooser: Home offers the registered Main-subject action without requiring a Source tab');
 			const groups = parts.groups.map(group => ({ group, active: group.model.activeTab, inputs: [...group.model.tabs] }));
 			const files = JSON.stringify(panel.serialize().view);

@@ -185,7 +185,9 @@ projection over existing semantic/source owners. Files and the Main Scene choose
 consume the same cached facts; discovery does not require a document or browser
 attachment. Canonical working copies map occurrence ranges. The file tree owns
 disclosure and presentation, while contribution
-controllers own exact-subject editor lookup and opening. Browsing neither
+controllers own exact-subject editor lookup and opening. Scene activation selects
+the visual Main subject; its source is a separate document presentation. Only
+document contributions participate in editor-group placement. Browsing neither
 executes Lua nor creates a second source or asset database.
 Retirement revokes query authority after accepted work drains; the final inert
 projection remains readable for the frontend's source-correspondence checkpoint.

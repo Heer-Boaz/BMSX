@@ -80,7 +80,7 @@ export async function testMainSceneAuthoring(test: StudioFixture): Promise<void>
 	check(occurrence?.kind === 'definition' && occurrence.content.kind === 'scene' && occurrence.content.ownerResource === resource,
 		'main: ordinary tree navigation selects the authored Scene occurrence');
 	await press('ContextMenu');
-	await test.clickContextCommand('resources.editInMain');
+	await test.clickContextCommand('resources.open');
 	const client = editor.mainWorkspace.primary;
 	check(client instanceof ScenePrimaryClient, 'main: Files admits the real authored Scene client');
 	if (!(client instanceof ScenePrimaryClient)) throw new Error('main: Scene client required');
@@ -351,7 +351,7 @@ async function testMainProjectRun(test: StudioFixture): Promise<void> {
 	const target = ide.runTargets.selected, panel = editor.resourcePanel, panelWasVisible = panel.isVisible();
 	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
 	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
-	await test.clickContextCommand('resources.editInMain');
+	await test.clickContextCommand('resources.open');
 	const client = editor.mainWorkspace.primary;
 	check(client instanceof ScenePrimaryClient && client.consumer.workingCopy.resource === resource,
 		'main run: Files admits the newly authored Scene in the actual installed project');

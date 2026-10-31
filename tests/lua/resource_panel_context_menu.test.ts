@@ -8,6 +8,7 @@ import { inputFocus } from '../../ide/input/focus';
 import type { EditorCommandId } from '../../ide/common/commands';
 import { CodeEditorInput, WORKBENCH_TEXT_EDITOR_ID } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { CartMapInput } from '../../ide/workbench/contrib/cart_maps/editor_input';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
 import type { WorkbenchTreeNode } from '../../ide/workbench/ui/tree_view';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -68,6 +69,19 @@ function accept(f: Fixture, command: EditorCommandId): void {
 	assert.ok(index >= 0 && menu.model.rows[index].enabled);
 	f.key('Home'); for (let row = 0; row < index; row++) if (menu.model.rows[row].enabled) f.key('ArrowDown'); f.key('Enter');
 }
+
+test('Scene context Open selects the exact visual Main subject, preserves documents and offers no document placement action', async t => {
+	const f = fixture(t, [['cartlib/world/scene_library.lua', 'return {}'], ['definitions.lua', SCENES]]);
+	const { node, entry } = definition(f), open = t.mock.method(f.editor, 'openSceneInMain');
+	assert.equal(f.editor.commands.isEnabled('resources.openToSide', f.panel.focusTarget), false);
+	secondary(f, node);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'resources.openToSide'), false);
+	accept(f, 'resources.open'); assert.equal(open.mock.callCount(), 1); await open.mock.calls[0].result; f.update();
+	const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+	assert.ok(entry.kind === 'scene' && client.consumer.subject === entry.definition);
+	assert.equal(client.viewport.attached, true);
+	assert.ok(f.firstGroup.model.activeTab === f.firstInput && f.secondGroup.model.activeTab === f.secondInput);
+});
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} secondary Files selection and directory disclosure gutter do not open or expand a subject`, t => {
 	const f = fixture(t, [], font), target = reveal(f, 'folder/third.lua').node, directory = target.parent!;

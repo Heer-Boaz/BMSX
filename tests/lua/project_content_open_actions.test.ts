@@ -9,7 +9,7 @@ import { BehaviorLensInput } from '../../ide/workbench/contrib/behavior_lens/edi
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
-import { ProjectContentIndex } from '../../ide/workbench/contrib/resources/content_index';
+import { ProjectContentIndex, type ProjectDocumentContentEntry } from '../../ide/workbench/contrib/resources/content_index';
 import { openProjectContent, openProjectContentSource, resolveProjectContentDestination } from '../../ide/workbench/contrib/resources/panel/open_actions';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
@@ -27,7 +27,7 @@ function fixture(t: TestContext, additional: readonly (readonly [string, string]
 	const index = new ProjectContentIndex(editorTextModelService, f.sources.catalog, f.editor.behaviorLens.documents.registrations, f.editor.sceneEditor.documents);
 	t.after(() => index.dispose()); index.sync();
 	const resource = (path: string) => f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!;
-	const entries = index.entriesFor(resource('content.lua'));
+	const entries = index.entriesFor(resource('content.lua')).filter((entry): entry is ProjectDocumentContentEntry => entry.kind !== 'scene');
 	assert.equal(entries.length, 2);
 	const panel = f.editor.resourcePanel;
 	panel.show();

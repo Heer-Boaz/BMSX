@@ -1,3 +1,4 @@
+import { openProjectScene } from '../../scene_editor/opening';
 import { ScrollbarController } from '../../../ui/scrollbar_controller';
 import { pointerHover, type PointerHoverTarget } from '../../../../input/pointer/hover';
 import { clamp } from '../../../../../machine/ts/common/clamp';
@@ -46,10 +47,9 @@ import { WorkbenchTreeNavigationResult, type WorkbenchTreeNavigation, type Workb
 import type { FileElement } from './files_model';
 import { ResourcePanelContextMenu } from './context_menu';
 import { findEditorGroup } from '../../../services/editor/editor_group';
-import { ResourcePanelDrag } from './drag';
+import { ResourcePanelDrag, type ResourcePanelPressSource } from './drag';
 import { editorRuntimeState } from '../../../../editor/common/runtime_state';
 import { isAltDown } from '../../../../input/keyboard/key_input';
-import type { ProspectiveEditorOpenSource } from '../../../services/editor/editor_opening';
 import { WorkbenchSplitControl } from '../../../ui/split_control';
 import { WorkbenchSplitView } from '../../../ui/split_view';
 
@@ -177,8 +177,8 @@ export class ResourcePanelController implements PointerHoverTarget {
 		this.contextMenu = new ResourcePanelContextMenu(editor, catalog, content, this);
 		this.focusTarget.registerCommand('resources.openToSide', {
 			isEnabled: () => {
-				const kind = this.files.selectedNode?.element.kind;
-				return this.isVisible() && (kind === 'file' || kind === 'definition');
+				const element = this.files.selectedNode?.element;
+				return this.isVisible() && (element?.kind === 'file' || element?.kind === 'definition' && element.content.kind !== 'scene');
 			},
 			run: editorContext => { if (this.focusTarget.hasFocus) this.openSelected('side', editorContext); },
 		});
@@ -379,16 +379,16 @@ export class ResourcePanelController implements PointerHoverTarget {
 		const node = this.files.tree.rows[index], element = node.element;
 		if (element.kind !== 'file' && element.kind !== 'definition') return;
 		this.setSelectionIndex(index);
-		const resource = element.kind === 'file' ? element.resource : element.content.ownerResource;
 		const entry = element.kind === 'definition' ? element.content : undefined;
+		const resource = element.kind === 'file' ? element.resource : element.content.ownerResource;
 		const key = resourceIdentityKey(resource), context = this.focusTarget.scope.contextGeneration;
 		const invoking = this.editor.editorParts.activeGroup;
 		const editorId = entry === undefined ? this.editor.resourceEditors.getEditorId(resource) : undefined;
 		const identity = entry === undefined ? { resource, editorId: editorId! } : undefined;
-		const source: ProspectiveEditorOpenSource = {
-			kind: 'opening',
-			isCurrent: () => (entry === undefined || this.content.isCurrent(entry)) && this.isVisible()
-				&& this.focusTarget.scope.contextGeneration === context && this.catalog.resourceByIdentity.get(key) === resource,
+		const current = () => (entry === undefined || this.content.isCurrent(entry)) && this.isVisible()
+			&& this.focusTarget.scope.contextGeneration === context && this.catalog.resourceByIdentity.get(key) === resource;
+		const source: ResourcePanelPressSource = entry?.kind === 'scene' ? { kind: 'activation', isCurrent: current } : {
+			kind: 'opening', isCurrent: current,
 			findExisting: group => entry === undefined ? group.model.findByResourceEditor(identity!)
 				: findProjectContentEditor(this.editor, entry, group),
 			resolve: entry === undefined ? async () => ({ input: await this.editor.resourceEditors.resolveEditorInput(resource, editorId) })
@@ -456,6 +456,10 @@ export class ResourcePanelController implements PointerHoverTarget {
 		const entry = element.kind === 'definition' ? element.content : undefined;
 		const origin = inputFocus.admittedTarget;
 		if (origin === null) return;
+		if (entry?.kind === 'scene') {
+			if (placement === 'default') void openProjectScene(this.editor, this.content, entry, origin);
+			return;
+		}
 		const invoking = findEditorGroup(editorContext === undefined ? origin : editorContext);
 		if (invoking === null) return;
 		const parts = this.editor.editorParts, reference = invoking ?? parts.activeGroup, part = parts.partForGroup(reference);

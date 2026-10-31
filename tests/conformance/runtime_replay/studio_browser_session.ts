@@ -21,7 +21,7 @@ export async function testProjectBrowserSession(test: StudioFixture): Promise<vo
 	const cycles = test.cycles(), media = test.ide.sources.currentBlua32Media;
 	panel.show(); panel.queuePendingSelection(resource); panel.applyPendingSelection(); await test.frame();
 	await test.press('ArrowRight'); await test.press('ArrowDown'); await test.press('ContextMenu');
-	await test.clickContextCommand('resources.editInMain');
+	await test.clickContextCommand('resources.open');
 	check(editor.mainWorkspace.primary instanceof ScenePrimaryClient, 'browser recovery: Files admits an independent Main subject');
 	await test.press('ContextMenu'); await test.clickContextCommand('editor.source');
 	await test.until(() => editor.editorParts.main.activeGroup.model.activeTab?.kind === 'code_editor',

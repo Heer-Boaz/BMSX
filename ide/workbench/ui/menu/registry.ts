@@ -9,7 +9,7 @@ export type WorkbenchDropdownMenuId =
 	| 'menubar.tools'
 	| 'menubar.window';
 
-export type WorkbenchContextMenuId = 'resources.directory.context' | 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context' | 'behaviorLens.graphCanvas.context';
+export type WorkbenchContextMenuId = 'resources.directory.context' | 'resourceViewer.context' | 'editor.source.actions' | 'resources.open.context' | 'resources.scene.context' | 'resources.resource.context' | 'resources.disclosure.context' | 'editorTabs.context' | 'editorGroup.context' | 'window.context' | 'window.minimizable.context' | 'activity.context' | 'activity.window.context' | 'scenarioLab.context' | 'play.context' | 'gamePanel.context' | 'events.context' | 'gte.context' | 'gpu.context' | 'behaviorLens.graph.actions' | 'behaviorLens.stateGraph.actions' | 'behaviorLens.properties.actions' | 'aem.context' | 'actorLab.context' | 'actorLab.stateGraph.context' | 'actorLab.property.context' | 'code.context' | 'code.symbol.context' | 'behaviorLens.node.context' | 'behaviorLens.state.context' | 'behaviorLens.edge.context' | 'behaviorLens.property.context' | 'behaviorLens.canvas.context' | 'behaviorLens.graphCanvas.context';
 
 export type WorkbenchActionMenuId = 'home.work' | 'home.author' | 'home.behavior' | 'home.gameplay' | 'home.run' | 'home.tools' | 'window.status' | 'status.context' | 'window.title' | 'window.minimizable.title' | 'play.title' | 'animation.clients' | 'romInspector.title' | 'romInspector.reader.title' | 'events.title' | 'gte.title' | 'gte.details.title' | 'gpu.title' | 'gpu.inspector.content' | 'gte.inspector.content' | 'gamePanel.title' | 'runtime.title' | 'editorTabs.title' | 'workspaceEditReview.title' | 'workspaceEditReview.evidence.title' | 'actorLab.title' | 'actorLab.details.title' | 'actorLab.stateGraph.title' | 'propertyInspector.title' | 'problems.title' | 'aem.title' | 'behaviorLens.title' | 'behaviorLens.graph.title' | 'behaviorLens.stateGraph.title' | 'behaviorLens.properties.title';
 
@@ -127,6 +127,8 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	'editor.source.actions': [{ type: 'command', command: 'editor.source' }],
 	'resources.open.context': [{ type: 'command', command: 'resources.open' }, { type: 'command', command: 'resources.openToSide' },
 		{ type: 'command', command: 'resources.source' }, { type: 'command', command: 'resources.sourceToSide' }],
+	'resources.scene.context': [{ type: 'command', command: 'resources.open' },
+		{ type: 'command', command: 'resources.source' }, { type: 'command', command: 'resources.sourceToSide' }],
 	'resources.resource.context': [{ type: 'command', command: 'resources.open' }, { type: 'command', command: 'resources.openToSide' }],
 	'resources.disclosure.context': [{ type: 'command', command: 'resources.disclosure' }],
 	'resources.directory.context': [{ type: 'command', command: 'createResource' }, { type: 'command', command: 'resources.newFolder' },
@@ -153,7 +155,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'group.close' },
 	],
 	'home.work': [
-		{ type: 'command', command: 'sceneEditor.chooseMain', icon: 'scene' },
+		{ type: 'command', command: 'sceneEditor', icon: 'scene' },
 		{ type: 'command', command: 'resources.focus', icon: 'source' },
 		{ type: 'command', command: 'resourceSearch', icon: 'filter' },
 		{ type: 'command', command: 'createResource', icon: 'source' },
@@ -476,7 +478,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'window.newEditor' },
 		{ type: 'command', command: 'window.restoreMinimized' },
 		{ type: 'separator' },
-		{ type: 'command', command: 'sceneEditor.chooseMain' },
+		{ type: 'command', command: 'sceneEditor' },
 		{ type: 'command', command: 'workspace.hierarchy.toggle' },
 		{ type: 'command', command: 'workspace.details.toggle' },
 		{ type: 'separator' },

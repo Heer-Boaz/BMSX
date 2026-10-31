@@ -1,5 +1,10 @@
+export const SCENE_VIEWPORT_IMPORTS = [['cartlib/world/prefab.lua', 'return {define=function() end}']] as const;
+
 /** Independent authored source; no shipped cart, runtime objects, or line-number oracle. */
 export const SCENE_VIEWPORT_SOURCE = `local viewport_scenes = require('cartlib/world/scene_library')
+local viewport_prefab = require('cartlib/world/prefab')
+viewport_prefab.define({def_id='proof.actor',class={},spatial={family='3d',authority='affine'}})
+viewport_prefab.define({def_id='proof.dynamic',class={},spatial={family='3d',authority='affine'}})
 local function compute_x() return 14 end
 local function compute_z() return 42 end
 viewport_scenes.register('viewport proof with a deliberately long scene name', {

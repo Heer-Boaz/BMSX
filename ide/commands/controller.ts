@@ -146,7 +146,7 @@ export class IdeCommandController {
 		}
 		switch (command) {
 			case 'workspace.resetLayout': this.editor.resetLayout(); return;
-			case 'sceneEditor.chooseMain': showMainScenePicker(this.editor, this.sources.catalog, invocationTarget); return;
+			case 'sceneEditor': showMainScenePicker(this.editor, this.sources.catalog, invocationTarget); return;
 			case 'workspace.focusNextRegion': this.editor.regionNavigation.focus(invocationTarget, 1); return;
 			case 'workspace.focusPreviousRegion': this.editor.regionNavigation.focus(invocationTarget, -1); return;
 			case 'status.focus': this.editor.statusBar.focus(); return;
@@ -427,7 +427,7 @@ export class IdeCommandController {
 		if (input !== undefined && !group.model.contains(input)) return false;
 		switch (command) {
 			case 'workspace.resetLayout': return this.editor.acceptsInput;
-			case 'sceneEditor.chooseMain': return this.editor.isActive && this.editor.projectContent.acceptingQueries;
+			case 'sceneEditor': return this.editor.isActive && this.editor.projectContent.acceptingQueries;
 			case 'window.showAll': case 'window.focusMain': case 'window.newEditor': return true;
 			case 'workspace.focusNextRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, 1);
 			case 'workspace.focusPreviousRegion': return this.editor.isActive && this.editor.regionNavigation.canNavigate(focus, -1);
@@ -548,7 +548,6 @@ export class IdeCommandController {
 			case 'behaviorLens.stateMachines':
 			case 'behaviorLens.behaviorTrees':
 			case 'cartMap':
-			case 'sceneEditor':
 			case 'gameView':
 				return true;
 			case 'filter':
