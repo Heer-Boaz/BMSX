@@ -135,16 +135,46 @@ without making list order a construction dependency.
 
 Procedural construction and Scene construction use the same semantic placement
 and lifecycle. Procedural parenting takes an actual object reference rather than
-looking up a Scene-local name. The public spawn API must not require separate
-spatial-input and component-initialization tables merely because those are
-separate internal construction lanes.
+looking up a Scene-local name:
+
+```lua
+local ship = scene:spawn('ship', {
+    position = { x = 160, y = 120 },
+    team = 'player',
+})
+scene:spawn('turret', { parent = ship, position = { x = 12, y = -4 } })
+```
+
+Both `world:spawn(definition_id, options)` and
+`scene:spawn(definition_id, options)` take this single construction input.
+Omitted options use a shared empty input, not a required empty table at each
+callsite. Separate spatial-input and component-initialization arguments are not
+part of the public contract.
+
+Prefab `position`, `rotation` and `scale` fields supply semantic pose defaults.
+Its `defaults` table supplies ordinary gameplay properties. Nonreserved spawn
+fields shallow-override those properties on the final object before gameplay
+initialization. This preserves useful construction such as `room`, `player`,
+`team` and `damage` without requiring assignment-only constructors or a property
+schema. Reference-valued gameplay properties remain their actual references.
+
+World consumes the public `id`, `space_id`, `tags` and `visible` construction
+controls, including their prefab defaults, at their owning initialization
+boundary. Pose records and `parent` are likewise construction inputs, not
+arbitrary tables to copy onto the object. World-owned runtime indexes, lifetime
+fields and captured executable methods are not gameplay override targets. The
+separation belongs to central admission, not feature-specific field filters or
+a new runtime validation layer.
 
 Construction inputs are consumed at admission. Numeric pose values are copied
 into the actual object's scalar state before user callbacks; retaining a
 caller's position table as live object state would be an ownership error. A
 caller can reuse a construction input without allocating a new position record
-for every spawn. Script options and explicit reference-valued gameplay data have
-their own documented ownership; construction does not deep-clone arbitrary data.
+for every spawn. Constructors borrow their input read-only for construction;
+they read effective placement and defaulted properties from their actual owner.
+World does not build a merged options/context record for each instance. Script
+options and explicit reference-valued gameplay data have their own documented
+ownership; construction does not deep-clone arbitrary data.
 
 Components retain their own meaningful configuration and constructors. Generic
 property-path override interpreters or component-initialization inventories are
@@ -179,11 +209,13 @@ It must not reassociate or collapse that chain as though it were associative
 matrix multiplication; a flattened matrix product is not an optimization of the
 same contract.
 
-Position, rotation and scale remain distinct values. Setting scale to zero does
-not erase stored rotation, and restoring scale recovers that rotation. Local
-negative scale remains signed. Quaternion production and interpolation belong to
-the central math owners; setters consume their representation without repeated
-normalization or validation.
+Position, rotation and scale remain distinct values. Setting local scale to zero
+does not erase the authoritative local rotation, and restoring scale recovers
+that rotation. This does not assert that a collapsed world basis retains enough
+information for matrix-derived world rotation. Local negative scale remains
+signed. Quaternion production and interpolation belong to the central math
+owners; setters consume their representation without repeated normalization or
+validation.
 
 ### Signed-scale arithmetic boundary
 
@@ -209,6 +241,13 @@ epsilon, or silently substitute another reflection algebra. The signed/singular
 composition and relative-pose rules remain an explicit implementation gate.
 They must define forward zero-scale results as well as nonuniform reflections;
 selecting the local/world TRS model alone does not settle that arithmetic.
+
+Object2D arithmetic is the XY-plane restriction of the selected Object3D rules:
+zero Z translation, unit Z scale and rotation around Z. Its scalar-specialized
+path must agree with that restriction, including reflected/nonuniform cases;
+a different planar polar-decomposition rule is not an equivalent optimization.
+Local 2D angles retain their unwrapped values. Derived world rotation describes
+orientation, not the number of authored turns.
 
 ### Gameplay operations
 
@@ -258,6 +297,15 @@ It does not expose construction permissions or internal transform-family flags.
 | Keep Relative | Keep the current local position, rotation and scale under the new parent. |
 | Keep World | Compute the new local pose from the currently resolved world TRS. It is not an arbitrary sheared-matrix preservation guarantee. |
 | Snap to Target | Set the selected local channels to their identity values at the new parent. |
+
+The inspected Unreal
+[relative-transform implementation](https://github.com/folgerwang/UnrealEngine/blob/release/Engine/Source/Runtime/Core/Private/Math/Transform.cpp)
+uses the matrix projection for negative scale too. Projecting to a relative TRS
+and then composing it again is not generally an exact round trip under reflected,
+nonuniform parents. Keep World is a placement rule using the selected relative
+operation, not an unconditional exact-world-TRS guarantee in those cases. Its
+accepted numerical behavior belongs to the signed-scale kernel decision rather
+than a compensating cached world-pose override.
 
 Attachment can choose the rule separately for position, rotation and scale.
 Shared presets cover the real standard cases, following
@@ -486,6 +534,15 @@ Subscription binding precedes activation of the batch. Callback-requested
 structural changes join World's ordered drain rather than recursively
 publishing a half-constructed batch.
 
+Construction invokes the captured class initializer as
+`initialize(owner, options)`, then each ordered `factory(owner, options)`, then
+`ctor(owner, options)`. Initializer and constructor hooks are optional. They all
+receive the same final owner and the existing construction input; the definition
+identity is already on that owner, not another positional constructor argument.
+Admission has already installed effective pose and gameplay defaults before the
+first hook. This ordering preserves initialization needed by component factories
+and component access needed by the constructor without an extra context object.
+
 Component factories receive the actual owner and the existing gameplay
 construction options directly. Immutable component configuration is bound once
 by the admitted factory; a game-specific factory may select configuration from
@@ -494,6 +551,11 @@ allocate another per-object context table merely to wrap `owner` or route a
 generic component-initialization inventory. Passing a different domain input
 must carry actual additional meaning, not duplicate state already available on
 the owner.
+
+Scene registration compiles semantic member placement into retained scalar rows
+and retains each member's gameplay options independently. Internal World admission
+consumes those rows directly. It does not reconstruct a public options table
+merely to pass the placement through the procedural interface again.
 
 Staged spawning selects explicit members. A required parent must already be live
 or be selected in the same batch. It does not implicitly spawn a namesake,
