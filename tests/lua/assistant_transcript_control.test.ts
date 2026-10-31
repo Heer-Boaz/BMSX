@@ -387,7 +387,7 @@ for (const theme of ['light', 'dark']) for (const variant of ['tiny', 'msx'] as 
 				}
 			} else if (frame.commandKinds[index] === Host2DKind.Bitmap) {
 				const image = frame.commandRefs[index] as HostBitmapRenderSubmission;
-				assert.ok(image.area.left >= f.input.viewport.bounds.left && image.area.right <= f.input.viewport.bounds.right);
+				assert.ok(image.originX >= f.input.viewport.bounds.left && image.originX + image.axisXX <= f.input.viewport.bounds.right);
 				bitmap = true;
 			}
 		}

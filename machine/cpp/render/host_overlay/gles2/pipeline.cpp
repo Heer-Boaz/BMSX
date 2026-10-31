@@ -253,7 +253,7 @@ void beginHostOverlayGLES2(OpenGLES2Backend& backend, HostOverlayGLES2State& pip
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
 	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 	glUseProgram(pipeline.program);
 	glUniform2f(pipeline.uniformResolution, static_cast<float>(state.overlayWidth), static_cast<float>(state.overlayHeight));
 }

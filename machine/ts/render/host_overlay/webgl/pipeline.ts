@@ -149,7 +149,11 @@ function bindPassState(backend: WebGLBackend, state: HostOverlayRuntime, passSta
 	updateAndBindFrameUniforms(state.frameUniforms, backend, passState.width, passState.height, passState.overlayWidth, passState.overlayHeight, passState.time, passState.delta);
 	backend.setUniformBlockBinding('FrameUniforms', FRAME_UNIFORM_BINDING);
 	backend.setViewportRect(0, 0, passState.width, passState.height);
-	backend.setAlphaBlended2DState(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+	backend.setCullEnabled(false);
+	backend.setDepthTestEnabled(false);
+	backend.setDepthMask(false);
+	backend.setBlendEnabled(true);
+	backend.setBlendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT);
 	backend.bindTexture2D(state.hostAtlasTexture);
 	backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT + 1);

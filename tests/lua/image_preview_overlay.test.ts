@@ -373,8 +373,8 @@ for (const variant of ['tiny', 'msx'] as const) test(`${variant} a zero-height o
 		const frame = overlay.queue.consumeOverlayFrame(); let bitmaps = 0, emptyClips = 0;
 		for (let index = 0; index < frame.commandCount; index++) {
 			if (frame.commandKinds[index] === Host2DKind.Bitmap) {
-				const { area } = frame.commandRefs[index] as HostBitmapRenderSubmission;
-				assert.equal(area.top, area.bottom); assert.equal(area.left, area.right); bitmaps++;
+				const image = frame.commandRefs[index] as HostBitmapRenderSubmission;
+				assert.equal(image.axisXX, 0); assert.equal(image.axisYY, 0); bitmaps++;
 			}
 			if (frame.commandKinds[index] === Host2DKind.Clip) {
 				const clip = frame.commandRefs[index] as typeof bounds;

@@ -60,9 +60,9 @@ test('attached image leases survive thumbnail frame eviction and release with th
 test('bitmap batches preserve clip and order and do not retarget later game-frame sampling', () => {
 	const image = new HostBitmap(pixels), stream = new HostOverlayQuadStream();
 	stream.reset(100, 100);
-	stream.appendEntry(Host2DKind.Bitmap, { bitmap: image, area: { left: 0, top: 0, right: 20, bottom: 10, z: 0 } });
+	stream.appendEntry(Host2DKind.Bitmap, { bitmap: image, originX: 0, originY: 0, axisXX: 20, axisXY: 0, axisYX: 0, axisYY: 10, u0: 0, v0: 0, u1: 1, v1: 1, color: 0xffffffff });
 	stream.appendEntry(Host2DKind.Clip, { left: 10, top: 10, right: 90, bottom: 90 });
-	stream.appendEntry(Host2DKind.Bitmap, { bitmap: image, area: { left: 0, top: 0, right: 20, bottom: 10, z: 0 } });
+	stream.appendEntry(Host2DKind.Bitmap, { bitmap: image, originX: 0, originY: 0, axisXX: 20, axisXY: 0, axisYX: 0, axisYY: 10, u0: 0, v0: 0, u1: 1, v1: 1, color: 0xffffffff });
 	stream.appendEntry(Host2DKind.Frame, { area: { left: 20, top: 20, right: 40, bottom: 40, z: 0 } });
 	assert.equal(stream.batchCount, 3);
 	assert.equal(stream.batches[0].bitmap, image); assert.equal(stream.batches[1].bitmap, image);

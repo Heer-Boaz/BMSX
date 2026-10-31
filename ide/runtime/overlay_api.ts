@@ -57,6 +57,12 @@ export class OverlayApi {
 		this.renderer.drawBitmap(bitmap, left, top, right, bottom);
 	}
 
+	public drawBitmapAffine(bitmap: HostBitmap, originX: number, originY: number,
+		axisXX: number, axisXY: number, axisYX: number, axisYY: number,
+		u0 = 0, v0 = 0, u1 = 1, v1 = 1, color: color = 0xffffffff): void {
+		this.renderer.drawBitmapAffine(bitmap, originX, originY, axisXX, axisXY, axisYX, axisYY, u0, v0, u1, v1, color);
+	}
+
 	public drawFrame(left: number, top: number, right: number, bottom: number): void {
 		this.renderer.drawFrame(left, top, right, bottom);
 	}

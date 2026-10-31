@@ -128,10 +128,10 @@ export class HostOverlayQuadStream {
 	private appendBitmap(command: HostBitmapRenderSubmission): void {
 		this.hasBitmaps = true;
 		this.setBitmap(command.bitmap);
-		const { area } = command, { scale, offsetX, offsetY } = this.transform;
-		this.appendQuad(area.left * scale + offsetX, area.top * scale + offsetY,
-			(area.right - area.left) * scale, 0, 0, (area.bottom - area.top) * scale,
-			0, 0, 1, 1, HOST_OVERLAY_TEXTURE_BITMAP, 0xffffffff);
+		const { scale, offsetX, offsetY } = this.transform;
+		this.appendQuad(command.originX * scale + offsetX, command.originY * scale + offsetY,
+			command.axisXX * scale, command.axisXY * scale, command.axisYX * scale, command.axisYY * scale,
+			command.u0, command.v0, command.u1, command.v1, HOST_OVERLAY_TEXTURE_BITMAP, command.color);
 	}
 
 	private ensureCapacity(required: number): void {

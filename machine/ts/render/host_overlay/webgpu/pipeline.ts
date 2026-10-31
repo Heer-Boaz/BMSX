@@ -102,7 +102,7 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 				format: backend.canvasFormat,
 				blend: {
 					color: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
-					alpha: { operation: 'add', srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+					alpha: { operation: 'add', srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
 				},
 			}],
 		},

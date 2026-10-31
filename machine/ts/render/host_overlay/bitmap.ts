@@ -1,5 +1,5 @@
 import type { RgbaImage } from '../image';
-import type { RenderRectBounds } from '../shared/submissions';
+import type { color } from '../shared/submissions';
 
 /** Owned host pixels. Only this resource publishes updates; views own its lifetime, not guest assets. */
 export class HostBitmap {
@@ -26,7 +26,21 @@ export class HostBitmap {
 	}
 }
 
-export type HostBitmapRenderSubmission = { bitmap: HostBitmap; area: RenderRectBounds };
+/** A host-pixel texture on an affine unit square, in logical overlay coordinates. */
+export type HostBitmapRenderSubmission = {
+	bitmap: HostBitmap;
+	originX: number;
+	originY: number;
+	axisXX: number;
+	axisXY: number;
+	axisYX: number;
+	axisYY: number;
+	u0: number;
+	v0: number;
+	u1: number;
+	v1: number;
+	color: color;
+};
 
 /** Retained backend storage. Held views do not upload; revisions update, dimensions replace storage. */
 export class HostBitmapTextures<T> {

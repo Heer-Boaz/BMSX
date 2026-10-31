@@ -237,16 +237,26 @@ export class OverlayRenderer {
 	}
 
 	public drawBitmap(bitmap: HostBitmap, left: number, top: number, right: number, bottom: number): void {
+		this.drawBitmapAffine(bitmap, left, top, right - left, 0, 0, bottom - top);
+	}
+
+	/** Snapshot a textured unit square; the bitmap pixels and their revision stay unchanged. */
+	public drawBitmapAffine(bitmap: HostBitmap, originX: number, originY: number,
+		axisXX: number, axisXY: number, axisYX: number, axisYY: number,
+		u0 = 0, v0 = 0, u1 = 1, v1 = 1, color: color = 0xffffffff): void {
 		const buffer = this.activeBuffer;
 		let submission = buffer.bitmapPool[buffer.bitmapCount];
 		if (submission === undefined) {
-			submission = { bitmap, area: { left: 0, top: 0, right: 0, bottom: 0, z: 0 } };
+			submission = { bitmap, originX, originY, axisXX, axisXY, axisYX, axisYY, u0, v0, u1, v1, color };
 			buffer.bitmapPool.push(submission);
 		}
 		buffer.bitmapCount++;
 		submission.bitmap = bitmap;
-		const area = submission.area;
-		area.left = left; area.top = top; area.right = right; area.bottom = bottom;
+		submission.originX = originX; submission.originY = originY;
+		submission.axisXX = axisXX; submission.axisXY = axisXY;
+		submission.axisYX = axisYX; submission.axisYY = axisYY;
+		submission.u0 = u0; submission.v0 = v0; submission.u1 = u1; submission.v1 = v1;
+		submission.color = color;
 		this.queueCommand(Host2DKind.Bitmap, submission);
 	}
 

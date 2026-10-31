@@ -42,6 +42,20 @@ int main() {
 		const HostOverlayClipRect empty{20, 10, 20, 30};
 		std::vector<u32> reference(64 * 48);
 		std::vector<u32> clipped(64 * 48);
+		const RectRenderSubmission translucentRed{RectRenderKind::Fill, {0, 0, 64, 48, 0}, 0x80ff0000u, Layer2D::IDE};
+		std::vector<u8> alphaPixels(64 * 48 * 4);
+		beginHostOverlayGLES2(backend, pipeline, state);
+		glClearColor(0, 0, 0, 1);
+		glClear(GL_COLOR_BUFFER_BIT);
+		renderHost2DEntryGLES2(backend, pipeline, Host2DKind::Rect, {.rect = &translucentRed});
+		glReadPixels(0, 0, 64, 48, GL_RGBA, GL_UNSIGNED_BYTE, alphaPixels.data());
+		endHostOverlayGLES2(backend, pipeline);
+		require(glGetError() == GL_NO_ERROR, "GLES2 source-over alpha graphics error");
+		for (size_t offset = 0; offset < alphaPixels.size(); offset += 4) {
+			require(alphaPixels[offset] == 128 && alphaPixels[offset + 1] == 0 && alphaPixels[offset + 2] == 0,
+				"GLES2 translucent red over opaque black must blend straight RGB once");
+			require(alphaPixels[offset + 3] == 255, "GLES2 source-over must preserve opaque destination alpha");
+		}
 		for (const HostOverlayTransform transform : {IDENTITY_HOST_OVERLAY_TRANSFORM, HostOverlayTransform{0.5F, 3, 2}, HostOverlayTransform{2, 3, 2}}) {
 			for (size_t index = 0; index < fixture.kinds.size(); ++index) {
 				for (const HostOverlayClipRect* bounds : {&full, &clip, &empty}) {
