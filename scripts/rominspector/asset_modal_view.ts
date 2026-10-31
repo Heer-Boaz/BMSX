@@ -1,10 +1,9 @@
 import { formatHexDumpRow } from '../../machine/ts/common/byte_hex_string';
 import type { RomAsset } from '../../toolchain/ts/rompack/assets';
 import type { RomTocEntry } from '../../machine/ts/rompack/toc';
-import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import type { CartManifest } from '../../machine/ts/rompack/manifest';
 import { decodeBinary } from '../../machine/ts/common/serializer/binencoder';
-import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../../toolchain/ts/rompack/loader';
+import { loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { BLUA32_IMAGE_ID } from '../../toolchain/ts/rompack/blua32_image';
 import {
 	BLUA32_SYMBOLS_IMAGE_ID,
@@ -240,10 +239,6 @@ export function renderPreviewSectionWindow(section: AssetPreviewSection, startCo
 	};
 }
 
-function isGLTFModel(obj: unknown): obj is GLTFModel {
-	return !!obj && typeof obj === 'object' && Array.isArray((obj as { meshes?: unknown }).meshes);
-}
-
 export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetModalViewContext): Promise<AssetModalView> {
 	const imgmeta = selected.imgmeta!;
 	const audiometa = selected.audiometa!;
@@ -328,36 +323,42 @@ export async function buildAssetModalView(selected: RomAsset, ctx: BuildAssetMod
 				preview = JSON.stringify(selected.buffer, null, 2);
 			}
 			break;
-		case 'model':
-			const modelData = isGLTFModel(selected.buffer)
-				? selected.buffer
-				: await loadGLTFModelFromBuffer(
-					String(selected.resid),
-					ctx.rombin.subarray(selected.start, selected.end),
-					selected.model_texture_start
-						? ctx.rombin.subarray(selected.model_texture_start, selected.model_texture_end!)
-						: undefined,
-				);
-			if (!isGLTFModel(modelData)) {
-				throw new Error(`Asset '${selected.resid}' buffer is not a GLTFModel.`);
-			}
+		case 'model': {
+			const modelData = loadModelFromBuffer(
+				selected.resid,
+				ctx.rombin.subarray(selected.start, selected.end),
+				selected.model_texture_start !== undefined
+					? ctx.rombin.subarray(selected.model_texture_start, selected.model_texture_end!)
+					: undefined,
+			);
 			metadataLines.push(`Model size: ${ctx.formatByteSize(selected.end - selected.start)}`);
 			metadataLines.push(`Nodes: ${modelData.nodes ? modelData.nodes.length : 0}`);
 			metadataLines.push(`Scenes: ${modelData.scenes ? modelData.scenes.length : 0}`);
 			metadataLines.push(`Skins: ${modelData.skins ? modelData.skins.length : 0}`);
-			const first = modelData.meshes[0];
-			if (first) {
-				preview =
-					`Meshes: ${modelData.meshes.length}\n` +
-					`Vertices: ${first.positions.length / 3}\n` +
-					`UVs: ${first.texcoords ? first.texcoords.length / 2 : 0}\n` +
-					`Normals: ${first.normals ? first.normals.length / 3 : 0}\n` +
-					`Indices: ${first.indices ? first.indices.length : 0}\n` +
-					`Animations: ${modelData.animations ? modelData.animations.length : 0}\n`;
-			} else {
-				preview = 'No mesh data';
+			let primitives = 0;
+			let vertices = 0;
+			let uvs = 0;
+			let normals = 0;
+			let indices = 0;
+			for (const mesh of modelData.meshes) {
+				primitives += mesh.primitives.length;
+				for (const primitive of mesh.primitives) {
+					vertices += primitive.positions.length / 3;
+					uvs += primitive.texcoords ? primitive.texcoords.length / 2 : 0;
+					normals += primitive.normals ? primitive.normals.length / 3 : 0;
+					indices += primitive.indices ? primitive.indices.length : 0;
+				}
 			}
+			preview =
+				`Meshes: ${modelData.meshes.length}\n` +
+				`Primitives: ${primitives}\n` +
+				`Vertices: ${vertices}\n` +
+				`UVs: ${uvs}\n` +
+				`Normals: ${normals}\n` +
+				`Indices: ${indices}\n` +
+				`Animations: ${modelData.animations ? modelData.animations.length : 0}\n`;
 			break;
+		}
 		default:
 			preview = '[No preview available]';
 			break;

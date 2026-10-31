@@ -16,7 +16,7 @@ export interface GLTFMaterial {
 	occlusionStrength?: number;
 	emissiveTexture?: number;
 	emissiveTexCoord?: number;
-	emissiveFactor?: vec4arr;
+	emissiveFactor?: vec3arr;
 	alphaMode?: 'OPAQUE' | 'MASK' | 'BLEND';
 	alphaCutoff?: number;
 	doubleSided?: boolean;
@@ -25,7 +25,7 @@ export interface GLTFMaterial {
 
 export type GLTFIndexArray = Uint8Array | Uint16Array | Uint32Array;
 
-export interface GLTFMesh {
+export interface GLTFPrimitive {
 	positions: Float32Array;
 	texcoords?: Float32Array;
 	texcoords1?: Float32Array;
@@ -37,10 +37,28 @@ export interface GLTFMesh {
 	morphPositions?: Float32Array[];
 	morphNormals?: Float32Array[];
 	morphTangents?: Float32Array[];
-	weights?: number[];
 	jointIndices?: Uint16Array;
 	jointWeights?: Float32Array;
 	colors?: Float32Array;
+}
+
+/** A node instances this complete mesh, not one flattened material primitive. */
+export interface GLTFMesh {
+	name?: string;
+	primitives: GLTFPrimitive[];
+	weights?: number[];
+}
+
+export interface GLTFTexture {
+	source?: number;
+	sampler?: number;
+}
+
+export interface GLTFSampler {
+	magFilter?: number;
+	minFilter?: number;
+	wrapS?: number;
+	wrapT?: number;
 }
 
 export interface GLTFAnimationSampler {
@@ -86,11 +104,11 @@ export interface GLTFModel {
 	meshes: GLTFMesh[];
 	materials?: GLTFMaterial[];
 	animations?: GLTFAnimation[];
-	textures?: number[];
+	/** Material texture references address these slots; source addresses imageBuffers. */
+	textures?: GLTFTexture[];
+	samplers?: GLTFSampler[];
 	imageURIs?: string[];
-	imageOffsets?: { start: number; end: number }[];
-	imageBuffers?: ArrayBuffer[];
-	gpuTextures?: Record<number, string>;
+	imageBuffers?: Uint8Array[];
 	nodes?: GLTFNode[];
 	scenes?: GLTFScene[];
 	scene?: number;

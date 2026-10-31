@@ -1,7 +1,6 @@
 import { Buffer } from 'buffer';
-import type { GLTFIndexArray, GLTFMesh, GLTFModel, GLTFNode, GLTFScene, GLTFSkin } from '../../toolchain/ts/rompack/gltf';
+import type { GLTFIndexArray, GLTFMesh, GLTFModel, GLTFNode, GLTFPrimitive, GLTFSampler, GLTFScene, GLTFSkin, GLTFTexture } from '../../toolchain/ts/rompack/gltf';
 import { dirname, extname, resolve } from 'node:path';
-import { reportBuildDiagnostics, type BuildReporter } from '../lib/build_reporter';
 
 type GLBParseResult = { json: any; bin?: Uint8Array };
 
@@ -35,6 +34,11 @@ export function prepareGLTFDocument(bytes: Buffer, path: string, capture: (path:
 }
 
 type AccessorRawArray = Float32Array | Uint8Array | Uint16Array | Uint32Array | Int8Array | Int16Array;
+
+const ATTRIBUTE_TYPES: Readonly<Record<string, readonly string[]>> = {
+	POSITION: ['VEC3'], NORMAL: ['VEC3'], TANGENT: ['VEC4'], COLOR_0: ['VEC3', 'VEC4'],
+	TEXCOORD_0: ['VEC2'], TEXCOORD_1: ['VEC2'], JOINTS_0: ['VEC4'], JOINTS_1: ['VEC4'], WEIGHTS_0: ['VEC4'], WEIGHTS_1: ['VEC4'],
+};
 
 type AccessorInfo = {
 	acc: any;
@@ -75,7 +79,7 @@ function parseGLB(data: Uint8Array): GLBParseResult {
 	return { json, bin };
 }
 
-export async function loadGLTFModel(document: GLTFDocument, resname: string, report: BuildReporter = reportBuildDiagnostics): Promise<GLTFModel> {
+export function loadGLTFModel(document: GLTFDocument, resname: string): GLTFModel {
 	const { json, bin: glbBin, external } = document;
 
 	const buffers: Uint8Array[] = [];
@@ -132,6 +136,7 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string, rep
 	function getAccessorInfo(index: number): AccessorInfo {
 		const acc = accessors[index];
 		if (!acc) throw new Error(`Missing accessor ${index}`);
+		if (!Number.isInteger(acc.count) || acc.count <= 0) throw new Error(`Accessor ${index} requires a positive integer count`);
 		const comp = getNumComponents(acc.type);
 		const componentSize = getComponentSize(acc.componentType);
 		const info: AccessorInfo = {
@@ -139,7 +144,7 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string, rep
 			buffer: undefined,
 			offset: 0,
 			stride: componentSize * comp,
-			count: acc.count ?? 0,
+			count: acc.count,
 			componentSize,
 			componentType: acc.componentType,
 			comp,
@@ -153,6 +158,10 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string, rep
 			info.buffer = buffer;
 			info.offset = (bufferView.byteOffset ?? 0) + (acc.byteOffset ?? 0);
 			info.stride = bufferView.byteStride ?? (componentSize * comp);
+			const span = (acc.byteOffset ?? 0) + (info.count - 1) * info.stride + componentSize * comp;
+			if ((bufferView.byteOffset ?? 0) + bufferView.byteLength > buffer.byteLength || span > bufferView.byteLength) {
+				throw new Error(`Accessor ${index} exceeds its declared bufferView`);
+			}
 		}
 		return info;
 	}
@@ -349,24 +358,34 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string, rep
 		return out;
 	}
 
-	function getAccessorIndices(index: number): GLTFIndexArray {
+	function getAccessorIndices(index: number, vertexCount: number): GLTFIndexArray {
 		const acc = accessors[index];
 		if (!acc || acc.type !== 'SCALAR') throw new Error('indices accessor must be SCALAR');
 		if (acc.componentType !== 5121 && acc.componentType !== 5123 && acc.componentType !== 5125) {
 			throw new Error('indices must use an unsigned component type');
 		}
-		const raw = getAccessorRaw(index);
-		if (raw instanceof Uint8Array || raw instanceof Uint16Array || raw instanceof Uint32Array) return raw;
-		throw new Error('indices must be unsigned integer type');
+		const raw = getAccessorRaw(index) as GLTFIndexArray;
+		const restart = acc.componentType === 5121 ? 0xff : acc.componentType === 5123 ? 0xffff : 0xffffffff;
+		for (const value of raw) if (value >= vertexCount || value === restart) throw new Error('GLTF index does not reference an admitted vertex');
+		return raw;
 	}
 
-	const textures = json.textures || [];
-	const textureSources: number[] = textures.map((t: any) => t.source ?? -1);
+	const textures = json.textures;
+	const modelTextures: GLTFTexture[] | undefined = textures?.map((texture: any) => {
+		if (texture.source !== undefined && json.images?.[texture.source] === undefined) throw new Error('GLTF texture references a missing image');
+		if (texture.sampler !== undefined && json.samplers?.[texture.sampler] === undefined) throw new Error('GLTF texture references a missing sampler');
+		return { source: texture.source, sampler: texture.sampler };
+	});
+	const samplers: GLTFSampler[] | undefined = json.samplers?.map((sampler: any) => ({
+		magFilter: sampler.magFilter, minFilter: sampler.minFilter, wrapS: sampler.wrapS, wrapT: sampler.wrapT,
+	}));
 
-	const materials = (json.materials || []).map((m: any) => {
+	const materials = json.materials?.map((m: any) => {
 		const pbr = m.pbrMetallicRoughness ?? {};
-		const emissive = Array.isArray(m.emissiveFactor) ? [...m.emissiveFactor] : undefined;
-		if (emissive && emissive.length < 4) emissive.push(1);
+		for (const info of [pbr.baseColorTexture, pbr.metallicRoughnessTexture, m.normalTexture, m.occlusionTexture, m.emissiveTexture]) {
+			if (info !== undefined && textures?.[info.index] === undefined) throw new Error('GLTF material references a missing texture');
+		}
+		const emissive = m.emissiveFactor;
 		return {
 			baseColorFactor: pbr.baseColorFactor,
 			metallicFactor: pbr.metallicFactor,
@@ -393,16 +412,29 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string, rep
 
 	const meshes: GLTFMesh[] = [];
 	for (const mesh of json.meshes || []) {
+		const primitives: GLTFPrimitive[] = [];
 		for (const prim of mesh.primitives || []) {
 			const mode = prim.mode ?? 4;
 			if (mode !== 4) throw new Error(`Unsupported primitive mode ${mode}`);
 			const attributes = prim.attributes ?? {};
 			if (attributes.POSITION === undefined) throw new Error('GLTF primitive missing POSITION attribute');
+			const position = accessors[attributes.POSITION];
+			for (const semantic in attributes) {
+				const accessor = accessors[attributes[semantic]], types = ATTRIBUTE_TYPES[semantic];
+				if (accessor.count !== position.count || types !== undefined && !types.includes(accessor.type)) throw new Error(`GLTF ${semantic} accessor does not match its vertex layout`);
+			}
+			if (prim.material !== undefined && json.materials?.[prim.material] === undefined) throw new Error('GLTF primitive references a missing material');
+			const indices = prim.indices === undefined ? undefined : getAccessorIndices(prim.indices, position.count);
+			if ((indices === undefined ? position.count : indices.length) % 3 !== 0) throw new Error('GLTF triangle-list count must be a multiple of three');
 			const targets = prim.targets || [];
 			const morphPositions: Float32Array[] = [];
 			const morphNormals: Float32Array[] = [];
 			const morphTangents: Float32Array[] = [];
 			for (const target of targets) {
+				for (const semantic in target) {
+					const accessor = accessors[target[semantic]];
+					if (accessor.count !== position.count || accessor.type !== 'VEC3') throw new Error(`GLTF morph ${semantic} accessor does not match its vertex layout`);
+				}
 				morphPositions.push(target.POSITION !== undefined ? getAccessorFloat(target.POSITION) : new Float32Array());
 				morphNormals.push(target.NORMAL !== undefined ? getAccessorFloat(target.NORMAL) : new Float32Array());
 				morphTangents.push(target.TANGENT !== undefined ? getAccessorFloat(target.TANGENT) : new Float32Array());
@@ -417,7 +449,8 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string, rep
 		const jointBlocks: Uint16Array[] = [];
 		const weightBlocks: Float32Array[] = [];
 		for (const [jAttr, wAttr] of jointAttrPairs) {
-			if (jAttr === undefined || wAttr === undefined) continue;
+			if ((jAttr === undefined) !== (wAttr === undefined)) throw new Error('GLTF joint and weight attributes must be paired');
+			if (jAttr === undefined) continue;
 			const rawJ = getAccessorRaw(jAttr);
 			let blockJ: Uint16Array;
 			if (rawJ instanceof Uint16Array) blockJ = rawJ;
@@ -460,28 +493,28 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string, rep
 			}
 		}
 
-			const meshEntry: GLTFMesh = {
+			const primitive: GLTFPrimitive = {
 				positions: getAccessorFloat(attributes.POSITION),
 				texcoords: attributes.TEXCOORD_0 !== undefined ? getAccessorFloat(attributes.TEXCOORD_0) : undefined,
 				texcoords1: attributes.TEXCOORD_1 !== undefined ? getAccessorFloat(attributes.TEXCOORD_1) : undefined,
-				normals: attributes.NORMAL !== undefined ? getAccessorFloat(attributes.NORMAL) : null,
-				tangents: attributes.TANGENT !== undefined ? getAccessorFloat(attributes.TANGENT) : null,
-				indices: prim.indices !== undefined ? getAccessorIndices(prim.indices) : undefined,
+				normals: attributes.NORMAL !== undefined ? getAccessorFloat(attributes.NORMAL) : undefined,
+				tangents: attributes.TANGENT !== undefined ? getAccessorFloat(attributes.TANGENT) : undefined,
+				indices,
 				indexComponentType: prim.indices !== undefined ? accessors[prim.indices].componentType : undefined,
 				materialIndex: prim.material,
 				morphPositions: morphPositions.length ? morphPositions : undefined,
 				morphNormals: morphNormals.some(arr => arr.length) ? morphNormals : undefined,
 				morphTangents: morphTangents.some(arr => arr.length) ? morphTangents : undefined,
-				weights: mesh.weights ? Array.from(mesh.weights) : (morphPositions.length ? new Array(morphPositions.length).fill(0) : undefined),
 				jointIndices,
 				jointWeights,
 				colors: attributes.COLOR_0 !== undefined ? getAccessorFloat(attributes.COLOR_0) : undefined,
 			};
-			meshes.push(meshEntry);
+			primitives.push(primitive);
 		}
+		meshes.push({ name: mesh.name, primitives, weights: mesh.weights });
 	}
 
-	const animations = (json.animations || []).map((anim: any) => ({
+	const animations = json.animations?.map((anim: any) => ({
 		name: anim.name,
 		samplers: (anim.samplers || []).map((sampler: any) => ({
 			interpolation: sampler.interpolation || 'LINEAR',
@@ -493,167 +526,59 @@ export async function loadGLTFModel(document: GLTFDocument, resname: string, rep
 
 	const imageURIs: string[] = [];
 	const imageBuffers: Uint8Array[] = [];
-	if (Array.isArray(json.images)) {
-		const entries = await Promise.all(json.images.map(async (img: any) => {
-			if (img.uri) {
-				return { uri: img.uri, buffer: external.get(img.uri)! };
-			}
-			if (img.bufferView !== undefined) {
-				const bufferView = bufferViews[img.bufferView];
-				if (!bufferView) throw new Error(`Image bufferView ${img.bufferView} missing`);
-				const buffer = buffers[bufferView.buffer];
-				if (!buffer) throw new Error(`Image buffer ${bufferView.buffer} missing`);
-				const start = (bufferView.byteOffset ?? 0);
-				const length = bufferView.byteLength ?? (buffer.byteLength - start);
-				return { uri: `bufferView:${img.bufferView}`, buffer: buffer.subarray(start, start + length) };
-			}
-			return null;
-		}));
-		for (const entry of entries) {
-			if (!entry) continue;
-			imageURIs.push(entry.uri);
-			imageBuffers.push(entry.buffer);
-		}
+	for (const image of json.images || []) {
+		if (image.uri !== undefined) {
+			imageURIs.push(image.uri); imageBuffers.push(external.get(image.uri)!);
+		} else if (image.bufferView !== undefined) {
+			const view = bufferViews[image.bufferView], buffer = buffers[view.buffer];
+			const start = view.byteOffset ?? 0, end = start + view.byteLength;
+			if (end > buffer.byteLength) throw new Error(`Image bufferView ${image.bufferView} exceeds its buffer`);
+			imageURIs.push(`bufferView:${image.bufferView}`); imageBuffers.push(buffer.subarray(start, end));
+		} else throw new Error('GLTF image requires a URI or bufferView');
 	}
 
-	const nodes: GLTFNode[] = (json.nodes || []).map((n: any) => ({
-		mesh: n.mesh,
-		children: n.children,
-		translation: n.translation,
-		rotation: n.rotation,
-		scale: n.scale,
-		matrix: n.matrix ? new Float32Array(n.matrix) : undefined,
-		skin: n.skin,
-		weights: n.weights ? Array.from(n.weights) : undefined,
-	}));
+	const nodes: GLTFNode[] | undefined = json.nodes?.map((n: any) => {
+		if (n.mesh !== undefined && json.meshes?.[n.mesh] === undefined) throw new Error('GLTF node references a missing mesh');
+		if (n.skin !== undefined && json.skins?.[n.skin] === undefined) throw new Error('GLTF node references a missing skin');
+		return {
+			mesh: n.mesh,
+			children: n.children,
+			translation: n.translation,
+			rotation: n.rotation,
+			scale: n.scale,
+			matrix: n.matrix ? new Float32Array(n.matrix) : undefined,
+			skin: n.skin,
+			weights: n.weights,
+		};
+	});
 
-	const scenes: GLTFScene[] = (json.scenes || []).map((s: any) => ({ nodes: s.nodes || [] }));
+	const scenes: GLTFScene[] | undefined = json.scenes?.map((s: any) => ({ nodes: s.nodes || [] }));
 	const scene: number = json.scene;
 
-	const skins: GLTFSkin[] = (json.skins || []).map((s: any) => {
+	const skins: GLTFSkin[] | undefined = json.skins?.map((s: any) => {
+		for (const joint of s.joints) if (json.nodes?.[joint] === undefined) throw new Error('GLTF skin references a missing joint');
 		if (s.inverseBindMatrices === undefined) {
-			return { joints: s.joints || [] };
+			return { joints: s.joints };
 		}
 		const data = getAccessorFloat(s.inverseBindMatrices);
 		const matrices: Float32Array[] = [];
 		for (let i = 0; i < data.length; i += 16) matrices.push(data.subarray(i, i + 16));
-		return { joints: s.joints || [], inverseBindMatrices: matrices };
+		return { joints: s.joints, inverseBindMatrices: matrices };
 	});
 
-	const model: GLTFModel = {
+	return {
 		name: resname,
 		meshes,
 		materials,
 		animations,
 		imageURIs,
-		textures: textureSources,
+		imageBuffers,
+		textures: modelTextures,
+		samplers,
 		nodes,
 		scenes,
 		scene,
 		skins,
 	};
 
-	model.imageBuffers = imageBuffers.map(buf => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)) as ArrayBuffer[];
-
-	validateGLTFModel(model, report);
-	return model;
-}
-
-function validateGLTFModel(model: GLTFModel, report: BuildReporter): void {
-	if (!model.meshes || model.meshes.length === 0) {
-		throw new Error('GLTF model has no meshes');
-	}
-	for (const mesh of model.meshes) {
-		if (!(mesh.positions && mesh.positions.length)) {
-			throw new Error('Mesh is missing vertex positions');
-		}
-		const vertexCount = mesh.positions.length / 3;
-		if (!Number.isInteger(vertexCount) || vertexCount <= 0) {
-			throw new Error('Mesh has invalid vertex position count');
-		}
-		if (mesh.texcoords && mesh.texcoords.length !== vertexCount * 2) {
-			throw new Error('Mesh texcoords length mismatch');
-		}
-		if (mesh.normals && mesh.normals.length !== vertexCount * 3) {
-			throw new Error('Mesh normals length mismatch');
-		}
-		if (mesh.tangents && mesh.tangents.length !== vertexCount * 4) {
-			report({ type: 'diagnostic', level: 'warning', message: 'Tangents array length mismatch, dropping tangents' });
-			mesh.tangents = null;
-		}
-		if (mesh.indices) {
-			for (let i = 0; i < mesh.indices.length; i++) {
-				if (mesh.indices[i] >= vertexCount) {
-					throw new Error('Mesh indices reference out-of-range vertex');
-				}
-			}
-			if (mesh.indexComponentType !== undefined && mesh.indexComponentType !== 5121 && mesh.indexComponentType !== 5123 && mesh.indexComponentType !== 5125) {
-				throw new Error('Mesh has unsupported index component type');
-			}
-		}
-		if (mesh.morphPositions) {
-			for (const target of mesh.morphPositions) {
-				if (target.length !== mesh.positions.length) {
-					throw new Error('Morph target position length mismatch');
-				}
-			}
-		}
-		if (mesh.morphNormals) {
-			for (const target of mesh.morphNormals) {
-				if (target.length && target.length !== vertexCount * 3) {
-					throw new Error('Morph target normal length mismatch');
-				}
-			}
-		}
-		if (mesh.morphTangents) {
-			for (const target of mesh.morphTangents) {
-				if (target.length && target.length !== vertexCount * 4 && target.length !== vertexCount * 3) {
-					throw new Error('Morph target tangent length mismatch');
-				}
-			}
-		}
-		if ((mesh.jointIndices && !mesh.jointWeights) || (!mesh.jointIndices && mesh.jointWeights)) {
-			throw new Error('Mesh skinning data incomplete');
-		}
-		if (mesh.jointIndices && mesh.jointWeights) {
-			if (mesh.jointIndices.length !== mesh.jointWeights.length) {
-				throw new Error('Mesh joint indices/weights length mismatch');
-			}
-			if (mesh.jointIndices.length !== vertexCount * 4 || mesh.jointWeights.length !== vertexCount * 4) {
-				throw new Error('Skin arrays must be 4-per-vertex');
-			}
-		}
-		if (mesh.materialIndex !== undefined && model.materials && mesh.materialIndex >= model.materials.length) {
-			throw new Error(`Mesh references invalid material index ${mesh.materialIndex}`);
-		}
-	}
-	if (model.animations) {
-		for (const anim of model.animations) {
-			if (!Array.isArray(anim.samplers) || !Array.isArray(anim.channels)) {
-				throw new Error('Invalid animation structure');
-			}
-		}
-	}
-	if (model.nodes) {
-		for (const node of model.nodes) {
-			if (node.mesh !== undefined && node.mesh >= model.meshes.length) {
-				throw new Error(`Node references invalid mesh index ${node.mesh}`);
-			}
-			if (node.skin !== undefined && model.skins && node.skin >= model.skins.length) {
-				throw new Error(`Node references invalid skin index ${node.skin}`);
-			}
-		}
-	}
-	if (model.skins) {
-		for (const skin of model.skins) {
-			for (const joint of skin.joints) {
-				if (model.nodes && joint >= model.nodes.length) {
-					throw new Error(`Skin joint index ${joint} invalid`);
-				}
-			}
-			if (skin.inverseBindMatrices && skin.inverseBindMatrices.length !== skin.joints.length) {
-				throw new Error('Skin inverse bind matrices length mismatch');
-			}
-		}
-	}
 }

@@ -13,7 +13,7 @@ import type {
 	TextureMeta,
 } from '../../toolchain/ts/rompack/assets';
 import type { LuaChunk } from '../../toolchain/ts/lua/syntax/ast';
-import type { GLTFMesh } from '../../toolchain/ts/rompack/gltf';
+import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import {
 	assertCartridgePackageFitsHardware,
 	type RomImageDomain,
@@ -885,54 +885,10 @@ export async function generateRomAssets(
 				break;
 			}
 			case 'model': {
-				const parsed = await loadGLTFModel(res.document, resid, report);
+				const parsed = loadGLTFModel(res.document, resid);
 
-				let texOffset = 0;
-				const imageOffsets: { start: number; end: number }[] = [];
-				// @ts-ignore
-				const texBuffers: Buffer[] = [];
-				for (let i = 0; i < parsed.imageBuffers.length; i++) {
-					const buf = parsed.imageBuffers[i];
-					const start = texOffset;
-					const end = texOffset + buf.byteLength;
-					texOffset = end;
-					// @ts-ignore
-					texBuffers.push(Buffer.from(buf));
-					imageOffsets.push({ start, end });
-				}
-				const obj = {
-					meshes: parsed.meshes.map((m: GLTFMesh) => ({
-						positions: m.positions,
-						texcoords: m.texcoords,
-						excoords1: m.texcoords1,
-						normals: m.normals,
-						tangents: m.tangents,
-						indices: m.indices,
-						indexComponentType: m.indexComponentType,
-						materialIndex: m.materialIndex,
-						morphPositions: m.morphPositions,
-						morphNormals: m.morphNormals,
-						morphTangents: m.morphTangents,
-						weights: m.weights,
-						jointIndices: m.jointIndices,
-						jointWeights: m.jointWeights,
-						colors: m.colors,
-					})),
-					materials: parsed.materials,
-					animations: parsed.animations,
-					nodes: parsed.nodes,
-					skins: parsed.skins,
-					scenes: parsed.scenes,
-					scene: parsed.scene,
-					imageOffsets,
-					textures: parsed.textures,
-				};
-				const encodedObj = encodeBinary(obj);
-				// @ts-ignore
-				buffer = Buffer.from(encodedObj);
-				// @ts-ignore
-				const model_texture_buffer = Buffer.concat(texBuffers);
-				romAssets.push({ resid, type, buffer, model_texture_buffer, source_path: sourcePath });
+				const packed = packModelAsset(parsed);
+				romAssets.push({ resid, type, ...packed, source_path: sourcePath });
 			}
 				break;
 			case 'atlas': {

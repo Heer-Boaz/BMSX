@@ -109,31 +109,9 @@ export function encodeBinary(obj: any, opts: EncodeOptions = {}): Uint8Array {
 }
 
 export function typedArrayFromBytes<T extends ArrayBufferView>(u8: Uint8Array, ctor: { new(buffer: ArrayBufferLike, byteOffset: number, length?: number): T; BYTES_PER_ELEMENT: number; }): T {
-	function ensureAlignedView(u8: Uint8Array, alignment: number): Uint8Array {
-		if ((u8.byteLength % alignment) !== 0) {
-			throw new Error(`loadModelFromBuffer: byteLength ${u8.byteLength} not divisible by ${alignment}`);
-		}
-		if ((u8.byteOffset % alignment) === 0) return u8;
-		const copy = u8.slice();
-		if ((copy.byteOffset % alignment) !== 0) {
-			throw new Error('loadModelFromBuffer: unable to align view');
-		}
-		return copy;
-	}
-
 	const alignment = ctor.BYTES_PER_ELEMENT;
-	const aligned = ensureAlignedView(u8, alignment);
+	const aligned = u8.byteOffset % alignment === 0 ? u8 : new Uint8Array(u8);
 	return new ctor(aligned.buffer, aligned.byteOffset, aligned.byteLength / alignment);
-}
-
-export function toF32(v: any): Float32Array {
-	if (v === undefined || v === null) return undefined;
-	if (ArrayBuffer.isView(v)) {
-		const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-		return typedArrayFromBytes(u8, Float32Array);
-	}
-	if (Array.isArray(v)) return new Float32Array(v);
-	return undefined;
 }
 
 class BinWriter {

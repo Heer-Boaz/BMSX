@@ -9,9 +9,7 @@ import type {
 	TextureMeta,
 	SourceMeta,
 } from './assets';
-import type { GLTFMaterial, GLTFModel } from './gltf';
-import type { vec4arr } from '../../../machine/ts/common/vector';
-import { decodeBinary, decodeBinaryWithPropTable, toF32, typedArrayFromBytes } from '../../../machine/ts/common/serializer/binencoder';
+import { decodeBinary, decodeBinaryWithPropTable } from '../../../machine/ts/common/serializer/binencoder';
 import { parseCartHeader, type CartRomHeader } from '../../../machine/ts/rompack/format';
 import { parseRomMetadataSection } from './metadata';
 import { RomSourceStack, type RawRomSource } from './source';
@@ -22,8 +20,7 @@ import {
 	type RomImage,
 	type RomImageDomain,
 } from '../../../machine/ts/rompack/image';
-
-const utf8Decoder = new TextDecoder();
+import { loadModelFromBuffer } from './model_asset';
 
 type RomAssetList = {
 	entries: PackedRomAsset[];
@@ -115,130 +112,6 @@ async function loadDataFromBuffer(buffer: Uint8Array): Promise<any> {
 	return decodeBinary(new Uint8Array(buffer));
 }
 
-export async function loadModelFromBuffer(asset_id: string, buffer: Uint8Array, textureBuf?: Uint8Array): Promise<GLTFModel> {
-	const obj = decodeBinary(new Uint8Array(buffer), { zeroCopyBin: true });
-
-	function toIndices(v: any, componentType?: number): Uint8Array | Uint16Array | Uint32Array {
-		if (v === undefined || v === null) return undefined;
-		if (ArrayBuffer.isView(v)) {
-			const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-			if (componentType === 5125) return typedArrayFromBytes(u8, Uint32Array);
-			if (componentType === 5123) return typedArrayFromBytes(u8, Uint16Array);
-			if (componentType === 5121) return new Uint8Array(u8.buffer, u8.byteOffset, u8.byteLength);
-			if (u8.byteLength % 4 === 0) return typedArrayFromBytes(u8, Uint32Array);
-			return typedArrayFromBytes(u8, Uint16Array);
-		}
-		if (Array.isArray(v)) {
-			if (componentType === 5125) return new Uint32Array(v);
-			if (componentType === 5123) return new Uint16Array(v);
-			if (componentType === 5121) return new Uint8Array(v);
-			return (v.length && v.length > 65535) ? new Uint32Array(v) : new Uint16Array(v);
-		}
-		return undefined;
-	}
-	const meshes = (obj.meshes || []).map((m: any) => ({
-		positions: toF32(m.positions)!,
-		texcoords: toF32(m.texcoords),
-		texcoords1: toF32(m.texcoords1),
-		normals: m.normals ? toF32(m.normals) : null,
-		tangents: m.tangents ? toF32(m.tangents) : null,
-		indices: toIndices(m.indices, m.indexComponentType),
-		indexComponentType: m.indexComponentType,
-		materialIndex: m.materialIndex,
-			imageURIs: m.imageURIs?.map((uri: any) => {
-				if (typeof uri === 'string') return uri;
-				if (ArrayBuffer.isView(uri)) {
-					const u8 = new Uint8Array(uri.buffer, uri.byteOffset, uri.byteLength);
-					return utf8Decoder.decode(u8);
-				}
-				return undefined;
-			}),
-			morphPositions: m.morphPositions?.map((mt: any) => toF32(mt)),
-			morphNormals: m.morphNormals?.map((mt: any) => toF32(mt)),
-			morphTangents: m.morphTangents?.map((mt: any) => toF32(mt)),
-		weights: m.weights ? Array.from(m.weights) : undefined,
-		jointIndices: m.jointIndices ? toIndices(m.jointIndices, 5123) as Uint16Array : undefined,
-		jointWeights: m.jointWeights ? toF32(m.jointWeights) : undefined,
-		colors: toF32(m.colors),
-
-	}));
-	const textures: number[] = obj.textures;
-	const materials = obj.materials as GLTFMaterial[];
-	const texBytes = textureBuf ? new Uint8Array(textureBuf) : undefined;
-	let imageBuffers: ArrayBuffer[] = undefined;
-	if (Array.isArray(obj.imageBuffers) && obj.imageBuffers.length) {
-		imageBuffers = obj.imageBuffers.map((buf: any) => {
-			if (buf instanceof Uint8Array) return buf;
-			if (ArrayBuffer.isView(buf)) {
-				const view = buf as ArrayBufferView;
-				return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
-			}
-			return undefined;
-		});
-	} else if (texBytes && Array.isArray(obj.imageOffsets)) {
-		imageBuffers = obj.imageOffsets.map((off: any) => {
-			if (off && typeof off.start === 'number' && typeof off.end === 'number') {
-				return texBytes.slice(off.start, off.end).buffer;
-			}
-			return undefined;
-		});
-	}
-
-	function textureIndexToTextureObject(index: number): number {
-		const remapped = textures?.[index];
-		if (remapped === undefined) {
-			throw new Error(`Invalid texture index ${index} for model "${asset_id}".`);
-		}
-		return remapped;
-	}
-
-	const animations = (obj.animations || []).map((a: any) => ({
-		name: a.name,
-		samplers: (a.samplers || []).map((s: any) => ({
-			interpolation: s.interpolation,
-			input: toF32(s.input)!,
-			output: toF32(s.output)!,
-		})),
-		channels: a.channels || [],
-	}));
-
-	const nodes = (obj.nodes || []).map((n: any) => ({
-		mesh: n.mesh,
-		children: n.children,
-		translation: n.translation,
-		rotation: n.rotation,
-		scale: n.scale,
-		matrix: toF32(n.matrix),
-		skin: n.skin,
-		weights: n.weights ? Array.from(n.weights) : undefined,
-	}));
-	const scenes = obj.scenes;
-	const scene = obj.scene;
-	const skins = (obj.skins || []).map((s: any) => ({
-		joints: s.joints,
-		inverseBindMatrices: s.inverseBindMatrices?.map((m: any) => toF32(m)!),
-	}));
-
-	if (textures && Array.isArray(materials)) {
-		for (const m of materials) {
-			if (m.baseColorTexture !== undefined) m.baseColorTexture = textureIndexToTextureObject(m.baseColorTexture);
-			if (m.normalTexture !== undefined) m.normalTexture = textureIndexToTextureObject(m.normalTexture);
-			if (m.metallicRoughnessTexture !== undefined) m.metallicRoughnessTexture = textureIndexToTextureObject(m.metallicRoughnessTexture);
-			if (m.occlusionTexture !== undefined) m.occlusionTexture = textureIndexToTextureObject(m.occlusionTexture);
-			if (m.emissiveTexture !== undefined) m.emissiveTexture = textureIndexToTextureObject(m.emissiveTexture);
-			if (m.emissiveFactor) {
-				const f = m.emissiveFactor;
-				const arr = ArrayBuffer.isView(f) ? Array.from(f) : Array.isArray(f) ? f : undefined;
-				if (arr) {
-					if (arr.length === 3) arr.push(1);
-					m.emissiveFactor = arr as vec4arr;
-				}
-			}
-		}
-	}
-	return { name: asset_id, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
-}
-
 async function load(source: RawRomSource, res: RomAsset, romPackage: RomToolingPackage) {
 	if (res.op === 'delete') {
 		return;
@@ -256,12 +129,10 @@ async function load(source: RawRomSource, res: RomAsset, romPackage: RomToolingP
 			romPackage.audio[assetKey] = baseAsset;
 			break;
 		case 'model': {
-			const texBuf = baseAsset.model_texture_start
-				? source.getBytes({ ...baseAsset, start: baseAsset.model_texture_start, end: baseAsset.model_texture_end! })
+			const texBuf = baseAsset.model_texture_start !== undefined
+				? source.getBytesView({ ...baseAsset, start: baseAsset.model_texture_start, end: baseAsset.model_texture_end! })
 				: undefined;
-			let model: GLTFModel;
-			model = await loadModelFromBuffer(res.resid, source.getBytes(baseAsset), texBuf);
-			romPackage.model[assetKey] = model;
+			romPackage.model[assetKey] = loadModelFromBuffer(res.resid, source.getBytesView(baseAsset), texBuf);
 			break;
 		}
 		case 'data':

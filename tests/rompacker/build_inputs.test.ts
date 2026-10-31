@@ -67,6 +67,6 @@ test('GLTF buffers and images outside the resource root are captured before conv
 	await writeFile(image, Buffer.from([13, 14, 15, 16]));
 	const model = await loadGLTFModel(inputs.models.get(mesh)!, 'mesh');
 	assert.deepEqual(new Uint8Array(model.imageBuffers[0]), new Uint8Array([5, 6, 7, 8]));
-	assert.deepEqual(model.meshes[0].positions, vertices);
+	assert.deepEqual(model.meshes[0].primitives[0].positions, vertices);
 	assert.notEqual((await prepareRomInputs([resources], [])).identity, inputs.identity);
 });
