@@ -41,6 +41,7 @@ export type SceneReparentChoice = {
 };
 export type SceneRenamePlan = { readonly initialName: string; readonly occupied: ReadonlySet<string>; readonly references: readonly SceneSourceObject[] };
 const NO_REPARENT_CHOICES: readonly SceneReparentChoice[] = [];
+const NO_SCENE_REFERENCES: readonly SceneSourceObject[] = [];
 
 /** Immutable-snapshot source graph and operation admission, not a guest World.
  * Each Scene and selected operation is projected once; steady command queries
@@ -159,7 +160,7 @@ export class SceneSpatialProjection {
 			const graph = this.graph(document, scene), name = graph.ids.get(member);
 			let plan: SceneRenamePlan | undefined;
 			if (graph.relationshipsComplete && name !== undefined && graph.entries.every(entry => graph.ids.get(entry) !== undefined)) {
-				const references = graph.references.get(name) ?? [];
+				const references = graph.references.get(name) ?? NO_SCENE_REFERENCES;
 				if (references.length === 0 || graph.byId.get(name) === member) {
 					const occupied = new Set<string>(); for (const entry of graph.entries) if (entry !== member) occupied.add(graph.ids.get(entry)!);
 					plan = { initialName: name, occupied, references };
