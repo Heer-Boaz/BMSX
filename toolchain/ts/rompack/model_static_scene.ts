@@ -10,7 +10,7 @@ export const MODEL_STATIC_FEATURE = {
 
 export type ModelStaticPart = { node: number; mesh: number; affine: Affine3 };
 export type ModelStaticScene = { firstPart: number; partCount: number; features: number };
-export type ModelStaticMaterial = { command: number; doubleSided: boolean; features: number };
+export type ModelStaticMaterial = { command: number; color: number; doubleSided: boolean; features: number };
 
 function nodeAffine(node: GLTFNode): Affine3 {
 	const matrix = node.matrix;
@@ -32,6 +32,7 @@ export function prepareModelStaticScenes(model: GLTFModel) {
 		const color = material.baseColorFactor;
 		const r = Math.round((color?.[0] ?? 1) * 255), g = Math.round((color?.[1] ?? 1) * 255), b = Math.round((color?.[2] ?? 1) * 255);
 		return { command: (0x20000000 | (r & 255) | ((g & 255) << 8) | ((b & 255) << 16)) >>> 0,
+			color: (0xff000000 | ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)) >>> 0,
 			doubleSided: material.doubleSided === true, features };
 	});
 	const meshFeatures: number[] = [];

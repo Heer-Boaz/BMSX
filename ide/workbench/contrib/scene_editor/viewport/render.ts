@@ -8,6 +8,8 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 	const bounds = view.bounds, points = view.points, segment = view.segment;
 	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_RESOURCE_VIEWER_BACKGROUND);
+	if (view.camera.mode === '3d' && view.models.scene.instances.length > 0)
+		api.drawMeshScene(view.models.scene, bounds.left, bounds.top, bounds.right, bounds.bottom);
 	if (view.camera.mode === '2d') for (const sprite of view.sprites.items) {
 		api.drawBitmapAffine(sprite.bitmap, sprite.x, sprite.y, sprite.xx, sprite.xy, sprite.yx, sprite.yy,
 			sprite.u0, sprite.v0, sprite.u1, sprite.v1, sprite.source.color);
@@ -21,7 +23,7 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 		api.polyline(outline, 0, 0, 0, 1, colors.COLOR_FOCUS_BORDER);
 	}
 	for (let index = 0; index < view.entries.length; index++) {
-		if (view.entries[index] !== view.selected && view.sprites.represented.has(view.entries[index])) continue;
+		if (view.entries[index] !== view.selected && (view.camera.mode === '2d' ? view.sprites.represented : view.models.represented).has(view.entries[index])) continue;
 		const offset = index * SCENE_VIEWPORT_POINT_STRIDE, x = points[offset], y = points[offset + 1];
 		segment[0] = x; segment[1] = y; segment[2] = points[offset + 2]; segment[3] = points[offset + 3];
 		api.polyline(segment, 0, 0, 0, 1, colors.COLOR_CONTENT_ERROR_TEXT);

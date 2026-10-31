@@ -88,10 +88,10 @@ export class SceneViewportSprites {
 		}
 	}
 	/** Actual world-space quad corners, before the editor camera; no inferred object boxes. */
-	public frameBounds(selected: SceneSourceObject | undefined, target: RectBounds): boolean {
+	public frameBounds(selected: ReadonlySet<SceneSourceObject> | undefined, target: RectBounds): boolean {
 		let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity, count = 0;
 		for (const item of this.items) {
-			if (selected !== undefined && item.source.entry !== selected) continue;
+			if (selected !== undefined && !selected.has(item.source.entry)) continue;
 			const affine = item.source.affine, x = affine.ox, y = affine.oy;
 			const xx = item.width * affine.xx, xy = item.width * affine.xy, yx = item.height * affine.yx, yy = item.height * affine.yy;
 			left = Math.min(left, x, x + xx, x + yx, x + xx + yx); right = Math.max(right, x, x + xx, x + yx, x + xx + yx);

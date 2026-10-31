@@ -54,8 +54,10 @@ test('authored helper projection consumes actual affine families and retains unc
 	assert.equal(points[index + 2] - points[index], 32);
 	assert.equal(points[index + 4] - points[index], 16);
 	const projection = t.mock.method(f.view.camera, 'projectX'), revision = f.view.projectionRevision;
+	const poses = t.mock.method(f.view.source!.worlds, 'get');
 	for (let frame = 0; frame < 100; frame++) f.control.update();
 	assert.equal(projection.mock.callCount(), 0); assert.equal(f.view.projectionRevision, revision);
+	assert.equal(poses.mock.callCount(), 0, 'steady reading does not walk source poses to rediscover the camera family');
 	f.view.camera.pan(11, -7); f.control.update();
 	assert.ok(f.view.points === points && f.view.entries === entries);
 	f.view.camera.zoom(1, 0, 0); f.control.update();
@@ -65,32 +67,52 @@ test('authored helper projection consumes actual affine families and retains unc
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
-for (const mode of ['2d', '3d'] as const) test(`${mode} camera zoom keeps the source point under the pointer and pan is its screen-plane inverse`, () => {
-	const camera = new SceneViewportCamera(); camera.setMode(mode);
-	const x = camera.projectX(19, 23, 29), y = camera.projectY(19, 23, 29);
+test('2D camera zoom anchors the source point and pan is its screen-plane inverse', () => {
+	const camera = new SceneViewportCamera();
+	const x = camera.projectX(19, 23, 0), y = camera.projectY(19, 23, 0);
 	camera.zoom(1, x, y);
-	assert.ok(Math.abs(camera.projectX(19, 23, 29) - x) < 1e-10);
-	assert.ok(Math.abs(camera.projectY(19, 23, 29) - y) < 1e-10);
+	assert.ok(Math.abs(camera.projectX(19, 23, 0) - x) < 1e-10);
+	assert.ok(Math.abs(camera.projectY(19, 23, 0) - y) < 1e-10);
 	camera.pan(13, -17);
-	assert.ok(Math.abs(camera.projectX(19, 23, 29) - x - 13) < 1e-10);
-	assert.ok(Math.abs(camera.projectY(19, 23, 29) - y + 17) < 1e-10);
-	const snapshot = camera.capture(), restored = new SceneViewportCamera(); restored.restore(snapshot);
-	assert.deepEqual(restored.capture(), snapshot);
+	assert.ok(Math.abs(camera.projectX(19, 23, 0) - x - 13) < 1e-10);
+	assert.ok(Math.abs(camera.projectY(19, 23, 0) - y + 17) < 1e-10);
+});
+
+test('perspective dolly anchors the actual picked point and independent camera readings restore', () => {
+	const camera = new SceneViewportCamera(); camera.setViewport(400, 240); camera.pan(17, -23);
+	const canvas = camera.capture().canvas;
+	camera.setMode('3d'); camera.frame3D(-10, -10, -10, 10, 10, 10);
+	const point = { originX: 0, originY: 0, originZ: 0, x: 1, y: 2, z: 3 }, x = camera.projectX(point.x, point.y, point.z), y = camera.projectY(point.x, point.y, point.z);
+	camera.zoom(1, x, y, point);
+	assert.ok(Math.abs(camera.projectX(point.x, point.y, point.z) - x) < 1e-10);
+	assert.ok(Math.abs(camera.projectY(point.x, point.y, point.z) - y) < 1e-10);
+	const space = camera.capture().space;
+	camera.setMode('2d'); assert.deepEqual(camera.capture().canvas, canvas);
+	camera.pan(8, 9); assert.deepEqual(camera.capture().space, space);
+	camera.setMode('3d'); const snapshot = camera.capture(), restored = new SceneViewportCamera();
+	restored.setViewport(400, 240); restored.restore(snapshot);
+	assert.deepEqual(restored.capture(), snapshot); assert.deepEqual(restored.clipFromOrigin, camera.clipFromOrigin);
+	const origin = new Float64Array(3), direction = new Float64Array(3);
+	camera.eyeRelativeTo(0, 0, 0, origin); camera.rayDirection3D(x, y, direction);
+	const distance = Math.hypot(point.x - origin[0], point.y - origin[1], point.z - origin[2]);
+	assert.ok(Math.abs(origin[0] + direction[0] * distance - point.x) < 1e-10);
+	assert.ok(Math.abs(origin[1] + direction[1] * distance - point.y) < 1e-10);
+	assert.ok(Math.abs(origin[2] + direction[2] * distance - point.z) < 1e-10);
 });
 
 test('camera framing fits actual image or line extents without imposing the origin-helper reading span', () => {
 	const camera = new SceneViewportCamera();
 	// Focused camera-fit contract: an 8-unit quad occupies the 80-unit inset allocation.
-	camera.frame(0, 0, 8, 8, 112, 112); assert.equal(camera.scale, 10);
+	camera.frame2D(0, 0, 8, 8, 112, 112); assert.equal(camera.scale, 10);
 	assert.equal(camera.projectX(0, 0, 0), -40); assert.equal(camera.projectY(8, 8, 0), 40);
-	camera.frame(0, 0, 8, 0, 112, 112); assert.equal(camera.scale, 10);
-	camera.frame(0, 0, 0, 0, 112, 112); assert.equal(camera.scale, 80 / 64);
+	camera.frame2D(0, 0, 8, 0, 112, 112); assert.equal(camera.scale, 10);
+	camera.frame2D(0, 0, 0, 0, 112, 112); assert.equal(camera.scale, 80 / 64);
 });
 
 test('camera persisted before first layout retains pending source-derived 3D admission', t => {
 	const objects = `{member_id='mesh',definition_id='node3',spatial={local_transform={1,0,0,0,1,0,0,0,1,70,110,130}}}`;
 	const f = fixture(t, objects, false), restored = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => restored.dispose());
-	const snapshot = f.view.camera.capture(); assert.equal(snapshot.reading, 'initial');
+	const snapshot = f.view.camera.capture(); assert.equal(snapshot.canvas.reading, 'initial');
 	restored.camera.restore(snapshot); f.control.setView(restored, BOUNDS);
 	assert.equal(restored.camera.mode, '3d'); assert.equal(restored.camera.initial, false); assert.equal(restored.entries.length, 1);
 	const reading = restored.camera.capture();
@@ -141,7 +163,7 @@ test('pan and orbit use native capture, preserve same-panel focus, and cancel ac
 	f.control.handlePointer(pointer(200, 120, PointerButton.Primary, PointerButton.Primary, 0, KeyModifier.alt), true);
 	const orbit = f.view.camera.capture();
 	pointerCapture.dispatch(pointer(220, 130, PointerButton.Primary), false, 0, f.control.focusTarget.scope.surfaceScope);
-	assert.notEqual(f.view.camera.capture().yaw, orbit.yaw);
+	assert.notEqual(f.view.camera.capture().space.yaw, orbit.space.yaw);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- newer\n' }]); f.control.update();
 	assert.equal(pointerCapture.active, false); const retired = f.view.camera.capture();
 	pointerCapture.dispatch(pointer(240, 140, PointerButton.Primary), false, 0, f.control.focusTarget.scope.surfaceScope);

@@ -403,8 +403,8 @@ shared chrome and region allocation. Semantic selection restore precedes optiona
 tree highlighting; disclosure does not determine whether Details has a subject.
 A document pane adapts the composition to a group; `ScenePrimaryClient` supplies
 the viewport and independent region controls directly to Main without an editor
-input. `scene_editor/viewport/` owns retained editor-camera intent, source-pose
-screen projection, asset-quad painting/picking and its concrete native input/capture
+input. `scene_editor/viewport/` owns independent retained canvas/orbit camera readings,
+source-pose projection, asset-quad and triangle painting/picking and its concrete native input/capture
 lifetime. Camera reading state persists with the primary subject, independently
 of document topology. It consumes the existing spatial projection's readonly
 world-affine cache and the context's exact source selection, not another Scene
@@ -412,11 +412,20 @@ forest or a running machine frame. A separate snapshot-cached visual projection
 reads declared cartlib constructor inputs and borrows that spatial graph; it
 does not evaluate custom initialization or gameplay. Shared prefab provenance
 and authored-affine reading belong to source projection, not viewport controls.
-`workspace/image_assets.ts` retains a reader's exact provider/packed-generation
-atlas resources and logical image regions. Camera motion changes projected
+`workspace/image_assets.ts` and `workspace/model_assets.ts` retain a reader's exact
+provider/packed generation, image regions and selected model-scene resources.
+Model placements share immutable primitive geometry; picking retains linear vertex
+offsets separately from translation. Camera pivots retain a world origin and local
+offset, so framing and ray tests use the same origin-relative arithmetic as rendering.
+For images, camera motion changes projected
 quads, not decoded pixels or texture revisions. The host overlay snapshots full
 Number affine bitmap quads, UVs and tint into its retained command pool; software
 and accelerated host renderers consume that same presentation representation.
+Retained mesh-scene commands own numeric placements and camera publication, not an
+authored graph. Each renderer owns their cached color/depth targets and geometry
+uploads, released by resource lifetime. Dirty mesh scenes rasterize with private
+per-pixel depth; their transparent targets compose in ordinary overlay order and
+clipping. Idle paint reuses the target rather than baking/uploading CPU bitmaps.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
 An input's optional fresh-view capability belongs to its contribution. It creates
