@@ -94,9 +94,9 @@ test('Scene pane source production and member commands retain their input when a
 		const part = parts.main;
 		part.prepareLayout();
 		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
-		main.layout(bounds, minimum, part.minimumClientHeight);
+		main.layout(bounds, minimum, part.minimumClientHeight, part.hasEditors);
 		const finalMinimum = part.minimumClientWidth(main.regionLayout.viewport.bottom - main.regionLayout.viewport.top);
-		if (finalMinimum !== minimum) main.layout(bounds, finalMinimum, part.minimumClientHeight);
+		if (finalMinimum !== minimum) main.layout(bounds, finalMinimum, part.minimumClientHeight, part.hasEditors);
 		part.layoutPrepared(main.documentBounds); main.layoutClients();
 	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,
@@ -161,9 +161,9 @@ scenes.register('incomplete', {})
 		const part = parts.main;
 		part.prepareLayout();
 		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
-		main.layout(bounds, minimum, part.minimumClientHeight);
+		main.layout(bounds, minimum, part.minimumClientHeight, part.hasEditors);
 		const finalMinimum = part.minimumClientWidth(main.regionLayout.viewport.bottom - main.regionLayout.viewport.top);
-		if (finalMinimum !== minimum) main.layout(bounds, finalMinimum, part.minimumClientHeight);
+		if (finalMinimum !== minimum) main.layout(bounds, finalMinimum, part.minimumClientHeight, part.hasEditors);
 		part.layoutPrepared(main.documentBounds); main.layoutClients();
 	}
 	const main = new MainWorkspace(surfaces, presentation.owner, presentation.focusScope, commands,

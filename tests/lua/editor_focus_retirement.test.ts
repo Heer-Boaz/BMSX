@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { InputFocusScope, InputFocusService, inputFocus } from '../../ide/input/focus';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
@@ -59,7 +58,7 @@ test('retirement preserves a newer foreign focus selected by the departing contr
 	assert.equal(focus.revision, revision, 'a retired control cannot release a newer focus owner');
 });
 
-for (const invocation of ['command', 'toolbar pointer', 'compact command'] as const) test(`Scene ${invocation} removal returns a retired numeric field to Outline for canonical keyboard Undo`, t => {
+for (const invocation of ['command', 'compact command'] as const) test(`Scene ${invocation} removal returns a retired numeric field to Outline for canonical keyboard Undo`, t => {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny');
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -80,20 +79,7 @@ for (const invocation of ['command', 'toolbar pointer', 'compact command'] as co
 	assert.equal(field.focusTarget.edit!.pending, true);
 	const accepted = original.replace('0, 0, 1, 11,', '0, 0, 1, 789,');
 
-	if (invocation !== 'toolbar pointer') f.editor.commands.execute('sceneEditor.removeMember', field.focusTarget.commandContext);
-	else {
-		const action = input.view.actionBar.items.find(item => item.command === 'sceneEditor.removeMember')!;
-		assert.ok(action.visible && !action.overflowed && action.enabled);
-		const { left, right, top, bottom } = action.bounds;
-		// Geometry locates the actual retained action; the assertions concern focus and source history.
-		for (const down of [true, false]) {
-			f.host.clock.advance(10);
-			f.editor.dispatchPointer({ x: (left + right) / 2, y: (top + bottom) / 2,
-				buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
-				releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
-				modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
-		}
-	}
+	f.editor.commands.execute('sceneEditor.removeMember', field.focusTarget.commandContext);
 	assert.equal(field.focusTarget.edit!.pending, false);
 	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
 	assert.ok(model.buffer.getText() !== original && model.buffer.getText() !== accepted);

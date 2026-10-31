@@ -76,7 +76,7 @@ export class WorkbenchRegionNavigation {
 			case Region.Files: return this.files.isVisible() ? this.files.focusTarget.scope : undefined;
 			case Region.Hierarchy: return this.main.primary?.hierarchy.attached ? this.main.primary.hierarchy.scope : undefined;
 			case Region.Viewport: return this.main.primary?.viewport.attached ? this.main.primary.viewport.scope : undefined;
-			case Region.Documents: return !this.documents.retired && this.documents.operation === 'none' ? this.documents.scope : undefined;
+			case Region.Documents: return this.documents.contentPresented && !this.documents.retired && this.documents.operation === 'none' ? this.documents.scope : undefined;
 			case Region.Details: return this.main.primary?.details.attached ? this.main.primary.details.scope : undefined;
 			case Region.Activity: return this.main.activityPlacement === 'dockedMain' && this.main.activityDisplayed
 				&& this.main.activities.attached && this.main.activity?.attached ? this.main.activity.scope : undefined;

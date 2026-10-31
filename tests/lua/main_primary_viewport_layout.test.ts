@@ -14,7 +14,7 @@ const ACTIVITY = { minimumWidth: 0, minimumHeight: 60, preferredHeight: 120 };
 
 test('Main gives authored content its own central allocation above ordinary documents', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 1037, bottom: 819 };
-	const vertical = { rowMinimumHeight: 140, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
+	const vertical = { documents: true, rowMinimumHeight: 140, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
 	assert.equal(layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical), true);
 	assert.equal(layout.viewportPresented, true); assert.equal(layout.viewportSplit.orientation, 'vertical');
 	assert.equal(layout.viewportSplit.ratio, 0.65);
@@ -40,7 +40,7 @@ test('Main gives authored content its own central allocation above ordinary docu
 test('unbound Main leaves the whole center to documents and retains the hidden viewport sizing intent', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 800, bottom: 500 };
 	const vertical: WorkbenchMainWorkspaceVerticalConstraints = {
-		rowMinimumHeight: 140, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0,
+		documents: true, rowMinimumHeight: 140, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0,
 	};
 	layout.viewportSplit.ratio = 0.72;
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
@@ -61,7 +61,7 @@ for (const centralMinimum of ['viewport', 'documents'] as const) {
 		const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 537, bottom: 519 };
 		const viewport = { ...VIEWPORT, minimumWidth: centralMinimum === 'viewport' ? 400 : 240 };
 		const documentMinimumWidth = centralMinimum === 'documents' ? 400 : 200;
-		const vertical = { rowMinimumHeight: 140, viewport, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
+		const vertical = { documents: true, rowMinimumHeight: 140, viewport, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
 		layout.layout(bounds, documentMinimumWidth, HIERARCHY, DETAILS, 6, 1000, vertical);
 		assert.equal(layout.contentWidth, 586); assert.equal(layout.scrollX, 86);
 		assert.equal(layout.viewportBounds.right - layout.viewportBounds.left, 400);
@@ -76,7 +76,7 @@ for (const centralMinimum of ['viewport', 'documents'] as const) {
 for (const activity of [undefined, ACTIVITY]) {
 	test(`central clips intersect each client with the visible row and physical viewport ${activity === undefined ? 'without' : 'with'} activity`, () => {
 		const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 237, bottom: 119 };
-		const vertical = { rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity, scrollY: 0 };
+		const vertical = { documents: true, rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity, scrollY: 0 };
 		layout.activityVisible = activity !== undefined;
 		for (const scrollY of [0, 100, 1000]) {
 			for (const scrollX of [0, 1000]) {
@@ -108,7 +108,7 @@ for (const activity of [undefined, ACTIVITY]) {
 
 test('a horizontally offscreen central column has empty clips until its retained allocation is revealed', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 87, bottom: 519 };
-	const vertical = { rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
+	const vertical = { documents: true, rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	for (const clip of [layout.viewportClip, layout.documentClip]) assert.equal(clip.left, clip.right);
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 150, vertical);
@@ -121,7 +121,7 @@ test('a horizontally offscreen central column has empty clips until its retained
 for (const activity of [undefined, ACTIVITY, { minimumWidth: 0, minimumHeight: 150, preferredHeight: 180 }]) {
 	test(`the horizontal scrollbar stays in visible row chrome with ${activity === undefined ? 'no' : activity.minimumHeight === 60 ? 'short' : 'tall'} activity`, () => {
 		const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 237, bottom: 119 };
-		const vertical = { rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity, scrollY: 0 };
+		const vertical = { documents: true, rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity, scrollY: 0 };
 		layout.activityVisible = activity !== undefined;
 		for (const scrollY of [0, 100, 1000]) {
 			vertical.scrollY = scrollY;
@@ -153,7 +153,7 @@ for (const activity of [undefined, ACTIVITY, { minimumWidth: 0, minimumHeight: 1
 
 test('visible row clipping does not reserve horizontal chrome when only the vertical axis overflows', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 119 };
-	const vertical = { rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
+	const vertical = { documents: true, rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	assert.equal(layout.viewportBounds.bottom - layout.viewportBounds.top, 180);
 	assert.equal(layout.documentBounds.bottom - layout.documentBounds.top, 140);
@@ -164,7 +164,7 @@ test('visible row clipping does not reserve horizontal chrome when only the vert
 
 test('vertical constraints preserve the requested viewport ratio and recover it after passive contraction', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 20, right: 800, bottom: 1020 };
-	const vertical = { rowMinimumHeight: 140, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
+	const vertical = { documents: true, rowMinimumHeight: 140, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
 	layout.viewportSplit.ratio = 0.9;
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	assert.equal(layout.viewportBounds.bottom - layout.viewportBounds.top, 852);
@@ -184,7 +184,7 @@ test('vertical constraints preserve the requested viewport ratio and recover it 
 
 test('the complete row minimum still overflows vertically without activity', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 319 };
-	const vertical = { rowMinimumHeight: 600, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 1000 };
+	const vertical = { documents: true, rowMinimumHeight: 600, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 1000 };
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	assert.equal(layout.contentHeight, 600); assert.equal(layout.scrollY, 300);
 	assert.equal(layout.rowBounds.bottom - layout.rowBounds.top, 600);
@@ -200,7 +200,7 @@ for (const activity of [undefined, ACTIVITY]) {
 			const layout = new WorkbenchMainWorkspaceLayout(), minimumHeight = 328 + (activity === undefined ? 0 : 68);
 			const bounds = { left: 37, top: 19, right: 37 + (cause === 'horizontal-admits-vertical' ? 420 : 430),
 				bottom: 19 + minimumHeight + (cause === 'horizontal-admits-vertical' ? 2 : -2) };
-			const vertical = { rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity, scrollY: 1000 };
+			const vertical = { documents: true, rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity, scrollY: 1000 };
 			layout.activityVisible = activity !== undefined;
 			layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 1000, vertical);
 			assert.equal(layout.contentWidth, 426); assert.equal(layout.contentHeight, minimumHeight + 6);
@@ -229,7 +229,7 @@ for (const activity of [undefined, ACTIVITY]) {
 test('viewport measurements and split changes invalidate stable arrangement only once', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 800, bottom: 800 };
 	const viewport: WorkbenchViewSizeConstraints = { ...VIEWPORT };
-	const vertical = { rowMinimumHeight: 100, viewport, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
+	const vertical = { documents: true, rowMinimumHeight: 100, viewport, documentMinimumHeight: 140, activity: undefined, scrollY: 0 };
 	const arrange = () => layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	arrange(); assert.equal(arrange(), false);
 	viewport.minimumWidth = 300; assert.equal(arrange(), true); assert.equal(arrange(), false);
@@ -251,7 +251,7 @@ test('viewport measurements and split changes invalidate stable arrangement only
 test('Main restores its viewport ratio in the same complete publication as side and activity placement', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), observed: WorkbenchMainWorkspaceState[] = [];
 	layout.layout({ left: 0, top: 0, right: 1000, bottom: 1000 }, 200, HIERARCHY, DETAILS, 6, 0,
-		{ rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 });
+		{ documents: true, rowMinimumHeight: 100, viewport: VIEWPORT, documentMinimumHeight: 140, activity: undefined, scrollY: 0 });
 	let nativeResizes = 0;
 	layout.viewportSplit.onDidResize(() => nativeResizes++);
 	layout.onDidChange(() => {

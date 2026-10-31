@@ -252,7 +252,8 @@ test('hiding the focused Main Details region requires its actual draft acceptanc
 	assert.equal(field.pending, false); assert.equal(primary.details.attached, false);
 	assert.ok(primary.hierarchy.attached && primary.details.scope.contextGeneration > generation);
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
-	assert.ok(inputFocus.admittedTarget !== null && f.parts.main.activeGroup.focusScope.contains(inputFocus.admittedTarget.scope));
+	assert.equal(f.parts.main.contentPresented, false);
+	assert.ok(inputFocus.admittedTarget !== null && primary.viewport.scope.contains(inputFocus.admittedTarget.scope));
 });
 
 test('a real Details toolbar Source invocation keeps its native region authority instead of borrowing the shared semantic root lifetime', async t => {

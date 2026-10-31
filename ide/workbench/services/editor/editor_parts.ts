@@ -763,17 +763,20 @@ export class EditorParts {
 		if (!this.canCloseGroup(group)) return Promise.resolve(false);
 		const part = this.owners.get(group)!;
 		group.setClosing(true);
+		let closedFocusRevision: number | undefined;
+		const unbindClose = group.onWillCloseEditor((_input, revision) => { if (revision !== undefined) closedFocusRevision = revision; });
 		const targets = group.model.tabs.map(input => ({ group, input }));
 		const completion = this.closeController.close(targets, origin, part.actionPrompt).then(closed => {
 			if (!closed || this.owners.get(group) !== part || part.retired || group.model.tabs.length !== 0) return false;
 			const focused = inputFocus.target;
-			const ownsFocus = focused === null ? this.activePart === part && part.activeGroup === group
-				: this.options.surfaces.isInContext(focused.scope.surfaceScope, group.surface.captureScope);
-			const focusRevision = inputFocus.revision;
+			let focusRevision = focused === null ? closedFocusRevision : undefined;
+			if (focused !== null && this.options.surfaces.isInContext(focused.scope.surfaceScope, group.surface.captureScope)
+				&& inputFocus.setTarget(null)) focusRevision = inputFocus.revision;
 			if (!part.removeGroup(group)) group.setClosing(false);
-			if (ownsFocus && !part.retired && (focusRevision === inputFocus.revision || inputFocus.target === null)) part.activeGroup.focus();
+			if (focusRevision !== undefined && !part.retired && focusRevision === inputFocus.revision && inputFocus.target === null) part.activeGroup.focus();
 			return true;
 		}).finally(() => {
+			unbindClose();
 			this.closingGroups.delete(group);
 			group.setClosing(false);
 		});

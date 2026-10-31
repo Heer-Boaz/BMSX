@@ -114,10 +114,11 @@ export class GamePanel {
 	}
 	private hidePresentation(): void {
 		const ownsFocus = this.focusTarget.hasFocus || this.sash.focusTarget.hasFocus || this.actions.focusTarget.hasFocus || this.gameInput.focusTarget.hasFocus;
+		const revision = ownsFocus && inputFocus.setTarget(null) ? inputFocus.revision : undefined;
 		this.presented = false;
 		this.gameInput.clearInput();
 		this.sash.clearInput(); this.actions.clearInput(); this.focusTarget.release();
-		if (ownsFocus) this.part.activeGroup.panes.activePane?.focus();
+		if (revision !== undefined && inputFocus.revision === revision && inputFocus.target === null) this.part.focus();
 	}
 	public dispose(): void {
 		this.surface.dispose(); this.gameInput.dispose(); this.sash.dispose(); this.actions.dispose(); this.unbindKeyboard();

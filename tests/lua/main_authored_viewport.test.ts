@@ -65,6 +65,13 @@ test(`${font} authored content is a real independently focused Main client besid
 
 test('Source from the viewport keeps its exact authored selection and opens through Main documents', async t => {
 	const f = await fixture(t);
+	const part = f.editor.editorParts.main, group = part.activeGroup;
+	assert.equal(part.hasEditors, false); assert.equal(part.contentPresented, false);
+	assert.equal(part.surface.visible, true); assert.equal(part.clientSurface.visible, false);
+	t.after(group.onWillFocus(() => {
+		assert.equal(part.contentPresented, true); assert.equal(group.presented, true);
+		assert.equal(f.editor.surfaces.isFocusAdmitted(group.surface), true); return true;
+	}));
 	selectSceneOutlineRow(f.client.view.hierarchy, 2); f.update(); f.main.focusPrimary('viewport');
 	const selection = f.client.consumer.selection, camera = f.client.view.viewport.camera.capture();
 	const target = f.client.viewport.control.focusTarget;
@@ -74,10 +81,103 @@ test('Source from the viewport keeps its exact authored selection and opens thro
 	assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result; f.update();
 	const input = f.editor.editorParts.main.activeGroup.model.activeTab;
 	assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);
+	assert.ok(part.activeGroup === group && group.focusScope.contains(inputFocus.admittedTarget!.scope));
 	assert.ok(f.main.primary === f.client && f.client.consumer.selection === selection);
 	assert.deepEqual(f.client.view.viewport.camera.capture(), camera);
 	assert.equal(f.client.viewport.attached, true);
 	assert.equal(f.model.canUndo, false);
+});
+
+test('first preserve-focus document restores allocation without replacing primary focus or its retained group', async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main, group = part.activeGroup, origin = inputFocus.admittedTarget;
+	group.openEditor(new CodeEditorInput(f.model), { preserveFocus: true }); f.update();
+	assert.equal(part.contentPresented, true); assert.ok(part.activeGroup === group);
+	assert.ok(inputFocus.admittedTarget === origin); assert.equal(f.client.viewport.attached, true);
+});
+
+for (const control of ['content', 'tabs'] as const)
+test(`closing the final focused ${control} returns to the retained authored viewport and removes Documents from F6`, async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main, group = part.activeGroup;
+	const source = new CodeEditorInput(f.model); group.openEditor(source); f.update(); group.focus(control);
+	const camera = f.client.view.viewport.camera.capture(), scope = group.focusScope;
+	assert.equal(await group.close(source.id), true); f.update();
+	assert.equal(part.contentPresented, false); assert.ok(part.activeGroup === group && group.focusScope === scope);
+	assert.ok(f.client.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('F6'); assert.ok(f.client.details.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('F6', KeyModifier.shift); assert.ok(f.client.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+	assert.deepEqual(f.client.view.viewport.camera.capture(), camera); assert.equal(f.model.canUndo, false);
+});
+
+test('bulk close retains both groups and returns only the displaced document focus', async t => {
+	const f = await fixture(t), parts = f.editor.editorParts, part = parts.main, first = part.activeGroup;
+	const firstInput = new CodeEditorInput(f.model); first.openEditor(firstInput);
+	const second = part.splitGroup(first, 'down'), secondInput = new CodeEditorInput(f.model); second.openEditor(secondInput); f.update(); first.focus();
+	assert.equal(await parts.closeController.close([{ group: first, input: firstInput }, { group: second, input: secondInput }], inputFocus.target, part.actionPrompt), true);
+	f.update(); assert.equal(part.contentPresented, false); assert.ok(part.groups.includes(first) && part.groups.includes(second));
+	assert.ok(f.client.viewport.scope.contains(inputFocus.admittedTarget!.scope));
+});
+
+test('group retirement cannot replace a newer focus-and-null request from disposal', async t => {
+	const f = await fixture(t), parts = f.editor.editorParts, part = parts.main, group = part.activeGroup;
+	group.openEditor(new CodeEditorInput(f.model));
+	const sibling = part.splitGroup(group, 'down'); sibling.openEditor(new CodeEditorInput(f.model)); f.update(); group.focus();
+	t.after(group.onWillDispose(() => { f.second.focus(); inputFocus.setTarget(null); }));
+	assert.equal(await parts.closeGroup(group), true); f.update();
+	assert.equal(inputFocus.target, null); assert.ok(part.groups.includes(sibling)); assert.equal(part.contentPresented, true);
+});
+
+test('a preserve-focus opening during clear revokes the old close receipt before a later background close', async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main, group = part.activeGroup;
+	const source = new CodeEditorInput(f.model), incoming = new CodeEditorInput(f.firstInput.workingCopy);
+	group.openEditor(source, { pinned: true }); f.update();
+	let unbind: () => void;
+	unbind = group.panes.onDidClearEditor(() => { unbind(); group.openEditor(incoming, { pinned: true, preserveFocus: true }); }); t.after(unbind);
+	assert.equal(await group.close(source.id), true); f.update();
+	assert.ok(group.model.activeTab === incoming); assert.equal(inputFocus.target, null);
+	assert.equal(await group.close(incoming.id), true); f.update();
+	assert.equal(part.contentPresented, false); assert.equal(inputFocus.target, null);
+});
+
+test('withdrawing the document companion cannot replace a newer focus-and-null request from blur', async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main, source = new CodeEditorInput(f.model), game = f.editor.gamePanel;
+	f.editor.updateViewport({ width: 1200, height: 800 }); part.activeGroup.openEditor(source); game.toggle(); f.update();
+	assert.equal(game.visible, true);
+	const bounds = f.editor.editorParts.mainArea.companionBounds;
+	pointer(f, bounds.left + 4, bounds.top + 4, PointerButton.Primary, PointerButton.Primary);
+	pointer(f, bounds.left + 4, bounds.top + 4, 0, 0, PointerButton.Primary);
+	const target = inputFocus.admittedTarget!; assert.ok(game.focusScope.contains(target.scope));
+	t.after(target.onDidBlur(() => { f.second.focus(); inputFocus.setTarget(null); }));
+	game.close(); f.update();
+	assert.equal(game.visible, false); assert.equal(inputFocus.target, null);
+	assert.ok(part.activeGroup.model.activeTab === source && f.main.primary === f.client);
+});
+
+for (const redirect of ['background', 'new focus', 'new focus then null'] as const)
+test(`closing the final Main document preserves ${redirect}`, async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main, group = part.activeGroup, source = new CodeEditorInput(f.model);
+	group.openEditor(source); f.update();
+	if (redirect === 'background') f.second.focus();
+	else {
+		let unbind: () => void;
+		unbind = group.panes.onDidClearEditor(() => { unbind(); f.second.focus(); if (redirect === 'new focus then null') inputFocus.setTarget(null); });
+		t.after(unbind);
+	}
+	assert.equal(await group.close(source.id), true); f.update(); assert.equal(part.contentPresented, false);
+	if (redirect === 'new focus then null') assert.equal(inputFocus.target, null);
+	else assert.ok(inputFocus.admittedTarget === f.second.commandTarget);
+});
+
+test('an empty retained Main document family presents local modals without restoring blank allocation', async t => {
+	const f = await fixture(t), part = f.editor.editorParts.main, origin = f.client.viewport.control.focusTarget;
+	part.quickInput.input('', '', '', async value => value, undefined, undefined, { invocationOrigin: origin }); f.update();
+	assert.equal(part.quickInput.visible, true); assert.equal(part.contentPresented, false);
+	assert.ok(inputFocus.admittedTarget === part.quickInput.field.focusTarget);
+	f.key('Escape'); assert.equal(part.quickInput.visible, false); assert.ok(inputFocus.admittedTarget === origin);
+	const decision = part.actionPrompt.show({ title: 'Pending action', message: 'Continue?', primary: 'Continue', secondary: 'Cancel', primaryEnabled: true, defaultChoice: 'cancel' }, origin); f.update();
+	assert.equal(part.actionPrompt.visible, true); assert.equal(part.contentPresented, false);
+	assert.ok(inputFocus.admittedTarget === origin); part.actionPrompt.focusTarget.focus();
+	assert.ok(part.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('Escape'); assert.equal(await decision, 'cancel'); assert.ok(inputFocus.admittedTarget === origin);
 });
 
 for (const route of ['keyboard', 'pointer'] as const)
@@ -105,6 +205,7 @@ test(`the viewport ${route} context menu retains its native camera commands and 
 
 test('camera movement is retained reading state and an allocation change cancels its physical capture only', async t => {
 	const f = await fixture(t), viewport = f.client.viewport, bounds = viewport.layoutState.client;
+	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(f.model), { preserveFocus: true }); f.update();
 	const before = f.client.view.viewport.camera.capture(), selection = f.client.consumer.selection;
 	const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
 	pointer(f, x, y, PointerButton.Auxiliary, PointerButton.Auxiliary);

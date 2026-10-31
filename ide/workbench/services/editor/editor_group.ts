@@ -154,6 +154,7 @@ export class EditorGroupView {
 	public get openingAdmitted(): boolean { return this.openingAdmittedValue && !this.closing && !this.presentationRevoked; }
 	private readonly disposeListeners = new Set<() => void>();
 	private readonly moveListeners = new Set<(event: EditorMoveEvent) => void>();
+	private readonly closeListeners = new Set<(input: EditorInput, focusRevision: number | undefined) => void>();
 	private presentationRevoked = false;
 
 	public constructor(contributions: EditorPaneContributions, private readonly commands: EditorCommandRunner, private readonly closeEditors: CloseEditors,
@@ -324,6 +325,10 @@ export class EditorGroupView {
 		this.moveListeners.add(listener);
 		return () => this.moveListeners.delete(listener);
 	}
+	/** Close admission has settled; the host can retain the exact focus retired by this input. */
+	public onWillCloseEditor(listener: (input: EditorInput, focusRevision: number | undefined) => void): () => void {
+		this.closeListeners.add(listener); return () => this.closeListeners.delete(listener);
+	}
 
 	/** Membership is final; history can follow the retained view before any coalesced source retires. */
 	public publishMovedEditor(input: EditorInput, destination: EditorGroupView, replacement: EditorInput): void {
@@ -478,6 +483,7 @@ export class EditorGroupView {
 	public removeEditor(input: EditorInput, closing?: (input: EditorInput) => boolean): void {
 		if (this.tabStrip.drag.state?.source.kind === 'editor' && this.tabStrip.drag.state.source.input === input) this.tabStrip.cancelDrag();
 		const index = this.model.indexOf(input);
+		let focusRevision: number | undefined;
 		if (this.model.activeTab === input) {
 			const tabs = this.model.tabs;
 			// A bulk close selects a surviving view once, never a doomed lazy pane.
@@ -494,10 +500,15 @@ export class EditorGroupView {
 			}
 			if (successor !== undefined) this.doActivate(successor, { preserveFocus: navigationState.activeOwner !== this || this.tabStrip.focusTarget.hasFocus });
 			else {
+				const focused = inputFocus.target;
+				if (focused !== null && (this.containerScope.contains(focused.scope) || this.panes.activePane?.inputScope?.contains(focused.scope))
+					&& inputFocus.setTarget(null)) focusRevision = inputFocus.revision;
 				const generation = this.panes.clearEditor();
+				if (this.panes.openGeneration !== generation) focusRevision = undefined;
 				if (deferred !== undefined) this.closeSelection = { inputs: deferred, generation };
 			}
 		}
+		for (const listener of this.closeListeners) listener(input, focusRevision);
 		this.model.removeAt(index);
 	}
 
@@ -557,6 +568,7 @@ export class EditorGroupView {
 		for (const listener of this.disposeListeners) listener();
 		this.disposeListeners.clear();
 		this.moveListeners.clear();
+		this.closeListeners.clear();
 		if (navigationState.activeOwner === this) navigationState.activeOwner = null;
 		this.unbindFocus();
 		for (const unbind of this.subscriptions) unbind();

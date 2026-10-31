@@ -38,7 +38,9 @@ export type MainEditorPresentation = {
 	readonly scope: InputFocusScope;
 	readonly focusTarget: InputFocusTarget;
 	readonly documentClip: Readonly<RectBounds>;
+	readonly documentsPresented: boolean;
 	readonly modalBounds: Readonly<RectBounds>;
+	focusDocuments(): void;
 	revealDocuments(region: Readonly<RectBounds>): void;
 };
 
@@ -87,12 +89,21 @@ export class EditorPart {
 	public readonly actionPrompt: ActionPrompt;
 	public activeGroup: EditorGroupView;
 	public get groups(): readonly EditorGroupView[] { return this.arrangement.groups; }
+	public get hasEditors(): boolean {
+		for (const group of this.groups) if (group.model.tabs.length !== 0) return true;
+		return false;
+	}
+	/** Logical document allocation; the retained family still owns its local modals. */
+	public get contentPresented(): boolean {
+		return this.presented && (this.options.kind === 'document' || this.options.mainPresentation.documentsPresented);
+	}
 	private readonly groupMru: EditorGroupView[] = [];
 	public get mostRecentlyActiveGroups(): readonly EditorGroupView[] { return this.groupMru; }
 	private readonly groupListeners = new Set<() => void>();
 	private restoreLifetime: AbortController | undefined;
 	private layoutResetRevision = 0;
 	private presented: boolean;
+	private closedFocusRevision: number | undefined;
 	private operationValue: 'none' | 'close' | 'move';
 	public get operation(): 'none' | 'close' | 'move' { return this.operationValue; }
 	public get closing(): boolean { return this.operationValue === 'close'; }
@@ -137,7 +148,7 @@ export class EditorPart {
 			this.scope = new InputFocusScope(Symbol('main editor host'), options.mainPresentation.scope);
 			this.clientScope = new InputFocusScope(Symbol('main document client'), this.scope);
 			this.focusTarget = inputFocus.createTarget(options.focusReturn, this.scope);
-			this.focusTarget.canFocus = () => !this.retired;
+			this.focusTarget.canFocus = () => !this.retired && this.contentPresented;
 			this.surface = options.surfaces.attach({
 				role: 'content', lifetimeOwner: options.mainPresentation.surface, presentationParent: options.mainPresentation.surface, captureScope: this.scope.surfaceScope,
 				isVisible: () => this.presented, getBounds: () => options.mainArea.availableBounds, getClip: () => options.mainPresentation.documentClip,
@@ -146,7 +157,7 @@ export class EditorPart {
 			});
 			this.clientSurface = options.surfaces.attach({
 				role: 'content', lifetimeOwner: this.surface, presentationParent: this.surface, captureScope: this.clientScope.surfaceScope,
-				isVisible: () => this.presented, getBounds: () => this.clientBounds, getClip: () => this.clientBounds,
+				isVisible: () => this.contentPresented, getBounds: () => this.clientBounds, getClip: () => this.clientBounds,
 				draw: () => this.drawClient(), handlePointer: snapshot => { if (snapshot.justPressedButtons !== 0) this.focus(); },
 				onRetire: () => pointerCapture.cancelScope(this.clientScope.surfaceScope),
 			});
@@ -165,13 +176,13 @@ export class EditorPart {
 			next => next !== null && options.surfaces.isInContext(next.scope.surfaceScope, this.actionPrompt.pointerScope),
 			{ ...presentation, reveal: () => this.reveal(this.promptSurface), shouldRevealOnShow: () => this.window?.model.minimized === true });
 		this.quickInputSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
-			presentationParent: modalParent, captureScope: this.quickInput.pointerScope, lifetimeOwner: this.clientSurface,
+			presentationParent: modalParent, captureScope: this.quickInput.pointerScope, lifetimeOwner: this.surface,
 			isVisible: () => this.quickInput.visible, getBounds: () => this.quickInput.layout.bounds, getClip: () => presentation.bounds,
 			draw: () => this.quickInput.draw(), handlePointer: snapshot => this.quickInput.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0),
 			handleWheel: event => { this.quickInput.handleWheel(event.deltaY); return true; }, onRetire: () => this.quickInput.hide(false),
 		});
 		this.promptSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
-			presentationParent: modalParent, captureScope: this.actionPrompt.pointerScope, lifetimeOwner: this.clientSurface,
+			presentationParent: modalParent, captureScope: this.actionPrompt.pointerScope, lifetimeOwner: this.surface,
 			isVisible: () => this.actionPrompt.visible, getBounds: () => this.actionPrompt.view.bounds, getClip: () => presentation.bounds,
 			draw: () => this.actionPrompt.draw(), handlePointer: snapshot => this.actionPrompt.handlePointer(snapshot),
 			handleWheel: event => { this.actionPrompt.handleWheel(event); return true; },
@@ -212,13 +223,20 @@ export class EditorPart {
 			}, presented);
 		group.setOpenAdmission(this.operationValue === 'none');
 		this.groupSubscriptions.set(group, [group.onWillFocus(() => this.prepareGroupFocus(group)),
+			group.onWillCloseEditor((_input, revision) => { if (revision !== undefined) this.closedFocusRevision = revision; }),
 			group.panes.onDidBeginOpen(() => {
 				if (group.openingAdmitted && this.groups.includes(group)) this.restoreLifetime?.abort();
-			}), group.model.onDidChange(() => {
+			}), group.model.onDidChange(change => {
 			if (this.restoreLifetime !== undefined && this.groups.includes(group)) this.restoreLifetime.abort();
 			if (group === this.activeGroup && this.window !== undefined) this.window.model.title = group.model.activeTab?.title ?? 'Editor';
+			if (change === 'editors' && !this.hasEditors) {
+				const revision = this.closedFocusRevision; this.closedFocusRevision = undefined;
+				this.relayout();
+				if (this.operationValue === 'none' && revision !== undefined && inputFocus.revision === revision && inputFocus.target === null) this.focus();
+			}
 			this.options.onDidChange();
 		}), group.panes.onDidClearEditor(this.options.onDidChange), group.panes.onWillShowEditor(openOptions => {
+			this.closedFocusRevision = undefined;
 			if (!openOptions.preserveFocus) {
 				const focusRevision = inputFocus.revision;
 				if (!this.activateGroup(group) || inputFocus.revision !== focusRevision && inputFocus.target !== null) return;
@@ -372,6 +390,9 @@ export class EditorPart {
 		this.window?.layout(editorViewState.font.renderFont(), measureTextRange, measureText);
 		if (this.options.kind === 'document') this.layout(this.clientBounds);
 		if (this.retired || inputFocus.revision !== focusRevision && inputFocus.target !== null) return false;
+		if (modal === null && this.options.kind === 'main' && !this.contentPresented) {
+			this.options.mainPresentation.focusDocuments(); return false;
+		}
 		this.raise();
 		if (modal !== null) this.options.surfaces.raise(modal);
 		return !this.retired && (inputFocus.revision === focusRevision || inputFocus.target === null);
@@ -532,7 +553,7 @@ export class EditorPart {
 		this.scrollbars.horizontal.layout(this.horizontalTrack, this.arrangement.contentWidth, this.viewport.right - this.viewport.left, this.arrangement.scrollX);
 		this.scrollbars.vertical.layout(this.verticalTrack, this.arrangement.contentHeight, this.viewport.bottom - this.viewport.top, this.arrangement.scrollY);
 		for (const leaf of this.arrangement.leaves) {
-			const presented = this.arrangement.maximized === undefined || this.arrangement.maximized === leaf.group;
+			const presented = this.contentPresented && (this.arrangement.maximized === undefined || this.arrangement.maximized === leaf.group);
 			if (changed || leaf.group.tabStrip.needsLayout || leaf.group.presented !== presented) leaf.group.layout(leaf.bounds, leaf.clip, presented);
 		}
 		if (changed && notify && this.surface.published) this.options.surfaces.changed();
@@ -547,6 +568,7 @@ export class EditorPart {
 		this.quickInput.update(); this.actionPrompt.update();
 	}
 	public suspend(): void {
+		this.closedFocusRevision = undefined;
 		const focused = inputFocus.target;
 		if (focused !== null && this.scope.contains(focused.scope)) {
 			focused.edit?.cancel();
@@ -558,6 +580,7 @@ export class EditorPart {
 		this.scope.retireContext();
 	}
 	public clear(): void {
+		this.closedFocusRevision = undefined;
 		this.restoreLifetime?.abort();
 		const retained = this.groups[0];
 		for (const [group, subscriptions] of this.groupSubscriptions) {
@@ -574,6 +597,7 @@ export class EditorPart {
 	}
 	/** Install the initial recovery route before the frontend retires captured document membership. */
 	public prepareRestore(isCurrent: () => boolean): readonly EditorGroupView[] | undefined {
+		this.closedFocusRevision = undefined;
 		const departing = [...this.groups], group = this.makeGroup(false);
 		if (!isCurrent()) { this.discardGroup(group); return; }
 		this.restoreLifetime?.abort();

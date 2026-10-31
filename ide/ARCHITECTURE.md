@@ -63,8 +63,9 @@ Internal membership projections settle before external topology/model events;
 retiring group authority is separate from history handoff and final disposal. An
 `EditorPart` owns real groups, local active/MRU state, retained client bounds,
 Quick Input and decision dialogs. Local modal sessions retain the requesting
-part's input authority while their placement uses the actual host's physical
-extent, independently of its scrolled document clip. `group_arrangement.ts` owns
+part's family lifetime independently of document-content allocation; their
+placement uses the actual host's physical extent, independently of its scrolled
+document clip. `group_arrangement.ts` owns
 the retained split tree, hard and reading minimum extents, overflow viewport,
 constrained drop previews and temporary group maximization. Both constraint tiers use the same
 tree; an optional companion must fit the presented arrangement's reading
@@ -325,7 +326,10 @@ viewport, independent document part, Hierarchy/Details sides and activity area.
 `common/main_workspace_layout.ts` allocates measured constraints, the central
 viewport/document split, requested side widths/visibility and overflow. Logical
 client allocations are separate from effective visible clips and sticky scroll
-chrome. The frontend composition measures the document part, allocates Main,
+chrome. The retained document part supplies content participation from its groups;
+Main omits an empty document allocation beside a primary viewport without
+retiring those groups or their reading state. The frontend composition measures
+the document part, allocates Main,
 then arranges its actual clients before publishing input routing. The composition
 root retains concrete clients; layout owners exchange constraints and extents.
 `EditorParts.main` is its document child; the Game companion is nested with that

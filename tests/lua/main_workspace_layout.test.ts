@@ -15,6 +15,7 @@ const DETAILS = { minimumWidth: 90, preferredWidth: 140, minimumHeight: 0 };
 test('Main allocates three real siblings and gives spare width to its permanent document client', () => {
 	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 219 };
 	assert.equal(view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0), true);
+	assert.equal(view.documentsPresented, true); assert.equal(view.viewportPresented, false); assert.equal(view.viewportSashPresented, false);
 	assert.deepEqual(view.hierarchyBounds, { left: 37, top: 19, right: 157, bottom: 219 });
 	assert.deepEqual(view.documentBounds, { left: 165, top: 19, right: 689, bottom: 219 });
 	assert.deepEqual(view.detailsBounds, { left: 697, top: 19, right: 837, bottom: 219 });
@@ -30,6 +31,91 @@ test('Main allocates three real siblings and gives spare width to its permanent 
 	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, 120);
 	assert.equal(view.detailsBounds.right - view.detailsBounds.left, 140);
 	assert.equal(view.documentBounds.right - view.documentBounds.left, 824);
+});
+
+test('absent documents contribute no allocation, minima or sash beside the full central authored viewport', () => {
+	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 419 };
+	const viewport = { minimumWidth: 160, preferredWidth: 200, minimumHeight: 60 };
+	const vertical = { rowMinimumHeight: 0, viewport, documents: false, documentMinimumHeight: 900, activity: undefined, scrollY: 0 };
+	assert.equal(view.layout(bounds, 1000, HIERARCHY, DETAILS, 6, 0, vertical), true);
+	assert.equal(view.viewportPresented, true); assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
+	assert.deepEqual(view.viewportBounds, { left: 165, top: 19, right: 689, bottom: 419 });
+	assert.deepEqual(view.viewportClip, view.viewportBounds);
+	assert.deepEqual(view.documentBounds, { left: 0, top: 0, right: 0, bottom: 0 });
+	assert.deepEqual(view.documentClip, view.documentBounds); assert.deepEqual(view.viewportSashBounds, view.documentBounds);
+	assert.equal(view.viewportSplit.resizable, false);
+	assert.equal(view.viewportSplit.minimumFirstSize, 0); assert.equal(view.viewportSplit.minimumSecondSize, 0);
+	assert.equal(view.contentWidth, 800); assert.equal(view.contentHeight, 400);
+	assert.equal(view.scrollTrack.top, view.scrollTrack.bottom); assert.equal(view.verticalScrollTrack.left, view.verticalScrollTrack.right);
+	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, HIERARCHY.preferredWidth);
+	assert.equal(view.detailsBounds.right - view.detailsBounds.left, DETAILS.preferredWidth);
+	for (let frame = 0; frame < 1000; frame++) assert.equal(view.layout(bounds, 1000, HIERARCHY, DETAILS, 6, 0, vertical), false);
+	vertical.documentMinimumHeight = 1000;
+	assert.equal(view.layout(bounds, 2000, HIERARCHY, DETAILS, 6, 0, vertical), false, 'omitted document minima do not invalidate its allocation');
+});
+
+test('document participation invalidates layout independently of minima and retains the requested viewport split', () => {
+	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 800, bottom: 400 };
+	const viewport = { minimumWidth: 0, preferredWidth: 0, minimumHeight: 20 };
+	const vertical = { rowMinimumHeight: 100, viewport, documents: true, documentMinimumHeight: 0, activity: undefined, scrollY: 0 };
+	view.viewportSplit.ratio = 0.72;
+	const revision = view.viewportSplit.revision;
+	assert.equal(view.layout(bounds, 0, undefined, undefined, 6, 0, vertical), true);
+	const viewportBounds = { ...view.viewportBounds }, documentBounds = { ...view.documentBounds }, sashBounds = { ...view.viewportSashBounds };
+	assert.equal(view.documentsPresented, true); assert.equal(view.viewportSashPresented, true);
+	vertical.documents = false;
+	assert.equal(view.layout(bounds, 0, undefined, undefined, 6, 0, vertical), true);
+	assert.deepEqual(view.viewportBounds, bounds);
+	assert.equal(view.viewportPresented, true); assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
+	assert.equal(view.viewportSplit.ratio, 0.72); assert.equal(view.viewportSplit.revision, revision);
+	assert.equal(view.layout(bounds, 0, undefined, undefined, 6, 0, vertical), false);
+	vertical.documents = true;
+	assert.equal(view.layout(bounds, 0, undefined, undefined, 6, 0, vertical), true);
+	assert.deepEqual(view.viewportBounds, viewportBounds); assert.deepEqual(view.documentBounds, documentBounds);
+	assert.deepEqual(view.viewportSashBounds, sashBounds);
+	assert.equal(view.viewportSplit.ratio, 0.72); assert.equal(view.viewportSplit.revision, revision);
+});
+
+test('absent documents preserve authored, side and activity minima through shared two-axis overflow', () => {
+	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 337, bottom: 169 };
+	const hierarchy = { ...HIERARCHY, minimumHeight: 250 }, details = { ...DETAILS, minimumHeight: 180 };
+	const viewport = { minimumWidth: 200, preferredWidth: 300, minimumHeight: 160 };
+	const activity = { minimumWidth: 0, minimumHeight: 60, preferredHeight: 80 };
+	const vertical = { rowMinimumHeight: 250, viewport, documents: false, documentMinimumHeight: 1000, activity, scrollY: 1000 };
+	view.activityVisible = true;
+	view.layout(bounds, 1000, hierarchy, details, 6, 1000, vertical);
+	assert.equal(view.contentWidth, 386); assert.equal(view.contentHeight, 324);
+	assert.equal(view.scrollX, 92); assert.equal(view.scrollY, 174);
+	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, HIERARCHY.minimumWidth);
+	assert.equal(view.detailsBounds.right - view.detailsBounds.left, DETAILS.minimumWidth);
+	assert.equal(view.hierarchyBounds.bottom - view.hierarchyBounds.top, hierarchy.minimumHeight);
+	assert.ok(view.detailsBounds.bottom - view.detailsBounds.top >= details.minimumHeight);
+	assert.equal(view.viewportBounds.right - view.viewportBounds.left, viewport.minimumWidth);
+	assert.ok(view.viewportBounds.bottom - view.viewportBounds.top >= viewport.minimumHeight);
+	assert.deepEqual(view.viewportClip, { left: 37, top: 19, right: 233, bottom: 95 });
+	assert.deepEqual(view.activityBounds, { left: 37, top: 109, right: 331, bottom: 169 });
+	assert.equal(view.activityPresented, true); assert.equal(view.viewportPresented, true);
+	assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
+	assert.deepEqual(view.documentBounds, { left: 0, top: 0, right: 0, bottom: 0 });
+	assert.deepEqual(view.documentClip, view.documentBounds); assert.deepEqual(view.viewportSashBounds, view.documentBounds);
+	activity.minimumHeight = activity.preferredHeight = 180;
+	view.layout(bounds, 1000, hierarchy, details, 6, 1000, vertical);
+	assert.equal(view.viewportClip.top, view.viewportClip.bottom, 'scrolling may clip the entire logical authored viewport');
+	assert.equal(view.viewportPresented, true); assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
+});
+
+test('explicitly absent central clients leave no document geometry while an omitted vertical contract retains ordinary documents', () => {
+	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 219 };
+	view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0,
+		{ rowMinimumHeight: 0, viewport: undefined, documents: false, documentMinimumHeight: 1000, activity: undefined, scrollY: 0 });
+	assert.equal(view.viewportPresented, false); assert.equal(view.documentsPresented, false); assert.equal(view.viewportSashPresented, false);
+	assert.deepEqual(view.viewportBounds, { left: 0, top: 0, right: 0, bottom: 0 });
+	assert.deepEqual(view.viewportClip, view.viewportBounds); assert.deepEqual(view.documentBounds, view.viewportBounds);
+	assert.deepEqual(view.documentClip, view.viewportBounds); assert.deepEqual(view.viewportSashBounds, view.viewportBounds);
+	assert.equal(view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0), true);
+	assert.equal(view.documentsPresented, true);
+	assert.deepEqual(view.documentBounds, { left: 165, top: 19, right: 689, bottom: 219 });
+	assert.deepEqual(view.documentClip, view.documentBounds);
 });
 
 test('constrained Main placement shrinks only displayed side widths and later restores the requested pixel widths', () => {

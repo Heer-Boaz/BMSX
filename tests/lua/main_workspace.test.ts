@@ -235,6 +235,7 @@ test('a newer pending replacement leaves its actual outgoing Main client attache
 
 test('Main preserves all region minima below the combined width and reveals actual focused regions through shared overflow', async t => {
 	const f = primaryFixture(t); assert.equal(await f.open(f.primary), true);
+	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(f.primary), { preserveFocus: true }); f.update();
 	const client = f.clients[0], source = f.primary.buffer.getText();
 	// The three-region layout contract is under test: no contradictory sash interval,
 	// implicit client collapse, or replacement when the viewport is below its minima.

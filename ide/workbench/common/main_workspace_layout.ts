@@ -17,6 +17,7 @@ export type WorkbenchMainWorkspaceState = {
 export type WorkbenchMainWorkspaceVerticalConstraints = {
 	readonly rowMinimumHeight: number;
 	readonly viewport: WorkbenchViewSizeConstraints | undefined;
+	readonly documents: boolean;
 	readonly documentMinimumHeight: number;
 	readonly activity: MainWorkspaceActivitySizeConstraints | undefined;
 	readonly scrollY: number;
@@ -50,6 +51,8 @@ export class WorkbenchMainWorkspaceLayout {
 	public detailsPresented = false;
 	public activityPresented = false;
 	public viewportPresented = false;
+	public documentsPresented = false;
+	public viewportSashPresented = false;
 	public contentWidth = 0;
 	public contentHeight = 0;
 	public scrollX = 0;
@@ -144,14 +147,16 @@ export class WorkbenchMainWorkspaceLayout {
 		if (!this.detailsVisibleValue) details = undefined;
 		const activity = this.activityVisibleValue ? vertical?.activity : undefined;
 		const viewport = vertical?.viewport;
-		const documentMinimumHeight = viewport === undefined ? 0 : vertical!.documentMinimumHeight;
+		const documents = vertical === undefined || vertical.documents;
+		if (!documents) documentMinimumWidth = 0;
+		const documentMinimumHeight = viewport === undefined || !documents ? 0 : vertical!.documentMinimumHeight;
 		const verticalPresented = activity !== undefined || viewport !== undefined;
 		const rowMinimumHeight = verticalPresented ? Math.max(vertical!.rowMinimumHeight,
-			viewport === undefined ? 0 : viewport.minimumHeight + WORKBENCH_SPLIT_SIZE + documentMinimumHeight) : 0;
+			viewport === undefined ? 0 : viewport.minimumHeight + (documents ? WORKBENCH_SPLIT_SIZE + documentMinimumHeight : 0)) : 0;
 		const requestedScrollY = verticalPresented ? vertical!.scrollY : 0;
 		if (this.arrangedRevision === this.stateRevision && this.bounds.left === bounds.left && this.bounds.top === bounds.top
 			&& this.bounds.right === bounds.right && this.bounds.bottom === bounds.bottom && this.documentMinimum === documentMinimumWidth
-			&& this.documentMinimumHeight === documentMinimumHeight && this.viewportMinimumWidth === viewport?.minimumWidth
+			&& this.documentsPresented === documents && this.documentMinimumHeight === documentMinimumHeight && this.viewportMinimumWidth === viewport?.minimumWidth
 			&& this.viewportPreferredWidth === viewport?.preferredWidth && this.viewportMinimumHeight === viewport?.minimumHeight
 			&& this.viewportSplitRevision === this.viewportSplit.revision
 			&& this.hierarchyMinimum === hierarchy?.minimumWidth && this.hierarchyPreferred === hierarchy?.preferredWidth
@@ -173,6 +178,8 @@ export class WorkbenchMainWorkspaceLayout {
 		this.hierarchyPresented = hierarchy !== undefined; this.detailsPresented = details !== undefined;
 		this.activityPresented = activity !== undefined;
 		this.viewportPresented = viewport !== undefined;
+		this.documentsPresented = documents;
+		this.viewportSashPresented = viewport !== undefined && documents;
 		const centralMinimumWidth = Math.max(documentMinimumWidth, viewport?.minimumWidth ?? 0);
 		const hierarchyMinimum = hierarchy?.minimumWidth ?? 0, detailsMinimum = details?.minimumWidth ?? 0;
 		const hierarchyGap = hierarchy === undefined ? 0 : WORKBENCH_SPLIT_SIZE;
@@ -239,25 +246,34 @@ export class WorkbenchMainWorkspaceLayout {
 		const clipRight = Math.max(clipLeft, Math.min(documentRight, this.viewport.right, this.verticalViewport.right));
 		const clipTop = Math.max(this.viewport.top, this.verticalViewport.top);
 		const clipBottom = Math.min(this.viewport.bottom, this.verticalViewport.bottom);
-		if (viewport !== undefined) {
+		if (viewport !== undefined && documents) {
 			const split = this.viewportSplit;
 			split.minimumFirstSize = viewport.minimumHeight + WORKBENCH_SPLIT_SIZE / 2;
 			split.minimumSecondSize = documentMinimumHeight + WORKBENCH_SPLIT_SIZE / 2;
 			split.layout(documentLeft, top, documentRight, bottom);
 			const position = split.position;
 			write_rect_bounds(this.viewportBounds, documentLeft, top, documentRight, position - WORKBENCH_SPLIT_SIZE / 2);
-			const viewportTop = Math.max(this.viewportBounds.top, clipTop);
-			write_rect_bounds(this.viewportClip, clipLeft, viewportTop, clipRight, Math.max(viewportTop, Math.min(this.viewportBounds.bottom, clipBottom)));
 			write_rect_bounds(this.viewportSashBounds, documentLeft, this.viewportBounds.bottom, documentRight, position + WORKBENCH_SPLIT_SIZE / 2);
 			write_rect_bounds(this.documentBounds, documentLeft, this.viewportSashBounds.bottom, documentRight, bottom);
 		} else {
-			clear_rect_bounds(this.viewportBounds); clear_rect_bounds(this.viewportClip); clear_rect_bounds(this.viewportSashBounds);
+			clear_rect_bounds(this.viewportSashBounds);
 			this.viewportSplit.minimumFirstSize = this.viewportSplit.minimumSecondSize = 0;
 			this.viewportSplit.layout(0, 0, 0, 0);
-			write_rect_bounds(this.documentBounds, documentLeft, top, documentRight, bottom);
+			if (viewport !== undefined) write_rect_bounds(this.viewportBounds, documentLeft, top, documentRight, bottom);
+			else clear_rect_bounds(this.viewportBounds);
+			if (documents) write_rect_bounds(this.documentBounds, documentLeft, top, documentRight, bottom);
+			else clear_rect_bounds(this.documentBounds);
 		}
-		const documentTop = Math.max(this.documentBounds.top, clipTop);
-		write_rect_bounds(this.documentClip, clipLeft, documentTop, clipRight, Math.max(documentTop, Math.min(this.documentBounds.bottom, clipBottom)));
+		if (viewport !== undefined) {
+			const viewportTop = Math.max(this.viewportBounds.top, clipTop);
+			write_rect_bounds(this.viewportClip, clipLeft, viewportTop, clipRight, Math.max(viewportTop, Math.min(this.viewportBounds.bottom, clipBottom)));
+		} else clear_rect_bounds(this.viewportClip);
+		if (documents) {
+			const documentTop = Math.max(this.documentBounds.top, clipTop);
+			write_rect_bounds(this.documentClip, clipLeft, documentTop, clipRight, Math.max(documentTop, Math.min(this.documentBounds.bottom, clipBottom)));
+		} else {
+			clear_rect_bounds(this.documentClip);
+		}
 		if (hierarchy !== undefined) {
 			write_rect_bounds(this.hierarchyBounds, left, top, left + hierarchyWidth, bottom);
 			const split = this.hierarchySash;
