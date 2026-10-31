@@ -1,6 +1,7 @@
+import { readLuaNumberLiteral } from '../../../../toolchain/ts/lua/syntax/number_expression';
 import { parseLuaExpressionSource } from '../../../../toolchain/ts/lua/analysis/parse';
 import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
-import { readLuaNumberLiteral, readLuaSourceRange, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
+import { readLuaSourceRange, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits, validateLuaTableFieldExpression, formatLuaTableFieldSource } from '../../../language/lua/table_field_insertion';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { QuickInputController } from '../../services/quick_input/controller';

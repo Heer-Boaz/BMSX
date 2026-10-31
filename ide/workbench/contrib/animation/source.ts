@@ -1,3 +1,4 @@
+import { readLuaNumberLiteral } from '../../../../toolchain/ts/lua/syntax/number_expression';
 import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
@@ -5,7 +6,6 @@ import { findLuaModuleExport } from '../../../../toolchain/ts/lua/semantic/modul
 import { resolveStaticLuaExpressionPath } from '../../../../toolchain/ts/lua/semantic/expression_path';
 import { resourceIdentityKey, type ResourceIdentity } from '../../../common/resource';
 import { LuaSourceReader } from '../../../language/lua/source_reader';
-import { readLuaNumberLiteral } from '../../../language/lua/source_edits';
 import { indexAnimationKeys } from './key_index';
 import type { AnimationKeySource, AnimationSourceDocument, AnimationTableSource, AnimationTrackSource, AnimationClipSource, AnimationFrameSource } from './model';
 

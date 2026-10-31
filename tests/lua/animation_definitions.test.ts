@@ -1,3 +1,4 @@
+import { readLuaNumberLiteral } from '../../toolchain/ts/lua/syntax/number_expression';
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { resourceIdentityKey } from '../../ide/common/resource';
 import { createTestEditorGroup } from '../helpers/editor_panes';
@@ -8,7 +9,7 @@ import { findNamedLuaTableField } from '../../toolchain/ts/lua/syntax/table_fiel
 import { buildLuaSemanticWorkspaceSnapshot, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { buildResourceLuaSemanticFixtureFile, createResourceModuleProjectFixture } from '../helpers/lua_semantic_project';
 import { LuaSourceReader } from '../../ide/language/lua/source_reader';
-import { luaSourceRangeToTextRange, readLuaNumberLiteral } from '../../ide/language/lua/source_edits';
+import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits } from '../../ide/language/lua/table_field_insertion';
 import { AnimationEditorInput } from '../../ide/workbench/contrib/animation/editor_input';
 import { AnimationEditorController } from '../../ide/workbench/contrib/animation/controller';

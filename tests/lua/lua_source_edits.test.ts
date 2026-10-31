@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import type { RuntimeResource } from '../../ide/common/resource';
 import { EditorTextModel } from '../../ide/editor/model/text_model';
 import { createLuaTableFieldNumberEdits, luaSourcePositionMatchesTextRange, luaSourcePositionToTextRange,
-	luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaSourceRange, readLuaNumberLiteral, readLuaExpressionPreview } from '../../ide/language/lua/source_edits';
+	luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange, readLuaSourceRange, readLuaExpressionPreview } from '../../ide/language/lua/source_edits';
 import { mapTrackedTextRange } from '../../ide/editor/text/text_change';
 import {
 	LuaSyntaxKind,
@@ -14,6 +14,7 @@ import {
 	type LuaTableConstructorExpression,
 } from '../../toolchain/ts/lua/syntax/ast';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
+import { formatLuaNumberExpression, readLuaNumberLiteral, readLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
 import { runCompiledLua } from './cpu_test_harness';
 
 const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'scene.lua', location: { kind: 'workspace' as const, path: 'scene.lua' },
@@ -149,6 +150,53 @@ test('numeric key edits support fractional coordinates without replacing groupin
 	assert.equal(model.buffer.getText(), source);
 });
 
+for (const optLevel of [0, 3] as const) {
+	test(`Lua Number source expressions preserve runtime arithmetic values and signed zero (O${optLevel})`, () => {
+		const generated = runCompiledLua(`local large, one, zero = 1e308, 1, 0
+return large * 2, -large * 2, one / zero, -one / zero, zero / zero, -zero`, 'number-source.lua', optLevel) as number[];
+		assert.deepEqual(generated, [Infinity, -Infinity, Infinity, -Infinity, NaN, -0]);
+		const values = [...generated, 0, 1.25, -1.25, Number.MIN_VALUE, Number.MAX_VALUE];
+		for (const value of values) {
+			const { fields } = parseFields(`local values = { value = ${formatLuaNumberExpression(value)} }`);
+			assert.equal(readLuaNumberExpression(fields.get('value')!.value), value);
+		}
+		assert.deepEqual(runCompiledLua(`return ${values.map(formatLuaNumberExpression).join(', ')}`, 'number-roundtrip.lua', optLevel), values);
+	});
+
+	test(`Lua numeric field edits preserve non-finite values, zero signs and source trivia (O${optLevel})`, () => {
+		for (const value of [Infinity, -Infinity, NaN, -0, 0]) {
+			const source = 'local values = { value = -( --[[retained]] 0X0002), neighbor = 7 }';
+			const model = new EditorTextModel(resource, 'lua', source);
+			const { fields, locations } = parseFields(source);
+			model.pushEditOperations(createLuaTableFieldNumberEdits(model.buffer, locations, fields.get('value')!, value)!);
+			assert.equal(readLuaNumberExpression(parseFields(model.buffer.getText()).fields.get('value')!.value), value);
+			assert.deepEqual(runCompiledLua(`${model.buffer.getText()}\nreturn values.value, values.neighbor`, 'field-number-roundtrip.lua', optLevel), [value, 7]);
+			assert.ok(model.buffer.getText().includes('--[[retained]]'));
+			model.undo(); assert.equal(model.buffer.getText(), source);
+		}
+		const source = 'local values = { positive = 0, negative = -0 }';
+		const model = new EditorTextModel(resource, 'lua', source);
+		const { fields, locations } = parseFields(source);
+		model.pushEditOperations([
+			...createLuaTableFieldNumberEdits(model.buffer, locations, fields.get('positive')!, -0)!,
+			...createLuaTableFieldNumberEdits(model.buffer, locations, fields.get('negative')!, 0)!,
+		]);
+		assert.deepEqual(runCompiledLua(`${model.buffer.getText()}\nreturn values.positive, values.negative`, 'field-zero-signs.lua', optLevel), [-0, 0]);
+		model.undo(); assert.equal(model.buffer.getText(), source);
+	});
+}
+
+test('Number source recognition stays closed; scalar entry remains literal-only', () => {
+	for (const source of ['1 / 2', '1 + 2', 'unknown_value', 'compute()', '2 / 0', '(1 / 0) + 1']) {
+		const { fields } = parseFields(`local values = { value = ${source} }`);
+		assert.equal(readLuaNumberExpression(fields.get('value')!.value), null);
+	}
+	for (const source of ['(1 / 0)', '(-1 / 0)', '(0 / 0)']) {
+		const { fields } = parseFields(`local values = { value = ${source} }`);
+		assert.equal(readLuaNumberLiteral(fields.get('value')!.value), null);
+	}
+});
+
 test('source numeric projection reads Number literals without evaluating expressions or coercing signed words', () => {
 	const source = 'local values = { zero = -(0), max = 2147483647, min = -( --[[keep]]\r\n2147483648), hex = 0X11, exponent = 1e3, fraction = 1.5, outside = 2147483648, dynamic = origin + 1 }';
 	const { fields, locations } = parseFields(source);
@@ -251,7 +299,7 @@ test('Lua field edits preserve the original spelling and history when the value 
 	model.pushEditOperations([
 		...createLuaTableFieldNumberEdits(model.buffer, locations, fields.get('positive')!, 42)!,
 		...createLuaTableFieldNumberEdits(model.buffer, locations, fields.get('negative')!, -42)!,
-		...createLuaTableFieldNumberEdits(model.buffer, locations, fields.get('zero')!, 0)!,
+		...createLuaTableFieldNumberEdits(model.buffer, locations, fields.get('zero')!, -0)!,
 		...createLuaTableFieldNumberEdits(model.buffer, locations, fields.get('exponent')!, 1000)!,
 	]);
 	assert.equal(model.version, version);

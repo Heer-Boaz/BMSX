@@ -1,7 +1,6 @@
 import type { LuaSourceLocations } from '../../../toolchain/ts/lua/syntax/source_locations';
 import {
 	LuaSyntaxKind,
-	LuaUnaryOperator,
 	type LuaNumericLiteralExpression,
 	type LuaBooleanLiteralExpression,
 	type LuaNilLiteralExpression,
@@ -13,6 +12,7 @@ import {
 } from '../../../toolchain/ts/lua/syntax/ast';
 import { findLuaTableFieldSeparator } from '../../../toolchain/ts/lua/syntax/table_fields';
 import { quoteLuaString } from '../../../toolchain/ts/lua/syntax/string_literal';
+import { formatLuaNumberExpression, luaNumericLiteral, readLuaNumberLiteral } from '../../../toolchain/ts/lua/syntax/number_expression';
 import type { LuaTokenSequence } from '../../../toolchain/ts/lua/syntax/token_sequence';
 import type { EditorTextEdit } from '../../editor/model/text_model';
 import type { TextBuffer } from '../../editor/text/text_buffer';
@@ -103,12 +103,6 @@ export function readLuaExpressionPreview(buffer: TextBuffer, locations: LuaSourc
 	return signature + ')';
 }
 
-/** Literal syntax only: editor projections must not evaluate arbitrary Lua. */
-export function readLuaNumberLiteral(expression: LuaExpression): number | null {
-	const literal = numericLiteral(expression);
-	return literal === null ? null : expression.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
-}
-
 /** Human scalar entry uses the language's numeric syntax and range, not a host word parser. */
 export function parseLuaNumberInput(text: string): { readonly value: number } | { readonly error: string } {
 	try {
@@ -121,14 +115,6 @@ export function parseLuaNumberInput(text: string): { readonly value: number } | 
 		if (!(error instanceof LuaSyntaxError)) throw error;
 		return { error: error.message };
 	}
-}
-
-function numericLiteral(expression: LuaExpression): LuaNumericLiteralExpression | null {
-	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression) return expression;
-	if (expression.kind === LuaSyntaxKind.UnaryExpression
-		&& expression.operator === LuaUnaryOperator.Negate
-		&& expression.operand.kind === LuaSyntaxKind.NumericLiteralExpression) return expression.operand;
-	return null;
 }
 
 /**
@@ -146,22 +132,23 @@ export function createLuaTableFieldNumberEdits(
 	value: number,
 ): EditorTextEdit[] | null {
 	const expression = field.value;
-	const literal = numericLiteral(expression);
+	const literal = luaNumericLiteral(expression);
 	if (literal === null) return null;
-	const previousValue = expression.kind === LuaSyntaxKind.UnaryExpression ? -literal.value : literal.value;
-	if (value === previousValue) {
+	const negated = expression.kind === LuaSyntaxKind.UnaryExpression;
+	const previousValue = negated ? -literal.value : literal.value;
+	if (Object.is(value, previousValue)) {
 		return [];
 	}
 
 	const literalStart = buffer.offsetAt(locations.range(literal.span).start.line - 1, locations.range(literal.span).start.column - 1);
 	const literalEnd = buffer.offsetAt(locations.range(literal.span).end.line - 1, locations.range(literal.span).end.column);
 	const literalSource = buffer.getTextRange(literalStart, literalEnd);
-	const negative = value < 0;
+	const negative = value < 0 || Object.is(value, -0);
 	const magnitude = negative ? -value : value;
-	const digits = magnitude % 1 === 0 ? formatIntegerLiteral(magnitude, literalSource) : String(magnitude);
+	const digits = magnitude % 1 === 0 ? formatIntegerLiteral(magnitude, literalSource) : formatLuaNumberExpression(magnitude);
 	const edits: EditorTextEdit[] = [];
 	let replacement = digits;
-	if (expression.kind === LuaSyntaxKind.UnaryExpression) {
+	if (negated) {
 		if (!negative) {
 			edits.push({
 				offset: buffer.offsetAt(locations.range(expression.span).start.line - 1, locations.range(expression.span).start.column - 1),

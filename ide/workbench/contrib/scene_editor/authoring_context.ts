@@ -1,9 +1,9 @@
 import { DisposableStore } from '../../../common/lifecycle';
 import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
-import { createLuaTableFieldRemovalEdits, luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
+import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
-import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry } from './model';
+import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, SceneSourceObject } from './model';
 import type { SceneSourceDocuments } from './source_documents';
 import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
@@ -271,20 +271,25 @@ export class SceneAuthoringContext {
 		for (const listener of this.selectionListeners) listener();
 	}
 
-	private editableMember(): Extract<SceneAuthoredSelection, { kind: 'member' }> | undefined {
+	private editableMember(): (Extract<SceneAuthoredSelection, { kind: 'member' }> & { readonly entry: SceneSourceObject }) | undefined {
 		const intent = this.selectionRevisionValue;
 		const selection = this.selection;
 		return intent === this.selectionRevisionValue && selection?.kind === 'member' && selection.entry.kind === 'object'
-			&& !this.workingCopy.readOnly && this.document!.analysis.chunk.syntaxError === null ? selection : undefined;
+			&& !this.workingCopy.readOnly && this.document!.analysis.chunk.syntaxError === null
+			? selection as Extract<SceneAuthoredSelection, { kind: 'member' }> & { readonly entry: SceneSourceObject } : undefined;
 	}
 
-	public canRemoveSelectedMember(): boolean { return this.editableMember() !== undefined; }
+	public canRemoveSelectedMember(): boolean {
+		const selected = this.editableMember();
+		return selected !== undefined && this.documents.memberRemovalEdits(this.workingCopy, this.document!, selected.scene, selected.entry) !== undefined;
+	}
 
 	public removeSelectedMember(): boolean {
 		const selected = this.editableMember();
 		if (selected === undefined) return false;
-		const chunk = this.document!.analysis.chunk;
-		this.workingCopy.pushEditOperations(createLuaTableFieldRemovalEdits(this.workingCopy.buffer, chunk.locations, chunk.tokens, selected.entry.field));
+		const edits = this.documents.memberRemovalEdits(this.workingCopy, this.document!, selected.scene, selected.entry);
+		if (edits === undefined || !this.isCurrent || this.selectionValue !== selected) return false;
+		this.workingCopy.pushEditOperations(edits);
 		// Content publication may already have selected another surviving occurrence.
 		if (this.selectionValue === selected) this.clearSelection();
 		return true;

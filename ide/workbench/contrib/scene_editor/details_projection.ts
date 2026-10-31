@@ -1,6 +1,7 @@
+import { readLuaNumberLiteral } from '../../../../toolchain/ts/lua/syntax/number_expression';
 import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
-import { readLuaExpressionPreview, readLuaSourceRange, readLuaNumberLiteral } from '../../../language/lua/source_edits';
+import { readLuaExpressionPreview, readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { SceneAuthoredSelection, SceneAuthoringContext } from './authoring_context';
 import type { SceneSourceDocument, SceneSourceDefinition } from './model';
 import { collectSceneOptionProperties, type SceneOptionProperty } from './option_properties';
