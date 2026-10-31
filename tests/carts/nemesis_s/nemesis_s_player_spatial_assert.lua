@@ -56,8 +56,8 @@ return {
 			-- This packet comparison is the vessel producer contract: the same
 			-- option batch precedes the newly selected primary image, with option
 			-- world positions independent of the player's presentation transform.
-			local actual<const> = command_list.new(actual_commands)
-			local expected<const> = command_list.new(expected_commands)
+			local actual<const> = command_list.new(actual_commands, 128)
+			local expected<const> = command_list.new(expected_commands, 128)
 			command_list.begin(actual, gp0.draw_mode_blend_half, 0)
 			command_list.begin(expected, gp0.draw_mode_blend_half, 0)
 			visual:draw(actual)

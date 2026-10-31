@@ -37,7 +37,7 @@ catalog.replace('fixture',{glyphs={a='glyph',b='glyph',[' ']='glyph',['?']='glyp
 local font<const> = catalog.get('fixture')
 bss text_words: word[512]
 local output<const>: *word = text_words
-local draw<const> = commands.new(text_words)
+local draw<const> = commands.new(text_words,512)
 `;
 
 const plain = `

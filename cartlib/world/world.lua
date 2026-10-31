@@ -164,7 +164,7 @@ function world_class.new()
 	self._executing_tick_group = nil
 	self._visual_sequence = 0
 	self._visual_revision = 0
-	self._draw_commands = command_list.new(cartlib_render_commands)
+	self._draw_commands = command_list.new(cartlib_render_commands, render_command_capacity)
 	self._render_visuals = {}
 	self._render_visual_count = 0
 	self._render_visual_revision = -1

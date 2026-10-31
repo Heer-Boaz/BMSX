@@ -101,7 +101,7 @@ part:set_imgid('other')
 assert(part.draw==layered.draw_visual and part.source_width==3 and part.source_height==2,
  'source admission discarded the concrete composite producer')
 bss words: word[32]
-local draw<const> = commands.new(words)
+local draw<const> = commands.new(words,32)
 commands.begin(draw,0x100,0)
 part.draw(part,draw)
 local output<const>: *word = words
@@ -129,7 +129,7 @@ prefab.define({def_id='rectangle.actor',class={},spatial={family='2d',authority=
 local actor<const> = world:spawn('rectangle.actor',{})
 local part<const> = actor:get_component(rectangle)
 bss words: word[32]
-local draw<const> = commands.new(words)
+local draw<const> = commands.new(words,32)
 commands.begin(draw,0x100,0)
 part:draw_rectangle(draw)
 local output<const>: *word = words
@@ -217,7 +217,7 @@ local commands<const> = require('cartlib/gx/command_list')
 local batch<const> = require('cartlib/gx/affine_batch')
 local image<const> = require('cartlib/gx/image')
 bss words: word[512]
-local draw<const> = commands.new(words)
+local draw<const> = commands.new(words,512)
 commands.begin(draw,0x100,0)
 local source<const> = image.resolve('tile')
 local surface<const> = image.resolve('surface')
@@ -286,7 +286,7 @@ local commands<const> = require('cartlib/gx/command_list')
 local batch<const> = require('cartlib/gx/affine_batch')
 local image<const> = require('cartlib/gx/image')
 bss words: word[1024]
-local draw<const> = commands.new(words)
+local draw<const> = commands.new(words,1024)
 local tile<const> = image.resolve('tile')
 local surface<const> = image.resolve('surface')
 local glyphs<const> = {tile,tile,tile,tile}

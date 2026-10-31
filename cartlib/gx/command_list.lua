@@ -52,12 +52,22 @@ struct gp0_quad_packet
 	position3: word
 end
 
+struct gp0_triangle_packet
+	command: word
+	position0: word
+	position1: word
+	position2: word
+end
+
 local textured_rectangle_packet_size<const> = sizeof(gp0_textured_rectangle_packet)
 local fixed_textured_rectangle_packet_size<const> = sizeof(gp0_fixed_textured_rectangle_packet)
 local rectangle_packet_size<const> = sizeof(gp0_rectangle_packet)
 local neutral_texture_color<const> = 0x00808080
 
 function command_list.submit(draw)
+	if draw.word_count == 0 then
+		return
+	end
 	dma.wait0_idle()
 	dma.wait1_idle()
 	dma.copy_to_gp0(draw.words, draw.word_count)
@@ -82,9 +92,12 @@ end
 
 command_list.reserve_atomic = reserve_atomic
 
-function command_list.new(words)
+-- The caller supplies storage in complete DMA blocks. Ordinary retained
+-- writers append within that allocation; bulk triangle submission streams it.
+function command_list.new(words, word_capacity)
 	return setmetatable({
 		words = words,
+		word_capacity = word_capacity,
 		word_count = 0,
 		draw_mode = gp0.draw_mode_blend_half,
 	}, draw_list)
@@ -105,6 +118,9 @@ function command_list.begin(draw, draw_mode, target_origin)
 end
 
 function command_list.submit_fenced(draw)
+	if draw.word_count == draw.word_capacity then
+		command_list.submit(draw)
+	end
 	local index<const> = draw.word_count
 	local words<const>: *word = draw.words
 	words[index] = gp0.irq_request
@@ -231,6 +247,37 @@ function draw_list:triangle_words(command_word, sxy0_word, sxy1_word, sxy2_word)
 	words[index + 2] = sxy1_word
 	words[index + 3] = sxy2_word
 	self.word_count = index + 4
+end
+
+-- The sorted batch already owns native command/SXY words. Submit the earlier
+-- prefix before streaming from offset zero, where four-word triangles cannot
+-- straddle DMA admission blocks. Every run completes its RAM reads before this
+-- storage is reused; GPU mode and drawing offset remain in the ordered stream.
+function draw_list:triangle_words_batch(commands, xy0, xy1, xy2, order, count)
+	if count == 0 then
+		return
+	end
+	command_list.submit(self)
+	local words<const>: *word = self.words
+	local triangles_per_run<const> = self.word_capacity >> 2
+	local first = 1
+	while first <= count do
+		local last = first + triangles_per_run - 1
+		if last > count then last = count end
+		local target: *word = words
+		for index = first, last do
+			local triangle<const> = order[index]
+			local packet<const>: *gp0_triangle_packet = target
+			packet.command = commands[triangle]
+			packet.position0 = xy0[triangle]
+			packet.position1 = xy1[triangle]
+			packet.position2 = xy2[triangle]
+			target = target + sizeof(gp0_triangle_packet)
+		end
+		self.word_count = (last - first + 1) << 2
+		command_list.submit(self)
+		first = last + 1
+	end
 end
 
 function draw_list:quad_words(command_word, sxy0_word, sxy1_word, sxy2_word, sxy3_word)
