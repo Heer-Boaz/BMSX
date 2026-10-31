@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneSpatialProjection } from '../../ide/workbench/contrib/scene_editor/spatial_projection';
 import { relativeAffine2 } from '../../ide/common/affine2';
-import { relativeAffine3 } from '../../ide/common/affine3';
+import { relativeAffine3 } from '../../machine/ts/common/affine3';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { formatLuaNumberExpression, readLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';

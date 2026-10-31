@@ -13,6 +13,13 @@ struct model_asset_header
 	mesh_count: word
 	primitive_directory_offset: word
 	primitive_count: word
+	scene_directory_offset: word
+	scene_count: word
+	part_directory_offset: word
+	part_count: word
+	material_directory_offset: word
+	material_count: word
+	default_scene: word
 end
 
 struct model_mesh
@@ -27,6 +34,34 @@ struct model_primitive
 	index_count: word
 	index_component_type: word
 	material_index: word
+end
+
+struct model_scene
+	first_part: word
+	part_count: word
+	features: word
+end
+
+struct model_part
+	node: word
+	mesh: word
+	xx: f64
+	xy: f64
+	xz: f64
+	yx: f64
+	yy: f64
+	yz: f64
+	zx: f64
+	zy: f64
+	zz: f64
+	ox: f64
+	oy: f64
+	oz: f64
+end
+
+struct model_material
+	command: word
+	double_sided: word
 end
 
 struct model_position
@@ -47,6 +82,12 @@ function model_asset.resolve(id)
 		mesh_count = header->mesh_count,
 		primitives = address + header->primitive_directory_offset,
 		primitive_count = header->primitive_count,
+		scenes = address + header->scene_directory_offset,
+		scene_count = header->scene_count,
+		parts = address + header->part_directory_offset,
+		part_count = header->part_count,
+		materials = address + header->material_directory_offset,
+		default_scene = header->default_scene,
 	}
 	resource._model_asset = prepared
 	return prepared

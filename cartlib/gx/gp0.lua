@@ -29,6 +29,18 @@ local pair16<const> = function(first, second)
 	return (rounded_first & 0x0000ffff) | ((rounded_second & 0x0000ffff) << 16)
 end
 
+-- Evaluate the positions that GP0 actually consumes, after coordinate rounding
+-- and signed-eleven-bit decode, rather than the unrounded source triangle.
+local triangle_area<const> = function(position0, position1, position2)
+	local x0<const> = (position0 & 0x3ff) - (position0 & 0x400)
+	local y0<const> = ((position0 >> 16) & 0x3ff) - ((position0 >> 16) & 0x400)
+	local x1<const> = (position1 & 0x3ff) - (position1 & 0x400)
+	local y1<const> = ((position1 >> 16) & 0x3ff) - ((position1 >> 16) & 0x400)
+	local x2<const> = (position2 & 0x3ff) - (position2 & 0x400)
+	local y2<const> = ((position2 >> 16) & 0x3ff) - ((position2 >> 16) & 0x400)
+	return (x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)
+end
+
 local drawing_offset_word<const> = function(x, y)
 	local rounded_x
 	if x >= 0 then
@@ -70,6 +82,7 @@ local uv_clut<const> = function(u, v, clut_x, clut_y)
 end
 
 return {
+	triangle_area = triangle_area,
 	nop = 0x00000000,
 	fill_rectangle = 0x02000000,
 	draw_rectangle = 0x60000000,

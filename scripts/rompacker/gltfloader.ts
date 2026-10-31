@@ -540,13 +540,20 @@ export function loadGLTFModel(document: GLTFDocument, resname: string): GLTFMode
 	const nodes: GLTFNode[] | undefined = json.nodes?.map((n: any) => {
 		if (n.mesh !== undefined && json.meshes?.[n.mesh] === undefined) throw new Error('GLTF node references a missing mesh');
 		if (n.skin !== undefined && json.skins?.[n.skin] === undefined) throw new Error('GLTF node references a missing skin');
+		if (n.matrix !== undefined && (n.matrix.length !== 16 || n.matrix[3] !== 0 || n.matrix[7] !== 0
+			|| n.matrix[11] !== 0 || n.matrix[15] !== 1)) throw new Error('GLTF node matrix requires a complete affine');
+		if (n.translation !== undefined && n.translation.length !== 3
+			|| n.rotation !== undefined && n.rotation.length !== 4
+			|| n.scale !== undefined && n.scale.length !== 3) throw new Error('GLTF node TRS dimensions are invalid');
+		if (n.matrix !== undefined && (n.translation !== undefined || n.rotation !== undefined || n.scale !== undefined))
+			throw new Error('GLTF node cannot combine matrix and TRS placement');
 		return {
 			mesh: n.mesh,
 			children: n.children,
 			translation: n.translation,
 			rotation: n.rotation,
 			scale: n.scale,
-			matrix: n.matrix ? new Float32Array(n.matrix) : undefined,
+			matrix: n.matrix ? new Float64Array(n.matrix) : undefined,
 			skin: n.skin,
 			weights: n.weights,
 		};
@@ -554,6 +561,33 @@ export function loadGLTFModel(document: GLTFDocument, resname: string): GLTFMode
 
 	const scenes: GLTFScene[] | undefined = json.scenes?.map((s: any) => ({ nodes: s.nodes || [] }));
 	const scene: number = json.scene;
+	// Admit the external glTF forest before publishing it to asset consumers.
+	// Static placement then traverses owned nodes without cycle/fallback guards.
+	const parents = new Int32Array(nodes?.length ?? 0).fill(-1);
+	for (let index = 0; index < parents.length; index++) {
+		for (const child of nodes[index].children ?? []) {
+			if (!Number.isInteger(child) || nodes[child] === undefined) throw new Error('GLTF node references a missing child');
+			if (parents[child] !== -1) throw new Error('GLTF node has more than one parent');
+			parents[child] = index;
+		}
+	}
+	const visited = new Uint8Array(parents.length);
+	for (let index = 0; index < parents.length; index++) {
+		let cursor = index;
+		while (cursor !== -1 && visited[cursor] === 0) { visited[cursor] = 1; cursor = parents[cursor]; }
+		if (cursor !== -1 && visited[cursor] === 1) throw new Error('GLTF node hierarchy contains a cycle');
+		cursor = index;
+		while (cursor !== -1 && visited[cursor] === 1) { visited[cursor] = 2; cursor = parents[cursor]; }
+	}
+	for (const entry of scenes ?? []) {
+		const roots = new Set<number>();
+		for (const root of entry.nodes) {
+			if (!Number.isInteger(root) || nodes?.[root] === undefined) throw new Error('GLTF scene references a missing root node');
+			if (parents[root] !== -1 || roots.has(root)) throw new Error('GLTF scene requires distinct root nodes');
+			roots.add(root);
+		}
+	}
+	if (scene !== undefined && (!Number.isInteger(scene) || scenes?.[scene] === undefined)) throw new Error('GLTF default scene is missing');
 
 	const skins: GLTFSkin[] | undefined = json.skins?.map((s: any) => {
 		for (const joint of s.joints) if (json.nodes?.[joint] === undefined) throw new Error('GLTF skin references a missing joint');

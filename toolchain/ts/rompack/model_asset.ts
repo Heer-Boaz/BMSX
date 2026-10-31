@@ -5,7 +5,9 @@ import {
 	MODEL_ASSET_HEADER, MODEL_ASSET_HEADER_BYTE_LENGTH,
 	MODEL_MESH, MODEL_MESH_BYTE_LENGTH,
 	MODEL_PRIMITIVE, MODEL_PRIMITIVE_BYTE_LENGTH,
+	MODEL_SCENE, MODEL_SCENE_BYTE_LENGTH, MODEL_PART, MODEL_PART_BYTE_LENGTH, MODEL_MATERIAL, MODEL_MATERIAL_BYTE_LENGTH,
 } from './model_asset_layout';
+import { prepareModelStaticScenes } from './model_static_scene';
 
 type Packed<T> = T extends ArrayBufferView
 	? Uint8Array
@@ -24,6 +26,7 @@ const INDEX_ARRAY_CONSTRUCTORS: Readonly<Record<number, Uint8ArrayConstructor | 
 };
 
 export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_texture_buffer?: Uint8Array } {
+	const staticScene = prepareModelStaticScenes(model);
 	let primitiveCount = 0;
 	let geometryByteLength = 0;
 	const streamOffsets = new Map<ArrayBufferView, number>();
@@ -57,7 +60,10 @@ export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_te
 	const rich = encodeBinary({ ...model, meshes, imageBuffers: undefined, imageOffsets });
 	const meshDirectoryOffset = MODEL_ASSET_HEADER_BYTE_LENGTH;
 	const primitiveDirectoryOffset = meshDirectoryOffset + model.meshes.length * MODEL_MESH_BYTE_LENGTH;
-	const geometryOffset = primitiveDirectoryOffset + primitiveCount * MODEL_PRIMITIVE_BYTE_LENGTH;
+	const sceneDirectoryOffset = primitiveDirectoryOffset + primitiveCount * MODEL_PRIMITIVE_BYTE_LENGTH;
+	const partDirectoryOffset = sceneDirectoryOffset + staticScene.scenes.length * MODEL_SCENE_BYTE_LENGTH;
+	const materialDirectoryOffset = partDirectoryOffset + staticScene.parts.length * MODEL_PART_BYTE_LENGTH;
+	const geometryOffset = materialDirectoryOffset + staticScene.materials.length * MODEL_MATERIAL_BYTE_LENGTH;
 	const richOffset = geometryOffset + geometryByteLength;
 	const buffer = new Uint8Array(richOffset + rich.byteLength);
 	const view = new DataView(buffer.buffer);
@@ -67,6 +73,32 @@ export function packModelAsset(model: GLTFModel): { buffer: Uint8Array; model_te
 	view.setUint32(MODEL_ASSET_HEADER.meshCount, model.meshes.length, true);
 	view.setUint32(MODEL_ASSET_HEADER.primitiveDirectoryOffset, primitiveDirectoryOffset, true);
 	view.setUint32(MODEL_ASSET_HEADER.primitiveCount, primitiveCount, true);
+	view.setUint32(MODEL_ASSET_HEADER.sceneDirectoryOffset, sceneDirectoryOffset, true);
+	view.setUint32(MODEL_ASSET_HEADER.sceneCount, staticScene.scenes.length, true);
+	view.setUint32(MODEL_ASSET_HEADER.partDirectoryOffset, partDirectoryOffset, true);
+	view.setUint32(MODEL_ASSET_HEADER.partCount, staticScene.parts.length, true);
+	view.setUint32(MODEL_ASSET_HEADER.materialDirectoryOffset, materialDirectoryOffset, true);
+	view.setUint32(MODEL_ASSET_HEADER.materialCount, staticScene.materials.length, true);
+	view.setUint32(MODEL_ASSET_HEADER.defaultScene, model.scene ?? 0xffffffff, true);
+	for (let index = 0; index < staticScene.scenes.length; index++) {
+		const scene = staticScene.scenes[index], offset = sceneDirectoryOffset + index * MODEL_SCENE_BYTE_LENGTH;
+		view.setUint32(offset + MODEL_SCENE.firstPart, scene.firstPart, true);
+		view.setUint32(offset + MODEL_SCENE.partCount, scene.partCount, true);
+		view.setUint32(offset + MODEL_SCENE.features, scene.features, true);
+	}
+	for (let index = 0; index < staticScene.parts.length; index++) {
+		const part = staticScene.parts[index], offset = partDirectoryOffset + index * MODEL_PART_BYTE_LENGTH;
+		view.setUint32(offset + MODEL_PART.node, part.node, true);
+		view.setUint32(offset + MODEL_PART.mesh, part.mesh, true);
+		const a = part.affine;
+		const coefficients = [a.xx,a.xy,a.xz,a.yx,a.yy,a.yz,a.zx,a.zy,a.zz,a.ox,a.oy,a.oz];
+		for (let field = 0; field < coefficients.length; field++) view.setFloat64(offset + MODEL_PART.affine + field * 8, coefficients[field], true);
+	}
+	for (let index = 0; index < staticScene.materials.length; index++) {
+		const material = staticScene.materials[index], offset = materialDirectoryOffset + index * MODEL_MATERIAL_BYTE_LENGTH;
+		view.setUint32(offset + MODEL_MATERIAL.command, material.command, true);
+		view.setUint32(offset + MODEL_MATERIAL.doubleSided, material.doubleSided ? 1 : 0, true);
+	}
 	let primitiveIndex = 0;
 	for (let meshIndex = 0; meshIndex < model.meshes.length; meshIndex++) {
 		const mesh = model.meshes[meshIndex];
@@ -145,7 +177,7 @@ export function loadModelFromBuffer(assetId: string, buffer: Uint8Array, imageBy
 		})),
 		nodes: packed.nodes?.map(node => ({
 			...node,
-			matrix: node.matrix && typedArrayFromBytes(node.matrix, Float32Array),
+			matrix: node.matrix && typedArrayFromBytes(node.matrix, Float64Array),
 		})),
 		skins: packed.skins?.map(skin => ({
 			...skin,

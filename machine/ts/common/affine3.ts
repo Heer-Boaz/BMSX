@@ -1,8 +1,22 @@
-/** Column-major Number affine; asset/device encodings belong to their producers. */
+/** Shared column-major Number affine; asset/device encodings belong to their producers. */
 export type Affine3 = {
 	xx: number; xy: number; xz: number; yx: number; yy: number; yz: number;
 	zx: number; zy: number; zz: number; ox: number; oy: number; oz: number;
 };
+
+export function affine3FromTRS(ox: number, oy: number, oz: number,
+	qx: number, qy: number, qz: number, qw: number, sx: number, sy: number, sz: number): Affine3 {
+	const x2 = qx + qx, y2 = qy + qy, z2 = qz + qz;
+	const xx = qx * x2, xy = qx * y2, xz = qx * z2;
+	const yy = qy * y2, yz = qy * z2, zz = qz * z2;
+	const wx = qw * x2, wy = qw * y2, wz = qw * z2;
+	return {
+		xx: (1 - yy - zz) * sx, xy: (xy + wz) * sx, xz: (xz - wy) * sx,
+		yx: (xy - wz) * sy, yy: (1 - xx - zz) * sy, yz: (yz + wx) * sy,
+		zx: (xz + wy) * sz, zy: (yz - wx) * sz, zz: (1 - xx - yy) * sz,
+		ox, oy, oz,
+	};
+}
 
 /** Append a complete local frame in place, with the guest affine3 operation order. */
 export function appendAffine3(destination: Affine3, local: Readonly<Affine3>): void {

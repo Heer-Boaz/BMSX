@@ -17,6 +17,7 @@ test('model directories expose one aligned geometry generation without deseriali
 	const indices32 = new Uint32Array([0xa5a5a5a5, 0, 0xffffffff, 0x80000001, 0x5a5a5a5a]).subarray(1, 4);
 	const model: GLTFModel = {
 		name: 'layout',
+		materials: [{}],
 		meshes: [
 			{ name: 'empty', primitives: [] },
 			{ primitives: [
@@ -38,7 +39,7 @@ test('model directories expose one aligned geometry generation without deseriali
 	const richLength = view.getUint32(MODEL_ASSET_HEADER.richLength, true);
 	const meshDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.meshDirectoryOffset, true);
 	const primitiveDirectoryOffset = view.getUint32(MODEL_ASSET_HEADER.primitiveDirectoryOffset, true);
-	assert.equal(MODEL_ASSET_HEADER_BYTE_LENGTH, 24);
+	assert.equal(MODEL_ASSET_HEADER_BYTE_LENGTH, 52);
 	assert.equal(MODEL_MESH_BYTE_LENGTH, 8);
 	assert.equal(MODEL_PRIMITIVE_BYTE_LENGTH, 24);
 	assert.equal(meshDirectoryOffset, MODEL_ASSET_HEADER_BYTE_LENGTH);

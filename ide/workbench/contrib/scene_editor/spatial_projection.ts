@@ -3,7 +3,7 @@ import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/tab
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaWrittenExpression } from '../../../../toolchain/ts/lua/semantic/written_sources';
 import { appendAffine2, relativeAffine2 } from '../../../common/affine2';
-import { appendAffine3, relativeAffine3 } from '../../../common/affine3';
+import { appendAffine3, relativeAffine3 } from '../../../../machine/ts/common/affine3';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';

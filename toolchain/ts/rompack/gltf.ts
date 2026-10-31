@@ -84,7 +84,7 @@ export interface GLTFNode {
 	translation?: vec3arr;
 	rotation?: vec4arr;
 	scale?: vec3arr;
-	matrix?: Float32Array;
+	matrix?: Float64Array;
 	skin?: number;
 	weights?: number[];
 	visible?: boolean;

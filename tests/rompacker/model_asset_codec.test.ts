@@ -54,7 +54,7 @@ for (const inputKind of ['uint8-subview', 'node-buffer', 'node-buffer-subview'] 
 				{},
 			],
 			nodes: [
-				{ mesh: 1, children: [1], matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2, 3, 4, 1]) },
+				{ mesh: 1, children: [1], matrix: new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 2.1, 3.2, 4.3, 1]) },
 				{ mesh: 0, translation: [1, 2, 3], rotation: [0, 0, 0, 1], scale: [2, 3, 4], skin: 0, weights: [0.75, 0.25], visible: false },
 			],
 			scenes: [{ nodes: [0] }, { nodes: [1] }], scene: 0,

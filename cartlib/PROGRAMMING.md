@@ -1846,6 +1846,57 @@ was checked in the working checkout, not on every OS or a fresh SDK installation
 
 <a id="dispatch-and-clock"></a>
 
+## Static model scenes
+
+`component/static_model_component` declares a model asset and its scene as
+placement data. `component/model_renderer_component` is the World visual that
+owns a camera and draws the active Space's model instances together. A model
+component is not a separate draw callback. Asset nodes retain their own
+immutable node-to-model transforms; they do not become WorldObjects.
+
+```lua
+local model<const> = require('cartlib/component/static_model_component')
+local camera<const> = require('cartlib/component/model_renderer_component')
+
+prefab.define({def_id='ship',class={},spatial={family='3d',authority='affine'},
+ components={model.factory({model_id='ship'})}})
+prefab.define({def_id='camera',class={},spatial={family='3d',authority='affine'},
+ components={camera.new}})
+world:spawn('ship',{})
+local view<const> = world:spawn('camera',{})
+view.spatial:set_local_origin(0,0,8)
+```
+
+The chosen asset scene must be explicit as `scene_index` when the asset has no
+default scene. An empty scene is valid; a mesh-only resource library is not
+silently substituted for a scene. The renderer uses the authored static pose,
+not animation playback. Placement is owner-world × attachment × presentation
+× asset-node, retaining full affine coefficients, including reflection and
+shear. Models expose `set_attachment_affine`, `set_attachment_origin`,
+`set_presentation_affine`, `set_presentation_origin` and `set_model`.
+
+This is an **opaque base-color unlit shader**, not glTF PBR shading. Metallic,
+roughness, normals and emissive lighting are not evaluated. A chosen scene
+requiring base-color textures, non-opaque alpha, vertex colors, morphing or skinning is
+rejected at static-resource admission; other scenes and rich asset data remain
+available. Missing material means opaque white.
+
+Camera local −Z is forward and +Y is up. Projection defaults to the configured
+World page dimensions, a focal length of half its width, a centered principal
+point and a near distance of 0.1 model units. `set_projection(width,height,
+focal_length,near,center_x,center_y)` changes that view. The infinite frustum
+clips against the near plane and four sides before perspective division.
+GP0 encoding rounds only the resulting screen positions. One stable,
+far-to-near triangle order spans all instances; ties use retained component
+identity and source order. This is painter ordering, not a depth buffer, and
+does not resolve intersecting or cyclically overlapping polygons.
+
+ROM geometry is shared, and projection, clipping and ordering use retained
+numeric lanes rather than per-vertex or per-face Lua tables. Clean passes
+reuse their packed triangles. New high-water working sets grow once; warm
+frames reuse them. The command-list owner streams complete triangle packets
+through its declared allocation before the GPU completion fence.
+
 ## Dispatcher and clock integration
 
 These are library policies. A hardware-owning program can instead implement

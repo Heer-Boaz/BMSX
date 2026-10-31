@@ -8,6 +8,7 @@ import { prepareGLTFDocument, loadGLTFModel } from '../../scripts/rompacker/gltf
 import { generateRomAssets } from '../../scripts/rompacker/rombuilder';
 import { writeCartRomHeader } from '../../toolchain/ts/rompack/header_encode';
 import { buildSystemToolingLayer } from '../../toolchain/ts/rompack/loader';
+import { loadModelFromBuffer, packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import { layoutRomPrefix } from '../../toolchain/ts/rompack/rom_prefix_layout';
 import { encodeRomToc } from '../../toolchain/ts/rompack/toc_encode';
 import { createTestRuntimeRomPayload } from '../helpers/runtime_sources';
@@ -84,7 +85,7 @@ test('external mesh instances survive the real resource packer, package reader a
 	}
 	assert.deepEqual(primitives[0].texcoords1, f.uv1);
 	assert.deepEqual(model.nodes!.map(node => node.mesh), [0, 1, 0]);
-	assert.deepEqual(model.nodes![1].matrix, new Float32Array(f.document.json.nodes[1].matrix));
+	assert.deepEqual(model.nodes![1].matrix, new Float64Array(f.document.json.nodes[1].matrix));
 	assert.deepEqual(model.meshes[0].weights, [0.25]); assert.deepEqual(model.nodes![0].weights, [0.75]);
 	assert.equal(primitives[0].morphPositions![0].length, 0, 'an omitted morph POSITION is the declared zero delta, not missing base geometry');
 	assert.equal(model.materials![0].baseColorTexture, 1); assert.equal(model.materials![0].normalTexture, 0);
@@ -125,6 +126,17 @@ for (const [contract, mutate] of [
 	['index vertex range', (f: ReturnType<typeof fixture>) => { f.document.external.get('3.bin')![0] = 4; }],
 	['primitive material reference', (f: ReturnType<typeof fixture>) => { f.document.json.meshes[0].primitives[0].material = 9; }],
 	['node mesh reference', (f: ReturnType<typeof fixture>) => { f.document.json.nodes[1].mesh = 9; }],
+	['node complete affine matrix', (f: ReturnType<typeof fixture>) => { f.document.json.nodes[1].matrix = [1, 0, 0]; }],
+	['node affine homogeneous row', (f: ReturnType<typeof fixture>) => { f.document.json.nodes[1].matrix[15] = 0; }],
+	['node TRS dimensions', (f: ReturnType<typeof fixture>) => { f.document.json.nodes[0].translation = [1, 2]; }],
+	['node exclusive placement representation', (f: ReturnType<typeof fixture>) => { f.document.json.nodes[1].translation = [1, 2, 3]; }],
+	['node child reference', (f: ReturnType<typeof fixture>) => { f.document.json.nodes[0].children = [9]; }],
+	['node forest parent ownership', (f: ReturnType<typeof fixture>) => { f.document.json.nodes[2].children = [1]; }],
+	['node forest cycle', (f: ReturnType<typeof fixture>) => { f.document.json.nodes[1].children = [0]; }],
+	['scene root reference', (f: ReturnType<typeof fixture>) => { f.document.json.scenes[0].nodes = [9]; }],
+	['scene root uniqueness', (f: ReturnType<typeof fixture>) => { f.document.json.scenes[0].nodes = [0, 0]; }],
+	['scene root ownership', (f: ReturnType<typeof fixture>) => { f.document.json.scenes[0].nodes = [1]; }],
+	['default scene reference', (f: ReturnType<typeof fixture>) => { f.document.json.scene = 3; }],
 	['material texture reference', (f: ReturnType<typeof fixture>) => { f.document.json.materials[0].normalTexture.index = 9; }],
 	['texture image reference', (f: ReturnType<typeof fixture>) => { f.document.json.textures[0].source = 9; }],
 	['texture sampler reference', (f: ReturnType<typeof fixture>) => { f.document.json.textures[0].sampler = 9; }],
@@ -135,4 +147,17 @@ for (const [contract, mutate] of [
 test('a mesh-free glTF asset library retains its authored nodes', () => {
 	const document = prepareGLTFDocument(Buffer.from('{"asset":{"version":"2.0"},"nodes":[{}]}'), resolve('library.gltf'), () => { throw new Error('No external data'); });
 	const model = loadGLTFModel(document, 'library'); assert.equal(model.meshes.length, 0); assert.equal(model.nodes!.length, 1);
+});
+
+test('JSON matrix-authored placements retain the same Number precision as TRS placements', () => {
+	const f = fixture();
+	f.document.json.nodes[1].matrix[4] = 0.1;
+	f.document.json.nodes[1].matrix[12] = 0.2;
+	const imported = loadGLTFModel(f.document, 'number-matrix');
+	assert.equal(imported.nodes[1].matrix[4], 0.1);
+	assert.equal(imported.nodes[1].matrix[12], 0.2);
+	const packed = packModelAsset(imported);
+	const loaded = loadModelFromBuffer('number-matrix', packed.buffer, packed.model_texture_buffer);
+	assert.equal(loaded.nodes[1].matrix[4], 0.1);
+	assert.equal(loaded.nodes[1].matrix[12], 0.2);
 });
