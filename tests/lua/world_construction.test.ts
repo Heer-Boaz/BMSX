@@ -10,7 +10,7 @@ for (const optLevel of [0, 3] as const) {
 	test(`World prepares batch identities and poses before constructors, then publishes, wires and activates (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local order<const> = {}
-local base<const> = setmetatable({}, { __index = world_object })
+local base<const> = setmetatable({}, { __index = object_3d })
 local actor<const> = {}
 local component<const> = setmetatable({}, { __index = base_component })
 component.__index = component
@@ -28,9 +28,9 @@ function base.initialize(self)
 		'custom initializer ran before World basic setup')
 	assert(peer ~= nil and peer.world == world and peer.events ~= nil and peer._components ~= nil,
 		'custom initializer ran before every batch shell was prepared')
-	assert(self.spatial.wox == self.expected_x and self.spatial.woy == self.expected_y and self.spatial.woz == self.expected_z,
+	assert(self.wox == self.expected_x and self.woy == self.expected_y and self.woz == self.expected_z,
 		'custom initializer did not see the requested construction pose')
-	assert(peer.spatial.wox == peer.expected_x and peer.spatial.woy == peer.expected_y and peer.spatial.woz == peer.expected_z,
+	assert(peer.wox == peer.expected_x and peer.woy == peer.expected_y and peer.woz == peer.expected_z,
 		'peer construction pose was not prepared with its shell')
 	assert(registry:get(self.id) == nil and registry:get(peer.id) == nil,
 		'constructor observed partially published identities')
@@ -39,15 +39,15 @@ end
 function component:on_attach()
 	local owner<const> = self.owner
 	assert(owner == owner.scene.members[owner.scene_member_id], 'component received a replacement owner shell')
-	assert(owner.spatial.wox == owner.expected_x and owner.spatial.woy == owner.expected_y and owner.spatial.woz == owner.expected_z,
+	assert(owner.wox == owner.expected_x and owner.woy == owner.expected_y and owner.woz == owner.expected_z,
 		'component attachment ran before the construction pose')
 	attached = attached + 1
 	owner.part = self
 	order[#order + 1] = 'component:' .. owner.scene_member_id
 end
 function actor:ctor(options)
-	assert(self.part.owner == self and self.spatial.wox == self.expected_x and self.spatial.woy == self.expected_y
-		and self.spatial.woz == self.expected_z, 'constructor did not receive final identity and pose')
+	assert(self.part.owner == self and self.wox == self.expected_x and self.woy == self.expected_y
+		and self.woz == self.expected_z, 'constructor did not receive final identity and pose')
 	assert(self.definition_id == 'batch.actor' and options.expected_x == self.expected_x,
 		'constructor arguments changed')
 	constructed = constructed + 1
@@ -88,15 +88,16 @@ function component:on_activate()
 	self.owner.events:emit('activated')
 	order[#order + 1] = 'activate:' .. self.owner.scene_member_id
 end
-prefab.define({ def_id = 'batch.actor', class = actor, base = base,
-	spatial = { family = '3d', authority = 'affine', local_transform = { 1,0,0, 0,1,0, 0,0,1, -1,-2,-3 } },
-	components = { function(options) return setmetatable(base_component.new(options), component) end } })
+prefab.define({def_id='batch.actor',
+ class=setmetatable(actor, {__index=base}),
+ components={ function(options) return setmetatable(base_component.new(options), component) end },
+ position={x=-1,y=-2,z=-3}})
 scenes.register('batch', { objects = {
 	{ member_id = 'left', definition_id = 'batch.actor',
-		spatial = { local_transform = { 1,0,0, 0,1,0, 0,0,1, 11,12,13 } },
+		position={x=11,y=12,z=13},
 		options = { peer_id = 'right', expected_x = 11, expected_y = 12, expected_z = 13 } },
 	{ member_id = 'right', definition_id = 'batch.actor',
-		spatial = { local_transform = { 1,0,0, 0,1,0, 0,0,1, 21,22,23 } },
+		position={x=21,y=22,z=23},
 		options = { peer_id = 'left', expected_x = 21, expected_y = 22, expected_z = 23 } },
 } })
 local scene<const> = scenes.instantiate('batch')
@@ -111,25 +112,25 @@ assert(scene.members.left.part.owner == scene.members.left and scene.members.rig
 	'World replaced a constructed identity')
 scene:dispose()
 local single_base<const> = setmetatable({ initialize = function(self)
-	assert(self.spatial.wox == 0 and self.spatial.woy == 0 and self.spatial.woz == 0 and self.events ~= nil and self.world == world,
+	assert(self.wox == 0 and self.woy == 0 and self.woz == 0 and self.events ~= nil and self.world == world,
 		'procedural initializer ran before basic setup and the requested zero pose')
 	self.initial_events = self.events
-end }, { __index = world_object })
-prefab.define({ def_id = 'single.actor', base = single_base,
-	spatial = { family = '3d', authority = 'affine', local_transform = { 1,0,0, 0,1,0, 0,0,1, 11,12,13 } },
-	class = { ctor = function(self)
-		assert(self.spatial.wox == 0 and self.spatial.woy == 0 and self.spatial.woz == 0 and self.events == self.initial_events,
+end }, { __index = object_3d })
+prefab.define({def_id='single.actor',
+ class=setmetatable({ ctor = function(self)
+		assert(self.wox == 0 and self.woy == 0 and self.woz == 0 and self.events == self.initial_events,
 			'procedural constructor used a different initialization or position path')
 	end, onspawn = function(self)
 		assert(registry:get(self.id) == self and not self.active,
 			'procedural ready callback ran before publication or after activation')
-	end },
-	components = { function(options)
-		assert(options.spatial.wox == 0 and options.spatial.woy == 0 and options.spatial.woz == 0,
+	end }, {__index=single_base}),
+ components={ function(options)
+		assert(options.wox == 0 and options.woy == 0 and options.woz == 0,
 			'procedural component factory ran before its requested position')
 		return base_component.new(options)
-	end } })
-local single<const> = world:spawn('single.actor', {}, { local_transform = { 1,0,0, 0,1,0, 0,0,1, 0,0,0 } })
+	end },
+ position={x=11,y=12,z=13}})
+local single<const> = world:spawn('single.actor',{transform={xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0}})
 assert(single.active and single._bound, 'procedural spawn did not finish the common lifecycle')
 single:mark_for_disposal()
 `, { optLevel, modules });
@@ -184,7 +185,9 @@ function component:on_detach()
 	detached = detached + 1
 end
 local factory<const> = function(options) return setmetatable(base_component.new(options), component) end
-prefab.define({ def_id = 'cancel.actor', class = actor, base = base, components = { factory, factory } })
+prefab.define({def_id='cancel.actor',
+ class=setmetatable(actor, {__index=base}),
+ components={ factory, factory }})
 local during_initialize<const> = world:spawn('cancel.actor', { cancel_at = 'initialize' })
 assert(initialized == 1 and constructed == 0 and spawned == 0 and bound == 0 and activated == 0
 	and despawned == 0 and unbound == 0 and detached == 0 and during_initialize.world == nil,
@@ -226,13 +229,15 @@ local factory_component<const> = setmetatable({
 	on_detach = function() factory_detached = factory_detached + 1 end,
 }, { __index = base_component })
 factory_component.__index = factory_component
-prefab.define({ def_id = 'closing.factory', class = {
+prefab.define({def_id='closing.factory',
+ class=setmetatable({
 	ctor = function() factory_ctor = factory_ctor + 1 end,
 	ondespawn = function() factory_despawn = factory_despawn + 1 end,
-}, components = { function(options)
+}, {__index=world_object}),
+ components={ function(options)
 	options.scene:dispose()
 	return setmetatable(base_component.new(options), factory_component)
-end } })
+end }})
 scenes.register('factory_closing', { objects = {
 	{ member_id = 'first', definition_id = 'closing.factory', options = {} },
 	{ member_id = 'second', definition_id = 'closing.factory', options = {} },
@@ -269,8 +274,9 @@ end
 function component:on_activate()
 	order[#order + 1] = 'activate:' .. self.owner.role
 end
-prefab.define({ def_id = 'reentrant.actor', class = actor,
-	components = { function(options) return setmetatable(base_component.new(options), component) end } })
+prefab.define({def_id='reentrant.actor',
+ class=setmetatable(actor, {__index=world_object}),
+ components={ function(options) return setmetatable(base_component.new(options), component) end }})
 scenes.register('reentrant', { objects = {
 	{ member_id = 'left', definition_id = 'reentrant.actor', options = { role = 'left' } },
 	{ member_id = 'right', definition_id = 'reentrant.actor', options = { role = 'right' } },
@@ -287,11 +293,12 @@ assert(scene.members.left.child.active and registry:get(scene.members.left.child
 scene:dispose()
 local callbacks = 0
 local despawned = 0
-prefab.define({ def_id = 'pending.actor', class = {
+prefab.define({def_id='pending.actor',
+ class=setmetatable({
 	onspawn = function() callbacks = callbacks + 1 end,
 	bind = function() callbacks = callbacks + 1 end,
 	ondespawn = function() despawned = despawned + 1 end,
-} })
+}, {__index=world_object})})
 scenes.register('pending', { objects = {
 	{ member_id = 'first', definition_id = 'pending.actor', options = {} },
 	{ member_id = 'second', definition_id = 'pending.actor', options = {} },
@@ -316,17 +323,19 @@ local retirement_callback_active = false
 local retirement_ready = 0
 local disposal_child
 local unload_child
-prefab.define({ def_id = 'retirement.child', class = { onspawn = function()
+prefab.define({def_id='retirement.child',
+ class=setmetatable({ onspawn = function()
 	assert(not retirement_callback_active, 'callback-requested child published in a half-completed retirement')
 	retirement_ready = retirement_ready + 1
-end } })
-prefab.define({ def_id = 'retirement.parent', class = { ondespawn = function()
+end }, {__index=world_object})})
+prefab.define({def_id='retirement.parent',
+ class=setmetatable({ ondespawn = function()
 	retirement_callback_active = true
 	disposal_child = world:spawn('retirement.child', {})
 	assert(registry:get(disposal_child.id) == nil and not disposal_child.active and retirement_ready == 0,
 		'ondespawn recursively admitted its requested spawn')
 	retirement_callback_active = false
-end } })
+end }, {__index=world_object})})
 local retiring<const> = world:spawn('retirement.parent', {})
 retiring:mark_for_disposal()
 assert(retiring.world == nil and disposal_child.active and registry:get(disposal_child.id) == disposal_child
@@ -370,7 +379,10 @@ local second_factory<const> = function(options)
 	return base_component.new(options)
 end
 local components<const> = { first_factory, second_factory }
-prefab.define({ def_id = 'retained.actor', class = class, base = base, defaults = defaults, components = components })
+prefab.define({def_id='retained.actor',
+ class=setmetatable(class, {__index=base}),
+ defaults=defaults,
+ components=components})
 local definition<const> = { name = 'old.scene', launchable = true, state = shared_state, objects = {
 	{ member_id = 'first', definition_id = 'retained.actor', options = { role = 'first' } },
 	{ member_id = 'later', definition_id = 'retained.actor', options = { role = 'later' } },
@@ -390,7 +402,10 @@ end
 defaults.revision = 'new'
 components[1] = second_factory
 components[2] = first_factory
-prefab.define({ def_id = 'retained.actor', class = class, base = base, defaults = defaults, components = components })
+prefab.define({def_id='retained.actor',
+ class=setmetatable(class, {__index=base}),
+ defaults=defaults,
+ components=components})
 local later<const> = existing:spawn_member('later')
 local same_plan<const> = scenes.instantiate('retained')
 assert(first.constructed == 'old' and first.revision == 'old' and first.ready == 'old' and first:helper() == 'old'
@@ -436,7 +451,9 @@ local class<const> = setmetatable({
 	helper = function() return 'same.base' end,
 	onspawn = function(self) assert(self.initialized == 'same.base', 'class/base admission lost its initializer') end,
 }, { __index = world_object })
-prefab.define({ def_id = 'same.base', class = class, base = class, defaults = { tags = declared_tags } })
+prefab.define({def_id='same.base',
+ class=class,
+ defaults={ tags = declared_tags }})
 local first<const> = world:spawn('same.base', {})
 local second<const> = world:spawn('same.base', {})
 assert(first:helper() == 'same.base' and first.tags ~= second.tags and first.tags ~= declared_tags,
@@ -469,7 +486,8 @@ assert(#registry:entries('fixture.shared') == 0 and #registry:entries('fixture.f
 	test(`Scene registration rejects unresolved prefabs and duplicate members before runtime construction (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local constructed = 0
-prefab.define({ def_id = 'cold.actor', class = { ctor = function() constructed = constructed + 1 end } })
+prefab.define({def_id='cold.actor',
+ class=setmetatable({ ctor = function() constructed = constructed + 1 end }, {__index=world_object})})
 local unresolved<const> = pcall(function()
 	scenes.register('cold.unresolved', { objects = {
 		{ member_id = 'missing', definition_id = 'cold.missing', options = {} },
@@ -509,9 +527,11 @@ local emitter_component<const> = setmetatable({ on_activate = function(self)
 		'inactive receiver dispatched a pre-start event')
 end }, { __index = base_component })
 emitter_component.__index = emitter_component
-prefab.define({ def_id = 'binding.emitter', class = {}, components = {
+prefab.define({def_id='binding.emitter',
+ class=world_object,
+ components={
 	function(options) return setmetatable(base_component.new(options), emitter_component) end,
-} })
+}})
 local prestart_component<const> = setmetatable({ on_activate = function(self)
 	local owner<const> = self.owner
 	local machine<const> = owner.state_machines
@@ -522,10 +542,12 @@ local prestart_component<const> = setmetatable({ on_activate = function(self)
 		'active owner dispatched into an FSM before that component started')
 end }, { __index = base_component })
 prestart_component.__index = prestart_component
-prefab.define({ def_id = 'binding.receiver', class = {}, components = {
+prefab.define({def_id='binding.receiver',
+ class=world_object,
+ components={
 	function(options) return setmetatable(base_component.new(options), prestart_component) end,
 	fsm_component.factory({ 'binding.machine' }),
-} })
+}})
 scenes.register('binding', { objects = {
 	{ member_id = 'emitter', definition_id = 'binding.emitter', options = {} },
 	{ member_id = 'receiver', definition_id = 'binding.receiver', options = {} },
@@ -559,13 +581,14 @@ local late_component<const> = setmetatable({
 	end,
 }, { __index = base_component })
 late_component.__index = late_component
-prefab.define({ def_id = 'cleanup.owner', class = {
+prefab.define({def_id='cleanup.owner',
+ class=setmetatable({
 	unbind = function(self)
 		owner_unbound = owner_unbound + 1
 		self.events:on({ event = 'cleanup.event', handler = function() events_delivered = events_delivered + 1 end })
 		self.late_component = self:add_component(setmetatable(base_component.new(self), late_component))
 	end,
-} })
+}, {__index=world_object})})
 local owner<const> = world:spawn('cleanup.owner', {})
 owner:mark_for_disposal()
 owner.events:emit('cleanup.event')
@@ -588,7 +611,8 @@ local removing_component<const> = setmetatable({
 	on_activate = function() activated = activated + 1 end,
 }, { __index = base_component })
 removing_component.__index = removing_component
-prefab.define({ def_id = 'attachment.owner', class = {} })
+prefab.define({def_id='attachment.owner',
+ class=world_object})
 local live_owner<const> = world:spawn('attachment.owner', {})
 local view<const> = world:active_component_view(removing_component)
 local component<const> = live_owner:add_component(setmetatable(base_component.new(live_owner), removing_component))

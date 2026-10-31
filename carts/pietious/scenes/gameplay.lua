@@ -1,5 +1,5 @@
 local scene_library<const> = require('cartlib/world/scene_library')
-local scene<const> = { id = 'pietious.gameplay' }
+local scene<const> = { id = 'pietious.gameplay', player_start = { x = 160, y = 104 } }
 
 function scene.register()
 	scene_library.register(scene.id, {
@@ -7,7 +7,7 @@ function scene.register()
 			{
 				member_id = 'player',
 				definition_id = 'player',
-				spatial = { local_transform = { 1, 0, 0, 1, 160, 104 } },
+				position = scene.player_start,
 				options = {
 					order = 250,
 					id = 'pietolon',

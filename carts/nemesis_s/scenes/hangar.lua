@@ -17,12 +17,12 @@ function hangar_scene.register()
 			{
 				member_id = 'ship',
 				definition_id = hangar_ship.definition_id,
-				spatial = { local_transform = { 1, 0, 0, 1, 48, 129 } },
+				position = { x = 48, y = 129 },
 			},
 			{
 				member_id = 'foreground',
 				definition_id = presentation.sprite_definition_id,
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 128 } },
+				position = { x = 0, y = 128 },
 				options = {
 					imgid = 'title_hangar_bottom_hider',
 					order = 4,

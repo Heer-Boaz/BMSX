@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 -- The director owns transition timing. This controller binds event payloads
 -- to independently authored banner and game-over captions.
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -6,6 +7,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local scene_library<const> = require('cartlib/world/scene_library')
 local scene<const> = require('scenes/transition')
 local transition<const> = {}
+setmetatable(transition, { __index = world_object })
 local clear_events<const> = {
 	'room', 'halo', 'title', 'intro', 'story', 'epilogue', 'end_demo', 'victory_dance',
 }

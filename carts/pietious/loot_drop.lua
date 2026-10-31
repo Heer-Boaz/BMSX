@@ -9,11 +9,12 @@ local combat_overlap<const> = require('combat/overlap')
 
 local loot_drop<const> = {}
 loot_drop.__index = loot_drop
+setmetatable(loot_drop, { __index = sprite_object })
 
 function loot_drop:onspawn()
-	local pose<const> = self.spatial
-	local x<const>, y<const> = self.room:snap_world_to_tile(pose.ox, pose.oy)
-	self.spatial:set_world_origin(x, y)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local x<const>, y<const> = self.room:snap_world_to_tile(pose_x, pose_y)
+	self:set_global_position(x, y)
 end
 
 local define_loot_drop_fsm<const> = function()
@@ -40,8 +41,6 @@ local register_loot_drop_definition<const> = function()
 	prefab.define({
 		def_id = 'loot_drop',
 		class = loot_drop,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_pickup_layer, mask = collision_pickup_mask }),
 			fsm_component.factory({ 'loot_drop' }),

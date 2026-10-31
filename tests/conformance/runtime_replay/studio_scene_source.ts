@@ -1,3 +1,4 @@
+import type { LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import { createLuaSourceRegistry, registerLuaSourceRecord } from '../../../ide/runtime/source_registry';
 import { SceneEditorPane } from '../../../ide/workbench/contrib/scene_editor/editor_pane';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
@@ -70,8 +71,9 @@ export async function testSceneSourceEdits(test: StudioFixture): Promise<void> {
 	await selectMember(test, scene, 2);
 	const pane = ide.editor.editorParts.activeGroup.panes.activePane;
 	if (!(pane instanceof SceneEditorPane)) throw new Error('scene: actual field controls required');
-	const x = pane.control.details.controls[0], property = scene.view.details.properties[0];
-	const range = scene.view.authoring.document!.analysis.chunk.locations.range(property.descriptor.field!.value.span);
+	const x = pane.control.details.controls[0], selected = scene.view.authoring.selection!;
+	if (selected.kind !== 'member' || selected.entry.kind !== 'object') throw new Error('scene: the selected source occurrence owns its authored origin');
+	const range = scene.view.authoring.document!.analysis.chunk.locations.range((selected.entry.position!.value as LuaTableConstructorExpression).fields[0].value.span);
 	const start = model.buffer.offsetAt(range.start.line - 1, range.start.column - 1);
 	const end = model.buffer.offsetAt(range.end.line - 1, range.end.column);
 	const grouped = '-( --[[source-owned anchor]]\n\t0)';

@@ -11,7 +11,7 @@ return {
 			director.state_machines:transition_to('/combat_wait')
 			combat:start_combat('combat_wekker', true)
 			local monster<const> = combat.monster
-			local spatial<const> = monster.spatial
+			local spatial<const> = monster.owner
 			local attachment_x<const>, attachment_y<const> = monster.attachment_ox, monster.attachment_oy
 			combat.state_machines:transition_to('/combat_hit')
 			combat.timelines:seek(combat_hit_timeline_id, combat_hit_stop_frames + 1)
@@ -34,7 +34,7 @@ return {
 			combat.timelines:seek_to_end(combat_all_out_timeline_id)
 			assert(combat.all_out.presentation_ox == 0 and combat.all_out.presentation_oy == 0,
 				'all-out final sample accumulated displacement')
-			assert(monster.spatial == spatial and spatial.ox == 0 and spatial.oy == 0
+			assert(monster.owner == spatial and spatial.ox == 0 and spatial.oy == 0
 				and monster.attachment_ox == attachment_x and monster.attachment_oy == attachment_y,
 				'presentation changed physical placement or authored attachment')
 		end,
@@ -46,11 +46,11 @@ return {
 			combat.state_machines:transition_to('/combat_hit')
 			combat.timelines:seek(combat_hit_timeline_id, combat_hit_stop_frames + 1)
 			local monster<const> = combat.monster
-			monster.spatial:set_local_affine(1, 0.25, 0.5, 1, 8, 12)
+			monster.owner:set_transform(1, 0.25, 0.5, 1, 8, 12)
 			world:set_gameplay_clock_running(false)
 			t:wait_ticks(3)
 			t:capture('spatial-squashed-monster-and-local-slash')
-			assert(combat.slash_visual.monster.spatial == monster.spatial,
+			assert(combat.slash_visual.monster.owner == monster.owner,
 				'slash rebound a coordinate mirror instead of the actual struck visual')
 		end,
 	},

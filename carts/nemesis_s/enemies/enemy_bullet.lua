@@ -9,6 +9,7 @@ require('constants')
 
 local enemy_bullet<const> = {}
 enemy_bullet.__index = enemy_bullet
+setmetatable(enemy_bullet, { __index = sprite_object })
 
 -- Nemesis 2 quantizes the absolute X/Y distance to a 16x16 direction table
 -- before looking up the two Q8.8 velocity components. Retaining those ROM
@@ -90,12 +91,12 @@ function enemy_bullet.aim_velocity(delta_x, delta_y)
 end
 
 function enemy_bullet:update_flying()
-	local pose<const> = self.spatial
-	if pose.ox < enemy_bullet_size
-	or pose.ox > playfield_width
-	or pose.oy < enemy_bullet_size
-	or pose.oy > playfield_height
-	or self.stage:is_solid_pixel(pose.ox + 2, pose.oy + 2) then
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	if pose_x < enemy_bullet_size
+	or pose_x > playfield_width
+	or pose_y < enemy_bullet_size
+	or pose_y > playfield_height
+	or self.stage:is_solid_pixel(pose_x + 2, pose_y + 2) then
 		self:mark_for_disposal()
 	end
 end
@@ -122,8 +123,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_enemy_bullet_def,
 		class = enemy_bullet,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			new_enemy_bullet_collider,
 			function(owner) return fixed_point_velocity_component.new(owner, owner) end,

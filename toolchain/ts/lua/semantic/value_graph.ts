@@ -89,6 +89,8 @@ export type DeclarationValueEntry = {
 	readonly index: number;
 	/** Body containing the write; undefined means module evaluation, not declaration scope. */
 	readonly flow: ScopeID | undefined;
+	/** Written on the unconditional module-evaluation path, not a body/branch effect. */
+	readonly unconditional: boolean;
 };
 
 export type ModuleValueEntry = {
@@ -150,6 +152,8 @@ export type ValueAssignmentEntry = {
 	readonly syntax: DeclarationValueEntry['syntax'] | LuaBinaryExpression | LuaCallExpression;
 	/** Assignment target, constructor field, logical operand or builtin argument index. */
 	readonly index: number;
+	/** Producer-owned execution context; source reachability alone is not execution proof. */
+	readonly unconditional: boolean;
 };
 
 export function declarationValueSource(declId: SymbolID): DeclarationSemanticValueSource {

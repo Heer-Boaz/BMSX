@@ -11,6 +11,7 @@ local combat_overlap<const> = require('combat/overlap')
 local combat_damage<const> = require('combat/damage')
 local rock<const> = {}
 rock.__index = rock
+setmetatable(rock, { __index = sprite_object })
 local rock_break_timeline_id<const> = 'rock.tl.break'
 
 function rock:ctor()
@@ -41,7 +42,7 @@ function rock:process_damage_result(result)
 end
 
 function rock:begin_break()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local room<const> = self.room
 	room:mark_rock_destroyed(self.scene_member_id)
 	if self.item_type == nil then
@@ -50,19 +51,20 @@ function rock:begin_break()
 	if self.player.status.inventory_items[self.item_type] then
 		return
 	end
-	local drop_y<const> = pose.oy + world_item_drop_offset_y[self.item_type]
+	local drop_y<const> = pose_y + world_item_drop_offset_y[self.item_type]
 	local id<const> = 'drop.' .. self.scene_member_id
 	local rock_drop_id = nil
 	if not world_item_inventory[self.item_type] then
 		rock_drop_id = id
 		room.castle.session.region_drops[id] = {
 			scene_id = room.scene_id,
-			x = pose.ox,
+			x = pose_x,
 			y = drop_y,
 			item_type = self.item_type,
 		}
 	end
 	room.scene:spawn('world_item', {
+		position = { x = pose_x, y = drop_y },
 		imgid = world_item_sprite[self.item_type],
 		space_id = 'main',
 		room = room,
@@ -70,7 +72,7 @@ function rock:begin_break()
 		item_id = id,
 		item_type = self.item_type,
 		rock_drop_id = rock_drop_id,
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, drop_y } })
+	})
 end
 
 local define_rock_fsm<const> = function()
@@ -130,8 +132,6 @@ local register_rock_definition<const> = function()
 	prefab.define({
 		def_id = 'rock',
 		class = rock,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_enemy_layer, mask = collision_enemy_mask }),
 			timeline_component.new,

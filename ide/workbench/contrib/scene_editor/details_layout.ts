@@ -46,23 +46,23 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 	let top = appendText(view, subject.preserveLabelCase ? subject.label : uppercaseOutsideStrings(subject.label), textWidth, PADDING);
 	top = appendText(view, subject.preserveDetailCase ? subject.detail : uppercaseOutsideStrings(subject.detail), textWidth, top);
 	if (subject.selection.kind === 'scene') return top;
-	if (view.properties.length > 0) top = appendText(view, 'LOCAL ORIGIN', textWidth, top);
+	if (view.properties.length > 0) top = appendText(view, 'LOCAL POSITION', textWidth, top);
 	const fieldHeight = view.layout.rowHeight + PADDING;
 	const fieldLeft = PADDING * 2 + editorViewState.font.advance('X');
 	for (const property of view.properties) {
 		write_rect_bounds(property.contentBounds, fieldLeft, top, Math.max(fieldLeft, width - PADDING), top + fieldHeight);
-		property.text = truncateTextToWidth(uppercaseOutsideStrings(property.descriptor.sourceText), width - PADDING - fieldLeft - 6);
+		property.text = truncateTextToWidth(String(property.descriptor.value), width - PADDING - fieldLeft - 6);
 		top += fieldHeight + PADDING;
 	}
 	if (view.optionProperties.length > 0) top = appendText(view, 'AUTHORED VALUES', textWidth, top);
 	for (const property of view.optionProperties) {
 		top = appendText(view, uppercaseOutsideStrings(property.descriptor.label), textWidth, top);
 		write_rect_bounds(property.contentBounds, PADDING, top, Math.max(PADDING, width - PADDING), top + fieldHeight);
-		property.text = truncateTextToWidth(uppercaseOutsideStrings(property.descriptor.preview), textWidth - 6);
+		property.text = truncateTextToWidth(property.descriptor.kind === 'string' ? property.descriptor.preview
+			: uppercaseOutsideStrings(property.descriptor.preview), textWidth - 6);
 		top += fieldHeight + PADDING;
 	}
-	top = appendText(view, subject.resolution === 'partial' ? 'PARTIAL DEFINITION' : 'DEFINITION ONLY', textWidth, top, true);
-	return appendText(view, 'AFFECTS NEW INSTANCES', textWidth, top);
+	return subject.resolution === 'partial' ? appendText(view, 'PARTIAL DEFINITION', textWidth, top, true) : top;
 }
 
 function appendText(view: SceneDetailsViewState, text: string, width: number, top: number, warning = false): number {

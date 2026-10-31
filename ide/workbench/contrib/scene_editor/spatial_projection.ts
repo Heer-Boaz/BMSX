@@ -1,7 +1,6 @@
 import { LuaSyntaxKind, type LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
-import type { LuaWrittenExpression } from '../../../../toolchain/ts/lua/semantic/written_sources';
 import { appendAffine2, relativeAffine2 } from '../../../common/affine2';
 import { appendAffine3, relativeAffine3 } from '../../../../machine/ts/common/affine3';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
@@ -9,13 +8,12 @@ import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import type { LuaSourceReader } from '../../../language/lua/source_reader';
 import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, SceneSourceObject } from './model';
-import { createSceneNameEdit, createScenePlacementEdits, finishSceneSpatialEdits } from './spatial_edits';
-import { readSceneSourceAffine } from './authored_affine';
+import { createSceneNameEdit, createScenePlacementEdits, createSceneTranslationEdits, finishSceneSpatialEdits } from './spatial_edits';
+import { readSceneSourcePose, type SceneAuthoredPose } from './authored_pose';
 import type { ScenePrefabSources } from './prefab_sources';
 
-type PrefabSpatial = { readonly family: '2d' | '3d'; readonly authority: 'affine' | 'root_origin'; readonly local: SceneSourceAffine | undefined };
-type SpatialInput = { readonly file: FileSemanticData; readonly table: LuaTableConstructorExpression;
-	readonly local: LuaWrittenExpression | null | undefined; readonly localSupplied: boolean };
+type PrefabSpatial = { readonly family: '2d' | '3d'; readonly pose: SceneAuthoredPose | undefined };
+type SpatialInput = { readonly file: FileSemanticData; readonly table: LuaTableConstructorExpression };
 export type SceneSpatialParents = ReadonlyMap<SceneSourceObject, SceneSourceObject | undefined>;
 export type SceneSpatialTopology = { readonly parents: SceneSpatialParents; readonly capabilities: ReadonlyMap<SceneSourceObject, PrefabSpatial | false | undefined> };
 /** Authored source occurrences and derived poses, shared by viewport rendering and manipulation.
@@ -78,6 +76,26 @@ export class SceneSpatialProjection {
 		}
 		return graph;
 	}
+	/** Effective local pose belongs to the spatial capability, including inherited defaults.
+	 * Local editing does not require a resolved or invertible parent world. */
+	public localTransform(document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject): Readonly<SceneSourceAffine> | undefined {
+		const graph = this.graph(document, scene), capability = graph.capabilities.get(member);
+		if (!capability) return;
+		const local = this.localAffine(graph, member);
+		if (local?.family !== capability.family) return;
+		return local;
+	}
+
+	public localPositionEdits(buffer: TextBuffer, document: SceneSourceDocument, member: SceneSourceObject,
+		initial: Readonly<SceneSourceAffine>, axis: 'x' | 'y' | 'z', value: number): readonly EditorTextEdit[] | undefined {
+		const local = { ...initial };
+		if (axis === 'x') local.ox = value;
+		else if (axis === 'y') local.oy = value;
+		else if (local.family === '3d') local.oz = value;
+		else return;
+		return finishSceneSpatialEdits(createSceneTranslationEdits(buffer, document, member, local, initial));
+	}
+
 	public sibling(document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject, direction: -1 | 1): SceneSourceEntry | undefined {
 		const graph = this.graph(document, scene);
 		return (direction < 0 ? graph.previous : graph.next).get(member);
@@ -95,7 +113,7 @@ export class SceneSpatialProjection {
 					const world = this.worldAffine(graph, child);
 					if (world === undefined) { edits = undefined; break; }
 					edits.push(...createScenePlacementEdits(buffer, document, child, undefined, world,
-						this.localAffine(graph, child), graph.inputs.get(child)!.localSupplied));
+						this.localAffine(graph, child)));
 				}
 			}
 			this.removals.set(member, edits === undefined ? undefined : finishSceneSpatialEdits(edits));
@@ -148,7 +166,7 @@ export class SceneSpatialProjection {
 					if (parent !== undefined) {
 						const parentCapability = graph.capabilities.get(parent);
 						parentId = graph.ids.get(parent);
-						if (capability.authority === 'root_origin' || !parentCapability || parentCapability.family !== capability.family
+						if (!parentCapability || parentCapability.family !== capability.family
 							|| parentId === undefined || graph.byId.get(parentId) !== parent || !graph.parents.has(parent) || descendants.has(parent)) continue;
 					}
 					let local = world === undefined ? undefined : { ...world };
@@ -172,7 +190,7 @@ export class SceneSpatialProjection {
 		choice: SceneReparentChoice): readonly EditorTextEdit[] {
 		const graph = this.graph(document, scene), parentId = choice.parent === undefined ? undefined : graph.ids.get(choice.parent)!;
 		return finishSceneSpatialEdits(createScenePlacementEdits(buffer, document, member, parentId, choice.local,
-			this.localAffine(graph, member), graph.inputs.get(member)?.localSupplied === true));
+			this.localAffine(graph, member)));
 	}
 
 	public renamePlan(document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject): SceneRenamePlan | undefined {
@@ -191,16 +209,14 @@ export class SceneSpatialProjection {
 		return this.renames.get(member);
 	}
 
-	public renameEdits(buffer: TextBuffer, document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject, plan: SceneRenamePlan, name: string): readonly EditorTextEdit[] {
+	public renameEdits(buffer: TextBuffer, document: SceneSourceDocument, _scene: SceneSourceDefinition, member: SceneSourceObject, plan: SceneRenamePlan, name: string): readonly EditorTextEdit[] {
 		if (name === plan.initialName) return [];
-		const graph = this.graph(document, scene), edits = [createSceneNameEdit(buffer, document, member.memberId, name)];
+		const edits = [createSceneNameEdit(buffer, document, member.memberId, name)];
 		for (const child of plan.references) {
-			const spatial = child.spatial!, table = spatial.field.value;
-			if (table.kind === LuaSyntaxKind.TableConstructorExpression) {
-				for (const field of table.fields) if (staticLuaTableFieldName(field) === 'parent_id'
-					&& this.reader.stringValue(document.analysis, field.value) === plan.initialName)
-					edits.push(createSceneNameEdit(buffer, document, field.value, name));
-			} else edits.push(...createScenePlacementEdits(buffer, document, child, name, undefined, undefined, graph.inputs.get(child)!.localSupplied));
+			const table = child.field.value as LuaTableConstructorExpression;
+			for (const field of table.fields) if (staticLuaTableFieldName(field) === 'parent'
+				&& this.reader.stringValue(document.analysis, field.value) === plan.initialName)
+				edits.push(createSceneNameEdit(buffer, document, field.value, name));
 		}
 		return finishSceneSpatialEdits(edits);
 	}
@@ -221,13 +237,8 @@ export class SceneSpatialProjection {
 			const definition = reader.member(file, entry.field.value, 'definition_id');
 			const definitionId = definition === undefined ? undefined : reader.stringValue(definition.file, definition.expression);
 			capabilities.set(entry, definitionId === undefined ? undefined : this.prefabs.get(definitionId));
-			const spatial = reader.memberState(file, entry.field.value, 'spatial');
-			if (spatial === null || spatial?.expression.kind === LuaSyntaxKind.NilLiteralExpression) { inputs.set(entry, undefined); parentIds.set(entry, undefined); continue; }
-			if (spatial?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) continue;
-			const local = reader.memberState(spatial.file, spatial.expression, 'local_transform');
-			inputs.set(entry, { file: spatial.file, table: spatial.expression,
-				local, localSupplied: local !== null && local?.expression.kind !== LuaSyntaxKind.NilLiteralExpression });
-			const parent = reader.memberState(spatial.file, spatial.expression, 'parent_id');
+			inputs.set(entry, { file, table: entry.field.value as LuaTableConstructorExpression });
+			const parent = reader.memberState(file, entry.field.value, 'parent');
 			if (parent === null || parent?.expression.kind === LuaSyntaxKind.NilLiteralExpression) parentIds.set(entry, undefined);
 			else if (parent !== undefined) { const name = reader.stringValue(parent.file, parent.expression); if (name !== undefined) parentIds.set(entry, name); }
 		}
@@ -238,7 +249,7 @@ export class SceneSpatialProjection {
 			let referenced = references.get(parentId); if (referenced === undefined) { referenced = []; references.set(parentId, referenced); } referenced.push(entry);
 			const parent = byId.get(parentId); if (parent === undefined) continue;
 			const capability = capabilities.get(entry), parentCapability = capabilities.get(parent);
-			if (parentCapability === false || capability === false || capability && capability.authority === 'root_origin'
+			if (parentCapability === false || capability === false
 				|| capability && parentCapability && capability.family !== parentCapability.family) continue;
 			candidateParents.set(entry, parent);
 		}
@@ -339,9 +350,8 @@ export class SceneSpatialProjection {
 		if (!graph.locals.has(member)) {
 			const input = graph.inputs.get(member);
 			const capability = graph.capabilities.get(member);
-			let local: SceneSourceAffine | undefined;
-			if (input?.localSupplied) local = input.local === undefined ? undefined : readSceneSourceAffine(this.reader, input.local!.file, input.local!.expression);
-			else if (graph.inputs.has(member)) local = capability ? capability.local : undefined;
+			const local = input !== undefined && capability && capability.pose !== undefined
+				? readSceneSourcePose(this.reader, input.file, input.table, capability.family, capability.pose)?.affine : undefined;
 			graph.locals.set(member, local);
 		}
 		return graph.locals.get(member);
@@ -351,24 +361,23 @@ export class SceneSpatialProjection {
 		const prefabs = new Map<string, PrefabSpatial | false | undefined>(), reader = this.reader;
 		for (const [id, definition] of this.prefabSources.all) {
 			if (definition === undefined) { prefabs.set(id, undefined); continue; }
-			const spatial = reader.memberState(definition.file, definition.expression, 'spatial');
-			if (spatial === null || spatial?.expression.kind === LuaSyntaxKind.NilLiteralExpression) { prefabs.set(id, false); continue; }
-			if (spatial?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) { prefabs.set(id, undefined); continue; }
-			const familySource = reader.member(spatial.file, spatial.expression, 'family'), authoritySource = reader.member(spatial.file, spatial.expression, 'authority');
-			const family = familySource === undefined ? undefined : reader.stringValue(familySource.file, familySource.expression);
-			const authority = authoritySource === undefined ? undefined : reader.stringValue(authoritySource.file, authoritySource.expression);
-			if ((family !== '2d' && family !== '3d') || (authority !== 'affine' && authority !== 'root_origin')) { prefabs.set(id, undefined); continue; }
-			const transform = reader.memberState(spatial.file, spatial.expression, 'local_transform');
-			const local = transform === null || transform?.expression.kind === LuaSyntaxKind.NilLiteralExpression
-				? family === '2d' ? { family: '2d' as const, xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 }
-					: { family: '3d' as const, xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 }
-				: transform === undefined ? undefined : readSceneSourceAffine(reader, transform.file, transform.expression);
-			prefabs.set(id, { family, authority, local: local?.family === family ? local : undefined });
+			const selected = reader.memberState(definition.file, definition.expression, 'class');
+			if (selected === null || selected?.expression.kind === LuaSyntaxKind.NilLiteralExpression) { prefabs.set(id, false); continue; }
+			const lineage = this.prefabSources.classes(definition);
+			if (lineage === undefined) { prefabs.set(id, undefined); continue; }
+			const object2 = reader.module(definition.file, 'cartlib/world/object_2d');
+			const object3 = reader.module(definition.file, 'cartlib/world/object_3d');
+			const family = object2 !== undefined && lineage.includes(object2) ? '2d' : object3 !== undefined && lineage.includes(object3) ? '3d' : undefined;
+			if (family === undefined) {
+				const base = reader.module(definition.file, 'cartlib/world/world_object');
+				prefabs.set(id, base !== undefined && lineage.includes(base) ? false : undefined); continue;
+			}
+			prefabs.set(id, { family, pose: readSceneSourcePose(reader, definition.file, definition.expression, family) });
 		}
 		return prefabs;
 	}
 }
 
 function sameCapability(left: PrefabSpatial | false | undefined, right: PrefabSpatial | false | undefined): boolean {
-	return left === right || !!left && !!right && left.family === right.family && left.authority === right.authority;
+	return left === right || !!left && !!right && left.family === right.family;
 }

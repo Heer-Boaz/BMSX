@@ -12,7 +12,7 @@ const PROGRAM_PRESENTATION = { prefix: 'PROGRAM / ' };
 const ACTOR_REFERENCE = { label: 'Owner', referenceType: 'Actor' };
 const INTERNAL_MEMBER = { internal: true };
 const ACTOR_LABELS: Readonly<Record<string, string>> = {
-	id: 'ID', definition_id: 'Definition', active: 'Active', spatial: 'Transform',
+	id: 'ID', definition_id: 'Definition', active: 'Active', parent: 'Parent',
 	tags: 'Tags', data: 'Data', events: 'Events',
 };
 const TIMELINE_FIELDS = [

@@ -9,7 +9,7 @@ import { createActualSourcePanes } from '../helpers/source_panes';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('root', { objects = {
- { member_id = 'first', definition_id = 'fixture.actor', spatial = { local_transform = { 1, 0, 0, 1, 11, 22 } }, options = { color = 0xffabcdef } },
+ { member_id = 'first', definition_id = 'fixture.actor', position = { x = 11, y = 22 }, options = { color = 0xffabcdef } },
  { member_id = 'second', definition_id = 'fixture.controller' },
 } })`;
 

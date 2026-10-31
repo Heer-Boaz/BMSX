@@ -4,7 +4,7 @@ import { appendValueElement, appendValueMember, appendValueMetatable, type CallV
 
 /** Raw sites; no decision depends on the order in which bodies were visited. */
 export type LuaBuiltinOperationSite =
-	| { readonly kind: 'setmetatable' | 'getmetatable'; readonly call: CallValueEntry; readonly flow: ScopeID | undefined }
+	| { readonly kind: 'setmetatable' | 'getmetatable'; readonly call: CallValueEntry; readonly flow: ScopeID | undefined; readonly unconditional: boolean }
 	| { readonly kind: 'iterator'; readonly name: string; readonly table: SemanticValueSource; readonly declaration: DeclarationValueEntry };
 
 /**
@@ -42,16 +42,16 @@ export function composeLuaBuiltinOperations(
 		if (site.flow !== undefined) hasBodyWrites = true;
 		let writes = projectedAssignments.get(site.flow);
 		if (writes === undefined) projectedAssignments.set(site.flow, writes = []);
-		const { call } = site;
+		const { call, unconditional } = site;
 		const target = call.arguments[0];
 		if (site.kind === 'getmetatable') {
-			writes.push({ target: call.result, source: appendValueMetatable(target), relation: 'value', syntax: call.expression, index: 0 });
+			writes.push({ target: call.result, source: appendValueMetatable(target), relation: 'value', syntax: call.expression, index: 0, unconditional });
 		} else {
 			const metatable = call.arguments[1];
 			writes.push(
-				{ target: call.result, source: target, relation: 'value', syntax: call.expression, index: 0 },
-				{ target, source: metatable, relation: 'metatable', syntax: call.expression, index: 1 },
-				{ target, source: appendValueMember(metatable, '__index'), relation: 'prototype', syntax: call.expression, index: 1 },
+				{ target: call.result, source: target, relation: 'value', syntax: call.expression, index: 0, unconditional },
+				{ target, source: metatable, relation: 'metatable', syntax: call.expression, index: 1, unconditional },
+				{ target, source: appendValueMember(metatable, '__index'), relation: 'prototype', syntax: call.expression, index: 1, unconditional },
 			);
 		}
 	}

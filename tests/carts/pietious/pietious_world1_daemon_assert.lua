@@ -28,7 +28,7 @@ return {
 				direction = 'down',
 			}, 1, 2, 5)
 			player.state_machines:transition_to('/quiet')
-			player.spatial:set_world_origin(32, 96)
+			player:set_global_position(32, 96)
 			local def<const> = find_daemon_def(room)
 			assert(def ~= nil, 'room 100 has no daemon definition')
 			test.daemon_id = def.member_id
@@ -98,12 +98,12 @@ return {
 				player.status.inventory_items.keyworld1 = false
 				player.status.health = 1
 				player:emit_health_changed()
-				test.key_x = key.spatial.ox
-				test.key_y = key.spatial.oy
+				test.key_x = key.ox
+				test.key_y = key.oy
 
 			end
 			t:wait_until('HUD health drains', function() return registry:get('ui').hud_health_level ~= player.status.max_health end, 120)
-			player.spatial:set_world_origin(test.key_x, test.key_y)
+			player:set_global_position(test.key_x, test.key_y)
 			t:wait_until('key pickup', function() return player.status.inventory_items.keyworld1 end, 120)
 			do
 				local key<const> = registry:get('world1_daemon_key')

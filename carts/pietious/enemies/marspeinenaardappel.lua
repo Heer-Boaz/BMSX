@@ -4,10 +4,10 @@ local bouncing_movement_component<const> = require('cartlib/physics/bouncing_mov
 local enemy_base<const> = require('enemies/enemy_base')
 
 local movement_profile<const> = {
-	local_left = 0,
-	local_top = 0,
-	local_right = room_tile_size,
-	local_bottom = room_tile_size,
+	footprint_left = 0,
+	footprint_top = 0,
+	footprint_right = room_tile_size,
+	footprint_bottom = room_tile_size,
 	world_left = 0,
 	world_top = room_hud_height,
 	world_right = room_width,
@@ -18,6 +18,7 @@ local movement_profile<const> = {
 
 local marspeinenaardappel<const> = {}
 marspeinenaardappel.__index = marspeinenaardappel
+setmetatable(marspeinenaardappel, { __index = enemy_base })
 
 function marspeinenaardappel:ctor()
 	local movement<const> = self:get_component(bouncing_movement_component)
@@ -42,8 +43,6 @@ function marspeinenaardappel.register()
 	prefab.define({
 		def_id = 'enemy.marspeinenaardappel',
 		class = marspeinenaardappel,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy_base.new_collider,
 			bouncing_movement_component.factory(movement_profile),

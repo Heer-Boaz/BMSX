@@ -10,6 +10,7 @@ local enemy_base<const> = require('enemies/enemy_base')
 
 local mijterfoe<const> = {}
 mijterfoe.__index = mijterfoe
+setmetatable(mijterfoe, { __index = enemy_base })
 
 -- The original Bat's sixteen signed Q8.8 flight vectors, decoded from the
 -- tables at 0x7e49 and 0x7e69 and multiplied by the enemy's speed factor 2.
@@ -49,18 +50,18 @@ end
 -- belongs to the enemy's flight controller; only one task activation's total
 -- flight duration belongs in node memory.
 local advance_flight_direction<const> = function(self)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local motion<const> = self.motion
 	local direction_index = self.direction_index
 	local reflected = false
 	local velocity_y<const> = motion.velocity_y
 	if velocity_y >= 0 then
-		if pose.oy >= enemy_mijter_max_y then
+		if pose_y >= enemy_mijter_max_y then
 			motion.velocity_y = -velocity_y
 			direction_index = (-direction_index) & 0x0f
 			reflected = true
 		end
-	elseif pose.oy < enemy_mijter_min_y then
+	elseif pose_y < enemy_mijter_min_y then
 		motion.velocity_y = -velocity_y
 		direction_index = (-direction_index) & 0x0f
 		reflected = true
@@ -68,12 +69,12 @@ local advance_flight_direction<const> = function(self)
 
 	local velocity_x<const> = motion.velocity_x
 	if velocity_x >= 0 then
-		if pose.ox >= enemy_mijter_max_x then
+		if pose_x >= enemy_mijter_max_x then
 			motion.velocity_x = -velocity_x
 			direction_index = (8 - direction_index) & 0x0f
 			reflected = true
 		end
-	elseif pose.ox < enemy_mijter_min_x then
+	elseif pose_x < enemy_mijter_min_x then
 		motion.velocity_x = -velocity_x
 		direction_index = (8 - direction_index) & 0x0f
 		reflected = true
@@ -115,9 +116,9 @@ end
 
 function mijterfoe.tick_seek_ceiling(self)
 	local rm<const> = self.room
-	local pose<const> = self.spatial
-	local tile_x<const>, tile_y<const> = rm:world_to_tile(pose.ox, pose.oy)
-	local _<const>, ceiling_tile_y<const> = rm:world_to_tile(pose.ox, pose.oy - 1)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local tile_x<const>, tile_y<const> = rm:world_to_tile(pose_x, pose_y)
+	local _<const>, ceiling_tile_y<const> = rm:world_to_tile(pose_x, pose_y - 1)
 	if rm:has_collision_flags_at_tile(tile_x, ceiling_tile_y, collision_flags_solid_mask)
 	and rm:has_collision_flags_at_tile(tile_x + 1, ceiling_tile_y, collision_flags_solid_mask)
 	and not rm:has_collision_flags_at_tile(tile_x, tile_y, collision_flags_solid_mask)
@@ -239,8 +240,6 @@ function mijterfoe.register()
 	prefab.define({
 		def_id = 'enemy.mijterfoe',
 		class = mijterfoe,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy_base.new_collider,
 			fixed_point_velocity_component.new,

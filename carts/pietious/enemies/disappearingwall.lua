@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local prefab<const> = require('cartlib/world/prefab')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local collision_storage<const> = require('collision_storage')
@@ -6,6 +7,7 @@ require('constants')
 
 local disappearingwall<const> = {}
 disappearingwall.__index = disappearingwall
+setmetatable(disappearingwall, { __index = object_2d })
 
 function disappearingwall:ctor()
 	local collider<const> = self:get_component(collider_2d_component)
@@ -20,7 +22,6 @@ function disappearingwall.register()
 	prefab.define({
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area,

@@ -29,7 +29,7 @@ function prohibit_leaving_screen_component:resolve_leaving(direction, previous_p
 	else
 		y = self.stick_to_edge and (self.bottom - self._footprint_bottom) or previous_position
 	end
-	return self._write_world_origin(self.spatial, x, y)
+	return self._write_world_origin(self.owner, x, y)
 end
 
 return prohibit_leaving_screen_component

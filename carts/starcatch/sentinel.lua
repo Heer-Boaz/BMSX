@@ -1,3 +1,4 @@
+local object_3d<const> = require('cartlib/world/object_3d')
 local bt_component<const> = require('cartlib/behaviour_tree/bt_component')
 local bt_library<const> = require('cartlib/behaviour_tree/library')
 local bt_result<const> = require('cartlib/behaviour_tree/result')
@@ -7,17 +8,18 @@ local poses<const> = require('poses')
 
 local sentinel_module<const> = {}
 local sentinel<const> = {}
+setmetatable(sentinel, { __index = object_3d })
 local align<const> = {
 	tick = function(enemy)
 		enemy.mode = 'align'
-		local target<const> = enemy.game.player.spatial:resolve_world()
-		local pose<const> = enemy.spatial:resolve_world()
+		local target_x<const> = enemy.game.player:get_global_position()
+		local x, y, z = enemy:get_global_position()
 		local next_x
-		if pose.wox < target.wox then next_x = math.min(target.wox, pose.wox + 1.25)
-		else next_x = math.max(target.wox, pose.wox - 1.25) end
-		pose:set_world_origin(next_x, pose.woy, pose.woz)
-		pose:resolve_world()
-		if math.abs(pose.wox - target.wox) <= 4 then return bt_result.success end
+		if x < target_x then next_x = math.min(target_x, x + 1.25)
+		else next_x = math.max(target_x, x - 1.25) end
+		enemy:set_global_position(next_x, y, z)
+		x, y, z = enemy:get_global_position()
+		if math.abs(x - target_x) <= 4 then return bt_result.success end
 		return bt_result.running
 	end,
 }
@@ -54,7 +56,7 @@ function sentinel_module.install()
 		} },
 	})
 	prefab.define({ def_id = 'starcatch.sentinel', class = sentinel,
-		spatial = { family = '3d', authority = 'affine', local_transform = { 1,0,0,0,1,0,0,0,1,0,0,512 } },
+		position = { x = 0, y = 0, z = 512 },
 		components = { timeline_component.new, bt_component.factory('starcatch.sentinel') } })
 end
 

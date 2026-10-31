@@ -11,6 +11,7 @@ require('constants')
 
 local noot<const> = {}
 noot.__index = noot
+setmetatable(noot, { __index = foe })
 
 local colors<const> = {
 	0xffffffff,
@@ -42,11 +43,11 @@ function noot:ctor()
 end
 
 function noot:update_flying()
-	local pose<const> = self.spatial
-	if pose.ox < -noot_width
-	or pose.ox > playfield_width
-	or pose.oy < -noot_height
-	or pose.oy > playfield_height then
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	if pose_x < -noot_width
+	or pose_x > playfield_width
+	or pose_y < -noot_height
+	or pose_y > playfield_height then
 		self:mark_for_disposal()
 	end
 end
@@ -67,8 +68,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_noot_def,
 		class = noot,
-		base = foe,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,

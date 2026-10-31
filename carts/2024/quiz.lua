@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local assets<const> = require('bmsx/assets')
 local bin<const> = require('cartlib/bin')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -10,6 +11,7 @@ local text_object<const> = require('cartlib/text/text_object')
 local quiz<const> = {}
 local controller<const> = {}
 controller.__index = controller
+setmetatable(controller, { __index = world_object })
 
 local controller_def_id<const> = 'quiz_controller'
 local controller_instance_id<const> = 'quiz'
@@ -180,8 +182,6 @@ local register_definitions<const> = function()
 	prefab.define({
 		def_id = text_def_id,
 		class = text_object,
-		base = text_object,
-		spatial = { family = '2d', authority = 'affine' },
 		defaults = { order = 1 },
 	})
 	prefab.define({

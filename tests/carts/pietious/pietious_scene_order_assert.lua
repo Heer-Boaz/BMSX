@@ -14,7 +14,8 @@ return {
 			scenes.register('pietious.gameplay', { objects = {
 				{ member_id = 'hud', definition_id = 'ui', options = hud_member.options },
 				{ member_id = 'player', definition_id = 'player', options = player_member.options,
-					spatial = { local_transform = player_member.local_transform } },
+					transform = { xx = player_member.xx, xy = player_member.xy,
+						yx = player_member.yx, yy = player_member.yy, ox = player_member.ox, oy = player_member.oy } },
 			} })
 			local old_player<const> = registry:get('pietolon')
 			new_game()
@@ -22,8 +23,8 @@ return {
 			local hud<const> = registry:get('ui')
 			assert(player ~= old_player and player.definition_id == 'player' and hud.definition_id == 'ui',
 			'reordering a scene changed the role of its player or HUD')
-			local pose<const> = player.spatial:resolve_world()
-			assert(hud.player == player and player.status.spawn_x == pose.wox and player.status.spawn_y == pose.woy,
+			local player_x<const>, player_y<const> = player:get_global_position()
+			assert(hud.player == player and player.status.spawn_x == player_x and player.status.spawn_y == player_y,
 			'reordering a scene broke construction bindings or its authored spawn anchor')
 		end,
 	},

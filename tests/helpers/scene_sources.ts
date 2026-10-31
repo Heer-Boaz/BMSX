@@ -1,3 +1,4 @@
+import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
 import type { TestContext } from 'node:test';
 import { EditorTextModelService } from '../../ide/editor/model/model_service';
 import { resetSemanticProjects } from '../../ide/editor/contrib/intellisense/semantic/workspace/state';
@@ -9,9 +10,11 @@ import { TEST_CARTRIDGE_CONTEXT_IDS } from './runtime_sources';
 /** Real canonical models and source authority for Scene domain/control fixtures. */
 export function createSceneSourceFixture(t: TestContext, source: string, path = 'scene.lua',
 	contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0], imports: readonly (readonly [string, string])[] = []) {
+
 	const sources = createScenarioTestSourceState([
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, 'return {}'),
 		createScenarioTestSourceRecord(path, 1, source),
+		...CARTLIB_OBJECT_SOURCE_MODULES.filter(([path]) => !imports.some(([imported]) => imported === path)).map(([path, source]) => createScenarioTestSourceRecord(path, 1, source)),
 		...imports.map(([path, source]) => createScenarioTestSourceRecord(path, 1, source)),
 	]);
 	if (contextId !== TEST_CARTRIDGE_CONTEXT_IDS[0]) sources.catalog.admitContext({

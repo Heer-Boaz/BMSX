@@ -4,6 +4,17 @@ local apu_slot<const>: *word = 0x08000148
 local apu_status<const>: *word = 0x08000178
 local apu_selected_source<const>: *word = 0x0800018c
 local apu_active<const>: *word = 0x08000190
+local renderer<const> = require('scene_renderer')
+local meshes<const> = require('scene_meshes')
+local prefab<const> = require('cartlib/world/prefab')
+local object_3d<const> = require('cartlib/world/object_3d')
+local gte<const> = require('cartlib/gx/gte')
+local gp0<const> = require('cartlib/gx/gp0')
+local gte_data<const>: *word = gte.data
+local gte_command<const>: *word = gte.command
+local gte_cycles<const>: *word = gte.cycles
+bss renderer_packets: word[256]
+prefab.define({ def_id = 'test.starcatch.renderer', class = object_3d })
 
 return {
 	kind = 'integration',
@@ -11,6 +22,63 @@ return {
 		t:wait_until('title scene', function() return starcatch ~= nil and starcatch.phase == 'title' end, 160)
 	end,
 	tests = {
+		['parented affine geometry and repeated render packets'] = function()
+			local parent<const> = starcatch.scene:spawn('test.starcatch.renderer', {
+				transform = { xx=1,xy=0.25,xz=0,yx=0.5,yy=1,yz=0.25,zx=0.25,zy=0,zz=1,ox=160,oy=120,oz=512 },
+			})
+			local ship<const> = starcatch.scene:spawn('test.starcatch.renderer', {
+				parent=parent, position={x=3,y=4,z=5}, spin=0,bank=0,bob=3,recoil=2,hit_flash=0,dash_shield=0,
+			})
+			local game<const> = { player=ship,phase='title',frame=0,scene={definition={}},player_bolts={},enemy_bolts={} }
+			local component<const> = { owner={game=game} }
+			local body_colors<const>, head_colors<const> = {}, {}
+			for _, color in ipairs(meshes.palettes[meshes.cyan]) do
+				body_colors[gp0.draw_triangle | gp0.argb_to_rgb(color)] = true
+			end
+			for _, color in ipairs(meshes.palettes[meshes.gold]) do
+				head_colors[gp0.draw_triangle | gp0.argb_to_rgb(color)] = true
+			end
+			-- Inspect the actual command producer and real GTE winding, not a host
+			-- renderer substitute. The sink records one pass and compares the next.
+			local draw<const> = { body=0,head=0,count=0,compare=false,reflected=false,
+				rect=function() end,line=function() end,triangle_words=function(self,color,a,b,c)
+					gte_data[gte.data_sxy0],gte_data[gte.data_sxy1],gte_data[gte.data_sxy2] = a,b,c
+					*gte_command = gte.opcode_nclip
+					while (*gte_cycles & 0x80000000) ~= 0 do end
+					local area<const> = gte_data[gte.data_mac0]
+					assert(area ~= 0 and ((area & 0x80000000) ~= 0) == self.reflected,
+						'full-affine render emitted a back face or lost reflected winding')
+					if body_colors[color] then self.body=self.body+1
+					elseif head_colors[color] then self.head=self.head+1
+					else error('render emitted an unrelated model palette') end
+					local offset<const> = self.count
+					if self.compare then
+						assert(renderer_packets[offset]==color and renderer_packets[offset+1]==a
+							and renderer_packets[offset+2]==b and renderer_packets[offset+3]==c,
+							'repeated rendering changed the same affine geometry packet')
+					else
+						renderer_packets[offset],renderer_packets[offset+1],renderer_packets[offset+2],renderer_packets[offset+3] = color,a,b,c
+					end
+					self.count=offset+4
+				end }
+			for pass = 1, 2 do
+				if pass == 2 then
+					parent:set_transform(-1,-0.25,0,0.5,1,0.25,0.25,0,1,160,120,512)
+					draw.reflected=true
+				end
+				draw.body,draw.head,draw.count,draw.compare = 0,0,0,false
+				renderer.draw(component,draw)
+				local count<const> = draw.count
+				local body<const>, head<const> = draw.body,draw.head
+				assert(body>0 and head>0, 'parent shear/reflection lost the ship or articulated head')
+				draw.body,draw.head,draw.count,draw.compare = 0,0,0,true
+				renderer.draw(component,draw)
+				assert(draw.count==count and draw.body==body and draw.head==head,
+					'repeated rendering dropped or duplicated model geometry')
+			end
+			ship:mark_for_disposal()
+			parent:mark_for_disposal()
+		end,
 		['real scenes, 3D arrival, movement and ActionEffect fire'] = function(t)
 			local title<const> = starcatch.scene
 			assert(title.definition.name == 'title')
@@ -25,27 +93,27 @@ return {
 			end, 6)
 			local intro<const> = starcatch.scene
 			local ship<const> = starcatch.player
-			local arrival<const> = ship.spatial:resolve_world()
-			assert(arrival.woy > 240 and arrival.woz > 512, 'arrival starts offscreen in depth')
+			local _, arrival_y, arrival_z = ship:get_global_position()
+			assert(arrival_y > 240 and arrival_z > 512, 'arrival starts offscreen in depth')
 			assert(ship.x == nil and ship.y == nil and ship.z == nil, '3D actor retains a mirrored position')
 			t:wait_ticks(35)
-			arrival:resolve_world()
-			assert(arrival.woy < 420 and arrival.woy > 198 and arrival.woz < 896 and arrival.woz > 512)
+			_, arrival_y, arrival_z = ship:get_global_position()
+			assert(arrival_y < 420 and arrival_y > 198 and arrival_z < 896 and arrival_z > 512)
 			assert(starcatch.shots_fired == 0, 'intro has no gameplay fire')
 			assert((*apu_active & 8) ~= 0 and (*apu_status & 1) == 0)
 			t:capture('arrival')
 			t:wait_until('gameplay scene', function() return starcatch.phase == 'play' end, 180)
 			assert(intro.closed and #intro.objects.items == 0)
 			assert(starcatch.player ~= ship)
-			local player<const> = starcatch.player.spatial:resolve_world()
-			assert(player.wox == 160 and player.woy == 198 and player.woz == 512)
+			local player_x, player_y, player_z = starcatch.player:get_global_position()
+			assert(player_x == 160 and player_y == 198 and player_z == 512)
 			assert(#starcatch.player_bolts == 8 and #starcatch.enemy_bolts == 4)
 			t:press('ArrowUp', 8)
-			player:resolve_world()
-			assert(player.woy < 198)
+			player_x, player_y, player_z = starcatch.player:get_global_position()
+			assert(player_y < 198)
 			t:press('ArrowRight', 6)
-			player:resolve_world()
-			assert(player.wox > 160)
+			player_x, player_y, player_z = starcatch.player:get_global_position()
+			assert(player_x > 160)
 			assert((*apu_active & 8) == 0, 'arrival voice retires before gameplay fire')
 			t:down('Space')
 			t:wait_until('player shot audio', function()
@@ -69,10 +137,10 @@ return {
 				if match.phase ~= 'play' then break end
 				saw_charge = saw_charge or match.enemy.charge > 0
 				local desired = ''
-				local player<const> = match.player.spatial:resolve_world()
-				local enemy<const> = match.enemy.spatial:resolve_world()
-				if player.wox < enemy.wox - 2 then desired = 'ArrowRight'
-				elseif player.wox > enemy.wox + 2 then desired = 'ArrowLeft' end
+				local player_x<const> = match.player:get_global_position()
+				local enemy_x<const> = match.enemy:get_global_position()
+				if player_x < enemy_x - 2 then desired = 'ArrowRight'
+				elseif player_x > enemy_x + 2 then desired = 'ArrowLeft' end
 				if desired ~= held then
 					if held ~= '' then t:up(held) end
 					if desired ~= '' then t:down(desired) end

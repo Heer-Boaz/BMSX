@@ -51,7 +51,7 @@ return {
 				assert(first.members.left.id ~= first.members.right.id and second.members.left.id ~= second.members.right.id
 				and first.members.left.id ~= second.members.left.id and first.members.right.id ~= second.members.right.id,
 				'repeated scene placement reused a Registry identity')
-				assert(first.members.left.spatial == nil and second.members.right.spatial == nil,
+				assert(first.members.left.get_position == nil and second.members.right.get_position == nil,
 				'placing a controller manufactured a spatial capability')
 				assert(prefab.definition(placement.definition_id).defaults.id == nil
 				and definition.objects[1].options.id == nil and definition.objects[2].options.id == nil,

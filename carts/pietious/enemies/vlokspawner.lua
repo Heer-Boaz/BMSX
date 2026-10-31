@@ -9,11 +9,13 @@ local enemy_base<const> = require('enemies/enemy_base')
 
 local vlokspawner<const> = {}
 vlokspawner.__index = vlokspawner
+setmetatable(vlokspawner, { __index = sprite_object })
 
 function vlokspawner.spawn_vlok(self)
 	local room<const> = self.room
 	local random_x<const> = math.random(-5, 4)
 	self.room.scene:spawn('enemy.vlokfoe', {
+		position = { x = math.random(2, 29) * room.tile_size, y = room.world_top },
 		speed_x_num = random_x * 2,
 		speed_y_num = 5,
 		speed_den = 10,
@@ -23,7 +25,7 @@ function vlokspawner.spawn_vlok(self)
 		room = room,
 		player = self.player,
 		direction = random_x < 0 and 'left' or 'right',
-	}, { local_transform = { 1, 0, 0, 1, math.random(2, 29) * room.tile_size, room.world_top } })
+	})
 	return bt_success
 end
 
@@ -55,8 +57,6 @@ function vlokspawner.register()
 	prefab.define({
 		def_id = 'enemy.vlokspawner',
 		class = vlokspawner,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { bt_component.factory(tree_id) },
 		defaults = {
 			order = 250,

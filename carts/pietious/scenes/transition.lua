@@ -20,7 +20,7 @@ function scene.register()
 			{
 				member_id = 'banner',
 				definition_id = 'pietious.caption',
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 104 } },
+				position = { x = 0, y = 104 },
 				options = {
 					order = 1,
 					center_block_width = 256,
@@ -31,7 +31,7 @@ function scene.register()
 			{
 				member_id = 'death_caption',
 				definition_id = 'pietious.caption',
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 80 } },
+				position = { x = 0, y = 80 },
 				options = {
 					order = 1,
 					center_block_width = 256,

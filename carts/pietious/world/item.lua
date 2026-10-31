@@ -8,15 +8,16 @@ require('constants')
 local combat_overlap<const> = require('combat/overlap')
 local world_item<const> = {}
 world_item.__index = world_item
+setmetatable(world_item, { __index = sprite_object })
 
 function world_item:ctor()
 	self.collider = self:get_component(collider_2d_component)
 end
 
 function world_item:onspawn()
-	local pose<const> = self.spatial
-	local x<const>, y<const> = self.room:snap_world_to_tile(pose.ox, pose.oy)
-	self.spatial:set_world_origin(x, y)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local x<const>, y<const> = self.room:snap_world_to_tile(pose_x, pose_y)
+	self:set_global_position(x, y)
 end
 
 function world_item:on_collected()
@@ -51,8 +52,6 @@ local register_world_item_definition<const> = function()
 	prefab.define({
 		def_id = 'world_item',
 		class = world_item,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_pickup_layer, mask = collision_pickup_mask }),
 			fsm_component.factory({ 'world_item' }),

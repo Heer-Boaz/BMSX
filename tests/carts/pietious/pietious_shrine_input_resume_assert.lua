@@ -16,7 +16,7 @@ return {
 			castle:commit_room_switch({ from_room_number = from, to_room_number = 4, direction = 'right' }, 0, 5, 12)
 			local shrine<const> = room.shrine_instances[1]
 			player.state_machines:transition_to('/quiet')
-			player.spatial:set_world_origin(shrine.spatial.ox, shrine.spatial.oy)
+			player:set_global_position(shrine.ox, shrine.oy)
 			player:begin_entering_shrine(shrine)
 
 			t:wait_until('shrine entered', function() return world.active_space_id == 'shrine' end, 120)

@@ -102,7 +102,7 @@ return {
 			assert(castle.current_room_number == transition.world_room_number,
 			'death did not return to the current world entrance')
 			assert(room.room_number == transition.world_room_number, 'room state did not reload the world entrance')
-			assert(player.spatial.ox == transition.world_spawn_x and player.spatial.oy == transition.world_spawn_y,
+			assert(player.ox == transition.world_spawn_x and player.oy == transition.world_spawn_y,
 			'player did not respawn at the world entrance')
 			assert(player.facing == transition.world_spawn_facing, 'player respawn facing is wrong')
 			assert(player.status.health == player.status.max_health, 'player health was not restored after death')

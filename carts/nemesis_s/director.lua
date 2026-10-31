@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local bool01<const> = require('cartlib/util/bool01')
 local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -19,6 +20,7 @@ local starfield<const> = require('starfield')
 
 local director<const> = {}
 director.__index = director
+setmetatable(director, { __index = world_object })
 
 local game_start_timeline_id<const> = 'nemesis_s.director.game_start'
 local game_start_duration_frames<const> = 41
@@ -118,8 +120,9 @@ function director:populate_game_start()
 	local status_bar<const> = members.status_bar
 	for player_index = 1, self.player_count do
 		local start<const> = members['player_start_' .. tostring(player_index)]
-		local pose<const> = start.spatial:resolve_world()
+		local pose_x<const>, pose_y<const> = start:get_global_position()
 		players[player_index] = instance:spawn(player_module.player_def_id, {
+			position = { x = pose_x, y = pose_y },
 			id = start.player_id,
 			start_point = start,
 			player_index = player_index,
@@ -127,7 +130,7 @@ function director:populate_game_start()
 			metalion_cheat_active = self.metalion_cheat_active,
 			space_id = 'main',
 			stage = stage,
-		}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
+		})
 	end
 	self.player_states = player_states
 	self.players = players

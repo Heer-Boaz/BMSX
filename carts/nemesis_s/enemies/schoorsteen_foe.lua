@@ -14,6 +14,7 @@ require('constants')
 
 local schoorsteen_foe<const> = {}
 schoorsteen_foe.__index = schoorsteen_foe
+setmetatable(schoorsteen_foe, { __index = ground_foe })
 
 local fire_event<const> = 'schoorsteen.fire'
 local closed_event<const> = 'schoorsteen.closed'
@@ -63,16 +64,16 @@ function schoorsteen_foe:enter_closed()
 end
 
 function schoorsteen_foe:update_idle()
-	local pose<const> = self.spatial
-	if pose.ox <= 0 then
+	local pose_x<const> = self:get_global_position()
+	if pose_x <= 0 then
 		return
 	end
 	local players<const> = players_view.objects
-	local fire_left<const> = pose.ox + schoorsteen_foe_fire_left
-	local fire_right<const> = pose.ox + schoorsteen_foe_fire_right
+	local fire_left<const> = pose_x + schoorsteen_foe_fire_left
+	local fire_right<const> = pose_x + schoorsteen_foe_fire_right
 	for player_index = 1, #players do
-		local target<const> = players[player_index].spatial
-		if target.ox >= fire_left and target.ox <= fire_right then
+		local target_x<const> = players[player_index]:get_global_position()
+		if target_x >= fire_left and target_x <= fire_right then
 			return '/opening'
 		end
 	end
@@ -88,10 +89,11 @@ function schoorsteen_foe:enter_opening()
 end
 
 function schoorsteen_foe:fire_ray()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.scene:spawn(ids_schoorsteen_ray_def, {
+		position = { x = pose_x + schoorsteen_ray_offset_x, y = pose_y + schoorsteen_ray_offset_y },
 		stage = self.stage,
-	}, { local_transform = { 1, 0, 0, 1, pose.ox + schoorsteen_ray_offset_x, pose.oy + schoorsteen_ray_offset_y } })
+	})
 	self.events:emit('enemy.ray_fired')
 	return '/firing'
 end
@@ -218,8 +220,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_schoorsteen_foe_def,
 		class = schoorsteen_foe,
-		base = ground_foe,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy.collider_factory(assets.collision_shape_schoorsteen_foe_body_addr),
 			new_flash_animation,

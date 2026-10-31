@@ -8,6 +8,7 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
 local daemon_cloud<const> = {}
 daemon_cloud.__index = daemon_cloud
+setmetatable(daemon_cloud, { __index = sprite_object })
 
 local anim_timeline_id<const> = 'daemon_cloud.anim'
 function daemon_cloud:ctor()
@@ -16,7 +17,7 @@ function daemon_cloud:ctor()
 end
 
 function daemon_cloud:play_once_at(x, y)
-	self.spatial:set_world_origin(x, y)
+	self:set_global_position(x, y)
 	self.sprite_component.visible = true
 	self.timelines:play(anim_timeline_id, self.play_options)
 end
@@ -60,8 +61,6 @@ local register_daemon_cloud_definition<const> = function()
 	prefab.define({
 		def_id = 'daemon_cloud',
 		class = daemon_cloud,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { timeline_component.new, fsm_component.factory({ 'daemon_cloud' }) },
 		defaults = {
 			order = 23,

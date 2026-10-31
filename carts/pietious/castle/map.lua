@@ -562,7 +562,7 @@ local prepare_scene_members<const> = function(template)
 		member.member_id = member.id
 		member.definition_id = definition_id
 		options.space_id = 'main'
-		member.spatial = { local_transform = { 1, 0, 0, 1, member.x, member.y } }
+		member.position = { x = member.x, y = member.y }
 		options.order = z
 		member.options = options
 		objects[#objects + 1] = member

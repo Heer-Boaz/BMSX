@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
@@ -563,6 +564,7 @@ end
 
 local room_object<const> = {}
 room_object.__index = room_object
+setmetatable(room_object, { __index = object_2d })
 
 function room_object:patch_rows(rows)
 	local changed
@@ -660,9 +662,9 @@ function room_object:overlaps_active_elevator(x, y, w, h)
 	local elevators<const> = self.castle.elevators
 	for i = 1, #elevators do
 		local platform<const> = elevators[i]
-		local pose<const> = platform.spatial:resolve_world()
+		local pose_x<const>, pose_y<const> = platform:get_global_position()
 		if platform.current_room_number == self.room_number
-			and rect_overlaps(x, y, w, h, pose.wox, pose.woy, room_tile_size4, room_tile_size2)
+			and rect_overlaps(x, y, w, h, pose_x, pose_y, room_tile_size4, room_tile_size2)
 		then
 			return true
 		end
@@ -679,8 +681,8 @@ function room_object:overlaps_active_breakable_wall(x, y, w, h)
 	local walls<const> = self.wall_instances
 	for i = 1, #walls do
 		local wall<const> = walls[i]
-		local pose<const> = wall.spatial:resolve_world()
-		if rect_overlaps(x, y, w, h, pose.wox, pose.woy, wall.width_tiles * room_tile_size, wall.height_tiles * room_tile_size) then
+		local pose_x<const>, pose_y<const> = wall:get_global_position()
+		if rect_overlaps(x, y, w, h, pose_x, pose_y, wall.width_tiles * room_tile_size, wall.height_tiles * room_tile_size) then
 			return true
 		end
 	end
@@ -693,9 +695,9 @@ function room_object:overlaps_active_draaideur(x, y, w, h)
 	local door_height<const> = tile_size * 3
 	for i = 1, #draaideuren do
 		local draaideur<const> = draaideuren[i]
-		local pose<const> = draaideur.spatial:resolve_world()
+		local pose_x<const>, pose_y<const> = draaideur:get_global_position()
 		if draaideur.collision_enabled
-		and rect_overlaps(x, y, w, h, pose.wox, pose.woy, tile_size, door_height)
+		and rect_overlaps(x, y, w, h, pose_x, pose_y, tile_size, door_height)
 		then
 			return true
 		end
@@ -783,19 +785,19 @@ end
 
 function room_object:find_near_lithograph(player)
 	local lithographs<const> = self.lithograph_instances
-	local pose<const> = player.spatial:resolve_world()
-	local player_left<const> = pose.wox
-	local player_top<const> = pose.woy
-	local player_right<const> = pose.wox + player.width
-	local player_bottom<const> = pose.woy + player.height
+	local player_x<const>, player_y<const> = player:get_global_position()
+	local player_left<const> = player_x
+	local player_top<const> = player_y
+	local player_right<const> = player_x + player.width
+	local player_bottom<const> = player_y + player.height
 
 	for i = 1, #lithographs do
 		local lithograph<const> = lithographs[i]
-		local pose<const> = lithograph.spatial:resolve_world()
-		local area_left<const> = pose.wox + lithograph_hit_left_px
-		local area_top<const> = pose.woy + lithograph_hit_top_px
-		local area_right<const> = pose.wox + lithograph_hit_right_px
-		local area_bottom<const> = pose.woy + lithograph_hit_bottom_px
+		local pose_x<const>, pose_y<const> = lithograph:get_global_position()
+		local area_left<const> = pose_x + lithograph_hit_left_px
+		local area_top<const> = pose_y + lithograph_hit_top_px
+		local area_right<const> = pose_x + lithograph_hit_right_px
+		local area_bottom<const> = pose_y + lithograph_hit_bottom_px
 		if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
 			return lithograph
 		end
@@ -1021,7 +1023,6 @@ local register_room_definition<const> = function()
 	prefab.define({
 		def_id = 'room',
 		class = room_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			timeline_component.new,
 			fsm_component.factory({ 'room' }),

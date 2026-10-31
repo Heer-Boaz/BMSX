@@ -7,6 +7,7 @@ require('constants')
 
 local spawn_projectile<const> = {}
 spawn_projectile.__index = spawn_projectile
+setmetatable(spawn_projectile, { __index = enemy_base })
 
 local projectile_images<const> = {
 	'world1_daemon_spawn_cadeau',
@@ -41,8 +42,6 @@ function spawn_projectile.register()
 	prefab.define({
 		def_id = 'enemy.daemon_spawn',
 		class = spawn_projectile,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { new_collider, enemy_base.projectile_boundary },
 		defaults = {
 			speed_den = 10,

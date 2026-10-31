@@ -22,7 +22,7 @@ local actor_id<const> = 'cartlib_test.boundary_actor'
 
 local empty_scene_plan<const> = scene_plan.compile({ objects = {} })
 
-prefab.define({ def_id = actor_id, class = {}, base = world_object })
+prefab.define({ def_id = actor_id, class = world_object })
 
 local first<const> = { group = 10, priority = 0, clock_source = clock.frame, method = 'first' }
 
@@ -58,7 +58,7 @@ function test_system:last()
 end
 
 prefab.define({
-	def_id = 'cartlib_test.boundary_visual', class = {}, base = world_object,
+	def_id = 'cartlib_test.boundary_visual', class = world_object,
 	components = { custom_visual.factory({ draw = function(visual)
 				local owner<const> = visual.owner
 				local state<const> = owner.state

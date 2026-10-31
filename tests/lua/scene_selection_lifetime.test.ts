@@ -1,3 +1,4 @@
+import type { LuaTableConstructorExpression } from '../../toolchain/ts/lua/syntax/ast';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
@@ -7,7 +8,7 @@ import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
+ { member_id = 'same', definition_id = 'first', position = { x = 1, y = 2, z = 3 } },
  { member_id = 'same', definition_id = 'second' },
 } })
 scenes.register('same', { objects = {} })`;
@@ -45,8 +46,8 @@ for (const target of ['primary root', 'member'] as const) test(`same-occurrence 
 	const moved = context.getSourceLocation(); assert.ok(moved !== undefined);
 	assert.equal(context.selectionRevision, intent);
 	const scene = context.subject!, document = context.document!;
-	const position = scene.objects[0]; assert.ok(position.kind === 'object' && position.spatial !== null);
-	model.pushEditOperations(createLuaTableFieldNumberEdits(model.buffer, document.analysis.chunk.locations, position.spatial!.origin[0], 12345)!);
+	const position = scene.objects[0]; assert.ok(position.kind === 'object' && position.position !== null);
+	model.pushEditOperations(createLuaTableFieldNumberEdits(model.buffer, document.analysis.chunk.locations, (position.position!.value as LuaTableConstructorExpression).fields[0], 12345)!);
 	const edited = context.getSourceLocation(); assert.ok(edited !== undefined);
 	assert.equal(context.selectionRevision, intent); assert.equal(edited.modelVersion, model.version);
 	const current = context.document!, range = target === 'member'

@@ -5,7 +5,7 @@ local div_toward_zero<const> = require('cartlib/util/div_toward_zero')
 local velocity<const> = require('cartlib/velocity')
 
 -- Signed Q8.8 displacement and fractional integration state belong to this
--- component. Transform2D is the only pose authority; scheduled motion publishes
+-- component. Object2D is the only pose authority; scheduled motion publishes
 -- one achieved world-origin vector after the word integration succeeds.
 local fixed_point_velocity_component<const> = {}
 fixed_point_velocity_component.__index = fixed_point_velocity_component
@@ -38,16 +38,14 @@ function fixed_point_velocity_component.factory(configuration)
 end
 
 function fixed_point_velocity_component:on_attach()
-	local spatial<const> = self.owner.spatial
-	if spatial == nil or spatial._family ~= affine2 then
-		error('fixed-point velocity component requires Transform2D')
+	local spatial<const> = self.owner
+	if spatial._family ~= affine2 then
+		error('fixed-point velocity component requires Object2D')
 	end
-	self.spatial = spatial
-	self._write_world_origin = spatial.set_world_origin
+	self._write_world_origin = spatial.set_global_position
 end
 
 function fixed_point_velocity_component:on_detach()
-	self.spatial = nil
 	self._write_world_origin = nil
 end
 

@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local scene_library<const> = require('cartlib/world/scene_library')
 local scene<const> = require('scenes/narrative')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -18,6 +19,7 @@ local epilogue_line_count<const> = text_util.count_lines(epilogue_text)
 
 local narrative_screen<const> = {}
 narrative_screen.__index = narrative_screen
+setmetatable(narrative_screen, { __index = world_object })
 
 local story_timeline_id<const> = 'narrative.story'
 local epilogue_timeline_id<const> = 'narrative.epilogue'

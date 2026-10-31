@@ -41,8 +41,10 @@ local draw<const> = commands.new(text_words,512)
 `;
 
 const plain = `
-prefab.define({def_id='text.plain',class={},spatial={family='2d',authority='affine',
- local_transform={0,1,-1,0,10,20}},components={text_component.factory({font=font,text='aa\\nb',color=0xffffffff})}})
+prefab.define({def_id='text.plain',
+ class=object_2d,
+ components={text_component.factory({font=font,text='aa\\nb',color=0xffffffff})},
+ transform={xx=0,xy=1,yx=-1,yy=0,ox=10,oy=20}})
 local actor<const> = world:spawn('text.plain',{})
 local text<const> = actor:get_component(text_component)
 local rows<const> = text.glyph_lines
@@ -53,12 +55,12 @@ assert(output[2]==0x0014000a and output[4]==0x0016000a
  'affine text did not transform retained glyph geometry')
 assert(output[17]==0x0017000a,'affine text lost glyph advances')
 local basis<const> = text._visual_basis_revision
-actor.spatial:set_local_origin(-100,20)
+actor:set_position(-100,20)
 commands.begin(draw,0x100,0)
 text:draw_visual(draw)
 assert(draw.word_count==1 and text._visual_basis_revision==basis and text.glyph_lines==rows,
  'origin-only text movement rebuilt layout/basis or culled using untransformed coordinates')
-actor.spatial:set_local_origin(10,20)
+actor:set_position(10,20)
 text:set_glyph_visible_height(1)
 commands.begin(draw,0x100,0)
 text:draw_visual(draw)
@@ -71,7 +73,7 @@ text:draw_visual(draw)
 assert(output[1]==0x28563412 and output[2]==0x0014000a
  and output[4]==0x00140007,'glyph background did not share the text affine')
 text.background_color=nil
-actor.spatial:set_local_affine(1,0,0,1,10,20)
+actor:set_transform(1,0,0,1,10,20)
 commands.begin(draw,0x100,0)
 text:draw_visual(draw)
 assert((output[1] & 0xff000000)==0x65000000,
@@ -84,14 +86,14 @@ assert(actor.x==nil and actor.y==nil and text.offset_x==nil and text.glyph_lines
  'text retained legacy object coordinates or rebuilt glyph rows for placement')
 probe={run=function(count)
  for index=1,count do
-  actor.spatial:set_local_origin(10+index%3,20)
+  actor:set_position(10+index%3,20)
   commands.begin(draw,0x100,0)
   text:draw_visual(draw)
  end
 end,affine=function(count)
- actor.spatial:set_local_affine(0,1,-1,0,10,20)
+ actor:set_transform(0,1,-1,0,10,20)
  for index=1,count do
-  actor.spatial:set_local_origin(10+index%3,20)
+  actor:set_position(10+index%3,20)
   commands.begin(draw,0x100,0)
   text:draw_visual(draw)
  end
@@ -100,9 +102,11 @@ return failed
 `;
 
 const rich = `
-prefab.define({def_id='text.rich',class={},base=text_object,spatial={family='2d',authority='affine',
- local_transform={0,1,-1,0,40,50}},defaults={font=font,text='aa b\\nb',
- layout_rect={left=0,top=2,right=20,bottom=30},wrap_chars=3,color=0xffffffff,background_color=0xff000000}})
+prefab.define({def_id='text.rich',
+ class=text_object,
+ defaults={font=font,text='aa b\\nb',
+ layout_rect={left=0,top=2,right=20,bottom=30},wrap_chars=3,color=0xffffffff,background_color=0xff000000},
+ transform={xx=0,xy=1,yx=-1,yy=0,ox=40,oy=50}})
 local actor<const> = world:spawn('text.rich',{})
 local text<const> = actor.text_component
 assert(actor.maximum_characters_per_line==3 and #actor.full_text_lines==3
@@ -128,7 +132,7 @@ text:draw_visual(draw)
 assert(text.glyph_lines==rows and text.glyph_visible_height==1,
  'rich glyph-row reveal replaced its retained layout')
 text:set_glyph_visible_height(3)
-actor.spatial:set_local_origin(60,70)
+actor:set_position(60,70)
 commands.begin(draw,0x100,0)
 text:draw_visual(draw)
 assert(text.layout_x==7 and text.layout_y==2 and actor.full_glyph_lines==rows,
@@ -141,7 +145,7 @@ assert(actor.maximum_characters_per_line==6 and #actor.full_text_lines==2,
  'rich text wrap setter bypassed its layout owner')
 probe={run=function(count)
  for index=1,count do
-  actor.spatial:set_local_origin(40+index%3,50)
+  actor:set_position(40+index%3,50)
   commands.begin(draw,0x100,0)
   text:draw_visual(draw)
  end

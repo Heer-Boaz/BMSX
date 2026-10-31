@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local clamp<const> = require('cartlib/util/clamp')
 local rol8<const> = require('cartlib/util/rol8')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -14,6 +15,7 @@ local string_char<const> = string.char
 
 local stage<const> = {}
 stage.__index = stage
+setmetatable(stage, { __index = object_2d })
 
 local resume_scrolling_event<const> = 'stage.resume_scrolling'
 
@@ -369,7 +371,7 @@ function stage:advance_actor_spawns(column)
 	local index = self.actor_spawn_index
 	while index <= spawn_count and spawns[index].column <= column do
 		local spawn<const> = spawns[index]
-		self.scene:spawn(spawn.definition_id, spawn.options, spawn.spatial)
+		self.scene:spawn(spawn.definition_id, spawn.options)
 		index = index + 1
 	end
 	self.actor_spawn_index = index
@@ -422,8 +424,8 @@ function stage:build_tape()
 					actor_spawns[#actor_spawns + 1] = {
 						column = column,
 						definition_id = ids_sint_pop_def,
-						spatial = { local_transform = { 1, 0, 0, 1, playfield_width + (group_index * sint_pop_width), spawn_y } },
 						options = {
+							position = { x = playfield_width + (group_index * sint_pop_width), y = spawn_y },
 							stage = self,
 							formation = formation,
 							group_type = sint_pop_group,
@@ -436,8 +438,8 @@ function stage:build_tape()
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_mijter_foe_def,
-						spatial = { local_transform = { 1, 0, 0, 1, playfield_width, (stage_y - 2) * self.tile_size } },
 						options = {
+							position = { x = playfield_width, y = (stage_y - 2) * self.tile_size },
 							stage = self,
 							mijter_type = mijter_foe_type,
 						},
@@ -446,8 +448,8 @@ function stage:build_tape()
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 2,
 						definition_id = ids_schoorsteen_foe_def,
-						spatial = { local_transform = { 1, 0, 0, 1, playfield_width - 3 - self.tile_size, (stage_y - 2) * self.tile_size } },
 						options = {
+							position = { x = playfield_width - 3 - self.tile_size, y = (stage_y - 2) * self.tile_size },
 							stage = self,
 						},
 					}
@@ -455,8 +457,8 @@ function stage:build_tape()
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_rook_generator_def,
-						spatial = { local_transform = { 1, 0, 0, 1, playfield_width - (self.tile_size * 2), (stage_y - 2) * self.tile_size } },
 						options = {
+							position = { x = playfield_width - (self.tile_size * 2), y = (stage_y - 2) * self.tile_size },
 							stage = self,
 						},
 					}
@@ -464,8 +466,8 @@ function stage:build_tape()
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_zak_foe_def,
-						spatial = { local_transform = { 1, 0, 0, 1, playfield_width - self.tile_size, (stage_y - 2) * self.tile_size } },
 						options = {
+							position = { x = playfield_width - self.tile_size, y = (stage_y - 2) * self.tile_size },
 							stage = self,
 							direction = zak_foe_direction_left,
 						},
@@ -474,8 +476,8 @@ function stage:build_tape()
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_sneeuwpop_def,
-						spatial = { local_transform = { 1, 0, 0, 1, playfield_width - self.tile_size, (stage_y - 7) * self.tile_size } },
 						options = {
+							position = { x = playfield_width - self.tile_size, y = (stage_y - 7) * self.tile_size },
 							stage = self,
 						},
 					}
@@ -484,16 +486,16 @@ function stage:build_tape()
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_bel_def,
-						spatial = { local_transform = { 1, 0, 0, 1, playfield_width + 7 - self.tile_size, kerk_y + 80 } },
 						options = {
+							position = { x = playfield_width + 7 - self.tile_size, y = kerk_y + 80 },
 							stage = self,
 						},
 					}
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_kerk_def,
-						spatial = { local_transform = { 1, 0, 0, 1, playfield_width - self.tile_size, kerk_y } },
 						options = {
+							position = { x = playfield_width - self.tile_size, y = kerk_y },
 							stage = self,
 						},
 					}
@@ -501,8 +503,8 @@ function stage:build_tape()
 					actor_spawns[#actor_spawns + 1] = {
 						column = stage_x - 1,
 						definition_id = ids_moon_def,
-						spatial = { local_transform = { 1, 0, 0, 1, moon_spawn_x, moon_spawn_y } },
 						options = {
+							position = { x = moon_spawn_x, y = moon_spawn_y },
 							stage = self,
 						},
 					}
@@ -595,8 +597,9 @@ function stage:advance_tape()
 	local followers<const> = stage_scroll_follower_view.components
 	for follower_index = 1, #followers do
 		local follower<const> = followers[follower_index]
-		local pose<const> = follower.spatial
-		follower._write_world_origin(pose, pose.ox - self.tile_size, pose.oy)
+		local owner<const> = follower.owner
+		local x<const>, y<const> = owner:get_global_position()
+		owner:set_global_position(x - self.tile_size, y)
 	end
 	self:advance_actor_spawns(column)
 	self.tile_steps = self.tile_steps + 1
@@ -649,9 +652,9 @@ function stage:resume_scrolling()
 end
 
 function stage:is_solid_pixel(screen_x, screen_y)
-	local pose<const> = self.spatial
-	local map_x = ((screen_x - pose.ox + self.total_scroll_px) // self.tile_size) + 1
-	local map_y = ((screen_y - pose.oy) // self.tile_size) + 1
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local map_x = ((screen_x - pose_x + self.total_scroll_px) // self.tile_size) + 1
+	local map_y = ((screen_y - pose_y) // self.tile_size) + 1
 
 	map_x = clamp(map_x, 1, self.tape_length_tiles)
 	map_y = clamp(map_y, 1, self.tile_rows)
@@ -663,9 +666,9 @@ end
 -- or tile_count when the complete run is clear. Beam and sprite-width collision
 -- paths consume the retained stage row directly instead of sampling pixels.
 function stage:first_solid_tile_offset(screen_x, screen_y, tile_count)
-	local pose<const> = self.spatial
-	local map_x<const> = ((screen_x - pose.ox + self.total_scroll_px) // self.tile_size) + 1
-	local map_y<const> = ((screen_y - pose.oy) // self.tile_size) + 1
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local map_x<const> = ((screen_x - pose_x + self.total_scroll_px) // self.tile_size) + 1
+	local map_y<const> = ((screen_y - pose_y) // self.tile_size) + 1
 	if map_y < 1 or map_y > self.tile_rows then return tile_count end
 	local row<const> = self.solid_tape[map_y]
 	local last_offset = tile_count - 1
@@ -687,9 +690,9 @@ end
 -- Stage-relative beams retain this result once because their map column stays
 -- fixed while both the stage and beam consume the same tile scroll.
 function stage:first_solid_vertical_tile_offset(screen_x, screen_y, tile_count, direction)
-	local pose<const> = self.spatial
-	local map_x<const> = ((screen_x - pose.ox + self.total_scroll_px) // self.tile_size) + 1
-	local map_y<const> = ((screen_y - pose.oy) // self.tile_size) + 1
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local map_x<const> = ((screen_x - pose_x + self.total_scroll_px) // self.tile_size) + 1
+	local map_y<const> = ((screen_y - pose_y) // self.tile_size) + 1
 	if map_x < 1 or map_x > self.tape_length_tiles then return tile_count end
 	local last_offset = tile_count - 1
 	local first_offset
@@ -753,7 +756,6 @@ local register_stage_definition<const> = function()
 	prefab.define({
 		def_id = ids_stage_def,
 		class = stage,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			function(owner) return tile_layer_component.new(owner, owner) end,
 			fsm_component.factory({ ids_stage_fsm }),

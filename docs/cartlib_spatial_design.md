@@ -2,10 +2,9 @@
 
 ## Purpose and design boundary
 
-This is a replacement design for cartlib's gameplay object model, not a
-specification of the current implementation. It defines how a game constructs,
-places, moves and relates its objects. Its requirements come from gameplay,
-rendering, collision, animation and execution cost.
+This document defines cartlib's intrinsic gameplay object model: how a game
+constructs, places, moves and relates its objects. Its requirements come from
+gameplay, rendering, collision, animation and execution cost.
 
 Cartlib is an independent gameplay library. Authoring and inspection tools are
 consumers of that library; their implementation needs do not define its Lua API,
@@ -19,7 +18,7 @@ being convenient to parse, inspect or visualize is not one.
 
 ## Object model
 
-The proposed model has three foundational built-in object classes:
+The object model has three foundational built-in object classes:
 
 | Type | Gameplay meaning |
 | --- | --- |
@@ -44,10 +43,10 @@ Its object type comes from its class lineage, not a second spatial declaration.
 A built-in class can be used directly:
 
 ```lua
-local Object2D<const> = require('cartlib/world/object_2d')
+local object_2d<const> = require('cartlib/world/object_2d')
 local prefab<const> = require('cartlib/world/prefab')
 
-prefab.define({ def_id = 'attachment', class = Object2D })
+prefab.define({ def_id = 'attachment', class = object_2d })
 ```
 
 A gameplay module declares its class lineage using ordinary Lua prototype
@@ -55,18 +54,18 @@ inheritance. This is the same table-valued `__index` convention already used by
 cartlib's concrete component and object modules, not a new class framework:
 
 ```lua
-local Ship<const> = setmetatable({}, { __index = Object2D })
-prefab.define({ def_id = 'ship', class = Ship })
+local ship<const> = setmetatable({}, { __index = object_2d })
+prefab.define({ def_id = 'ship', class = ship })
 ```
 
-Gameplay methods are declared on Ship normally. There are no required empty
+Gameplay methods are declared on `ship` normally. There are no required empty
 constructors or lifecycle hooks; a prefab without custom behavior uses the
-built-in class directly instead of declaring Ship at all.
+built-in class directly instead of declaring `ship` at all.
 
 The module owns that inheritance declaration. Prefab registration reads the
 established lineage and captures the built-in construction type, methods and
 callbacks; it does not write to the class or its metatable. Registering a second
-prefab for Ship cannot change Ship's superclass. A prefab-specific `base` field,
+prefab for `ship` cannot change its superclass. A prefab-specific `base` field,
 a parallel `type` selector and an `extend` forwarding helper are unnecessary.
 
 Custom object classes derive from WorldObject, Object2D or Object3D, directly or
@@ -92,8 +91,7 @@ not receive copied class graphs or per-instance method closures.
 
 ## Placement and construction inputs
 
-Ordinary placement uses semantic values. These examples describe the proposed
-construction contract, not an API already provided by the current code.
+Ordinary placement uses semantic values:
 
 ```lua
 scene_library.register('hangar', {
@@ -183,71 +181,48 @@ needs its own gameplay purpose and construction semantics.
 
 ## Local and world transforms
 
-### UE-style position, rotation and scale
+### Geometric authority and semantic editing
 
-Object transforms follow the position/rotation/scale model selected from UE5's
-[TTransform](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/TTransform).
-Object2D stores local position, an unwrapped rotation angle and signed scale.
-Object3D stores local position, quaternion rotation and signed scale. Identity
-values are supplied by the type, not required in an instance declaration.
+The actual object stores its local affine and a retained world affine. The world
+pose is `parentWorld * local`; a root's world pose is its local pose. Arbitrary
+shear, reflection and singular bases remain geometric values, not reasons to
+repair a pose or allocate hidden intermediate objects.
 
-Local values are authoritative. Each object derives a retained **world TRS pose**
-from its parent's world TRS and its own local pose. A rendering affine is derived
-from that resulting world pose. This distinction is substantive: UE's
-[ComponentToWorld calculation](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/USceneComponent/CalcNewComponentToWorld)
-also produces an FTransform, not an unrestricted affine result.
+Ordinary gameplay uses position, rotation and scale rather than coefficients.
+Object2D uses an unwrapped angle in radians and supports skew. Object3D uses a
+unit quaternion. The type supplies identity placement without an authored matrix
+or transform-permission declaration. Imported/model-node transforms can instead
+supply a named `transform` record using the central affine representation:
+`xx`, `xy`, `yx`, `yy`, `ox`, `oy` in 2D; the corresponding nine basis and three
+origin fields in 3D. The record is a construction input, not a live pose proxy.
 
-The contract is therefore not `worldMatrix = parentMatrix * localMatrix` with
-arbitrary shear carried through the object hierarchy. A product of rotated,
-nonuniformly scaled matrices need not fit one TRS. Choosing this model means
-choosing its representational limit, not silently adding a local-affine mode,
-hidden intermediate nodes or coefficient-array inputs when that limit appears.
-Imported model-node matrices and explicit geometry transforms remain the math
-and asset owners' concern; they do not redefine the object transform contract.
-Hierarchy evaluation follows the selected TRS composition at each parent edge.
-It must not reassociate or collapse that chain as though it were associative
-matrix multiplication; a flattened matrix product is not an optimization of the
-same contract.
+Semantic editing channels are cached on the same actual object. Explicit semantic
+writes retain their angle/quaternion and signed scale, even at zero scale;
+restoring scale therefore restores the specified rotation. A raw basis replacement
+invalidates this knowledge. Reading semantic values never rewrites the geometric
+pose. Position-only edits and Keep Relative do not invalidate basis knowledge.
 
-Position, rotation and scale remain distinct values. Setting local scale to zero
-does not erase the authoritative local rotation, and restoring scale recovers
-that rotation. This does not assert that a collapsed world basis retains enough
-information for matrix-derived world rotation. Local negative scale remains
-signed. Quaternion production and interpolation belong to the central math
-owners; setters consume their representation without repeated normalization or
-validation.
+Matrix-derived values use fixed conventions:
 
-### Signed-scale arithmetic boundary
+- In 2D, scale is the column lengths, with a negative determinant carried by Y.
+  Rotation comes from the first column; skew describes the second column relative
+  to it. Missing required axes make rotation/skew unavailable.
+- In 3D, scale is the column lengths, with reflection carried by Z. Rotation uses
+  the first two independent columns and their proper cross-product orientation.
+  A zero first column or parallel first two columns makes it unavailable; a zero
+  third column alone does not.
 
-Unreal's ordinary composition multiplies rotations and axis scales and transforms
-the child's translation through its parent. Its negative-scale path is materially
-different: the inspected historical
-[Epic implementation](https://github.com/folgerwang/UnrealEngine/blob/release/Engine/Source/Runtime/Core/Public/Math/TransformNonVectorized.h)
-uses matrix-based orientation extraction when either input has negative scale.
-The current API also documents that
-[matrix-with-desired-scale operation](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/TTransform/MultiplyUsingMatrixWithScale).
-The historical implementation is a reference for that distinction, not proof of
-the current UE5 function body or numerical parity.
+Unavailable extraction is memoized until the basis changes. It returns `nil`, not
+an invented angle/quaternion. These conventions are editing projections, not a
+promise that arbitrary affine geometry can round-trip through rotation/scale.
+In particular, explicitly setting 3D rotation or scale rebuilds `R * diag(S)` and
+replaces existing shear. Merely reading, evaluating or reparenting never does so.
+A complete pose write needs no decomposition of its previous values. A partial
+write fails only when a channel it must preserve cannot be determined.
 
-For example, a parent with scale `(-1, 1, 1)` and a child rotated 90 degrees
-around Z distinguish `R(90) * S(-1, 1, 1)` from
-`S(-1, 1, 1) * R(90)`. Applying ordinary quaternion multiplication to all signed
-scales does not merely introduce a rounding difference; it changes reflection
-behavior.
-
-The historical matrix path also loses axes at zero scale and contains degenerate
-rotation recovery. Cartlib does not import that recovery, replace scale with
-epsilon, or silently substitute another reflection algebra. The signed/singular
-composition and relative-pose rules remain an explicit implementation gate.
-They must define forward zero-scale results as well as nonuniform reflections;
-selecting the local/world TRS model alone does not settle that arithmetic.
-
-Object2D arithmetic is the XY-plane restriction of the selected Object3D rules:
-zero Z translation, unit Z scale and rotation around Z. Its scalar-specialized
-path must agree with that restriction, including reflected/nonuniform cases;
-a different planar polar-decomposition rule is not an equivalent optimization.
-Local 2D angles retain their unwrapped values. Derived world rotation describes
-orientation, not the number of authored turns.
+Quaternion production and interpolation belong to the central math owners.
+Setters consume their representation without repeated normalization, epsilon
+repair or defensive validation.
 
 ### Gameplay operations
 
@@ -263,10 +238,13 @@ local committed = object:set_global_position(x, y)
 ```
 
 The 3D counterparts consume three position/scale operands or four quaternion
-operands. A complete pose operation publishes its semantic values with one
-invalidation. Changing one local property preserves the others. Global rotation
-and scale describe the cached world TRS values, not a decomposition of an
-arbitrary matrix supplied by a caller.
+operands. A complete `set_pose` operation publishes its semantic values with one
+invalidation. A partial setter preserves the other editing channels according
+to the rules above and returns whether it could publish. `get_transform` and
+`get_global_transform` return full affine scalar tuples; their setters accept
+the same tuple. `set_global_pose` supplies a semantic world pose while solving
+the exact relative affine under its parent. There is no second world-TRS
+authority or hidden override of the composed geometry.
 
 Getters return scalar tuples rather than allocating vector tables. World reads
 resolve the actual object's dirty pose; gameplay does not run an internal
@@ -288,47 +266,33 @@ Representable values are not repaired to make an operation appear successful.
 
 ### Explicit attachment rules
 
-Parenting uses UE's useful gameplay distinction between
-[KeepRelative, KeepWorld and SnapToTarget](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/EAttachmentRule).
-It does not expose construction permissions or internal transform-family flags.
+Parenting separates coordinate relationship from lifetime ownership.
+`world:reparent(object, parent, keep_world, on_completed?, context?)` requests a
+concrete same-dimension parent, or `nil` for a root. `keep_world` selects:
 
-| Rule | Meaning within the object TRS model |
+| Rule | Meaning |
 | --- | --- |
-| Keep Relative | Keep the current local position, rotation and scale under the new parent. |
-| Keep World | Compute the new local pose from the currently resolved world TRS. It is not an arbitrary sheared-matrix preservation guarantee. |
-| Snap to Target | Set the selected local channels to their identity values at the new parent. |
+| `false`: Keep Relative | Keep the full local affine and its known semantic editing channels under the new parent. |
+| `true`: Keep World | Preserve the full resolved world affine, including shear and singular child geometry. |
 
-The inspected Unreal
-[relative-transform implementation](https://github.com/folgerwang/UnrealEngine/blob/release/Engine/Source/Runtime/Core/Private/Math/Transform.cpp)
-uses the matrix projection for negative scale too. Projecting to a relative TRS
-and then composing it again is not generally an exact round trip under reflected,
-nonuniform parents. Keep World is a placement rule using the selected relative
-operation, not an unconditional exact-world-TRS guarantee in those cases. Its
-accepted numerical behavior belongs to the signed-scale kernel decision rather
-than a compensating cached world-pose override.
+Keep World computes `inverse(newParentWorld) * currentWorld` before changing the
+edge. Only the new parent's inverse is required. Detachment to a root simply
+copies the full world affine into the local affine, including under a singular
+old parent. Keep Relative requires no inverse. A singular new parent rejects
+inverse-dependent placement without changing the local pose or topology.
+An already-current relationship commits without pose/cache changes or inversion.
 
-Attachment can choose the rule separately for position, rotation and scale.
-Shared presets cover the real standard cases, following
-[FAttachmentTransformRules](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FAttachmentTransformRules):
-keep all relative, keep all world, snap all channels, and snap position/rotation
-while retaining world scale. Scene placement declares relative properties;
-runtime attachment takes a concrete parent and explicit rules.
-
-[Detachment](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FDetachmentTransformRules)
-supports Keep Relative and Keep World. Keep World detachment copies the cached
-world TRS into the new root's local TRS; it does not decompose a sheared affine.
-
-Keep Relative and full Snap do not need a parent inverse and remain meaningful
-under a zero-scaled parent. Keep World channels requiring division by a zero
-parent scale fail explicitly. All required local values are calculated before
-changing the edge or local pose. There is no partial channel write, rollback,
-identity substitution or failure-induced parent change.
+These rules use the familiar explicit Keep Relative/Keep World distinction from
+[UE attachment](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/EAttachmentRule)
+without importing its TRS-only numerical projection or zero-reciprocal recovery.
+Snap placement can be expressed by Keep Relative followed by an explicit local
+pose; there is no per-channel attachment-rule framework in this API.
 
 ### World mutation and completion
 
 World commits topology at its existing structural barriers. Parent links refer
 to concrete objects in the same World and dimension, not necessarily the same
-concrete gameplay class. Rule operands are copied when the request is admitted;
+concrete gameplay class. The placement rule is retained when the request is admitted;
 pose and topology are evaluated when it commits. Keep World therefore uses the
 object's world pose at that commit, not a stale pose captured when enqueuing.
 Requests for the same object apply in their queue order.
@@ -350,7 +314,7 @@ no-op closure. Outside a structural group completion may run inline. Inside a
 group it runs after that request's result is determined at the barrier, not at
 enqueue or preflight.
 
-World retains actual object references, captured channel rules and caller
+World retains actual object references, the placement rule and caller
 callback/context in reusable queue storage. It removes the request's retained
 references and advances the drain cursor before invoking user code. Reentrant
 requests join the drain with the barrier still open; they do not recursively
@@ -382,8 +346,8 @@ additional ownership mechanism merely to support spatial attachment.
 At removal of a parent:
 
 1. World determines the actual retiring set at its barrier.
-2. It resolves each surviving direct child's world TRS while the old ancestry is
-   still present.
+2. It resolves retiring objects and each surviving direct child's full world
+   affine while the old ancestry is still present.
 3. Those children detach with Keep World into roots; their Scene membership and
    local descendant relationships remain intact.
 4. World disconnects the retiring objects from the hierarchy across the whole
@@ -453,56 +417,32 @@ changes the object's type or transform interface during that transition.
 
 ## Visual placement
 
-Each visual component has one actual component-local pose. Construction defaults
-initialize it; presentation animation and gameplay write that same pose. Its
-geometry is placed by `objectWorld * visualLocal`, with further model-node or
-shape-local transforms owned by the actual asset/geometry producer.
+Visual-local placement is independent of the object's physical pose. Components
+resolve their actual Object2D/Object3D owner once per placement evaluation and
+compose its world affine with their local geometry. Model-node and shape-local
+transforms belong to the asset/geometry producer. Render-only recoil, bob or
+squash need not move collision geometry.
 
-Here multiplication means **affine geometry multiplication**: derive the
-object-world affine from its world TRS, then multiply the visual-local affine.
-This is not another object-hierarchy TRS edge. A rotated visual under nonuniform
-object scale can therefore have sheared geometry; that result is not presented
-as an attachable world-TRS object pose. The distinction follows the geometry's
-local coordinate system and must remain explicit in the rendering/math owner.
+The existing component attachment and presentation inputs retain their own
+representation. Replacing them with one writable visual-local pose is a separate
+component/animation change, not a prerequisite for intrinsic objects. It must
+establish the composition of additive clips and rest placement at the animator;
+adding more permanent pose authorities does not solve competing writers.
 
-There are not two permanently writable attachment/presentation transforms on
-every visual. A relative clip or additive effect retains its rest inputs in the
-animator when needed, composes its intended output, then performs one grouped
-write to the receiver:
-
-```lua
-local rest_x, rest_y = sprite:get_position()
--- Captured when the relative animation begins, not rediscovered each frame.
--- The presentation runner publishes its composed result:
-sprite:set_position(rest_x + recoil_x, rest_y + bob_y)
-```
-
-Absolute tracks contain their intended local coordinates. Multiple additive
-writers require one animator's defined composition and ordering; adding another
-matrix to a visual does not resolve competing writers. If the rest placement
-changes during a relative clip, the animator owns that new input. Initial
-configuration is not secretly retained as another live transform authority.
-
-Sprite-frame animation changes image/frame/flip bindings independently of local
-placement. Fixed frame alignment is geometry/layout data, not an extra game
-object. A shared attachment used by a sword visual and its hitbox is instead a
-meaningful Object2D child with actual gameplay consumers.
-
+Sprite frames change image/flip bindings independently of physical placement.
 Two-dimensional draw order belongs to the visual's actual order property, not a
-third Object2D coordinate or an automatically inherited parent depth. Animation
-of that property uses the render owner's normal ordering invalidation, not a
-permanent extra order-offset store on every visual.
-
-Render-only recoil, bob or squash need not move a physical collision body. That
-is why a visual's local pose is separate from its object's pose, not a reason for
-two extra transform layers within the visual.
+third Object2D coordinate or an inherited parent depth. An attachment shared by a
+sword visual and its hitbox is a meaningful Object2D child, not a fabricated
+transform component.
 
 ## Animation
 
-Gameplay animation targets semantic channels: position, rotation, scale and
-intentional visual placement. Authors do not animate `ox`, `woy`,
-`local_origin3`, dirty flags or matrix coefficient indices.
-Those transform channels address the receiver's local pose. A world-space
+Grouped `position2`/`position3` channels address the actual object's local
+position. Advanced `transform2`/`transform3` channels address the full named
+local affine. Their grouped writers invalidate once; runtime cache fields and
+hierarchy bookkeeping are not independent animation properties. Semantic
+rotation/scale animation can use an ordinary apply callback and the object API;
+quaternion interpolation belongs to the animation/math producer. A world-space
 movement operation must retain its explicit inverse/failure contract rather
 than treating an unsuccessful global write as a successful animation sample.
 
@@ -526,8 +466,11 @@ identities, parent indices and parent-first construction order at admission.
 A live Scene retains those definitions when a registration is replaced; staged
 spawning must not mix a new constructor with an old retained plan.
 
-A spawn batch reserves final object identities and initializes intrinsic pose
-and topology before invoking component or gameplay constructors. Components
+A spawn batch prepares its final object shells and mathematical placement
+before graph, Scene or admission-queue publication. A failed partial semantic
+pose merge therefore cannot strand a structural barrier or publish earlier
+members. Successful preparation initializes intrinsic topology before invoking
+component or gameplay constructors. Components
 receive the actual final owner. Constructors initialize their own object;
 post-construction wiring runs only after the batch is constructed and published.
 Subscription binding precedes activation of the batch. Callback-requested
@@ -578,23 +521,21 @@ framework or constructor rollback is introduced.
 
 ### Storage
 
-The actual object stores local semantic values, retained world TRS values, a
-cached world basis, revisions and intrusive hierarchy links. There is no
-separate Transform instance, vector/matrix proxy or per-object resolver closure.
+The actual object stores a local affine, retained world affine, lazy semantic
+editing channels, revisions and intrusive hierarchy links. There is no separate
+Transform instance, vector/matrix proxy or per-object resolver closure.
 Nonspatial WorldObjects allocate none of this spatial state.
 
-One concrete shared-basis layout has this numeric budget, excluding metadata:
+Numeric pose storage, excluding flags/revisions and lifetime metadata, is:
 
-| Object | Local pose | World TRS | World basis | Total |
+| Object | Local affine | World affine | Editing channels | Total |
 | --- | ---: | ---: | ---: | ---: |
-| Object2D | 5 | 5 | 4 | 14 |
-| Object3D | 10 | 10 | 9 | 29 |
+| Object2D | 6 | 6 | 4 (angle, scale, skew) | 16 |
+| Object3D | 12 | 12 | 7 (quaternion, scale) | 31 |
 
-World translation is already part of world TRS; an additional copied affine
-origin is not another required store. A retained local basis or extra signed-
-scale cache is not inherited automatically from the previous matrix model: its
-cost must be justified by the actual selected kernels. Storage accounting is
-not a measured speed claim.
+Unextracted channel fields need not occupy a table slot. Known semantic values
+and unavailable extraction are selected by one flags word. There is no
+world-rotation/scale cache. Storage accounting is not a measured speed claim.
 
 The full budget also includes object identity, component indexes, subscriptions
 and lifetime bookkeeping. An empty grouping node must be measured as an actual
@@ -625,8 +566,8 @@ benchmark cannot establish a fixed per-object construction cost.
 
 A world-position change does not run trigonometry, rebuild quaternion matrices
 or rewrite an unchanged world basis. Rotation/scale changes rebuild the affected
-basis only when needed; clean queries share the result. Ancestor changes consume
-retained semantic values rather than decomposing old matrices. Roots keep a
+basis only when needed; clean queries share the result. Ancestor changes compose
+retained affine coefficients without decomposing matrices. Roots keep a
 direct position path without a parent inverse or identity multiplication.
 
 ### Evaluation and consumers
@@ -663,8 +604,8 @@ Use dedicated gameplay fixtures, not mutable shipped carts, to prove:
 
 - Default identity placement without authored transform records in both 2D/3D.
 - Object-owned local values, zero-scale rotation retention and signed scale.
-- Nested placement and the selected world-TRS results under nonuniform parents,
-  explicitly distinguished from unrestricted affine-matrix composition.
+- Nested full-affine placement, reflection and shear under nonuniform parents,
+  including exact Keep World and singular child geometry.
 - Current synchronous reads between structural/tick groups.
 - Defined reparent failure/removal behavior with no partial state changes.
 - One real physical pose shared by movement, overlap and rendering.
@@ -681,53 +622,20 @@ are not performance evidence.
 
 ## Production references and chosen differences
 
-- UE5 [TTransform](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/TTransform)
-  and [ComponentToWorld](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/USceneComponent/CalcNewComponentToWorld)
-  establish the chosen local/world TRS model. The
-  [attachment](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FAttachmentTransformRules)
-  and [detachment](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FDetachmentTransformRules)
-  contracts establish explicit placement rules. They do not establish byte-for-
-  byte numerical parity with a separately implemented kernel.
-- Godot [Node2D](https://github.com/godotengine/godot/blob/master/scene/2d/node_2d.h)
-  and [Node3D](https://github.com/godotengine/godot/blob/master/scene/3d/node_3d.h)
-  demonstrate intrinsic spatial objects. Cartlib chooses this lean object
-  ownership rather than allocating an Unreal-style root SceneComponent for every
-  object. That does not require copying Godot's matrix/Euler reconciliation or
-  its zero-scale repair.
+- Godot [Node2D](https://github.com/godotengine/godot/blob/master/scene/2d/node_2d.cpp)
+  and [Node3D](https://github.com/godotengine/godot/blob/master/scene/3d/node_3d.cpp)
+  demonstrate intrinsic spatial objects and reconciliation of editing channels
+  with authoritative transforms. Cartlib retains that ownership, not Godot's
+  epsilon scale repair or singular-rotation recovery.
 - Unity [Transform](https://github.com/Unity-Technologies/UnityCsReference/blob/master/Runtime/Transform/ScriptBindings/Transform.bindings.cs)
-  demonstrates the coherent alternative of a real mandatory Transform component.
+  demonstrates a coherent alternative: a real mandatory Transform component.
   Cartlib does not mix that model with object forwarding facades.
-- Bevy [Transform](https://github.com/bevyengine/bevy/blob/main/crates/bevy_transform/src/components/transform.rs)
-  and [GlobalTransform](https://github.com/bevyengine/bevy/blob/main/crates/bevy_transform/src/components/global_transform.rs)
-  are useful contrasts: its affine world cache is not the world-TRS contract
-  selected here. Its decomposition caveats cannot be hidden behind Keep World.
+- UE [attachment rules](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/EAttachmentRule)
+  establish explicit Keep Relative/Keep World placement vocabulary. Cartlib's
+  full-affine result is not a claim of Unreal FTransform numerical parity.
+- Bevy [GlobalTransform](https://github.com/bevyengine/bevy/blob/main/crates/bevy_transform/src/components/global_transform.rs)
+  demonstrates retained affine world geometry. Its TRS-local reparenting caveats
+  do not constrain cartlib's full-affine local authority.
 - Filament [TransformManager](https://github.com/google/filament/blob/main/filament/src/components/TransformManager.cpp)
-  provides retained topology and dirty-evaluation precedents. Its C++ storage,
+  provides retained topology and dirty-evaluation precedents. C++ storage,
   threading and inline proxies are not automatic performance wins in BLua.
-
-## Implementation gates
-
-The public design is intrinsic Object2D/Object3D, class-owned inheritance,
-semantic construction, UE-style local/world TRS with explicit attachment rules,
-Scene/component lifetime ownership, an optional world-pixel tile motor, and one
-actual local pose per visual component. No editor metadata or parseability
-requirement defines those contracts.
-
-The remaining integration criteria are:
-
-1. Specify and check central 2D/3D composition and relative-pose arithmetic,
-   especially reflected/nonuniform scales. Do not claim that a convenient
-   quaternion/component-scale formula is verified Unreal numerical behavior.
-2. Implement the specified terminal results at World, including observerless
-   requests, inline/deferred completion, reentrant callbacks, clear and removal
-   during pending construction. Establish inverse availability before any pose,
-   edge, revision or contact-latch publication.
-3. Measure complete object/component storage and emitted hot-path work on both
-   compiler paths against the existing baseline. Those measurements are
-   implementation acceptance evidence, not performance already established by
-   this design. Any additional cache needs an actual consumer and cost
-   comparison, not an assumed O3 optimization.
-
-The existing implementation is not made conformant by hiding old fields,
-renaming a restricted transform type or adding convenience forwarding methods.
-Implementation must move actual ownership and datapaths to the selected model.

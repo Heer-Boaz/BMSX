@@ -51,7 +51,8 @@ assert(source.bytes==160 and source.original==assets.reflected+32
  'complete source binding omitted the larger reflected variant')
 assert(sprite_shapes.image('reflected')==source and sprite_shapes.image('reflected_alias')==source,
  'image aliases and explicit assets duplicated immutable source bindings')
-prefab.define({def_id='collision.reflected',class={},spatial={family='2d',authority='affine'}})
+prefab.define({def_id='collision.reflected',
+ class=object_2d})
 local actor<const> = world:spawn('collision.reflected',{})
 local undersized<const> = pool.new(geometry,64,1)
 local admitted<const> = pcall(collider.new,actor,{geometry_pool=undersized,shape_asset=assets.reflected})
@@ -63,7 +64,7 @@ actor:add_component(body)
 assert(body:resolve_shape()==source.original,'translation-only binding copied its original descriptor')
 body:set_shape_flip(true,true)
 assert(body:resolve_shape()==source.fliphv,'reflected binding lost its exact compound descriptor')
-actor.spatial:set_local_affine(2,0,0,1,0,0)
+actor:set_transform(2,0,0,1,0,0)
 assert(body:resolve_shape()==geometry,'reflected compound did not fit its admitted output slot')
 local words<const>: *word = geometry
 assert(words[0]==4 and words[1]==2,'reflected source binding lost disjoint pieces')
@@ -92,8 +93,8 @@ local pool<const> = require('cartlib/collision/geometry_pool')
 local collider<const> = require('cartlib/collision/collider_2d_component')
 bss cache: word[16]
 local storage<const> = pool.new(cache,64,1)
-prefab.define({def_id='collision.moving_area',class={},
- spatial={family='2d',authority='root_origin',local_transform={1,0,0,1,0,0}},
+prefab.define({def_id='collision.moving_area',
+ class=object_2d,
  components={collider.factory({geometry_pool=storage,local_area={left=0,top=0,right=8,bottom=2}})}})
 local actor<const> = world:spawn('collision.moving_area',{})
 local body<const> = actor:get_component(collider)
@@ -101,7 +102,7 @@ body:resolve_shape()
 local geometry_revision<const> = body._geometry_revision
 kernel=function(count)
  for index=1,count do
-  actor.spatial:set_local_origin(index,index*2)
+  actor:set_position(index,index*2)
   body:set_local_area(0,0,8,2)
   assert(body:resolve_shape()==cache and body.wox==index and body.woy==index*2)
  end
@@ -175,17 +176,18 @@ local images<const> = require('cartlib/gx/image')
 local assets<const> = require('fixture_shapes')
 bss caches: word[128]
 local storage<const> = pool.new(caches,256,2)
-prefab.define({def_id='collision.actor',class={},
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,10,20}},
+prefab.define({def_id='collision.actor',
+ class=object_2d,
  components={animation.factory({frames={'small','wide'},frame_duration_ms=20,loop=true}),
- collider.factory_for_sprite({geometry_pool=storage,sprite_id_local='sprite'})}})
+ collider.factory_for_sprite({geometry_pool=storage,sprite_id_local='sprite'})},
+ position={x=10,y=20}})
 local actor<const> = world:spawn('collision.actor',{})
 local body<const> = actor:get_component(collider)
 local visual<const> = actor:get_component(sprite)
 assert(body._geometry_address==caches,'sprite admission did not reserve its cart-owned geometry slot')
 assert(body:resolve_shape()==assets.rectangle+32 and body.wox==10 and body.woy==20,
  'translation-only collider copied geometry or lost physical origin')
-actor.spatial:set_local_affine(0,2,-3,0,10,20)
+actor:set_transform(0,2,-3,0,10,20)
 local shape<const> = body:resolve_shape()
 assert(shape==caches,'affine collider cached a pass scratch pointer instead of its owned slot')
 local words<const>: *word = shape
@@ -205,7 +207,7 @@ assert(body:resolve_shape()==shape and words[0]==4 and words[1]==2,
 local same<const> = shape
 kernel=function(count)
  for index=1,count do
-  actor.spatial:set_local_origin(index,index*2)
+  actor:set_position(index,index*2)
   assert(body:resolve_shape()==same and body._geometry_basis_revision==basis,
    'translation-only motion rebuilt or relocated transformed geometry')
  end
@@ -229,8 +231,8 @@ local collider<const> = require('cartlib/collision/collider_2d_component')
 bss canceled_storage: word[16]
 local storage<const> = pool.new(canceled_storage,64,1)
 local returned_component
-prefab.define({def_id='collision.canceled',class={},
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
+prefab.define({def_id='collision.canceled',
+ class=object_2d,
  components={function(owner)
   local part<const> = collider.new(owner,{geometry_pool=storage,local_area={left=0,top=0,right=2,bottom=1}})
   returned_component=part
@@ -257,10 +259,11 @@ local strip_component<const> = require('cartlib/component/tile_strip_component')
 local strip_collider<const> = require('cartlib/collision/tile_strip_collider_2d_component')
 bss strip_geometry: word[128]
 local storage<const> = pool.new(strip_geometry,256,2)
-prefab.define({def_id='collision.strip',class={},
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,10,20}},
-  components={strip_component.factory({imgid='small',first_tile=0,step_x=4,step_y=0,maximum_tiles=3}),
- strip_collider.factory({geometry_pool=storage,})}})
+prefab.define({def_id='collision.strip',
+ class=object_2d,
+ components={strip_component.factory({imgid='small',first_tile=0,step_x=4,step_y=0,maximum_tiles=3}),
+ strip_collider.factory({geometry_pool=storage,})},
+ position={x=10,y=20}})
 local actor<const> = world:spawn('collision.strip',{})
 local strip<const> = actor:get_component(strip_component)
 local body<const> = actor:get_component(collider)
@@ -317,9 +320,9 @@ local strip_component<const> = require('cartlib/component/tile_strip_component')
 local strip_collider<const> = require('cartlib/collision/tile_strip_collider_2d_component')
 bss strip_geometry: word[16]
 local storage<const> = pool.new(strip_geometry,64,1)
-prefab.define({def_id='collision.contiguous_strip',class={},
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
-  components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
+prefab.define({def_id='collision.contiguous_strip',
+ class=object_2d,
+ components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
  strip_collider.factory({geometry_pool=storage,})}})
 local actor<const> = world:spawn('collision.contiguous_strip',{})
 local strip<const> = actor:get_component(strip_component)
@@ -359,9 +362,9 @@ local storage<const> = pool.new(strip_geometry,64,1)
 local construct_collider<const> = strip_collider.factory({geometry_pool=storage,})
 local returned_collider
 local returned_strip
-prefab.define({def_id='collision.canceled_strip',class={},
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
-  components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
+prefab.define({def_id='collision.canceled_strip',
+ class=object_2d,
+ components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
  function(owner)
   returned_strip=owner:get_component(strip_component)
   returned_collider=construct_collider(owner)

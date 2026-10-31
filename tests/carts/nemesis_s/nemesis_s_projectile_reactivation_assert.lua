@@ -18,6 +18,7 @@ local target_definition_id<const> = 'test.projectile_reactivation_target'
 local target<const> = {}
 
 target.__index = target
+setmetatable(target, { __index = enemy })
 
 function target:receive_player_projectile(_projectile)
 	self.hit_count = self.hit_count + 1
@@ -27,8 +28,6 @@ end
 prefab.define({
 	def_id = target_definition_id,
 	class = target,
-	base = enemy,
-	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 0, 0 } },
 	components = {
 		collider_2d_component.factory({
 			geometry_pool = collision_storage.area,
@@ -59,11 +58,10 @@ return {
 						row[column] = 0
 					end
 				end
-				player.spatial:set_world_origin(32, 64)
-				test.target = registry:get('nemesis_s.director').gameplay:spawn(target_definition_id, {},
-					{ local_transform = { 1, 0, 0, 1, 48, 70 } })
+				player:set_global_position(32, 64)
+				test.target = registry:get('nemesis_s.director').gameplay:spawn(target_definition_id, { position = { x = 48, y = 70 } })
 				test.projectile = player.primary_projectiles[1]
-				player:spawn_laser(1, 32, 64, player.spatial, 1)
+				player:spawn_laser(1, 32, 64, player, 1)
 				t:wait_ticks(1)
 			end
 			do
@@ -72,8 +70,8 @@ return {
 				and test.projectile.type == 0
 				and not test.projectile.collider.enabled,
 				'the first laser contact did not consume its retained projectile slot')
-				local pose<const> = player.spatial:resolve_world()
-				player:spawn_laser(1, pose.wox, pose.woy, pose, 1)
+				local player_x<const>, player_y<const> = player:get_global_position()
+				player:spawn_laser(1, player_x, player_y, player, 1)
 				assert(player.primary_projectiles[1] == test.projectile
 				and test.projectile.collider.enabled,
 				'the second laser did not reactivate the same retained projectile slot')

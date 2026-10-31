@@ -20,10 +20,14 @@ local visual2<const> = require('cartlib/component/visual_2d_component')
 local manual_factory<const> = function(owner)
 	return timeline_component.new(owner,{clock_mode='manual'})
 end
-prefab.define({def_id='timeline.pose2',class={},spatial={family='2d',authority='affine',
-	local_transform={1,0,0,1,3,7}},components={manual_factory}})
-prefab.define({def_id='timeline.pose3',class={},spatial={family='3d',authority='affine',
-	local_transform={1,0,0,0,1,0,0,0,1,3,7,11}},components={manual_factory}})
+prefab.define({def_id='timeline.pose2',
+ class=object_2d,
+ components={manual_factory},
+ position={x=3,y=7}})
+prefab.define({def_id='timeline.pose3',
+ class=object_3d,
+ components={manual_factory},
+ position={x=3,y=7,z=11}})
 `;
 
 for (const optLevel of [0, 3] as const) {
@@ -42,7 +46,9 @@ library.register('timeline.entry_binding', { initial='hidden', states={
   }}}},
  },
 } })
-prefab.define({def_id='timeline.state_receiver',class={},components={manual_factory,
+prefab.define({def_id='timeline.state_receiver',
+ class=world_object,
+ components={manual_factory,
  fsm.factory({'timeline.entry_binding'})}})
 local owner<const> = world:spawn('timeline.state_receiver',{})
 assert(owner.panel==nil,'inactive state fabricated its entry-owned recipient')
@@ -87,10 +93,11 @@ local actor<const> = {}
 function actor:ctor()
  self.sample=self:get_component(visual2)
 end
-prefab.define({def_id='timeline.constructor_alias',class=actor,
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,40,50}},
+prefab.define({def_id='timeline.constructor_alias',
+ class=setmetatable(actor, {__index=object_2d}),
  components={manual_factory,function(owner) return visual2.new(owner,nil,'sample') end,
- fsm.factory({'timeline.component_binding'})}})
+ fsm.factory({'timeline.component_binding'})},
+ position={x=40,y=50}})
 local owner<const> = world:spawn('timeline.constructor_alias',{})
 local visual<const> = owner.sample
 local entry<const> = owner.timelines:get('bound')
@@ -98,11 +105,11 @@ assert(entry.playing and entry.primary_binding==visual
  and entry.channel_writers[1]==visual2.set_presentation_origin
  and visual.presentation_ox==3 and visual.presentation_oy==7,
  'autoplay admitted the WorldObject in place of its constructor-published visual')
-local physical_revision<const> = owner.spatial._origin_revision
+local physical_revision<const> = owner._origin_revision
 owner.timelines:seek_time('bound',50)
 assert(visual.presentation_ox==8 and visual.presentation_oy==7
- and owner.spatial.ox==40 and owner.spatial.oy==50
- and owner.spatial._origin_revision==physical_revision,
+ and owner.ox==40 and owner.oy==50
+ and owner._origin_revision==physical_revision,
  'targeted presentation sampling changed the physical owner')
 world:clear()
 return true
@@ -117,17 +124,17 @@ end)
 	test(`grouped spatial sampling preserves real identities, interpolation and query boundaries (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local owner<const> = world:spawn('timeline.pose2',{})
-local pose<const> = owner.spatial
+local pose<const> = owner
 local seen = 0
 owner.timelines:define('move',{phase='physical',bindings={'pose'},duration_ms=100,tracks={
-	{kind='spatial',binding='pose',operation='local_origin2',channels={ox={interpolation='linear',keys={
+	{kind='spatial',binding='pose',operation='position2',channels={x={interpolation='linear',keys={
 		{time_ms=0,value=0},{time_ms=50,value=10},{time_ms=100,value=30}}}}},
 	{kind='sample',binding='pose',apply=function(target)
-		target:resolve_world()
+		hierarchy.resolve(target)
 		assert(target==pose and target.wox==target.ox, 'query observed an uncommitted spatial group')
 		seen=seen+1
 	end},
-	{kind='spatial',binding='pose',operation='local_affine2',channels={xx=2,xy=0,yx=1,yy=3}},
+	{kind='spatial',binding='pose',operation='transform2',channels={xx=2,xy=0,yx=1,yy=3}},
 }}, {pose=pose})
 owner.timelines:seek_time('move',75)
 assert(pose.ox==20 and pose.oy==7 and pose.xx==2 and pose.yx==1 and pose.yy==3 and seen==1,
@@ -136,28 +143,28 @@ owner.timelines:seek_time('move',25)
 assert(pose.ox==5 and pose.oy==7 and seen==2, 'reverse seek retained a stale scalar segment')
 local other<const> = world:spawn('timeline.pose3',{})
 other.timelines:define('move',{phase='physical',bindings={'pose'},duration_ms=100,tracks={
-	{kind='spatial',binding='pose',operation='local_origin3',channels={
-		ox={interpolation='step',keys={{time_ms=0,value=2},{time_ms=50,value=9},{time_ms=100,value=12}}},
-		oy={interpolation='cubic',keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=0},
-			{time_ms=100,value=10,arrive_tangent=0,leave_tangent=0}}},oz=30}},
-}}, {pose=other.spatial})
+	{kind='spatial',binding='pose',operation='position3',channels={
+		x={interpolation='step',keys={{time_ms=0,value=2},{time_ms=50,value=9},{time_ms=100,value=12}}},
+		y={interpolation='cubic',keys={{time_ms=0,value=0,arrive_tangent=0,leave_tangent=0},
+			{time_ms=100,value=10,arrive_tangent=0,leave_tangent=0}}},z=30}},
+}}, {pose=other})
 other.timelines:seek_time('move',50)
-assert(other.spatial.ox==9 and other.spatial.oy==5 and other.spatial.oz==30,
+assert(other.ox==9 and other.oy==5 and other.oz==30,
 	'3D grouped writer did not consume numeric step/cubic coefficients')
 local second<const> = world:spawn('timeline.pose2',{})
 local receivers<const> = {pose=pose}
 owner.timelines:define('bound',{phase='physical',bindings={'pose'},duration_ms=100,tracks={{kind='spatial',
-	binding='pose',operation='local_origin2',channels={ox={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=20}}}}}}},receivers)
-receivers.pose=second.spatial
+	binding='pose',operation='position2',channels={x={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=20}}}}}}},receivers)
+receivers.pose=second
 owner.timelines:seek_time('bound',50)
-assert(pose.ox==10 and second.spatial.ox==3, 'mutating caller binding map retargeted seek after definition admission')
+assert(pose.ox==10 and second.ox==3, 'mutating caller binding map retargeted seek after definition admission')
 owner.timelines:play('bound')
-assert(pose.ox==0 and second.spatial.ox==3, 'play implicitly reread a mutated caller binding map')
-owner.timelines:play('bound',{bindings={pose=second.spatial}})
+assert(pose.ox==0 and second.ox==3, 'play implicitly reread a mutated caller binding map')
+owner.timelines:play('bound',{bindings={pose=second}})
 owner.timelines:seek_time('bound',50)
-assert(pose.ox==0 and second.spatial.ox==10, 'explicit play binding override was not admitted')
+assert(pose.ox==0 and second.ox==10, 'explicit play binding override was not admitted')
 owner.timelines:play('bound')
-assert(pose.ox==0 and second.spatial.ox==10, 'explicit play override replaced the retained definition receivers')
+assert(pose.ox==0 and second.ox==10, 'explicit play override replaced the retained definition receivers')
 `, { optLevel, modules });
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	});
@@ -166,23 +173,23 @@ assert(pose.ox==0 and second.spatial.ox==10, 'explicit play override replaced th
 		const { cpu } = createCartlibProgramHarness(setup + `
 local range<const> = require('cartlib/timeline/timeline').range
 local owner<const> = world:spawn('timeline.pose2',{})
-local pose<const> = owner.spatial
+local pose<const> = owner
 owner.timelines:define('mixed',{phase='physical',bindings={'pose'},duration_ms=30,subsequences={{
 	duration_ms=30,sequence={phase='physical',bindings={'pose'},frames=range(3),frame_duration=10,tracks={{
-		kind='spatial',binding='pose',operation='local_origin2',channels={
-			ox={interpolation='linear',keys={{frame=0,value=0},{frame=1,value=10},{frame=2,value=20}}},
-			oy={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=20}}},
+		kind='spatial',binding='pose',operation='position2',channels={
+			x={interpolation='linear',keys={{frame=0,value=0},{frame=1,value=10},{frame=2,value=20}}},
+			y={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=100,value=20}}},
 		},
 	}}},
 }}}, {pose=pose})
 owner.timelines:play('mixed')
-pose:set_local_origin(7,pose.oy)
+pose:set_position(7,pose.oy)
 owner.timelines:tick_gameplay(5)
 observed={pose.ox,pose.oy}
 owner.timelines:tick_gameplay(5)
 observed[3]=pose.ox
 observed[4]=pose.oy
-pose:set_local_origin(17,pose.oy)
+pose:set_position(17,pose.oy)
 owner.timelines:tick_gameplay(5)
 observed[5]=pose.ox
 observed[6]=pose.oy
@@ -196,7 +203,7 @@ observed[6]=pose.oy
 	test(`cold writer admission protects every generic lowering and retains exact leaf receivers (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local owner<const> = world:spawn('timeline.pose2',{})
-local pose<const> = owner.spatial
+local pose<const> = owner
 local bad<const> = {
 	{target=pose,frames={{ox=99}},apply=true},
 	{target=pose,tracks={{kind='value',interpolation='step',path={'ox'},keys={{time_ms=0,value=99}}}}},
@@ -208,20 +215,20 @@ for index=1,#bad do
 	assert(not admitted and pose.ox==3, 'generic output bypassed protected spatial storage')
 end
 local reference<const> = pcall(function()
-	owner.timelines:define('replace',{tracks={{kind='value',interpolation='step',path={'spatial'},keys={{time_ms=0,value=pose}}}}})
+	owner.timelines:define('replace',{tracks={{kind='value',interpolation='step',path={'parent'},keys={{time_ms=0,value=pose}}}}})
 end)
-assert(not reference and owner.spatial==pose, 'generic output replaced the fixed spatial capability reference')
+assert(not reference and owner.parent==nil, 'generic output bypassed structural parent authority')
 local presentation<const> = pcall(function()
-	program.compile({phase='presentation',tracks={{kind='spatial',operation='local_origin2',channels={ox=1}}}})
+	program.compile({phase='presentation',tracks={{kind='spatial',operation='position2',channels={x=1}}}})
 end)
 assert(not presentation, 'presentation program admitted a physical writer')
 local callback<const> = pcall(function() program.compile({frames={1},apply=function() end}) end)
 assert(not callback, 'opaque callback program omitted its execution phase')
-local root<const> = transform2.root_origin.new(hierarchy.new(),{}, {1,0,0,1,0,0})
+local root<const> = world:spawn('timeline.pose3')
 local forbidden<const> = pcall(function()
-	owner.timelines:define('root',{phase='physical',target=root,tracks={{kind='spatial',operation='local_affine2',channels={xx=2}}}})
+	owner.timelines:define('root',{phase='physical',target=root,tracks={{kind='spatial',operation='transform2',channels={xx=2}}}})
 end)
-assert(not forbidden, 'root-origin binding admitted an affine writer')
+assert(not forbidden, '3D object admitted a 2D transform writer')
 local leaf<const> = {ox=-1}
 local target<const> = {leaf=leaf}
 owner.timelines:define('leaf',{target=target,duration_ms=100,tracks={{kind='value',path={'leaf','ox'},
@@ -250,7 +257,7 @@ owner.timelines:define('visual',{phase='presentation',bindings={'visual'},durati
 }}, {visual=visual})
 owner.timelines:seek_time('visual',50)
 visual:resolve_pose()
-assert(owner.spatial.ox==3 and owner.spatial.oy==7, 'presentation animation moved the physical pose')
+assert(owner.ox==3 and owner.oy==7, 'presentation animation moved the physical pose')
 assert(visual.presentation_ox==12 and visual.presentation_oy==5 and visual.wox==27 and visual.woy==22,
 	'visual group skipped prefixed state or pose invalidation')
 assert(visual.order==2 and visual.presentation_order==4 and world._visual_revision>revision,
@@ -275,14 +282,16 @@ local system<const> = {}
 function system.new() return setmetatable({tick_functions={{group=30,priority=0,clock_source=clock.gameplay,method='update'}}},{__index=system}) end
 function system:update()
 	physics_observed=physics_observed+1
-	assert(actor.spatial.ox==20 and late_value==0, 'physical clip ran after physics or presentation ran before physics')
+	assert(actor.ox==20 and late_value==0, 'physical clip ran after physics or presentation ran before physics')
 end
-prefab.define({def_id='scheduled',class={},spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},components={timeline_component.new}})
+prefab.define({def_id='scheduled',
+ class=object_2d,
+ components={timeline_component.new}})
 actor=world:spawn('scheduled',{})
 actor.timelines:define('late',{phase='presentation',duration_ms=100,tracks={{kind='value',interpolation='linear',
 	apply=function(_,value) late_value=value end,keys={{time_ms=0,value=0},{time_ms=100,value=100}}}}})
 actor.timelines:define('early',{phase='physical',duration_ms=20,bindings={'pose'},tracks={{kind='spatial',binding='pose',
-	operation='local_origin2',channels={ox={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=20,value=20}}}}}}}, {pose=actor.spatial})
+	operation='position2',channels={x={interpolation='linear',keys={{time_ms=0,value=0},{time_ms=20,value=20}}}}}}}, {pose=actor})
 actor.timelines:play('early',nil,function(owner)
 	owner.timelines:play('late',{snap_to_start=false})
 end)
@@ -303,7 +312,9 @@ assert(not mixed, 'nested sequence acquired a second incompatible execution phas
 	test(`manual clock transport remains exclusive when attached to an updating World (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local timeline_system<const> = require('cartlib/timeline/timeline_system')
-prefab.define({def_id='timeline.world',class={},components={timeline_component.new}})
+prefab.define({def_id='timeline.world',
+ class=world_object,
+ components={timeline_component.new}})
 local manual<const> = world:spawn('timeline.pose2',{})
 local automatic<const> = world:spawn('timeline.world',{})
 for _, phase in ipairs({'physical','presentation'}) do
@@ -352,7 +363,9 @@ end
 function abort_system:update()
 	if abort_now then self.owner:set_gameplay_clock_running(false) end
 end
-prefab.define({def_id='external.actor',class={},components={timeline_component.new}})
+prefab.define({def_id='external.actor',
+ class=world_object,
+ components={timeline_component.new}})
 local actor<const> = world:spawn('external.actor',{})
 for _, phase in ipairs({'physical','presentation'}) do
 	for _, domain in ipairs({'platform','audio'}) do
@@ -422,8 +435,8 @@ test('warmed grouped curve sampling makes no guest heap reservations', t => {
 	const { cpu } = createCartlibProgramHarness(setup + `
 local owner<const> = world:spawn('timeline.pose2',{})
 owner.timelines:define('loop',{phase='physical',duration_ms=1000,playback_mode='loop',bindings={'pose'},tracks={{kind='spatial',
-	binding='pose',operation='local_origin2',channels={ox={interpolation='linear',keys={
-		{time_ms=0,value=0},{time_ms=250,value=10},{time_ms=500,value=20},{time_ms=1000,value=40}}},oy=7}}}}, {pose=owner.spatial})
+	binding='pose',operation='position2',channels={x={interpolation='linear',keys={
+		{time_ms=0,value=0},{time_ms=250,value=10},{time_ms=500,value=20},{time_ms=1000,value=40}}},y=7}}}}, {pose=owner})
 owner.timelines:play('loop')
 probe={run=function(count) for index=1,count do owner.timelines:tick_gameplay(1) end end}
 `, { optLevel: 3, modules });

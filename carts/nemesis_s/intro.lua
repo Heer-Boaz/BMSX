@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local clock<const> = require('cartlib/clock')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -11,6 +12,7 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
 local intro<const> = {}
 intro.__index = intro
+setmetatable(intro, { __index = world_object })
 
 local intro_definition_id<const> = 'nemesis_s.intro'
 local intro_instance_id<const> = 'nemesis_s.intro'

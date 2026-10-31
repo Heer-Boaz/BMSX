@@ -54,6 +54,7 @@ function affine2.relative_world(node, parent)
 		node.yy = yy
 		node.ox = ox
 		node.oy = oy
+		node._semantic_flags = 0
 		return true
 	end
 	local pxx<const> = parent.wxx
@@ -77,6 +78,7 @@ function affine2.relative_world(node, parent)
 	node.yy = ixy * yx + iyy * yy
 	node.ox = ixx * dx + iyx * dy
 	node.oy = ixy * dx + iyy * dy
+	node._semantic_flags = 0
 	return true
 end
 
@@ -110,6 +112,7 @@ function affine2.from_world(node, parent, xx, xy, yx, yy, ox, oy)
 		node.yy = yy
 		node.ox = ox
 		node.oy = oy
+		node._semantic_flags = 0
 		return true
 	end
 	local pxx<const> = parent.wxx
@@ -133,6 +136,7 @@ function affine2.from_world(node, parent, xx, xy, yx, yy, ox, oy)
 	node.yy = ixy * yx + iyy * yy
 	node.ox = ixx * dx + iyx * dy
 	node.oy = ixy * dx + iyy * dy
+	node._semantic_flags = 0
 	return true
 end
 
@@ -172,10 +176,77 @@ end
 
 -- Returns coefficients in the canonical column order. Rotation is radians;
 -- scale acts on the local axes before rotation, and translation acts last.
-function affine2.trs(ox, oy, rotation, scale_x, scale_y)
+function affine2.trs(ox, oy, rotation, scale_x, scale_y, skew)
+	if skew == nil then skew = 0 end
 	local cosine<const> = math.cos(rotation)
 	local sine<const> = math.sin(rotation)
-	return cosine * scale_x, sine * scale_x, -sine * scale_y, cosine * scale_y, ox, oy
+	if skew == 0 then
+		return cosine * scale_x, sine * scale_x, -sine * scale_y, cosine * scale_y, ox, oy
+	end
+	return cosine * scale_x, sine * scale_x,
+		-math.sin(rotation + skew) * scale_y, math.cos(rotation + skew) * scale_y, ox, oy
+end
+
+-- Editing channels describe this local affine. Explicit semantic writes retain
+-- their supplied signed scales and unwrapped angle, even at zero scale. A raw
+-- basis replacement clears that knowledge; extraction then follows one fixed
+-- convention, never changing the geometric coefficients.
+function affine2.write_trs(node, ox, oy, rotation, scale_x, scale_y, skew)
+	if skew == nil then skew = 0 end
+	node.xx, node.xy, node.yx, node.yy, node.ox, node.oy =
+		affine2.trs(ox, oy, rotation, scale_x, scale_y, skew)
+	node._rotation = rotation
+	node._scale_x, node._scale_y = scale_x, scale_y
+	node._skew = skew
+	node._semantic_flags = 7
+end
+
+function affine2.rotation(node)
+	local flags<const> = node._semantic_flags
+	if (flags & 1) ~= 0 then return node._rotation end
+	if (flags & 8) ~= 0 then return nil end
+	local xx<const>, xy<const> = node.xx, node.xy
+	if xx * xx + xy * xy == 0 then
+		node._semantic_flags = flags | 8
+		return nil
+	end
+	local rotation<const> = math.atan(xy, xx)
+	node._rotation = rotation
+	node._semantic_flags = flags | 1
+	return rotation
+end
+
+-- Matrix-derived X scale is nonnegative; reflection is carried by Y. At zero
+-- determinant there is no reflection sign, so the column lengths remain
+-- nonnegative. Source-known editing values retain their original signs.
+function affine2.scale(node)
+	local flags<const> = node._semantic_flags
+	if (flags & 2) ~= 0 then return node._scale_x, node._scale_y end
+	local xx<const>, xy<const>, yx<const>, yy<const> = node.xx, node.xy, node.yx, node.yy
+	local sx<const> = math.sqrt(xx * xx + xy * xy)
+	local sy = math.sqrt(yx * yx + yy * yy)
+	if xx * yy - yx * xy < 0 then sy = -sy end
+	node._scale_x, node._scale_y = sx, sy
+	node._semantic_flags = flags | 2
+	return sx, sy
+end
+
+function affine2.skew(node)
+	local flags<const> = node._semantic_flags
+	if (flags & 4) ~= 0 then return node._skew end
+	if (flags & 16) ~= 0 then return nil end
+	local xx<const>, xy<const>, yx<const>, yy<const> = node.xx, node.xy, node.yx, node.yy
+	if xx * xx + xy * xy == 0 or yx * yx + yy * yy == 0 then
+		node._semantic_flags = flags | 16
+		return nil
+	end
+	local determinant = xx * yy - yx * xy
+	local dot = xx * yx + xy * yy
+	if determinant < 0 then determinant, dot = -determinant, -dot end
+	local skew<const> = math.atan(determinant, dot) - math.pi * 0.5
+	node._skew = skew
+	node._semantic_flags = flags | 4
+	return skew
 end
 
 function affine2.transform_point(node, x, y)

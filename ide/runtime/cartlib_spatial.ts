@@ -41,7 +41,7 @@ export class CartlibSpatialReader2D {
 			guest.readStringMember(visual, 'presentation_yy') as number,
 			guest.readStringMember(visual, 'presentation_ox') as number,
 			guest.readStringMember(visual, 'presentation_oy') as number);
-		this.readWorld(guest.readStringMember(visual, 'spatial') as Table, destination);
+		this.readWorld(guest.readStringMember(visual, 'owner') as Table, destination);
 		appendAffine2(destination, local.xx, local.xy, local.yx, local.yy, local.ox, local.oy);
 	}
 
@@ -54,7 +54,7 @@ export class CartlibSpatialReader2D {
 			const cached = this.indices.get(current);
 			if (cached !== undefined && cached.epoch === this.epoch) { parentIndex = cached.index; break; }
 			ancestors.set(count++, current);
-			const parent = guest.readStringMember(current, 'spatial_parent');
+			const parent = guest.readStringMember(current, 'parent');
 			current = valueTag(parent) === ValueTag.Nil ? null : parent as Table;
 		}
 		let parent = parentIndex === undefined ? undefined : this.poses.peek(parentIndex);

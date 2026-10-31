@@ -34,7 +34,7 @@ function gameplay_scene.register()
 				options = {
 					id = status_bar.instance_id, space_id = 'game_start', order = 100,
 				},
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 176 } },
+				position = { x = 0, y = 176 },
 			},
 			{
 				member_id = 'player_start_1',
@@ -42,7 +42,7 @@ function gameplay_scene.register()
 				options = {
 					player_id = 'nemesis_s.player.1', space_id = 'main',
 				},
-				spatial = { local_transform = { 1, 0, 0, 1, 80, 60 } },
+				position = { x = 80, y = 60 },
 			},
 			{
 				member_id = 'player_start_2',
@@ -50,7 +50,7 @@ function gameplay_scene.register()
 				options = {
 					player_id = 'nemesis_s.player.2', space_id = 'main',
 				},
-				spatial = { local_transform = { 1, 0, 0, 1, 120, 80 } },
+				position = { x = 120, y = 80 },
 			},
 			{
 				member_id = 'game_over_curtain',

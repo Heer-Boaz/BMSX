@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local visual_2d<const> = require('cartlib/component/visual_2d_component')
 local image<const> = require('cartlib/gx/image')
 local prefab<const> = require('cartlib/world/prefab')
@@ -9,6 +10,7 @@ local starfield<const> = {
 	definition_id = 'nemesis_s.starfield',
 	instance_id = 'nemesis_s.starfield',
 }
+setmetatable(starfield, { __index = object_2d })
 local blink_timeline_id<const> = 'nemesis_s.starfield.blink'
 local yellow_source<const> = image.resolve(assets_star_yellow)
 local blue_source<const> = image.resolve(assets_star_blue)
@@ -152,7 +154,6 @@ function starfield.register()
 	prefab.define({
 		def_id = starfield.definition_id,
 		class = starfield,
-		spatial = { family = '2d', authority = 'affine' },
 		components = {
 			starfield_visual.new,
 			timeline_component.new,

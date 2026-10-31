@@ -16,8 +16,6 @@ setmetatable(renderer, { __index = visual_component })
 function renderer.new(owner, configuration, id_local, defaults)
 	local self<const>, input<const> = visual_component.new(owner, configuration, id_local or 'camera', defaults)
 	setmetatable(self, renderer)
-	local spatial<const> = owner.spatial
-	self.spatial = spatial
 	self._models = owner.world:active_component_view(model_component)
 	self._batch = model_batch.new()
 	self._view, self._world, self._instance_view, self._part_view = {}, {}, {}, {}
@@ -51,7 +49,7 @@ function renderer:set_projection(width, height, focal_length, near, center_x, ce
 end
 
 function renderer:draw_models(draw)
-	local spatial<const> = self.spatial
+	local spatial<const> = self.owner
 	hierarchy.resolve(spatial)
 	local basis_revision<const>, origin_revision<const> = spatial._basis_revision, spatial._origin_revision
 	local changed = basis_revision ~= self._basis_revision or origin_revision ~= self._origin_revision

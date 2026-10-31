@@ -83,7 +83,7 @@ return {
 				local enemy<const> = room.scene.members[test.enemy.scene_member_id]
 				assert(enemy ~= nil and enemy ~= test.enemy, 'ordinary enemies must receive a fresh room instance')
 				local authored<const> = room.scene.definition.members_by_id[room.enemies[1].member_id]
-				assert(authored.local_transform[5] == 112 and authored.local_transform[6] == 56 and authored.options.room == nil,
+				assert(authored.ox == 112 and authored.oy == 56 and authored.options.room == nil,
 				'instance motion or reentry mutated authored placement')
 			end
 			t:at_boundary(world:request_mutation_boundary(), 30)

@@ -6,16 +6,18 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { createLuaTableFieldRemovalEdits } from '../../ide/language/lua/source_edits';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
+local prefab=require('cartlib/world/prefab')
+prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
- { member_id = 'same', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } } },
+ { member_id = 'same', definition_id = 'actor', position = { x = 1, y = 2, z = 3 } },
+ { member_id = 'same', definition_id = 'actor', position = { x = 4, y = 5, z = 6 } },
 } })
 scenes.register('same', { objects = {
  { member_id = 'same', definition_id = 'actor' },
 } })`;
 
 function fixture(t: TestContext) {
-	const f = createSceneSourceFixture(t, SOURCE);
+	const f = createSceneSourceFixture(t, SOURCE, 'scene.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
 	const { model, documents } = f;
 	const document = documents.get(model), first = new SceneAuthoringContext(model, documents), second = new SceneAuthoringContext(model, documents);
 	t.after(() => { first.dispose(); second.dispose(); });
@@ -153,7 +155,7 @@ test('member removal preserves a newer selection admitted during canonical conte
 	assert.equal(f.first.removeSelectedMember(), true);
 	assert.equal(f.first.selection?.kind, 'scene');
 	assert.equal(f.first.selection?.scene, f.first.document!.scenes[1]);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace(" { member_id = 'same', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },", ' '));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace(" { member_id = 'same', definition_id = 'actor', position = { x = 1, y = 2, z = 3 } },", ' '));
 });
 
 for (const change of ['selection', 'source', 'provider'] as const) test(`admission cannot retarget through a newer ${change} change published by selection retirement`, t => {

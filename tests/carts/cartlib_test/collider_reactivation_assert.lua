@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local geometry_pool<const> = require('cartlib/collision/geometry_pool')
 local overlap_2d_system<const> = require('cartlib/collision/overlap_2d_system')
@@ -8,8 +9,8 @@ bss geometry: word[32]
 local pool<const> = geometry_pool.new(geometry, 64, 2)
 local definition_id<const> = 'cartlib_test.overlap_actor'
 prefab.define({
-	def_id = definition_id, class = {},
-	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 32, 32 } },
+	def_id = definition_id, class = object_2d,
+	position = { x = 32, y = 32 },
 	components = { collider_2d_component.factory({ geometry_pool = pool, local_area = { left = 0, top = 0, right = 8, bottom = 8 }, layer = 1, mask = 1 }) },
 })
 
@@ -48,11 +49,11 @@ return {
 			assert(phases[5] == 'stay' and #phases == 5, 'the replacement contact did not stay')
 			-- Rotate the exact polygon while retaining the same world square.
 			-- A basis publication is not a new contact identity or a replacement AABB.
-			a.spatial:set_local_affine(0, 1, -1, 0, 40, 32)
+			a:set_transform(0, 1, -1, 0, 40, 32)
 			overlap:update()
 			assert(phases[6] == 'stay' and #phases == 6 and a.contact_depth == 8,
 				'transformed polygon contact lost its retained identity or exact geometry')
-			a.spatial:set_local_origin(80, 32)
+			a:set_position(80, 32)
 			overlap:update()
 			assert(phases[7] == 'end' and #phases == 7, 'new physical origin did not retire the old contact')
 			owner:clear()

@@ -49,8 +49,8 @@ local profile<const> = {imgid='tile',order=0,flip_h=false,visible=false}
 local factory<const> = sprite.factory(profile)
 profile.imgid='other'
 local static_class<const> = {primary_sprite_factory=factory}
-prefab.define({def_id='primary.static',class=static_class,base=sprite_object,
- spatial={family='2d',authority='affine'}})
+prefab.define({def_id='primary.static',
+ class=setmetatable(static_class, {__index=sprite_object})})
 local first<const> = world:spawn('primary.static',{})
 local second<const> = world:spawn('primary.static',{})
 assert(first.sprite_component.owner==first and second.sprite_component.owner==second
@@ -58,9 +58,10 @@ assert(first.sprite_component.owner==first and second.sprite_component.owner==se
  and first.sprite_component.order==0 and first.sprite_component.flip_h==false
  and first.sprite_component.visible==false and second.sprite_component.visible==false,
  'primary construction changed the bound static profile or its independent flags')
-prefab.define({def_id='primary.plain',class={},base=sprite_object,
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,30,40}},
- defaults={imgid='tile',order=7,color=0xff123456,region={x=0,y=0,width=1,height=1},attachment_affine={1,0,0,1,9,12}}})
+prefab.define({def_id='primary.plain',
+ class=sprite_object,
+ defaults={imgid='tile',order=7,color=0xff123456,region={x=0,y=0,width=1,height=1},attachment_affine={1,0,0,1,9,12}},
+ position={x=30,y=40}})
 local plain<const> = world:spawn('primary.plain',{visible=false,enabled=false,imgid='other',
  order=false,color=false,presentation_order=4,region=false,attachment_affine=false})
 local visual<const> = plain.sprite_component
@@ -72,14 +73,14 @@ assert(visual.visible and visual.enabled and visual.imgid=='other' and visual.wo
 plain.visible=true
 assert(visual.visible and visual.enabled,'showing an owner could not reveal its independently enabled primary visual')
 local frames<const> = {'tile','other'}
-prefab.define({def_id='primary.sequence',class={primary_sprite_factory=animation.factory({frames=frames,frame_duration_ms=20})},
- base=sprite_object,spatial={family='2d',authority='affine'}})
+prefab.define({def_id='primary.sequence',
+ class=setmetatable({primary_sprite_factory=animation.factory({frames=frames,frame_duration_ms=20})}, {__index=sprite_object})})
 local sequence<const> = world:spawn('primary.sequence',{imgid='other'}).sprite_component
 assert(sequence.imgid=='tile' and sequence.frames==frames,
  'ordinary owner imgid replaced the admitted animation first frame or copied its shared frame source')
-prefab.define({def_id='primary.named',class={primary_sprite_factory=animation.factory({animation='idle',animations={
- idle={frames={'tile'},frame_duration_ms=20},active={frames={'other'},frame_duration_ms=20}}})},
- base=sprite_object,spatial={family='2d',authority='affine'}})
+prefab.define({def_id='primary.named',
+ class=setmetatable({primary_sprite_factory=animation.factory({animation='idle',animations={
+ idle={frames={'tile'},frame_duration_ms=20},active={frames={'other'},frame_duration_ms=20}}})}, {__index=sprite_object})})
 local named<const> = world:spawn('primary.named',{animation='active',imgid='tile'}).sprite_component
 assert(named.animation=='active' and named.imgid=='other',
  'ordinary named-animation selection did not use the admitted animation owner')
@@ -93,33 +94,34 @@ return true
 		const { cpu } = createCartlibProgramHarness(WORLD_CPU_SETUP + `
 local sprite<const> = require('cartlib/component/sprite_component')
 local sprite_object<const> = require('cartlib/sprite')
-prefab.define({def_id='visual.defaults',class=sprite_object,
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,9,12}},
- defaults={imgid='tile',order=7,attachment_affine={1,0,0,1,2,3}}})
-prefab.define({def_id='visual.neutral',class=sprite_object,
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
+prefab.define({def_id='visual.defaults',
+ class=setmetatable(sprite_object, {__index=object_2d}),
+ defaults={imgid='tile',order=7,attachment_affine={1,0,0,1,2,3}},
+ position={x=9,y=12}})
+prefab.define({def_id='visual.neutral',
+ class=setmetatable(sprite_object, {__index=object_2d}),
  defaults={imgid='tile'}})
 scenes.register('visual.defaults',{objects={
  {member_id='inherited',definition_id='visual.defaults'},
  {member_id='neutral',definition_id='visual.neutral'},
- {member_id='explicit',definition_id='visual.defaults',spatial={local_transform={1,0,0,1,0,0}},
+ {member_id='explicit',definition_id='visual.defaults',position={x=0,y=0},
   options={order=0,attachment_affine={1,0,0,1,0,0}}},
 }})
 local instance<const> = scenes.instantiate('visual.defaults')
 local inherited<const>, neutral<const>, explicit<const> = instance.members.inherited, instance.members.neutral, instance.members.explicit
 local iv<const>, nv<const>, ev<const> = inherited:get_component(sprite),neutral:get_component(sprite),explicit:get_component(sprite)
-assert(inherited.spatial.ox==9 and inherited.spatial.oy==12 and iv.order==7
+assert(inherited.ox==9 and inherited.oy==12 and iv.order==7
  and iv.attachment_ox==2 and iv.attachment_oy==3 and iv.imgid=='tile',
  'omitting Scene overrides lost actual prefab placement or visual inputs')
-assert(neutral.spatial.ox==0 and neutral.spatial.oy==0 and nv.order==0
+assert(neutral.ox==0 and neutral.oy==0 and nv.order==0
  and nv.attachment_xx==1 and nv.attachment_yy==1 and nv.attachment_ox==0 and nv.attachment_oy==0,
  'neutral Scene member required duplicated identity or zero-order declarations')
-assert(explicit.spatial.ox==0 and explicit.spatial.oy==0 and ev.order==0
+assert(explicit.ox==0 and explicit.oy==0 and ev.order==0
  and ev.attachment_ox==0 and ev.attachment_oy==0 and ev.imgid=='tile',
  'explicit zero and identity overrides were confused with omitted defaults')
-inherited.spatial:set_local_origin(30,40)
+inherited:set_position(30,40)
 local second<const> = scenes.instantiate('visual.defaults')
-assert(second.members.inherited.spatial.ox==9 and second.members.inherited.spatial.oy==12,
+assert(second.members.inherited.ox==9 and second.members.inherited.oy==12,
  'instance writes mutated the shared prefab placement')
 return true
 `, { optLevel, modules });
@@ -138,14 +140,15 @@ function layered:draw_visual(draw)
  draw:rect(0,0,1,1,0xff204080)
  sprite.draw_visual(self,draw)
 end
-prefab.define({def_id='visual.layered',class={},
- spatial={family='2d',authority='affine',local_transform={1,0,0,1,10,20}},
+prefab.define({def_id='visual.layered',
+ class=object_2d,
  components={function(owner)
   local part<const> = sprite.new(owner,{imgid='tile'},'sprite')
   setmetatable(part,layered)
   part:set_draw_function(layered.draw_visual)
   return part
- end}})
+ end},
+ position={x=10,y=20}})
 local actor<const> = world:spawn('visual.layered',{})
 local part<const> = actor:get_component(sprite)
 part:set_imgid('other')
@@ -173,10 +176,12 @@ return true
 local rectangle<const> = require('cartlib/component/rectangle_component')
 local commands<const> = require('cartlib/gx/command_list')
 local gp0<const> = require('cartlib/gx/gp0')
-prefab.define({def_id='rectangle.actor',class={},spatial={family='2d',authority='affine',
- local_transform={0,2,-3,0,10,20}},components={function(owner) return rectangle.new(owner,{
+prefab.define({def_id='rectangle.actor',
+ class=object_2d,
+ components={function(owner) return rectangle.new(owner,{
  width=2,height=3,color=0xff204080,attachment_affine={2,0,0,1,1,2},
- presentation_affine={1,0,0,1,3,4}}) end}})
+ presentation_affine={1,0,0,1,3,4}}) end},
+ transform={xx=0,xy=2,yx=-3,yy=0,ox=10,oy=20}})
 local actor<const> = world:spawn('rectangle.actor',{})
 local part<const> = actor:get_component(rectangle)
 bss words: word[32]
@@ -196,7 +201,7 @@ commands.begin(draw,0x100,0)
 part:draw_rectangle(draw)
 assert(output[2]==gp0.pair16(4,22) and output[3]==gp0.pair16(4,38)
  and output[4]==gp0.pair16(-2,22) and output[5]==gp0.pair16(-2,38)
- and actor.spatial.wox==10 and actor.spatial.woy==20)
+ and actor.wox==10 and actor.woy==20)
 kernel=function(count)
  for index=1,count do
   part:set_presentation_origin(index & 7,0)
@@ -221,36 +226,41 @@ return true
 local sprite<const> = require('cartlib/component/sprite_component')
 local visual<const> = require('cartlib/component/visual_component')
 local custom<const> = require('cartlib/component/custom_visual_component')
-prefab.define({def_id='visual.parent',class={},spatial={family='2d',authority='affine',
- local_transform={0,2,-3,0,10,20}}})
-prefab.define({def_id='visual.child',class={},spatial={family='2d',authority='affine',
- local_transform={1,0,1,1,4,5}},components={sprite.factory({imgid='tile',
- attachment_affine={2,0,0,1,1,2},presentation_affine={1,0,0,1,3,4}})}})
+prefab.define({def_id='visual.parent',
+ class=object_2d,
+ transform={xx=0,xy=2,yx=-3,yy=0,ox=10,oy=20}})
+prefab.define({def_id='visual.child',
+ class=object_2d,
+ components={sprite.factory({imgid='tile',
+ attachment_affine={2,0,0,1,1,2},presentation_affine={1,0,0,1,3,4}})},
+ transform={xx=1,xy=0,yx=1,yy=1,ox=4,oy=5}})
 local parent<const> = world:spawn('visual.parent', {})
-local child<const> = world:spawn('visual.child',{},{parent=parent.spatial})
+local child<const> = world:spawn('visual.child',{parent=parent})
 local part<const> = child:get_component(sprite)
 part:resolve_pose()
 assert(part.wxx==0 and part.wxy==4 and part.wyx==-3 and part.wyy==2
  and part.wox==-23 and part.woy==54,'visual composed the three owners in a different order')
-assert(child.spatial.wox==-5 and child.spatial.woy==28
+assert(child.wox==-5 and child.woy==28
  and child.x==nil and child.y==nil and part.offset_x==nil,'presentation became a second object pose')
 local basis<const> = part._visual_basis_revision
 part:set_presentation_origin(5,6)
 part:resolve_pose()
 assert(part._visual_basis_revision==basis and part.wox==-29 and part.woy==66,
  'presentation translation rebuilt the basis or missed the affine')
-parent.spatial:set_local_origin(100,200)
+parent:set_position(100,200)
 part:resolve_pose()
 assert(part._visual_basis_revision==basis and part.wox==61 and part.woy==246,
  'ancestor translation rebuilt the visual basis')
-local physical<const> = child.spatial._origin_revision
+local physical<const> = child._origin_revision
 part:set_order(9)
 part:set_presentation_order(-2)
-assert(part.order==9 and part.presentation_order==-2 and child.spatial._origin_revision==physical,
+assert(part.order==9 and part.presentation_order==-2 and child._origin_revision==physical,
  'render ordering invalidated physical pose')
-prefab.define({def_id='visual.nonspatial',class={},components={custom.factory({draw=function() end})}})
+prefab.define({def_id='visual.nonspatial',
+ class=world_object,
+ components={custom.factory({draw=function() end})}})
 local nonspatial<const> = world:spawn('visual.nonspatial', {})
-assert(nonspatial.spatial==nil and nonspatial:get_component(visual)~=nil,
+assert(nonspatial._hierarchy==nil and nonspatial:get_component(visual)~=nil,
  'generic custom geometry fabricated a spatial capability')
 return assertion_failed
 `, { optLevel, modules });

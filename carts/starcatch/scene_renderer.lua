@@ -30,8 +30,15 @@ local model_reflected
 local model_affine<const> = {
 	xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0,
 }
-local place_model<const> = function(spatial, yaw, roll)
-	spatial:resolve_world()
+local object_affine<const> = {
+	xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0,
+}
+local place_model<const> = function(object, yaw, roll)
+	local object_pose<const> = object_affine
+	object_pose.xx, object_pose.xy, object_pose.xz,
+	object_pose.yx, object_pose.yy, object_pose.yz,
+	object_pose.zx, object_pose.zy, object_pose.zz,
+	object_pose.ox, object_pose.oy, object_pose.oz = object:get_global_transform()
 	local cy, sy, cr, sr = 1, 0, 1, 0
 	if yaw ~= 0 then cy, sy = math.cos(yaw), math.sin(yaw) end
 	if roll ~= 0 then cr, sr = math.cos(roll), math.sin(roll) end
@@ -39,12 +46,13 @@ local place_model<const> = function(spatial, yaw, roll)
 	model.xx, model.xy, model.xz = cr*cy, sr*cy, -sy
 	model.yx, model.yy, model.yz = -sr, cr, 0
 	model.zx, model.zy, model.zz = cr*sy, sr*sy, cy
-	affine3.evaluate(model, spatial, true, true)
-	model_reflected = model.wxx*(model.wyy*model.wzz-model.wzy*model.wyz)
-		+ model.wyx*(model.wzy*model.wxz-model.wxy*model.wzz)
-		+ model.wzx*(model.wxy*model.wyz-model.wyy*model.wxz) < 0
-	gte_transform.write_affine(model.wxx,model.wxy,model.wxz,model.wyx,model.wyy,model.wyz,
-		model.wzx,model.wzy,model.wzz,model.wox-160,model.woy-120,model.woz)
+	model.ox, model.oy, model.oz = 0, 0, 0
+	affine3.compose(model, object_pose, model)
+	model_reflected = model.xx*(model.yy*model.zz-model.zy*model.yz)
+		+ model.yx*(model.zy*model.xz-model.xy*model.zz)
+		+ model.zx*(model.xy*model.yz-model.yy*model.xz) < 0
+	gte_transform.write_affine(model.xx,model.xy,model.xz,model.yx,model.yy,model.yz,
+		model.zx,model.zy,model.zz,model.ox-160,model.oy-120,model.oz)
 end
 
 local queue_mesh<const> = function(mesh_id, palette_id)
@@ -174,24 +182,24 @@ function renderer.draw(component, draw)
 		local style = meshes.cyan
 		if ship.hit_flash > 0 then style = meshes.red
 		elseif ship.dash_shield > 0 then style = meshes.jade end
-		place_model(ship.spatial, ship.spin, ship.bank)
+		place_model(ship, ship.spin, ship.bank)
 		queue_mesh(meshes.ship, style)
 		local model<const> = model_affine
 		local head_y<const> = -3 + ship.bob + ship.recoil
-		gte_transform.write_origin(model.wox + model.wyx*head_y - model.wzx*4 - 160,
-			model.woy + model.wyy*head_y - model.wzy*4 - 120,
-			model.woz + model.wyz*head_y - model.wzz*4)
+		gte_transform.write_origin(model.ox + model.yx*head_y - model.zx*4 - 160,
+			model.oy + model.yy*head_y - model.zy*4 - 120,
+			model.oz + model.yz*head_y - model.zz*4)
 		queue_mesh(meshes.head, meshes.gold)
 	end
 	local enemy<const> = game.enemy
 	if enemy ~= nil and enemy.visible then
 		local style = meshes.violet
 		if enemy.charge > 0.65 then style = meshes.red end
-		place_model(enemy.spatial, 0, 0)
+		place_model(enemy, 0, 0)
 		queue_mesh(meshes.drone, style)
 		local model<const> = model_affine
-		gte_transform.write_origin(model.wox - model.wzx*5 - 160, model.woy - model.wzy*5 - 120,
-			model.woz - model.wzz*5)
+		gte_transform.write_origin(model.ox - model.zx*5 - 160, model.oy - model.zy*5 - 120,
+			model.oz - model.zz*5)
 		queue_mesh(meshes.head, meshes.red)
 	end
 	sort_faces()
@@ -202,28 +210,24 @@ function renderer.draw(component, draw)
 	for index = 1, #game.player_bolts do
 		local bolt<const> = game.player_bolts[index]
 		if bolt.visible then
-			local pose<const> = bolt.spatial
-			pose:resolve_world()
-			affine_batch.rect(draw, -1,-5,2,4, pose.wxx,pose.wxy,pose.wyx,pose.wyy,pose.wox,pose.woy, 0xffa5f5ef)
-			affine_batch.rect(draw, 0,-8,1,-5, pose.wxx,pose.wxy,pose.wyx,pose.wyy,pose.wox,pose.woy, 0xff55c7db)
+			local xx<const>, xy<const>, yx<const>, yy<const>, x<const>, y<const> = bolt:get_global_transform()
+			affine_batch.rect(draw, -1,-5,2,4, xx,xy,yx,yy,x,y, 0xffa5f5ef)
+			affine_batch.rect(draw, 0,-8,1,-5, xx,xy,yx,yy,x,y, 0xff55c7db)
 		end
 	end
 	for index = 1, #game.enemy_bolts do
 		local bolt<const> = game.enemy_bolts[index]
 		if bolt.visible then
-			local pose<const> = bolt.spatial
-			pose:resolve_world()
-			affine_batch.rect(draw, -2,-3,3,4, pose.wxx,pose.wxy,pose.wyx,pose.wyy,pose.wox,pose.woy, 0xffed627b)
+			local xx<const>, xy<const>, yx<const>, yy<const>, x<const>, y<const> = bolt:get_global_transform()
+			affine_batch.rect(draw, -2,-3,3,4, xx,xy,yx,yy,x,y, 0xffed627b)
 		end
 	end
 	local burst<const> = game.burst
 	if burst ~= nil and burst.pulse > 0 then
 		local r<const> = burst.pulse
-		local pose<const> = burst.spatial
-		pose:resolve_world()
-		local x<const>, y<const> = pose.wox, pose.woy
-		local ax<const>, ay<const> = pose.wxx*r, pose.wxy*r
-		local bx<const>, by<const> = pose.wyx*r, pose.wyy*r
+		local xx<const>, xy<const>, yx<const>, yy<const>, x<const>, y<const> = burst:get_global_transform()
+		local ax<const>, ay<const> = xx*r, xy*r
+		local bx<const>, by<const> = yx*r, yy*r
 		draw:line(x-bx,y-by, x+ax,y+ay, 0xffffd866)
 		draw:line(x+ax,y+ay, x+bx,y+by, 0xffffd866)
 		draw:line(x+bx,y+by, x-ax,y-ay, 0xffffd866)

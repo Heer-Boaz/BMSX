@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local sprite_component<const> = require('cartlib/component/sprite_component')
 local scene_library<const> = require('cartlib/world/scene_library')
 local scene<const> = require('scenes/title')
@@ -10,6 +11,7 @@ require('constants')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
+setmetatable(title_screen, { __index = world_object })
 
 local sparkle_timeline_id<const> = 'title_screen.sparkle'
 local start_timeline_id<const> = 'title_screen.start'

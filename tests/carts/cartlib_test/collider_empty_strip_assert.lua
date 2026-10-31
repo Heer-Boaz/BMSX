@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local collision_2d<const> = require('cartlib/collision/collision_2d')
 local geometry_pool<const> = require('cartlib/collision/geometry_pool')
@@ -12,8 +13,8 @@ bss geometry: word[320]
 local pool<const> = geometry_pool.new(geometry, 256, 5)
 local definition_id<const> = 'cartlib_test.empty_strip'
 prefab.define({
-	def_id = definition_id, class = {},
-	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 32, 32 } },
+	def_id = definition_id, class = object_2d,
+	position = { x = 32, y = 32 },
 	components = {
 		tile_strip_component.factory({ imgid = 'collision_tile', first_tile = 0, step_x = 4, step_y = 0, maximum_tiles = 3 }),
 		tile_strip_collider.factory({ geometry_pool = pool, layer = 1, mask = 1 }),
@@ -48,8 +49,8 @@ return {
 			strip_a:set_range(0, 0)
 			strip_b:set_range(0, 0)
 			strip_c:set_range(0, 0)
-			b.spatial:set_local_origin(33, 32)
-			c.spatial:set_local_origin(32, 33)
+			b:set_position(33, 32)
+			c:set_position(32, 33)
 			local ca<const> = a:get_component(collider_2d_component)
 			local cb<const> = b:get_component(collider_2d_component)
 			local cc<const> = c:get_component(collider_2d_component)

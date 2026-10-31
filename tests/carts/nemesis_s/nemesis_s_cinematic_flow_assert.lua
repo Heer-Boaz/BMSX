@@ -46,7 +46,7 @@ return {
 			local logo_object<const> = intro.presentation.members.logo
 			local logo<const> = logo_object.sprite_component
 			assert(logo.imgid == 'intro_konami'
-			and logo_object.spatial.ox == 40 and logo_object.spatial.oy == 64
+			and logo_object.ox == 40 and logo_object.oy == 64
 			and logo.region_width == 168 and logo.region_height == 1
 			and not logo_object.visible,
 			'Konami logo did not enter the source-derived blank presentation')
@@ -145,7 +145,7 @@ return {
 			'Metalion lift did not retain its final visible ROM step')
 			title.state_machines:transition_to('/startup/flight/ignition')
 			assert(ship.sprite_component:resolve_pose().woy == 73 and ship.burst:resolve_pose().woy == 73
-			and ship.spatial.oy == 129,
+			and ship.oy == 129,
 			'Metalion ignition did not enter at the hangar endpoint')
 			title.timelines:advance_to('nemesis_s.title_screen.ignition', 0)
 			assert(ship.burst.imgid == 'title_startup_metalion_burst_1',
@@ -189,9 +189,9 @@ return {
 			'status presentation did not bind the retained player states')
 			local player_1<const> = registry:get('nemesis_s.player.1')
 			local player_2<const> = registry:get('nemesis_s.player.2')
-			assert(player_1 ~= nil and player_1.spatial.ox == 80 and player_1.spatial.oy == 60,
+			assert(player_1 ~= nil and player_1.ox == 80 and player_1.oy == 60,
 			'selected game did not spawn player 1 at the XNA start')
-			assert(player_2 ~= nil and player_2.spatial.ox == 120 and player_2.spatial.oy == 80,
+			assert(player_2 ~= nil and player_2.ox == 120 and player_2.oy == 80,
 			'selected two-player game did not spawn player 2 at the XNA start')
 			assert(player_1.sprite_component.imgid == 'metallion_n' and player_2.sprite_component.imgid == 'metallion_n_p2',
 			'local players did not retain their authored vessel presentation')
@@ -286,7 +286,7 @@ return {
 				assert(read_music_source() == end_demo_music_source,
 				'title entry stopped the non-looping XNA end-demo music')
 				local title<const> = registry:get('nemesis_s.title_screen')
-				assert(title.presentation.members.selector.spatial.oy == 136 and title.selected_player_count == 1,
+				assert(title.presentation.members.selector.oy == 136 and title.selected_player_count == 1,
 				'returning from gameplay did not create a fresh title scene')
 				title.events:emit('title_screen_done', { player_count = 1 })
 				assert(not director.metalion_cheat_active,

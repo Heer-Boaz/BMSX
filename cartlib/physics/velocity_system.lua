@@ -55,12 +55,14 @@ function velocity_system:update()
 		local component<const> = bouncing_components[index]
 		local velocity_x<const> = component.speed_x_num
 		local velocity_y<const> = component.speed_y_num
-		local contacts<const> = move_kinematic(component, velocity_x, velocity_y)
-		if (contacts & horizontal_contacts) ~= 0 then
-			component.speed_x_num = -velocity_x
-		end
-		if (contacts & vertical_contacts) ~= 0 then
-			component.speed_y_num = -velocity_y
+		local committed<const>, contacts<const> = move_kinematic(component, velocity_x, velocity_y)
+		if committed then
+			if (contacts & horizontal_contacts) ~= 0 then
+				component.speed_x_num = -velocity_x
+			end
+			if (contacts & vertical_contacts) ~= 0 then
+				component.speed_y_num = -velocity_y
+			end
 		end
 	end
 
@@ -84,7 +86,7 @@ function velocity_system:update_fixed_point()
 		local delta_y<const> = y >> 8
 		local committed = true
 		if delta_x ~= 0 or delta_y ~= 0 then
-			local spatial<const> = component.spatial
+			local spatial<const> = component.owner
 			if spatial._flags ~= 0 then
 				spatial_hierarchy.resolve(spatial)
 			end

@@ -8,6 +8,7 @@ local enemy_base<const> = require('enemies/enemy_base')
 
 local boekfoe<const> = {}
 boekfoe.__index = boekfoe
+setmetatable(boekfoe, { __index = enemy_base })
 
 function boekfoe:ctor()
 	self.sprite_component.flip_h = self.direction == 'left'
@@ -20,10 +21,11 @@ function boekfoe.open_cover(self)
 end
 
 function boekfoe.spawn_paper(self)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local y_speed_num<const> = math.random(-5, 4)
 	self.castle.events:emit('paperspawn')
 	self.room.scene:spawn('enemy.paperfoe', {
+		position = { x = pose_x, y = pose_y },
 		speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5,
 		speed_y_num = y_speed_num,
 		speed_den = 5,
@@ -33,7 +35,7 @@ function boekfoe.spawn_paper(self)
 		room = self.room,
 		player = self.player,
 		direction = self.direction == 'left' and 'left' or 'right',
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
+	})
 	return bt_success
 end
 
@@ -110,8 +112,6 @@ function boekfoe.register()
 	prefab.define({
 		def_id = 'enemy.boekfoe',
 		class = boekfoe,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
 			order = 250,

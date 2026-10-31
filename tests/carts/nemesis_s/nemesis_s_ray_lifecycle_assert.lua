@@ -29,22 +29,23 @@ return {
 				stage.actor_spawn_index = stage.actor_spawn_count + 1
 				local chimney<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_schoorsteen_foe_def, {
 					stage = stage,
-				}, { local_transform = { 1, 0, 0, 1, 120, 88 } })
+					position = { x = 120, y = 88 },
+				})
 				local player<const> = registry:get('nemesis_s.player.1')
-				local player_x<const> = player.spatial.ox
-				player.spatial:set_world_origin(chimney.spatial.ox - 33, player.spatial.oy)
+				local player_x<const> = player.ox
+				player:set_global_position(chimney.ox - 33, player.oy)
 				assert(chimney:update_idle() == nil,
 				'chimney admitted a player left of its Nemesis 2 scan window')
-				player.spatial:set_world_origin(chimney.spatial.ox - 32, player.spatial.oy)
+				player:set_global_position(chimney.ox - 32, player.oy)
 				assert(chimney:update_idle() == '/opening',
 				'chimney rejected the left edge of its Nemesis 2 scan window')
-				player.spatial:set_world_origin(chimney.spatial.ox + 31, player.spatial.oy)
+				player:set_global_position(chimney.ox + 31, player.oy)
 				assert(chimney:update_idle() == '/opening',
 				'chimney rejected the right edge of its Nemesis 2 scan window')
-				player.spatial:set_world_origin(chimney.spatial.ox + 32, player.spatial.oy)
+				player:set_global_position(chimney.ox + 32, player.oy)
 				assert(chimney:update_idle() == nil,
 				'chimney admitted a player right of its Nemesis 2 scan window')
-				player.spatial:set_world_origin(player_x, player.spatial.oy)
+				player:set_global_position(player_x, player.oy)
 				chimney.state_machines:transition_to('/firing')
 				chimney:fire_ray()
 				local firing<const> = chimney.state_machines:bind_state_path('/firing')
@@ -61,7 +62,8 @@ return {
 				}
 				local bounded_ray<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_schoorsteen_ray_def, {
 					stage = probe_stage,
-				}, { local_transform = { 1, 0, 0, 1, 48, 80 } })
+					position = { x = 48, y = 80 },
+				})
 				local strip<const> = bounded_ray:get_component(tile_strip_component)
 				assert(strip.first_tile == 1 and strip.last_tile == 1,
 				'chimney ray lost its one-tile admission length')
@@ -83,10 +85,12 @@ return {
 				'empty chimney ray remained published')
 				local timed_ray<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_schoorsteen_ray_def, {
 					stage = probe_stage,
-				}, { local_transform = { 1, 0, 0, 1, 48, 80 } })
+					position = { x = 48, y = 80 },
+				})
 				local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 					stage = stage,
-				}, { local_transform = { 1, 0, 0, 1, 160, 48 } })
+					position = { x = 160, y = 48 },
+				})
 				snowman.state_machines:transition_to('/firing')
 				snowman:fire_ray()
 				local detached_ray<const> = snowman.ray

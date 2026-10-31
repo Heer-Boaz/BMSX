@@ -19,18 +19,20 @@ import { createHostOverlayFixture } from '../helpers/host_overlay';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
+local prefab=require('cartlib/world/prefab')
+prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})
 scenes.register('room', { objects = {
-	{ member_id = 'same  member', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } },
-	{ member_id = 'same  member', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } } },
+	{ member_id = 'same  member', definition_id = 'actor', position = { x = 1, y = 2, z = 3 } },
+	{ member_id = 'same  member', definition_id = 'actor', position = { x = 4, y = 5, z = 6 } },
 } })
 scenes.register('other room', { objects = {
-	{ member_id = 'same  member', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } },
+	{ member_id = 'same  member', definition_id = 'actor', position = { x = 7, y = 8, z = 9 } },
 } })
 `;
 
 function scene(t: TestContext, contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0], source = SOURCE) {
 	const path = 'scenes/room.lua';
-	const { model, documents } = createSceneSourceFixture(t, source, path, contextId);
+	const { model, documents } = createSceneSourceFixture(t, source, path, contextId, [['cartlib/world/prefab.lua','return {define=function() end}']]);
 	const input = new SceneEditorInput(model, documents);
 	assert.equal(input.view.authoring.document!.analysis.syntaxError, null);
 	installSceneOutline(input.view.hierarchy);
@@ -170,7 +172,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} full iden
 	assert.equal(member.element.labelClipped, true, 'the ownership fixture exercises full-identity feedback for an overflowing semantic caption');
 	f.input.view.hierarchy.outline.hoverIndex = 1; f.feedback.pointer(f.input.view.hierarchy, 1, f.point); f.update(); f.paint();
 	assert.ok(f.labels.length > 0, 'the admitted row paints its source-owned qualification');
-	assert.ok(f.labels.join('').includes('scenes/room.lua:3:2'));
+	assert.ok(f.labels.join('').includes('scenes/room.lua:' + f.input.view.hierarchy.outline.rows[1].element.source.start.line + ':' + f.input.view.hierarchy.outline.rows[1].element.source.start.column));
 	assert.equal(f.surfaces.hitTest(f.point.viewportX, f.point.viewportY), f.owner, 'identity feedback never intercepts pointer input');
 	const measured = f.measurements();
 	for (let frame = 0; frame < 1000; frame++) f.update();

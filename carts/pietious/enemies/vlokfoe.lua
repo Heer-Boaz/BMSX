@@ -11,6 +11,7 @@ local new_boundary<const> = screen_boundary_component.factory({
 
 local vlokfoe<const> = {}
 vlokfoe.__index = vlokfoe
+setmetatable(vlokfoe, { __index = enemy_base })
 
 -- disable-next-line single_line_method_pattern -- prefab lifecycle construction creates and attaches this object's velocity; this is not a forwarding API.
 function vlokfoe:ctor()
@@ -25,8 +26,6 @@ function vlokfoe.register()
 	prefab.define({
 		def_id = 'enemy.vlokfoe',
 		class = vlokfoe,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { enemy_base.new_collider, new_boundary },
 		defaults = {
 			speed_x_num = 0,

@@ -14,7 +14,7 @@ return {
 			player:zero_motion()
 			player:cancel_sword()
 			player.status.health = player.status.max_health
-			player.spatial:set_world_origin(player.status.spawn_x, player.status.spawn_y)
+			player:set_global_position(player.status.spawn_x, player.status.spawn_y)
 			test.quiet_state = player.state_machines:bind_state_path('/quiet')
 			test.hit_fall_state = player.state_machines:bind_state_path('/hit_fall')
 			test.hit_recovery_state = player.state_machines:bind_state_path('/hit_recovery')
@@ -25,7 +25,8 @@ return {
 				room = registry:get('c').room,
 				player = player,
 				damage = damage_enemy_contact_damage,
-			}, { local_transform = { 1, 0, 0, 1, 0, player.status.spawn_y } })
+				position = { x = 0, y = player.status.spawn_y },
+			})
 
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			local probe<const> = registry:get('probe.damage')

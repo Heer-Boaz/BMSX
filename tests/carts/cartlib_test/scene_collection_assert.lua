@@ -6,7 +6,7 @@ local scene_library<const> = require('cartlib/world/scene_library')
 
 local world<const> = require('cartlib/world/world')
 
-local world_object<const> = require('cartlib/world/world_object')
+local object_3d<const> = require('cartlib/world/object_3d')
 
 local actor_definition_id<const> = 'cartlib_test.scene_collection.actor'
 
@@ -18,7 +18,7 @@ local scene_actor_base<const> = {}
 
 scene_actor_base.__index = scene_actor_base
 
-setmetatable(scene_actor_base, { __index = world_object })
+setmetatable(scene_actor_base, { __index = object_3d })
 
 function scene_actor_base.initialize(self)
 	lifecycle[#lifecycle + 1] = 'initialize:' .. self.authored_value
@@ -27,6 +27,7 @@ end
 local scene_actor<const> = {}
 
 scene_actor.__index = scene_actor
+setmetatable(scene_actor, { __index = scene_actor_base })
 
 function scene_actor:onspawn()
 	lifecycle[#lifecycle + 1] = 'spawn:' .. self.authored_value
@@ -41,8 +42,6 @@ end
 prefab.define({
 	def_id = actor_definition_id,
 	class = scene_actor,
-	base = scene_actor_base,
-	spatial = { family = '3d', authority = 'affine', local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 } },
 })
 
 local first_definition<const> = {
@@ -50,7 +49,7 @@ local first_definition<const> = {
 		{
 			member_id = 'left',
 			definition_id = actor_definition_id,
-			spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 11, 12, 13 } },
+			position = { x = 11, y = 12, z = 13 },
 			options = {
 				authored_value = 'left.1',
 			},
@@ -58,7 +57,7 @@ local first_definition<const> = {
 		{
 			member_id = 'right',
 			definition_id = actor_definition_id,
-			spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 21, 22, 23 } },
+			position = { x = 21, y = 22, z = 23 },
 			options = {
 				authored_value = 'right.1',
 			},
@@ -71,7 +70,7 @@ local replacement_definition<const> = {
 		{
 			member_id = 'left',
 			definition_id = actor_definition_id,
-			spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 31, 32, 33 } },
+			position = { x = 31, y = 32, z = 33 },
 			options = {
 				authored_value = 'left.2',
 			},
@@ -99,10 +98,10 @@ return {
 			and lifecycle[4] == 'spawn:right.1',
 			'scene members were not instantiated in authored order')
 			assert(first_left.authored_value == 'left.1'
-			and first_left.spatial.ox == 11 and first_left.spatial.oy == 12 and first_left.spatial.oz == 13
+			and first_left.ox == 11 and first_left.oy == 12 and first_left.oz == 13
 			and first_right.authored_value == 'right.1'
-			and first_right.spatial.ox == 21 and first_right.spatial.oy == 22 and first_right.spatial.oz == 23,
-			'scene instantiation did not preserve gameplay input and its declared Transform3D')
+			and first_right.ox == 21 and first_right.oy == 22 and first_right.oz == 23,
+			'scene instantiation did not preserve gameplay input and its intrinsic Object3D pose')
 			assert(first_left.x == nil and first_left.y == nil and first_left.z == nil,
 			'the object retained a second position authority')
 			assert(first_left.id ~= 'left' and first_right.id ~= 'right'
@@ -119,7 +118,7 @@ return {
 				left = { authored_value = 'bound', player_state = state },
 			})
 			assert(bound.members.left.player_state == state and bound.members.left.authored_value == 'bound'
-			and bound.members.left.spatial.ox == 11 and bound.members.right.authored_value == 'right.1',
+			and bound.members.left.ox == 11 and bound.members.right.authored_value == 'right.1',
 			'runtime binding discarded layout or affected an unbound member')
 			assert(scene_library.definition(scene_id) == admitted_definition
 			and first_definition.objects[1].options.authored_value == 'left.1'
@@ -167,11 +166,11 @@ return {
 			scene_library.register(scene_id, replacement_definition)
 			local replacement<const> = scene_library.instantiate(scene_id)
 			assert(replacement.members.left.authored_value == 'left.2'
-			and replacement.members.left.spatial.ox == 31 and replacement.members.left.spatial.oy == 32
-			and replacement.members.left.spatial.oz == 33,
+			and replacement.members.left.ox == 31 and replacement.members.left.oy == 32
+			and replacement.members.left.oz == 33,
 			're-registration did not affect the next scene instantiation')
 			assert(first_left.authored_value == 'left.1'
-			and first_left.spatial.ox == 11 and first_left.spatial.oy == 12 and first_left.spatial.oz == 13,
+			and first_left.ox == 11 and first_left.oy == 12 and first_left.oz == 13,
 			're-registration mutated an existing scene instance')
 			first:dispose()
 			assert(registry:get(first_left.id) == nil and registry:get(first_right.id) == nil

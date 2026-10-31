@@ -3,16 +3,10 @@ local rom_dir<const> = require('cartlib/rom_dir')
 local world<const> = require('cartlib/world/world')
 local selected_apu_source<const>: *word = 0x0800018c
 local rotatedoor_source_address<const> = rom_dir.audio('rotatedoor').addr
-local player<const> = {
-	width = 16,
-	height = 16,
-	walking_right = false,
-	doorpass_count = 0,
-}
-function player:has_tag(tag)
+local has_tag<const> = function(self, tag)
 	return self.walking_right and tag == 'v.wr'
 end
-function player:start_slow_doorpass()
+local start_slow_doorpass<const> = function(self)
 	self.doorpass_count = self.doorpass_count + 1
 end
 local fixture<const> = require('tests/carts/pietious/fixture')
@@ -21,18 +15,22 @@ return {
 	kind = 'integration',
 	tests = {
 		draaideur = function(t)
-			local _director<const>, _castle<const>, actual_player<const> = fixture.start_game(t)
-			actual_player.state_machines:set_enabled(false)
-			player.spatial = actual_player.spatial
+			local _director<const>, _castle<const>, player<const> = fixture.start_game(t)
+			player.state_machines:set_enabled(false)
+			player.walking_right = false
+			player.doorpass_count = 0
+			player.has_tag = has_tag
+			player.start_slow_doorpass = start_slow_doorpass
 			local door_x<const> = 128
-			player.spatial:set_world_origin(door_x - player.width + 1, 64)
+			player:set_global_position(door_x - player.width + 1, 64)
 			registry:get('c').room.scene:spawn('draaideur', {
 				id = 'probe.draaideur',
 				space_id = 'main',
 				castle = registry:get('c'),
 				player = player,
-			}, { local_transform = { 1, 0, 0, 1, door_x, player.spatial.oy } },
-			{ base_sprite = { order = 22 } })
+				position = { x = door_x, y = player.oy },
+				order = 22,
+			})
 
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			local door<const> = registry:get('probe.draaideur')

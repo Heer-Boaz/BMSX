@@ -14,7 +14,6 @@ import type {
 	SceneSourceDocument,
 	SceneSourceEntry,
 	SceneSourceObject,
-	SceneSourceSpatial,
 } from './model';
 
 const SCENE_REGISTRATION: LuaModuleImportTarget = { module: 'cartlib/world/scene_library', memberPath: ['register'] };
@@ -119,30 +118,17 @@ function buildSceneObject(field: LuaTableField, table: LuaTableConstructorExpres
 		return null;
 	}
 	const options = findNamedLuaTableField(table, 'options');
-	const spatial = findNamedLuaTableField(table, 'spatial');
 	return {
 		kind: 'object',
 		field,
 		memberId: memberId.value,
 		definitionId: definitionId.value,
 		options,
-		spatial: spatial === null ? null : readSceneSpatial(spatial),
+		parent: findNamedLuaTableField(table, 'parent'),
+		position: findNamedLuaTableField(table, 'position'),
+		rotation: findNamedLuaTableField(table, 'rotation'),
+		scale: findNamedLuaTableField(table, 'scale'),
+		skew: findNamedLuaTableField(table, 'skew'),
+		transform: findNamedLuaTableField(table, 'transform'),
 	};
-}
-
-function readSceneSpatial(field: LuaTableField): SceneSourceSpatial {
-	const table = field.value;
-	if (table.kind !== LuaSyntaxKind.TableConstructorExpression) {
-		return { field, parentId: null, localTransform: null, coefficients: null, origin: [] };
-	}
-	const parentId = findNamedLuaTableField(table, 'parent_id');
-	const localTransform = findNamedLuaTableField(table, 'local_transform');
-	const value = localTransform?.value;
-	// Authored source can be incomplete or computed. Only an explicit 6/12
-	// coefficient array exposes local-coordinate controls; never invent a pose.
-	const coefficients = value?.kind === LuaSyntaxKind.TableConstructorExpression
-		&& (value.fields.length === 6 || value.fields.length === 12)
-		&& value.fields.every(coefficient => coefficient.kind === LuaTableFieldKind.Array) ? value.fields : null;
-	return { field, parentId, localTransform, coefficients,
-		origin: coefficients === null ? [] : coefficients.slice(coefficients.length === 6 ? 4 : 9) };
 }

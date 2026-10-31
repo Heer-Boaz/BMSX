@@ -1,3 +1,6 @@
+local object_3d<const> = require('cartlib/world/object_3d')
+local object_2d<const> = require('cartlib/world/object_2d')
+local world_object<const> = require('cartlib/world/world_object')
 local prefab<const> = require('cartlib/world/prefab')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local actioneffect_component<const> = require('cartlib/actioneffects/actioneffect_component')
@@ -10,10 +13,15 @@ local poses<const> = require('poses')
 
 local combat<const> = {}
 local ship<const> = {}
+setmetatable(ship, { __index = object_3d })
 local bolt<const> = {}
+setmetatable(bolt, { __index = object_2d })
 local backdrop<const> = {}
+setmetatable(backdrop, { __index = world_object })
 local caption<const> = {}
+setmetatable(caption, { __index = object_2d })
 local burst<const> = {}
+setmetatable(burst, { __index = object_2d })
 
 function ship:ctor(options)
 	self.game = options.game
@@ -25,7 +33,7 @@ function ship:ctor(options)
 	self.dash_shield = 0
 	self.hit_flash = 0
 	self.timelines:define('idle', poses.ship_idle)
-	self.timelines:define('arrival', poses.arrival, { pose = self.spatial })
+	self.timelines:define('arrival', poses.arrival, { pose = self })
 	self.timelines:define('fire', poses.fire)
 	self.timelines:define('hurt', poses.hurt)
 	self.timelines:define('dash', poses.dash)
@@ -47,23 +55,18 @@ function burst:ctor()
 	self.timelines:define('burst', poses.burst)
 end
 
-
 function combat.install()
 	actions.register()
-	local spatial3<const> = { family = '3d', authority = 'affine',
-		local_transform = { 1,0,0,0,1,0,0,0,1,0,0,512 } }
-	local spatial2<const> = { family = '2d', authority = 'affine',
-		local_transform = { 1,0,0,1,0,0 } }
-	prefab.define({ def_id = 'starcatch.ship', class = ship, spatial = spatial3,
+	prefab.define({ def_id = 'starcatch.ship', class = ship, position = { x = 0, y = 0, z = 512 },
 		components = { timeline_component.new,
 			actioneffect_component.factory(actions.effect_ids),
 			input_component.factory({ program = actions.input }) } })
-	prefab.define({ def_id = 'starcatch.preview', class = ship, spatial = spatial3, components = { timeline_component.new } })
-	prefab.define({ def_id = 'starcatch.bolt', class = bolt, spatial = spatial2 })
-	prefab.define({ def_id = 'starcatch.burst', class = burst, spatial = spatial2, components = { timeline_component.new } })
+	prefab.define({ def_id = 'starcatch.preview', class = ship, position = { x = 0, y = 0, z = 512 }, components = { timeline_component.new } })
+	prefab.define({ def_id = 'starcatch.bolt', class = bolt })
+	prefab.define({ def_id = 'starcatch.burst', class = burst, components = { timeline_component.new } })
 	prefab.define({ def_id = 'starcatch.backdrop', class = backdrop,
 		components = { custom_visual.factory({ draw = renderer.draw, order = -1000 }) } })
-	prefab.define({ def_id = 'starcatch.caption', class = caption, spatial = spatial2,
+	prefab.define({ def_id = 'starcatch.caption', class = caption,
 		defaults = {
 			text = '',
 			color = 0xffffffff,

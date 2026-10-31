@@ -7,7 +7,7 @@ function scene.register()
 			{
 				member_id = 'background',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 32, 48 } },
+				position = { x = 32, y = 48 },
 				options = {
 					imgid = 'lithograph_mode',
 					id = 'lithograph.background',
@@ -17,7 +17,7 @@ function scene.register()
 			{
 				member_id = 'caption',
 				definition_id = 'pietious.caption',
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 80 } },
+				position = { x = 0, y = 80 },
 				options = {
 					order = 1,
 					background_color = 0xff000000,

@@ -1,4 +1,3 @@
-import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { EditorCommandRunner } from '../../../common/commands';
@@ -7,10 +6,11 @@ import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
-import { createLuaTableFieldNumberEdits, parseLuaNumberInput } from '../../../language/lua/source_edits';
+import { parseLuaNumberInput } from '../../../language/lua/source_edits';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchMenuPresentation } from '../../ui/menu/model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
+import type { SceneLocalPositionRequest } from './authoring_context';
 import { POSITION_AXES } from './details_projection';
 import { layoutSceneDetails } from './details_layout';
 import { drawSceneDetails } from './details_render';
@@ -19,7 +19,8 @@ import { SceneOptionEditor, type SceneEditorSectionCommands } from './option_edi
 
 export type ScenePositionInputValue = {
 	readonly value: number;
-	readonly field: LuaTableField;
+	readonly axis: typeof POSITION_AXES[number];
+	readonly request: SceneLocalPositionRequest;
 	readonly binding: SceneDetailsFieldBinding;
 };
 
@@ -30,7 +31,7 @@ export class SceneDetailsControl {
 	public readonly options: SceneOptionEditor;
 	private readonly scroll: WorkbenchScrollControl;
 	private readonly unbindFocus: readonly (() => void)[];
-	private readonly fields: ({ readonly binding: SceneDetailsFieldBinding; readonly field: LuaTableField } | undefined)[] = [];
+	private readonly fields: (Omit<ScenePositionInputValue, 'value'> | undefined)[] = [];
 	private viewValue: SceneDetailsViewState | undefined;
 	private bounds!: Readonly<RectBounds>;
 	private boundRevision = -1;
@@ -75,9 +76,7 @@ export class SceneDetailsControl {
 			}, value => {
 				const binding = value.binding, authoring = binding.view.authoring;
 				if (!binding.isCurrent() || !authoring.isCurrent || !binding.isCurrent() || authoring.workingCopy.readOnly) return;
-				const model = authoring.workingCopy;
-				model.pushEditOperations(createLuaTableFieldNumberEdits(model.buffer,
-					value.binding.subject.document.analysis.chunk.locations, value.field, value.value)!);
+				value.request.apply(value.axis, value.value);
 			}, () => this.update());
 			control.field.readOnly = true;
 			control.field.focusTarget.commandContext = parentCommandTarget;
@@ -116,7 +115,7 @@ export class SceneDetailsControl {
 			view.authoring.workingCopy.onWillDispose(() => { if (attached()) this.clearView(); }),
 			view.authoring.workingCopy.onDidChangeContent(() => { if (attached()) this.boundRevision = -1; }),
 			view.authoring.onDidChangeSelection(() => { if (attached()) this.update(); }),
-			view.authoring.workingCopy.onDidChangeReadOnly(() => { if (attached()) { this.admissionDirty = true; this.update(); } }),
+			view.authoring.workingCopy.onDidChangeReadOnly(() => { if (attached()) { this.fieldsBound = false; this.admissionDirty = true; this.update(); } }),
 		];
 		this.update();
 	}
@@ -188,11 +187,13 @@ export class SceneDetailsControl {
 	private bindFields(binding: SceneDetailsFieldBinding): boolean {
 		const view = binding.view;
 		this.fields.length = 0;
+		const request = view.properties.length === 0 ? undefined : view.authoring.captureLocalPosition();
+		if (!binding.isCurrent()) return false;
 		for (let index = 0; index < view.properties.length; index++) {
 			const property = view.properties[index].descriptor;
-			if (property.value !== null) {
-				this.fields[index] = { binding, field: property.field };
-				this.controls[index].setValue({ value: property.value, field: property.field, binding });
+			if (request !== undefined) {
+				this.fields[index] = { binding, axis: property.axis, request };
+				this.controls[index].setValue({ value: property.value, axis: property.axis, request, binding });
 				if (!binding.isCurrent()) return false;
 			} else this.fields[index] = undefined;
 		}
@@ -206,7 +207,7 @@ export class SceneDetailsControl {
 		for (let index = 0; index < this.controls.length; index++) {
 			const control = this.controls[index];
 			const property = view.properties[index];
-			const readOnly = view.authoring.workingCopy.readOnly || property === undefined || property.descriptor.value === null;
+			const readOnly = view.authoring.workingCopy.readOnly || property === undefined || this.fields[index] === undefined;
 			if (control.field.readOnly !== readOnly) this.focusOrderDirty = true;
 			control.field.readOnly = readOnly;
 			if (!available || control.field.readOnly) {

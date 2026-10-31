@@ -20,6 +20,7 @@ local opening_visual_event<const> = 'world_entrance.opening.visual'
 
 local world_entrance<const> = {}
 world_entrance.__index = world_entrance
+setmetatable(world_entrance, { __index = sprite_object })
 
 function world_entrance:set_entrance_state(entrance_state)
 	self.entrance_state = entrance_state
@@ -121,8 +122,6 @@ local register_world_entrance_definition<const> = function()
 	prefab.define({
 		def_id = 'world_entrance',
 		class = world_entrance,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { timeline_component.new, fsm_component.factory({ 'world_entrance' }) },
 		defaults = {
 			order = 22,

@@ -4,6 +4,7 @@ local enemy_base<const> = require('enemies/enemy_base')
 
 local staffspawn<const> = {}
 staffspawn.__index = staffspawn
+setmetatable(staffspawn, { __index = enemy_base })
 
 function staffspawn:ctor()
 	local velocity<const> = self:add_component(velocity_component.new(self, self))
@@ -18,8 +19,6 @@ function staffspawn.register()
 	prefab.define({
 		def_id = 'enemy.staffspawn',
 		class = staffspawn,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { enemy_base.new_collider, enemy_base.projectile_boundary },
 		defaults = {
 			speed_x_num = 0,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
@@ -31,8 +31,8 @@ import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import type { GlyphRenderSubmission } from '../../machine/ts/render/shared/submissions';
 
-function scene(t: TestContext, path = 'viewport.lua') {
-	const { model, documents } = createSceneSourceFixture(t, SCENE_VIEWPORT_SOURCE, path);
+function scene(t: TestContext, path = 'viewport.lua', source = SCENE_VIEWPORT_SOURCE) {
+	const { model, documents } = createSceneSourceFixture(t, source, path, undefined, SCENE_VIEWPORT_IMPORTS);
 	const input = new SceneEditorInput(model, documents);
 	installSceneOutline(input.view.hierarchy);
 	selectSceneOutlineRow(input.view.hierarchy, 1);
@@ -176,7 +176,7 @@ test('replacing selected Scene source with the same member name retires the Deta
 	const snapshot = captureSceneEditorView(input.view), selected = snapshot.selected!;
 	const originalLabel = input.view.hierarchy.outline.rows[input.view.hierarchy.outline.selectionIndex].element.label;
 	const source = input.workingCopy.buffer.getText();
-	const replacement = source.slice(selected.span.start, selected.span.end).replace('0, 0, 1, 11,', '0, 0, 1, 12,');
+	const replacement = source.slice(selected.span.start, selected.span.end).replace('x = 11,', 'x = 12,');
 	const changes = [{ offset: selected.span.start, deletedLength: selected.span.end - selected.span.start, insertedLength: replacement.length }];
 	input.workingCopy.pushEditOperations([{ offset: selected.span.start, deleteLength: replacement.length, text: replacement }]);
 	mapSceneReading(snapshot, changes);
@@ -255,7 +255,7 @@ for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 		assert.equal(input.view.hierarchy.outline.layout.visibleRowCount, 0);
 		editorViewState.editorAreaBottom = 275; arrangeScene(input.view, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		selectSceneOutlineRow(input.view.hierarchy, 2); arrangeScene(input.view, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-		assert.deepEqual(input.view.details.properties.map(property => property.descriptor.value), [null, 2, null]);
+		assert.equal(input.view.details.properties.length, 0, 'computed placement does not grant editable coordinates from a fabricated partial pose');
 		selectSceneOutlineRow(input.view.hierarchy, 0); arrangeScene(input.view, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(input.view.details.viewport.contentHeight < height);
 		selectSceneOutlineRow(input.view.hierarchy, -1); arrangeScene(input.view, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
@@ -270,7 +270,16 @@ test('scene painting publishes nested content clips and reuses quad storage on s
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	editorViewState.editorAreaTop = 31; editorViewState.editorAreaBottom = 98;
-	const input = scene(t); arrangeScene(input.view, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+	// Warning colors are exercised by a real unresolved authored member.
+	const source = `local scenes = require('cartlib/world/scene_library')
+local prefab = require('cartlib/world/prefab')
+prefab.define({def_id='partial.actor',class=require('cartlib/world/object_3d')})
+scenes.register('partial', {objects={
+ {member_id='authored',definition_id='partial.actor',position={x=11,y=-22,z=33},
+  options={color=0xffabcdef,visible=true,region={width=16,height=24}}},
+ build_member(),
+}})`;
+	const input = scene(t, 'partial.lua', source); arrangeScene(input.view, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 	const details = detailsControl(t, input.view);
 	t.after(() => input.dispose());
 	const overlay = createHostOverlayFixture(384, 288); const stream = new HostOverlayQuadStream();

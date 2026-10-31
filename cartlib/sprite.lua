@@ -2,7 +2,7 @@
 -- sprite component. Collision remains an explicit, independently scheduled
 -- component; visual-only objects therefore never enter collision storage.
 
-local world_object<const> = require('cartlib/world/world_object')
+local object_2d<const> = require('cartlib/world/object_2d')
 local sprite_component<const> = require('cartlib/component/sprite_component')
 
 local sprite_object<const> = {}
@@ -12,7 +12,7 @@ sprite_object.__index = sprite_object
 -- render and animation lanes therefore consume their normal retained types
 -- without a per-frame visual-mode branch.
 sprite_object.primary_sprite_factory = sprite_component.new
-setmetatable(sprite_object, { __index = world_object })
+setmetatable(sprite_object, { __index = object_2d })
 
 local base_sprite_id<const> = 'base_sprite'
 

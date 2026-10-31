@@ -19,7 +19,7 @@ function scene.register()
 			{
 				member_id = 'logo',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 40, 64 } },
+				position = { x = 40, y = 64 },
 				options = {
 					imgid = 'intro_konami',
 					region = { x = 0, y = 0, width = 168, height = 1 },

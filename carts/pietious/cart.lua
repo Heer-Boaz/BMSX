@@ -91,21 +91,42 @@ local create_world<const> = function(director_boot_mode)
 	new_game_requested = false
 	world:clear()
 
-	local player_member<const> = scene_library.member_definition(gameplay_scene.id, 'player')
-	local session<const> = session_model.new(castle_module.castle.level.program, player_member.local_transform[5], player_member.local_transform[6], castle_module.castle.level.map.rooms)
+	local player_start<const> = gameplay_scene.player_start
+	local session<const> = session_model.new(castle_module.castle.level.program, player_start.x, player_start.y, castle_module.castle.level.map.rooms)
 	local gameplay<const> = scene_library.create(gameplay_scene.id)
-	local castle<const> = gameplay:spawn('castle', { id = 'c', session = session })
+	local castle<const> = gameplay:spawn('castle', {
+		id = 'c',
+		session = session,
+	})
 	local player<const> = gameplay:spawn_member('player', { castle = castle, status = session.player })
 	castle.player = player
 	grant_debug_starting_loadout(player, castle)
 	castle:start_at_room(castle_map.start_room_number, director_boot_mode == 'room')
 
-	world:spawn('intro', { id = 'intro', space_id = 'intro', })
-	world:spawn('narrative_screen', { id = 'narrative', space_id = 'narrative', })
-	world:spawn('end_demo', { id = 'end_demo', space_id = 'end_demo', })
-	world:spawn('transition', { id = 'transition', space_id = 'transition', })
-	world:spawn('shrine', { id = 'shrine', space_id = 'shrine', })
-	world:spawn('lithograph_screen', { id = 'lithograph', space_id = 'lithograph', })
+	world:spawn('intro', {
+		id = 'intro',
+		space_id = 'intro',
+	})
+	world:spawn('narrative_screen', {
+		id = 'narrative',
+		space_id = 'narrative',
+	})
+	world:spawn('end_demo', {
+		id = 'end_demo',
+		space_id = 'end_demo',
+	})
+	world:spawn('transition', {
+		id = 'transition',
+		space_id = 'transition',
+	})
+	world:spawn('shrine', {
+		id = 'shrine',
+		space_id = 'shrine',
+	})
+	world:spawn('lithograph_screen', {
+		id = 'lithograph',
+		space_id = 'lithograph',
+	})
 	world:spawn('item_screen', {
 		id = 'item_screen',
 		space_id = 'item',
@@ -113,7 +134,10 @@ local create_world<const> = function(director_boot_mode)
 		player = player,
 	})
 	local ui<const> = gameplay:spawn_member('hud', { player = player })
-	world:spawn('title_screen', { id = 'title_screen', space_id = 'title', })
+	world:spawn('title_screen', {
+		id = 'title_screen',
+		space_id = 'title',
+	})
 	local director<const> = world:spawn('director', {
 		id = 'd',
 		boot_mode = director_boot_mode,

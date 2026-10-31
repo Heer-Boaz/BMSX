@@ -12,13 +12,13 @@ import { SceneViewportViewState, SCENE_VIEWPORT_POINT_STRIDE } from '../../ide/w
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
-prefab.define({def_id='node2',class={},spatial={family='2d',authority='affine'}})
-prefab.define({def_id='node3',class={},spatial={family='3d',authority='affine'}})`;
+prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
+prefab.define({def_id='node3',class=require('cartlib/world/object_3d')})`;
 const OBJECTS = `
- {member_id='first',definition_id='node2',spatial={local_transform={1,0,0,1,0,0}}},
- {member_id='second',definition_id='node2',spatial={parent_id='first',local_transform={2,0,1,1,100,20}}},
- {member_id='mesh',definition_id='node3',spatial={local_transform={1,0,0,0,1,0,0,0,1,7,11,13}}},
- {member_id='dynamic',definition_id='node2',spatial={local_transform=runtime_pose()}},`;
+ {member_id='first',definition_id='node2',position = { x = 0, y = 0 }},
+ {member_id='second',definition_id='node2',parent='first',transform = { xx = 2, xy = 0, yx = 1, yy = 1, ox = 100, oy = 20 }},
+ {member_id='mesh',definition_id='node3',position = { x = 7, y = 11, z = 13 }},
+ {member_id='dynamic',definition_id='node2',transform=runtime_pose()},`;
 const BOUNDS = { left: 10, top: 20, right: 410, bottom: 260 };
 
 function pointer(x: number, y: number, buttons: number, pressed = 0, released = 0, modifiers = KeyModifier.none): PointerInputSnapshot {
@@ -110,7 +110,7 @@ test('camera framing fits actual image or line extents without imposing the orig
 });
 
 test('camera persisted before first layout retains pending source-derived 3D admission', t => {
-	const objects = `{member_id='mesh',definition_id='node3',spatial={local_transform={1,0,0,0,1,0,0,0,1,70,110,130}}}`;
+	const objects = `{member_id='mesh',definition_id='node3',position = { x = 70, y = 110, z = 130 }}`;
 	const f = fixture(t, objects, false), restored = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => restored.dispose());
 	const snapshot = f.view.camera.capture(); assert.equal(snapshot.canvas.reading, 'initial');
 	restored.camera.restore(snapshot); f.control.setView(restored, BOUNDS);
@@ -147,7 +147,7 @@ test('frame commands are disabled for absent or unresolved geometry instead of b
 	const empty = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => empty.dispose());
 	f.view.camera.setMode('3d'); f.select(0);
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
-	const g = fixture(t, `{member_id='dynamic',definition_id='node2',spatial={local_transform=runtime_pose()}}`);
+	const g = fixture(t, `{member_id='dynamic',definition_id='node2',transform=runtime_pose()}`);
 	assert.equal(g.panel.getCommand('sceneViewport.frameAll')!.isEnabled(), false);
 });
 

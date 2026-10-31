@@ -17,11 +17,9 @@ local identity<const> = affine2.identity
 function visual_2d_component.new(owner, configuration, id_local, defaults)
 	local self<const>, input<const> = visual_component.new(owner, configuration, id_local, defaults)
 	setmetatable(self, visual_2d_component)
-	local spatial<const> = owner.spatial
-	if spatial == nil or spatial._family ~= affine2 then
-		error('2D visual requires its owner\'s Transform2D')
+	if owner._family ~= affine2 then
+		error('2D visual requires its owner\'s Object2D')
 	end
-	self.spatial = spatial
 	local attachment<const> = input.attachment_affine
 		or (defaults and defaults.attachment_affine) or identity
 	local presentation<const> = input.presentation_affine
@@ -116,7 +114,7 @@ end
 -- owner revisions then select basis/origin work independently. A clean read
 -- performs no composition, and ordinary translation never rebuilds a basis.
 function visual_2d_component:resolve_pose()
-	local spatial<const> = self.spatial
+	local spatial<const> = self.owner
 	hierarchy.resolve(spatial)
 	local flags<const> = self._pose_flags
 	local owner_basis<const> = spatial._basis_revision

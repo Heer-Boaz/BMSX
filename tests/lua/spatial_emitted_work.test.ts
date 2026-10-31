@@ -30,13 +30,13 @@ local timelines<const> = require('cartlib/timeline/timeline_component')
 local manual<const> = function(owner)
  return timelines.new(owner,{clock_mode='manual'})
 end
-prefab.define({def_id='emitted.2d',class={},spatial={family='2d',authority='affine'},components={manual}})
-prefab.define({def_id='emitted.3d',class={},spatial={family='3d',authority='affine'},components={manual}})
-local root2<const> = world:spawn('emitted.2d',{}).spatial
+prefab.define({def_id='emitted.2d',class=object_2d,components={manual}})
+prefab.define({def_id='emitted.3d',class=object_3d,components={manual}})
+local root2<const> = world:spawn('emitted.2d',{})
 local actor2<const> = world:spawn('emitted.2d',{})
-local root3<const> = world:spawn('emitted.3d',{}).spatial
+local root3<const> = world:spawn('emitted.3d',{})
 local actor3<const> = world:spawn('emitted.3d',{})
-local child2<const>,child3<const> = actor2.spatial,actor3.spatial
+local child2<const>,child3<const> = actor2,actor3
 hierarchy.reparent(child2,root2,false)
 hierarchy.reparent(child3,root3,false)
 local visual<const> = visual2.new(actor2,nil,'visual')
@@ -72,9 +72,9 @@ probe = {
   local curve<const> = {interpolation='linear',keys={
    {time_ms=0,value=0},{time_ms=250,value=10},{time_ms=1000,value=40}}}
   local definitions<const> = {
-   {owner=actor2,name='origin2',operation='local_origin2',target=child2,channels={ox=curve}},
-   {owner=actor2,name='affine2',operation='local_affine2',target=child2,channels={xx=2,xy=1,yx=0,yy=3,ox=curve,oy=7}},
-   {owner=actor3,name='affine3',operation='local_affine3',target=child3,
+   {owner=actor2,name='origin2',operation='position2',target=child2,channels={x=curve}},
+   {owner=actor2,name='affine2',operation='transform2',target=child2,channels={xx=2,xy=1,yx=0,yy=3,ox=curve,oy=7}},
+   {owner=actor3,name='affine3',operation='transform3',target=child3,
     channels={xx=2,xy=1,xz=0,yx=0,yy=3,yz=1,zx=0,zy=0,zz=4,ox=curve,oy=7,oz=11}},
    {owner=actor2,name='presentation',operation='presentation_affine2',target=visual,
     channels={xx=2,xy=1,yx=0,yy=3,ox=curve,oy=7}},

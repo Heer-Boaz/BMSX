@@ -57,7 +57,7 @@ local assert_authored_actor_tape<const> = function(stage)
 		'Authored stage placement column changed for ' .. definition_id)
 		assert(spawn.options.stage == stage,
 		'Authored stage actor lost its stage owner')
-		assert(spawn.spatial.local_transform[5] == expected.x and spawn.spatial.local_transform[6] == expected.y,
+		assert(spawn.options.position.x == expected.x and spawn.options.position.y == expected.y,
 		'Authored stage placement position changed for ' .. definition_id)
 	end
 end
@@ -73,12 +73,13 @@ return {
 				stage.actor_spawn_index = stage.actor_spawn_count + 1
 				local snowman<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_def, {
 					stage = stage,
-				}, { local_transform = { 1, 0, 0, 1, 100, 32 } })
+					position = { x = 100, y = 32 },
+				})
 				local collider<const> = snowman:get_component(collider_2d_component)
 				assert(collider.shape_ref ~= nil,
 				'the snowman did not bind its authored tile collision shape')
 				stage:advance_tape()
-				assert(snowman.spatial.ox == 92,
+				assert(snowman.ox == 92,
 				'the retained stage follower did not consume one ASCII tile step')
 				stage.scrolling = false
 				for row_index = 1, stage.tile_rows do
@@ -87,9 +88,9 @@ return {
 						row[column] = 0
 					end
 				end
-				snowman.spatial:set_world_origin(44, 32)
-				player.spatial:set_world_origin(41, 25)
-				player:spawn_bullet(1, player.spatial.ox, player.spatial.oy, player.primary_projectiles[1])
+				snowman:set_global_position(44, 32)
+				player:set_global_position(41, 25)
+				player:spawn_bullet(1, player.ox, player.oy, player.primary_projectiles[1])
 				test.snowman = snowman
 				test.initial_health = snowman.health
 				test.gameplay_time_ms = world.gameplay_time_ms

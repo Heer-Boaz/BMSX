@@ -19,10 +19,10 @@ return {
 			and player.primary_projectiles[5].type == 0,
 			'new option vessels did not retain their projectile slots')
 
-			local y<const> = player.spatial:resolve_world().woy
+			local _, y<const> = player:get_global_position()
 			player.right_held = true
 			for step = 1, 32 do
-				player.spatial:set_world_origin(80 + step, y)
+				player:set_global_position(80 + step, y)
 				player:update_options()
 			end
 			assert(player.option_history_index == 1, 'option history did not wrap after thirty-two movement samples')

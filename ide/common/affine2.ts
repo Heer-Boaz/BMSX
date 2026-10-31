@@ -1,6 +1,29 @@
 /** Column-major Number affine; no renderer/register narrowing in host geometry. */
 export type Affine2 = { xx: number; xy: number; yx: number; yy: number; ox: number; oy: number };
 
+/** Local axis scale and angular skew precede translation. */
+export function affine2FromPose(ox: number, oy: number, rotation: number, sx: number, sy: number, skew: number): Affine2 {
+	const cosine = Math.cos(rotation), sine = Math.sin(rotation);
+	if (skew === 0) return { xx: cosine * sx, xy: sine * sx, yx: -sine * sy, yy: cosine * sy, ox, oy };
+	return { xx: cosine * sx, xy: sine * sx, yx: -Math.sin(rotation + skew) * sy, yy: Math.cos(rotation + skew) * sy, ox, oy };
+}
+
+export function affine2Scale(source: Readonly<Affine2>): readonly [number, number] {
+	return [Math.sqrt(source.xx * source.xx + source.xy * source.xy), Math.sqrt(source.yx * source.yx + source.yy * source.yy) * (source.xx * source.yy - source.yx * source.xy < 0 ? -1 : 1)];
+}
+
+export function affine2Rotation(source: Readonly<Affine2>): number | undefined {
+	return source.xx * source.xx + source.xy * source.xy === 0 ? undefined : Math.atan2(source.xy, source.xx);
+}
+
+export function affine2Skew(source: Readonly<Affine2>): number | undefined {
+	if (source.xx * source.xx + source.xy * source.xy === 0 || source.yx * source.yx + source.yy * source.yy === 0) return;
+	let determinant = source.xx * source.yy - source.yx * source.xy;
+	let dot = source.xx * source.yx + source.xy * source.yy;
+	if (determinant < 0) { determinant = -determinant; dot = -dot; }
+	return Math.atan2(determinant, dot) - Math.PI / 2;
+}
+
 /** Append a local frame in place, including when the destination is its input. */
 export function appendAffine2(destination: Affine2, xx: number, xy: number, yx: number, yy: number, ox: number, oy: number): void {
 	const axx = destination.xx, axy = destination.xy, ayx = destination.yx, ayy = destination.yy;

@@ -1,4 +1,4 @@
-import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../toolchain/ts/lua/syntax/ast';
+import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import { writtenSourceExpression, type LuaWrittenExpression } from '../../../toolchain/ts/lua/semantic/written_sources';
 import type { LuaAuthoredSourceTrace } from '../../../toolchain/ts/lua/semantic/authored_sources';
@@ -27,6 +27,7 @@ export class LuaSourceReader {
 	public syntaxComplete = true;
 	private readonly traces = new Set<LuaAuthoredSourceTrace>();
 	private readonly strings = new Map<LuaWrittenExpression, string | undefined>();
+	private readonly prototypes = new Map<LuaTableConstructorExpression, LuaWrittenExpression | null | undefined>();
 
 	public constructor(public readonly snapshot: LuaSemanticWorkspaceSnapshot) {}
 
@@ -76,6 +77,13 @@ export class LuaSourceReader {
 		return value;
 	}
 
+	/** A written Lua numeric expression or alias, not executable arithmetic. */
+	public numberValue(file: FileSemanticData, expression: LuaExpression): number | undefined {
+		const source = this.expression(file, expression);
+		const value = source === undefined ? null : readLuaNumberExpression(source.expression);
+		return value === null ? undefined : value;
+	}
+
 	/** Select a field's authored source independently of mutation in the field's descendants. */
 	public member(file: FileSemanticData, expression: LuaExpression, name: string): LuaWrittenExpression | undefined {
 		const query = this.snapshot.symbolResolver.writtenSources;
@@ -115,6 +123,47 @@ export class LuaSourceReader {
 		if (unwritten && this.expression(file, expression)?.expression.kind === LuaSyntaxKind.TableConstructorExpression) return null;
 	}
 
+	/** The single table-valued __index written by an admitted builtin
+	 * setmetatable operation. This consumes binder transfer facts, never a
+	 * similarly named Lua call or a guessed class-name convention. */
+	public prototype(file: FileSemanticData, expression: LuaExpression): LuaWrittenExpression | null | undefined {
+		const source = this.expression(file, expression);
+		if (source?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) return;
+		if (this.prototypes.has(source.expression)) return this.prototypes.get(source.expression);
+		this.prototypes.set(source.expression, undefined);
+		const authored = this.snapshot.symbolResolver.authoredSources;
+		const transfer = authored.metatable(source);
+		if (transfer === null) { this.prototypes.set(source.expression, null); return null; }
+		if (transfer === undefined) return;
+		const metatable = this.resolve(transfer);
+		if (metatable === undefined) return;
+		let prototype: LuaWrittenExpression | null | undefined;
+		if (metatable.expression.kind === LuaSyntaxKind.NilLiteralExpression) prototype = null;
+		else {
+			const member = authored.member(metatable, '__index');
+			if (!member.unconditional) { this.observe(member); return; }
+			prototype = this.ownMemberState(metatable.file, metatable.expression, '__index');
+		}
+		const result = prototype?.expression.kind === LuaSyntaxKind.NilLiteralExpression ? null
+			: prototype === null || prototype?.expression.kind === LuaSyntaxKind.TableConstructorExpression ? prototype : undefined;
+		this.prototypes.set(source.expression, result);
+		return result;
+	}
+
+	/** Ordinary table prototype lineage, retaining unknown/cyclic ancestry as
+	 * unavailable. The returned occurrences preserve their actual module owners. */
+	public lineage(file: FileSemanticData, expression: LuaExpression): readonly LuaWrittenExpression[] | undefined {
+		const result: LuaWrittenExpression[] = [], seen = new Set<LuaWrittenExpression>();
+		let source = this.expression(file, expression);
+		while (source !== undefined) {
+			if (source.expression.kind !== LuaSyntaxKind.TableConstructorExpression || seen.has(source)) return;
+			seen.add(source); result.push(source);
+			const parent = this.prototype(source.file, source.expression);
+			if (parent === null) return result;
+			source = parent;
+		}
+	}
+
 	/** A unique written call application, including aliases to its result. Its
 	 * arguments remain source; this never resolves or executes the called value. */
 	public call(file: FileSemanticData, expression: LuaExpression): CallValueEntry | undefined {
@@ -143,6 +192,13 @@ export class LuaSourceReader {
 
 	/** Unique authored syntax is independent of whether the consumer represents that source. */
 	private selectExpression(trace: LuaAuthoredSourceTrace, ownMember?: OwnMemberRead): LuaWrittenExpression | undefined {
+		// Generated Number source has a deliberately closed arithmetic spelling
+		// for infinities/NaN. It is written data, not an executable Lua query.
+		if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'unknown-value') {
+			const source = trace.boundaries[0].source, syntax = writtenSourceExpression(source);
+			if (syntax !== undefined && readLuaNumberExpression(syntax) !== null)
+				return this.snapshot.symbolResolver.writtenSources.expression(source.file, syntax);
+		}
 		if (trace.terminals.length !== 1 || trace.boundaries.length !== 0
 			&& (!ownMember || trace.boundaries.some(boundary => boundary.reason !== 'prototype-write'))) return undefined;
 		const source = trace.terminals[0];

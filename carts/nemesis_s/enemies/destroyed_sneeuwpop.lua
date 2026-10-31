@@ -8,6 +8,7 @@ require('constants')
 
 local destroyed_sneeuwpop<const> = {}
 destroyed_sneeuwpop.__index = destroyed_sneeuwpop
+setmetatable(destroyed_sneeuwpop, { __index = enemy })
 
 function destroyed_sneeuwpop:ctor()
 	self.vulnerable = false
@@ -28,8 +29,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_destroyed_sneeuwpop_def,
 		class = destroyed_sneeuwpop,
-		base = enemy,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy.collider_factory(assets.collision_shape_sneeuwpop_destroyed_body_addr),
 			stage_scroll_follower_component.new,

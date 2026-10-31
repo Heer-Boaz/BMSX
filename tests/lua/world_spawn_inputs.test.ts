@@ -17,8 +17,9 @@ function actor:ctor(options)
  self.received_options = options
  assert(self.health ~= nil and self.team == 'player')
 end
-prefab.define({ def_id = 'inputs.actor', class = actor,
- defaults = { health = 10, team = 'player', shared = shared } })
+prefab.define({def_id='inputs.actor',
+ class=setmetatable(actor, {__index=world_object}),
+ defaults={ health = 10, team = 'player', shared = shared }})
 
 local first<const> = world:spawn('inputs.actor')
 local second<const> = world:spawn('inputs.actor', nil)
@@ -60,8 +61,9 @@ world:clear()
 
 	test(`Omitted spawn options have the same guest allocation cost as reused explicit input (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
-prefab.define({ def_id = 'inputs.group', class = world_object,
- defaults = { id = 'inputs.reused' } })
+prefab.define({def_id='inputs.group',
+ class=world_object,
+ defaults={ id = 'inputs.reused' }})
 local input<const> = {}
 probe = {
  omitted = function(count)
@@ -94,8 +96,12 @@ end
 function actor:ctor(options)
  assert(self.world == world and options == input)
 end
-prefab.define({ def_id = 'inputs.plain', class = {}, defaults = { id = 'inputs.reused' } })
-prefab.define({ def_id = 'inputs.hooks', class = actor, defaults = { id = 'inputs.reused' } })
+prefab.define({def_id='inputs.plain',
+ class=world_object,
+ defaults={ id = 'inputs.reused' }})
+prefab.define({def_id='inputs.hooks',
+ class=setmetatable(actor, {__index=world_object}),
+ defaults={ id = 'inputs.reused' }})
 probe = {
  plain = function(count)
   for index = 1, count do world:spawn('inputs.plain', input):mark_for_disposal() end

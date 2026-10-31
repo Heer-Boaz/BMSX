@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local tile_strip_collider_2d_component<const> = require('cartlib/collision/tile_strip_collider_2d_component')
@@ -5,13 +6,13 @@ local tile_strip_component<const> = require('cartlib/component/tile_strip_compon
 local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local world_object<const> = require('cartlib/world/world_object')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 local collision_storage<const> = require('collision_storage')
 require('constants')
 
 local sneeuwpop_ray<const> = {}
 sneeuwpop_ray.__index = sneeuwpop_ray
+setmetatable(sneeuwpop_ray, { __index = object_2d })
 
 local sneeuwpop_ray_expand_timeline_id<const> = 'nemesis_s.enemy.sneeuwpop_ray.expand'
 local sneeuwpop_ray_contract_timeline_id<const> = 'nemesis_s.enemy.sneeuwpop_ray.contract'
@@ -98,8 +99,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_sneeuwpop_ray_def,
 		class = sneeuwpop_ray,
-		base = world_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			new_ray_strip,
 			new_ray_collider,

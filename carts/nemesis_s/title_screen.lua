@@ -12,6 +12,7 @@ local timeline_component<const> = require('cartlib/timeline/timeline_component')
 
 local title_screen<const> = {}
 title_screen.__index = title_screen
+setmetatable(title_screen, { __index = world_object })
 
 local title_definition_id<const> = 'nemesis_s.title_screen'
 local title_instance_id<const> = 'nemesis_s.title_screen'
@@ -394,7 +395,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = title_definition_id,
 		class = title_screen,
-		base = world_object,
 		components = {
 			timeline_component.new,
 			fsm_component.factory({ title_fsm_id }),

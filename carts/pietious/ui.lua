@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local image<const> = require('cartlib/gx/image')
@@ -11,6 +12,7 @@ require('constants')
 
 local ui<const> = {}
 ui.__index = ui
+setmetatable(ui, { __index = world_object })
 local hud_hidden_events<const> = {
 	'intro',
 	'story',

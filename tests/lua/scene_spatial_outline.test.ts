@@ -11,12 +11,12 @@ import { layoutSceneHierarchy } from '../../ide/workbench/contrib/scene_editor/h
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 
 const PREFAB = `local prefab = require('cartlib/world/prefab')
-prefab.define({ def_id = 'node', class = {}, spatial = { family = '2d', authority = 'affine' } })`;
+prefab.define({ def_id = 'node', class = require('cartlib/world/object_2d') })`;
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('fixture', { objects = {
- { member_id = 'leaf', definition_id = 'node', spatial = { parent_id = 'child' } },
+ { member_id = 'leaf', definition_id = 'node', parent = 'child' },
  { member_id = 'other', definition_id = 'node' },
- { member_id = 'child', definition_id = 'node', spatial = { parent_id = 'parent' } },
+ { member_id = 'child', definition_id = 'node', parent = 'parent' },
  { member_id = 'parent', definition_id = 'node' },
 } })`;
 
@@ -60,9 +60,9 @@ test('nested Scene disclosure survives canonical edits and reading-state restora
 test('unresolved authored parent relationships stay visible as unavailable facts, not invented edges', t => {
 	const source = `local scenes = require('cartlib/world/scene_library')
 scenes.register('fixture', { objects = {
- { member_id = 'a', definition_id = 'node', spatial = { parent_id = 'b' } },
- { member_id = 'b', definition_id = 'node', spatial = { parent_id = 'a' } },
- { member_id = 'missing', definition_id = 'node', spatial = { parent_id = 'absent' } },
+ { member_id = 'a', definition_id = 'node', parent = 'b' },
+ { member_id = 'b', definition_id = 'node', parent = 'a' },
+ { member_id = 'missing', definition_id = 'node', parent = 'absent' },
 } })`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
 		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB]]);
@@ -97,7 +97,7 @@ test('Scene hierarchy follows provider capabilities without rebuilding for unrel
 	assert.equal(view.hierarchy.outline.roots[0], root, 'unchanged topology retains its presentation identities');
 	const prefabResource = f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'prefabs.lua' })!;
 	const prefabs = resolveLuaTextFileModel(f.models, f.sources.catalog, prefabResource);
-	prefabs.pushEditOperations([{ offset: PREFAB.indexOf("'affine'"), deleteLength: 8, text: "'root_origin'" }]);
+	prefabs.pushEditOperations([{ offset: PREFAB.indexOf('object_2d'), deleteLength: 9, text: 'world_object' }]);
 	view.hierarchy.refresh();
 	assert.equal(f.model.version, version, 'provider admission is independent of edits to the Scene document');
 	assert.notEqual(view.hierarchy.outline.roots[0], root);
@@ -127,7 +127,7 @@ test('Scene reading position restores without remeasuring unchanged hierarchy co
 test('flat authored source can project and measure a deep hierarchy without recursive host visitors', t => {
 	configureFontVariant('tiny');
 	const members = Array.from({ length: 6000 }, (_, index) => `{ member_id = 'm${index}', definition_id = 'node'${index === 0 ? ''
-		: `, spatial = { parent_id = 'm${index - 1}' }`} }`);
+		: `, parent = 'm${index - 1}'`} }`);
 	const source = `local scenes = require('cartlib/world/scene_library')\nscenes.register('deep', { objects = {\n${members.join(',\n')}\n} })`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
 		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB]]);

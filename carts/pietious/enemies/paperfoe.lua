@@ -11,6 +11,7 @@ local new_boundary<const> = screen_boundary_component.factory({
 
 local paperfoe<const> = {}
 paperfoe.__index = paperfoe
+setmetatable(paperfoe, { __index = enemy_base })
 
 function paperfoe:ctor()
 	local velocity<const> = self:add_component(velocity_component.new(self, self))
@@ -25,8 +26,6 @@ function paperfoe.register()
 	prefab.define({
 		def_id = 'enemy.paperfoe',
 		class = paperfoe,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { enemy_base.new_collider, new_boundary },
 		defaults = {
 			speed_x_num = 0,

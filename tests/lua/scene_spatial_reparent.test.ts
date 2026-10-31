@@ -7,16 +7,16 @@ import { relativeAffine2 } from '../../ide/common/affine2';
 import { relativeAffine3 } from '../../machine/ts/common/affine3';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
-import { formatLuaNumberExpression, readLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
+import { formatLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
 import { materializeCpuCompletionValues } from './cpu_test_harness';
 import { RunResult } from '../../machine/ts/machine/cpu/cpu';
 
 const PREFABS = `local prefab = require('cartlib/world/prefab')
-prefab.define({def_id='node2',class={},spatial={family='2d',authority='affine'}})
-prefab.define({def_id='node3',class={},spatial={family='3d',authority='affine'}})
-prefab.define({def_id='body',class={},spatial={family='2d',authority='root_origin'}})`;
+prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
+prefab.define({def_id='node3',class=require('cartlib/world/object_3d')})
+prefab.define({def_id='body',class=require('cartlib/world/object_2d')})`;
 
 function fixture(t: TestContext, objects: string, prefabs = PREFABS) {
 	const source = `local scenes = require('cartlib/world/scene_library')\nrequire('prefabs')\nscenes.register('fixture', {objects={\n${objects}\n}})`;
@@ -25,23 +25,26 @@ function fixture(t: TestContext, objects: string, prefabs = PREFABS) {
 	const select = (id: string) => {
 		const document = f.documents.get(f.model), scene = document.scenes[0];
 		const index = scene.objects.findIndex(entry => entry.kind === 'object' && stringLiteralValue(entry.memberId) === id);
-		assert.notEqual(index, -1); context.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index });
+		assert.notEqual(index, -1);
+		assert.equal(context.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index }), true);
 		return { document, scene, member: scene.objects[index] };
 	};
 	const values = (id: string) => {
 		const { member } = select(id); assert.ok(member.kind === 'object');
-		return member.spatial!.coefficients!.map(field => readLuaNumberExpression(field.value));
+		const local=context.selectedLocalTransform!;
+		return local.family === '2d' ? [local.xx,local.xy,local.yx,local.yy,local.ox,local.oy]
+			: [local.xx,local.xy,local.xz,local.yx,local.yy,local.yz,local.zx,local.zy,local.zz,local.ox,local.oy,local.oz];
 	};
 	return { ...f, context, source, select, values };
 }
 
 test('reparent publishes a full affine and parent as one source edit without prebuilding candidate edits', t => {
 	const f = fixture(t, `
- {member_id='child',definition_id='node2',spatial={parent_id='old',local_transform={1,0,0,1,2,3}},options={note='untouched'}},
- {member_id='old',definition_id='node2',spatial={local_transform={1,0,0,1,100,200}}},
- {member_id='target',definition_id='node2',spatial={local_transform={1,0,0,1,10,20}}},
+ {member_id='child',definition_id='node2',parent='old',position = { x = 2, y = 3 },options={note='untouched'}},
+ {member_id='old',definition_id='node2',position = { x = 100, y = 200 }},
+ {member_id='target',definition_id='node2',position = { x = 10, y = 20 }},
  {member_id='Scene Root',definition_id='node2'},
- {member_id='leaf',definition_id='node2',spatial={parent_id='child'}},`);
+ {member_id='leaf',definition_id='node2',parent='child'},`);
 	f.select('child');
 	const writer = t.mock.method(SceneSpatialProjection.prototype, 'reparentEdits');
 	const request = f.context.captureReparent()!; assert.ok(request);
@@ -60,26 +63,26 @@ test('reparent publishes a full affine and parent as one source edit without pre
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
 });
 
-test('Keep Local admits computed local data and singular parents; physical roots and dimensions remain intrinsic', t => {
+test('Keep Local admits computed local data and singular parents while class dimensions remain intrinsic', t => {
 	const f = fixture(t, `
- {member_id='child',definition_id='node2',spatial={local_transform=build_pose()}},
- {member_id='singular',definition_id='node2',spatial={local_transform={0,0,0,0,8,9}}},
+ {member_id='child',definition_id='node2',transform=build_pose()},
+ {member_id='singular',definition_id='node2',transform = { xx = 0, xy = 0, yx = 0, yy = 0, ox = 8, oy = 9 }},
  {member_id='body',definition_id='body'},
  {member_id='mesh',definition_id='node3'},`);
 	f.select('child'); assert.equal(f.context.captureReparent(), undefined);
 	const local = f.context.captureReparent('keep_local')!;
 	assert.ok(!local.choices.some(choice => choice.label === 'mesh'));
 	assert.equal(local.apply(local.choices.find(choice => choice.label === 'singular')!), true);
-	assert.ok(f.model.buffer.getText().includes('local_transform=build_pose()'));
-	f.select('body'); assert.equal(f.context.canReparentSelectedMember('keep_local'), false);
+	assert.ok(f.model.buffer.getText().includes('transform=build_pose()'));
+	f.select('body'); assert.equal(f.context.canReparentSelectedMember('keep_local'), true);
 });
 
 test('3D Keep World preserves singular child affines and detaches without any parent inverse', t => {
 	const f = fixture(t, `
- {member_id='child',definition_id='node3',spatial={parent_id='old',local_transform={1,0,0,0,0,0,0,0,-1,4,5,6}}},
- {member_id='old',definition_id='node3',spatial={local_transform={2,0,0,1,-1,0,0,1,3,10,20,30}}},
- {member_id='target',definition_id='node3',spatial={local_transform={1,0,0,0,1,0,0,0,1,100,-20,5}}},
- {member_id='singular',definition_id='node3',spatial={local_transform={0,0,0,0,0,0,0,0,0,0,0,0}}},`);
+ {member_id='child',definition_id='node3',parent='old',transform = { xx = 1, xy = 0, xz = 0, yx = 0, yy = 0, yz = 0, zx = 0, zy = 0, zz = -1, ox = 4, oy = 5, oz = 6 }},
+ {member_id='old',definition_id='node3',transform = { xx = 2, xy = 0, xz = 0, yx = 1, yy = -1, yz = 0, zx = 0, zy = 1, zz = 3, ox = 10, oy = 20, oz = 30 }},
+ {member_id='target',definition_id='node3',position = { x = 100, y = -20, z = 5 }},
+ {member_id='singular',definition_id='node3',transform = { xx = 0, xy = 0, xz = 0, yx = 0, yy = 0, yz = 0, zx = 0, zy = 0, zz = 0, ox = 0, oy = 0, oz = 0 }},`);
 	f.select('child'); const request = f.context.captureReparent()!;
 	assert.ok(!request.choices.some(choice => choice.label === 'singular'));
 	assert.equal(request.apply(request.choices.find(choice => choice.label === 'target')!), true);
@@ -107,11 +110,11 @@ test('captured operations retire on source, selection and semantic dependency ch
 test('hierarchy facts are stable between admitted generations and unknown edges never become roots or siblings', t => {
 	const f = fixture(t, `
  {member_id='a',definition_id='node2'},
- {member_id='unknown',definition_id='node2',spatial={parent_id=choose_parent()}},
+ {member_id='unknown',definition_id='node2',parent=choose_parent()},
  {member_id='b',definition_id='node2'},
- {member_id='missing',definition_id='node2',spatial={parent_id='absent'}},
- {member_id='cycle1',definition_id='node2',spatial={parent_id='cycle2'}},
- {member_id='cycle2',definition_id='node2',spatial={parent_id='cycle1'}},`);
+ {member_id='missing',definition_id='node2',parent='absent'},
+ {member_id='cycle1',definition_id='node2',parent='cycle2'},
+ {member_id='cycle2',definition_id='node2',parent='cycle1'},`);
 	const { scene } = f.select('b'); f.context.refresh();
 	const parents = f.context.getSpatialParents(scene), generation = f.context.spatialGeneration;
 	const admissions = t.mock.method(f.documents, 'get');
@@ -125,19 +128,19 @@ test('hierarchy facts are stable between admitted generations and unknown edges 
 });
 
 test('known rejected incoming edges disable ordinary and subtree deletion instead of leaving invalid source behind', t => {
-	for (const definition of ['body', 'node3']) {
-		const f = fixture(t, `{member_id='parent',definition_id='node2',spatial={local_transform={2,0,0,2,10,20}}},
- {member_id='child',definition_id='${definition}',spatial={parent_id='parent'}},`);
+	for (const definition of ['node3']) {
+		const f = fixture(t, `{member_id='parent',definition_id='node2',transform = { xx = 2, xy = 0, yx = 0, yy = 2, ox = 10, oy = 20 }},
+ {member_id='child',definition_id='${definition}',parent='parent'},`);
 		f.select('parent'); assert.equal(f.context.canRemoveSelectedMember(), false); assert.equal(f.context.canRemoveSelectedSubtree(), false);
 		assert.equal(f.context.removeSelectedMember(), false); assert.equal(f.context.removeSelectedSubtree(), false);
 		assert.equal(f.model.buffer.getText(), f.source);
 	}
 });
 
-test('required prefab field proof rejects computed overrides rather than inventing identity or authority', t => {
-	for (const spatial of ["{family='2d',authority='affine',[unknown_key()]='3d'}", "{family='2d',authority='affine',local_transform=build_pose()}"]) {
+test('required prefab source proof rejects computed class or pose contributions rather than inventing defaults', t => {
+	for (const fields of ["class=choose_class()", "class=require('cartlib/world/object_2d'),[unknown_key()]='3d'", "class=require('cartlib/world/object_2d'),position=build_position()"]) {
 		const f = fixture(t, `{member_id='child',definition_id='node2'}, {member_id='target',definition_id='node2'},`,
-			`local prefab=require('cartlib/world/prefab')\nprefab.define({def_id='node2',class={},spatial=${spatial}})`);
+			`local prefab=require('cartlib/world/prefab')\nprefab.define({def_id='node2',${fields}})`);
 		f.select('child'); assert.equal(f.context.canReparentSelectedMember(), false);
 		assert.equal(f.model.buffer.getText(), f.source);
 	}

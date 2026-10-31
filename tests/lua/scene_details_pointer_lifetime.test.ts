@@ -16,12 +16,13 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} hidden Details cannot
 	const pane = f.firstGroup.panes.activePane; assert.ok(pane instanceof SceneEditorPane);
 	pane.control.hierarchy.focus(); f.key('Home'); f.key('ArrowDown');
 	const view = pane.control.view, details = pane.control.details;
-	assert.ok(view.authoring.selection?.kind === 'member');
+	const initialSelection = view.authoring.selection; assert.ok(initialSelection?.kind === 'member');
 	f.editor.commands.execute('sceneEditor.details', pane.commandTarget); f.update();
 	assert.equal(view.layout.mode, 'details');
 	assert.ok(details.options.controls.length > 0, 'the selected authored member admits real expression editors');
 	f.editor.commands.execute('sceneEditor.outline', pane.commandTarget); f.update(); f.key('Home');
-	assert.equal(view.layout.mode, 'outline'); assert.equal(view.authoring.selection?.kind, 'scene');
+	assert.equal(view.layout.mode, 'outline');
+	const outlineSelection = view.authoring.selection; assert.equal(outlineSelection?.kind, 'scene');
 	assert.equal(view.details.optionProperties.length, 0);
 	const before = view.authoring.workingCopy.buffer.getText();
 	const tree = view.hierarchy.outline, root = tree.rows[0], layout = tree.layout;
@@ -34,12 +35,12 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} hidden Details cannot
 			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
-	assert.equal(view.authoring.selection?.kind, 'scene');
+	const clickedSelection = view.authoring.selection; assert.equal(clickedSelection?.kind, 'scene');
 	assert.equal(view.authoring.workingCopy.buffer.getText(), before); assert.equal(view.authoring.workingCopy.dirty, false);
 	f.editor.commands.execute('sceneEditor.details', pane.commandTarget); f.update();
 	assert.equal(view.layout.mode, 'details'); assert.equal(details.options.controls.length, 0);
 	f.editor.commands.execute('sceneEditor.outline', pane.commandTarget); f.update(); f.key('ArrowDown');
 	f.editor.commands.execute('sceneEditor.details', pane.commandTarget); f.update();
-	assert.ok(view.authoring.selection?.kind === 'member');
+	const nextSelection = view.authoring.selection; assert.ok(nextSelection?.kind === 'member');
 	assert.equal(details.options.controls.length, view.details.optionProperties.length);
 });

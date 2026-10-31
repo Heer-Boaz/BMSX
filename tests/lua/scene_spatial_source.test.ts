@@ -1,301 +1,151 @@
-import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneDetailsProjection } from '../../ide/workbench/contrib/scene_editor/details_projection';
-import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
-import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
-import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
-import { setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { inputFocus, InputFocusScope } from '../../ide/input/focus';
-import { pointerCapture } from '../../ide/input/pointer/capture';
-import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
-import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
-import { parseLuaNumberInput } from '../../ide/language/lua/source_edits';
-import { readLuaNumberLiteral, readLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
 import { SceneSpatialProjection } from '../../ide/workbench/contrib/scene_editor/spatial_projection';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
-const SOURCE = `local scenes = require('cartlib/world/scene_library')
-scenes.register('fixture', { objects = {
- { member_id = 'child', definition_id = 'sprite',
-   spatial = { parent_id = 'parent', local_transform = { -1, 0.5, 2, 1, 12.25, -3.5 } },
-   options = { imgid = 'image', order = 5, health = 7 } },
- { member_id = 'parent', definition_id = 'mesh',
-   spatial = { local_transform = { 1, 0, 0, 0.5, 1, 0, 0, 0, -2, 30, 40, 50 } } },
- { member_id = 'built', definition_id = 'sprite', spatial = { local_transform = build_pose() } },
- { member_id = 'controller', definition_id = 'controller' },
-} })`;
+const PREFABS = `local prefab=require('cartlib/world/prefab')
+local object_2d=require('cartlib/world/object_2d')
+local object_3d=require('cartlib/world/object_3d')
+prefab.define({def_id='node2',class=object_2d})
+prefab.define({def_id='node3',class=object_3d})
+prefab.define({def_id='inherited',class=object_2d,position={x=7,y=9},rotation=0,scale={x=-2,y=3}})
+prefab.define({def_id='logic'})`;
 
-test('Scene source retains full 2D/3D affines, authored parents and component inputs without evaluating Lua', t => {
-	const f = createSceneSourceFixture(t, SOURCE), document = f.documents.get(f.model), scene = document.scenes[0];
-	const authoring = new SceneAuthoringContext(f.model, f.documents), projection = new SceneDetailsProjection(authoring);
-	t.after(() => authoring.dispose());
-	const child = scene.objects[0]; assert.ok(child.kind === 'object' && child.spatial !== null);
-	assert.equal(child.spatial.coefficients!.length, 6);
-	assert.deepEqual(child.spatial.origin.map(field => readLuaNumberLiteral(field.value)), [12.25, -3.5]);
-	assert.ok(child.spatial.parentId !== null && child.options !== null);
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: child, index: 0 }); projection.refresh();
-	assert.deepEqual(projection.subject!.properties.map(property => [property.axis, property.value]), [['x', 12.25], ['y', -3.5]]);
-	const fields = projection.subject!.optionProperties;
-	assert.ok(fields.some(property => property.field === child.spatial!.parentId));
-	assert.equal(fields.filter(property => child.spatial!.coefficients!.includes(property.field)).length, 4,
-		'local origin is not duplicated in the generic authored-property lane');
-	assert.ok(fields.some(property => property.label === 'order' && property.sourceText === '5'));
-	const parent = scene.objects[1]; assert.ok(parent.kind === 'object' && parent.spatial !== null);
-	assert.equal(parent.spatial.coefficients!.length, 12);
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: parent, index: 1 }); projection.refresh();
-	assert.deepEqual(projection.subject!.properties.map(property => property.value), [30, 40, 50]);
-	for (const index of [2, 3]) {
-		authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index }); projection.refresh();
-		assert.equal(projection.subject!.properties.length, 0, 'computed or absent affines never invent editable coordinates');
-	}
-	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.dirty, false);
-});
-
-test('local-origin input accepts fractional Lua Numbers and preserves the basis, parent and canonical document Undo', t => {
-	configureFontVariant('tiny');
-	const f = createSceneSourceFixture(t, SOURCE), document = f.documents.get(f.model), scene = document.scenes[0];
-	const authoring = new SceneAuthoringContext(f.model, f.documents), view = new SceneDetailsViewState(authoring);
-	const scope = new InputFocusScope(Symbol('spatial source'), inputFocus.workbenchScope), parent = inputFocus.createTarget(null, scope);
-	const bounds = { left: 0, top: 0, right: 320, bottom: 160 }, menu = new ContextMenuController(inputFocus, pointerCapture, bounds);
-	const command = { isEnabled: () => true, run: () => {} };
-	const control = new SceneDetailsControl({
-		isEnabled: (id, target) => inputFocus.getCommand(id, target)?.isEnabled() === true,
-		execute: (id, target) => inputFocus.executeCommand(id, target),
-	}, menu, scope, parent, { outline: command, details: command }, new WorkbenchMenu([], undefined));
-	t.after(() => { control.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); });
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
-	control.setView(view, bounds);
-	const field = control.controls[0]; setFieldText(field.field, '-1.25e2', true);
-	assert.equal(field.commit(), true);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('12.25, -3.5', '-125, -3.5'));
-	f.model.undo(); control.update();
-	assert.equal(f.model.buffer.getText(), SOURCE);
-	assert.equal(control.controls[2].field.readOnly, true, 'a 2D declaration does not admit a fabricated Z edit');
-});
-
-test('numeric entry uses Lua literal syntax, not executable expressions or host integer coercion', () => {
-	for (const [text, value] of [['0x100', 256], ['-0.125', -0.125], ['1.25e2', 125]] as const) {
-		assert.deepEqual(parseLuaNumberInput(text), { value });
-	}
-	for (const text of ['1 / 2', 'compute()', '1, 2', '-', '1e1000']) assert.ok('error' in parseLuaNumberInput(text));
-});
-
-test('Delete Member preserves all direct 2D children and untouched source in one document Undo', t => {
-	const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('fixture', { objects = {
- -- child documentation stays
- { member_id = 'child', definition_id = 'sprite', spatial = {
-   parent_id = 'obsolete', -- old relationship comment stays
-   parent_id = 'parent', -- current relationship comment stays
-   local_transform = { 1, 0, 2, -1, 6, 7 }, -- affine comment stays
- }, options = { team = 'blue' } },
- { member_id = 'ancestor', definition_id = 'sprite', spatial = { local_transform = { 2, 0, 1, 3, 10, 20 } } },
- { member_id = 'parent', definition_id = 'sprite', spatial = { parent_id = 'ancestor', local_transform = { 0, 1, -1, 0, 4, 5 } } },
- { member_id = 'sibling', definition_id = 'sprite', spatial = { parent_id = 'parent', local_transform = { 1, 0, 0, 1, 1, 2 } } },
- { member_id = 'leaf', definition_id = 'sprite', spatial = { parent_id = 'child', local_transform = { 1, 0, 0, 1, 8, 9 } } },
- { member_id = 'other', definition_id = 'sprite', spatial = { local_transform = build_pose() } },
-} })`;
-	const f = createSceneSourceFixture(t, source), authoring = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => authoring.dispose());
-	const document = f.documents.get(f.model), scene = document.scenes[0];
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[2], index: 2 });
-	const projection = t.mock.method(SceneSpatialProjection.prototype, 'memberRemovalEdits');
-	assert.equal(authoring.canRemoveSelectedMember(), true);
-	const edits = projection.mock.calls[0].result;
-	for (let index = 0; index < 20; index++) assert.equal(authoring.canRemoveSelectedMember(), true);
-	assert.ok(projection.mock.calls.every(call => call.result === edits), 'stable command admission retains its edit batch');
-	let changes = 0;
-	const unbind = f.model.onDidChangeContent(() => changes++); t.after(unbind);
-	assert.equal(authoring.removeSelectedMember(), true);
-	assert.equal(changes, 1, 'children and parent publish one complete source generation');
-	const changed = f.documents.get(f.model).scenes[0];
-	assert.deepEqual(changed.objects.map(entry => entry.kind === 'object' ? stringLiteralValue(entry.memberId) : undefined),
-		['child', 'ancestor', 'sibling', 'leaf', 'other']);
-	for (const [index, expected] of [[0, [1, 3, 4, 6, 15, 53]], [2, [1, 3, -2, 0, 20, 38]]] as const) {
-		const child = changed.objects[index]; assert.ok(child.kind === 'object');
-		assert.equal(child.spatial!.parentId, null);
-		assert.deepEqual(child.spatial!.coefficients!.map(field => readLuaNumberLiteral(field.value)), expected);
-	}
-	const text = f.model.buffer.getText();
-	assert.ok(text.includes('-- old relationship comment stays') && text.includes('-- current relationship comment stays')
-		&& text.includes('-- affine comment stays') && text.includes('-- child documentation stays'));
-	for (const untouched of ["options = { team = 'blue' }", "{ member_id = 'leaf', definition_id = 'sprite', spatial = { parent_id = 'child', local_transform = { 1, 0, 0, 1, 8, 9 } } }",
-		"{ member_id = 'other', definition_id = 'sprite', spatial = { local_transform = build_pose() } }"])
-		assert.ok(text.includes(untouched), 'deletion does not reprint unrelated canonical source');
-	f.model.undo(); assert.equal(f.model.buffer.getText(), source);
-	f.model.redo(); assert.equal(f.model.buffer.getText(), text);
-});
-
-test('Delete Member preserves full 3D shear and singular ancestors without an inverse or TRS round trip', t => {
-	const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('fixture', { objects = {
- { member_id = 'child', definition_id = 'mesh', spatial = { parent_id = 'parent', local_transform = { 1, 1, 0, 0, 1, 1, 1, 0, 1, 2, 3, 4 } } },
- { member_id = 'parent', definition_id = 'mesh', spatial = { parent_id = 'ancestor', local_transform = { 1, 0, 0, 0, 0, 0, 0, 0, -1, 4, 5, 6 } } },
- { member_id = 'ancestor', definition_id = 'mesh', spatial = { local_transform = { 2, 0, 0, 1, -1, 0, 0, 1, 3, 10, 20, 30 } } },
-} })`;
-	const f = createSceneSourceFixture(t, source), authoring = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => authoring.dispose());
-	const document = f.documents.get(f.model), scene = document.scenes[0];
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
-	assert.equal(authoring.removeSelectedMember(), true);
-	const child = f.documents.get(f.model).scenes[0].objects[0]; assert.ok(child.kind === 'object');
-	assert.equal(child.spatial!.parentId, null);
-	assert.deepEqual(child.spatial!.coefficients!.map(field => readLuaNumberLiteral(field.value)), [2, 0, 0, 0, -1, -3, 2, -1, -3, 27, 17, 36]);
-	f.model.undo(); assert.equal(f.model.buffer.getText(), source);
-});
-
-test('Delete Member admits inherited prefab affines at the current dependency generation', t => {
-	const prefabSource = `local prefab = require('cartlib/world/prefab')
-prefab.define({ def_id = 'parent', class = {}, spatial = { family = '2d', authority = 'affine', local_transform = { 2, 0, 1, 3, 10, 20 } } })
-prefab.define({ def_id = 'child', class = {}, spatial = { family = '2d', authority = 'affine' } })`;
-	const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('fixture', { objects = {
- { member_id = 'child', definition_id = 'child', spatial = { parent_id = 'parent' } },
- { member_id = 'parent', definition_id = 'parent' },
- { member_id = 'explicit_default', definition_id = 'child', spatial = { parent_id = 'parent', local_transform = nil } },
- { member_id = 'nonspatial', definition_id = 'controller', spatial = nil },
-} })`;
+function fixture(t: TestContext, members: string, prefix = '', prefabs = PREFABS) {
+	const source = `local scenes=require('cartlib/world/scene_library')
+${prefix}
+scenes.register('fixture',{objects={${members}}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
-		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabSource]]);
-	const authoring = new SceneAuthoringContext(f.model, f.documents); t.after(() => authoring.dispose());
-	const document = f.documents.get(f.model), scene = document.scenes[0];
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
-	assert.equal(authoring.canRemoveSelectedMember(), true);
+		[['cartlib/world/prefab.lua', 'return {define=function() end}'], ['prefabs.lua', prefabs]]);
+	const context = new SceneAuthoringContext(f.model, f.documents);
+	t.after(() => context.dispose());
+	const select = (id: string) => {
+		context.refresh(); const document = f.documents.get(f.model), scene = document.scenes[0];
+		const index = scene.objects.findIndex(entry => entry.kind === 'object' && stringLiteralValue(entry.memberId) === id);
+		assert.notEqual(index, -1);
+		context.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index });
+		return scene.objects[index];
+	};
+	return { ...f, source, context, select };
+}
+
+test('semantic placement derives dimension from actual class lineage and keeps ordinary fields separate', t => {
+	const f = fixture(t, `
+ {member_id='child',definition_id='node2',parent='parent',position={x=12.25,y=-3.5},rotation=.25,scale={x=-2,y=3},skew=.5,options={health=7}},
+ {member_id='parent',definition_id='node2'},
+ {member_id='mesh',definition_id='node3',position={x=30,y=40,z=50}},
+ {member_id='computed',definition_id='node2',position=build_position()},
+ {member_id='logic',definition_id='logic',position={x=1,y=2}},`);
+	const projection = new SceneDetailsProjection(f.context);
+	f.select('child'); projection.refresh();
+	assert.deepEqual(projection.subject!.properties.map(property => property.value), [12.25, -3.5]);
+	assert.deepEqual(projection.subject!.optionProperties.map(property => property.label), ['health']);
+	assert.equal(f.context.selectedLocalTransform!.family, '2d');
+	f.select('mesh'); projection.refresh();
+	assert.deepEqual(projection.subject!.properties.map(property => property.value), [30, 40, 50]);
+	for (const id of ['computed', 'logic']) { f.select(id); projection.refresh(); assert.equal(projection.subject!.properties.length, 0); }
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('numeric position edits preserve exact parent, rotation, scale and comments in one shared document Undo', t => {
+	const f = fixture(t, `{member_id='child',definition_id='node2',parent='parent',
+ position={x=(12.25),y=-3.5}, -- placement stays
+ rotation=.25,scale={x=-2,y=3},skew=.5,options={health=7}},
+ {member_id='parent',definition_id='node2'}`);
+	f.select('child'); const request = f.context.captureLocalPosition()!;
+	assert.equal(request.apply('x', -125), true);
+	assert.equal(f.model.buffer.getText(), f.source.replace('12.25', '-125'));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('Delete Member materializes exact sheared survivor poses before editing the parent and leaves descendants attached', t => {
+	const f = fixture(t, `
+ -- child documentation stays
+ {member_id='child',definition_id='node2',parent='obsolete',parent='parent',
+ transform={xx=1,xy=0,yx=2,yy=-1,ox=6,oy=7},options={team='blue'}},
+ {member_id='ancestor',definition_id='node2',transform={xx=2,xy=0,yx=1,yy=3,ox=10,oy=20}},
+ {member_id='parent',definition_id='node2',parent='ancestor',transform={xx=0,xy=1,yx=-1,yy=0,ox=4,oy=5}},
+ {member_id='sibling',definition_id='node2',parent='parent',position={x=1,y=2}},
+ {member_id='leaf',definition_id='node2',parent='child',position={x=8,y=9}},`);
+	const before = f.documents.get(f.model), beforeScene = before.scenes[0];
+	const read = f.documents.getSpatialProjection(f.model, before)!.readScene(before, beforeScene);
+	const expected = new Map(read.entries.map(entry => [stringLiteralValue(entry.memberId), read.worlds.get(entry)]));
+	f.select('parent'); const projection = t.mock.method(SceneSpatialProjection.prototype, 'memberRemovalEdits');
+	assert.equal(f.context.canRemoveSelectedMember(), true);
+	const admitted = projection.mock.calls[0].result;
+	for (let index = 0; index < 20; index++) assert.equal(f.context.canRemoveSelectedMember(), true);
+	assert.ok(projection.mock.calls.every(call => call.result === admitted));
+	let changes = 0; t.after(f.model.onDidChangeContent(() => changes++));
+	assert.equal(f.context.removeSelectedMember(), true); assert.equal(changes, 1);
+	f.select('child'); assert.deepEqual(f.context.selectedLocalTransform, expected.get('child'));
+	const next = f.documents.get(f.model), nextScene = next.scenes[0], nextRead = f.documents.getSpatialProjection(f.model, next)!.readScene(next, nextScene);
+	assert.deepEqual(nextScene.objects.map(entry => entry.kind === 'object' ? stringLiteralValue(entry.memberId) : undefined), ['child', 'ancestor', 'sibling', 'leaf']);
+	for (const entry of nextRead.entries) assert.deepEqual(nextRead.worlds.get(entry), expected.get(stringLiteralValue(entry.memberId)));
+	assert.ok(f.model.buffer.getText().includes("options={team='blue'}"));
+	assert.ok(f.model.buffer.getText().includes('-- child documentation stays'));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('3D survivor detachment retains shear and a singular child without requiring any inverse', t => {
+	const f = fixture(t, `{member_id='child',definition_id='node3',parent='parent',
+ transform={xx=2,xy=0,xz=0,yx=0,yy=0,yz=0,zx=2,zy=1,zz=-1,ox=4,oy=5,oz=6}},
+ {member_id='parent',definition_id='node3',transform={xx=1,xy=0,xz=0,yx=2,yy=-1,yz=0,zx=0,zy=3,zz=0,ox=10,oy=20,oz=30}}`);
+	const document = f.documents.get(f.model), scene = document.scenes[0], read = f.documents.getSpatialProjection(f.model, document)!.readScene(document, scene);
+	const expected = read.worlds.get(read.entries[0]);
+	f.select('parent'); assert.equal(f.context.removeSelectedMember(), true);
+	const child = f.select('child'); assert.equal(child.kind, 'object');
+	assert.deepEqual(f.context.selectedLocalTransform, expected);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('inherited semantic defaults stay source-owned and consumer overrides follow the current provider generation', t => {
+	const f = fixture(t, `{member_id='child',definition_id='inherited',parent='parent'},
+ {member_id='parent',definition_id='node2'}`);
+	f.select('child'); assert.equal(f.context.selectedLocalTransform!.ox, 7);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'prefabs.lua' })!;
-	const prefabs = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
-	prefabs.pushEditOperations([{ offset: prefabSource.indexOf('10, 20'), deleteLength: 6, text: '30, 40' }]);
-	assert.equal(authoring.removeSelectedMember(), true);
-	const child = f.documents.get(f.model).scenes[0].objects[0]; assert.ok(child.kind === 'object');
-	assert.equal(child.spatial!.parentId, null);
-	assert.deepEqual(child.spatial!.coefficients!.map(field => readLuaNumberLiteral(field.value)), [2, 0, 1, 3, 30, 40]);
-	const explicit = f.documents.get(f.model).scenes[0].objects[1]; assert.ok(explicit.kind === 'object');
-	assert.equal(explicit.spatial!.parentId, null);
-	assert.deepEqual(explicit.spatial!.coefficients!.map(field => readLuaNumberLiteral(field.value)), [2, 0, 1, 3, 30, 40]);
-	assert.equal(prefabs.buffer.getText(), prefabSource.replace('10, 20', '30, 40'), 'Scene deletion does not rewrite its prefab provider');
-	f.model.undo(); assert.equal(f.model.buffer.getText(), source);
+	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
+	provider.pushEditOperations([{ offset: PREFABS.indexOf('x=7'), deleteLength: 3, text: 'x=11' }]);
+	f.select('child'); assert.equal(f.context.selectedLocalTransform!.ox, 11);
+	const beforeProvider = provider.buffer.getText();
+	assert.equal(f.context.captureLocalPosition()!.apply('y', 13), true);
+	assert.equal(provider.buffer.getText(), beforeProvider);
+	assert.equal(f.context.selectedLocalTransform!.xx, -2); assert.equal(f.context.selectedLocalTransform!.yy, 3);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
 });
 
-test('Delete Member is unavailable only when the affected pose or relationship cannot be projected', t => {
-	for (const [parentPose, childPose] of [['build_pose()', '{ 1, 0, 0, 1, 2, 3 }'], ['{ 1, 0, 0, 1, 2, 3 }', 'build_pose()']] as const) {
-		const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('fixture', { objects = {
- { member_id = 'parent', definition_id = 'sprite', spatial = { local_transform = ${parentPose} } },
- { member_id = 'child', definition_id = 'sprite', spatial = { parent_id = 'parent', local_transform = ${childPose} } },
- { member_id = 'other', definition_id = 'sprite', spatial = { local_transform = unknown() } },
-} })`;
-		const f = createSceneSourceFixture(t, source, `scene${parentPose.startsWith('build') ? 1 : 2}.lua`);
-		const authoring = new SceneAuthoringContext(f.model, f.documents); t.after(() => authoring.dispose());
-		const document = f.documents.get(f.model), scene = document.scenes[0];
-		authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
-		assert.equal(authoring.canRemoveSelectedMember(), false);
-		assert.equal(authoring.removeSelectedMember(), false);
-		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.dirty, false);
-		authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
-		assert.equal(authoring.canRemoveSelectedMember(), true, 'a leaf needs no pose conversion and unrelated dynamic geometry stays source');
-		assert.equal(authoring.removeSelectedMember(), true);
-		f.model.undo(); assert.equal(f.model.buffer.getText(), source);
+test('shared named affine inputs are borrowed exactly and translation edits only the consuming semantic position', t => {
+	const f = fixture(t, `{member_id='first',definition_id='node2',transform=shared},
+ {member_id='second',definition_id='node2',transform=shared}`, 'local shared={xx=2,xy=0,yx=1,yy=3,ox=10,oy=20} -- provider stays');
+	f.select('first'); assert.equal(f.context.captureLocalPosition()!.apply('x', 17), true);
+	f.select('first'); assert.equal(f.context.selectedLocalTransform!.ox, 17);
+	assert.ok(f.model.buffer.getText().includes('local shared={xx=2,xy=0,yx=1,yy=3,ox=10,oy=20} -- provider stays'));
+	assert.ok(f.model.buffer.getText().includes('transform=shared'));
+	f.select('second'); assert.equal(f.context.selectedLocalTransform!.ox, 10);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('unavailable affected geometry or parent expressions veto removal without changing canonical bytes', t => {
+	for (const child of ["parent='parent',position=compute_position()", 'parent=choose_parent()']) {
+		const f = fixture(t, `{member_id='parent',definition_id='node2'}, {member_id='child',definition_id='node2',${child}}`);
+		f.select('parent'); assert.equal(f.context.canRemoveSelectedMember(), false);
+		assert.equal(f.context.removeSelectedMember(), false); assert.equal(f.model.buffer.getText(), f.source);
 	}
 });
 
-test('Delete Member keeps occurrence identity despite duplicate names outside required ancestor chains', t => {
-	const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('fixture', { objects = {
- { member_id = 'same', definition_id = 'first' },
- { member_id = 'same', definition_id = 'second' },
- { member_id = 'parent', definition_id = 'sprite', spatial = { local_transform = { 1, 0, 0, 1, 3, 4 } } },
- { member_id = 'child', definition_id = 'sprite', spatial = { parent_id = 'parent', local_transform = { 1, 0, 0, 1, 5, 6 } } },
-} })`;
-	const f = createSceneSourceFixture(t, source), authoring = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => authoring.dispose());
-	let document = f.documents.get(f.model), scene = document.scenes[0];
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
-	assert.equal(authoring.removeSelectedMember(), true);
-	assert.ok(f.model.buffer.getText().includes("{ member_id = 'same', definition_id = 'second' }"));
-	assert.ok(!f.model.buffer.getText().includes("definition_id = 'first'"));
-	f.model.undo(); assert.equal(f.model.buffer.getText(), source);
-	document = f.documents.get(f.model); scene = document.scenes[0];
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[2], index: 2 });
-	assert.equal(authoring.removeSelectedMember(), true, 'unrelated duplicate names do not make this child pose ambiguous');
-	const child = f.documents.get(f.model).scenes[0].objects[2]; assert.ok(child.kind === 'object');
-	assert.equal(child.spatial!.parentId, null);
-	assert.deepEqual(child.spatial!.coefficients!.map(field => readLuaNumberLiteral(field.value)), [1, 0, 0, 1, 8, 10]);
-});
-
-test('Delete Member resolves shared written prefab inputs and replaces member aliases without rewriting their providers', t => {
-	const source = `local scenes = require('cartlib/world/scene_library')
-local ids = require('ids')
-local offset = { 1, 0, 0, 1, 2, 3 } -- shared affine stays
-local relationship = { parent_id = 'parent', local_transform = offset } -- shared relationship stays
-scenes.register('fixture', { objects = {
- { member_id = 'child', definition_id = ids.child, spatial = { parent_id = 'parent', local_transform = offset } },
- { member_id = 'alias', definition_id = ids.child, spatial = relationship },
- { member_id = 'parent', definition_id = ids.parent },
-} })`;
-	const prefabs = `local prefab = require('cartlib/world/prefab')
-local ids = require('ids')
-local spatial = { family = '2d', authority = 'affine', local_transform = { 2, 0, 1, 3, 10, 20 } }
-prefab.define({ def_id = ids.parent, class = {}, spatial = spatial })
-prefab.define({ def_id = ids.child, class = {}, spatial = spatial })`;
-	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [
-		['ids.lua', "return { parent = 'group', child = 'part' }"],
-		['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabs],
-	]);
-	const authoring = new SceneAuthoringContext(f.model, f.documents); t.after(() => authoring.dispose());
-	const document = f.documents.get(f.model), scene = document.scenes[0];
-	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[2], index: 2 });
-	assert.equal(authoring.removeSelectedMember(), true);
-	const changed = f.documents.get(f.model);
-	for (const entry of changed.scenes[0].objects) {
-		assert.ok(entry.kind === 'object');
-		assert.equal(entry.spatial!.parentId, null);
-		assert.deepEqual(entry.spatial!.coefficients!.map(field => readLuaNumberLiteral(field.value)), [2, 0, 1, 3, 17, 29]);
+test('successive member deletions round-trip overflowed affine Numbers through canonical named source', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=1e308,xy=0,yx=0,yy=1,ox=0,oy=0}},
+ {member_id='child',definition_id='node2',parent='parent',transform={xx=2,xy=0,yx=0,yy=1,ox=0,oy=0}},
+ {member_id='leaf',definition_id='node2',parent='child'}`);
+	for (const [id, expected] of [['child', [Infinity,0,0,1,0,0]], ['leaf', [Infinity,0,NaN,1,NaN,0]]] as const) {
+		f.context.refresh(); const document=f.documents.get(f.model),scene=document.scenes[0];
+		f.context.select(document,f.model.version,{kind:'member',scene,entry:scene.objects[0],index:0});
+		assert.equal(f.context.removeSelectedMember(),true); f.select(id);
+		const local=f.context.selectedLocalTransform!;
+		assert.deepEqual([local.xx,local.xy,local.yx,local.yy,local.ox,local.oy],expected);
 	}
-	assert.ok(f.model.buffer.getText().includes("local offset = { 1, 0, 0, 1, 2, 3 } -- shared affine stays\nlocal relationship = { parent_id = 'parent', local_transform = offset } -- shared relationship stays"));
-	f.model.undo(); assert.equal(f.model.buffer.getText(), source);
-});
-
-test('Delete Member preserves inherited placement without redundant affine overrides', t => {
-	for (const family of ['2d', '3d']) {
-		const affine = family === '2d' ? '2, 0, 1, 3, 10, 20' : '2, 0, 0, 1, -1, 0, 0, 1, 3, 10, 20, 30';
-		const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('fixture', { objects = {
- { member_id = 'child', definition_id = 'child', spatial = { parent_id = 'parent' } },
- { member_id = 'parent', definition_id = 'parent' },
-} })`;
-		const prefabs = `local prefab = require('cartlib/world/prefab')
-prefab.define({ def_id = 'parent', class = {}, spatial = { family = '${family}', authority = 'affine' } })
-prefab.define({ def_id = 'child', class = {}, spatial = { family = '${family}', authority = 'affine', local_transform = { ${affine} } } })`;
-		const f = createSceneSourceFixture(t, source, `scene_${family}.lua`, undefined,
-			[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabs]]);
-		const authoring = new SceneAuthoringContext(f.model, f.documents); t.after(() => authoring.dispose());
-		const document = f.documents.get(f.model), scene = document.scenes[0];
-		authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
-		assert.equal(authoring.removeSelectedMember(), true);
-		const child = f.documents.get(f.model).scenes[0].objects[0]; assert.ok(child.kind === 'object');
-		assert.equal(child.spatial!.parentId, null); assert.equal(child.spatial!.localTransform, null);
-		f.model.undo(); assert.equal(f.model.buffer.getText(), source);
-	}
-});
-
-test('successive member deletions retain overflowed Number poses through canonical generated source', t => {
-	const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('fixture', { objects = {
- { member_id = 'parent', definition_id = 'sprite', spatial = { local_transform = { 1e308, 0, 0, 1, 0, 0 } } },
- { member_id = 'child', definition_id = 'sprite', spatial = { parent_id = 'parent', local_transform = { 2, 0, 0, 1, 0, 0 } } },
- { member_id = 'leaf', definition_id = 'sprite', spatial = { parent_id = 'child', local_transform = { 1, 0, 0, 1, 0, 0 } } },
-} })`;
-	const f = createSceneSourceFixture(t, source), authoring = new SceneAuthoringContext(f.model, f.documents);
-	t.after(() => authoring.dispose());
-	for (const expected of [[Infinity, 0, 0, 1, 0, 0], [Infinity, 0, NaN, 1, NaN, 0]]) {
-		const document = f.documents.get(f.model), scene = document.scenes[0];
-		authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
-		assert.equal(authoring.removeSelectedMember(), true);
-		const child = f.documents.get(f.model).scenes[0].objects[0]; assert.ok(child.kind === 'object');
-		assert.equal(child.spatial!.parentId, null);
-		assert.deepEqual(child.spatial!.coefficients!.map(field => readLuaNumberExpression(field.value)), expected);
-	}
-	f.model.undo(); f.model.undo(); assert.equal(f.model.buffer.getText(), source);
+	f.model.undo(); f.model.undo(); assert.equal(f.model.buffer.getText(),f.source);
 });

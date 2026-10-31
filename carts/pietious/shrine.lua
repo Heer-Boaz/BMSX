@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local scene_library<const> = require('cartlib/world/scene_library')
 local scene<const> = require('scenes/shrine')
 -- shrine.lua
@@ -11,6 +12,7 @@ require('constants')
 
 local shrine<const> = {}
 shrine.__index = shrine
+setmetatable(shrine, { __index = world_object })
 
 function shrine:ctor()
 	self.presentation = scene_library.instantiate(scene.id)
@@ -20,6 +22,7 @@ end
 
 local room_shrine<const> = {}
 room_shrine.__index = room_shrine
+setmetatable(room_shrine, { __index = sprite_object })
 
 local define_shrine_fsm<const> = function()
 	fsm_library.register('shrine', {
@@ -62,8 +65,6 @@ local register_room_shrine_definition<const> = function()
 	prefab.define({
 		def_id = 'room_shrine',
 		class = room_shrine,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		defaults = {
 			imgid = 'shrine',
 			order = 22,

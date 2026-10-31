@@ -1,3 +1,4 @@
+import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
 import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import test, { type TestContext } from 'node:test';
@@ -18,36 +19,35 @@ import type { QuickInputController } from '../../ide/workbench/services/quick_in
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
-import { readLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-const POSES = `return { dock = { 1, 0, 0, 1, 10, 20 } }\n`;
+const POSES = `return { dock = { xx=1,xy=0,yx=0,yy=1,ox=10,oy=20 } }\n`;
 const PREFABS = `local prefab = require('cartlib/world/prefab')
-prefab.define({ def_id = 'node', class = {}, spatial = { family = '2d', authority = 'affine' } })
+prefab.define({ def_id = 'node', class = require('cartlib/world/object_2d') })
 return {}
 `;
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local poses = require('poses')
 require('prefabs')
 -- This shared provider and its spelling must not be materialized by member edits.
-local carrier_pose = { 1, 0, 0, 1, 100, 200 }
+local carrier_pose = { xx = 1, xy = 0, yx = 0, yy = 1, ox = 100, oy = 200 }
 scenes.register('room', { objects = {
- { member_id = 'carrier', definition_id = 'node', spatial = { local_transform = carrier_pose } },
- { member_id = 'subject', definition_id = 'node', spatial = { parent_id = 'carrier', local_transform = { 1, 0, 0, 1, 2, 3 } } },
- { member_id = 'leaf', definition_id = 'node', spatial = { parent_id = 'subject', local_transform = { 1, 0, 0, 1, 4, 5 } } },
- { member_id = 'dock', definition_id = 'node', spatial = { local_transform = poses.dock } },
- { member_id = 'spare', definition_id = 'node', spatial = { local_transform = { 1, 0, 0, 1, 7, 8 } } },
+ { member_id = 'carrier', definition_id = 'node', transform = carrier_pose },
+ { member_id = 'subject', definition_id = 'node', parent = 'carrier', position = { x = 2, y = 3 } },
+ { member_id = 'leaf', definition_id = 'node', parent = 'subject', position = { x = 4, y = 5 } },
+ { member_id = 'dock', definition_id = 'node', transform = poses.dock },
+ { member_id = 'spare', definition_id = 'node', position = { x = 7, y = 8 } },
 } })
 -- Equal member IDs in another Scene never confer edit authority.
 scenes.register('elsewhere', { objects = {
- { member_id = 'carrier', definition_id = 'node', spatial = { local_transform = { 1, 0, 0, 1, 30, 40 } } },
- { member_id = 'leaf', definition_id = 'node', spatial = { parent_id = 'carrier', local_transform = { 1, 0, 0, 1, 6, 7 } } },
+ { member_id = 'carrier', definition_id = 'node', position = { x = 30, y = 40 } },
+ { member_id = 'leaf', definition_id = 'node', parent = 'carrier', position = { x = 6, y = 7 } },
 } })
 return {}
 `;
 
 async function fixture(t: TestContext, placement: 'document' | 'Main' = 'document') {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['poses.lua', POSES], ['prefabs.lua', PREFABS],
+	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES, ['scene.lua', SOURCE], ['poses.lua', POSES], ['prefabs.lua', PREFABS],
 		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/prefab.lua', 'return { define=function() end }']]);
 	f.editor.setFontVariant('tiny'); f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -112,15 +112,17 @@ function contextCommand(f: Fixture, command: EditorCommandId): void {
 	assert.equal(menu.model.rows[menu.model.selectedIndex].command, command); f.key('Enter');
 }
 
-function coefficients(entry: SceneSourceObject): readonly (number | null)[] {
-	assert.ok(entry.spatial?.coefficients !== null && entry.spatial?.coefficients !== undefined);
-	return entry.spatial.coefficients.map(field => readLuaNumberExpression(field.value));
+function coefficients(f: Fixture, entry: SceneSourceObject): readonly number[] {
+	const document = f.context.document!, scene = document.scenes.find(scene => scene.objects.includes(entry))!;
+	const local = f.ide.sceneSources.getSpatialProjection(f.model, document)!.localTransform(document, scene, entry)!;
+	return local.family === '2d' ? [local.xx, local.xy, local.yx, local.yy, local.ox, local.oy]
+		: [local.xx, local.xy, local.xz, local.yx, local.yy, local.yz, local.zx, local.zy, local.zz, local.ox, local.oy, local.oz];
 }
 
 function assertProvidersUnchanged(f: Fixture): void {
 	const source = f.model.buffer.getText();
-	assert.ok(source.includes('local carrier_pose = { 1, 0, 0, 1, 100, 200 }'));
-	assert.ok(source.includes('local_transform = carrier_pose') && source.includes('local_transform = poses.dock'));
+	assert.ok(source.includes('local carrier_pose = { xx = 1, xy = 0, yx = 0, yy = 1, ox = 100, oy = 200 }'));
+	assert.ok(source.includes('transform = carrier_pose') && source.includes('transform = poses.dock'));
 	assert.ok(source.endsWith(SOURCE.slice(SOURCE.indexOf('-- Equal member IDs'))));
 	assert.ok(f.sourceInput instanceof CodeEditorInput && f.sourceInput.workingCopy === f.model);
 	assert.ok(f.secondGroup.model.activeTab === f.sourceInput);
@@ -128,7 +130,7 @@ function assertProvidersUnchanged(f: Fixture): void {
 
 for (const [command, placement, expected] of [
 	['sceneEditor.reparentMember', 'document', [1, 0, 0, 1, 92, 183]],
-	['sceneEditor.reparentMemberKeepLocal', 'Main', [1, 0, 0, 1, 2, 3]],
+	['sceneEditor.reparentMemberKeepLocal', 'Main', [1, 0, -0, 1, 2, 3]],
 ] as const) test(`${placement} Scene ${command} filters and accepts a source parent with its explicit placement policy`, async t => {
 	const f = await fixture(t, placement); selectMember(f, 'subject');
 	paletteCommand(f, command); assert.equal(f.picker.visible, true);
@@ -137,8 +139,8 @@ for (const [command, placement, expected] of [
 	enterText(f, 'dock'); assert.equal(f.picker.model.list.rows.length, 1); f.key('Enter');
 	assert.equal(f.picker.visible, false);
 	const subject = member(f, 'subject');
-	assert.equal(stringLiteralValue(subject.spatial!.parentId!.value), 'dock');
-	assert.deepEqual(coefficients(subject), expected);
+	assert.equal(stringLiteralValue(subject.parent!.value), 'dock');
+	assert.deepEqual(coefficients(f, subject), expected);
 	const parent = f.context.getSpatialParents(f.context.document!.scenes[0]);
 	assert.equal(parent.get(subject), member(f, 'dock'));
 	assert.equal(parent.get(member(f, 'leaf')), subject);
@@ -166,8 +168,8 @@ test('actual Scene rename rejects an occupied identity and changes only the admi
 	assert.equal(f.picker.visible, true); assert.equal(f.picker.busy, false); assert.equal(f.model.buffer.getText(), SOURCE);
 	enterText(f, 'renamed'); f.key('Enter'); await setImmediate(); f.update();
 	assert.equal(f.picker.visible, false);
-	assert.equal(stringLiteralValue(member(f, 'leaf').spatial!.parentId!.value), 'renamed');
-	assert.deepEqual(coefficients(member(f, 'renamed')), [1, 0, 0, 1, 2, 3]);
+	assert.equal(stringLiteralValue(member(f, 'leaf').parent!.value), 'renamed');
+	assert.deepEqual(coefficients(f, member(f, 'renamed')), [1, 0, -0, 1, 2, 3]);
 	assertProvidersUnchanged(f);
 	f.editor.commands.execute('undo', f.commandTarget); f.update();
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
@@ -176,8 +178,8 @@ test('actual Scene rename rejects an occupied identity and changes only the admi
 test('normal Scene removal roots surviving children at their previous world pose', async t => {
 	const f = await fixture(t); selectMember(f, 'subject'); contextCommand(f, 'sceneEditor.removeMember');
 	const scene = f.context.document!.scenes[0], leaf = member(f, 'leaf');
-	assert.equal(scene.objects.length, 4); assert.equal(leaf.spatial!.parentId, null);
-	assert.deepEqual(coefficients(leaf), [1, 0, 0, 1, 106, 208]);
+	assert.equal(scene.objects.length, 4); assert.equal(leaf.parent, null);
+	assert.deepEqual(coefficients(f, leaf), [1, 0, 0, 1, 106, 208]);
 	assert.equal(f.context.getSpatialParents(scene).get(leaf), undefined); assertProvidersUnchanged(f);
 	f.editor.commands.execute('undo', f.commandTarget); f.update();
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
@@ -219,7 +221,7 @@ test(`canonical Scene and pose-dependency changes retire an already open ${comma
 	paletteCommand(f, command); enterText(f, 'dock');
 	const poses = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'poses.lua' })!);
-	poses.pushEditOperations([{ offset: 0, deleteLength: POSES.length, text: POSES.replace('10, 20', '50, 60') }]); f.update();
+	poses.pushEditOperations([{ offset: 0, deleteLength: POSES.length, text: POSES.replace('ox=10,oy=20', 'ox=50,oy=60') }]); f.update();
 	assert.equal(f.picker.visible, false); assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
 
@@ -242,7 +244,7 @@ test('provider-only Scene topology replacement measures its new nodes once at un
 	assert.notEqual(previous.element.displayLabel, '');
 	const prefabs = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'prefabs.lua' })!);
-	prefabs.pushEditOperations([{ offset: 0, deleteLength: PREFABS.length, text: PREFABS.replace("authority = 'affine'", "authority = 'root_origin'") }]); f.update();
+	prefabs.pushEditOperations([{ offset: 0, deleteLength: PREFABS.length, text: PREFABS.replace("object_2d", "world_object") }]); f.update();
 	const next = view.outline.rows.find(row => row.element.kind === 'member' && row.element.entry === entry)!;
 	assert.notEqual(next, previous); assert.equal(f.model.version, sourceVersion); assert.equal(f.context.revision, authoringRevision);
 	// A new projected caption needs layout even when its owning Scene source and control bounds did not change.
@@ -259,11 +261,11 @@ test('Scene command execution settles its concrete Details draft before admittin
 	assert.equal(field.pending, true); assert.equal(f.model.buffer.getText(), SOURCE);
 	f.editor.commands.execute('sceneEditor.reparentMember', f.commandTarget);
 	assert.equal(field.pending, false); assert.equal(f.picker.visible, true);
-	assert.deepEqual(coefficients(member(f, 'subject')), [1, 0, 0, 1, 31, 3]);
+	assert.deepEqual(coefficients(f, member(f, 'subject')), [1, 0, -0, 1, 31, 3]);
 	enterText(f, 'dock'); f.key('Enter');
-	assert.deepEqual(coefficients(member(f, 'subject')), [1, 0, 0, 1, 121, 183]);
+	assert.deepEqual(coefficients(f, member(f, 'subject')), [1, 0, 0, 1, 121, 183]);
 	f.editor.commands.execute('undo', f.commandTarget); f.update();
-	assert.deepEqual(coefficients(member(f, 'subject')), [1, 0, 0, 1, 31, 3]);
+	assert.deepEqual(coefficients(f, member(f, 'subject')), [1, 0, -0, 1, 31, 3]);
 	f.editor.commands.execute('undo', f.commandTarget); f.update();
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 	selectMember(f, 'subject');
@@ -277,14 +279,14 @@ test('Scene command execution settles its concrete Details draft before admittin
 	}); t.after(release);
 	f.editor.commands.execute('sceneEditor.reparentMember', f.commandTarget);
 	assert.equal(published, true); assert.equal(nextField.pending, false); assert.equal(f.picker.visible, false);
-	assert.deepEqual(coefficients(member(f, 'subject')), [1, 0, 0, 1, 55, 3]);
-	assert.deepEqual(coefficients(member(f, 'spare')), [1, 0, 0, 1, 7, 8]);
+	assert.deepEqual(coefficients(f, member(f, 'subject')), [1, 0, -0, 1, 55, 3]);
+	assert.deepEqual(coefficients(f, member(f, 'spare')), [1, 0, -0, 1, 7, 8]);
 	f.editor.commands.execute('undo', f.commandTarget); f.update(); assert.equal(f.model.buffer.getText(), SOURCE);
 });
 
 test('Scene sibling moves skip interleaved descendants and other roots while retaining the selected source occurrence', async t => {
 	const f = await fixture(t);
-	const before = SOURCE.replace("{ member_id = 'spare', definition_id = 'node', spatial = {", "{ member_id = 'spare', definition_id = 'node', spatial = { parent_id = 'carrier',");
+	const before = SOURCE.replace("member_id = 'spare'", "member_id = 'spare', parent = 'carrier'");
 	f.model.pushEditOperations([{ offset: 0, deleteLength: SOURCE.length, text: before }]); f.update();
 	selectMember(f, 'subject'); contextCommand(f, 'sceneEditor.moveMemberDown');
 	const scene = f.context.document!.scenes[0], subject = member(f, 'subject');
@@ -330,6 +332,6 @@ test('the parent picker distinguishes a legal root-named member from removing it
 	const index = rows.findIndex(row => row.item.description === choice.description); assert.ok(index >= 0);
 	for (let step = 0; step < index; step++) f.key('ArrowDown');
 	f.key('Enter');
-	assert.equal(stringLiteralValue(member(f, 'subject').spatial!.parentId!.value), 'Scene Root');
+	assert.equal(stringLiteralValue(member(f, 'subject').parent!.value), 'Scene Root');
 	f.editor.commands.execute('undo', f.commandTarget); f.update(); assert.equal(f.model.buffer.getText(), source);
 });

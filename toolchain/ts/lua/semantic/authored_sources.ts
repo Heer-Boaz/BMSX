@@ -23,6 +23,8 @@ export type LuaAuthoredSourceTrace = {
 	readonly terminals: readonly LuaWrittenSource[];
 	readonly boundaries: readonly LuaAuthoredSourceBoundary[];
 	readonly memberReads: readonly LuaAuthoredMemberRead[];
+	/** Every contributing storage write belongs to unconditional module evaluation. */
+	readonly unconditional: boolean;
 };
 
 type SourceNode = {
@@ -103,6 +105,7 @@ export class LuaAuthoredSourceQuery {
 		const terminals: LuaWrittenSource[] = [];
 		const boundaries: LuaAuthoredSourceBoundary[] = [];
 		const memberReads: LuaAuthoredMemberRead[] = [];
+		let unconditional = true;
 		// Evidence reaches resource/boundary owners without making the receiver
 		// constructor another result of the member read.
 		const states = new Map<SourceNode, number>();
@@ -119,6 +122,8 @@ export class LuaAuthoredSourceQuery {
 		const observed = new Set<SourceNode>();
 		for (let cursor = 0; cursor < pending.length; cursor += 1) {
 			const { node, value } = pending[cursor];
+			if ((node.source.kind === 'declaration-write' || node.source.kind === 'value-transfer') && !node.source.write.unconditional)
+				unconditional = false;
 			const inputs = node.inputs!;
 			const observe = !observed.has(node);
 			observed.add(node);
@@ -153,9 +158,32 @@ export class LuaAuthoredSourceQuery {
 				else boundaries.push({ source: node.source, reason: inputs.reason });
 			}
 		}
-		const trace = { root, sources, terminals, boundaries, memberReads };
+		const trace = { root, sources, terminals, boundaries, memberReads, unconditional };
 		this.traces.set(root, trace);
 		return trace;
+	}
+
+	/** A constructor's one unconditional metatable transfer. Possible receivers
+	 * join this same mutation index; unresolved aliases cannot disappear merely
+	 * because they have no single written value. Body effects are not execution. */
+	public metatable(root: LuaWrittenSource): LuaAuthoredSourceTrace | null | undefined {
+		this.index();
+		const node = this.node(root);
+		this.solve();
+		if (node.tables.size !== 1) return;
+		const table = node.tables.values().next().value!;
+		let selected: Mutation | undefined;
+		for (const mutation of this.tables.get(table)!.mutations) {
+			const source = mutation.source;
+			if (source.kind !== 'value-transfer' || source.write.relation !== 'metatable') continue;
+			if (selected !== undefined || !source.write.unconditional) return;
+			selected = mutation;
+		}
+		if (selected === undefined) return null;
+		const receiver = this.trace(selected.owner.source);
+		if (!receiver.unconditional || receiver.boundaries.length !== 0 || receiver.terminals.length !== 1) return;
+		const source = this.trace(selected.source);
+		return source.unconditional ? source : undefined;
 	}
 
 	/** Local storage writes, distinct from partiality inherited through contained sources. */

@@ -77,7 +77,14 @@ local structural_mutation_mask<const> = mutation_admission
 
 bss cartlib_render_commands: word[render_command_capacity]
 
-local world_class<const> = {}
+local world_class<const> = {
+	reparent_result = {
+		committed = spatial_hierarchy.committed,
+		retired_target = spatial_hierarchy.retired_target,
+		invalid_relationship = spatial_hierarchy.invalid_relationship,
+		singular_parent = spatial_hierarchy.singular_parent,
+	},
+}
 world_class.__index = world_class
 
 local visual_order_less<const> = function(a, b)
@@ -690,9 +697,8 @@ function world_class:_flush_admissions()
 	-- cancellation before publishing any identity.
 	for index = first, last do
 		local obj<const> = pending[index]
-		local spatial<const> = obj.spatial
-		local parent<const> = spatial and spatial.spatial_parent
-		if parent ~= nil and parent.owner.marked_for_disposal then
+		local parent<const> = obj._hierarchy and obj.parent
+		if parent ~= nil and parent.marked_for_disposal then
 			self:mark_for_disposal(obj)
 		end
 	end
@@ -739,28 +745,37 @@ end
 
 -- Allocate the final object identity and all common metadata before entering
 -- any initializer, component factory or constructor.
-function world_class:_prepare_spawn(definition, options, local_transform, scene, member_id)
+function world_class:_prepare_spawn(definition, options, pose, pose_input)
 	local obj<const> = setmetatable(shallow_copy(definition.defaults), definition.instance_metatable)
+	local placement_fields<const> = definition.placement_fields
 	for key, value in pairs(options) do
-		obj[key] = value
+		if not placement_fields[key] then
+			obj[key] = value
+		end
+	end
+	local compile_pose<const> = definition.compile_pose
+	if compile_pose ~= nil and not compile_pose(obj, pose, pose_input) then
+		error('construction placement cannot preserve unspecified rotation or skew: ' .. definition.definition_id)
 	end
 	obj.definition_id = definition.definition_id
 	obj.id = obj.id or registry:next_id()
 	obj.world = self
 	obj.space_id = obj.space_id or self.active_space_id
 	world_object._initialize(obj)
+	obj._construction_definition = definition
+	obj._construction_options = options
+	return obj
+end
+
+-- All final shells and inverse-dependent placement are prepared before World
+-- publishes graph/Scene membership or opens a new structural barrier.
+function world_class:_admit_spawn(obj, scene, member_id)
+	local initialize_transform<const> = obj._construction_definition.initialize_transform
+	if initialize_transform ~= nil then initialize_transform(self._spatial_hierarchy, obj) end
 	if scene ~= nil then
 		obj.scene = scene
 		scene:_attach(obj, member_id)
 	end
-	local spatial_constructor<const> = definition.spatial_constructor
-	if spatial_constructor ~= nil then
-		local spatial<const> = spatial_constructor(self._spatial_hierarchy, obj, local_transform)
-		obj.spatial = spatial
-		obj:_attach_component(spatial)
-	end
-	obj._construction_definition = definition
-	obj._construction_options = options
 	local index<const> = self._pending_admission_count + 1
 	self._pending_admission_count = index
 	self._pending_admissions[index] = obj
@@ -779,8 +794,8 @@ function world_class:_construct_spawn(obj)
 	end
 	local definition<const> = obj._construction_definition
 	local options<const> = obj._construction_options
-	if obj.spatial ~= nil then
-		spatial_hierarchy.resolve(obj.spatial)
+	if obj._hierarchy ~= nil then
+		spatial_hierarchy.resolve(obj)
 	end
 	local initialize<const> = definition.initialize
 	local component_factories<const> = definition.components
@@ -810,31 +825,15 @@ end
 -- Procedural requests resolve once; retained Scene rows call the concrete
 -- definition boundary without re-resolving an identifier.
 -- Options may be omitted; explicit inputs retain their caller-owned identity.
-function world_class:spawn(definition_id, options, spatial_input, scene)
+function world_class:spawn(definition_id, options, scene)
 	if options == nil then
 		options = empty_spawn_options
 	end
 	local definition<const> = prefab.definition(definition_id)
-	local local_transform = definition.default_local_transform
-	local parent
-	if spatial_input ~= nil then
-		if definition.spatial_constructor == nil then
-			error('nonspatial prefab cannot receive spatial construction input')
-		end
-		local supplied_transform<const> = spatial_input.local_transform
-		if supplied_transform ~= nil then
-			local validate<const> = definition.spatial_validate_local
-			if validate ~= nil then
-				validate(supplied_transform)
-			end
-			local_transform = supplied_transform
-		end
-		parent = spatial_input.parent
-	end
-	return self:_spawn_definition(definition, options, local_transform, parent, scene)
+	return self:_spawn_definition(definition, options, definition, options, options.parent, scene)
 end
 
-function world_class:_spawn_definition(definition, options, local_transform, parent, scene, member_id)
+function world_class:_spawn_definition(definition, options, pose, pose_input, parent, scene, member_id)
 	if scene ~= nil then
 		assert(not scene.closed, 'cannot spawn into an unloaded scene')
 		if member_id ~= nil and scene.members[member_id] ~= nil then
@@ -842,21 +841,21 @@ function world_class:_spawn_definition(definition, options, local_transform, par
 		end
 	end
 	if parent ~= nil then
-		if parent._hierarchy ~= self._spatial_hierarchy or parent.owner.marked_for_disposal
-		or parent.owner._world_object_index == nil then
+		if parent._hierarchy ~= self._spatial_hierarchy or parent.world ~= self or parent.marked_for_disposal then
 			error('spatial construction parent is not live in this World')
 		end
-		if definition.spatial_root_origin or parent._family ~= definition.spatial_family then
+		if parent._family ~= definition.transform_family then
 			error('incompatible spatial construction parent')
 		end
 	end
+	local obj<const> = self:_prepare_spawn(definition, options, pose, pose_input)
 	local own_barrier<const> = not self._mutation_barrier_open
 	if own_barrier then
 		self:_open_mutation_barrier()
 	end
-	local obj<const> = self:_prepare_spawn(definition, options, local_transform, scene, member_id)
+	self:_admit_spawn(obj, scene, member_id)
 	if parent ~= nil then
-		spatial_hierarchy.attach_local(obj.spatial, parent)
+		spatial_hierarchy.attach_local(obj, parent)
 	end
 	self:_construct_spawn(obj)
 	if own_barrier then
@@ -878,16 +877,12 @@ function world_class:spawn_members(scene, members, selected, overrides)
 		local parent_index<const> = member.parent_index
 		if parent_index ~= nil and not selected[parent_index] then
 			local parent<const> = scene._members_by_index[parent_index]
-			if parent == nil or parent.marked_for_disposal or parent._world_object_index == nil then
+			if parent == nil or parent.marked_for_disposal or parent._hierarchy ~= self._spatial_hierarchy then
 				error('required spatial parent is not live or selected: ' .. member.member_id)
 			end
 		end
 	end
-	local own_barrier<const> = not self._mutation_barrier_open
-	if own_barrier then
-		self:_open_mutation_barrier()
-	end
-	local first<const> = self._pending_admission_count + 1
+	local prepared<const> = {}
 	for index = 1, #members do
 		local member<const> = members[index]
 		local options = member.options
@@ -898,7 +893,13 @@ function world_class:spawn_members(scene, members, selected, overrides)
 				options[key] = value
 			end
 		end
-		self:_prepare_spawn(member.definition, options, member.local_transform, scene, member.member_id)
+		prepared[index] = self:_prepare_spawn(member.definition, options, member, member_overrides)
+	end
+	local own_barrier<const> = not self._mutation_barrier_open
+	if own_barrier then self:_open_mutation_barrier() end
+	local first<const> = self._pending_admission_count + 1
+	for index = 1, #members do
+		self:_admit_spawn(prepared[index], scene, members[index].member_id)
 	end
 	local last<const> = self._pending_admission_count
 	local pending<const> = self._pending_admissions
@@ -906,21 +907,20 @@ function world_class:spawn_members(scene, members, selected, overrides)
 	for index = 1, #members do
 		local member<const> = members[index]
 		if member.parent_index ~= nil then
-			spatial_hierarchy.attach_local(by_index[member.index].spatial, by_index[member.parent_index].spatial)
+			spatial_hierarchy.attach_local(by_index[member.index], by_index[member.parent_index])
 		end
 	end
 	-- Every shell's authored pose is available before the first user hook.
 	for index = first, last do
-		local spatial<const> = pending[index].spatial
-		if spatial ~= nil then
-			spatial_hierarchy.resolve(spatial)
+		local obj<const> = pending[index]
+		if obj._hierarchy ~= nil then
+			spatial_hierarchy.resolve(obj)
 		end
 	end
 	for index = first, last do
 		local obj<const> = pending[index]
-		local spatial<const> = obj.spatial
-		local parent<const> = spatial and spatial.spatial_parent
-		if parent ~= nil and parent.owner.marked_for_disposal then
+		local parent<const> = obj._hierarchy and obj.parent
+		if parent ~= nil and parent.marked_for_disposal then
 			self:mark_for_disposal(obj)
 		end
 		self:_construct_spawn(obj)
@@ -987,27 +987,28 @@ function world_class:_flush_disposals()
 	local last<const> = self._pending_disposal_count
 	-- Establish the complete retirement set before deriving any surviving pose.
 	for index = first, last do
-		local spatial<const> = pending[index].spatial
-		if spatial ~= nil then
-			spatial._retiring = true
+		local obj<const> = pending[index]
+		if obj._hierarchy ~= nil then
+			obj._retiring = true
 		end
 	end
 	for index = first, last do
-		local spatial<const> = pending[index].spatial
-		if spatial ~= nil then
-			spatial_hierarchy.materialize_surviving_children(spatial)
+		local obj<const> = pending[index]
+		if obj._hierarchy ~= nil then
+			spatial_hierarchy.resolve(obj)
+			spatial_hierarchy.materialize_surviving_children(obj)
 		end
 	end
 	for index = first, last do
-		local spatial<const> = pending[index].spatial
-		if spatial ~= nil then
-			spatial_hierarchy.detach_surviving_children(spatial)
+		local obj<const> = pending[index]
+		if obj._hierarchy ~= nil then
+			spatial_hierarchy.detach_surviving_children(obj)
 		end
 	end
 	for index = first, last do
-		local spatial<const> = pending[index].spatial
-		if spatial ~= nil then
-			spatial_hierarchy.retire(spatial)
+		local obj<const> = pending[index]
+		if obj._hierarchy ~= nil then
+			spatial_hierarchy.retire(obj)
 		end
 	end
 	-- All topology is retired before hooks can append another removal batch.
@@ -1036,12 +1037,12 @@ function world_class:dispose_spatial_subtree(root)
 	end
 	local node = root
 	while true do
-		self:mark_for_disposal(node.owner)
+		self:mark_for_disposal(node)
 		if node._first_child ~= nil then
 			node = node._first_child
 		else
 			while node ~= root and node._next_sibling == nil do
-				node = node.spatial_parent
+				node = node.parent
 			end
 			if node == root then
 				break
@@ -1088,8 +1089,8 @@ function world_class:_flush_reparents()
 		local parent<const> = parents[index]
 		local result
 		if self._clearing
-		or target.owner.world == nil or target.owner.marked_for_disposal
-		or (parent ~= nil and (parent.owner.world == nil or parent.owner.marked_for_disposal)) then
+		or target.world == nil or target.marked_for_disposal
+		or (parent ~= nil and (parent.world == nil or parent.marked_for_disposal)) then
 			result = spatial_hierarchy.retired_target
 		elseif target._hierarchy ~= self._spatial_hierarchy then
 			result = spatial_hierarchy.invalid_relationship
@@ -1104,7 +1105,7 @@ function world_class:_flush_reparents()
 		callbacks[index] = nil
 		contexts[index] = nil
 		self._pending_reparent_first = index + 1
-		callback(context, result)
+		if callback ~= nil then callback(context, result) end
 	end
 	if self._pending_reparent_count == last then
 		self._pending_reparent_first = 1

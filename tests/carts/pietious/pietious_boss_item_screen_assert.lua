@@ -29,7 +29,7 @@ return {
 				direction = 'down',
 			}, 1, 2, 5)
 			player.state_machines:transition_to('/quiet')
-			player.spatial:set_world_origin(32, 96)
+			player:set_global_position(32, 96)
 			local def<const> = find_daemon_def(room)
 			assert(def ~= nil, 'room 100 has no daemon definition')
 			test.daemon_id = def.member_id

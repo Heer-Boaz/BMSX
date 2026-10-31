@@ -34,8 +34,8 @@ function scene:_detach(object)
 	end
 end
 
-function scene:spawn(definition_id, options, spatial_input)
-	return world:spawn(definition_id, options, spatial_input, self)
+function scene:spawn(definition_id, options)
+	return world:spawn(definition_id, options, self)
 end
 
 -- Admission policy belongs to the cart. It may instantiate an authored member
@@ -55,9 +55,9 @@ function scene:spawn_member(member_id, overrides)
 		if parent_object == nil then
 			error('scene spatial parent is not live: ' .. member_id)
 		end
-		parent = parent_object.spatial
+		parent = parent_object
 	end
-	return world:_spawn_definition(member.definition, options, member.local_transform, parent, self, member_id)
+	return world:_spawn_definition(member.definition, options, member, overrides, parent, self, member_id)
 end
 
 function scene:spawn_members(member_ids, overrides)

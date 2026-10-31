@@ -1,9 +1,10 @@
 local world_object<const> = require('cartlib/world/world_object')
-local shallow_copy<const> = require('cartlib/util/shallow_copy')
-local transform_2d<const> = require('cartlib/component/transform_2d_component')
-local transform_3d<const> = require('cartlib/component/transform_3d_component')
 
 local definitions<const> = {}
+local placement_fields<const> = {
+	position = true, rotation = true, scale = true, skew = true,
+	transform = true, parent = true,
+}
 local prefab<const> = {}
 
 local empty_values<const> = {}
@@ -13,53 +14,8 @@ local empty_components<const> = {}
 -- constructors. World owns identity, construction and publication.
 
 function prefab.define(source)
-	local spatial_constructor
-	local spatial_family
-	local spatial_root_origin
-	local spatial_validate_local
-	local default_local_transform
-	local spatial_source<const> = source.spatial
-	if spatial_source ~= nil then
-		local transform
-		if spatial_source.family == '2d' then
-			transform = transform_2d
-		elseif spatial_source.family == '3d' then
-			transform = transform_3d
-		else
-			error('unsupported prefab spatial family: ' .. source.def_id)
-		end
-		spatial_family = transform.family
-		if spatial_source.authority == 'affine' then
-			spatial_constructor = transform.new
-		elseif spatial_source.authority == 'root_origin' then
-			local root_origin<const> = transform.root_origin
-			spatial_constructor = root_origin.new
-			spatial_root_origin = true
-			spatial_validate_local = root_origin.validate_local
-		else
-			error('unsupported prefab spatial authority: ' .. source.def_id)
-		end
-		local authored_transform<const> = spatial_source.local_transform
-		if authored_transform == nil then
-			default_local_transform = spatial_family.identity
-		else
-			default_local_transform = shallow_copy(authored_transform)
-			if spatial_validate_local ~= nil then
-				spatial_validate_local(default_local_transform)
-			end
-		end
-	end
-
-	local prototype<const> = source.base or world_object
-	local class<const> = source.class
-	-- A concrete library base may itself be the instantiated class. That
-	-- declares no new inheritance edge (not a self-parented prototype).
-	if class ~= prototype then
-		local class_metatable<const> = getmetatable(class)
-		local inheritance<const> = class_metatable and shallow_copy(class_metatable) or {}
-		inheritance.__index = prototype
-		setmetatable(class, inheritance)
-	end
+	local class = source.class
+	if class == nil then class = world_object end
 
 	-- Admission owns the lookup surface and ordered construction mappings.
 	-- Nested authored values and closure captures retain their declared identity;
@@ -76,23 +32,38 @@ function prefab.define(source)
 		current = metatable and metatable.__index
 	end
 	local components<const> = {}
-	local source_components<const> = source.components or empty_components
+	local source_components = source.components
+	if source_components == nil then source_components = empty_components end
 	for index = 1, #source_components do
 		components[index] = source_components[index]
 	end
-	definitions[source.def_id] = {
+	local initialize_transform<const> = methods._initialize_transform
+	local reserved<const> = initialize_transform ~= nil and placement_fields or empty_values
+	local source_defaults = source.defaults
+	if source_defaults == nil then source_defaults = empty_values end
+	local defaults<const> = {}
+	for key, value in pairs(source_defaults) do
+		if not reserved[key] then
+			defaults[key] = value
+		end
+	end
+	local definition<const> = {
 		definition_id = source.def_id,
 		ctor = methods.ctor,
 		instance_metatable = { __index = methods },
 		initialize = methods.initialize,
-		defaults = shallow_copy(source.defaults or empty_values),
+		defaults = defaults,
 		components = components,
-		spatial_constructor = spatial_constructor,
-		spatial_family = spatial_family,
-		spatial_root_origin = spatial_root_origin,
-		spatial_validate_local = spatial_validate_local,
-		default_local_transform = default_local_transform,
+		transform_family = methods._family,
+		compile_pose = methods._compile_pose,
+		initialize_transform = initialize_transform,
+		placement_fields = reserved,
 	}
+	local compile_pose<const> = definition.compile_pose
+	if compile_pose ~= nil and not compile_pose(definition, nil, source) then
+		error('prefab placement cannot preserve unspecified rotation or skew: ' .. source.def_id)
+	end
+	definitions[source.def_id] = definition
 end
 
 function prefab.definition(definition_id)

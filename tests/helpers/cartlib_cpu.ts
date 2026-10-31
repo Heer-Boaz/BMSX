@@ -7,13 +7,11 @@ import { BLUA32_FIRMWARE_MODULE_SOURCE } from '../../toolchain/ts/rompack/blua32
 import { createTestBlua32PairCpu, linkTestBlua32Pair } from './blua32';
 import { parseLuaChunk } from '../lua/cpu_test_harness';
 
-/** Real cartlib/compiler/CPU; no host, ICU, world scheduler or trigonometry proof. */
+/** Real cartlib/compiler/CPU and BIOS math; no host, ICU or world scheduler. */
 type CartlibProgramOptions = {
 	traceStatements?: TraceStatementSelection;
 	preloadModules?: readonly string[];
 	optLevel?: 0 | 3;
-	/** Execute the production BIOS math module, including its trig kernels. */
-	firmwareMath?: boolean;
 	/** Additional or replacement cart modules, compiled normally by path. */
 	modules?: readonly { path: string; source: string }[];
 };
@@ -41,8 +39,9 @@ const SYSTEM_MODULE_FILES = [
 const CART_MODULE_FILES = [
 	['cartlib/world/tick_group', 'cartlib/world/tick_group.lua'],
 	['cartlib/timeline/channel_binding', 'cartlib/timeline/channel_binding.lua'],
-	['cartlib/component/transform_2d_component', 'cartlib/component/transform_2d_component.lua'],
-	['cartlib/component/transform_3d_component', 'cartlib/component/transform_3d_component.lua'],
+	['cartlib/world/world_object', 'cartlib/world/world_object.lua'],
+	['cartlib/world/object_2d', 'cartlib/world/object_2d.lua'],
+	['cartlib/world/object_3d', 'cartlib/world/object_3d.lua'],
 	['cartlib/component/visual_component', 'cartlib/component/visual_component.lua'],
 	['cartlib/component/visual_2d_component', 'cartlib/component/visual_2d_component.lua'],
 	['cartlib/world/spatial_hierarchy', 'cartlib/world/spatial_hierarchy.lua'],
@@ -129,13 +128,11 @@ const CART_STUB_MODULES = [
 
 export function createCartlibProgramHarness(
 	cartEntrySource: string,
-	{ traceStatements = 'erase', preloadModules = [], optLevel = 3, firmwareMath = false, modules = [] }: CartlibProgramOptions = {},
+	{ traceStatements = 'erase', preloadModules = [], optLevel = 3, modules = [] }: CartlibProgramOptions = {},
 ) {
 	const systemSources = new Map<string, string>(SYSTEM_MODULE_FILES.map(([path, file]) => [path, readFileSync(file, 'utf8')]));
 	for (const module of SYSTEM_STUB_MODULES) systemSources.set(module.path, module.source);
-	if (firmwareMath) {
-		for (const path of ['math', 'math/trig']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
-	}
+	for (const path of ['math', 'math/trig']) systemSources.set(path, readFileSync(`machine/bios/${path}.lua`, 'utf8'));
 	const systemModules = Array.from(systemSources, ([path, source]) => ({
 		path, source, chunk: parseLuaChunk(source, `${path}.lua`),
 	}));
@@ -152,7 +149,7 @@ string = require('string/base')
 string.find = require('string/pattern').find
 lua_compiler = require('compiler/api')
 load = lua_compiler.load
-math = ${firmwareMath ? "require('math')" : '{ sin = function(value) return value end, pi = 3.141592653589793 }'}
+math = require('math')
 assert(setmetatable ~= nil)
 cop0.exec = mem[${CART_ROM_BASE + BMSX_ROM_HEADER_BLUA32_STARTUP_FUNCTION_ADDRESS_OFFSET}]
 `;

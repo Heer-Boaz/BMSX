@@ -26,13 +26,13 @@ scenes.register('main',{objects={${members}}})`;
 
 test('model construction retains exact occurrence, local inputs and owner x attachment x presentation Number affine', t => {
 	const f = fixture(t, `
-prefab.define({def_id='parent',class={},spatial={family='3d',authority='affine'}})
-prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},defaults={visible=false},
+prefab.define({def_id='parent',class=require('cartlib/world/object_3d')})
+prefab.define({def_id='model',class=require('cartlib/world/object_3d'),defaults={visible=false},
  components={models.factory({id_local='body',model_id='scene',scene_index=0,enabled=0,visible='',
  attachment_affine={1,1,0,0,1,0,0,0,1,2,3,4},presentation_affine={-1,0,0,2,1,0,0,0,0.5,4,5,6}})}})`, `
- {member_id='child',definition_id='model',spatial={parent_id='parent',local_transform={1,0,0,0,1,0,0,0,1,4,5,6}},
+ {member_id='child',definition_id='model',parent='parent',position = { x = 4, y = 5, z = 6 },
   options={visible=0,active=false,model_id='not-component-config'}},
- {member_id='parent',definition_id='parent',spatial={local_transform={2,0,0,1,3,0,0,0,-2,10,20,30}}}`);
+ {member_id='parent',definition_id='parent',transform = { xx = 2, xy = 0, xz = 0, yx = 1, yy = 3, yz = 0, zx = 0, zy = 0, zz = -2, ox = 10, oy = 20, oz = 30 }}`);
 	const read = f.context.visualScene!, model = read.models[0];
 	assert.equal(read.models.length, 1); assert.equal(read.sprites.length, 0);
 	assert.ok(model.entry === f.context.subject!.objects[0]);
@@ -44,12 +44,12 @@ prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
 
 test('model factories own static configuration rather than reading gameplay options', t => {
 	const f = fixture(t, `
-prefab.define({def_id='factory',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='factory',class=require('cartlib/world/object_3d'),
  components={models.factory({id_local='body',model_id='factory',scene_index=3,
  attachment_affine={2,0,0,0,3,0,0,0,4,5,6,7}})}})
-prefab.define({def_id='direct',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='direct',class=require('cartlib/world/object_3d'),
  components={models.factory({model_id='direct'})}})
-prefab.define({def_id='missing_factory_source',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='missing_factory_source',class=require('cartlib/world/object_3d'),
  components={models.factory({})}})`, `
  {member_id='nil',definition_id='factory',options={model_id=nil,scene_index=nil,attachment_affine=false}},
  {member_id='false',definition_id='factory',options={model_id=false,scene_index=false}},
@@ -66,7 +66,7 @@ test('model aliases and reexports need actual builtin callable identities, not s
 local bridge=require('model_bridge')
 local admitted=bridge.factory({id_local='body',model_id='alias'})
 local function factory() return models.factory({model_id='guessed'}) end
-prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='model',class=require('cartlib/world/object_3d'),
  components={admitted,bridge.factory({model_id='direct'}),factory()}})`, `{member_id='source',definition_id='model'}`, [
 		['model_bridge.lua', "return require('cartlib/component/static_model_component')"],
 	]);
@@ -75,7 +75,7 @@ prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
 
 test('production model component exports retain their authored constructor correspondence without executing resource resolution', t => {
 	const f = fixture(t, `
-prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='model',class=require('cartlib/world/object_3d'),
  components={models.new,models.factory({id_local='body',model_id='factory',scene_index=0})}})`,
 		`{member_id='source',definition_id='model'}`, [
 			['cartlib/component/static_model_component.lua', readFileSync('cartlib/component/static_model_component.lua', 'utf8')],
@@ -85,11 +85,11 @@ prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
 
 test('model profiles ignore unrelated gameplay options while dynamic owner visibility and unresolved factories remain unavailable', t => {
 	const f = fixture(t, `
-prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},components={models.factory({model_id='factory'})}})
-prefab.define({def_id='unknown_id',class={},spatial={family='3d',authority='affine'},components={models.factory({model_id='factory',id_local=choose()})}})
-prefab.define({def_id='unknown_default',class={},spatial={family='3d',authority='affine'},components={models.factory({model_id=choose()})}})
-prefab.define({def_id='duplicate',class={},spatial={family='3d',authority='affine'},components={models.new}})
-prefab.define({def_id='duplicate',class={},spatial={family='3d',authority='affine'},components={models.new}})`, `
+prefab.define({def_id='model',class=require('cartlib/world/object_3d'),components={models.factory({model_id='factory'})}})
+prefab.define({def_id='unknown_id',class=require('cartlib/world/object_3d'),components={models.factory({model_id='factory',id_local=choose()})}})
+prefab.define({def_id='unknown_default',class=require('cartlib/world/object_3d'),components={models.factory({model_id=choose()})}})
+prefab.define({def_id='duplicate',class=require('cartlib/world/object_3d'),components={models.new}})
+prefab.define({def_id='duplicate',class=require('cartlib/world/object_3d'),components={models.new}})`, `
  {member_id='dynamic_model',definition_id='model',options={model_id=choose()}},
  {member_id='dynamic_scene',definition_id='model',options={scene_index=choose()}},
  {member_id='dynamic_inputs',definition_id='model',options=choose()},
@@ -109,13 +109,13 @@ prefab.define({def_id='duplicate',class={},spatial={family='3d',authority='affin
 
 test('model owner options, defaults and class visibility share component nil-only visibility semantics', t => {
 	const f = fixture(t, `
-prefab.define({def_id='hidden',class={visible=false},spatial={family='3d',authority='affine'},
+prefab.define({def_id='hidden',class=setmetatable({visible=false},{__index=require('cartlib/world/object_3d')}),
  components={models.factory({model_id='hidden'})}})
-prefab.define({def_id='visible',class={visible=0},base={visible=false},spatial={family='3d',authority='affine'},
+prefab.define({def_id='visible',class=setmetatable({visible=0},{__index=require('cartlib/world/object_3d')}),
  components={models.factory({model_id='visible'})}})
-prefab.define({def_id='defaults',class={visible=false},defaults={visible=true},spatial={family='3d',authority='affine'},
+prefab.define({def_id='defaults',class=setmetatable({visible=false},{__index=require('cartlib/world/object_3d')}),defaults={visible=true},
  components={models.factory({model_id='defaults',enabled=false,visible=false})}})
-prefab.define({def_id='unknown',class={},base=unknown,spatial={family='3d',authority='affine'},
+prefab.define({def_id='unknown',class=setmetatable({visible=unknown},{__index=require('cartlib/world/object_3d')}),
  components={models.factory({model_id='unknown'})}})`, `
  {member_id='class_hidden',definition_id='hidden'},
  {member_id='class_visible',definition_id='visible'},
@@ -139,14 +139,14 @@ test('replaced model constructor members and prefab registration cannot grant bu
 		'prefab.define=function(definition) return definition end',
 	]) {
 		const f = fixture(t, `${replacement}
-prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='model',class=require('cartlib/world/object_3d'),
  components={models.new,models.factory({model_id='factory'})}})`, `{member_id='source',definition_id='model'}`);
 		assert.deepEqual(f.context.visualScene!.models.map(model => model.model), []);
 	}
 });
 
 test('model visual source generations remain retained and preserve canonical source and exact occurrences', t => {
-	const f = fixture(t, `prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
+	const f = fixture(t, `prefab.define({def_id='model',class=require('cartlib/world/object_3d'),
  components={models.factory({model_id='before'})}})`, `{member_id='source',definition_id='model'}`);
 	const before = f.context.visualScene!, calls = t.mock.method(LuaSourceReader.prototype, 'call');
 	for (let frame = 0; frame < 100; frame++) assert.ok(f.context.visualScene === before);

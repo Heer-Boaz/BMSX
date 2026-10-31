@@ -97,6 +97,7 @@ local input<const> = require('cartlib/input/input')
 
 local player<const> = {}
 player.__index = player
+setmetatable(player, { __index = sprite_object })
 
 -- STATE_TAGS — short string tag identifiers.
 -- variant: one per FSM state, exactly one active at a time (excluding the
@@ -429,18 +430,18 @@ function player:reset_stairs_lock()
 end
 
 function player:apply_spawn_position(switch)
-	self.spatial:set_world_origin(switch.spawn_x, switch.spawn_y)
+	self:set_global_position(switch.spawn_x, switch.spawn_y)
 	self.facing = switch.spawn_facing
 end
 
 function player:emit_room_switched(from_room, to_room, direction)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.events:emit('room.switched', {
 		from = from_room,
 		to = to_room,
 		dir = direction,
-		x = pose.ox,
-		y = pose.oy,
+		x = pose_x,
+		y = pose_y,
 	})
 end
 
@@ -454,13 +455,13 @@ function player:land_from_hit()
 end
 
 function player:update_collision_state()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.collider:set_enabled(true)
 	self.sword_collider:set_enabled(self:has_tag(state_tags.group.sword))
-	self.left_wall_collision_primary = self:collides_at_left_wall_primary_profile(pose.ox, pose.oy, false)
-	self.left_wall_collision_secondary = self:collides_at_left_wall_secondary_profile(pose.ox, pose.oy, false)
+	self.left_wall_collision_primary = self:collides_at_left_wall_primary_profile(pose_x, pose_y, false)
+	self.left_wall_collision_secondary = self:collides_at_left_wall_secondary_profile(pose_x, pose_y, false)
 	self.left_wall_collision = self.left_wall_collision_primary or self.left_wall_collision_secondary
-	self.right_wall_collision = self:collides_at_right_wall_profile(pose.ox, pose.oy, false)
+	self.right_wall_collision = self:collides_at_right_wall_profile(pose_x, pose_y, false)
 end
 
 function player:apply_color(color)
@@ -814,8 +815,8 @@ function player:is_hittable()
 end
 
 function player:get_hit_direction_from_source(source_x)
-	local pose<const> = self.spatial
-	local center_x<const> = pose.ox + (self.width // 2)
+	local pose_x<const> = self:get_global_position()
+	local center_x<const> = pose_x + (self.width // 2)
 	if source_x < center_x then
 		return 1
 	end
@@ -945,20 +946,20 @@ function player:collect_item(item_type, item_id)
 end
 
 function player:find_near_shrine()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local shrines<const> = self.room.shrine_instances
-	local player_left<const> = pose.ox
-	local player_top<const> = pose.oy
-	local player_right<const> = pose.ox + self.width
-	local player_bottom<const> = pose.oy + self.height
+	local player_left<const> = pose_x
+	local player_top<const> = pose_y
+	local player_right<const> = pose_x + self.width
+	local player_bottom<const> = pose_y + self.height
 
 	for i = 1, #shrines do
 		local shrine<const> = shrines[i]
-		local shrine_pose<const> = shrine.spatial:resolve_world()
-		local area_left<const> = shrine_pose.wox + shrine_hit_left_px
-		local area_top<const> = shrine_pose.woy + shrine_hit_top_px
-		local area_right<const> = shrine_pose.wox + shrine_hit_right_px
-		local area_bottom<const> = shrine_pose.woy + shrine_hit_bottom_px
+		local shrine_pose_x<const>, shrine_pose_y<const> = shrine:get_global_position()
+		local area_left<const> = shrine_pose_x + shrine_hit_left_px
+		local area_top<const> = shrine_pose_y + shrine_hit_top_px
+		local area_right<const> = shrine_pose_x + shrine_hit_right_px
+		local area_bottom<const> = shrine_pose_y + shrine_hit_bottom_px
 		if player_right >= area_left and player_left <= area_right and player_bottom >= area_top and player_top <= area_bottom then
 			return shrine
 		end
@@ -968,16 +969,16 @@ function player:find_near_shrine()
 end
 
 function player:find_world_entrance_for_unlock()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local world_entrances<const> = self.room.world_entrance_instances
 	local castle<const> = self.castle
 	for i = 1, #world_entrances do
 		local world_entrance<const> = world_entrances[i]
 		local entrance_state<const> = castle.session.world_entrances[world_entrance.target].state
 		if entrance_state == 'closed' then
-			local entrance_pose<const> = world_entrance.spatial:resolve_world()
-			local within_x<const> = pose.ox >= entrance_pose.wox and pose.ox <= (entrance_pose.wox + room_tile_size2)
-			local on_trigger_y<const> = pose.oy == (entrance_pose.woy + world_entrance_trigger_y_offset)
+			local entrance_pose_x<const>, entrance_pose_y<const> = world_entrance:get_global_position()
+			local within_x<const> = pose_x >= entrance_pose_x and pose_x <= (entrance_pose_x + room_tile_size2)
+			local on_trigger_y<const> = pose_y == (entrance_pose_y + world_entrance_trigger_y_offset)
 			if within_x and on_trigger_y then
 				return world_entrance
 			end
@@ -988,17 +989,17 @@ function player:find_world_entrance_for_unlock()
 end
 
 function player:find_near_open_world_entrance()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local world_entrances<const> = self.room.world_entrance_instances
 	local castle<const> = self.castle
 	for i = 1, #world_entrances do
 		local world_entrance<const> = world_entrances[i]
 		local entrance_state<const> = castle.session.world_entrances[world_entrance.target].state
 		if entrance_state == 'open' then
-			local entrance_pose<const> = world_entrance.spatial:resolve_world()
-			local within_x<const> = pose.ox >= ((entrance_pose.wox + world_entrance_trigger_x_offset) - world_entrance_trigger_half_width)
-			and pose.ox <= ((entrance_pose.wox + world_entrance_trigger_x_offset) + world_entrance_trigger_half_width)
-			local on_trigger_y<const> = pose.oy == (entrance_pose.woy + world_entrance_trigger_y_offset)
+			local entrance_pose_x<const>, entrance_pose_y<const> = world_entrance:get_global_position()
+			local within_x<const> = pose_x >= ((entrance_pose_x + world_entrance_trigger_x_offset) - world_entrance_trigger_half_width)
+			and pose_x <= ((entrance_pose_x + world_entrance_trigger_x_offset) + world_entrance_trigger_half_width)
+			local on_trigger_y<const> = pose_y == (entrance_pose_y + world_entrance_trigger_y_offset)
 			if within_x and on_trigger_y then
 				return world_entrance
 			end
@@ -1021,9 +1022,9 @@ function player:begin_entering_world(world_entrance)
 	self:reset_stairs_lock()
 	self.enter_leave_world_target = world_entrance.target
 	self.enter_leave_shrine_text_lines = {}
-	local pose<const> = self.spatial
-	local target_pose<const> = world_entrance.spatial:resolve_world()
-	self.spatial:set_world_origin(target_pose.wox + world_entrance_trigger_x_offset, pose.oy)
+	local _<const>, pose_y<const> = self:get_global_position()
+	local target_pose_x<const> = world_entrance:get_global_position()
+	self:set_global_position(target_pose_x + world_entrance_trigger_x_offset, pose_y)
 	self:reset_enter_leave_animation()
 	self.sprite_component:set_imgid('pietolon_stairs_up_1')
 	local sprite<const> = self.sprite_component
@@ -1039,9 +1040,9 @@ function player:begin_entering_shrine(shrine)
 	self:reset_stairs_lock()
 	self.enter_leave_world_target = nil
 	self.enter_leave_shrine_text_lines = shrine.text_lines
-	local pose<const> = self.spatial
-	local target_pose<const> = shrine.spatial:resolve_world()
-	self.spatial:set_world_origin(target_pose.wox, pose.oy)
+	local _<const>, pose_y<const> = self:get_global_position()
+	local target_pose_x<const> = shrine:get_global_position()
+	self:set_global_position(target_pose_x, pose_y)
 	self:reset_enter_leave_animation()
 	self.sprite_component:set_imgid('pietolon_stairs_up_1')
 	local sprite<const> = self.sprite_component
@@ -1188,9 +1189,9 @@ function player:compute_walk_step(direction)
 end
 
 function player:sync_water_state()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.previous_water_state = self.water_state
-	local next_water_state<const> = self.room:player_water_kind_at_world(pose.ox + room_tile_half, pose.oy + self.height)
+	local next_water_state<const> = self.room:player_water_kind_at_world(pose_x + room_tile_half, pose_y + self.height)
 	self.water_state = next_water_state
 	set_tag_flag(self, player_tags.in_water, player_in_water_by_state[next_water_state])
 end
@@ -1268,12 +1269,12 @@ function player:switch_room(direction, keep_stairs_lock)
 	if self.castle:is_current_room_boss_encounter_active() then
 		return false
 	end
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	if keep_stairs_lock then
-		self.spatial:set_world_origin(self.stairs_x, pose.oy)
+		self:set_global_position(self.stairs_x, pose_y)
 	end
 
-	local switch<const> = self.castle:switch_room(direction, pose.oy, pose.oy + self.height)
+	local switch<const> = self.castle:switch_room(direction, pose_y, pose_y + self.height)
 	if switch.outside then
 		local director<const> = self.director
 		director.events:emit('world_leave_transition_start')
@@ -1290,7 +1291,7 @@ function player:switch_room(direction, keep_stairs_lock)
 		return true
 	end
 	local room<const> = self.room
-	local x, y = pose.ox, pose.oy
+	local x, y = pose_x, pose_y
 	if direction == 'left' then
 		x = room.world_width - self.width
 	elseif direction == 'right' then
@@ -1301,7 +1302,7 @@ function player:switch_room(direction, keep_stairs_lock)
 		y = room.world_top - room.tile_size
 	end
 	if keep_stairs_lock then x = self.stairs_x end
-	self.spatial:set_world_origin(x, y)
+	self:set_global_position(x, y)
 
 	self.last_dx = 0
 	self.last_dy = 0
@@ -1315,19 +1316,19 @@ function player:switch_room(direction, keep_stairs_lock)
 end
 
 function player:switch_side_room_from_position()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local room<const> = self.room
 	local max_x<const> = room.world_width - self.width
-	if pose.ox < room.tile_size then
+	if pose_x < room.tile_size then
 		if room.room_links.left == 0 then
-			self.spatial:set_world_origin(room.tile_size, pose.oy)
+			self:set_global_position(room.tile_size, pose_y)
 			return false
 		end
 		return self:switch_room('left', false)
 	end
-	if pose.ox > max_x then
+	if pose_x > max_x then
 		if room.room_links.right == 0 then
-			self.spatial:set_world_origin(max_x, pose.oy)
+			self:set_global_position(max_x, pose_y)
 			return false
 		end
 		return self:switch_room('right', false)
@@ -1343,41 +1344,41 @@ function player:can_switch_up_from_state()
 end
 
 function player:nearing_room_exit()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local room<const> = self.room
 	local max_x<const> = room.world_width - self.width
-	if pose.ox < 0 then
+	if pose_x < 0 then
 		return 'left'
 	end
-	if pose.ox > max_x then
+	if pose_x > max_x then
 		return 'right'
 	end
 	local up_exit_threshold<const> = room.world_top - room.tile_size
-	if pose.oy < up_exit_threshold then
+	if pose_y < up_exit_threshold then
 		return 'up'
 	end
 	local down_exit_threshold<const> = room.world_height - self.height
-	if pose.oy > down_exit_threshold then
+	if pose_y > down_exit_threshold then
 		return 'down'
 	end
 	return nil
 end
 
 function player:clamp_blocked_vertical_room_exit(direction)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	if direction == 'up' then
 		local room<const> = self.room
 		local up_limit<const> = room.world_top - room.tile_size
-		if pose.oy < up_limit then
-			self.spatial:set_world_origin(pose.ox, up_limit)
+		if pose_y < up_limit then
+			self:set_global_position(pose_x, up_limit)
 		end
 		self.previous_y_collision = true
 		return
 	end
 
 	local down_limit<const> = self.room.world_height - self.height
-	if pose.oy > down_limit then
-		self.spatial:set_world_origin(pose.ox, down_limit)
+	if pose_y > down_limit then
+		self:set_global_position(pose_x, down_limit)
 	end
 end
 
@@ -1435,24 +1436,24 @@ function player:get_jump_inertia(default_inertia)
 end
 
 function player:pick_entry_stairs(direction)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local stairs<const> = self.room.stairs
 	local best = nil
 	local best_dx = 0
 
 	for i = 1, #stairs do
 		local stair<const> = stairs[i]
-		if pose.ox >= (stair.x - 4) and pose.ox <= (stair.x + 8) then
+		if pose_x >= (stair.x - 4) and pose_x <= (stair.x + 8) then
 			local y_ok
 			if direction < 0 then
 				local min_y<const> = stair.top_y + room_tile_size2
-				y_ok = pose.oy >= min_y and pose.oy <= stair.bottom_y
+				y_ok = pose_y >= min_y and pose_y <= stair.bottom_y
 			else
 				local max_y<const> = stair.top_y + room_tile_size
-				y_ok = pose.oy >= stair.top_y and pose.oy <= max_y
+				y_ok = pose_y >= stair.top_y and pose_y <= max_y
 			end
 			if y_ok then
-				local dx<const> = abs(pose.ox - stair.x)
+				local dx<const> = abs(pose_x - stair.x)
 				if best == nil or dx < best_dx or (dx == best_dx and stair.x > best.x) then
 					best = stair
 					best_dx = dx
@@ -1485,8 +1486,8 @@ function player:apply_stairs_lock(stair)
 end
 
 function player:sync_stairs_after_vertical_room_switch(direction)
-	local pose<const> = self.spatial
-	local probe_y = pose.oy
+	local _<const>, pose_y<const> = self:get_global_position()
+	local probe_y = pose_y
 	if direction == 'up' then
 		probe_y = probe_y + self.room.tile_size
 	end
@@ -1496,7 +1497,7 @@ function player:sync_stairs_after_vertical_room_switch(direction)
 	end
 
 	self:apply_stairs_lock(stair)
-	self.spatial:set_world_origin(stair.x, pose.oy)
+	self:set_global_position(stair.x, pose_y)
 	self.last_dx = 0
 	self.last_dy = 0
 	return true
@@ -1510,8 +1511,8 @@ function player:update_hit_stairs_lock()
 		self.hit_stairs_lock = false
 		return
 	end
-	local pose<const> = self.spatial
-	if self:search_stairs_at_locked_x(self.stairs_x, pose.oy) == nil then
+	local _<const>, pose_y<const> = self:get_global_position()
+	if self:search_stairs_at_locked_x(self.stairs_x, pose_y) == nil then
 		self.hit_stairs_lock = false
 	end
 end
@@ -1520,10 +1521,10 @@ function player:leave_stairs(event_name)
 	self.stairs_direction = 0
 	self.stairs_x = -1
 	if stairs_vertical_exit_events[event_name] then
-		local pose<const> = self.spatial
-		local old_y<const> = pose.oy
+		local _<const>, old_y<const> = self:get_global_position()
 		self:snap_feet_y_to_floor_grid()
-		self.last_dy = self.last_dy + (pose.oy - old_y)
+		local _<const>, new_y<const> = self:get_global_position()
+		self.last_dy = self.last_dy + (new_y - old_y)
 	end
 	if stairs_landing_events[event_name] then
 		self.stairs_landing_sound_pending = true
@@ -1562,7 +1563,7 @@ function player:step_off_stairs()
 	if self.up_held or self.down_held then
 		return false
 	end
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 
 	local dir
 	local event_name
@@ -1573,14 +1574,14 @@ function player:step_off_stairs()
 		dir = -1
 		event_name = 'stairs_step_off_left'
 		step_x = stairs_step_off_left_x
-		support_probe_x = pose.ox + stairs_step_off_left_probe_offset_x
-		blocked_by_wall = self:collides_at_left_wall_stairs_step_off_profile(pose.ox, pose.oy)
+		support_probe_x = pose_x + stairs_step_off_left_probe_offset_x
+		blocked_by_wall = self:collides_at_left_wall_stairs_step_off_profile(pose_x, pose_y)
 	elseif self.right_held and not self.left_held then
 		dir = 1
 		event_name = 'stairs_step_off_right'
 		step_x = stairs_step_off_right_x
-		support_probe_x = pose.ox + stairs_step_off_right_probe_offset_x
-		blocked_by_wall = self:collides_at_right_wall_stairs_step_off_profile(pose.ox, pose.oy)
+		support_probe_x = pose_x + stairs_step_off_right_probe_offset_x
+		blocked_by_wall = self:collides_at_right_wall_stairs_step_off_profile(pose_x, pose_y)
 	else
 		return false
 	end
@@ -1589,7 +1590,7 @@ function player:step_off_stairs()
 	if blocked_by_wall then
 		return false
 	end
-	local support_probe_y<const> = pose.oy + self.height + stairs_step_off_probe_extra_y
+	local support_probe_y<const> = pose_y + self.height + stairs_step_off_probe_extra_y
 	if not self.room:has_collision_flags_at_world(
 	support_probe_x,
 	support_probe_y,
@@ -1599,7 +1600,7 @@ function player:step_off_stairs()
 		return false
 	end
 
-	self.spatial:set_world_origin(pose.ox + step_x, pose.oy)
+	self:set_global_position(pose_x + step_x, pose_y)
 	self.last_dx = step_x
 	self.last_dy = 0
 	self:leave_stairs(event_name)
@@ -1619,15 +1620,15 @@ function player:update_stairs_animation(distance_px)
 end
 
 function player:start_stairs(direction, stair, event_name)
-	local pose<const> = self.spatial
-	local old_y<const> = pose.oy
+	local _<const>, pose_y<const> = self:get_global_position()
+	local old_y<const> = pose_y
 	self:apply_stairs_lock(stair)
 	local y = old_y
 	if direction > 0 then
 		local feet_y<const> = y + self.height
 		y = (((feet_y // room_tile_size) * room_tile_size) + room_tile_size) - self.height
 	end
-	self.spatial:set_world_origin(stair.x, y)
+	self:set_global_position(stair.x, y)
 	self.stairs_direction = direction
 	self.stairs_anim_distance = 0
 	self.stairs_anim_frame = 0
@@ -1642,9 +1643,9 @@ function player:collides_with_elevator_probe(x, y)
 	for i = 1, #elevators do
 		local platform<const> = elevators[i]
 		if platform.current_room_number == current_room_number then
-			local pose<const> = platform.spatial:resolve_world()
-			if x >= pose.wox and x < (pose.wox + room_tile_size4)
-			and y >= pose.woy and y < (pose.woy + room_tile_size2) then
+			local pose_x<const>, pose_y<const> = platform:get_global_position()
+			if x >= pose_x and x < (pose_x + room_tile_size4)
+			and y >= pose_y and y < (pose_y + room_tile_size2) then
 				return true
 			end
 		end
@@ -1654,8 +1655,8 @@ function player:collides_with_elevator_probe(x, y)
 end
 
 function player:collides_with_elevator_at(x, y)
-	local pose<const> = self.spatial
-	local delta_x<const>, delta_y<const> = x - pose.ox, y - pose.oy
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local delta_x<const>, delta_y<const> = x - pose_x, y - pose_y
 	local elevators<const> = self.castle.elevators
 	local current_room_number<const> = self.castle.current_room_number
 	for i = 1, #elevators do
@@ -1670,13 +1671,13 @@ function player:collides_with_elevator_at(x, y)
 end
 
 function player:has_feet_over_elevator_top(platform, x)
-	local pose<const> = platform.spatial:resolve_world()
+	local pose_x<const> = platform:get_global_position()
 	local left_foot_x<const> = x + room_tile_half
 	local mid_foot_x<const> = x + (self.width / 2)
 	local right_foot_x<const> = (x + self.width) - room_tile_half
-	return (left_foot_x >= pose.wox and left_foot_x < (pose.wox + room_tile_size4))
-	or (mid_foot_x >= pose.wox and mid_foot_x < (pose.wox + room_tile_size4))
-	or (right_foot_x >= pose.wox and right_foot_x < (pose.wox + room_tile_size4))
+	return (left_foot_x >= pose_x and left_foot_x < (pose_x + room_tile_size4))
+	or (mid_foot_x >= pose_x and mid_foot_x < (pose_x + room_tile_size4))
+	or (right_foot_x >= pose_x and right_foot_x < (pose_x + room_tile_size4))
 end
 
 function player:resolve_overlap_with_elevator(platform, previous_platform_y)
@@ -1686,34 +1687,34 @@ function player:resolve_overlap_with_elevator(platform, previous_platform_y)
 	if not collision_2d.collides(self.collider, platform.collider) then
 		return false
 	end
-	local pose<const> = self.spatial
-	local platform_pose<const> = platform.spatial:resolve_world()
-	if pose.oy <= previous_platform_y and self:has_feet_over_elevator_top(platform, pose.ox) then
-		self.spatial:set_world_origin(pose.ox, platform_pose.woy - self.height)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local platform_pose_x<const>, platform_pose_y<const> = platform:get_global_position()
+	if pose_y <= previous_platform_y and self:has_feet_over_elevator_top(platform, pose_x) then
+		self:set_global_position(pose_x, platform_pose_y - self.height)
 		return true
 	end
-	if pose.oy >= (previous_platform_y + room_tile_size2) then
-		self.spatial:set_world_origin(pose.ox, platform_pose.woy + room_tile_size2)
+	if pose_y >= (previous_platform_y + room_tile_size2) then
+		self:set_global_position(pose_x, platform_pose_y + room_tile_size2)
 		return true
 	end
-	local left_x<const> = platform_pose.wox - self.width
-	local right_x<const> = platform_pose.wox + room_tile_size4
-	local left_clear<const> = not self:collides_at(left_x, pose.oy, true)
-	local right_clear<const> = not self:collides_at(right_x, pose.oy, true)
+	local left_x<const> = platform_pose_x - self.width
+	local right_x<const> = platform_pose_x + room_tile_size4
+	local left_clear<const> = not self:collides_at(left_x, pose_y, true)
+	local right_clear<const> = not self:collides_at(right_x, pose_y, true)
 	if left_clear and right_clear then
-		if abs(pose.ox - left_x) <= abs(pose.ox - right_x) then
-			self.spatial:set_world_origin(left_x, pose.oy)
+		if abs(pose_x - left_x) <= abs(pose_x - right_x) then
+			self:set_global_position(left_x, pose_y)
 		else
-			self.spatial:set_world_origin(right_x, pose.oy)
+			self:set_global_position(right_x, pose_y)
 		end
 		return true
 	end
 	if left_clear then
-		self.spatial:set_world_origin(left_x, pose.oy)
+		self:set_global_position(left_x, pose_y)
 		return true
 	end
 	if right_clear then
-		self.spatial:set_world_origin(right_x, pose.oy)
+		self:set_global_position(right_x, pose_y)
 		return true
 	end
 	return false
@@ -1735,12 +1736,12 @@ function player:is_support_below_at(x, y, include_elevator)
 	for i = 1, #elevators do
 		local platform<const> = elevators[i]
 		if platform.current_room_number == current_room_number then
-			local pose<const> = platform.spatial:resolve_world()
-			if player_bottom >= pose.woy
-			and player_bottom <= (pose.woy + 1)
+			local pose_x<const>, pose_y<const> = platform:get_global_position()
+			if player_bottom >= pose_y
+			and player_bottom <= (pose_y + 1)
 			and (
-			(left_foot_x >= pose.wox and left_foot_x < (pose.wox + room_tile_size4))
-			or (right_foot_x >= pose.wox and right_foot_x < (pose.wox + room_tile_size4))
+			(left_foot_x >= pose_x and left_foot_x < (pose_x + room_tile_size4))
+			or (right_foot_x >= pose_x and right_foot_x < (pose_x + room_tile_size4))
 			)
 			then
 				return true
@@ -1812,14 +1813,14 @@ function player:collides_at_left_wall_secondary_profile(x, y, include_elevator)
 end
 
 function player:snap_feet_y_to_floor_grid()
-	local pose<const> = self.spatial
-	local feet_y<const> = pose.oy + self.height
-	self.spatial:set_world_origin(pose.ox, ((feet_y // room_tile_size) * room_tile_size) - self.height)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local feet_y<const> = pose_y + self.height
+	self:set_global_position(pose_x, ((feet_y // room_tile_size) * room_tile_size) - self.height)
 end
 
 function player:apply_side_probe_horizontal_move(dx)
-	local pose<const> = self.spatial
-	local old_x<const> = pose.ox
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local old_x<const> = pose_x
 	local x = old_x
 	local collided_x = false
 	if dx < 0 then
@@ -1828,8 +1829,8 @@ function player:apply_side_probe_horizontal_move(dx)
 			collided_x = true
 		else
 			local next_x<const> = x + dx
-			local next_left_wall_collision_primary<const> = self:collides_at_left_wall_primary_profile(next_x, pose.oy, false)
-			local next_left_wall_collision_secondary<const> = self:collides_at_left_wall_secondary_profile(next_x, pose.oy, false)
+			local next_left_wall_collision_primary<const> = self:collides_at_left_wall_primary_profile(next_x, pose_y, false)
+			local next_left_wall_collision_secondary<const> = self:collides_at_left_wall_secondary_profile(next_x, pose_y, false)
 			if next_left_wall_collision_primary or next_left_wall_collision_secondary then
 				x = next_x
 				self.left_wall_collision_primary = next_left_wall_collision_primary
@@ -1845,9 +1846,9 @@ function player:apply_side_probe_horizontal_move(dx)
 
 	if collided_x then
 		-- The wall-grid procedure consumes the committed collision-side pose.
-		self.spatial:set_world_origin(x, pose.oy)
+		self:set_global_position(x, pose_y)
 		self:snap_x_to_current_wall_grid()
-		x = pose.ox
+		x = self:get_global_position()
 	else
 		x = x + dx
 	end
@@ -1863,30 +1864,30 @@ function player:apply_side_probe_horizontal_move(dx)
 		x = max_x
 		collided_x = true
 	end
-	self.spatial:set_world_origin(x, pose.oy)
+	self:set_global_position(x, pose_y)
 	return x - old_x, collided_x
 end
 
 function player:snap_x_to_current_wall_grid()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	if self.right_wall_collision then
-		local msx_x<const> = ((pose.ox + room_tile_size) // room_tile_size) * room_tile_size
-		self.spatial:set_world_origin(msx_x - room_tile_size, pose.oy)
+		local msx_x<const> = ((pose_x + room_tile_size) // room_tile_size) * room_tile_size
+		self:set_global_position(msx_x - room_tile_size, pose_y)
 		return
 	end
 	if self.left_wall_collision then
-		local x = ((pose.ox + room_tile_size - 1) // room_tile_size) * room_tile_size
+		local x = ((pose_x + room_tile_size - 1) // room_tile_size) * room_tile_size
 		if self.left_wall_collision_primary and (x % room_tile_size) == 0
-		and self:collides_at_left_wall_primary_profile(x, pose.oy, false) then
+		and self:collides_at_left_wall_primary_profile(x, pose_y, false) then
 			x = x + room_tile_size
 		end
-		self.spatial:set_world_origin(x, pose.oy)
+		self:set_global_position(x, pose_y)
 	end
 end
 
 function player:apply_air_move(dx, dy, include_elevator_collision)
-	local pose<const> = self.spatial
-	local old_x<const>, old_y<const> = pose.ox, pose.oy
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local old_x<const>, old_y<const> = pose_x, pose_y
 	local room<const> = self.room
 	local moved_x<const>, collided_x = self:apply_side_probe_horizontal_move(dx)
 	local x = old_x + moved_x
@@ -1903,7 +1904,7 @@ function player:apply_air_move(dx, dy, include_elevator_collision)
 	end
 	local max_y<const> = room.world_height - self.height
 	if y > max_y and room_links.down <= 0 then y = max_y end
-	self.spatial:set_world_origin(x, y)
+	self:set_global_position(x, y)
 	self.last_dx = x - old_x
 	self.last_dy = y - old_y
 	self.previous_x_collision = collided_x
@@ -2120,12 +2121,12 @@ end
 
 function player:runcheck_quiet_stairs_controls()
 	if self.down_held then
-		local pose<const> = self.spatial
-		local was_at_or_below_bottom<const> = pose.oy >= self.stairs_bottom_y
+		local pose_x<const>, pose_y<const> = self:get_global_position()
+		local was_at_or_below_bottom<const> = pose_y >= self.stairs_bottom_y
 		self.stairs_direction = 1
 		self.events:emit('stairs_down_hold')
 		self.last_dy = stairs_down_start_push_px
-		self.spatial:set_world_origin(pose.ox, pose.oy + self.last_dy)
+		self:set_global_position(pose_x, pose_y + self.last_dy)
 		if self.last_dy ~= 0 then
 			self:update_stairs_animation(abs(self.last_dy))
 		end
@@ -2137,11 +2138,11 @@ function player:runcheck_quiet_stairs_controls()
 
 	if self.up_held then
 		self.events:emit('stairs_up_hold')
-		local pose<const> = self.spatial
-		if pose.oy > self.stairs_top_y then
-			local next_y<const> = pose.oy - stairs_speed_px
-			self.last_dy = next_y - pose.oy
-			self.spatial:set_world_origin(pose.ox, next_y)
+		local pose_x<const>, pose_y<const> = self:get_global_position()
+		if pose_y > self.stairs_top_y then
+			local next_y<const> = pose_y - stairs_speed_px
+			self.last_dy = next_y - pose_y
+			self:set_global_position(pose_x, next_y)
 			self.stairs_direction = -1
 			if self.last_dy ~= 0 then
 				self:update_stairs_animation(abs(self.last_dy))
@@ -2164,9 +2165,9 @@ function player:runcheck_quiet_stairs_controls()
 end
 
 function player:update_quiet()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self:zero_motion()
-	if not self:is_support_below_at(pose.ox, pose.oy, true) then
+	if not self:is_support_below_at(pose_x, pose_y, true) then
 		self:reset_fall_substate_sequence()
 		self:reset_vertical_motion_for_fall()
 		self.events:emit('falling')
@@ -2179,10 +2180,10 @@ function player:update_quiet()
 end
 
 function player:update_walking_right()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.facing = 1
 
-	if not self:is_support_below_at(pose.ox, pose.oy, true) then
+	if not self:is_support_below_at(pose_x, pose_y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
 		self:reset_vertical_motion_for_fall()
@@ -2211,10 +2212,10 @@ function player:update_walking_right()
 end
 
 function player:update_walking_left()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.facing = -1
 
-	if not self:is_support_below_at(pose.ox, pose.oy, true) then
+	if not self:is_support_below_at(pose_x, pose_y, true) then
 		self:zero_motion()
 		self:reset_fall_substate_sequence()
 		self:reset_vertical_motion_for_fall()
@@ -2251,8 +2252,8 @@ function player:update_slowdoorpass(state)
 		collided_x = self.left_wall_collision
 	end
 	if not collided_x then
-		local pose<const> = self.spatial
-		self.spatial:set_world_origin(pose.ox + dx, pose.oy)
+		local pose_x<const>, pose_y<const> = self:get_global_position()
+		self:set_global_position(pose_x + dx, pose_y)
 	end
 	self.last_dx = collided_x and 0 or dx
 	self.last_dy = 0
@@ -2361,13 +2362,13 @@ function player:update_stopped_jump_motion()
 end
 
 function player:update_controlled_fall_motion()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self:update_facing_from_horizontal_input()
 	if (not self:has_tag(state_tags.group.sword)) and self.previous_x_collision then
 		self.jump_inertia = 0
 	end
-	local tile_support<const> = self:collides_at_support_profile(pose.ox, pose.oy, false)
-	if tile_support or self:is_support_below_at(pose.ox, pose.oy, true) then
+	local tile_support<const> = self:collides_at_support_profile(pose_x, pose_y, false)
+	if tile_support or self:is_support_below_at(pose_x, pose_y, true) then
 		if tile_support then
 			self:snap_feet_y_to_floor_grid()
 		end
@@ -2400,9 +2401,9 @@ function player:update_controlled_fall_motion()
 end
 
 function player:update_uncontrolled_fall_motion()
-	local pose<const> = self.spatial
-	local tile_support<const> = self:collides_at_support_profile(pose.ox, pose.oy, false)
-	if tile_support or self:is_support_below_at(pose.ox, pose.oy, true) then
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local tile_support<const> = self:collides_at_support_profile(pose_x, pose_y, false)
+	if tile_support or self:is_support_below_at(pose_x, pose_y, true) then
 		if tile_support then
 			self:snap_feet_y_to_floor_grid()
 		end
@@ -2436,32 +2437,32 @@ end
 
 function player:update_up_stairs()
 	self:zero_motion()
-	local pose<const> = self.spatial
-	self.spatial:set_world_origin(self.stairs_x, pose.oy)
+	local _<const>, pose_y<const> = self:get_global_position()
+	self:set_global_position(self.stairs_x, pose_y)
 
 	local moved
 	local next_y
 
 	if self.up_held and not self.down_held then
 		self.stairs_direction = -1
-		if pose.oy > self.stairs_top_y then
-			next_y = pose.oy - stairs_speed_px
+		if pose_y > self.stairs_top_y then
+			next_y = pose_y - stairs_speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_top')
 			return
 		end
 		if next_y <= self.stairs_top_y then
-			self.last_dy = next_y - pose.oy
-			self.spatial:set_world_origin(pose.ox, next_y)
+			self.last_dy = next_y - pose_y
+			self:set_global_position(self.stairs_x, next_y)
 			self:leave_stairs('stairs_end_top')
 			return
 		end
 	elseif self.down_held then
 		self.stairs_direction = 1
 		self.events:emit('stairs_reverse_down')
-		if pose.oy < self.stairs_bottom_y then
-			next_y = pose.oy + stairs_speed_px
+		if pose_y < self.stairs_bottom_y then
+			next_y = pose_y + stairs_speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_bottom')
@@ -2482,16 +2483,16 @@ function player:update_up_stairs()
 	end
 
 	if moved then
-		self.last_dy = next_y - pose.oy
-		self.spatial:set_world_origin(pose.ox, next_y)
+		self.last_dy = next_y - pose_y
+		self:set_global_position(self.stairs_x, next_y)
 		self:update_stairs_animation(abs(self.last_dy))
 	end
 end
 
 function player:update_down_stairs()
 	self:zero_motion()
-	local pose<const> = self.spatial
-	self.spatial:set_world_origin(self.stairs_x, pose.oy)
+	local _<const>, pose_y<const> = self:get_global_position()
+	self:set_global_position(self.stairs_x, pose_y)
 
 	local moved
 	local next_y
@@ -2500,24 +2501,24 @@ function player:update_down_stairs()
 
 	if self.down_held and not self.up_held then
 		self.stairs_direction = 1
-		if pose.oy < self.stairs_bottom_y or stairs_reaches_room_exit then
-			next_y = pose.oy + stairs_speed_px
+		if pose_y < self.stairs_bottom_y or stairs_reaches_room_exit then
+			next_y = pose_y + stairs_speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_bottom')
 			return
 		end
 		if (not stairs_reaches_room_exit) and next_y >= self.stairs_bottom_y then
-			self.last_dy = next_y - pose.oy
-			self.spatial:set_world_origin(pose.ox, next_y)
+			self.last_dy = next_y - pose_y
+			self:set_global_position(self.stairs_x, next_y)
 			self:leave_stairs('stairs_end_bottom')
 			return
 		end
 	elseif self.up_held then
 		self.stairs_direction = -1
 		self.events:emit('stairs_reverse_up')
-		if pose.oy > self.stairs_top_y then
-			next_y = pose.oy - stairs_speed_px
+		if pose_y > self.stairs_top_y then
+			next_y = pose_y - stairs_speed_px
 			moved = true
 		else
 			self:leave_stairs('stairs_end_top')
@@ -2538,16 +2539,16 @@ function player:update_down_stairs()
 	end
 
 	if moved then
-		self.last_dy = next_y - pose.oy
-		self.spatial:set_world_origin(pose.ox, next_y)
+		self.last_dy = next_y - pose_y
+		self:set_global_position(self.stairs_x, next_y)
 		self:update_stairs_animation(abs(self.last_dy))
 	end
 end
 
 function player:update_quiet_stairs()
 	self:zero_motion()
-	local pose<const> = self.spatial
-	self.spatial:set_world_origin(self.stairs_x, pose.oy)
+	local _<const>, pose_y<const> = self:get_global_position()
+	self:set_global_position(self.stairs_x, pose_y)
 	self.stairs_direction = 0
 	if not self:has_tag(state_tags.group.sword) then
 		self:runcheck_quiet_stairs_controls()
@@ -2559,26 +2560,26 @@ function player:is_ground_below_for_hit_on_stairs(x, y)
 end
 
 function player:advance_hit_stairs_fall(dy)
-	local pose<const> = self.spatial
-	local y = pose.oy
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local y = pose_y
 	local moved_y = 0
 	for i = 1, dy do
-		if self:is_ground_below_for_hit_on_stairs(pose.ox, y) then
+		if self:is_ground_below_for_hit_on_stairs(pose_x, y) then
 			break
 		end
 		y = y + 1
 		moved_y = moved_y + 1
 	end
-	self.spatial:set_world_origin(pose.ox, y)
+	self:set_global_position(pose_x, y)
 	self.previous_x_collision = false
 	self.previous_y_collision = false
 	self.last_dx = 0
 	self.last_dy = moved_y
-	return self:is_ground_below_for_hit_on_stairs(pose.ox, y)
+	return self:is_ground_below_for_hit_on_stairs(pose_x, y)
 end
 
 function player:update_hit_fall()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local dx<const> = self.hit_direction * damage_knockback_dx
 	local dy
 	if self.hit_substate >= 4 then
@@ -2591,7 +2592,7 @@ function player:update_hit_fall()
 	end
 
 	if self.hit_substate >= 4 then
-		if self:collides_at_support_profile(pose.ox, pose.oy, false) then
+		if self:collides_at_support_profile(pose_x, pose_y, false) then
 			if self.status.health <= 0 then
 				self:start_dying()
 				return
@@ -2601,8 +2602,8 @@ function player:update_hit_fall()
 		end
 	end
 
-	local old_x<const> = pose.ox
-	local old_y<const> = pose.oy
+	local old_x<const> = pose_x
+	local old_y<const> = pose_y
 	local hit_wall = false
 	if dx > 0 then
 		hit_wall = self.right_wall_collision
@@ -2612,10 +2613,10 @@ function player:update_hit_fall()
 	local x = old_x + dx
 	if hit_wall then
 		self:snap_x_to_current_wall_grid()
-		x = pose.ox
+		x = self:get_global_position()
 		self.hit_direction = 0
 	end
-	self.spatial:set_world_origin(x, old_y + dy)
+	self:set_global_position(x, old_y + dy)
 	self.last_dx = x - old_x
 	self.last_dy = dy
 	self.previous_x_collision = hit_wall
@@ -2662,9 +2663,9 @@ function player:update_hit_collision()
 		return
 	end
 
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	if self.hit_substate >= 4 then
-		if self:collides_at_support_profile(pose.ox, pose.oy, false) then
+		if self:collides_at_support_profile(pose_x, pose_y, false) then
 			if self.status.health <= 0 then
 				self:start_dying()
 				return
@@ -2674,7 +2675,7 @@ function player:update_hit_collision()
 		end
 	end
 
-	self.spatial:set_world_origin(pose.ox, pose.oy + dy)
+	self:set_global_position(pose_x, pose_y + dy)
 	self.last_dx = 0
 	self.last_dy = dy
 	self.previous_x_collision = false
@@ -2710,8 +2711,8 @@ function player:update_common_frame()
 	self:switch_side_room_from_position()
 	self:switch_vertical_room_from_position()
 
-	local pose<const> = self.spatial
-	self.grounded = self:is_support_below_at(pose.ox, pose.oy, true)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	self.grounded = self:is_support_below_at(pose_x, pose_y, true)
 	self:apply_presentation_state()
 end
 
@@ -3390,8 +3391,6 @@ local register_player_definition<const> = function()
 	prefab.define({
 		def_id = 'player',
 		class = player,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory_for_sprite({ id_local = 'body', geometry_pool = collision_storage.sprite,
 				layer = collision_player_layer, mask = collision_player_mask }),

@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local tile_strip_collider_2d_component<const> = require('cartlib/collision/tile_strip_collider_2d_component')
@@ -5,12 +6,12 @@ local tile_strip_component<const> = require('cartlib/component/tile_strip_compon
 local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local world_object<const> = require('cartlib/world/world_object')
 local collision_storage<const> = require('collision_storage')
 require('constants')
 
 local moon_small_ray<const> = {}
 moon_small_ray.__index = moon_small_ray
+setmetatable(moon_small_ray, { __index = object_2d })
 
 local new_ray_strip<const> = tile_strip_component.factory({
 	imgid = assets_schoorsteen_ray,
@@ -61,9 +62,9 @@ function moon_small_ray:apply_expansion_frame(frame)
 end
 
 function moon_small_ray:update_moving()
-	local pose<const> = self.spatial:resolve_world()
-	local next_y<const> = pose.woy + self.direction * moon_small_ray_speed
-	self.spatial:set_world_origin(pose.wox, next_y)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local next_y<const> = pose_y + self.direction * moon_small_ray_speed
+	self:set_global_position(pose_x, next_y)
 	if self.direction == moon_vertical_direction_up then
 		if next_y < 0 then
 			self:mark_for_disposal()
@@ -102,8 +103,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_moon_small_ray_def,
 		class = moon_small_ray,
-		base = world_object,
-		spatial = { family = '2d', authority = 'affine' },
 		components = {
 			new_ray_strip,
 			new_ray_collider,

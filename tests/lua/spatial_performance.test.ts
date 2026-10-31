@@ -22,17 +22,19 @@ import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test
 // unrelated World population. These are guest machine cycles, not host timings.
 // https://github.com/bevyengine/bevy/blob/main/examples/stress_tests/transform_hierarchy.rs
 const worldFixture = WORLD_CPU_SETUP + `
-prefab.define({def_id='measure.2d',class={},spatial={family='2d',authority='affine'}})
-prefab.define({def_id='measure.3d',class={},spatial={family='3d',authority='affine'}})
+prefab.define({def_id='measure.2d',
+ class=object_2d})
+prefab.define({def_id='measure.3d',
+ class=object_3d})
 local options<const> = {}
 local branches2<const>, branches3<const> = {}, {}
 local selected_width=1
 local leaf2, leaf3
 local build<const> = function(id, width)
- local root<const> = world:spawn(id, options).spatial
+ local root<const> = world:spawn(id, options)
  local child
  for index=1,width do
-  child=world:spawn(id,options).spatial
+  child=world:spawn(id,options)
   assert(hierarchy.reparent(child,root,false)==hierarchy.committed)
   hierarchy.resolve(child)
  end
@@ -54,15 +56,15 @@ probe = {
   branches3[2]=build('measure.3d',8)
   branches2[3]=build('measure.2d',32)
   branches3[3]=build('measure.3d',32)
-  anchor2=world:spawn('measure.2d',options).spatial
-  anchor3=world:spawn('measure.3d',options).spatial
+  anchor2=world:spawn('measure.2d',options)
+  anchor3=world:spawn('measure.3d',options)
   hierarchy.resolve(anchor2)
   hierarchy.resolve(anchor3)
  end,
  unrelated=function(count)
   for index=1,count do
    local id<const> = index%2==0 and 'measure.2d' or 'measure.3d'
-   hierarchy.resolve(world:spawn(id,options).spatial)
+   hierarchy.resolve(world:spawn(id,options))
   end
  end,
  select_width=function(index) selected_width=index end,
@@ -92,30 +94,30 @@ probe = {
   for index=1,count do
    local a<const> = world:spawn('measure.2d',options)
    local b<const> = world:spawn('measure.3d',options)
-   retired[1],retired[2],retired[3],retired[4]=a,a.spatial,b,b.spatial
+   retired[1],retired[2]=a,b
    world:_open_mutation_barrier()
-   world:reparent(a.spatial,anchor2,false,complete,context)
-   world:reparent(b.spatial,anchor3,false,complete,context)
+   world:reparent(a,anchor2,false,complete,context)
+   world:reparent(b,anchor3,false,complete,context)
    world:_commit_mutation_barrier()
-   hierarchy.resolve(a.spatial)
-   hierarchy.resolve(b.spatial)
+   hierarchy.resolve(a)
+   hierarchy.resolve(b)
    world:_open_mutation_barrier()
-   world:reparent(a.spatial,nil,true,complete,context)
-   world:reparent(b.spatial,nil,true,complete,context)
+   world:reparent(a,nil,true,complete,context)
+   world:reparent(b,nil,true,complete,context)
    world:_commit_mutation_barrier()
    world:_open_mutation_barrier()
    a:mark_for_disposal()
    b:mark_for_disposal()
    world:_commit_mutation_barrier()
-   assert(a.world==nil and b.world==nil and a.spatial._hierarchy==nil and b.spatial._hierarchy==nil)
+   assert(a.world==nil and b.world==nil and a._hierarchy==nil and b._hierarchy==nil)
   end
  end,
  steady=function(count)
   for index=1,count do
-   anchor2:set_local_origin(index,-index)
-   anchor3:set_local_origin(index,-index,index*2)
-   anchor2:resolve_world()
-   anchor3:resolve_world()
+   anchor2:set_position(index,-index)
+   anchor3:set_position(index,-index,index*2)
+   hierarchy.resolve(anchor2)
+   hierarchy.resolve(anchor3)
   end
  end,
  check=function()
@@ -225,14 +227,14 @@ for (const optLevel of [0, 3] as const) {
 		const measurements = [];
 		for (let batch = 0; batch < 3; batch += 1) {
 			const profile = profileWarmGuestKernel(cpu, churn, 16);
-			assert.ok(profile.reservations > 0, 'public gameplay/component identities have real allocation costs');
+			assert.ok(profile.reservations > 0, 'public gameplay identities have real allocation costs');
 			assert.ok(profile.reservedBytes > 0);
 			assert.equal(cpu.collectTrackedHeapBytes(), retained, 'retired instances must not accumulate in queues or scratch');
 			assert.deepEqual(heapObjects(cpu), objects);
 			assert.equal(graph.getStringKey(cpu.stringPool.find('_scratch')!), scratch);
 			assert.equal(graph.getStringKey(cpu.stringPool.find('_scratch_capacity')!), scratchSlots);
 			const retired = probe.getStringKey(cpu.stringPool.find('retired')!) as Table;
-			for (let index = 1; index <= 4; index += 1) assert.equal(retired.getInteger(index), null);
+			for (let index = 1; index <= 2; index += 1) assert.equal(retired.getInteger(index), null);
 			runCompletionClosure(cpu, probe.getStringKey(cpu.stringPool.find('check')!) as Closure, []);
 			measurements.push({ ...profile, collectedRetained: retained });
 		}
@@ -240,7 +242,7 @@ for (const optLevel of [0, 3] as const) {
 		assert.equal(steady.reservations, 0);
 		assert.equal(steady.reservedBytes, 0);
 		assert.equal(steady.retainedAfter, steady.retainedBefore);
-		t.diagnostic(JSON.stringify({ optLevel, publicObjectsPerIteration: 2, spatialComponentsPerIteration: 2,
+		t.diagnostic(JSON.stringify({ optLevel, publicObjectsPerIteration: 2, spatialComponentsPerIteration: 0,
 			measurements, steady, retainedObjects: objects, scratchSlots,
 			linkedCodeBytes: images.cartImage.textBytes.byteLength, configuredBssBytes: images.cartImage.header.bssByteCount,
 			topologyCompilation: 'fixed linked functions; no topology-specific generated evaluator' }));

@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
@@ -10,6 +11,7 @@ local combat_damage<const> = require('combat/damage')
 
 local breakablewall<const> = {}
 breakablewall.__index = breakablewall
+setmetatable(breakablewall, { __index = object_2d })
 
 function breakablewall:apply_damage(request)
 	if request.weapon_kind ~= 'sword' then
@@ -57,7 +59,6 @@ function breakablewall.register()
 	prefab.define({
 		def_id = 'enemy.breakablewall',
 		class = breakablewall,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area,

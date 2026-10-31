@@ -12,6 +12,7 @@ require('constants')
 
 local bel<const> = {}
 bel.__index = bel
+setmetatable(bel, { __index = enemy })
 
 local players_view
 
@@ -34,14 +35,14 @@ function bel:center()
 end
 
 function bel:ring()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local sprite<const> = self.sprite_component
 	local spawn_count<const> = math.random(
 		bel_note_spawn_count_min,
 		bel_note_spawn_count_max
 	) * self.player_count
-	local spawn_x<const> = pose.ox + sprite.attachment_ox + bel_note_spawn_offset_x
-	local spawn_y<const> = pose.oy + sprite.attachment_oy + bel_note_spawn_offset_y
+	local spawn_x<const> = pose_x + sprite.attachment_ox + bel_note_spawn_offset_x
+	local spawn_y<const> = pose_y + sprite.attachment_oy + bel_note_spawn_offset_y
 	for _ = 1, spawn_count do
 		local angle<const> = math.random() * math.pi
 		local velocity_x<const> = velocity.pixels_per_second_to_velocity_q8(
@@ -49,11 +50,11 @@ function bel:ring()
 		local velocity_y<const> = velocity.pixels_per_second_to_velocity_q8(
 			math.sin(angle - math.pi * 0.5) * noot_velocity_scale_px_per_second)
 		self.scene:spawn(ids_noot_def, {
+			position = { x = spawn_x, y = spawn_y },
 			velocity_x = velocity_x,
 			velocity_y = velocity_y,
 			stage = self.stage,
-		},
-			{ local_transform = { 1, 0, 0, 1, spawn_x, spawn_y } })
+		})
 	end
 	self.events:emit('enemy.bel.ring')
 end
@@ -117,18 +118,20 @@ function bel:receive_player_projectile(projectile, _collider_local_id, hit_point
 	if self.health > 0 then
 		self.events:emit('enemy.bel.hit')
 		self.scene:spawn(ids_small_explosion_def, {
+			position = { x = hit_point.x, y = hit_point.y },
 			stage = self.stage,
-		}, { local_transform = { 1, 0, 0, 1, hit_point.x, hit_point.y } })
+		})
 	end
 	return true
 end
 
 function bel:on_destroyed(projectile)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self:center()
 	self.scene:spawn(ids_large_explosion_def, {
+		position = { x = pose_x, y = pose_y },
 		stage = self.stage,
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
+	})
 	self.events:emit('enemy.bel.destroyed')
 	self.stage:resume_scrolling()
 	enemy.on_destroyed(self, projectile)
@@ -193,8 +196,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_bel_def,
 		class = bel,
-		base = enemy,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy.collider_factory(assets.collision_shape_bel_middle_body_addr),
 			stage_scroll_follower_component.new,

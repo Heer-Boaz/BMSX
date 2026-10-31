@@ -75,8 +75,8 @@ function enemy:bind()
 end
 
 function enemy:dispose_if_left_of_stage(width)
-	local pose<const> = self.spatial
-	if pose.ox < -width then
+	local pose_x<const> = self:get_global_position()
+	if pose_x < -width then
 		self:mark_for_disposal()
 		return true
 	end
@@ -84,8 +84,8 @@ function enemy:dispose_if_left_of_stage(width)
 end
 
 function enemy:update_stage_follower()
-	local pose<const> = self.spatial
-	if pose.ox < -self.stage_scroll_width then
+	local pose_x<const> = self:get_global_position()
+	if pose_x < -self.stage_scroll_width then
 		self:mark_for_disposal()
 	end
 end

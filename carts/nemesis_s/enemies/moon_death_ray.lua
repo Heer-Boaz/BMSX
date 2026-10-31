@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local tile_strip_collider_2d_component<const> = require('cartlib/collision/tile_strip_collider_2d_component')
 local sprite_component<const> = require('cartlib/component/sprite_component')
@@ -13,6 +14,7 @@ require('constants')
 
 local moon_death_ray<const> = {}
 moon_death_ray.__index = moon_death_ray
+setmetatable(moon_death_ray, { __index = object_2d })
 
 local expansion_timeline_id<const> = 'nemesis_s.enemy.moon_death_ray.expansion'
 local hold_timeline_id<const> = 'nemesis_s.enemy.moon_death_ray.hold'
@@ -67,16 +69,18 @@ function moon_death_ray:begin_expansion()
 end
 
 function moon_death_ray:apply_expansion_frame(frame)
-	local pose<const> = self.spatial:resolve_world()
-	local next_y<const> = self.originator.spatial.oy + moon_death_ray_offset_y
-	self.spatial:set_world_origin(pose.wox, next_y)
+	local pose_x<const> = self:get_global_position()
+	local _<const>, originator_y<const> = self.originator:get_global_position()
+	local next_y<const> = originator_y + moon_death_ray_offset_y
+	self:set_global_position(pose_x, next_y)
 	self.ray_strip:set_range(1, frame + 2)
 end
 
 function moon_death_ray:follow_originator()
-	local pose<const> = self.spatial:resolve_world()
-	local next_y<const> = self.originator.spatial.oy + moon_death_ray_offset_y
-	self.spatial:set_world_origin(pose.wox, next_y)
+	local pose_x<const> = self:get_global_position()
+	local _<const>, originator_y<const> = self.originator:get_global_position()
+	local next_y<const> = originator_y + moon_death_ray_offset_y
+	self:set_global_position(pose_x, next_y)
 end
 
 local define_fsm<const> = function()
@@ -122,8 +126,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_moon_death_ray_def,
 		class = moon_death_ray,
-		base = world_object,
-		spatial = { family = '2d', authority = 'affine' },
 		components = {
 			new_ray_strip,
 			new_ray_strip_collider,

@@ -12,6 +12,7 @@ require('constants')
 
 local cloud<const> = {}
 cloud.__index = cloud
+setmetatable(cloud, { __index = enemy_base })
 cloud.primary_sprite_factory = sprite_animation_component.factory({
 	frames = { 'cloud_1', 'cloud_2' },
 	frame_run = enemy_cloud_anim_switch_steps,
@@ -36,7 +37,7 @@ function cloud.execute_move(self, node_memory)
 end
 
 function cloud.tick_move(self, node_memory)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local room<const> = self.room
 	local dir_modifier<const> = self.direction == 'left' and -1 or 1
 	local move_x<const>, move_accum<const> = velocity.consume_axis_accum(
@@ -45,7 +46,7 @@ function cloud.tick_move(self, node_memory)
 		enemy_cloud_horizontal_speed_den
 	)
 	node_memory.move_accum = move_accum
-	local next_x<const> = pose.ox + move_x * dir_modifier
+	local next_x<const> = pose_x + move_x * dir_modifier
 
 	local wave_accum<const> = node_memory.wave_accum
 	local wave_phase = node_memory.wave_phase_millirad
@@ -64,7 +65,7 @@ function cloud.tick_move(self, node_memory)
 		end
 	end
 	local wave_dy<const>, next_wave_accum<const> = velocity.consume_axis_accum(wave_accum, wave_speed_num, enemy_cloud_wave_speed_den)
-	self.spatial:set_world_origin(next_x, pose.oy + wave_dy)
+	self:set_global_position(next_x, pose_y + wave_dy)
 	wave_phase = wave_phase + enemy_cloud_wave_phase_step_millirad
 	if wave_phase >= full_circle_milliradians then
 		wave_phase = wave_phase - full_circle_milliradians
@@ -85,7 +86,7 @@ function cloud.tick_move(self, node_memory)
 end
 
 function cloud.spawn_vlok_burst(self)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local room<const> = self.room
 	for _ = 1, 3 do
 		local random_x = 0
@@ -95,6 +96,7 @@ function cloud.spawn_vlok_burst(self)
 			random_y = math.random(-5, 4)
 		end
 		self.room.scene:spawn('enemy.vlokfoe', {
+			position = { x = pose_x + 16, y = pose_y + 12 },
 			speed_x_num = random_x,
 			speed_y_num = random_y,
 			speed_den = 5,
@@ -102,7 +104,7 @@ function cloud.spawn_vlok_burst(self)
 			room = room,
 			player = self.player,
 			direction = random_x < 0 and 'left' or 'right',
-		}, { local_transform = { 1, 0, 0, 1, pose.ox + 16, pose.oy + 12 } })
+		})
 	end
 	return bt_success
 end
@@ -150,8 +152,6 @@ function cloud.register()
 	prefab.define({
 		def_id = 'enemy.cloud',
 		class = cloud,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
 			order = 250,

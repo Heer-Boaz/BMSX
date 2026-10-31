@@ -3,6 +3,7 @@ local display<const> = require('cartlib/gx/display')
 local vblank<const> = require('cartlib/gx/vblank')
 local world<const> = require('cartlib/world/world')
 local prefab<const> = require('cartlib/world/prefab')
+local object_2d<const> = require('cartlib/world/object_2d')
 local input_system<const> = require('cartlib/input/input_system')
 local custom_visual<const> = require('cartlib/component/custom_visual_component')
 local scene_library<const> = require('cartlib/world/scene_library')
@@ -20,11 +21,11 @@ world:configure({ framebuffer_count = 1, gameplay_interval_vblanks = 1,
 	frame_interval_vblanks = 1, spaces = { 'main' }, systems = { input_system } })
 
 local draw<const> = function(component, commands)
-	local pose<const> = component.owner.spatial:resolve_world()
-	commands:rect(pose.wox, pose.woy, pose.wox + 64, pose.woy + 48, component.owner.color)
+	local pose_x<const>, pose_y<const> = component.owner:get_global_position()
+	commands:rect(pose_x, pose_y, pose_x + 64, pose_y + 48, component.owner.color)
 end
-prefab.define({ def_id = 'studio_test.actor', class = {},
-	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 16, 24 } },
+prefab.define({ def_id = 'studio_test.actor', class = object_2d,
+	position = { x = 16, y = 24 },
 	components = { custom_visual.factory({ draw = draw }) } })
 local root_scene<const> = require('scenes/root')
 root_scene.register()

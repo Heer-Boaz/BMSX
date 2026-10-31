@@ -4,7 +4,7 @@ require('constants')
 local record_cross_landing<const> = function(test)
 	local cross<const> = registry:get('c').room.scene.members[test.cross_id]
 	test.landing_count = test.landing_count + 1
-	test.landing_x = cross.spatial.ox
+	test.landing_x = cross.ox
 end
 local fixture<const> = require('tests/carts/pietious/fixture')
 
@@ -29,7 +29,7 @@ return {
 					break
 				end
 			end
-			test.wall_x = room.wall_instances[1].spatial.ox
+			test.wall_x = room.wall_instances[1].ox
 			castle.events:on({
 				event = 'crossland',
 				subscriber = test,
@@ -41,28 +41,30 @@ return {
 				castle = castle,
 				room = room,
 				player = player,
-			}, { local_transform = { 1, 0, 0, 1,
-				room.world_width - room_tile_size, room.world_top + (13 * room_tile_size) } },
-			{ base_sprite = { order = 110 }, movement = { speed_x_num = 2, speed_y_num = 0 } })
+				position = { x = room.world_width - room_tile_size, y = room.world_top + (13 * room_tile_size) },
+				order = 110,
+				speed_x_num = 2,
+				speed_y_num = 0,
+			})
 
 			t:wait_until('Mars admission', function() return registry:get('probe.marspeinenaardappel') ~= nil end, 30)
 			local mars<const> = registry:get('probe.marspeinenaardappel')
 			local boundary_x<const> = room.world_width - room_tile_size
-			t:wait_until('Mars boundary bounce', function() return mars.spatial.ox ~= boundary_x end, 30)
-			assert(mars.spatial.ox == boundary_x - 2, 'Mars did not reflect from right room boundary')
+			t:wait_until('Mars boundary bounce', function() return mars.ox ~= boundary_x end, 30)
+			assert(mars.ox == boundary_x - 2, 'Mars did not reflect from right room boundary')
 			mars:mark_for_disposal()
 			local cross<const> = castle.room.scene.members[test.cross_id]
-			local cross_start_x<const> = cross.spatial.ox
+			local cross_start_x<const> = cross.ox
 			for tick = 1, 140 do
-				player.spatial:set_world_origin(room.world_width - player.width, room.world_top)
+				player:set_global_position(room.world_width - player.width, room.world_top)
 				t:wait_ticks(1)
 			end
-			assert(cross.spatial.ox == cross_start_x, 'cross left without vertical player overlap')
+			assert(cross.ox == cross_start_x, 'cross left without vertical player overlap')
 			t:wait_until('cross retreats from wall', function()
-				player.spatial:set_world_origin(room.world_width - player.width, cross.spatial.oy)
+				player:set_global_position(room.world_width - player.width, cross.oy)
 				return test.landing_count > 0
 			end, 800)
-			assert(test.landing_x < test.wall_x and cross.spatial.ox < test.wall_x, 'cross passed through room wall')
+			assert(test.landing_x < test.wall_x and cross.ox < test.wall_x, 'cross passed through room wall')
 			do
 				local from_room_number<const> = castle.current_room_number
 				room = castle:load_room(102)
@@ -82,13 +84,13 @@ return {
 			end
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			local zak<const> = castle.room.scene.members[test.zak_id]
-			local min_x = zak.spatial.ox
-			local max_x = zak.spatial.ox
+			local min_x = zak.ox
+			local max_x = zak.ox
 			local direction = zak.direction
 			local changed_direction = false
 			t:wait_until('Zak patrol spans platform', function()
-				min_x = math.min(min_x, zak.spatial.ox)
-				max_x = math.max(max_x, zak.spatial.ox)
+				min_x = math.min(min_x, zak.ox)
+				max_x = math.max(max_x, zak.ox)
 				if zak.direction ~= direction then
 					assert(zak.sprite_component.flip_h == (zak.direction == 'left'), 'Zak direction lost visual facing')
 					direction = zak.direction

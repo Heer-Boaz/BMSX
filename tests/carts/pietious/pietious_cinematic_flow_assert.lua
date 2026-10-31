@@ -38,9 +38,9 @@ return {
 			intro.state_machines:transition_to('/hidden')
 			intro.state_machines:transition_to('/playing/blank')
 			local logo<const> = intro.logo_sprite
-			local logo_pose<const> = logo.owner.spatial:resolve_world()
+			local logo_x<const>, logo_y<const> = logo.owner:get_global_position()
 			assert(logo.imgid == 'intro_konami'
-			and logo_pose.wox == 40 and logo_pose.woy == 64
+			and logo_x == 40 and logo_y == 64
 			and logo.region_width == 168 and logo.region_height == 1
 			and not logo.visible and intro.logo_background.visible,
 			'Konami logo did not enter its source-derived white presentation')

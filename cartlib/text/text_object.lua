@@ -1,7 +1,7 @@
 -- text_object.lua
 -- Text object with typewriter effect for carts.
 
-local world_object<const> = require('cartlib/world/world_object')
+local object_2d<const> = require('cartlib/world/object_2d')
 local text_component<const> = require('cartlib/text/text_component')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -16,7 +16,7 @@ local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local text_object<const> = {}
 text_object.__index = text_object
-setmetatable(text_object, { __index = world_object })
+setmetatable(text_object, { __index = object_2d })
 
 local text_object_component<const> = {}
 text_object_component.__index = text_object_component

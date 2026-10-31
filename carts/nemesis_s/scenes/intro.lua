@@ -19,7 +19,7 @@ function intro_scene.register()
 			{
 				member_id = 'logo',
 				definition_id = presentation.sprite_definition_id,
-				spatial = { local_transform = { 1, 0, 0, 1, 40, 64 } },
+				position = { x = 40, y = 64 },
 				options = { imgid = 'intro_konami' },
 			},
 		},

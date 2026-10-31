@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local collider<const> = require('cartlib/collision/collider_2d_component')
 local collision<const> = require('cartlib/collision/collision_2d')
 local geometry_pool<const> = require('cartlib/collision/geometry_pool')
@@ -7,12 +8,12 @@ local world<const> = require('cartlib/world/world')
 
 bss geometry: word[32]
 local pool<const> = geometry_pool.new(geometry, 64, 2)
-prefab.define({ def_id = 'cartlib_test.flipped_sprite', class = {},
-	spatial = { family = '2d', authority = 'affine', local_transform = { 1,0,0,1,10,20 } },
+prefab.define({ def_id = 'cartlib_test.flipped_sprite', class = object_2d,
+	position = { x = 10, y = 20 },
 	components = { sprite.factory({ imgid = 'collision_asymmetric' }), collider.factory_for_sprite({ geometry_pool = pool, sprite_id_local = 'sprite' }) },
 })
-prefab.define({ def_id = 'cartlib_test.flip_probe', class = {},
-	spatial = { family = '2d', authority = 'affine', local_transform = { 1,0,0,1,12.25,20.25 } },
+prefab.define({ def_id = 'cartlib_test.flip_probe', class = object_2d,
+	position = { x = 12.25, y = 20.25 },
 	components = { collider.factory({ geometry_pool = pool, local_area = { left=0,top=0,right=0.5,bottom=0.5 } }) },
 })
 
@@ -32,14 +33,14 @@ return {
 			assert(collision.collides(body,target) ~= nil,
 				'packed AABB reflection differs from the image pixel-center reflection')
 			visual.flip_h, visual.flip_v = false, true
-			probe.spatial:set_world_origin(10.25,21.25)
+			probe:set_global_position(10.25,21.25)
 			assert(collision.collides(body,target) ~= nil, 'vertical image reflection shifted physical geometry')
 			visual.flip_h = true
-			probe.spatial:set_world_origin(12.25,21.25)
+			probe:set_global_position(12.25,21.25)
 			assert(collision.collides(body,target) ~= nil, 'combined image reflection shifted physical geometry')
 			visual.flip_v = false
-			actor.spatial:set_local_affine(-1,0,0,1,25,20)
-			probe.spatial:set_world_origin(22.25,20.25)
+			actor:set_transform(-1,0,0,1,25,20)
+			probe:set_global_position(22.25,20.25)
 			assert(collision.collides(body,target) ~= nil,
 				'world reflection did not transform the selected prebuilt image geometry')
 			owner:clear()

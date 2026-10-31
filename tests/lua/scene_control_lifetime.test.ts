@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
-import { SCENE_AUTHORING_SOURCE } from '../fixtures/studio/scene_authoring';
+import { SCENE_AUTHORING_IMPORTS, SCENE_AUTHORING_SOURCE } from '../fixtures/studio/scene_authoring';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneEditorControl } from '../../ide/workbench/contrib/scene_editor/control';
 import { SceneEditorViewState } from '../../ide/workbench/contrib/scene_editor/view_state';
@@ -18,7 +18,7 @@ import type { EditorCommandRunner } from '../../ide/common/commands';
 /** Actual Scene controls attached to frontend surfaces, without an editor input or group. */
 function fixture(t: TestContext) {
 	configureFontVariant('tiny');
-	const source = createSceneSourceFixture(t, SCENE_AUTHORING_SOURCE);
+	const source = createSceneSourceFixture(t, SCENE_AUTHORING_SOURCE, 'scene.lua', undefined, SCENE_AUTHORING_IMPORTS);
 	const document = source.documents.get(source.model);
 	const context = new SceneAuthoringContext(source.model, source.documents,
 		{ document, sourceVersion: source.model.version, scene: document.scenes[0] });
@@ -66,7 +66,7 @@ test('independent Scene contexts share source but not semantic selection or cont
 	assert.equal(other.selection?.kind, 'member');
 	assert.equal(other.selection?.kind === 'member' ? other.selection.entry : undefined, other.document!.scenes[0].objects[2]);
 	assert.equal(other.selection?.kind === 'member' ? other.selection.index : -1, 2);
-	assert.equal(f.model.buffer.getText(), SCENE_AUTHORING_SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
+	assert.equal(f.model.buffer.getText(), SCENE_AUTHORING_SOURCE.replace('x = 1,', 'x = 31,'));
 });
 
 test('a missing primary declaration revokes pending field edits and cannot retarget the control after Undo', t => {

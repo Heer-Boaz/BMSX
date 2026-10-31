@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local combat<const> = {}
 local director_definition_id<const> = 'p3.combat.director'
 local combat_director_fsm_id<const> = 'p3.combat.director.fsm'
@@ -72,6 +73,7 @@ end
 
 local combat_director<const> = {}
 combat_director.__index = combat_director
+setmetatable(combat_director, { __index = world_object })
 
 function combat_director:ctor()
 	self.slash_visual = self:get_component(slash_component)

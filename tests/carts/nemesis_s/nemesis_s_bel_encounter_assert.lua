@@ -28,10 +28,12 @@ return {
 				stage.state_machines:transition_to('/running/stopped')
 				local kerk<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_kerk_def, {
 					stage = stage,
-				}, { local_transform = { 1, 0, 0, 1, 192, 16 } })
+					position = { x = 192, y = 16 },
+				})
 				local bell<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_bel_def, {
 					stage = stage,
-				}, { local_transform = { 1, 0, 0, 1, 199, 96 } })
+					position = { x = 199, y = 96 },
+				})
 				local kerk_collider<const> = kerk:get_component(collider_2d_component)
 				assert(kerk_collider.local_top == 109 and kerk_collider.local_bottom == 152,
 				'the church lost its authored lower-body collision area')
@@ -51,12 +53,13 @@ return {
 				end
 				local bottom_note<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_noot_def, {
 					stage = stage,
-				}, { local_transform = { 1, 0, 0, 1, 128, playfield_height + 1 } })
+					position = { x = 128, y = playfield_height + 1 },
+				})
 				test.bottom_note_id = bottom_note.id
 				for index = #notes, 1, -1 do
 					notes[index]:mark_for_disposal()
 				end
-				local hit_point<const> = { x = bell.spatial.ox + 12, y = bell.spatial.oy + 12 }
+				local hit_point<const> = { x = bell.ox + 12, y = bell.oy + 12 }
 				bell:receive_player_projectile({
 					damage = bel_health - 1,
 				}, bell.collider.id_local, hit_point)
@@ -64,13 +67,14 @@ return {
 				'a non-fatal bell hit resumed the stage')
 				local hit_explosions<const> = hit_explosions_view.objects
 				assert(#hit_explosions == 1
-				and hit_explosions[1].spatial.ox == hit_point.x
-				and hit_explosions[1].spatial.oy == hit_point.y,
+				and hit_explosions[1].ox == hit_point.x
+				and hit_explosions[1].oy == hit_point.y,
 				'the bell hit feedback did not use the retained collision contact')
 				registry:get('nemesis_s.director').gameplay:spawn(ids_small_explosion_def, {
 					stage = stage,
 					drop_definition_id = ids_roodje_def,
-				}, { local_transform = { 1, 0, 0, 1, player.spatial.ox, player.spatial.oy } })
+					position = { x = player.ox, y = player.oy },
+				})
 				test.player = player
 				test.bell = bell
 				test.bell_id = bell.id
@@ -85,8 +89,8 @@ return {
 				assert(registry:get(test.bottom_note_id) == nil,
 				'the bell note remained live below the playfield rectangle')
 				test.bell.state_machines:transition_to('/ringing/left')
-				test.player.spatial:set_world_origin(40, 94)
-				test.player:spawn_laser(1, test.player.spatial.ox, test.player.spatial.oy, test.player.spatial, 1)
+				test.player:set_global_position(40, 94)
+				test.player:spawn_laser(1, test.player.ox, test.player.oy, test.player, 1)
 				t:wait_ticks(1)
 			end
 			t:wait_until('bel_encounter observation 2', function() return not (registry:get(test.bell_id) ~= nil) end, 120)

@@ -11,22 +11,18 @@ import type { Affine3 } from '../../../../machine/ts/common/affine3';
 
 export type SceneSourceAffine = Affine2 & { readonly family: '2d' } | Affine3 & { readonly family: '3d' };
 
-export type SceneSourceSpatial = {
-	readonly field: LuaTableField;
-	readonly parentId: LuaTableField | null;
-	readonly localTransform: LuaTableField | null;
-	/** Direct full-affine declaration only; a referenced/built value stays Lua. */
-	readonly coefficients: readonly LuaTableField[] | null;
-	readonly origin: readonly LuaTableField[];
-};
-
 export type SceneSourceObject = {
 	readonly kind: 'object';
 	readonly field: LuaTableField;
 	readonly memberId: LuaExpression;
 	readonly definitionId: LuaExpression;
 	readonly options: LuaTableField | null;
-	readonly spatial: SceneSourceSpatial | null;
+	readonly parent: LuaTableField | null;
+	readonly position: LuaTableField | null;
+	readonly rotation: LuaTableField | null;
+	readonly scale: LuaTableField | null;
+	readonly skew: LuaTableField | null;
+	readonly transform: LuaTableField | null;
 };
 
 export type SceneSourceDynamicObject = {

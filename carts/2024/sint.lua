@@ -7,6 +7,7 @@ local quiz<const> = require('quiz')
 local sint<const> = {}
 local portrait<const> = {}
 portrait.__index = portrait
+setmetatable(portrait, { __index = sprite_object })
 
 local portrait_def_id<const> = 'sint'
 local portrait_instance_id<const> = 'sint'
@@ -17,7 +18,7 @@ local screen_height<const> = 192
 function portrait:set_image(imgid)
 	local visual<const> = self.sprite_component
 	visual:set_imgid(imgid)
-	self.spatial:set_local_origin(screen_width - visual.source_width, screen_height - visual.source_height)
+	self:set_position(screen_width - visual.source_width, screen_height - visual.source_height)
 end
 
 local define_fsm<const> = function()
@@ -82,8 +83,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = portrait_def_id,
 		class = portrait,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'affine' },
 		defaults = { imgid = 'quiz' },
 		components = {
 			fsm_component.factory({ portrait_fsm_id }),

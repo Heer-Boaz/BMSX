@@ -191,7 +191,7 @@ export class ActorLabEditorActions {
 				lifetime.add({ dispose: controller.guest.onDidInvalidate(() => this.quickInput.hide()) });
 				return new TextQuickPickProvider(choices);
 			}, choice => {
-				this.quickInput.input('SPAWN ARGUMENTS', 'World.spawn: options, optional spatial input, optional component inputs', '{}',
+				this.quickInput.input('SPAWN ARGUMENTS', 'World.spawn: object options and optional placement', '{}',
 					async text => prepareLuaArguments(text), args => this.run(input, { kind: 'spawn', domain: input.domain,
 						worldHashId: runtimeWorld(controller.sources, controller.guest, input.domain)!.hashId,
 						definitionId: choice.id, definition: choice.definition, args }, result => {

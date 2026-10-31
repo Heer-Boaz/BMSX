@@ -1,15 +1,16 @@
 import { ValueInput } from '../../../editor/ui/inline/value_input';
 import type { FocusCommand, InputFocusTarget } from '../../../input/focus';
-import { parseLuaFieldValueEdit, type LuaFieldValueEdit } from '../../../language/lua/field_value_edit';
-import { luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
+import type { EditorTextEdit } from '../../../editor/model/text_model';
+import { parseLuaFieldValueEdit } from '../../../language/lua/field_value_edit';
+import { createLuaStringValueEdit, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import type { SceneDetailsFieldBinding, SceneDetailsViewState, SceneOptionViewProperty } from './details_view';
 import type { SceneOptionProperty } from './option_properties';
 
 export type SceneEditorSectionCommands = { readonly outline: FocusCommand; readonly details: FocusCommand };
-export type SceneOptionInputValue = LuaFieldValueEdit & { readonly binding: SceneDetailsFieldBinding };
+export type SceneOptionInputValue = { readonly binding: SceneDetailsFieldBinding; readonly text: string; readonly edit: EditorTextEdit };
 type BoundOption = { readonly binding: SceneDetailsFieldBinding; readonly property: SceneOptionProperty };
 
-/** Expression drafts consume the field binding admitted by this independent Details view. */
+/** Typed string and expression drafts consume this independent Details view's admitted field binding. */
 export class SceneOptionEditor {
 	public readonly controls: ValueInput<SceneOptionInputValue>[] = [];
 	private readonly unbindFocus: (() => void)[] = [];
@@ -36,9 +37,8 @@ export class SceneOptionEditor {
 			this.fields[index] = { binding, property };
 			if (index === this.controls.length) this.append(index);
 			const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
-			this.controls[index].setValue({ binding,
-				edit: { offset: span.start, deleteLength: span.end - span.start, text: property.sourceText },
-				fieldRange: locations.range(field.span), expressionRange: locations.range(field.value.span), expressionKind: field.value.kind, expressionOffset: 0, firstTokenOffset: 0 });
+			this.controls[index].setValue({ binding, text: property.kind === 'string' ? property.literal.value : property.sourceText,
+				edit: { offset: span.start, deleteLength: span.end - span.start, text: property.sourceText } });
 			if (revision !== this.revision || !binding.isCurrent()) return;
 		}
 		this.updateControlAdmission();
@@ -84,12 +84,13 @@ export class SceneOptionEditor {
 		const control = new ValueInput<SceneOptionInputValue>(this.parent, {
 			options: { allowSpace: true, singleLine: true },
 			invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
-			format: value => value.edit.text,
+			format: value => value.text,
 			parse: text => {
-				const field = this.fields[index], binding = field.binding;
-				const result = parseLuaFieldValueEdit(binding.view.authoring.workingCopy.buffer,
-					binding.subject.document.analysis.chunk.locations, field.property.field, text);
-				return 'error' in result ? result : { value: { ...result.value, binding } };
+				const field = this.fields[index], binding = field.binding, property = field.property;
+				const buffer = binding.view.authoring.workingCopy.buffer, locations = binding.subject.document.analysis.chunk.locations;
+				if (property.kind === 'string') return { value: { binding, text, edit: createLuaStringValueEdit(buffer, locations, property.literal, text) } };
+				const result = parseLuaFieldValueEdit(buffer, locations, property.field, text);
+				return 'error' in result ? result : { value: { binding, text, edit: result.value.edit } };
 			},
 		}, value => {
 			const binding = value.binding, authoring = binding.view.authoring;

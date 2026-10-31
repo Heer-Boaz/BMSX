@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local scene_library<const> = require('cartlib/world/scene_library')
 local scene<const> = require('scenes/end_demo')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
@@ -7,6 +8,7 @@ local prefab<const> = require('cartlib/world/prefab')
 require('constants')
 
 local end_demo<const> = {}
+setmetatable(end_demo, { __index = world_object })
 
 function end_demo:ctor()
 	self.presentation = scene_library.instantiate(scene.id)

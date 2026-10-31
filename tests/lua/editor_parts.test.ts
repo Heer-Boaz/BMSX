@@ -1,3 +1,4 @@
+import type { LuaTableConstructorExpression } from '../../toolchain/ts/lua/syntax/ast';
 import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -11,11 +12,12 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { CodeEditorPane } from '../../ide/workbench/contrib/code_editor/editor_pane';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyModifier } from '../../hosts/common/input/text';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
@@ -223,7 +225,7 @@ test('Open Editor in New Window is unavailable for an actual host diagnostic wit
 
 test('Scene and Source use real sibling groups while canonical edits, Save and Source close retain the authored view', async t => {
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
-	const f = createActualSourcePanes(t, false, [
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['authoring_scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', ''],
 	]);
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
@@ -247,8 +249,9 @@ test('Scene and Source use real sibling groups while canonical edits, Save and S
 	assert.equal(parts.documents.length, 0, 'ordinary Source navigation does not invent a floating host');
 	assert.equal(sceneGroup.model.activeTab, scene); assert.equal(sceneGroup.panes.activePane, scenePane);
 	assert.deepEqual(scene.view.authoring.selectionRange, selection);
-	const model = source.input.workingCopy, property = scene.view.details.properties[0].descriptor;
-	const range = luaSourceRangeToTextRange(model.buffer, scene.view.authoring.document!.analysis.chunk.locations.range(property.field.value.span));
+	const model = source.input.workingCopy, selected = scene.view.authoring.selection!;
+	assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
+	const range = luaSourceRangeToTextRange(model.buffer, scene.view.authoring.document!.analysis.chunk.locations.range((selected.entry.position!.value as LuaTableConstructorExpression).fields[0].value.span));
 	assert.equal(source.code.focusTarget.textInput!.replaceText(range.start, range.end, '17'), true);
 	f.update();
 	assert.equal(scene.view.details.properties[0].descriptor.value, 17, 'the sibling Scene inspector consumes the same edited working copy');
@@ -351,33 +354,37 @@ test('a main tool command opens its own group chooser without creating a floatin
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
-test('a floating Scene command stays with its invoking group and retains its Source tab', async t => {
-	const f = createActualSourcePanes(t, false, [
+test('a floating Source opens the Main Scene subject without replacing its document tab or executing the guest', async t => {
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['authoring_scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', ''],
 	]);
-	const input = f.second.input, source = input.workingCopy.buffer.getText();
-	const cycles = f.host.runtime.machine.scheduler.nowCycles;
-	f.second.focus();
-	f.editor.commands.execute('sceneEditor', f.second.commandTarget);
-	const picker = f.secondPart.quickInput;
-	assert.equal(picker.visible, true); assert.ok(inputFocus.target === picker.field.focusTarget);
-	assert.ok(f.editor.editorParts.activePart === f.secondPart);
-	assert.ok(picker.invocationOrigin === f.second.commandTarget);
-	assert.ok(f.editor.textTarget === picker.field && f.editor.clipboardTarget === picker.field);
-	const field = picker.layout.field, x = (field.left + field.right) / 2, y = (field.top + field.bottom) / 2;
-	assert.ok(f.editor.surfaces.hitTest(x, y)?.captureScope === picker.pointerScope, 'the invoking host owns its reachable Scene chooser');
-	f.editor.dispatchPointer({ x, y, buttons: PointerButton.Primary, pressedButtons: PointerButton.Primary,
-		releasedButtons: 0, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 1 });
-	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0,
-		releasedButtons: PointerButton.Primary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: 2 });
-	assert.ok(inputFocus.target === picker.field.focusTarget);
-	assert.equal(picker.model.list.rows.length, 1, 'the authored Scene registration supplies the actual chooser');
-	f.key('Enter'); await setImmediate(); f.update();
-	assert.equal(picker.visible, false); assert.ok(f.secondGroup.model.activeTab instanceof SceneEditorInput);
-	assert.ok(f.secondGroup.model.tabs.includes(input));
-	assert.equal(f.secondGroup.model.activeTab.workingCopy.buffer.getText(), SCENE_VIEWPORT_SOURCE);
-	assert.equal(input.workingCopy.buffer.getText(), source);
-	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+	const input = f.second.input, source = input.workingCopy.buffer.getText(), version = input.workingCopy.version;
+	const tabs = [...f.secondGroup.model.tabs], cycles = f.host.runtime.machine.scheduler.nowCycles;
+	f.second.focus(); const origin = f.second.commandTarget;
+	const picker = f.editor.quickInput;
+	for (const accept of [false, true]) {
+		f.editor.commands.execute('sceneEditor', origin);
+		assert.equal(picker.visible, true); assert.ok(inputFocus.admittedTarget === picker.field.focusTarget);
+		assert.ok(picker.invocationOrigin === origin);
+		assert.equal(f.secondPart.quickInput.visible, false, 'Scene selection belongs to Main, not a floating document chooser');
+		if (accept) {
+			assert.equal(picker.model.items.length, 1, 'the single authored declaration is the actual Main chooser subject');
+			f.key('Enter'); await setImmediate(); f.update();
+			const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+			const resource = f.sources.catalog.resolveResource({contextId:f.sources.systemContextId,path:'authoring_scene.lua'})!;
+			const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
+			assert.ok(primary.consumer.workingCopy === model && primary.consumer.subject === document.scenes[0]);
+			assert.ok(f.editor.editorParts.activePart === f.editor.editorParts.main);
+			assert.equal(model.buffer.getText(), SCENE_VIEWPORT_SOURCE); assert.equal(model.canUndo, false);
+		} else {
+			f.key('Escape'); assert.ok(inputFocus.admittedTarget === origin);
+			assert.equal(f.editor.mainWorkspace.primary, undefined);
+		}
+		assert.equal(picker.visible, false);
+		assert.deepEqual(f.secondGroup.model.tabs, tabs); assert.equal(f.secondGroup.model.activeTab, input);
+		assert.equal(input.workingCopy.buffer.getText(), source); assert.equal(input.workingCopy.version, version);
+		assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
+	}
 });
 
 test('closing the foreground document restores its sibling retained local input', async t => {
@@ -407,7 +414,7 @@ test('a foreground tool command does not reveal unrelated minimized hosts to pre
 });
 
 for (const activation of ['keyboard', 'pointer'] as const) test(`${activation} Problems activation opens Source in the chosen group and retains its Scene tab`, t => {
-	const f = createActualSourcePanes(t, false, [
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['authoring_scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', ''],
 		['broken.lua', 'local value =\nreturn value'],
 	]);

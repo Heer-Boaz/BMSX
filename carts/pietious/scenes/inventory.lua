@@ -8,7 +8,7 @@ function scene.register()
 			{
 				member_id = 'background',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 32 } },
+				position = { x = 0, y = 32 },
 				options = {
 					imgid = 'f1_screen',
 					id = 'inventory.background',
@@ -18,7 +18,7 @@ function scene.register()
 			{
 				member_id = 'keyworld1',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 200, 144 } },
+				position = { x = 200, y = 144 },
 				options = {
 					order = 1,
 					imgid = world_item_sprite.keyworld1,
@@ -29,7 +29,7 @@ function scene.register()
 			{
 				member_id = 'spyglass',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 136, 168 } },
+				position = { x = 136, y = 168 },
 				options = {
 					order = 1,
 					imgid = world_item_sprite.spyglass,
@@ -40,7 +40,7 @@ function scene.register()
 			{
 				member_id = 'halo',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 128, 80 } },
+				position = { x = 128, y = 80 },
 				options = {
 					order = 1,
 					imgid = world_item_sprite.halo,
@@ -51,7 +51,7 @@ function scene.register()
 			{
 				member_id = 'lamp',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 128, 96 } },
+				position = { x = 128, y = 96 },
 				options = {
 					order = 1,
 					imgid = world_item_sprite.lamp,
@@ -62,7 +62,7 @@ function scene.register()
 			{
 				member_id = 'schoentjes',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 112, 80 } },
+				position = { x = 112, y = 80 },
 				options = {
 					order = 1,
 					imgid = world_item_sprite.schoentjes,
@@ -73,7 +73,7 @@ function scene.register()
 			{
 				member_id = 'greenvase',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 112, 96 } },
+				position = { x = 112, y = 96 },
 				options = {
 					order = 1,
 					imgid = world_item_sprite.greenvase,
@@ -84,7 +84,7 @@ function scene.register()
 			{
 				member_id = 'map_world1',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 152, 144 } },
+				position = { x = 152, y = 144 },
 				options = {
 					order = 1,
 					imgid = world_item_sprite.map_world1,
@@ -95,7 +95,7 @@ function scene.register()
 			{
 				member_id = 'pepernoot',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 112, 168 } },
+				position = { x = 112, y = 168 },
 				options = {
 					order = 1,
 					imgid = world_item_sprite.pepernoot,
@@ -106,7 +106,7 @@ function scene.register()
 			{
 				member_id = 'selector',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 112, 163 } },
+				position = { x = 112, y = 163 },
 				options = {
 					order = 2,
 					imgid = 'f1_selector_white',
@@ -117,7 +117,7 @@ function scene.register()
 			{
 				member_id = 'map_title',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 49, 135 } },
+				position = { x = 49, y = 135 },
 				options = {
 					order = 3,
 					imgid = 'f1_map_title',
@@ -128,7 +128,7 @@ function scene.register()
 			{
 				member_id = 'map',
 				definition_id = 'pietious.map',
-				spatial = { local_transform = { 1, 0, 0, 1, 40, 148 } },
+				position = { x = 40, y = 148 },
 				options = {
 					order = 3,
 					id = 'inventory.map',

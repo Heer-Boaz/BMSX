@@ -36,22 +36,24 @@ return {kind = 'integration', tests = { independent_shields_absorb_and_deplete =
 			assert(player.force_field_strength == player_force_field_strength
 			and visual.enabled and visual.animation == 'strong',
 			'shield activation did not publish the retained strong force-field visual')
-			local pose<const> = player.spatial:resolve_world()
+			local player_x, player_y = player:get_global_position()
 			local visual_pose<const> = visual:resolve_pose()
-			assert(visual_pose.wox == pose.wox
-			and visual_pose.woy == pose.woy + player_force_field_offset_y
+			assert(visual_pose.wox == player_x
+			and visual_pose.woy == player_y + player_force_field_offset_y
 			and visual.order == player_draw_z - 1,
 			'force field did not retain the XNA player-relative draw placement')
 			assert(visual.frame_index == visual_2.frame_index
 			and visual.elapsed_ms == visual_2.elapsed_ms,
 			'force fields acquired on different ticks did not share the XNA animation phase')
 			player:update_position()
+			player_x, player_y = player:get_global_position()
 			assert(player.sprite_component.imgid == assets_player_n_shield,
 			'strong force field did not select the XNA neutral vessel sprite')
 
 			local kerk<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_kerk_def, {
 				stage = player.stage,
-			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
+				position = { x = player_x, y = player_y },
+			})
 			assert(collide_with(player, kerk, collision_enemy_layer) == nil
 			and player.force_field_strength == player_force_field_strength - 1,
 			'large enemy collision bypassed the equipped force field')
@@ -59,7 +61,8 @@ return {kind = 'integration', tests = { independent_shields_absorb_and_deplete =
 
 			local bullet<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_enemy_bullet_def, {
 				stage = player.stage,
-			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
+				position = { x = player_x, y = player_y },
+			})
 			assert(bullet.force_field_hit == player_force_field_hit_standard,
 			'ordinary enemy bullet lost its standard force-field impact')
 			assert(collide_with(player, bullet, collision_enemy_projectile_layer) == nil
@@ -70,7 +73,8 @@ return {kind = 'integration', tests = { independent_shields_absorb_and_deplete =
 			local rook<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_def, {
 				stage = player.stage,
 				rise_distance = rook_rise_distances[1],
-			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
+				position = { x = player_x, y = player_y },
+			})
 			assert(collide_with(player, rook, collision_enemy_layer) == nil
 			and player.force_field_strength == player_force_field_strength - 3,
 			'small-fry collision bypassed the equipped force field')
@@ -81,12 +85,14 @@ return {kind = 'integration', tests = { independent_shields_absorb_and_deplete =
 			and visual.imgid == visual.frames[visual.frame_index],
 			'last force-field strength did not switch to the weak animation')
 			player:update_position()
+			player_x, player_y = player:get_global_position()
 			assert(player.sprite_component.imgid == assets_player_n,
 			'weak force field retained the strong vessel sprite')
 
 			local ray<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_sneeuwpop_ray_def, {
 				originator = { ray_disposed = function() end },
-			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
+				position = { x = player_x, y = player_y },
+			})
 			assert(ray.force_field_hit == player_force_field_hit_overload,
 			'Sneeuwpop ray lost its overload force-field impact')
 			player:activate_force_field()

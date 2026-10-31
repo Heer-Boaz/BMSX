@@ -79,6 +79,7 @@ function affine3.relative_world(node, parent)
 		node.ox = node.wox
 		node.oy = node.woy
 		node.oz = node.woz
+		node._semantic_flags = 0
 		return true
 	end
 
@@ -132,6 +133,7 @@ function affine3.relative_world(node, parent)
 	node.ox = ixx * ox + iyx * oy + izx * oz
 	node.oy = ixy * ox + iyy * oy + izy * oz
 	node.oz = ixz * ox + iyz * oy + izz * oz
+	node._semantic_flags = 0
 	return true
 end
 
@@ -192,6 +194,7 @@ function affine3.from_world(node, parent, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox
 		node.ox = ox
 		node.oy = oy
 		node.oz = oz
+		node._semantic_flags = 0
 		return true
 	end
 	local pxx<const>, pxy<const>, pxz<const> = parent.wxx, parent.wxy, parent.wxz
@@ -225,6 +228,7 @@ function affine3.from_world(node, parent, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox
 	node.ox = ixx * dx + iyx * dy + izx * dz
 	node.oy = ixy * dx + iyy * dy + izy * dz
 	node.oz = ixz * dx + iyz * dy + izz * dz
+	node._semantic_flags = 0
 	return true
 end
 
@@ -299,6 +303,87 @@ function affine3.trs(ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
 		(xy - wz) * scale_y, (1 - (xx + zz)) * scale_y, (yz + wx) * scale_y,
 		(xz + wy) * scale_z, (yz - wx) * scale_z, (1 - (xx + yy)) * scale_z,
 		ox, oy, oz
+end
+
+-- Source-known channels are retained separately from this canonical affine's
+-- lazily extracted editing view. Geometry and hierarchy evaluation never need
+-- this extraction and never discard shear.
+function affine3.write_trs(node, ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	node.xx, node.xy, node.xz, node.yx, node.yy, node.yz,
+		node.zx, node.zy, node.zz, node.ox, node.oy, node.oz =
+		affine3.trs(ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	node._rotation_x, node._rotation_y, node._rotation_z, node._rotation_w = qx, qy, qz, qw
+	node._scale_x, node._scale_y, node._scale_z = scale_x, scale_y, scale_z
+	node._semantic_flags = 3
+end
+
+-- Matrix-derived X/Y scales are nonnegative; reflection is carried by Z.
+-- Singular bases still have well-defined column lengths, without an invented
+-- orientation or a repaired geometric basis.
+function affine3.scale(node)
+	local flags<const> = node._semantic_flags
+	if (flags & 2) ~= 0 then return node._scale_x, node._scale_y, node._scale_z end
+	local xx<const>, xy<const>, xz<const> = node.xx, node.xy, node.xz
+	local yx<const>, yy<const>, yz<const> = node.yx, node.yy, node.yz
+	local zx<const>, zy<const>, zz<const> = node.zx, node.zy, node.zz
+	local sx<const> = math.sqrt(xx * xx + xy * xy + xz * xz)
+	local sy<const> = math.sqrt(yx * yx + yy * yy + yz * yz)
+	local sz = math.sqrt(zx * zx + zy * zy + zz * zz)
+	local determinant<const> = xx * (yy * zz - zy * yz)
+		+ yx * (zy * xz - xy * zz) + zx * (xy * yz - yy * xz)
+	if determinant < 0 then sz = -sz end
+	node._scale_x, node._scale_y, node._scale_z = sx, sy, sz
+	node._semantic_flags = flags | 2
+	return sx, sy, sz
+end
+
+-- The ordered first two local axes define the editing orientation. Their
+-- orthogonal directions and right-handed cross product determine one proper
+-- rotation, including when the third scale is zero. A missing first axis or
+-- dependent second axis cannot supply that orientation. Failure is memoized
+-- until a real basis replacement or an explicit semantic write.
+function affine3.rotation(node)
+	local flags<const> = node._semantic_flags
+	if (flags & 1) ~= 0 then
+		return node._rotation_x, node._rotation_y, node._rotation_z, node._rotation_w
+	end
+	if (flags & 8) ~= 0 then return nil end
+	local ax<const>, ay<const>, az<const> = node.xx, node.xy, node.xz
+	local length_squared<const> = ax * ax + ay * ay + az * az
+	if length_squared == 0 then
+		node._semantic_flags = flags | 8
+		return nil
+	end
+	local inverse_length<const> = 1 / math.sqrt(length_squared)
+	local ux<const>, uy<const>, uz<const> = ax * inverse_length, ay * inverse_length, az * inverse_length
+	local bx<const>, by<const>, bz<const> = node.yx, node.yy, node.yz
+	local cx<const>, cy<const>, cz<const> = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
+	local cross_squared<const> = cx * cx + cy * cy + cz * cz
+	if cross_squared == 0 then
+		node._semantic_flags = flags | 8
+		return nil
+	end
+	local inverse_cross<const> = 1 / math.sqrt(cross_squared)
+	local wx<const>, wy<const>, wz<const> = cx * inverse_cross, cy * inverse_cross, cz * inverse_cross
+	local vx<const>, vy<const>, vz<const> = wy * uz - wz * uy, wz * ux - wx * uz, wx * uy - wy * ux
+	local trace<const> = ux + vy + wz
+	local qx, qy, qz, qw
+	if trace > 0 then
+		local divisor<const> = math.sqrt(trace + 1) * 2
+		qx, qy, qz, qw = (vz - wy) / divisor, (wx - uz) / divisor, (uy - vx) / divisor, divisor * 0.25
+	elseif ux > vy and ux > wz then
+		local divisor<const> = math.sqrt(1 + ux - vy - wz) * 2
+		qx, qy, qz, qw = divisor * 0.25, (vx + uy) / divisor, (wx + uz) / divisor, (vz - wy) / divisor
+	elseif vy > wz then
+		local divisor<const> = math.sqrt(1 + vy - ux - wz) * 2
+		qx, qy, qz, qw = (vx + uy) / divisor, divisor * 0.25, (wy + vz) / divisor, (wx - uz) / divisor
+	else
+		local divisor<const> = math.sqrt(1 + wz - ux - vy) * 2
+		qx, qy, qz, qw = (wx + uz) / divisor, (wy + vz) / divisor, divisor * 0.25, (uy - vx) / divisor
+	end
+	node._rotation_x, node._rotation_y, node._rotation_z, node._rotation_w = qx, qy, qz, qw
+	node._semantic_flags = flags | 1
+	return qx, qy, qz, qw
 end
 
 function affine3.transform_point(node, x, y, z)

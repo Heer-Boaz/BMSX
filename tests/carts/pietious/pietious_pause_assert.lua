@@ -20,15 +20,15 @@ return {
 				'gameplay time advanced while its clock lane was suspended')
 				assert(player.state_machines:matches_state(test.quiet_state),
 				'pause replaced the retained player gameplay state')
-				assert(player.spatial.ox == test.player_x and player.spatial.oy == test.player_y,
+				assert(player.ox == test.player_x and player.oy == test.player_y,
 				'player moved while gameplay was paused')
 				local enemy<const> = registry:get('probe.pause.enemy')
 				assert(enemy ~= nil, 'enemy was disposed while gameplay was paused')
-				assert(enemy.spatial.ox == test.enemy_x and enemy.spatial.oy == test.enemy_y,
+				assert(enemy.ox == test.enemy_x and enemy.oy == test.enemy_y,
 				'enemy moved while gameplay was paused')
 				local projectile<const> = registry:get('probe.pause.projectile')
 				assert(projectile ~= nil, 'projectile was disposed while gameplay was paused')
-				assert(projectile.spatial.ox == test.projectile_x and projectile.spatial.oy == test.projectile_y,
+				assert(projectile.ox == test.projectile_x and projectile.oy == test.projectile_y,
 				'projectile moved while gameplay was paused')
 				assert(player.sprite_component.visible, 'pause presentation hid the player')
 				assert(player.sprite_component.color == 0xffffffff,
@@ -44,7 +44,7 @@ return {
 			player:zero_motion()
 			player:cancel_sword()
 			player.facing = -1
-			player.spatial:set_world_origin(32, 152)
+			player:set_global_position(32, 152)
 			player:apply_presentation_state()
 			registry:get('c').room.scene:spawn('enemy.crossfoe', {
 				id = 'probe.pause.enemy',
@@ -52,8 +52,9 @@ return {
 				castle = castle,
 				room = room,
 				player = player,
-			}, { local_transform = { 1, 0, 0, 1, 160, 96 } },
-			{ base_sprite = { order = 110 } }).cross_state = 'flying_right'
+				position = { x = 160, y = 96 },
+				order = 110,
+			}).cross_state = 'flying_right'
 			registry:get('c').room.scene:spawn('pepernoot_projectile', {
 				id = 'probe.pause.projectile',
 				space_id = 'main',
@@ -61,8 +62,9 @@ return {
 				room_number = castle.current_room_number,
 				owner_id = player.id,
 				direction = 1,
-			}, { local_transform = { 1, 0, 0, 1, 64, 64 } },
-			{ base_sprite = { order = 113 } })
+				position = { x = 64, y = 64 },
+				order = 113,
+			})
 
 			t:at_boundary(world:request_mutation_boundary(), 30)
 			assert(player.state_machines:matches_state(test.quiet_state),
@@ -78,12 +80,12 @@ return {
 			t:wait_until('pause admission', function() return director.state_machines:matches_state(test.pause_state) and not world.gameplay_clock_running end, 30)
 			local enemy<const> = registry:get('probe.pause.enemy')
 			local projectile<const> = registry:get('probe.pause.projectile')
-			test.player_x = player.spatial.ox
-			test.player_y = player.spatial.oy
-			test.enemy_x = enemy.spatial.ox
-			test.enemy_y = enemy.spatial.oy
-			test.projectile_x = projectile.spatial.ox
-			test.projectile_y = projectile.spatial.oy
+			test.player_x = player.ox
+			test.player_y = player.oy
+			test.enemy_x = enemy.ox
+			test.enemy_y = enemy.oy
+			test.projectile_x = projectile.ox
+			test.projectile_y = projectile.oy
 			test.pause_started = true
 			test.pause_gameplay_time_ms = world.gameplay_time_ms
 			local wait<const> = player.timelines:get('p.tl.pw')
@@ -178,8 +180,8 @@ return {
 			t:wait_until('retained objects resume movement', function()
 				local enemy<const> = registry:get('probe.pause.enemy')
 				local projectile<const> = registry:get('probe.pause.projectile')
-				return (enemy ~= nil and (enemy.spatial.ox ~= test.enemy_x or enemy.spatial.oy ~= test.enemy_y))
-				or (projectile ~= nil and (projectile.spatial.ox ~= test.projectile_x or projectile.spatial.oy ~= test.projectile_y))
+				return (enemy ~= nil and (enemy.ox ~= test.enemy_x or enemy.oy ~= test.enemy_y))
+				or (projectile ~= nil and (projectile.ox ~= test.projectile_x or projectile.oy ~= test.projectile_y))
 			end, 12)
 			assert(world.gameplay_time_ms > test.resume_gameplay_time_ms, 'gameplay time did not resume')
 

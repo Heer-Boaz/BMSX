@@ -10,6 +10,7 @@ require('constants')
 
 local sint_pop<const> = {}
 sint_pop.__index = sint_pop
+setmetatable(sint_pop, { __index = foe })
 local hit_area<const> = {
 	left = 0,
 	top = 0,
@@ -23,30 +24,30 @@ function sint_pop:ctor()
 end
 
 function sint_pop:update_move_to_player()
-	local pose<const> = self.spatial
-	if pose.ox > sint_pop_vertical_start_x then
+	local pose_x<const> = self:get_global_position()
+	if pose_x > sint_pop_vertical_start_x then
 		return
 	end
 	return '/move_vertical'
 end
 
 function sint_pop:update_move_vertical()
-	local pose<const> = self.spatial
-	if pose.ox > sint_pop_retreat_start_x then
+	local pose_x<const> = self:get_global_position()
+	if pose_x > sint_pop_retreat_start_x then
 		return
 	end
 	return '/move_away_from_player'
 end
 
 function sint_pop:update_move_away_from_player()
-	local pose<const> = self.spatial
-	if pose.ox > playfield_width then
+	local pose_x<const> = self:get_global_position()
+	if pose_x > playfield_width then
 		self:mark_for_disposal()
 	end
 end
 
 function sint_pop:on_destroyed(projectile)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local formation<const> = self.formation
 	local remaining<const> = formation.remaining - 1
 	formation.remaining = remaining
@@ -55,9 +56,10 @@ function sint_pop:on_destroyed(projectile)
 		drop_definition_id = ids_roodje_def
 	end
 	self.scene:spawn(ids_small_explosion_def, {
+		position = { x = pose_x, y = pose_y + 8 },
 		stage = self.stage,
 		drop_definition_id = drop_definition_id,
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy + 8 } })
+	})
 	self.events:emit('enemy.small.destroyed')
 	enemy.on_destroyed(self, projectile)
 end
@@ -95,8 +97,6 @@ function sint_pop.register()
 	prefab.define({
 		def_id = ids_sint_pop_def,
 		class = sint_pop,
-		base = foe,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,

@@ -42,10 +42,11 @@ return { kind = 'integration', tests = { passwords_apply_to_both_paused_players 
 			assert(player_2.sprite_component.imgid == assets_player_2_cheat_n,
 			'Metalion cheat did not publish the player-two cyan vessel source')
 
-			local pose<const> = player_1.spatial:resolve_world()
+			local player_x<const>, player_y<const> = player_1:get_global_position()
 			local bullet<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_enemy_bullet_def, {
 				stage = player_1.stage,
-			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
+				position = { x = player_x, y = player_y },
+			})
 			assert(collide_with(player_1, bullet, collision_enemy_projectile_layer) == nil,
 			'Metalion cheat admitted ordinary projectile damage')
 			bullet:mark_for_disposal()
@@ -53,14 +54,16 @@ return { kind = 'integration', tests = { passwords_apply_to_both_paused_players 
 			local rook<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_rook_def, {
 				stage = player_1.stage,
 				rise_distance = rook_rise_distances[1],
-			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
+				position = { x = player_x, y = player_y },
+			})
 			assert(collide_with(player_1, rook, collision_enemy_layer) == nil,
 			'Metalion cheat admitted small-fry contact damage')
 			rook:mark_for_disposal()
 
 			local kerk<const> = registry:get('nemesis_s.director').gameplay:spawn(ids_kerk_def, {
 				stage = player_1.stage,
-			}, { local_transform = { 1, 0, 0, 1, pose.wox, pose.woy } })
+				position = { x = player_x, y = player_y },
+			})
 			assert(collide_with(player_1, kerk, collision_enemy_layer) == '/dying',
 			'Metalion cheat suppressed substantial stage-object contact')
 			kerk:mark_for_disposal()

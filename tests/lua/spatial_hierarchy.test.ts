@@ -1,25 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Closure } from '../../machine/ts/machine/cpu/closure';
 import { type CPU, RunResult } from '../../machine/ts/machine/cpu/cpu';
 import type { Table } from '../../machine/ts/machine/cpu/table';
-import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
-import { compileLuaChunkToProgram } from '../../toolchain/ts/lua/compiler';
-import { createTestSystemCpu, linkTestSystemBlua32 } from '../helpers/blua32';
 import { materializeCpuCompletionValues, runCompletionClosure } from './cpu_test_harness';
 
-const spatialModules = [
-	'cartlib/math/affine2',
-	'cartlib/math/affine3',
-	'cartlib/world/spatial_hierarchy',
-].map(path => {
-	const source = readFileSync(`${path}.lua`, 'utf8');
-	return { path, source, chunk: parseLuaChunk(source, path).chunk };
-});
+import { createCartlibProgramHarness } from '../helpers/cartlib_cpu';
+import { WORLD_CPU_MODULES } from '../helpers/world_cpu';
 
 function createSpatialCpu(source: string, optLevel: 0 | 3) {
-	// This system fixture has no BIOS assertion service. Record the first
+	// Record the first
 	// violated contract in guest scalars and inspect its actual completion value.
 	source = `local assertion_index = 0
 local first_failed_assertion = 0
@@ -29,19 +19,13 @@ local assert<const> = function(condition)
 end
 ${source}
 return first_failed_assertion`;
-	const compiled = compileLuaChunkToProgram(parseLuaChunk(source, 'spatial-fixture').chunk, spatialModules, {
-		entrySource: source,
-		programDomain: 'system',
-		optLevel,
-	});
-	const linked = linkTestSystemBlua32(compiled);
-	const { cpu } = createTestSystemCpu(linked);
+	const { cpu, images } = createCartlibProgramHarness(source, { optLevel, modules: WORLD_CPU_MODULES });
 	const initialHeap = cpu.luaHeap.usedBytes();
 	assert.equal(cpu.runUntilDepth(0, 10_000_000), RunResult.Halted);
 	assert.deepEqual(materializeCpuCompletionValues(cpu), [0], 'all guest spatial contract assertions must pass');
 	const allocated = cpu.luaHeap.usedBytes() - initialHeap;
 	const retained = cpu.collectTrackedHeapBytes() - initialHeap;
-	return { cpu, codeBytes: linked.image.textBytes.byteLength, allocated, retained };
+	return { cpu, codeBytes: images.cartImage.textBytes.byteLength, allocated, retained };
 }
 
 function measureWarmKernel(cpu: CPU, run: Closure, iterations: number) {
@@ -70,6 +54,20 @@ function measureWarmKernel(cpu: CPU, run: Closure, iterations: number) {
 
 const fixture = `
 local h<const> = require('cartlib/world/spatial_hierarchy')
+local object2<const> = require('cartlib/world/object_2d')
+local object3<const> = require('cartlib/world/object_3d')
+local admit2<const> = function(graph,transform)
+ local node<const> = setmetatable({},object2)
+ assert(object2._compile_pose(node,nil,{transform=transform}))
+ h.initialize2(graph,node)
+ return node
+end
+local admit3<const> = function(graph,transform)
+ local node<const> = setmetatable({},object3)
+ assert(object3._compile_pose(node,nil,{transform=transform}))
+ h.initialize3(graph,node)
+ return node
+end
 local graph<const> = h.new()
 local assert2<const> = function(n, xx, xy, yx, yy, ox, oy)
 	assert(n.wxx == xx and n.wxy == xy and n.wyx == yx and n.wyy == yy)
@@ -87,8 +85,8 @@ const behaviors = [
 	{
 		name: 'whole world-affine writes solve one parent inverse and preserve authority on failure',
 		source: `
-local p<const> = h.create2(graph, nil, 2,0,1,2, 10,20)
-local c<const> = h.create2(graph, nil, 1,0,0,1, 0,0)
+local p<const> = admit2(graph,{xx=2,xy=0,yx=1,yy=2,ox=10,oy=20})
+local c<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=0,oy=0})
 assert(h.reparent(c, p, false) == h.committed)
 assert(h.write_world2(c, 1,2,-2,0, 20,28))
 assert(c.xx == 0 and c.xy == 1 and c.yx == -1 and c.yy == 0 and c.ox == 3 and c.oy == 4)
@@ -98,9 +96,9 @@ h.write_local2(p, 0,0,0,0, 10,20)
 local flags<const> = c._flags
 assert(not h.write_world2(c, 3,4,5,6, 70,80))
 assert(c._flags == flags and c.xx == 0 and c.xy == 1 and c.yx == -1 and c.yy == 0
- and c.ox == 3 and c.oy == 4 and c.spatial_parent == p)
-local p3<const> = h.create3(graph, nil, 2,0,0, 1,2,0, 0,0,4, 10,20,30)
-local c3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 0,0,0)
+ and c.ox == 3 and c.oy == 4 and c.parent == p)
+local p3<const> = admit3(graph,{xx=2,xy=0,xz=0,yx=1,yy=2,yz=0,zx=0,zy=0,zz=4,ox=10,oy=20,oz=30})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0})
 assert(h.reparent(c3, p3, false) == h.committed)
 assert(h.write_world3(c3, 1,2,0, -2,0,0, 0,0,-4, 20,28,46))
 assert(c3.xx == 0 and c3.xy == 1 and c3.xz == 0 and c3.yx == -1 and c3.yy == 0 and c3.yz == 0
@@ -111,7 +109,7 @@ h.write_local3(p3, 0,0,0, 0,0,0, 0,0,0, 1,2,3)
 local flags3<const> = c3._flags
 assert(not h.write_world3(c3, 2,0,0, 0,2,0, 0,0,2, 7,8,9))
 assert(c3._flags == flags3 and c3.xx == 0 and c3.xy == 1 and c3.yx == -1 and c3.yy == 0
- and c3.zz == -1 and c3.ox == 3 and c3.oy == 4 and c3.oz == 4 and c3.spatial_parent == p3)
+ and c3.zz == -1 and c3.ox == 3 and c3.oy == 4 and c3.oz == 4 and c3.parent == p3)
 `,
 	},
 	{
@@ -125,7 +123,7 @@ a2.compose(right, left, right)
 assert(right.xx == 1 and right.xy == 2 and right.yx == -2 and right.yy == 0 and right.ox == 20 and right.oy == 28)
 assert(a2.inverse(left, left))
 assert(left.xx == 0.5 and left.xy == 0 and left.yx == -0.25 and left.yy == 0.5 and left.ox == 0 and left.oy == -10)
-local node<const> = h.create2(graph, nil, 2,0,1,2, 10,20)
+local node<const> = admit2(graph,{xx=2,xy=0,yx=1,yy=2,ox=10,oy=20})
 h.resolve(node)
 local x<const>, y<const> = a2.transform_point(node, 3,4)
 local vx<const>, vy<const> = a2.transform_vector(node, 3,4)
@@ -147,7 +145,7 @@ a3.compose(matrix, inverse, matrix)
 assert(matrix.xx == 1 and matrix.xy == 0 and matrix.xz == 0 and matrix.yx == 0 and matrix.yy == 1
  and matrix.yz == 0 and matrix.zx == 0 and matrix.zy == 0 and matrix.zz == 1
  and matrix.ox == 0 and matrix.oy == 0 and matrix.oz == 0)
-local node3<const> = h.create3(graph, nil, 2,0,0, 1,2,0, 0,0,4, 10,20,30)
+local node3<const> = admit3(graph,{xx=2,xy=0,xz=0,yx=1,yy=2,yz=0,zx=0,zy=0,zz=4,ox=10,oy=20,oz=30})
 h.resolve(node3)
 local x3<const>, y3<const>, z3<const> = a3.transform_point(node3, 3,4,5)
 local vx3<const>, vy3<const>, vz3<const> = a3.transform_vector(node3, 3,4,5)
@@ -172,15 +170,15 @@ for dimension = 2, 3 do
   local graph<const> = h.new()
   local a, survivor, b, leaf
   if dimension == 2 then
-   a = h.create2(graph, nil, 2,0,1,2, 10,20)
-   survivor = h.create2(graph, nil, 0,1,-1,0, 3,4)
-   b = h.create2(graph, nil, 2,0,0,3, 5,6)
-   leaf = h.create2(graph, nil, 1,0,0,1, 7,8)
+   a = admit2(graph,{xx=2,xy=0,yx=1,yy=2,ox=10,oy=20})
+   survivor = admit2(graph,{xx=0,xy=1,yx=-1,yy=0,ox=3,oy=4})
+   b = admit2(graph,{xx=2,xy=0,yx=0,yy=3,ox=5,oy=6})
+   leaf = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=7,oy=8})
   else
-   a = h.create3(graph, nil, 2,0,0, 1,2,0, 0,0,4, 10,20,30)
-   survivor = h.create3(graph, nil, 0,1,0, -1,0,0, 0,0,1, 3,4,5)
-   b = h.create3(graph, nil, 2,0,0, 0,3,0, 0,0,-1, 5,6,7)
-   leaf = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 7,8,9)
+   a = admit3(graph,{xx=2,xy=0,xz=0,yx=1,yy=2,yz=0,zx=0,zy=0,zz=4,ox=10,oy=20,oz=30})
+   survivor = admit3(graph,{xx=0,xy=1,xz=0,yx=-1,yy=0,yz=0,zx=0,zy=0,zz=1,ox=3,oy=4,oz=5})
+   b = admit3(graph,{xx=2,xy=0,xz=0,yx=0,yy=3,yz=0,zx=0,zy=0,zz=-1,ox=5,oy=6,oz=7})
+   leaf = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=7,oy=8,oz=9})
   end
   assert(h.reparent(survivor, a, false) == h.committed)
   assert(h.reparent(b, survivor, false) == h.committed)
@@ -189,10 +187,13 @@ for dimension = 2, 3 do
   local saved_x<const>, saved_y<const>, saved_z<const> = leaf.wox, leaf.woy, leaf.woz
   local saved_xx<const>, saved_xy<const>, saved_xz<const> = leaf.wxx, leaf.wxy, leaf.wxz
   local saved_yy<const>, saved_zz<const> = leaf.wyy, leaf.wzz
+  local retired_xx<const>,retired_yy<const>,retired_x<const>,retired_y<const> = b.wxx,b.wyy,b.wox,b.woy
   a._retiring = true
   b._retiring = true
   local first<const> = reverse == 0 and a or b
   local last<const> = reverse == 0 and b or a
+  h.resolve(first)
+  h.resolve(last)
   h.materialize_surviving_children(first)
   h.materialize_surviving_children(last)
   h.detach_surviving_children(first)
@@ -200,13 +201,14 @@ for dimension = 2, 3 do
   h.retire(first)
   h.retire(last)
   assert(a._hierarchy == nil and b._hierarchy == nil and graph._count == 2)
-  assert(survivor.spatial_parent == nil and leaf.spatial_parent == nil)
+  assert(survivor.parent == nil and leaf.parent == nil)
   assert(a._first_child == nil and a._last_child == nil and b._first_child == nil and b._last_child == nil)
   h.resolve(leaf)
   assert(leaf.wox == saved_x and leaf.woy == saved_y and leaf.woz == saved_z
    and leaf.wxx == saved_xx and leaf.wxy == saved_xy and leaf.wxz == saved_xz
    and leaf.wyy == saved_yy and leaf.wzz == saved_zz)
-  assert(b.xx == 2 and b.yy == 3 and b.ox == 5 and b.oy == 6)
+  assert(b.xx == retired_xx and b.yy == retired_yy and b.ox == retired_x and b.oy == retired_y
+   and b._flags==0 and b:get_global_position()==retired_x)
   assert(h.reparent(leaf, a, true) == h.retired_target)
  end
 end
@@ -215,13 +217,13 @@ end
 	{
 		name: 'column-affine composition preserves nonuniform scale, shear and reflection in both families',
 		source: `
-local p2<const> = h.create2(graph, nil, 2, 0, 1, 3, 10, 20)
-local c2<const> = h.create2(graph, nil, 0, 1, -1, 0, 4, 5)
+local p2<const> = admit2(graph,{xx=2,xy=0,yx=1,yy=3,ox=10,oy=20})
+local c2<const> = admit2(graph,{xx=0,xy=1,yx=-1,yy=0,ox=4,oy=5})
 assert(h.reparent(c2, p2, false) == h.committed)
 assert(h.resolve(c2) == c2)
 assert2(c2, 1, 3, -2, 0, 23, 35)
-local p3<const> = h.create3(graph, nil, 2,0,0, 1,3,0, 0,1,4, 10,20,30)
-local c3<const> = h.create3(graph, nil, 1,0,1, 0,-1,0, 1,0,0, 2,3,4)
+local p3<const> = admit3(graph,{xx=2,xy=0,xz=0,yx=1,yy=3,yz=0,zx=0,zy=1,zz=4,ox=10,oy=20,oz=30})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=1,yx=0,yy=-1,yz=0,zx=1,zy=0,zz=0,ox=2,oy=3,oz=4})
 assert(h.reparent(c3, p3, false) == h.committed)
 assert(h.resolve(c3) == c3)
 assert3(c3, 2,1,4, -1,-3,0, 2,0,0, 17,33,46)
@@ -230,8 +232,8 @@ assert3(c3, 2,1,4, -1,-3,0, 2,0,0, 17,33,46)
 	{
 		name: 'a changed parent basis moves child origins; origin-only writes preserve basis revisions',
 		source: `
-local p<const> = h.create2(graph, nil, 1,0,0,1, 10,20)
-local c<const> = h.create2(graph, nil, 1,0,0,1, 3,4)
+local p<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=10,oy=20})
+local c<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=3,oy=4})
 assert(h.reparent(c, p, false) == h.committed)
 h.resolve(c)
 local basis<const> = c._basis_revision
@@ -243,8 +245,8 @@ h.write_local2(p, 0,1,-1,0, 20,30)
 h.resolve(c)
 assert2(c, 0,1,-1,0, 16,33)
 assert(c._basis_revision == basis + 1)
-local p3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 1,2,3)
-local c3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 2,3,4)
+local p3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=1,oy=2,oz=3})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=2,oy=3,oz=4})
 assert(h.reparent(c3, p3, false) == h.committed)
 h.resolve(c3)
 local basis3<const> = c3._basis_revision
@@ -260,9 +262,9 @@ assert3(c3, 0,1,0, -1,0,0, 0,0,2, 7,22,38)
 	{
 		name: 'Keep World retains full affine state without a TRS decomposition',
 		source: `
-local old<const> = h.create2(graph, nil, 2,0,0,1, 10,20)
-local c<const> = h.create2(graph, nil, 1,1,0,1, 3,4)
-local new<const> = h.create2(graph, nil, -1,0,1,2, -5,6)
+local old<const> = admit2(graph,{xx=2,xy=0,yx=0,yy=1,ox=10,oy=20})
+local c<const> = admit2(graph,{xx=1,xy=1,yx=0,yy=1,ox=3,oy=4})
+local new<const> = admit2(graph,{xx=-1,xy=0,yx=1,yy=2,ox=-5,oy=6})
 assert(h.reparent(c, old, false) == h.committed)
 h.resolve(c)
 assert2(c, 2,1,0,1, 16,24)
@@ -271,9 +273,9 @@ assert(c.xx == -1.5 and c.xy == 0.5 and c.yx == 0.5 and c.yy == 0.5)
 assert(c.ox == -12 and c.oy == 9)
 h.resolve(c)
 assert2(c, 2,1,0,1, 16,24)
-local p3<const> = h.create3(graph, nil, 2,0,0, 1,3,0, 0,1,4, 10,20,30)
-local c3<const> = h.create3(graph, nil, 1,0,1, 0,-1,0, 1,0,0, 2,3,4)
-local new3<const> = h.create3(graph, nil, -1,-1,-1, 1,2,2, 1,2,3, -2,5,8)
+local p3<const> = admit3(graph,{xx=2,xy=0,xz=0,yx=1,yy=3,yz=0,zx=0,zy=1,zz=4,ox=10,oy=20,oz=30})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=1,yx=0,yy=-1,yz=0,zx=1,zy=0,zz=0,ox=2,oy=3,oz=4})
+local new3<const> = admit3(graph,{xx=-1,xy=-1,xz=-1,yx=1,yy=2,yz=2,zx=1,zy=2,zz=3,ox=-2,oy=5,oz=8})
 assert(h.reparent(c3, p3, false) == h.committed)
 h.resolve(c3)
 assert(h.reparent(c3, new3, true) == h.committed)
@@ -288,27 +290,27 @@ assert3(c3, 2,1,4, -1,-3,0, 2,0,0, 17,33,46)
 	{
 		name: 'singular parents admit Keep Local but reject inverse operations without writes',
 		source: `
-local zero<const> = h.create2(graph, nil, 0,0,0,0, 10,20)
-local c<const> = h.create2(graph, nil, 1,2,3,4, 5,6)
+local zero<const> = admit2(graph,{xx=0,xy=0,yx=0,yy=0,ox=10,oy=20})
+local c<const> = admit2(graph,{xx=1,xy=2,yx=3,yy=4,ox=5,oy=6})
 assert(h.reparent(c, zero, true) == h.singular_parent)
-assert(c.spatial_parent == nil and c.xx == 1 and c.xy == 2 and c.yx == 3 and c.yy == 4)
+assert(c.parent == nil and c.xx == 1 and c.xy == 2 and c.yx == 3 and c.yy == 4)
 assert(c.ox == 5 and c.oy == 6)
 assert(h.reparent(c, zero, false) == h.committed)
 h.resolve(c)
 assert2(c, 0,0,0,0, 10,20)
 assert(not h.write_world_origin2(c, 90,80))
-assert(c.ox == 5 and c.oy == 6 and c.spatial_parent == zero)
+assert(c.ox == 5 and c.oy == 6 and c.parent == zero)
 assert(h.reparent(c, nil, true) == h.committed)
 h.resolve(c)
 assert2(c, 0,0,0,0, 10,20)
-local invertible<const> = h.create2(graph, nil, -1,0,1,2, 5,6)
+local invertible<const> = admit2(graph,{xx=-1,xy=0,yx=1,yy=2,ox=5,oy=6})
 assert(h.reparent(c, invertible, true) == h.committed)
 h.resolve(c)
 assert2(c, 0,0,0,0, 10,20)
-local zero3<const> = h.create3(graph, nil, 0,0,0, 0,0,0, 0,0,0, 1,2,3)
-local c3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 4,5,6)
+local zero3<const> = admit3(graph,{xx=0,xy=0,xz=0,yx=0,yy=0,yz=0,zx=0,zy=0,zz=0,ox=1,oy=2,oz=3})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=4,oy=5,oz=6})
 assert(h.reparent(c3, zero3, true) == h.singular_parent)
-assert(c3.spatial_parent == nil and c3.xx == 1 and c3.yy == 1 and c3.zz == 1)
+assert(c3.parent == nil and c3.xx == 1 and c3.yy == 1 and c3.zz == 1)
 assert(c3.ox == 4 and c3.oy == 5 and c3.oz == 6)
 assert(h.reparent(c3, zero3, false) == h.committed)
 h.resolve(c3)
@@ -318,7 +320,7 @@ assert(c3.ox == 4 and c3.oy == 5 and c3.oz == 6)
 assert(h.reparent(c3, nil, true) == h.committed)
 h.resolve(c3)
 assert3(c3, 0,0,0, 0,0,0, 0,0,0, 1,2,3)
-local invertible3<const> = h.create3(graph, nil, -1,-1,-1, 1,2,2, 1,2,3, -2,5,8)
+local invertible3<const> = admit3(graph,{xx=-1,xy=-1,xz=-1,yx=1,yy=2,yz=2,zx=1,zy=2,zz=3,ox=-2,oy=5,oz=8})
 assert(h.reparent(c3, invertible3, true) == h.committed)
 h.resolve(c3)
 assert3(c3, 0,0,0, 0,0,0, 0,0,0, 1,2,3)
@@ -327,15 +329,15 @@ assert3(c3, 0,0,0, 0,0,0, 0,0,0, 1,2,3)
 	{
 		name: 'world-origin writes use the current parent inverse and retain the local basis',
 		source: `
-local p<const> = h.create2(graph, nil, 2,0,1,2, 10,20)
-local c<const> = h.create2(graph, nil, 0,1,-1,0, 3,4)
+local p<const> = admit2(graph,{xx=2,xy=0,yx=1,yy=2,ox=10,oy=20})
+local c<const> = admit2(graph,{xx=0,xy=1,yx=-1,yy=0,ox=3,oy=4})
 assert(h.reparent(c, p, false) == h.committed)
 assert(h.write_world_origin2(c, 24,28))
 assert(c.ox == 5 and c.oy == 4 and c.xx == 0 and c.xy == 1 and c.yx == -1 and c.yy == 0)
 h.resolve(c)
 assert2(c, 1,2,-2,0, 24,28)
-local p3<const> = h.create3(graph, nil, -1,-1,-1, 1,2,2, 1,2,3, 10,20,30)
-local c3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 0,0,0)
+local p3<const> = admit3(graph,{xx=-1,xy=-1,xz=-1,yx=1,yy=2,yz=2,zx=1,zy=2,zz=3,ox=10,oy=20,oz=30})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0})
 assert(h.reparent(c3, p3, false) == h.committed)
 assert(h.write_world_origin3(c3, 15,32,46))
 assert(c3.ox == 2 and c3.oy == 3 and c3.oz == 4)
@@ -346,8 +348,8 @@ assert3(c3, -1,-1,-1, 1,2,2, 1,2,3, 15,32,46)
 	{
 		name: 'world-origin writes reuse clean affine roots without losing dirty basis or descendant propagation',
 		source: `
-local root2<const> = h.create2(graph, nil, 2,0,1,3, 7,8)
-local root3<const> = h.create3(graph, nil, 2,0,0, 1,3,0, 0,1,-4, 7,8,9)
+local root2<const> = admit2(graph,{xx=2,xy=0,yx=1,yy=3,ox=7,oy=8})
+local root3<const> = admit3(graph,{xx=2,xy=0,xz=0,yx=1,yy=3,yz=0,zx=0,zy=1,zz=-4,ox=7,oy=8,oz=9})
 h.resolve(root2)
 h.resolve(root3)
 local basis2<const>, basis3<const> = root2._basis_revision, root3._basis_revision
@@ -362,7 +364,7 @@ h.write_local2(root2, 0,2,-3,0, 10,20)
 assert(h.write_world_origin2(root2, 60,70))
 h.resolve(root2)
 assert2(root2, 0,2,-3,0, 60,70)
-local child<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 1,2,3)
+local child<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=1,oy=2,oz=3})
 assert(h.reparent(child, root3, false) == h.committed)
 h.resolve(child)
 assert(h.write_world_origin3(root3, 100,200,300))
@@ -371,32 +373,32 @@ assert(child.wox == 104 and child.woy == 209 and child.woz == 288)
 `,
 	},
 	{
-		name: 'relationship admission rejects self, cycles, other graphs/families and parented origin-only bodies',
+		name: 'relationship admission rejects self, cycles, other graphs/families without assigning gameplay constraints to parent edges',
 		source: `
-local a<const> = h.create2(graph, nil, 1,0,0,1, 1,2)
-local b<const> = h.create2(graph, nil, 1,0,0,1, 3,4)
+local a<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=1,oy=2})
+local b<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=3,oy=4})
 assert(h.reparent(a, a, false) == h.invalid_relationship)
 assert(h.reparent(a, b, false) == h.committed)
 assert(h.reparent(b, a, false) == h.invalid_relationship)
-assert(a.spatial_parent == b and b.spatial_parent == nil)
-local other<const> = h.create2(h.new(), nil, 1,0,0,1, 0,0)
+assert(a.parent == b and b.parent == nil)
+local other<const> = admit2(h.new(),{xx=1,xy=0,yx=0,yy=1,ox=0,oy=0})
 assert(h.reparent(b, other, false) == h.invalid_relationship)
-local other3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 0,0,0)
+local other3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0})
 assert(h.reparent(b, other3, false) == h.invalid_relationship)
-local body<const> = h.create_origin2(graph, nil, 7,8)
-assert(h.reparent(body, b, false) == h.invalid_relationship)
+local body<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=7,oy=8})
+assert(h.reparent(body, b, false) == h.committed)
 h.write_origin2(body, 9,10)
 h.resolve(body)
-assert2(body, 1,0,0,1, 9,10)
+assert2(body, 1,0,0,1, 12,14)
 `,
 	},
 	{
 		name: 'Keep Local reparent invalidates a clean moved subtree under an already dirty parent',
 		source: `
-local old<const> = h.create2(graph, nil, 1,0,0,1, 1,2)
-local new<const> = h.create2(graph, nil, 1,0,0,1, 100,200)
-local child<const> = h.create2(graph, nil, 1,0,0,1, 3,4)
-local leaf<const> = h.create2(graph, nil, 1,0,0,1, 5,6)
+local old<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=1,oy=2})
+local new<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=100,oy=200})
+local child<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=3,oy=4})
+local leaf<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=5,oy=6})
 assert(h.reparent(child, old, false) == h.committed)
 assert(h.reparent(leaf, child, false) == h.committed)
 h.resolve(leaf)
@@ -423,10 +425,10 @@ for index = 1, graph._scratch_capacity do assert(graph._scratch[index] == false)
 		name: 'parent removal preserves surviving child poses and never rebinds a namesake',
 		source: `
 local owner<const> = { id = 'same-member' }
-local p<const> = h.create2(graph, owner, -2,0,1,2, 10,20)
-local a<const> = h.create2(graph, nil, 1,0,0,1, 3,4)
-local b<const> = h.create2(graph, nil, 1,0,0,1, 5,6)
-local leaf<const> = h.create2(graph, nil, 1,0,0,1, 1,2)
+local p<const> = admit2(graph,{xx=-2,xy=0,yx=1,yy=2,ox=10,oy=20})
+local a<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=3,oy=4})
+local b<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=5,oy=6})
+local leaf<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=1,oy=2})
 assert(h.reparent(a, p, false) == h.committed)
 assert(h.reparent(b, p, false) == h.committed)
 assert(h.reparent(leaf, a, false) == h.committed)
@@ -435,21 +437,21 @@ assert2(leaf, -2,0,1,2, 8,32)
 assert(graph._count == 4)
 assert(h.remove(p) == h.committed)
 assert(graph._count == 3 and p._hierarchy == nil)
-assert(a.spatial_parent == nil and b.spatial_parent == nil and leaf.spatial_parent == a)
+assert(a.parent == nil and b.parent == nil and leaf.parent == a)
 h.resolve(leaf)
 assert2(leaf, -2,0,1,2, 8,32)
 h.resolve(b)
 assert2(b, -2,0,1,2, 6,32)
-local replacement<const> = h.create2(graph, owner, 1,0,0,1, 100,200)
-assert(replacement ~= p and a.spatial_parent == nil and b.spatial_parent == nil)
+local replacement<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=100,oy=200})
+assert(replacement ~= p and a.parent == nil and b.parent == nil)
 assert(h.reparent(a, p, true) == h.retired_target)
 assert(h.reparent(p, replacement, false) == h.retired_target)
 assert(h.remove(p) == h.retired_target and graph._count == 4)
-local p3<const> = h.create3(graph, owner, -2,0,0, 0,3,0, 0,0,4, 10,20,30)
-local c3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 2,3,4)
+local p3<const> = admit3(graph,{xx=-2,xy=0,xz=0,yx=0,yy=3,yz=0,zx=0,zy=0,zz=4,ox=10,oy=20,oz=30})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=2,oy=3,oz=4})
 assert(h.reparent(c3, p3, false) == h.committed)
 assert(h.remove(p3) == h.committed)
-assert(c3.spatial_parent == nil)
+assert(c3.parent == nil)
 h.resolve(c3)
 assert3(c3, -2,0,0, 0,3,0, 0,0,4, 6,29,46)
 `,
@@ -457,37 +459,37 @@ assert3(c3, -2,0,0, 0,3,0, 0,0,4, 6,29,46)
 	{
 		name: 'flat-root origin publication stays clean without bypassing child or pending-basis work',
 		source: `
-local p<const> = h.create_origin2(graph, nil, 1,2)
+local p<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=1,oy=2})
 h.resolve(p)
 local basis<const> = p._basis_revision
 h.write_origin2(p, 3,4)
 assert(p._flags == 0 and p._basis_revision == basis)
 assert2(p, 1,0,0,1, 3,4)
-local child<const> = h.create2(graph, nil, 1,0,0,1, 5,6)
+local child<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=5,oy=6})
 assert(h.reparent(child, p, false) == h.committed)
 h.resolve(child)
 h.write_origin2(p, 7,8)
 h.resolve(child)
 assert2(child, 1,0,0,1, 12,14)
-local pending<const> = h.create2(graph, nil, 1,0,0,1, 1,2)
+local pending<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=1,oy=2})
 h.resolve(pending)
 h.write_local2(pending, 2,1,3,4, 5,6)
 h.write_origin2(pending, 7,8)
 h.resolve(pending)
 assert2(pending, 2,1,3,4, 7,8)
-local p3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 1,2,3)
+local p3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=1,oy=2,oz=3})
 h.resolve(p3)
 local basis3<const> = p3._basis_revision
 h.write_origin3(p3, 4,5,6)
 assert(p3._flags == 0 and p3._basis_revision == basis3)
 assert3(p3, 1,0,0, 0,1,0, 0,0,1, 4,5,6)
-local child3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 7,8,9)
+local child3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=7,oy=8,oz=9})
 assert(h.reparent(child3, p3, false) == h.committed)
 h.resolve(child3)
 h.write_origin3(p3, 10,11,12)
 h.resolve(child3)
 assert3(child3, 1,0,0, 0,1,0, 0,0,1, 17,19,21)
-local pending3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 0,0,0)
+local pending3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0})
 h.resolve(pending3)
 h.write_local3(pending3, 2,1,0, 3,4,1, 0,1,2, 1,2,3)
 h.write_origin3(pending3, 7,8,9)
@@ -498,12 +500,12 @@ assert3(pending3, 2,1,0, 3,4,1, 0,1,2, 7,8,9)
 	{
 		name: 'stackless invalidation reaches sibling branches after a middle-child unlink',
 		source: `
-local p<const> = h.create2(graph, nil, 1,0,0,1, 0,0)
-local a<const> = h.create2(graph, nil, 1,0,0,1, 1,2)
-local b<const> = h.create2(graph, nil, 1,0,0,1, 3,4)
-local c<const> = h.create2(graph, nil, 1,0,0,1, 5,6)
-local a_leaf<const> = h.create2(graph, nil, 1,0,0,1, 7,8)
-local b_leaf<const> = h.create2(graph, nil, 1,0,0,1, 9,10)
+local p<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=0,oy=0})
+local a<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=1,oy=2})
+local b<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=3,oy=4})
+local c<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=5,oy=6})
+local a_leaf<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=7,oy=8})
+local b_leaf<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=9,oy=10})
 assert(h.reparent(a, p, false) == h.committed)
 assert(h.reparent(b, p, false) == h.committed)
 assert(h.reparent(c, p, false) == h.committed)
@@ -541,10 +543,10 @@ for (const optLevel of [0, 3] as const) {
 
 test('spatial: warmed 2D/3D writes and queries make zero guest heap reservations', t => {
 	const { cpu, codeBytes, allocated, retained } = createSpatialCpu(fixture + `
-local p2<const> = h.create2(graph, nil, 2,0,1,2, 10,20)
-local c2<const> = h.create2(graph, nil, 1,0,0,1, 3,4)
-local p3<const> = h.create3(graph, nil, 2,0,0, 1,2,0, 0,1,2, 10,20,30)
-local c3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 2,3,4)
+local p2<const> = admit2(graph,{xx=2,xy=0,yx=1,yy=2,ox=10,oy=20})
+local c2<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=3,oy=4})
+local p3<const> = admit3(graph,{xx=2,xy=0,xz=0,yx=1,yy=2,yz=0,zx=0,zy=1,zz=2,ox=10,oy=20,oz=30})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=2,oy=3,oz=4})
 assert(h.reparent(c2, p2, false) == h.committed)
 assert(h.reparent(c3, p3, false) == h.committed)
 h.resolve(c2)
@@ -582,9 +584,9 @@ probe = {
 test('spatial: clean read cost is independent of hierarchy depth', t => {
 	const { cpu } = createSpatialCpu(fixture + `
 local build<const> = function(depth)
-	local previous = h.create2(graph, nil, 1,0,0,1, 1,2)
+	local previous = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=1,oy=2})
 	for index = 1, depth do
-		local current<const> = h.create2(graph, nil, 1,0,0,1, 1,2)
+		local current<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=1,oy=2})
 		assert(h.reparent(current, previous, false) == h.committed)
 		previous = current
 	end
@@ -616,12 +618,12 @@ probe = {
 
 test('spatial: flat-root and full-basis/inverse kernels have separate allocation-free measurements', t => {
 	const { cpu, codeBytes, allocated, retained } = createSpatialCpu(fixture + `
-local root2<const> = h.create_origin2(graph, nil, 0,0)
-local root3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 0,0,0)
-local p2<const> = h.create2(graph, nil, 2,0,1,2, 0,0)
-local c2<const> = h.create2(graph, nil, 1,0,0,1, 2,4)
-local p3<const> = h.create3(graph, nil, 2,0,0, 1,2,0, 0,1,2, 0,0,0)
-local c3<const> = h.create3(graph, nil, 1,0,0, 0,1,0, 0,0,1, 2,3,4)
+local root2<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=0,oy=0})
+local root3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0})
+local p2<const> = admit2(graph,{xx=2,xy=0,yx=1,yy=2,ox=0,oy=0})
+local c2<const> = admit2(graph,{xx=1,xy=0,yx=0,yy=1,ox=2,oy=4})
+local p3<const> = admit3(graph,{xx=2,xy=0,xz=0,yx=1,yy=2,yz=0,zx=0,zy=1,zz=2,ox=0,oy=0,oz=0})
+local c3<const> = admit3(graph,{xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=2,oy=3,oz=4})
 assert(h.reparent(c2, p2, false) == h.committed)
 assert(h.reparent(c3, p3, false) == h.committed)
 h.resolve(root2)

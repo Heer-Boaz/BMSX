@@ -1,19 +1,15 @@
-import { readLuaNumberLiteral } from '../../../../toolchain/ts/lua/syntax/number_expression';
-import type { LuaTableField } from '../../../../toolchain/ts/lua/syntax/ast';
 import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
-import { readLuaExpressionPreview, readLuaSourceRange } from '../../../language/lua/source_edits';
+import { readLuaExpressionPreview } from '../../../language/lua/source_edits';
 import type { SceneAuthoredSelection, SceneAuthoringContext } from './authoring_context';
 import type { SceneSourceDocument, SceneSourceDefinition } from './model';
 import { collectSceneOptionProperties, type SceneOptionProperty } from './option_properties';
 
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
 
-/** Written source facts, independent of any field control or measured presentation. */
+/** Semantic local coordinates, independent of written overrides, controls and measured presentation. */
 export type ScenePositionProperty = {
 	readonly axis: typeof POSITION_AXES[number];
-	readonly field: LuaTableField;
-	readonly value: number | null;
-	readonly sourceText: string;
+	readonly value: number;
 };
 
 export type SceneDetailsSubject = {
@@ -66,10 +62,11 @@ export class SceneDetailsProjection {
 				preserveDetailCase = definitionId !== undefined;
 				optionProperties = collectSceneOptionProperties(buffer, locations, entry);
 			} else { detail = 'Dynamic Lua composition'; preserveDetailCase = false; }
-			properties = entry.kind !== 'object' || entry.spatial === null ? NO_PROPERTIES : entry.spatial.origin.map((field, index) => ({
-				axis: POSITION_AXES[index], field, value: readLuaNumberLiteral(field.value),
-				sourceText: readLuaSourceRange(buffer, locations.range(field.value.span)),
-			}));
+			const local = this.authoring.selectedLocalTransform;
+			if (local !== undefined) {
+				properties = local.family === '2d' ? [{ axis: 'x', value: local.ox }, { axis: 'y', value: local.oy }]
+					: [{ axis: 'x', value: local.ox }, { axis: 'y', value: local.oy }, { axis: 'z', value: local.oz }];
+			}
 		}
 		this.subject = { selection, document, sourceVersion: version, label, preserveLabelCase, detail, preserveDetailCase,
 			resolution: scene.resolution, properties, optionProperties };

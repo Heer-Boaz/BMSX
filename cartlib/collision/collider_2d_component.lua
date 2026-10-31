@@ -24,7 +24,7 @@ function collider_2d_component:reserve_geometry(required)
 end
 
 function collider_2d_component:resolve_pose()
-	local spatial<const> = self.spatial
+	local spatial<const> = self.owner
 	hierarchy.resolve(spatial)
 	local flags<const> = self._local_flags
 	local owner_basis<const>, owner_origin<const> = spatial._basis_revision, spatial._origin_revision
@@ -117,10 +117,8 @@ function collider_2d_component.construct(owner, configuration, id_local, default
 	local self<const>, input<const> = base_component.new(owner, configuration)
 	setmetatable(self, collider_2d_component)
 	local local_id<const> = id_local or input.id_local or definition.id_local or 'collider'
-	local spatial<const> = owner.spatial
-	if spatial == nil or spatial._family ~= affine2 then error('Collider2D requires its owner\'s Transform2D') end
+	if owner._family ~= affine2 then error('Collider2D requires its owner\'s Object2D') end
 	self.id_local = local_id
-	self.spatial = spatial
 	self.geometry_pool = input.geometry_pool or definition.geometry_pool
 	self.layer = input.layer or definition.layer or 1
 	self.mask = input.mask or definition.mask or 0xffffffff

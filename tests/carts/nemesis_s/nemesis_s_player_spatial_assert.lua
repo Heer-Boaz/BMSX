@@ -19,14 +19,11 @@ return {
 				local row<const> = stage.solid_tape[row_index]
 				for column = 1, 40 do row[column] = 0 end
 			end
-			local pose<const> = player.spatial
+			local pose<const> = player
 			-- A descendant makes origin writes invalidate derived world state;
 			-- gameplay still consumes the root's current committed authority.
-			player.scene:spawn(player_start.definition_id, {}, {
-				parent = pose,
-				local_transform = { 1, 0, 0, 1, 0, 0 },
-			})
-			pose:set_world_origin(41, 25)
+			player.scene:spawn(player_start.definition_id, { position = { x = 0, y = 0 }, parent = pose })
+			pose:set_global_position(41, 25)
 			local visual<const> = player.sprite_component
 			local body<const> = player.body_collider
 			assert(player:get_component(sprite_component, 'base_sprite') == visual,
@@ -43,7 +40,7 @@ return {
 
 			visual:set_imgid(assets_player_u)
 			visual:set_presentation_origin(-4, 2)
-			pose:set_world_origin(57, 33)
+			pose:set_global_position(57, 33)
 			local body_pose<const> = body:resolve_pose()
 			local visual_pose<const> = visual:resolve_pose()
 			assert(body_pose.wox == 57 and body_pose.woy == 33
@@ -75,13 +72,13 @@ return {
 			local bullet<const> = player.primary_projectiles[1]
 			player:spawn_bullet(1, 57, 33, bullet)
 			local collider<const> = bullet.collider
-			pose:set_world_origin(1, 1)
+			pose:set_global_position(1, 1)
 			player:update_weapons()
 			local projectile_pose<const> = collider:resolve_pose()
 			assert(bullet.x == 76 and bullet.y == 39
 			and projectile_pose.wox == bullet.x and projectile_pose.woy == bullet.y,
 			'moving the player root moved an independently travelling projectile collider')
-			pose:resolve_world()
+			pose:get_global_transform()
 			assert(pose.wox == 1 and pose.woy == 1 and bullet.collider == collider,
 			'projectile synchronization replaced its collider or rewrote the player pose')
 		end,

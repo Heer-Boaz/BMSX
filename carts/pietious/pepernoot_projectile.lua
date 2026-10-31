@@ -14,33 +14,34 @@ local world_object<const> = require('cartlib/world/world_object')
 
 local pepernoot_projectile<const> = {}
 pepernoot_projectile.__index = pepernoot_projectile
+setmetatable(pepernoot_projectile, { __index = sprite_object })
 
 local query_terrain<const> = function(_component, owner, payload)
-	local pose<const> = owner.spatial
-	local collision_flags<const> = owner.room:collision_flags_at_world(pose.ox, pose.oy)
+	local pose_x<const>, pose_y<const> = owner:get_global_position()
+	local collision_flags<const> = owner.room:collision_flags_at_world(pose_x, pose_y)
 	if collision_flags == collision_flags_none or collision_flags == collision_flags_elevator then
 		return nil
 	end
 	payload.collision_flags = collision_flags
-	payload.world_x = pose.ox
-	payload.world_y = pose.oy
+	payload.world_x = pose_x
+	payload.world_y = pose_y
 	return collision_flags
 end
 
 local terrain_collision<const> = { query = query_terrain }
 
 function pepernoot_projectile:onspawn()
-	local pose<const> = self.spatial
-	local snapped_x<const>, snapped_y<const> = self.room:snap_world_to_tile(pose.ox, pose.oy)
-	self.sprite_component:set_attachment_origin(snapped_x - pose.ox, snapped_y - pose.oy)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local snapped_x<const>, snapped_y<const> = self.room:snap_world_to_tile(pose_x, pose_y)
+	self.sprite_component:set_attachment_origin(snapped_x - pose_x, snapped_y - pose_y)
 end
 
 function pepernoot_projectile:update_motion()
 	local room<const> = self.room
-	local pose<const> = self.spatial
-	local x<const> = pose.ox + self.direction * secondary_weapon_pepernoot_speed_px
-	local y<const> = pose.oy
-	self.spatial:set_world_origin(x, y)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local x<const> = pose_x + self.direction * secondary_weapon_pepernoot_speed_px
+	local y<const> = pose_y
+	self:set_global_position(x, y)
 	local snapped_x<const>, snapped_y<const> = room:snap_world_to_tile(x, y)
 	self.sprite_component:set_attachment_origin(snapped_x - x, snapped_y - y)
 	if x <= 0 or x >= room.world_width then
@@ -72,8 +73,6 @@ local register_pepernoot_projectile_definition<const> = function()
 	prefab.define({
 		def_id = 'pepernoot_projectile',
 		class = pepernoot_projectile,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_projectile_layer, mask = collision_projectile_mask }),
 			function(owner) return tile_collision_component.new(owner, terrain_collision) end,

@@ -34,15 +34,16 @@ return {
 				direction = 'down',
 			}, 1, 2, 5)
 			player.state_machines:transition_to('/quiet')
-			player.spatial:set_world_origin(32, 96)
+			player:set_global_position(32, 96)
 			local enemy<const> = registry:get('c').room.scene:spawn('enemy.crossfoe', {
 				id = 'probe.daemon.enemy',
 				space_id = 'main',
 				castle = castle,
 				room = room,
 				player = player,
-			}, { local_transform = { 1, 0, 0, 1, 160, 96 } },
-			{ base_sprite = { order = 110 } })
+				position = { x = 160, y = 96 },
+				order = 110,
+			})
 			enemy.cross_state = 'flying_right'
 			local projectile<const> = registry:get('c').room.scene:spawn('pepernoot_projectile', {
 				id = 'probe.daemon.projectile',
@@ -51,14 +52,15 @@ return {
 				room_number = 100,
 				owner_id = player.id,
 				direction = 1,
-			}, { local_transform = { 1, 0, 0, 1, 64, 96 } },
-			{ base_sprite = { order = 113 } })
-			test.player_x = player.spatial.ox
-			test.player_y = player.spatial.oy
-			test.enemy_x = enemy.spatial.ox
-			test.enemy_y = enemy.spatial.oy
-			test.projectile_x = projectile.spatial.ox
-			test.projectile_y = projectile.spatial.oy
+				position = { x = 64, y = 96 },
+				order = 113,
+			})
+			test.player_x = player.ox
+			test.player_y = player.oy
+			test.enemy_x = enemy.ox
+			test.enemy_y = enemy.oy
+			test.projectile_x = projectile.ox
+			test.projectile_y = projectile.oy
 			director.events:emit('seal.incantation_completed')
 
 			t:wait_until('seal freezes gameplay', function() return not world.gameplay_clock_running end, 30)
@@ -67,13 +69,13 @@ return {
 				if not seal_timeline.playing then return true end
 				assert(not world.gameplay_clock_running,
 				'gameplay resumed before the dissolve timeline finished')
-				assert(player.spatial.ox == test.player_x and player.spatial.oy == test.player_y,
+				assert(player.ox == test.player_x and player.oy == test.player_y,
 				'player moved while the summon state paused gameplay')
 				local enemy<const> = registry:get('probe.daemon.enemy')
-				assert(enemy.spatial.ox == test.enemy_x and enemy.spatial.oy == test.enemy_y,
+				assert(enemy.ox == test.enemy_x and enemy.oy == test.enemy_y,
 				'enemy moved while the summon state paused gameplay')
 				local projectile<const> = registry:get('probe.daemon.projectile')
-				assert(projectile.spatial.ox == test.projectile_x and projectile.spatial.oy == test.projectile_y,
+				assert(projectile.ox == test.projectile_x and projectile.oy == test.projectile_y,
 				'projectile moved while the summon state paused gameplay')
 				local frame<const> = seal_timeline.head
 				if frame < flow_seal_flash_frames then
@@ -127,7 +129,7 @@ return {
 					test.saw_appearance_audio = true
 				end
 				local enemy<const> = registry:get('probe.daemon.enemy')
-				if enemy.spatial.ox ~= test.enemy_x then
+				if enemy.ox ~= test.enemy_x then
 					test.saw_gameplay_resume = true
 				end
 				for index = 1, flow_daemon_cloud_count do
@@ -138,8 +140,8 @@ return {
 					if cloud.sprite_component.visible then
 						if not test.seen_clouds[index] then
 							local position_index<const> = index * 2 - 1
-							assert(cloud.spatial.ox == cloud_positions[position_index]
-							and cloud.spatial.oy == cloud_positions[position_index + 1],
+							assert(cloud.ox == cloud_positions[position_index]
+							and cloud.oy == cloud_positions[position_index + 1],
 							'daemon cloud used the wrong fixed MSX coordinate')
 							assert(daemon_timeline.head - animation.head
 							== flow_daemon_cloud_first_spawn_frame

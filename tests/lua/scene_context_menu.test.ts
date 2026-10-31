@@ -1,3 +1,4 @@
+import type { LuaTableConstructorExpression } from '../../toolchain/ts/lua/syntax/ast';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
@@ -14,12 +15,12 @@ import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
 function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant(font);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.sceneEditor.openResource(f.firstGroup, resource); const input = f.firstGroup.model.activeTab; assert.ok(input instanceof SceneEditorInput);
@@ -60,7 +61,7 @@ for (const target of ['definition', 'member'] as const) test(`Scene pointer ${ta
 			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 42,'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11,', 'x = 42,'));
 	const selection = input.view.authoring.selection!;
 	if (target === 'definition') {
 		assert.equal(selection.kind, 'scene');
@@ -96,7 +97,7 @@ test('an incoming Scene click cannot replace a newer selection made by its depar
 	}
 	f.update();
 	assert.equal(input.view.authoring.selection?.kind, 'scene');
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 42,'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('x = 11,', 'x = 42,'));
 });
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} Scene secondary selects the exact row without expanding its disclosure or modifying canonical source`, t => {
@@ -246,7 +247,7 @@ for (const rebind of [false, true]) test(`Scene retained member command ${rebind
 		const unbind = f.model.onDidChangeContent(() => { unbind(); rebound = true; f.firstGroup.openEditor(new HostErrorInput('newer attachment')); }); t.after(unbind);
 	}
 	f.editor.commands.execute('sceneEditor.moveMemberDown', commandTarget);
-	const text = f.model.buffer.getText(); assert.equal(field.focusTarget.edit!.pending, false); assert.ok(text.includes('0, 0, 1, 77,'));
+	const text = f.model.buffer.getText(); assert.equal(field.focusTarget.edit!.pending, false); assert.ok(text.includes('x = 77,'));
 	assert.equal(rebound, rebind); assert.equal(f.model.canUndo, true);
 	assert.equal(text.indexOf("member_id = 'source only'") < text.indexOf("member_id = 'subject'"), !rebind);
 	if (rebind) assert.ok(f.firstGroup.model.activeTab instanceof HostErrorInput);
@@ -334,7 +335,9 @@ test(`${font}/${mode} Scene numeric fields retain section commands and accept th
 	assert.ok(field.focusTarget.getCommand('sceneEditor.details')?.isEnabled());
 	assert.ok(field.focusTarget.getCommand('sceneEditor.outline')?.isEnabled());
 	const source = f.model.buffer.getText();
-	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.view.authoring.document.analysis.chunk.locations.range(f.input.view.details.properties[0].descriptor.field!.value.span));
+	const selected = f.input.view.authoring.selection!;
+	assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
+	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.view.authoring.document.analysis.chunk.locations.range((selected.entry.position!.value as LuaTableConstructorExpression).fields[0].value.span));
 	setFieldText(field, '42', true); assert.equal(f.model.buffer.getText(), source);
 	f.editor.commands.execute('sceneEditor.outline');
 	assert.equal(f.input.view.section, 'outline'); assert.ok(inputFocus.admittedTarget === f.pane.commandTarget);
@@ -370,7 +373,9 @@ test('Scene section navigation accepts its exact draft without overwriting forei
 	const field = f.pane.control.details.controls[0].field;
 	assert.equal(field.focusTarget.focus(), true);
 	const source = f.model.buffer.getText();
-	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.view.authoring.document.analysis.chunk.locations.range(f.input.view.details.properties[0].descriptor.field!.value.span));
+	const selected = f.input.view.authoring.selection!;
+	assert.ok(selected.kind === 'member' && selected.entry.kind === 'object');
+	const range = luaSourceRangeToTextRange(f.model.buffer, f.input.view.authoring.document.analysis.chunk.locations.range((selected.entry.position!.value as LuaTableConstructorExpression).fields[0].value.span));
 	setFieldText(field, '42', true);
 	let publications = 0;
 	const unbind = f.model.onDidChangeContent(() => { unbind(); publications++; f.second.focus(); }); t.after(unbind);

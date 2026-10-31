@@ -19,3 +19,21 @@ export function readSceneSourceAffine(reader: LuaSourceReader, file: FileSemanti
 	return values.length === 6 ? { family: '2d', xx: values[0], xy: values[1], yx: values[2], yy: values[3], ox: values[4], oy: values[5] }
 		: { family: '3d', xx: values[0], xy: values[1], xz: values[2], yx: values[3], yy: values[4], yz: values[5], zx: values[6], zy: values[7], zz: values[8], ox: values[9], oy: values[10], oz: values[11] };
 }
+
+/** Object construction consumes the same named affine representation as the
+ * object's math/render owners. Dimension comes from proved class lineage. */
+export function readSceneSourceTransform(reader: LuaSourceReader, file: FileSemanticData, value: LuaExpression,
+	family: '2d' | '3d'): SceneSourceAffine | undefined {
+	const source = reader.expression(file, value);
+	if (source?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) return;
+	const fields = family === '2d' ? ['xx', 'xy', 'yx', 'yy', 'ox', 'oy'] as const
+		: ['xx', 'xy', 'xz', 'yx', 'yy', 'yz', 'zx', 'zy', 'zz', 'ox', 'oy', 'oz'] as const;
+	const coefficients: Record<string, number> = {};
+	for (const name of fields) {
+		const member = reader.member(source.file, source.expression, name);
+		const number = member === undefined ? undefined : reader.numberValue(member.file, member.expression);
+		if (number === undefined) return;
+		coefficients[name] = number;
+	}
+	return { family, ...coefficients } as SceneSourceAffine;
+}

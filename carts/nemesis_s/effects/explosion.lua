@@ -9,6 +9,7 @@ require('constants')
 
 local explosion<const> = {}
 explosion.__index = explosion
+setmetatable(explosion, { __index = sprite_object })
 
 local small_frames<const> = {
 	assets_small_explosion_1,
@@ -23,12 +24,13 @@ local large_frames<const> = {
 }
 
 function explosion:finish()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local drop_definition_id<const> = self.drop_definition_id
 	if drop_definition_id ~= nil then
 		self.scene:spawn(drop_definition_id, {
+			position = { x = pose_x, y = pose_y },
 			stage = self.stage,
-		}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
+		})
 	end
 	self:mark_for_disposal()
 end
@@ -57,8 +59,6 @@ local register_variant<const> = function(definition_id, machine_id, frames, draw
 	prefab.define({
 		def_id = definition_id,
 		class = explosion,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			stage_scroll_follower_component.new,
 			timeline_component.new,

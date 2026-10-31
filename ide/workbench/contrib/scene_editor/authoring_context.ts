@@ -3,7 +3,7 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import { luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { createLuaTableFieldMoveEdits } from '../../../language/lua/table_field_moves';
-import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, SceneSourceObject } from './model';
+import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, SceneSourceObject } from './model';
 import type { SceneSourceDocuments } from './source_documents';
 import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
@@ -29,6 +29,8 @@ export type SceneRenameRequest = {
 	validate(name: string): string | undefined;
 	apply(name: string): boolean;
 };
+
+export type SceneLocalPositionRequest = { apply(axis: 'x' | 'y' | 'z', value: number): boolean };
 
 export type SceneAuthoredSelection = {
 	readonly kind: 'scene';
@@ -346,6 +348,36 @@ export class SceneAuthoringContext {
 		const selected = this.editableMember();
 		return selected !== undefined && (this.documents.getSpatialProjection(this.workingCopy, this.document!)
 			?.reparentChoices(this.document!, selected.scene, selected.entry, mode).length ?? 0) > 0;
+	}
+
+	/** Consume the selected source generation already admitted by refresh/selection. */
+	public get selectedLocalTransform(): Readonly<SceneSourceAffine> | undefined {
+		const selected = this.selectionValue;
+		return selected?.kind === 'member' && selected.entry.kind === 'object'
+			? this.spatialProjection?.localTransform(this.documentValue!, selected.scene, selected.entry) : undefined;
+	}
+
+	/** A local-axis edit preserves the complete basis and never solves through a parent world. */
+	public captureLocalPosition(): SceneLocalPositionRequest | undefined {
+		const selected = this.editableMember(); if (selected === undefined) return;
+		const document = this.document!, projection = this.documents.getSpatialProjection(this.workingCopy, document);
+		if (projection === undefined) return;
+		const local = projection.localTransform(document, selected.scene, selected.entry); if (local === undefined) return;
+		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
+		let consumed = false;
+		const isCurrent = () => !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly && this.workingCopy.version === version
+			&& this.selectionRevisionValue === selection && this.isCurrent && this.documentValue === document && this.selectionValue === selected
+			&& this.documents.getSpatialProjection(this.workingCopy, document) === projection
+			&& !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly
+			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
+		if (!isCurrent()) return;
+		return { apply: (axis, value) => {
+			if (!isCurrent()) return false;
+			const edits = projection.localPositionEdits(this.workingCopy.buffer, document, selected.entry, local, axis, value);
+			if (edits === undefined || !isCurrent()) return false;
+			if (edits.length === 0) return true;
+			consumed = true; this.workingCopy.pushEditOperations(edits); return true;
+		} };
 	}
 
 	public captureReparent(mode: SceneReparentMode = 'keep_world'): SceneReparentRequest | undefined {

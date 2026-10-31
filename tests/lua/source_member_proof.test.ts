@@ -96,3 +96,92 @@ test('callable identity requires unique authored function source rather than an 
 	assert.equal(changed.reader.callable(changed.file, changed.expressions[0]), undefined);
 	assert.ok(changed.reader.callable(changed.file, changed.expressions[1]));
 });
+
+test('table prototype proof consumes builtin transfers and preserves concrete multi-module lineage', () => {
+	const f = fixture("local base=require('base'); local child=setmetatable({}, {__index=base}); return child", {
+		'base.lua': "local root=require('root'); local base={}; setmetatable(base,{__index=root}); return base",
+		'root.lua': 'return {}',
+	});
+	const lineage = f.reader.lineage(f.file, f.expressions[0])!;
+	assert.deepEqual(lineage.map(source => source.file.file), ['member.lua', 'base.lua', 'root.lua']);
+	assert.equal(f.reader.prototype(lineage[2].file, lineage[2].expression), null);
+	for (const source of [
+		'local value={}; setmetatable(value,unknown); return value',
+		'local value={}; setmetatable(value,{__index={}}); setmetatable(value,{__index={}}); return value',
+		'local value={}; setmetatable(value,{__index=value}); return value',
+		'local mt={__index={}}; mt[key()]={}; local value=setmetatable({},mt); return value',
+	]) {
+		const unknown = fixture(source); assert.equal(unknown.reader.lineage(unknown.file, unknown.expressions[0]), undefined);
+	}
+});
+
+test('a shadowed setmetatable call does not manufacture a table prototype or construction identity', () => {
+	const f = fixture('local function setmetatable(value,mt) return value end; local value=setmetatable({}, {__index={}}); return value');
+	assert.equal(f.reader.lineage(f.file, f.expressions[0]), undefined);
+});
+
+test('prototype proof retains possible receiver mutations instead of dropping ambiguous aliases', () => {
+	for (const setup of [
+		'local target=external and value or {}; setmetatable(target,{__index=replacement})',
+		'local target=value; target={}; setmetatable(target,{__index=replacement})',
+	]) {
+		const f = fixture(`local base={}; local replacement={}; local value={}; setmetatable(value,{__index=base}); ${setup}; return value`);
+		assert.equal(f.reader.lineage(f.file, f.expressions[0]), undefined);
+	}
+});
+
+test('conditional and body metatable effects are not unconditional module prototype authority', () => {
+	for (const setup of [
+		'if external then setmetatable(value,{__index=base}) end',
+		'if external then else setmetatable(value,{__index=base}) end',
+		'local ignored=external and setmetatable(value,{__index=base})',
+		'local ignored=external or setmetatable(value,{__index=base})',
+		'while external do setmetatable(value,{__index=base}) end',
+		'repeat setmetatable(value,{__index=base}) until external',
+		'for i=1,external do setmetatable(value,{__index=base}) end',
+		'for i in external do setmetatable(value,{__index=base}) end',
+		'local function never() setmetatable(value,{__index=base}) end',
+	]) {
+		const f = fixture(`local base={}; local value={}; ${setup}; return value`);
+		assert.equal(f.reader.lineage(f.file, f.expressions[0]), undefined, setup);
+	}
+});
+
+test('prototype __index and metatable aliases require unconditional own storage writes', () => {
+	for (const setup of [
+		'local mt={}; local function never() mt.__index=base end',
+		'local mt={}; if external then mt.__index=base end',
+		'if external then mt={__index=base} end',
+	]) {
+		const f = fixture(`local base={}; ${setup}; local value={}; setmetatable(value,mt); return value`);
+		assert.equal(f.reader.lineage(f.file, f.expressions[0]), undefined, setup);
+	}
+	for (const setup of ['local mt={__index=base}', 'local mt={}; mt.__index=base']) {
+		const f = fixture(`local base={}; ${setup}; local value={}; setmetatable(value,mt); return value`);
+		assert.equal(f.reader.lineage(f.file, f.expressions[0])!.length, 2);
+	}
+});
+
+test('unconditional constructor and nested builtin effects remain known without poisoning unrelated factory inputs', () => {
+	for (const construction of [
+		'local value=setmetatable({}, {__index=base})',
+		'local value=setmetatable({},setmetatable({__index=base},{}))',
+		'local value={}; do setmetatable(value,{__index=base}) end',
+	]) {
+		const f = fixture(`local base={}; local function factory(input) setmetatable(input,external) end; ${construction}; return value`);
+		assert.equal(f.reader.lineage(f.file, f.expressions[0])!.length, 2, construction);
+	}
+	const cleared = fixture('local value={}; setmetatable(value,nil); return value');
+	assert.equal(cleared.reader.prototype(cleared.file, cleared.expressions[0]), null);
+});
+
+test('closed generated Number source preserves nonfinite members without admitting arbitrary arithmetic or competing writes', () => {
+	const f = fixture('return {positive=(1/0),negative=(-1/0),undefined_number=(0/0),computed=(7/2)}');
+	for (const [name, expected] of [['positive', Infinity], ['negative', -Infinity], ['undefined_number', NaN]] as const) {
+		const member = f.reader.member(f.file, f.expressions[0], name)!;
+		assert.ok(member); assert.deepEqual(f.reader.numberValue(member.file, member.expression), expected);
+	}
+	assert.equal(f.reader.member(f.file, f.expressions[0], 'computed'), undefined);
+	const competing = fixture('local value={number=(1/0)}; value.number=(1/0); return value');
+	assert.equal(competing.reader.member(competing.file, competing.expressions[0], 'number'), undefined);
+});

@@ -1,5 +1,4 @@
 import { LuaSyntaxKind, LuaTableFieldKind } from '../../../../toolchain/ts/lua/syntax/ast';
-import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { readLuaNumberExpression } from '../../../../toolchain/ts/lua/syntax/number_expression';
 import { getLuaModuleAliasTarget, type LuaModuleImportTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { LuaWrittenExpression } from '../../../../toolchain/ts/lua/semantic/written_sources';
@@ -153,47 +152,23 @@ export class SceneVisualProjection {
 		const affine = readSceneSourceAffine(this.reader, source.file, source.expression);
 		return affine?.family === family ? affine : undefined;
 	}
-	/** Prefab admission copies own class members before its chosen base. A
-	 * class's preexisting __index is replaced unless class and base are the same
-	 * source. Unknown inherited data is not the nil default from _initialize. */
+	/** Visibility follows the same captured class lineage as runtime admission. */
 	private classVisibility(definition: LuaWrittenExpression): SourceState {
-		if (this.inheritedVisibility.has(definition)) return this.inheritedVisibility.get(definition);
-		const selected = this.fields.member(definition, 'class');
-		let value: SourceState;
-		if (selected?.expression.kind === LuaSyntaxKind.TableConstructorExpression) {
-			value = this.reader.ownMemberState(selected.file, selected.expression, 'visible');
-			if (value?.expression.kind === LuaSyntaxKind.NilLiteralExpression) value = null;
-			if (value === null) {
-				let base = this.fields.member(definition, 'base');
-				if (readLuaSourceTruth(base) === false) base = this.reader.module(definition.file, 'cartlib/world/world_object');
-				if (base?.expression.kind === LuaSyntaxKind.TableConstructorExpression) {
-					value = this.fields.member(base, 'visible');
-				} else value = undefined;
-			}
-		}
-		this.inheritedVisibility.set(definition, value);
-		return value;
+		if (!this.inheritedVisibility.has(definition))
+			this.inheritedVisibility.set(definition, this.prefabs.classMember(definition, 'visible'));
+		return this.inheritedVisibility.get(definition);
 	}
 	private readProducers(definition: LuaWrittenExpression): readonly ComponentProducer[] {
 		let producers = this.producers.get(definition);
 		if (producers === undefined) {
 			producers = [];
 			const fields = this.fields;
-			const raw = definition.expression;
-			if (raw.kind === LuaSyntaxKind.TableConstructorExpression) {
-				const classField = findNamedLuaTableField(raw, 'class');
-				if (classField !== null) {
-					const source = this.reader.snapshot.symbolResolver.writtenSources.expression(definition.file, classField.value);
-					const target = getLuaModuleAliasTarget(definition.file, source.value);
-					if (target !== null && this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, SPRITE_OBJECT)) {
-						const componentModule = this.reader.module(definition.file, SPRITE_NEW.module), constructor = fields.member(componentModule, 'new');
-						const selected = fields.member(definition, 'class');
-						const initialize = fields.member(selected, 'initialize'), primary = fields.member(selected, 'primary_sprite_factory');
-						if (initialize?.expression.kind === LuaSyntaxKind.FunctionExpression && primary?.expression.kind === LuaSyntaxKind.FunctionExpression
-							&& primary === constructor)
-							producers.push({ kind: 'sprite', defaults: null, primary: true });
-					}
-				}
+			const sprite = this.reader.module(definition.file, SPRITE_OBJECT.module);
+			if (sprite !== undefined && this.prefabs.classes(definition)?.includes(sprite)) {
+				const componentModule = this.reader.module(definition.file, SPRITE_NEW.module), constructor = fields.member(componentModule, 'new');
+				const initialize = this.prefabs.classMember(definition, 'initialize'), primary = this.prefabs.classMember(definition, 'primary_sprite_factory');
+				if (initialize?.expression.kind === LuaSyntaxKind.FunctionExpression && primary?.expression.kind === LuaSyntaxKind.FunctionExpression
+					&& primary === constructor) producers.push({ kind: 'sprite', defaults: null, primary: true });
 			}
 			const components = fields.member(definition, 'components');
 			if (components?.expression.kind === LuaSyntaxKind.TableConstructorExpression

@@ -84,7 +84,7 @@ export function installSceneOutline(input: SceneHierarchyViewState): void {
 				? definitionId === undefined ? readLuaSourceRange(buffer, locations.range(entry.definitionId.span)) : definitionId : '';
 			const parent = entry.kind === 'object' ? parents.get(entry) : undefined;
 			const memberSpan = luaSourceRangeToTextRange(buffer, range), previousMember = previous.get(memberSpan.start);
-			const unresolvedParent = entry.kind === 'object' && entry.spatial !== null && !parents.has(entry);
+			const unresolvedParent = entry.kind === 'object' && entry.parent !== null && !parents.has(entry);
 			const member = appendWorkbenchTreeNode(outline, parent === undefined ? root : nodes.get(parent)!, {
 				kind: 'member', scene, entry, index, source: range, unresolvedParent,
 				span: memberSpan,

@@ -15,7 +15,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { createTestEditorGroup, createTestEditorPaneContributions, createTestEditorCloseDependencies, createTestGroupPresentation } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
@@ -34,6 +34,7 @@ beforeEach(() => configureFontVariant('tiny'));
 
 test('a shared Scene controller keeps group openings and explicit mutation subjects independent', t => {
 	const sources = createScenarioTestSourceState([
+		...SCENE_VIEWPORT_IMPORTS.map(([path, source]) => createScenarioTestSourceRecord(path, 1, source)),
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
@@ -78,6 +79,7 @@ test('a shared Scene controller keeps group openings and explicit mutation subje
 
 test('Scene pane source production and member commands retain their input when another group gains focus', async t => {
 	const sources = createScenarioTestSourceState([
+		...SCENE_VIEWPORT_IMPORTS.map(([path, source]) => createScenarioTestSourceRecord(path, 1, source)),
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
@@ -140,13 +142,16 @@ test('Scene pane source production and member commands retain their input when a
 
 function definitionOpeningFixture(t: TestContext, height = 288) {
 	const source = `local scenes = require('cartlib/world/scene_library')
-scenes.register('same', { objects = { { member_id = 'one', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 11, 12, 13 } }, options = { visible = true } } } })
-scenes.register('same', { objects = { { member_id = 'two', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 22, 23, 24 } } } } })
+local prefab = require('cartlib/world/prefab')
+prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})
+scenes.register('same', { objects = { { member_id = 'one', definition_id = 'actor', position = { x = 11, y = 12, z = 13 }, options = { visible = true } } } })
+scenes.register('same', { objects = { { member_id = 'two', definition_id = 'actor', position = { x = 22, y = 23, z = 24 } } } })
 scenes.register('incomplete', {})
 `;
 	const sources = createScenarioTestSourceState([
+		...SCENE_VIEWPORT_IMPORTS.map(([path, source]) => createScenarioTestSourceRecord(path, 1, source)),
 		createScenarioTestSourceRecord('scene.lua', 1, source),
-		createScenarioTestSourceRecord('unopened.lua', 1, source),
+		createScenarioTestSourceRecord('unopened.lua', 1, source.replace("prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})", '')),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);
 	const controller = new SceneEditorController(sources.catalog, new SceneSourceDocuments(editorTextModelService, sources.catalog));
@@ -213,8 +218,8 @@ test('Scene definition opening selects the exact table among duplicate semantic 
 	assert.equal(pane.control.details.controls[0].field.text, '22');
 	setFieldText(pane.control.details.controls[0].field, '123', false);
 	assert.equal(pane.control.details.controls[0].commit(), true);
-	assert.ok(f.model.buffer.getText().includes('0, 0, 1, 123, 23'));
-	assert.ok(f.model.buffer.getText().includes('0, 0, 1, 11, 12'));
+	assert.ok(f.model.buffer.getText().includes('x = 123, y = 23'));
+	assert.ok(f.model.buffer.getText().includes('x = 11, y = 12'));
 	f.model.undo(); pane.update();
 	assert.equal(pane.control.details.controls[0].field.text, '22');
 	assert.equal(f.group.model.tabs.length, 1);
@@ -264,7 +269,7 @@ test('Scene opening settles the attached field draft before consuming its tracke
 	const input = f.group.model.activeTab;
 	assert.ok(input instanceof SceneEditorInput);
 	assert.deepEqual(input.view.authoring.selectionRange, f.ranges[1]);
-	assert.ok(f.model.buffer.getText().includes('0, 0, 1, 123456, 12'));
+	assert.ok(f.model.buffer.getText().includes('x = 123456, y = 12'));
 	assert.equal(pane.control.details.controls[0].pending, false);
 });
 
@@ -331,7 +336,7 @@ for (const edit of ['delete', 'replace'] as const) test(`${edit} retires the Sce
 
 test('domain admission cannot hide a revoked provider generation from its retained Scene outline', t => {
 	const source = SCENE_VIEWPORT_SOURCE.replace("require('cartlib/world/scene_library')", "require('bridge')");
-	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['bridge.lua', "return require('cartlib/world/scene_library')"]]);
+	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [...SCENE_VIEWPORT_IMPORTS, ['bridge.lua', "return require('cartlib/world/scene_library')"]]);
 	const input = new SceneEditorInput(f.model, f.documents);
 	t.after(() => input.dispose());
 	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
@@ -352,7 +357,7 @@ test('domain admission cannot hide a revoked provider generation from its retain
 });
 
 test('same-byte replacement retires a row receipt even when its source projection is reused', t => {
-	const f = createSceneSourceFixture(t, SCENE_VIEWPORT_SOURCE), input = new SceneEditorInput(f.model, f.documents);
+	const f = createSceneSourceFixture(t, SCENE_VIEWPORT_SOURCE, 'scene.lua', undefined, SCENE_VIEWPORT_IMPORTS), input = new SceneEditorInput(f.model, f.documents);
 	t.after(() => input.dispose());
 	input.view.refresh(); selectSceneOutlineRow(input.view.hierarchy, 1);
 	const displayed = input.view.hierarchy.outlineDocument, row = input.view.hierarchy.outline.rows[1], version = input.view.hierarchy.outlineSourceVersion;

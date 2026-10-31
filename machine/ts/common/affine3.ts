@@ -4,6 +4,43 @@ export type Affine3 = {
 	zx: number; zy: number; zz: number; ox: number; oy: number; oz: number;
 };
 
+/** Canonical matrix-derived editing scales; reflection is assigned to Z. */
+export function affine3Scale(source: Readonly<Affine3>): readonly [number, number, number] {
+	const determinant = source.xx * (source.yy * source.zz - source.zy * source.yz)
+		+ source.yx * (source.zy * source.xz - source.xy * source.zz)
+		+ source.zx * (source.xy * source.yz - source.yy * source.xz);
+	return [Math.sqrt(source.xx * source.xx + source.xy * source.xy + source.xz * source.xz), Math.sqrt(source.yx * source.yx + source.yy * source.yy + source.yz * source.yz),
+		Math.sqrt(source.zx * source.zx + source.zy * source.zy + source.zz * source.zz) * (determinant < 0 ? -1 : 1)];
+}
+
+/** First-axis Gram-Schmidt editing orientation. A missing first axis or
+ * parallel second axis has no orientation; no invented completion is supplied. */
+export function affine3Rotation(source: Readonly<Affine3>): readonly [number, number, number, number] | undefined {
+	const xLength = Math.sqrt(source.xx * source.xx + source.xy * source.xy + source.xz * source.xz);
+	if (xLength === 0) return;
+	const inverseLength = 1 / xLength, xx = source.xx * inverseLength, xy = source.xy * inverseLength, xz = source.xz * inverseLength;
+	let zx = source.xy * source.yz - source.xz * source.yy, zy = source.xz * source.yx - source.xx * source.yz, zz = source.xx * source.yy - source.xy * source.yx;
+	const zLength = Math.sqrt(zx * zx + zy * zy + zz * zz);
+	if (zLength === 0) return;
+	const inverseCross = 1 / zLength; zx *= inverseCross; zy *= inverseCross; zz *= inverseCross;
+	const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+	const trace = xx + yy + zz;
+	if (trace > 0) {
+		const s = Math.sqrt(trace + 1) * 2;
+		return [(yz - zy) / s, (zx - xz) / s, (xy - yx) / s, s / 4];
+	}
+	if (xx > yy && xx > zz) {
+		const s = Math.sqrt(1 + xx - yy - zz) * 2;
+		return [s / 4, (yx + xy) / s, (zx + xz) / s, (yz - zy) / s];
+	}
+	if (yy > zz) {
+		const s = Math.sqrt(1 + yy - xx - zz) * 2;
+		return [(yx + xy) / s, s / 4, (zy + yz) / s, (zx - xz) / s];
+	}
+	const s = Math.sqrt(1 + zz - xx - yy) * 2;
+	return [(zx + xz) / s, (zy + yz) / s, s / 4, (xy - yx) / s];
+}
+
 export function affine3FromTRS(ox: number, oy: number, oz: number,
 	qx: number, qy: number, qz: number, qw: number, sx: number, sy: number, sz: number): Affine3 {
 	const x2 = qx + qx, y2 = qy + qy, z2 = qz + qz;

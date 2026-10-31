@@ -648,6 +648,8 @@ class SemanticBuilder {
 	private readonly bypassingModuleReturns: LuaReturnStatement[] = [];
 	private moduleValue: ModuleValueEntry | undefined;
 	private readonly functionValueFlowStack: FunctionValueFlowState[] = [];
+	private conditionalDepth = 0;
+	private moduleContinuation = true;
 
 	constructor(options: {
 		parent?: SemanticBuilder;
@@ -905,15 +907,18 @@ class SemanticBuilder {
 						statement, bypassingReturns: this.bypassingModuleReturns,
 					};
 				} else this.bypassingModuleReturns.push(statement);
+				this.moduleContinuation = false;
 				break;
 			}
 			case LuaSyntaxKind.IfStatement: {
 				const ifStatement = statement;
 				for (let index = 0; index < ifStatement.clauses.length; index += 1) {
 					const clause = ifStatement.clauses[index];
+					if (index > 0) this.conditionalDepth++;
 					if (clause.condition) {
 						this.visitExpression(clause.condition, { tableBaseDecl: null, tableBasePath: null });
 					}
+					if (index === 0) this.conditionalDepth++;
 					this.enterScope(
 						{ unit: clause.block.span.unit, offset: clause.block.startInclusive },
 						{ unit: clause.block.span.unit, offset: clause.block.endExclusive },
@@ -921,11 +926,13 @@ class SemanticBuilder {
 					);
 					this.visitBlock(clause.block);
 					this.leaveScope();
+					this.conditionalDepth--;
 				}
 				break;
 			}
 			case LuaSyntaxKind.WhileStatement: {
 				const whileStatement = statement;
+				this.conditionalDepth++;
 				this.visitExpression(whileStatement.condition, { tableBaseDecl: null, tableBasePath: null });
 				this.enterScope(
 					{ unit: whileStatement.block.span.unit, offset: whileStatement.block.startInclusive },
@@ -934,10 +941,12 @@ class SemanticBuilder {
 				);
 				this.visitBlock(whileStatement.block);
 				this.leaveScope();
+				this.conditionalDepth--;
 				break;
 			}
 			case LuaSyntaxKind.RepeatStatement: {
 				const repeatStatement = statement;
+				this.conditionalDepth++;
 				this.enterScope(
 					{ unit: repeatStatement.block.span.unit, offset: repeatStatement.block.startInclusive },
 					{ unit: repeatStatement.span.unit, offset: repeatStatement.span.end + 1 },
@@ -946,6 +955,7 @@ class SemanticBuilder {
 				this.visitBlock(repeatStatement.block);
 				this.visitExpression(repeatStatement.condition, { tableBaseDecl: null, tableBasePath: null });
 				this.leaveScope();
+				this.conditionalDepth--;
 				break;
 			}
 			case LuaSyntaxKind.ForNumericStatement: {
@@ -955,6 +965,7 @@ class SemanticBuilder {
 				if (forNumeric.step) {
 					this.visitExpression(forNumeric.step, { tableBaseDecl: null, tableBasePath: null });
 				}
+				this.conditionalDepth++;
 				this.enterScope(
 					{ unit: forNumeric.block.span.unit, offset: forNumeric.block.startInclusive },
 					{ unit: forNumeric.block.span.unit, offset: forNumeric.block.endExclusive },
@@ -965,6 +976,7 @@ class SemanticBuilder {
 				this.setDeclarationValue(variable, unknownValueSource(), statement, 0);
 				this.visitBlock(forNumeric.block);
 				this.leaveScope();
+				this.conditionalDepth--;
 				break;
 			}
 			case LuaSyntaxKind.ForGenericStatement: {
@@ -973,6 +985,7 @@ class SemanticBuilder {
 					this.visitExpression(forGeneric.iterators[index], { tableBaseDecl: null, tableBasePath: null });
 				}
 				const iterator = this.resolveGenericForTableSource(forGeneric);
+				this.conditionalDepth++;
 				this.enterScope(
 					{ unit: forGeneric.block.span.unit, offset: forGeneric.block.startInclusive },
 					{ unit: forGeneric.block.span.unit, offset: forGeneric.block.endExclusive },
@@ -990,6 +1003,7 @@ class SemanticBuilder {
 				}
 				this.visitBlock(forGeneric.block);
 				this.leaveScope();
+				this.conditionalDepth--;
 				break;
 			}
 			case LuaSyntaxKind.DoStatement: {
@@ -1065,6 +1079,8 @@ class SemanticBuilder {
 	private visitGenericStatement(statement: LuaStatement): void {
 		switch (statement.kind) {
 			case LuaSyntaxKind.GotoStatement:
+				this.moduleContinuation = false;
+				return;
 			case LuaSyntaxKind.LabelStatement:
 			case LuaSyntaxKind.BreakStatement:
 				return;
@@ -1156,7 +1172,8 @@ class SemanticBuilder {
 					if ((name === 'setmetatable' && call.arguments.length === 2)
 						|| (name === 'getmetatable' && call.arguments.length === 1)) {
 						this.builtinOperations.push({ kind: name, call,
-							flow: this.functionValueFlowStack[this.functionValueFlowStack.length - 1]?.id });
+							flow: this.functionValueFlowStack[this.functionValueFlowStack.length - 1]?.id,
+							unconditional: this.parent === undefined && this.conditionalDepth === 0 && this.moduleContinuation });
 					}
 				}
 				const valueSource = requireArgument ? moduleImportValueSource(this.path, requireArgument.value) : callResult;
@@ -1184,9 +1201,11 @@ class SemanticBuilder {
 			}
 			case LuaSyntaxKind.BinaryExpression: {
 				const left = this.visitExpression(expression.left, context);
+				const conditional = expression.operator === LuaBinaryOperator.And || expression.operator === LuaBinaryOperator.Or;
+				if (conditional) this.conditionalDepth++;
 				const right = this.visitExpression(expression.right, context);
-				if (expression.operator === LuaBinaryOperator.And
-					|| expression.operator === LuaBinaryOperator.Or) {
+				if (conditional) {
+					this.conditionalDepth--;
 					const valueSource = this.createExpressionValueSource(expression);
 					this.recordValueFlow(valueSource, left.valueSource, 'value', expression, 0);
 					this.recordValueFlow(valueSource, right.valueSource, 'value', expression, 1);
@@ -1982,7 +2001,8 @@ class SemanticBuilder {
 			? 'identity' : 'value',
 	): DeclarationValueEntry {
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
-		const entry: DeclarationValueEntry = { file: this.path, declId: decl.id, source, relation, syntax, index, flow: flow?.id };
+		const entry: DeclarationValueEntry = { file: this.path, declId: decl.id, source, relation, syntax, index, flow: flow?.id,
+			unconditional: this.parent === undefined && this.conditionalDepth === 0 && this.moduleContinuation };
 		this.declarationValues.push(entry);
 		if (decl.globalPublication !== undefined) {
 			this.recordValueFlow(decl.globalPublication, decl.valueSource, 'value', syntax, index);
@@ -1997,7 +2017,8 @@ class SemanticBuilder {
 		syntax: ValueAssignmentEntry['syntax'],
 		index: number,
 	): void {
-		const assignment: ValueAssignmentEntry = { target, source, relation, syntax, index };
+		const assignment: ValueAssignmentEntry = { target, source, relation, syntax, index,
+			unconditional: this.parent === undefined && this.conditionalDepth === 0 && this.moduleContinuation };
 		const flow = this.functionValueFlowStack[this.functionValueFlowStack.length - 1];
 		if (flow) {
 			flow.assignments.push(assignment);

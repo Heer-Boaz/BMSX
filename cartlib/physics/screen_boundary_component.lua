@@ -35,16 +35,14 @@ function screen_boundary_component.factory(definition)
 end
 
 function screen_boundary_component:on_attach()
-	local spatial<const> = self.owner.spatial
-	if spatial == nil or spatial._family ~= affine2 then
-		error('screen boundary component requires Transform2D')
+	local spatial<const> = self.owner
+	if spatial._family ~= affine2 then
+		error('screen boundary component requires Object2D')
 	end
-	self.spatial = spatial
-	self._write_world_origin = spatial.set_world_origin
+	self._write_world_origin = spatial.set_global_position
 end
 
 function screen_boundary_component:on_detach()
-	self.spatial = nil
 	self._write_world_origin = nil
 end
 
@@ -60,7 +58,7 @@ end
 -- Translation consumes only the current origin; changed basis/source inputs
 -- rebuild the four retained world-axis offsets once at this consumer boundary.
 function screen_boundary_component:resolve_footprint()
-	local spatial<const> = self.spatial
+	local spatial<const> = self.owner
 	if spatial._flags ~= 0 then
 		spatial_hierarchy.resolve(spatial)
 	end

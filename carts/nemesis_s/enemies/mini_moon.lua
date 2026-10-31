@@ -10,6 +10,7 @@ require('constants')
 
 local mini_moon<const> = {}
 mini_moon.__index = mini_moon
+setmetatable(mini_moon, { __index = foe })
 
 local hit_area<const> = {
 	left = 0,
@@ -23,26 +24,26 @@ function mini_moon:ctor()
 end
 
 function mini_moon:onspawn()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	if self.red then
 		self.sprite_component:set_imgid(assets_mini_moon_red)
 		self.drop_definition_id = ids_roodje_def
 	end
-	local target<const> = self.target.spatial
+	local target_x<const>, target_y<const> = self.target:get_global_position()
 	self.motion:set_dominant_axis_speed_pixels_per_second(
-		target.ox - pose.ox,
-		target.oy - pose.oy,
+		target_x - pose_x,
+		target_y - pose_y,
 		mini_moon_speed_px_per_second
 	)
 	self.target = nil
 end
 
 function mini_moon:update_flying()
-	local pose<const> = self.spatial
-	if pose.ox < -mini_moon_width
-	or pose.ox > playfield_width
-	or pose.oy < -mini_moon_height
-	or pose.oy > playfield_height then
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	if pose_x < -mini_moon_width
+	or pose_x > playfield_width
+	or pose_y < -mini_moon_height
+	or pose_y > playfield_height then
 		self:mark_for_disposal()
 	end
 end
@@ -62,8 +63,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_mini_moon_def,
 		class = mini_moon,
-		base = foe,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,

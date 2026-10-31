@@ -1,15 +1,15 @@
--- Cold output admission. Component classes own the writable channel surface;
+-- Cold output admission. Receiver classes own the writable channel surface;
 -- generated evaluators retain concrete receivers and substantive AOT writers.
-local transform2<const> = require('cartlib/component/transform_2d_component')
-local transform3<const> = require('cartlib/component/transform_3d_component')
+local object_2d<const> = require('cartlib/world/object_2d')
+local object_3d<const> = require('cartlib/world/object_3d')
 local visual2<const> = require('cartlib/component/visual_2d_component')
 local binding<const> = {}
 
 function binding.operation(name)
-	if name == 'local_origin2' then return transform2.timeline_channels.groups[name] end
-	if name == 'local_origin3' then return transform3.timeline_channels.groups[name] end
-	if name == 'local_affine2' then return transform2.affine.timeline_channels.groups[name] end
-	if name == 'local_affine3' then return transform3.affine.timeline_channels.groups[name] end
+	local object2_group<const> = object_2d.timeline_channels.groups[name]
+	if object2_group ~= nil then return object2_group end
+	local object3_group<const> = object_3d.timeline_channels.groups[name]
+	if object3_group ~= nil then return object3_group end
 	local visual_group<const> = visual2.timeline_channels.groups[name]
 	if visual_group ~= nil then return visual_group end
 	error('unknown timeline spatial operation: ' .. name)

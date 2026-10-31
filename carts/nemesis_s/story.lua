@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local atlas<const> = require('cartlib/gx/atlas')
@@ -13,6 +14,7 @@ local story_scene<const> = require('scenes/story')
 
 local story<const> = {}
 story.__index = story
+setmetatable(story, { __index = world_object })
 
 local story_definition_id<const> = 'nemesis_s.story'
 local story_instance_id<const> = 'nemesis_s.story'

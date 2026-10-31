@@ -32,7 +32,7 @@ function scene.register()
 			{
 				member_id = 'victory_cover',
 				definition_id = 'pietious.rectangle',
-				spatial = { local_transform = { 1, 0, 0, 1, 8, 64 } },
+				position = { x = 8, y = 64 },
 				options = {
 					order = 1100,
 					width = 240,
@@ -45,7 +45,7 @@ function scene.register()
 			{
 				member_id = 'victory_caption',
 				definition_id = 'pietious.caption',
-				spatial = { local_transform = { 1, 0, 0, 1, 8, 64 } },
+				position = { x = 8, y = 64 },
 				options = {
 					order = 1101,
 					text = game_text[0].victory_message,

@@ -65,7 +65,6 @@ local shallow_copy<const> = require('cartlib/util/shallow_copy')
 
 local world_object<const> = {}
 world_object.__index = world_object
-world_object.timeline_channels = { protected = { spatial = true } }
 
 function world_object._initialize(self)
 	self.visible = self.visible == nil or self.visible
@@ -92,9 +91,6 @@ end
 -- group the object's component storage, lifecycle hooks, Registry identity and
 -- active system views all commit together at the group barrier.
 function world_object:add_component(comp)
-	if comp.is_spatial then
-		error('spatial capability is installed by the prefab')
-	end
 	comp.owner = self
 	if self._world_object_index ~= nil then
 		return self.world:attach_component(comp)
@@ -163,9 +159,6 @@ function world_object:get_component(component_class, id_local)
 end
 
 function world_object:remove_component(comp)
-	if comp == self.spatial then
-		error('spatial capability belongs to the object lifetime')
-	end
 	comp._attached = false
 	if self._world_object_index ~= nil then
 		self.world:detach_component(comp)

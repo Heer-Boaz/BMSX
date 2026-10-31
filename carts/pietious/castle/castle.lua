@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local fsm_library<const> = require('cartlib/fsm/library')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local prefab<const> = require('cartlib/world/prefab')
@@ -9,6 +10,7 @@ local progression<const> = require('cartlib/progression')
 local room_spawner<const> = require('room/spawner')
 
 local castle<const> = {}
+setmetatable(castle, { __index = world_object })
 
 local world1_stairs_open_row<const> = '#............................-=#'
 local halo_destination_room_number<const> = 1
@@ -300,6 +302,7 @@ function castle:spawn_global_elevators()
 		local route<const> = routes[i]
 		local start<const> = route.path[1]
 		elevators[i] = self.scene:spawn('elevator_platform', {
+			position = { x = start.x, y = start.y },
 			id = 'e.p' .. tostring(i),
 			space_id = 'main',
 			castle = self,
@@ -308,7 +311,7 @@ function castle:spawn_global_elevators()
 			vertical_to_point = route.vertical_to_point,
 			going_to = route.going_to,
 			current_room_number = start.room_number,
-		}, { local_transform = { 1, 0, 0, 1, start.x, start.y } })
+		})
 	end
 end
 

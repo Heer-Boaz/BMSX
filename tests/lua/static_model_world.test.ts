@@ -49,15 +49,17 @@ primitive.queue = function(batch,geometry,matrix,id,reflected)
  queued=queued+1
  original_queue(batch,geometry,matrix,id,reflected)
 end
-prefab.define({def_id='model.fixture',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='model.fixture',
+ class=object_3d,
  components={model_component.factory({model_id='fixture'})}})
-prefab.define({def_id='camera.fixture',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='camera.fixture',
+ class=object_3d,
  components={renderer.factory({width=64,height=64,focal_length=32,near=0.25})}})
 local first<const> = world:spawn('model.fixture',{})
 local second<const> = world:spawn('model.fixture',{})
-second.spatial:set_local_origin(2,0,1)
+second:set_position(2,0,1)
 local camera_object<const> = world:spawn('camera.fixture',{})
-camera_object.spatial:set_local_origin(0,0,8)
+camera_object:set_position(0,0,8)
 local camera<const> = camera_object:get_component(renderer)
 local a<const>,b<const> = first:get_component(model_component),second:get_component(model_component)
 local draw<const> = {count=0,commands={},xy0={},xy1={},xy2={},triangle_words_batch=function(self,commands,xy0,xy1,xy2,order,count)
@@ -83,7 +85,7 @@ probe = {
   render(); assert(draw.count==2 and queued==4)
   first.visible=false
   render(); assert(draw.count==1 and queued==5)
-  camera_object.spatial:set_local_origin(0,0,9)
+  camera_object:set_position(0,0,9)
   render(); assert(draw.count==1 and queued==6)
   second:set_space('other')
   render(); assert(draw.count==0 and queued==6)
@@ -108,7 +110,7 @@ probe = {
   return draw.count
  end,
  pose=function()
-  first.spatial:set_local_affine(1,0,0,0.5,1,0,0,0,1,0,0,0)
+  first:set_transform(1,0,0,0.5,1,0,0,0,1,0,0,0)
   a:set_attachment_affine(2,0,0,0,1,0,0,0,-1,1,2,3)
   a:set_presentation_origin(0,4,5)
   a:resolve_pose()

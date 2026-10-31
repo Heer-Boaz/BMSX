@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 -- director.lua
 -- game flow orchestrator — owns the master FSM that governs which mode the
 -- game is in (room, shrine, lithograph, item screen, death, etc.) and
@@ -91,6 +92,7 @@ local daemon_cloud_positions<const> = {
 
 local director<const> = {}
 director.__index = director
+setmetatable(director, { __index = world_object })
 
 function director:set_active_space(space_id)
 	world:set_space(space_id)

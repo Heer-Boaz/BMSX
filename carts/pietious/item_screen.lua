@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local scene_library<const> = require('cartlib/world/scene_library')
 local scene<const> = require('scenes/inventory')
 local map_widget<const> = require('map_widget')
@@ -10,6 +11,7 @@ require('constants')
 
 local item_screen<const> = {}
 item_screen.__index = item_screen
+setmetatable(item_screen, { __index = world_object })
 local selector_blink_frames<const> = 5
 local selector_blink_timeline_id<const> = 'item_screen.blink'
 

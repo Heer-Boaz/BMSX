@@ -17,7 +17,7 @@ function scene.register()
 			{
 				member_id = 'sparkle',
 				definition_id = 'pietious.sprite',
-				spatial = { local_transform = { 1, 0, 0, 1, 96, 71 } },
+				position = { x = 96, y = 71 },
 				options = {
 					order = 351,
 					imgid = 'tsf4',

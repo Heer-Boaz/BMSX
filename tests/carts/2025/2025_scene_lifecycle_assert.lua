@@ -24,7 +24,7 @@ return {
 			combat.state_machines:transition_to('/combat_round')
 			assert(combat.combat_monster_base_x == monster.attachment_ox - monster.source_width / 2,
 				'combat reentry accumulated an animated offset into its baseline')
-			assert(monster.spatial == old_owner.spatial and monster.attachment_ox == 208 and monster.attachment_oy == 60,
+			assert(monster.owner == old_owner and monster.attachment_ox == 208 and monster.attachment_oy == 60,
 				'combat mutated its retained spatial binding or immutable attachment')
 			director.state_machines:transition_to('/boot')
 			assert(director.session == session and session.stats.planning == 7
@@ -38,15 +38,15 @@ return {
 				{ member_id = 'monster', definition_id = presentation.sprite,
 					options = { id = 'p3.test.monster', imgid = 'monster_snoozer', order = 205,
 						attachment_affine = { 1, 0, 0, 1, 208, 60 } },
-					spatial = { local_transform = { 1, 0, 0, 1, 8, 8 } } },
+					position = { x = 8, y = 8 } },
 				{ member_id = 'main', definition_id = presentation.text,
 					options = { id = 'p3.test.text', attachment_affine = { 1, 0, 0, 1, 32, 96 },
 						layout_rect = { left = 0, right = 256, top = 0, bottom = 64 } },
-					spatial = { local_transform = { 1, 0, 0, 1, 8, 8 } } },
+					position = { x = 8, y = 8 } },
 			} })
 			local edited<const> = scene_library.instantiate('p3.test.placement')
 			local edited_monster<const> = edited.members.monster.sprite_component
-			assert(edited_monster.owner ~= old_owner and edited_monster.spatial == edited.members.monster.spatial,
+			assert(edited_monster.owner ~= old_owner and edited_monster.owner == edited.members.monster,
 				'scene admission reused the retired object or rebound its visual spatial identity')
 			edited_monster:resolve_pose()
 			assert(edited_monster.wox == 216 and edited_monster.woy == 68 and edited_monster.order == 205,

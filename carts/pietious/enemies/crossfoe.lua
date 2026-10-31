@@ -10,6 +10,7 @@ local enemy_base<const> = require('enemies/enemy_base')
 
 local crossfoe<const> = {}
 crossfoe.__index = crossfoe
+setmetatable(crossfoe, { __index = enemy_base })
 
 local upright_collision_left<const> = 4
 local upright_collision_top<const> = 2
@@ -66,7 +67,7 @@ local apply_spin_state<const> = function(self)
 	self.sprite_component:set_imgid(imgid)
 	self.sprite_component.flip_h = flip_h
 	self.sprite_component.flip_v = flip_v
-	self.movement:set_local_bounds(
+	self.movement:set_footprint(
 		collision_left,
 		collision_top,
 		collision_right,
@@ -82,17 +83,17 @@ function crossfoe:ctor()
 end
 
 function crossfoe.player_overlaps_takeoff_lane(self)
-	local pose<const> = self.spatial
-	local target<const> = self.player.spatial:resolve_world()
+	local _<const>, pose_y<const> = self:get_global_position()
+	local _<const>, target_y<const> = self.player:get_global_position()
 	local player<const> = self.player
-	return target.woy + player.height >= pose.oy
-		and target.woy <= pose.oy + upright_collision_bottom
+	return target_y + player.height >= pose_y
+		and target_y <= pose_y + upright_collision_bottom
 end
 
 function crossfoe.execute_flight(self, node_memory)
-	local pose<const> = self.spatial
-	local target<const> = self.player.spatial:resolve_world()
-	if target.wox < pose.ox then
+	local pose_x<const> = self:get_global_position()
+	local target_x<const> = self.player:get_global_position()
+	if target_x < pose_x then
 		node_memory.direction_mod = -1
 	else
 		node_memory.direction_mod = 1
@@ -105,30 +106,37 @@ function crossfoe.execute_flight(self, node_memory)
 end
 
 function crossfoe.tick_flight(self, node_memory)
-	local pose<const> = self.spatial
-	local target<const> = self.player.spatial:resolve_world()
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local target_x<const> = self.player:get_global_position()
 	local player<const> = self.player
 	local direction_mod<const> = node_memory.direction_mod
 
-	if (direction_mod < 0 and pose.ox < (target.wox - player.width))
-		or (direction_mod > 0 and pose.ox > (target.wox + (player.width * 2)))
+	if (direction_mod < 0 and pose_x < (target_x - player.width))
+		or (direction_mod > 0 and pose_x > (target_x + (player.width * 2)))
 	then
 		local landing_delta_x<const> = -(room_tile_size * direction_mod)
-		local landing_x<const> = pose.ox + landing_delta_x
+		local landing_x<const> = pose_x + landing_delta_x
 		if self.room:has_collision_flags_at_world(
 			landing_x + upright_support_probe_x,
-			pose.oy + upright_support_probe_y,
+			pose_y + upright_support_probe_y,
 			collision_flags_solid_mask
 		) then
+			local committed<const> = self.movement:move_x(landing_delta_x)
+			if not committed then
+				return bt_running
+			end
 			self.cross_spin_direction = 'down'
-			self.movement:move_x(landing_delta_x)
 			apply_spin_state(self)
 			self.castle.events:emit('crossland')
 			return bt_success
 		end
 	end
 
-	if self.movement:move_x(enemy_cross_horizontal_speed_px * direction_mod) ~= 0 then
+	local committed<const>, contacts<const> = self.movement:move_x(enemy_cross_horizontal_speed_px * direction_mod)
+	if not committed then
+		return bt_running
+	end
+	if contacts ~= 0 then
 		self.cross_spin_direction = 'down'
 		apply_spin_state(self)
 		self.castle.events:emit('crossland')
@@ -143,22 +151,22 @@ function crossfoe.tick_flight(self, node_memory)
 	end
 
 	turn_ticks = enemy_cross_turn_steps
-	local pivot<const> = self.spatial
+	local pivot_origin_x<const>, pivot_y<const> = self:get_global_position()
 	local pivot_x
 	if self.cross_spin_direction == 'down' then
 		self.cross_spin_direction = 'left'
-		pivot_x = pivot.ox - 4
+		pivot_x = pivot_origin_x - 4
 	elseif self.cross_spin_direction == 'left' then
 		self.cross_spin_direction = 'up'
-		pivot_x = pivot.ox + 4
+		pivot_x = pivot_origin_x + 4
 	elseif self.cross_spin_direction == 'up' then
 		self.cross_spin_direction = 'right'
-		pivot_x = pivot.ox - 4
+		pivot_x = pivot_origin_x - 4
 	else
 		self.cross_spin_direction = 'down'
-		pivot_x = pivot.ox + 4
+		pivot_x = pivot_origin_x + 4
 	end
-	self.spatial:set_world_origin(pivot_x, pivot.oy)
+	self:set_global_position(pivot_x, pivot_y)
 	apply_spin_state(self)
 	node_memory.turn_ticks = turn_ticks
 	return bt_running
@@ -214,15 +222,13 @@ function crossfoe.register()
 	prefab.define({
 		def_id = 'enemy.crossfoe',
 		class = crossfoe,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy_base.new_collider,
 			kinematic_movement_component.factory({
-				local_left = upright_collision_left,
-				local_top = upright_collision_top,
-				local_right = upright_collision_right,
-				local_bottom = upright_collision_bottom,
+				footprint_left = upright_collision_left,
+				footprint_top = upright_collision_top,
+				footprint_right = upright_collision_right,
+				footprint_bottom = upright_collision_bottom,
 				world_left = 0,
 				world_top = room_hud_height,
 				world_right = room_width,

@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local collider<const> = require('cartlib/collision/collider_2d_component')
 local collision<const> = require('cartlib/collision/collision_2d')
 local geometry_pool<const> = require('cartlib/collision/geometry_pool')
@@ -6,13 +7,13 @@ local world<const> = require('cartlib/world/world')
 
 bss geometry: word[32]
 local pool<const> = geometry_pool.new(geometry, 64, 2)
-prefab.define({ def_id = 'cartlib_test.query_body', class = {},
-	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 1, 1, 10, 10 } },
+prefab.define({ def_id = 'cartlib_test.query_body', class = object_2d,
+	transform = { xx = 1, xy = 0, yx = 1, yy = 1, ox = 10, oy = 10 },
 	components = { collider.factory({ geometry_pool = pool, local_affine = { 1, 0, 0, 1, 2, 1 },
 		local_area = { left = 0, top = 0, right = 4, bottom = 4 } }) },
 })
-prefab.define({ def_id = 'cartlib_test.query_target', class = {},
-	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 57.25, 33.25 } },
+prefab.define({ def_id = 'cartlib_test.query_target', class = object_2d,
+	position = { x = 57.25, y = 33.25 },
 	components = { collider.factory({ geometry_pool = pool,
 		local_area = { left = 0, top = 0, right = 0.5, bottom = 0.5 } }) },
 })
@@ -26,7 +27,8 @@ return { kind = 'unit', tests = {
 		local target<const> = owner:spawn('cartlib_test.query_target', {})
 		local body<const> = actor:get_component(collider)
 		local probe<const> = target:get_component(collider)
-		local pose<const> = actor.spatial:resolve_world()
+		local pose<const> = actor
+		pose:get_global_transform()
 		local shape<const> = body:resolve_shape()
 		local basis_revision<const>, origin_revision<const> = pose._basis_revision, pose._origin_revision
 		local geometry_revision<const> = body._geometry_basis_revision
@@ -45,11 +47,11 @@ return { kind = 'unit', tests = {
 			and body.wox == 13 and body.woy == 11,
 			'candidate query published or restored actor/collider authority or invalidated geometry')
 		assert(collision.collides(body, probe) == nil, 'a candidate displacement leaked into the next query')
-		target.spatial:set_world_origin(53.25, 34.25)
+		target:set_global_position(53.25, 34.25)
 		assert(collision.collides(body, probe, 40, 20) == nil,
 			'candidate query replaced the exact sheared polygon with its broadphase box')
-		target.spatial:set_world_origin(57.25, 33.25)
-		actor.spatial:set_world_origin(50, 30)
+		target:set_global_position(57.25, 33.25)
+		actor:set_global_position(50, 30)
 		local committed<const> = collision.collides(body, probe)
 		assert(committed ~= nil and committed.normal.x == normal_x and committed.normal.y == normal_y
 			and committed.depth == depth and committed.point.x == point_x and committed.point.y == point_y,

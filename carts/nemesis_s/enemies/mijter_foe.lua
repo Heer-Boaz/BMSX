@@ -11,6 +11,7 @@ require('constants')
 
 local mijter_foe<const> = {}
 mijter_foe.__index = mijter_foe
+setmetatable(mijter_foe, { __index = foe })
 
 local images_by_type<const> = {
 	[mijter_foe_type_blue] = {
@@ -55,10 +56,10 @@ function mijter_foe:onspawn()
 end
 
 function mijter_foe:update_flying()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local motion<const> = self.motion
-	local target<const> = self.target.spatial
-	if target.oy < pose.oy then
+	local _<const>, target_y<const> = self.target:get_global_position()
+	if target_y < pose_y then
 		motion.velocity_y = motion.velocity_y - mijter_foe_tracking_acceleration_y_q8
 	else
 		motion.velocity_y = motion.velocity_y + mijter_foe_tracking_acceleration_y_q8
@@ -67,10 +68,10 @@ function mijter_foe:update_flying()
 	if self.sprite_component.imgid ~= imgid then
 		self.sprite_component:set_imgid(imgid)
 	end
-	if pose.ox < -mijter_foe_width
-	or pose.ox > playfield_width
-	or pose.oy < -mijter_foe_height
-	or pose.oy > playfield_height then
+	if pose_x < -mijter_foe_width
+	or pose_x > playfield_width
+	or pose_y < -mijter_foe_height
+	or pose_y > playfield_height then
 		self:mark_for_disposal()
 	end
 end
@@ -88,8 +89,6 @@ function mijter_foe.register()
 	prefab.define({
 		def_id = ids_mijter_foe_def,
 		class = mijter_foe,
-		base = foe,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,

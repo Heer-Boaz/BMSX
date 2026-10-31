@@ -8,13 +8,15 @@ import { rebuildWorkbenchTreeRows } from '../../ide/workbench/ui/tree_view';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
+local prefab=require('cartlib/world/prefab')
+prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})
 scenes.register('room', { objects = {
- { member_id = 'ship', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 11, 2, 3 } } },
- { member_id = 'ship', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 22, 5, 6 } } },
+ { member_id = 'ship', definition_id = 'actor', position = { x = 11, y = 2, z = 3 } },
+ { member_id = 'ship', definition_id = 'actor', position = { x = 22, y = 5, z = 6 } },
 } })`;
 
 test('constructing and refreshing a Scene hierarchy never admits a semantic selection', t => {
-	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua');
+	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
 	const context = new SceneAuthoringContext(model, documents);
 	const hierarchy = new SceneHierarchyViewState(context);
 	t.after(() => { hierarchy.dispose(); context.dispose(); });
@@ -33,7 +35,7 @@ test('constructing and refreshing a Scene hierarchy never admits a semantic sele
 });
 
 test('Scene snapshot restores exact semantic member independently of a collapsed hierarchy', t => {
-	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua');
+	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
 	const context = new SceneAuthoringContext(model, documents), view = new SceneEditorViewState(context);
 	const document = context.document!, scene = document.scenes[0];
 	context.select(document, model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
@@ -63,7 +65,7 @@ test('Scene snapshot restores exact semantic member independently of a collapsed
 });
 
 test('same-source Scene selection projects a new highlight without rebuilding hierarchy occurrences', t => {
-	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua');
+	const { model, documents } = createSceneSourceFixture(t, SOURCE, 'regions.lua', undefined, [['cartlib/world/prefab.lua','return {define=function() end}']]);
 	const context = new SceneAuthoringContext(model, documents), hierarchy = new SceneHierarchyViewState(context);
 	t.after(() => { hierarchy.dispose(); context.dispose(); });
 	hierarchy.refresh();

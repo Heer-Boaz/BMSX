@@ -9,6 +9,7 @@ require('constants')
 
 local kerk<const> = {}
 kerk.__index = kerk
+setmetatable(kerk, { __index = enemy })
 
 local hit_area<const> = {
 	left = 0,
@@ -35,8 +36,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_kerk_def,
 		class = kerk,
-		base = enemy,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,

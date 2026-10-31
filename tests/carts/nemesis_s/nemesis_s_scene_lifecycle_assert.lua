@@ -31,7 +31,7 @@ return {kind = 'integration', tests = { title_takeoff_and_reentry = function(t)
 			t:wait_until('hangar composition', function() return title.presentation ~= nil and title.presentation.members.ship ~= nil end, 120)
 			assert_disposed(menu)
 			local hangar<const> = shallow_copy(title.presentation.members)
-			assert(hangar.ship.space_id == 'title' and hangar.ship.spatial.oy == 129,
+			assert(hangar.ship.space_id == 'title' and hangar.ship.oy == 129,
 			'takeoff discarded authored hangar placement')
 			t:wait_until('takeoff completes', function() return world.active_space_id == 'main' end, 650)
 			assert_disposed(hangar)

@@ -11,7 +11,7 @@ export const WORLD_CPU_MODULES = [
 	'cartlib/world/space', 'cartlib/world/system_manager', 'cartlib/world/system_schedule_syntax',
 	'cartlib/world/tick_schedule', 'cartlib/world/scene_plan', 'cartlib/world/world', 'cartlib/world/world_object',
 	'cartlib/world/spatial_hierarchy', 'cartlib/math/affine2', 'cartlib/math/affine3',
-	'cartlib/component/transform_2d_component', 'cartlib/component/transform_3d_component',
+	'cartlib/world/object_2d', 'cartlib/world/object_3d',
 ].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') }));
 WORLD_CPU_MODULES.push(
 	...['gpu/system_vram_region', 'tty/layout'].map(path => ({ path, source: readFileSync(`machine/bios/${path}.lua`, 'utf8') })),
@@ -29,8 +29,8 @@ local prefab<const> = require('cartlib/world/prefab')
 local scenes<const> = require('cartlib/world/scene_library')
 local registry<const> = require('cartlib/registry')
 local base_component<const> = require('cartlib/component/base_component')
-local transform2<const> = require('cartlib/component/transform_2d_component')
-local transform3<const> = require('cartlib/component/transform_3d_component')
+local object_2d<const> = require('cartlib/world/object_2d')
+local object_3d<const> = require('cartlib/world/object_3d')
 local hierarchy<const> = require('cartlib/world/spatial_hierarchy')
 world:_add_space('main')
 world:_add_space('other')

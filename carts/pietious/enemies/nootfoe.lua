@@ -11,6 +11,7 @@ local new_boundary<const> = screen_boundary_component.factory({
 
 local nootfoe<const> = {}
 nootfoe.__index = nootfoe
+setmetatable(nootfoe, { __index = enemy_base })
 
 local noot_colors<const> = {
 	0xffffffff,
@@ -36,8 +37,6 @@ function nootfoe.register()
 	prefab.define({
 		def_id = 'enemy.nootfoe',
 		class = nootfoe,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { enemy_base.new_collider, new_boundary },
 		defaults = {
 			speed_x_num = 0,

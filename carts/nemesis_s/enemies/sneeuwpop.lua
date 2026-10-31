@@ -11,6 +11,7 @@ require('constants')
 
 local sneeuwpop<const> = {}
 sneeuwpop.__index = sneeuwpop
+setmetatable(sneeuwpop, { __index = ground_foe })
 
 local new_flash_animation<const> = sprite_animation_component.factory({
 	frames = {
@@ -28,17 +29,17 @@ function sneeuwpop:ctor()
 end
 
 function sneeuwpop:update_idle()
-	local pose<const> = self.spatial
-	if pose.ox <= 0 then
+	local pose_x<const> = self:get_global_position()
+	if pose_x <= 0 then
 		return
 	end
 	return '/ready_to_fire'
 end
 
 function sneeuwpop:fire_ray()
-	local pose<const> = self.spatial
-	local ray<const> = self.scene:spawn(ids_sneeuwpop_ray_def, {
-	}, { local_transform = { 1, 0, 0, 1, pose.ox + sneeuwpop_ray_offset_x, pose.oy + sneeuwpop_ray_offset_y } })
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local ray<const> = self.scene:spawn(ids_sneeuwpop_ray_def, { position = { x = pose_x + sneeuwpop_ray_offset_x, y = pose_y + sneeuwpop_ray_offset_y }
+	})
 	ray.events:on({
 		event = 'enemy.ray.finished',
 		subscriber = self,
@@ -56,10 +57,11 @@ function sneeuwpop:ray_finished()
 end
 
 function sneeuwpop:on_destroyed(projectile)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.scene:spawn(ids_destroyed_sneeuwpop_def, {
+		position = { x = pose_x, y = pose_y },
 		stage = self.stage,
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
+	})
 	ground_foe.on_destroyed(self, projectile)
 end
 
@@ -110,8 +112,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_sneeuwpop_def,
 		class = sneeuwpop,
-		base = ground_foe,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy.collider_factory(assets.collision_shape_sneeuwpop_body_addr),
 			new_flash_animation,

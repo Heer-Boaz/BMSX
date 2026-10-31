@@ -16,6 +16,7 @@ require('constants')
 
 local zak_foe<const> = {}
 zak_foe.__index = zak_foe
+setmetatable(zak_foe, { __index = foe })
 zak_foe.destroyed_event = 'enemy.zak.destroyed'
 
 local fire_effect_id<const> = 'nemesis_s.enemy.zak_foe.fire'
@@ -41,8 +42,8 @@ function zak_foe:ctor()
 end
 
 function zak_foe:onspawn()
-	local pose<const> = self.spatial
-	self.ground_y = pose.oy
+	local _<const>, pose_y<const> = self:get_global_position()
+	self.ground_y = pose_y
 	set_direction(self, self.direction)
 end
 
@@ -67,7 +68,7 @@ function zak_foe:enter_jumping()
 end
 
 function zak_foe:update_jumping()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	if self:dispose_if_left_of_stage(zak_foe_width) then
 		return
 	end
@@ -75,20 +76,20 @@ function zak_foe:update_jumping()
 
 	local stage<const> = self.stage
 	if self.direction == zak_foe_direction_left then
-		if pose.ox < 0
-		or stage:is_solid_pixel(pose.ox + hit_area.left, pose.oy + hit_area.top)
+		if pose_x < 0
+		or stage:is_solid_pixel(pose_x + hit_area.left, pose_y + hit_area.top)
 		or not stage:is_solid_pixel(
-			pose.ox + hit_area.left - 4,
-			pose.oy + hit_area.bottom + stage.tile_size
+			pose_x + hit_area.left - 4,
+			pose_y + hit_area.bottom + stage.tile_size
 		) then
 			set_direction(self, zak_foe_direction_right)
 		end
 	else
-		if pose.ox + hit_area.right >= playfield_width
-		or stage:is_solid_pixel(pose.ox + hit_area.right, pose.oy + hit_area.top)
+		if pose_x + hit_area.right >= playfield_width
+		or stage:is_solid_pixel(pose_x + hit_area.right, pose_y + hit_area.top)
 		or not stage:is_solid_pixel(
-			pose.ox + hit_area.right,
-			pose.oy + hit_area.bottom + stage.tile_size
+			pose_x + hit_area.right,
+			pose_y + hit_area.bottom + stage.tile_size
 		) then
 			set_direction(self, zak_foe_direction_left)
 		end
@@ -96,7 +97,7 @@ function zak_foe:update_jumping()
 end
 
 function zak_foe:enter_recovering()
-	local pose<const> = self.spatial
+	local pose_x<const> = self:get_global_position()
 	local motion<const> = self.motion
 	motion:set_enabled(false)
 	motion.velocity_x = 0
@@ -105,7 +106,7 @@ function zak_foe:enter_recovering()
 	motion.acceleration_y = 0
 	motion.fraction_y = 0
 	local next_y<const> = self.ground_y
-	self.spatial:set_world_origin(pose.ox, next_y)
+	self:set_global_position(pose_x, next_y)
 	self.sprite_component:set_imgid(assets_zak_foe_recover)
 end
 
@@ -168,8 +169,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_zak_foe_def,
 		class = zak_foe,
-		base = foe,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,
@@ -204,7 +203,7 @@ function zak_foe.register()
 			return wait_ms
 		end,
 		handler = function(self)
-			local pose<const> = self.spatial
+			local pose_x<const>, pose_y<const> = self:get_global_position()
 			local players<const> = players_view.objects
 			local target
 			if #players == 1 then
@@ -212,21 +211,22 @@ function zak_foe.register()
 			else
 				target = players[math.random(1, #players)]
 			end
-			local target_pose<const> = target.spatial
-			local bullet_x<const> = pose.ox + 4
-			local bullet_y<const> = pose.oy
+			local target_pose_x<const>, target_pose_y<const> = target:get_global_position()
+			local bullet_x<const> = pose_x + 4
+			local bullet_y<const> = pose_y
 			local velocity_x<const>, velocity_y<const> = enemy_bullet.aim_velocity(
-				target_pose.ox - bullet_x,
-				target_pose.oy - bullet_y
+				target_pose_x - bullet_x,
+				target_pose_y - bullet_y
 			)
 			if velocity_x == nil then
 				return
 			end
 			self.scene:spawn(ids_enemy_bullet_def, {
+				position = { x = bullet_x, y = bullet_y },
 				velocity_x = velocity_x,
 				velocity_y = velocity_y,
 				stage = self.stage,
-			}, { local_transform = { 1, 0, 0, 1, bullet_x, bullet_y } })
+			})
 		end,
 	})
 	define_fsm()

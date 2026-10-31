@@ -17,8 +17,6 @@ function model_component.new(owner, configuration, id_local, defaults, default_s
 	setmetatable(self, model_component)
 	local definition<const> = defaults or empty_configuration
 	self.id_local = id_local
-	local spatial<const> = owner.spatial
-	self.spatial = spatial
 	local enabled = input.enabled
 	if enabled == nil then enabled = definition.enabled end
 	self.enabled = enabled == nil or enabled
@@ -130,7 +128,7 @@ end
 -- revisions select world basis/origin work independently; a clean read is free
 -- of affine composition, allocation and vertex work.
 function model_component:resolve_pose()
-	local spatial<const> = self.spatial
+	local spatial<const> = self.owner
 	hierarchy.resolve(spatial)
 	local flags<const> = self._pose_flags
 	local basis_revision<const>, origin_revision<const> = spatial._basis_revision, spatial._origin_revision

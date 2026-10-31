@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local visual_2d<const> = require('cartlib/component/visual_2d_component')
 local font<const> = require('cartlib/font')
 local image<const> = require('cartlib/gx/image')
@@ -8,6 +9,7 @@ local player_state<const> = require('player/player_state')
 
 local status_bar<const> = {}
 status_bar.__index = status_bar
+setmetatable(status_bar, { __index = object_2d })
 
 local definition_id<const> = 'nemesis_s.status_bar'
 local instance_id<const> = 'nemesis_s.status_bar'
@@ -206,7 +208,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = definition_id,
 		class = status_bar,
-		spatial = { family = '2d', authority = 'affine' },
 		components = {
 			status_visual.new,
 		},

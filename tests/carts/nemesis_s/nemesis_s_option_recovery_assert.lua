@@ -50,14 +50,14 @@ return {
 				assert(test.option_laser.type ~= 0 and test.option_laser.collider.enabled,
 				'player death removed an independently admitted option projectile')
 				local pickups<const> = test.pickups.objects
-				local first<const> = pickups[1].spatial:resolve_world()
-				local second<const> = pickups[2].spatial:resolve_world()
 				assert(#pickups == 2, 'player death did not publish one pickup per option')
-				assert(first.wox == 148 and first.woy == 40,
+				local first_x<const>, first_y<const> = pickups[1]:get_global_position()
+				local second_x<const>, second_y<const> = pickups[2]:get_global_position()
+				assert(first_x == 148 and first_y == 40,
 				'first option pickup did not retain the authored XNA displacement')
-				assert(second.wox == playfield_width and second.woy == 80,
+				assert(second_x == playfield_width and second_y == 80,
 				'second option pickup did not clamp at the playfield edge')
-				test.pickup_x = first.wox
+				test.pickup_x = first_x
 				test.animation_frame = player.option_anim_index
 				test.gameplay_time_ms = world.gameplay_time_ms
 				t:wait_ticks(1)
@@ -66,16 +66,16 @@ return {
 				t:wait_until('option_recovery observation 2', function() return not (world.gameplay_time_ms == test.gameplay_time_ms
 					or player.option_anim_index == test.animation_frame) end, 120)
 				local pickups<const> = test.pickups.objects
-				assert(pickups[1].spatial:resolve_world().wox < test.pickup_x,
+				assert(pickups[1]:get_global_position() < test.pickup_x,
 				'detached option did not consume its retained fixed-point velocity')
 				player.state_machines:transition_to('/active/respawning')
 				assert(player.body_collider.enabled
 				and player.body_collider.mask == collision_pickup_layer,
 				'respawning player did not retain pickup collision admission')
-				local player_pose<const> = player.spatial:resolve_world()
-				pickups[1].spatial:set_world_origin(player_pose.wox, player_pose.woy)
-				local second<const> = pickups[2].spatial:resolve_world()
-				second:set_world_origin(second.wox, playfield_height)
+				pickups[1]:set_global_position(player:get_global_position())
+				local second<const> = pickups[2]
+				local second_x<const> = second:get_global_position()
+				second:set_global_position(second_x, playfield_height)
 				t:wait_ticks(1)
 			end
 			do
@@ -91,8 +91,7 @@ return {
 			do
 				t:wait_until('option_recovery observation 4', function() return not (*selected_apu_source == player_death_source) end, 120)
 				local pickup<const> = test.pickups.objects[1]
-				local pose<const> = player.spatial:resolve_world()
-				pickup.spatial:set_world_origin(pose.wox, pose.woy)
+				pickup:set_global_position(player:get_global_position())
 				t:wait_ticks(1)
 			end
 			t:wait_until('option_recovery observation 5', function() return not (#test.pickups.objects > 0) end, 120)

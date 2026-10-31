@@ -10,6 +10,7 @@ require('constants')
 
 local roodje<const> = {}
 roodje.__index = roodje
+setmetatable(roodje, { __index = sprite_object })
 
 local hit_area<const> = {
 	left = 0,
@@ -25,8 +26,8 @@ local new_collider<const> = collider_2d_component.factory({
 })
 
 function roodje:update_active()
-	local pose<const> = self.spatial
-	if pose.ox <= -roodje_width then
+	local pose_x<const> = self:get_global_position()
+	if pose_x <= -roodje_width then
 		self:mark_for_disposal()
 	end
 end
@@ -62,8 +63,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_roodje_def,
 		class = roodje,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			new_collider,
 			stage_scroll_follower_component.new,

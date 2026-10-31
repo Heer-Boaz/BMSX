@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local scene_library<const> = require('cartlib/world/scene_library')
 local scene<const> = require('scenes/lithograph')
 local fsm_library<const> = require('cartlib/fsm/library')
@@ -7,6 +8,7 @@ require('constants')
 
 local lithograph_screen<const> = {}
 lithograph_screen.__index = lithograph_screen
+setmetatable(lithograph_screen, { __index = world_object })
 
 function lithograph_screen:ctor()
 	self.presentation = scene_library.instantiate(scene.id)

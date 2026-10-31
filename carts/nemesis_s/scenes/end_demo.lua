@@ -23,7 +23,7 @@ function end_demo_scene.register()
 			{
 				member_id = 'caption',
 				definition_id = caption.definition_id,
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 8 } },
+				position = { x = 0, y = 8 },
 				options = { order = 1 },
 			},
 			{

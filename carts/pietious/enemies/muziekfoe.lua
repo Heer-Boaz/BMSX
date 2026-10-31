@@ -13,6 +13,7 @@ local abs<const> = math.abs
 
 local muziekfoe<const> = {}
 muziekfoe.__index = muziekfoe
+setmetatable(muziekfoe, { __index = enemy_base })
 
 local get_delta_from_source_to_target_scaled<const> = function(source_x, source_y, target_x, target_y, speed_scale)
 	local dx<const> = target_x - source_x
@@ -49,29 +50,34 @@ function muziekfoe.tick_move(self, node_memory)
 		enemy_muziek_horizontal_speed_num,
 		enemy_muziek_horizontal_speed_den
 	)
+	local committed<const>, contacts<const> = self.movement:move_x(move_x * dir_modifier)
+	if not committed then
+		return bt_running
+	end
 	node_memory.move_accum = move_accum
-	if self.movement:move_x(move_x * dir_modifier) ~= 0 then
+	if contacts ~= 0 then
 		self.direction = self.direction == 'left' and 'right' or 'left'
 	end
 	return bt_running
 end
 
 function muziekfoe.spawn_note(self)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local player<const> = self.player
-	local source_x<const> = pose.ox + 12
-	local source_y<const> = pose.oy + 8
-	local target<const> = player.spatial:resolve_world()
+	local source_x<const> = pose_x + 12
+	local source_y<const> = pose_y + 8
+	local target_x<const>, target_y<const> = player:get_global_position()
 	local delta_scale<const> = 8
 	local delta_x<const>, delta_y<const> = get_delta_from_source_to_target_scaled(
 		source_x,
 		source_y,
-		target.wox,
-		target.woy + player.height,
+		target_x,
+		target_y + player.height,
 		delta_scale
 	)
 	local delta_divisor<const> = math.random(1, 2)
 	self.room.scene:spawn('enemy.nootfoe', {
+		position = { x = pose_x + 12, y = pose_y },
 		speed_x_num = delta_x,
 		speed_y_num = delta_y,
 		speed_den = delta_scale * delta_divisor,
@@ -81,7 +87,7 @@ function muziekfoe.spawn_note(self)
 		room = self.room,
 		player = player,
 		direction = delta_x < 0 and 'left' or 'right',
-	}, { local_transform = { 1, 0, 0, 1, pose.ox + 12, pose.oy } })
+	})
 	return bt_success
 end
 
@@ -134,15 +140,13 @@ function muziekfoe.register()
 	prefab.define({
 		def_id = 'enemy.muziekfoe',
 		class = muziekfoe,
-		base = enemy_base,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy_base.new_collider,
 			kinematic_movement_component.factory({
-				local_left = 0,
-				local_top = 0,
-				local_right = 24,
-				local_bottom = 16,
+				footprint_left = 0,
+				footprint_top = 0,
+				footprint_right = 24,
+				footprint_bottom = 16,
 				world_left = 0,
 				world_top = room_hud_height,
 				world_right = room_width,

@@ -11,10 +11,10 @@ return {
 		phase = 'physical', bindings = { 'pose' },
 		duration_ms = 1500, clock_source = timeline_clock.frame,
 		tracks = {
-			{ kind = 'spatial', binding = 'pose', operation = 'local_origin3', channels = {
-				ox = { interpolation = 'linear', keys = {{ time_ms = 0, value = 160 }, { time_ms = 950, value = 150 }, { time_ms = 1500, value = 160 }} },
-				oy = { interpolation = 'linear', keys = {{ time_ms = 0, value = 420 }, { time_ms = 950, value = 235 }, { time_ms = 1500, value = 198 }} },
-				oz = { interpolation = 'linear', keys = {{ time_ms = 0, value = 896 }, { time_ms = 950, value = 640 }, { time_ms = 1500, value = 512 }} },
+			{ kind = 'spatial', binding = 'pose', operation = 'position3', channels = {
+				x = { interpolation = 'linear', keys = {{ time_ms = 0, value = 160 }, { time_ms = 950, value = 150 }, { time_ms = 1500, value = 160 }} },
+				y = { interpolation = 'linear', keys = {{ time_ms = 0, value = 420 }, { time_ms = 950, value = 235 }, { time_ms = 1500, value = 198 }} },
+				z = { interpolation = 'linear', keys = {{ time_ms = 0, value = 896 }, { time_ms = 950, value = 640 }, { time_ms = 1500, value = 512 }} },
 			} },
 			{ kind = 'value', path = { 'bank' }, interpolation = 'linear',
 				keys = {{ time_ms = 0, value = -0.35 }, { time_ms = 950, value = 0.15 }, { time_ms = 1500, value = 0 }} },

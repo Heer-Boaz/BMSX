@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local tile_strip_collider_2d_component<const> = require('cartlib/collision/tile_strip_collider_2d_component')
@@ -5,13 +6,13 @@ local tile_strip_component<const> = require('cartlib/component/tile_strip_compon
 local prefab<const> = require('cartlib/world/prefab')
 local timeline<const> = require('cartlib/timeline/timeline')
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
-local world_object<const> = require('cartlib/world/world_object')
 local stage_scroll_follower_component<const> = require('stage_scroll_follower_component')
 local collision_storage<const> = require('collision_storage')
 require('constants')
 
 local schoorsteen_ray<const> = {}
 schoorsteen_ray.__index = schoorsteen_ray
+setmetatable(schoorsteen_ray, { __index = object_2d })
 
 local expansion_finished_event<const> = 'schoorsteen_ray.expansion.finished'
 local initial_first_tile<const> = 1
@@ -62,13 +63,13 @@ function schoorsteen_ray:ctor()
 end
 
 function schoorsteen_ray:onspawn()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	local direction<const> = self.direction
 	local ray_strip<const> = self.ray_strip
 	ray_strip:set_step(0, direction * schoorsteen_ray_tile_size)
 	self.max_tiles = self.stage:first_solid_vertical_tile_offset(
-		pose.ox,
-		pose.oy + ray_strip.step_y,
+		pose_x,
+		pose_y + ray_strip.step_y,
 		max_tiles,
 		direction
 	)
@@ -131,8 +132,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_schoorsteen_ray_def,
 		class = schoorsteen_ray,
-		base = world_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			new_ray_strip,
 			new_ray_collider,

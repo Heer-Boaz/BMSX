@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local atlas<const> = require('cartlib/gx/atlas')
@@ -12,6 +13,7 @@ local end_demo_scene<const> = require('scenes/end_demo')
 
 local end_demo<const> = {}
 end_demo.__index = end_demo
+setmetatable(end_demo, { __index = world_object })
 
 local end_demo_definition_id<const> = 'nemesis_s.end_demo'
 local end_demo_instance_id<const> = 'nemesis_s.end_demo'

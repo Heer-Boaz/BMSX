@@ -7,6 +7,7 @@ local hangar_ship<const> = {
 }
 
 local ship<const> = {}
+setmetatable(ship, { __index = sprite_object })
 
 function ship:ctor()
 	self.burst = self:get_component(sprite_component, 'burst')
@@ -17,8 +18,6 @@ function hangar_ship.register()
 	prefab.define({
 		def_id = hangar_ship.definition_id,
 		class = ship,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'affine' },
 		defaults = {
 			imgid = 'title_startup_metalion',
 			order = 3,

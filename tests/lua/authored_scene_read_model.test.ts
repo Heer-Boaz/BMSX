@@ -6,8 +6,8 @@ import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
-prefab.define({def_id='node2',class={},spatial={family='2d',authority='affine'}})
-prefab.define({def_id='node3',class={},spatial={family='3d',authority='affine'}})
+prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
+prefab.define({def_id='node3',class=require('cartlib/world/object_3d')})
 prefab.define({def_id='controller',class={}})`;
 
 function fixture(t: TestContext, objects: string, index = 0, prefabs = PREFABS) {
@@ -26,10 +26,10 @@ scenes.register('second',{objects={{member_id='other',definition_id='node2'}}})`
 
 test('authored viewport reads exact 2D/3D world affines from the existing source forest without selecting or editing', t => {
 	const f = fixture(t, `
- {member_id='child2',definition_id='node2',spatial={parent_id='root2',local_transform={1,0,0,1,4,5}}},
- {member_id='root2',definition_id='node2',spatial={local_transform={2,0,1,-3,10,20}}},
- {member_id='root3',definition_id='node3',spatial={local_transform={1,0,0,2,1,0,0,1,-1,10,20,30}}},
- {member_id='child3',definition_id='node3',spatial={parent_id='root3',local_transform={1,0,0,0,0,0,0,0,-1,4,5,6}}},
+ {member_id='child2',definition_id='node2',parent='root2',position = { x = 4, y = 5 }},
+ {member_id='root2',definition_id='node2',transform = { xx = 2, xy = 0, yx = 1, yy = -3, ox = 10, oy = 20 }},
+ {member_id='root3',definition_id='node3',transform = { xx = 1, xy = 0, xz = 0, yx = 2, yy = 1, yz = 0, zx = 0, zy = 1, zz = -1, ox = 10, oy = 20, oz = 30 }},
+ {member_id='child3',definition_id='node3',parent='root3',transform = { xx = 1, xy = 0, xz = 0, yx = 0, yy = 0, yz = 0, zx = 0, zy = 0, zz = -1, ox = 4, oy = 5, oz = 6 }},
  {member_id='controller',definition_id='controller'},`);
 	const read = f.context.spatialScene!, child2 = f.member('child2'), root2 = f.member('root2');
 	assert.ok(child2 === f.context.subject!.objects[0]);
@@ -44,7 +44,7 @@ test('authored viewport reads exact 2D/3D world affines from the existing source
 });
 
 test('one retained scene read materializes all poses once and steady viewport reads do not traverse or allocate a graph', t => {
-	const f = fixture(t, `{member_id='root',definition_id='node2'}, {member_id='child',definition_id='node2',spatial={parent_id='root'}}`);
+	const f = fixture(t, `{member_id='root',definition_id='node2'}, {member_id='child',definition_id='node2',parent='root'}`);
 	const read = f.context.spatialScene!, child = f.member('child'), world = read.worlds.get(child);
 	const reads = t.mock.method(read.worlds, 'has');
 	for (let index = 0; index < 1000; index++) assert.ok(f.context.spatialScene === read);
@@ -56,12 +56,12 @@ test('one retained scene read materializes all poses once and steady viewport re
 test('invalid, missing, cyclic and dynamic ancestry remains unavailable instead of becoming a root pose', t => {
 	const f = fixture(t, `
  {member_id='root',definition_id='node2'},
- {member_id='missing',definition_id='node2',spatial={parent_id='absent'}},
- {member_id='cycle_a',definition_id='node2',spatial={parent_id='cycle_b'}},
- {member_id='cycle_b',definition_id='node2',spatial={parent_id='cycle_a'}},
- {member_id='dynamic',definition_id='node2',spatial={local_transform=runtime_pose()}},
- {member_id='under_dynamic',definition_id='node2',spatial={parent_id='dynamic'}},
- {member_id='wrong_family',definition_id='node3',spatial={parent_id='root'}},`);
+ {member_id='missing',definition_id='node2',parent='absent'},
+ {member_id='cycle_a',definition_id='node2',parent='cycle_b'},
+ {member_id='cycle_b',definition_id='node2',parent='cycle_a'},
+ {member_id='dynamic',definition_id='node2',transform=runtime_pose()},
+ {member_id='under_dynamic',definition_id='node2',parent='dynamic'},
+ {member_id='wrong_family',definition_id='node3',parent='root'},`);
 	const read = f.context.spatialScene!;
 	assert.ok(read.worlds.get(f.member('root')) !== undefined);
 	for (const id of ['missing', 'cycle_a', 'cycle_b', 'dynamic', 'under_dynamic', 'wrong_family'])
@@ -70,18 +70,18 @@ test('invalid, missing, cyclic and dynamic ancestry remains unavailable instead 
 });
 
 test('source dependency changes publish new poses while an older admitted read remains immutable', t => {
-	const prefabs = PREFABS.replace("authority='affine'}", "authority='affine',local_transform={1,0,0,1,7,9}}" );
-	const f = fixture(t, `{member_id='root',definition_id='node2'}, {member_id='child',definition_id='node2',spatial={parent_id='root'}}`, 0, prefabs);
+	const prefabs = PREFABS.replace("def_id='node2'", "def_id='node2',position={x=7,y=9}");
+	const f = fixture(t, `{member_id='root',definition_id='node2'}, {member_id='child',definition_id='node2',parent='root'}`, 0, prefabs);
 	const old = f.context.spatialScene!, oldChild = f.member('child'), world = old.worlds.get(oldChild)!;
-	assert.deepEqual(world, { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox: 14, oy: 18 });
+	assert.deepEqual(world, { family: '2d', xx: 1, xy: 0, yx: -0, yy: 1, ox: 14, oy: 18 });
 	const resource = f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'prefabs.lua' })!;
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
-	const offset = provider.buffer.getText().indexOf('7,9');
-	provider.pushEditOperations([{ offset, deleteLength: 3, text: '11,13' }]);
+	const offset = provider.buffer.getText().indexOf('x=7,y=9');
+	provider.pushEditOperations([{ offset, deleteLength: 7, text: 'x=11,y=13' }]);
 	f.context.refresh();
 	const current = f.context.spatialScene!;
 	assert.notEqual(current, old);
-	assert.deepEqual(current.worlds.get(f.member('child')), { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox: 22, oy: 26 });
+	assert.deepEqual(current.worlds.get(f.member('child')), { family: '2d', xx: 1, xy: 0, yx: -0, yy: 1, ox: 22, oy: 26 });
 	assert.ok(old.worlds.get(oldChild) === world);
 	assert.equal(world.ox, 14); assert.equal(world.oy, 18);
 	assert.equal(f.model.canUndo, false);
@@ -101,11 +101,27 @@ test('a primary scene read never infers its subject from selection, another decl
 
 test('a deep flat-authored chain projects iteratively, including forward parents, without a cloned scene tree', t => {
 	const count = 4096, objects: string[] = [];
-	for (let index = count - 1; index >= 0; index--) objects.push(`{member_id='n${index}',definition_id='node2',spatial={${index === 0 ? '' : `parent_id='n${index - 1}',`}local_transform={1,0,0,1,1,2}}}`);
+	for (let index = count - 1; index >= 0; index--) objects.push(`{member_id='n${index}',definition_id='node2',${index === 0 ? '' : `parent='n${index - 1}',`}position = { x = 1, y = 2 }}`);
 	const f = fixture(t, objects.join(',')), read = f.context.spatialScene!;
 	assert.equal(read.entries.length, count);
 	const last = f.member(`n${count - 1}`), world = read.worlds.get(last)!;
 	assert.equal(world.ox, count); assert.equal(world.oy, count * 2);
 	assert.ok(read.parents.get(last) === f.member(`n${count - 2}`));
+	assert.equal(f.model.canUndo, false);
+});
+
+
+test('empty or nil-only scale overrides preserve exact singular and sheared construction without semantic reconstruction', t => {
+	const f = fixture(t, `
+ {member_id='empty2',definition_id='node2',transform={xx=0,xy=0,yx=2,yy=3,ox=4,oy=5},scale={}},
+ {member_id='nil2',definition_id='node2',transform={xx=0,xy=0,yx=2,yy=3,ox=4,oy=5},scale={x=nil,y=nil}},
+ {member_id='empty3',definition_id='node3',transform={xx=1,xy=0,xz=0,yx=2,yy=1,yz=0,zx=0,zy=3,zz=-1,ox=4,oy=5,oz=6},scale={}},
+ {member_id='nil3',definition_id='node3',transform={xx=1,xy=0,xz=0,yx=2,yy=1,yz=0,zx=0,zy=3,zz=-1,ox=4,oy=5,oz=6},scale={x=nil,y=nil,z=nil}},`);
+	const worlds = f.context.spatialScene!.worlds;
+	for (const id of ['empty2', 'nil2'])
+		assert.deepEqual(worlds.get(f.member(id)), { family: '2d', xx: 0, xy: 0, yx: 2, yy: 3, ox: 4, oy: 5 });
+	for (const id of ['empty3', 'nil3'])
+		assert.deepEqual(worlds.get(f.member(id)),
+			{ family: '3d', xx: 1, xy: 0, xz: 0, yx: 2, yy: 1, yz: 0, zx: 0, zy: 3, zz: -1, ox: 4, oy: 5, oz: 6 });
 	assert.equal(f.model.canUndo, false);
 });

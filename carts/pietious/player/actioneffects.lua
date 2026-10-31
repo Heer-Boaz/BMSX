@@ -45,17 +45,18 @@ actioneffects.register_effect('pepernoot', {
 		local room<const> = owner.room
 		owner.pepernoot_projectile_sequence = owner.pepernoot_projectile_sequence + 1
 		local projectile_id<const> = string.format('pepernoot_%d_%d', owner.player_index, owner.pepernoot_projectile_sequence)
-		local pose<const> = owner.spatial:resolve_world()
-		local spawn_x = pose.wox + (owner.facing < 0 and -secondary_weapon_pepernoot_spawn_offset_x or secondary_weapon_pepernoot_spawn_offset_x)
-		local spawn_y = pose.woy + secondary_weapon_pepernoot_spawn_offset_y
+		local pose_x<const>, pose_y<const> = owner:get_global_position()
+		local spawn_x = pose_x + (owner.facing < 0 and -secondary_weapon_pepernoot_spawn_offset_x or secondary_weapon_pepernoot_spawn_offset_x)
+		local spawn_y = pose_y + secondary_weapon_pepernoot_spawn_offset_y
 		spawn_x, spawn_y = room:snap_world_to_tile(spawn_x, spawn_y)
 		owner.room.scene:spawn('pepernoot_projectile', {
+			position = { x = spawn_x, y = spawn_y },
 			id = projectile_id,
 			room = room,
 			room_number = owner.castle.current_room_number,
 			owner_id = owner.id,
 			direction = owner.facing,
-		}, { local_transform = { 1, 0, 0, 1, spawn_x, spawn_y } })
+		})
 		-- owner.status.weapon_level = owner.status.weapon_level - secondary_weapon_pepernoot_weapon_level_cost
 		owner:emit_weapon_changed()
 		owner.events:emit('fire_pepernoot')

@@ -29,38 +29,36 @@ local admit<const> = function(graph)
 	end
 end
 
-function spatial.create2(graph, owner, xx, xy, yx, yy, ox, oy)
-	local node<const> = {
-		owner = owner, _family = affine2, _origin_only = false,
-		_retiring = false,
-		_hierarchy = graph, _flags = all_dirty,
-		_basis_revision = 0, _origin_revision = 0,
-		_parent_basis_revision = 0, _parent_origin_revision = 0,
-		xx = xx, xy = xy, yx = yx, yy = yy, ox = ox, oy = oy,
-		wxx = 0, wxy = 0, wyx = 0, wyy = 0, wox = 0, woy = 0,
-	}
+function spatial.initialize2(graph, node)
+	node._family = affine2
+	node.parent = nil
+	node._retiring = false
+	node._hierarchy = graph
+	node._flags = all_dirty
+	node._basis_revision = 0
+	node._origin_revision = 0
+	node._parent_basis_revision = 0
+	node._parent_origin_revision = 0
+	node.wxx, node.wxy, node.wyx, node.wyy = 0, 0, 0, 0
+	node.wox, node.woy = 0, 0
 	admit(graph)
 	return node
 end
 
-function spatial.create_origin2(graph, owner, x, y)
-	local node<const> = spatial.create2(graph, owner, 1, 0, 0, 1, x, y)
-	node._origin_only = true
-	return node
-end
-
-function spatial.create3(graph, owner, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
-	local node<const> = {
-		owner = owner, _family = affine3, _origin_only = false,
-		_retiring = false,
-		_hierarchy = graph, _flags = all_dirty,
-		_basis_revision = 0, _origin_revision = 0,
-		_parent_basis_revision = 0, _parent_origin_revision = 0,
-		xx = xx, xy = xy, xz = xz, yx = yx, yy = yy, yz = yz,
-		zx = zx, zy = zy, zz = zz, ox = ox, oy = oy, oz = oz,
-		wxx = 0, wxy = 0, wxz = 0, wyx = 0, wyy = 0, wyz = 0,
-		wzx = 0, wzy = 0, wzz = 0, wox = 0, woy = 0, woz = 0,
-	}
+function spatial.initialize3(graph, node)
+	node._family = affine3
+	node.parent = nil
+	node._retiring = false
+	node._hierarchy = graph
+	node._flags = all_dirty
+	node._basis_revision = 0
+	node._origin_revision = 0
+	node._parent_basis_revision = 0
+	node._parent_origin_revision = 0
+	node.wxx, node.wxy, node.wxz = 0, 0, 0
+	node.wyx, node.wyy, node.wyz = 0, 0, 0
+	node.wzx, node.wzy, node.wzz = 0, 0, 0
+	node.wox, node.woy, node.woz = 0, 0, 0
 	admit(graph)
 	return node
 end
@@ -82,7 +80,7 @@ local invalidate<const> = function(root)
 			end
 		end
 		while node ~= root and node._next_sibling == nil do
-			node = node.spatial_parent
+			node = node.parent
 		end
 		if node == root then
 			return
@@ -93,6 +91,7 @@ local invalidate<const> = function(root)
 end
 
 function spatial.write_local2(node, xx, xy, yx, yy, ox, oy)
+	node._semantic_flags = 0
 	node.xx = xx
 	node.xy = xy
 	node.yx = yx
@@ -101,9 +100,11 @@ function spatial.write_local2(node, xx, xy, yx, yy, ox, oy)
 	node.oy = oy
 	node._flags = node._flags | local_basis | local_origin
 	invalidate(node)
+	return true
 end
 
 function spatial.write_local3(node, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
+	node._semantic_flags = 0
 	node.xx = xx
 	node.xy = xy
 	node.xz = xz
@@ -118,6 +119,7 @@ function spatial.write_local3(node, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, 
 	node.oz = oz
 	node._flags = node._flags | local_basis | local_origin
 	invalidate(node)
+	return true
 end
 
 function spatial.write_origin2(node, x, y)
@@ -125,7 +127,7 @@ function spatial.write_origin2(node, x, y)
 	node.oy = y
 	-- A clean, childless root already has world == local. Publish directly;
 	-- the common flat-object path needs neither traversal nor a resolver call.
-	if node.spatial_parent == nil and node._first_child == nil and node._flags == 0 then
+	if node.parent == nil and node._first_child == nil and node._flags == 0 then
 		node.wox = x
 		node.woy = y
 		node._origin_revision = node._origin_revision + 1
@@ -140,7 +142,7 @@ function spatial.write_origin3(node, x, y, z)
 	node.ox = x
 	node.oy = y
 	node.oz = z
-	if node.spatial_parent == nil and node._first_child == nil and node._flags == 0 then
+	if node.parent == nil and node._first_child == nil and node._flags == 0 then
 		node.wox = x
 		node.woy = y
 		node.woz = z
@@ -163,14 +165,14 @@ function spatial.resolve(target)
 	while node ~= nil and (node._flags & world_dirty) ~= 0 do
 		count = count + 1
 		scratch[count] = node
-		node = node.spatial_parent
+		node = node.parent
 	end
 	while count > 0 do
 		node = scratch[count]
 		scratch[count] = false
 		count = count - 1
 		local flags<const> = node._flags
-		local parent<const> = node.spatial_parent
+		local parent<const> = node.parent
 		local basis_changed = (flags & (local_basis | parent_inputs)) ~= 0
 		local origin_changed = (flags & (local_origin | parent_inputs)) ~= 0
 		if parent ~= nil then
@@ -196,7 +198,7 @@ function spatial.resolve(target)
 end
 
 function spatial.write_world_origin2(node, x, y)
-	local parent<const> = node.spatial_parent
+	local parent<const> = node.parent
 	if parent == nil then
 		return spatial.write_origin2(node, x, y)
 	end
@@ -210,7 +212,7 @@ function spatial.write_world_origin2(node, x, y)
 end
 
 function spatial.write_world_origin3(node, x, y, z)
-	local parent<const> = node.spatial_parent
+	local parent<const> = node.parent
 	if parent == nil then
 		return spatial.write_origin3(node, x, y, z)
 	end
@@ -224,7 +226,7 @@ function spatial.write_world_origin3(node, x, y, z)
 end
 
 function spatial.write_world2(node, xx, xy, yx, yy, ox, oy)
-	local parent<const> = node.spatial_parent
+	local parent<const> = node.parent
 	if parent ~= nil then
 		spatial.resolve(parent)
 	end
@@ -237,7 +239,7 @@ function spatial.write_world2(node, xx, xy, yx, yy, ox, oy)
 end
 
 function spatial.write_world3(node, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
-	local parent<const> = node.spatial_parent
+	local parent<const> = node.parent
 	if parent ~= nil then
 		spatial.resolve(parent)
 	end
@@ -249,20 +251,37 @@ function spatial.write_world3(node, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, 
 	return true
 end
 
-function spatial.write_local_trs2(node, ox, oy, rotation, scale_x, scale_y)
-	local xx<const>, xy<const>, yx<const>, yy<const> = affine2.trs(ox, oy, rotation, scale_x, scale_y)
-	spatial.write_local2(node, xx, xy, yx, yy, ox, oy)
+function spatial.write_local_trs2(node, ox, oy, rotation, scale_x, scale_y, skew)
+	affine2.write_trs(node, ox, oy, rotation, scale_x, scale_y, skew)
+	node._flags = node._flags | local_basis | local_origin
+	invalidate(node)
+	return true
 end
 
-function spatial.write_world_trs2(node, ox, oy, rotation, scale_x, scale_y)
-	local xx<const>, xy<const>, yx<const>, yy<const> = affine2.trs(ox, oy, rotation, scale_x, scale_y)
+function spatial.write_basis_trs2(node, rotation, scale_x, scale_y, skew)
+	affine2.write_trs(node, node.ox, node.oy, rotation, scale_x, scale_y, skew)
+	node._flags = node._flags | local_basis
+	invalidate(node)
+	return true
+end
+
+function spatial.write_world_trs2(node, ox, oy, rotation, scale_x, scale_y, skew)
+	local xx<const>, xy<const>, yx<const>, yy<const> = affine2.trs(ox, oy, rotation, scale_x, scale_y, skew)
 	return spatial.write_world2(node, xx, xy, yx, yy, ox, oy)
 end
 
 function spatial.write_local_trs3(node, ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
-	local xx<const>, xy<const>, xz<const>, yx<const>, yy<const>, yz<const>, zx<const>, zy<const>, zz<const> =
-		affine3.trs(ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
-	spatial.write_local3(node, xx, xy, xz, yx, yy, yz, zx, zy, zz, ox, oy, oz)
+	affine3.write_trs(node, ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	node._flags = node._flags | local_basis | local_origin
+	invalidate(node)
+	return true
+end
+
+function spatial.write_basis_trs3(node, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	affine3.write_trs(node, node.ox, node.oy, node.oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
+	node._flags = node._flags | local_basis
+	invalidate(node)
+	return true
 end
 
 function spatial.write_world_trs3(node, ox, oy, oz, qx, qy, qz, qw, scale_x, scale_y, scale_z)
@@ -272,7 +291,7 @@ function spatial.write_world_trs3(node, ox, oy, oz, qx, qy, qz, qw, scale_x, sca
 end
 
 local unlink<const> = function(node)
-	local parent<const> = node.spatial_parent
+	local parent<const> = node.parent
 	local previous<const> = node._previous_sibling
 	local next<const> = node._next_sibling
 	if previous ~= nil then
@@ -285,18 +304,18 @@ local unlink<const> = function(node)
 	elseif parent ~= nil then
 		parent._last_child = previous
 	end
-	node.spatial_parent = nil
+	node.parent = nil
 	node._previous_sibling = nil
 	node._next_sibling = nil
 end
 
 -- The construction owner has already proved this relationship and supplies
--- an unlinked component. Dynamic reparenting reaches the same topology commit
+-- an unlinked object. Dynamic reparenting reaches the same topology commit
 -- only after its liveness, cycle and inverse-dependent work has succeeded.
 function spatial.attach_local(node, parent)
 	if parent ~= nil then
 		local previous<const> = parent._last_child
-		node.spatial_parent = parent
+		node.parent = parent
 		node._previous_sibling = previous
 		if previous ~= nil then
 			previous._next_sibling = node
@@ -315,8 +334,11 @@ function spatial.reparent(node, parent, keep_world)
 	or (parent ~= nil and (parent._hierarchy == nil or parent._retiring)) then
 		return spatial.retired_target
 	end
+	-- An unchanged relationship replaces neither geometry nor editing channels.
+	-- In particular, it needs no inverse of an already singular parent.
+	if parent == node.parent then return spatial.committed end
 	if parent ~= nil then
-		if node._origin_only or parent._hierarchy ~= graph or parent._family ~= node._family then
+		if parent._hierarchy ~= graph or parent._family ~= node._family then
 			return spatial.invalid_relationship
 		end
 		local ancestor = parent
@@ -324,7 +346,7 @@ function spatial.reparent(node, parent, keep_world)
 			if ancestor == node then
 				return spatial.invalid_relationship
 			end
-			ancestor = ancestor.spatial_parent
+			ancestor = ancestor.parent
 		end
 	end
 	if keep_world then
@@ -375,7 +397,11 @@ end
 
 function spatial.retire(node)
 	local graph<const> = node._hierarchy
+	if node.parent ~= nil then node._family.relative_world(node, nil) end
 	unlink(node)
+	-- The complete retirement set was materialized before topology changes.
+	-- Survivor detachment may have dirtied this node without changing its pose.
+	node._flags = 0
 	node._hierarchy = nil
 	graph._count = graph._count - 1
 end
@@ -385,6 +411,7 @@ function spatial.remove(node)
 		return spatial.retired_target
 	end
 	node._retiring = true
+	spatial.resolve(node)
 	spatial.materialize_surviving_children(node)
 	spatial.detach_surviving_children(node)
 	spatial.retire(node)

@@ -18,7 +18,7 @@ function scene.register()
 			{
 				member_id = 'cover',
 				definition_id = 'pietious.rectangle',
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 176 } },
+				position = { x = 0, y = 176 },
 				options = {
 					order = 1,
 					width = 256,
@@ -31,7 +31,7 @@ function scene.register()
 			{
 				member_id = 'caption',
 				definition_id = 'pietious.caption',
-				spatial = { local_transform = { 1, 0, 0, 1, 0, 176 } },
+				position = { x = 0, y = 176 },
 				options = {
 					order = 2,
 					text = game_text[0].end_demo_message,

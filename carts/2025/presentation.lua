@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local prefab<const> = require('cartlib/world/prefab')
 local sprite_object<const> = require('cartlib/sprite')
 local text_object<const> = require('cartlib/text/text_object')
@@ -10,11 +11,11 @@ local presentation<const> = {
 	rectangle = 'p3.rectangle', overlay = 'p3.overlay',
 }
 local surface<const> = {}
+setmetatable(surface, { __index = object_2d })
 local rectangle<const> = {}
+setmetatable(rectangle, { __index = object_2d })
 local overlay<const> = {}
-local spatial<const> = {
-	family = '2d', authority = 'affine',
-}
+setmetatable(overlay, { __index = object_2d })
 
 function surface:ctor()
 	self:get_component(surface_component).visible = true
@@ -25,13 +26,13 @@ function rectangle:ctor()
 end
 
 function presentation.register()
-	prefab.define({ def_id = presentation.sprite, class = sprite_object, spatial = spatial })
-	prefab.define({ def_id = presentation.text, class = text_object, spatial = spatial })
-	prefab.define({ def_id = presentation.surface, class = surface, spatial = spatial,
+	prefab.define({ def_id = presentation.sprite, class = sprite_object })
+	prefab.define({ def_id = presentation.text, class = text_object })
+	prefab.define({ def_id = presentation.surface, class = surface,
 		components = { function(owner) return surface_component.new(owner, owner) end } })
-	prefab.define({ def_id = presentation.rectangle, class = rectangle, spatial = spatial,
+	prefab.define({ def_id = presentation.rectangle, class = rectangle,
 		components = { function(owner) return rectangle_component.new(owner, owner) end } })
-	prefab.define({ def_id = presentation.overlay, class = overlay, spatial = spatial,
+	prefab.define({ def_id = presentation.overlay, class = overlay,
 		components = { overlay_component.new } })
 end
 

@@ -16,15 +16,20 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
- { member_id = 'first', definition_id = 'actor.first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = { strength = 5 } },
- { member_id = 'second', definition_id = 'actor.second', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } }, options = { strength = 8 } },
+ { member_id = 'first', definition_id = 'actor.first', position = { x = 1, y = 2, z = 3 }, options = { strength = 5 } },
+ { member_id = 'second', definition_id = 'actor.second', position = { x = 4, y = 5, z = 6 }, options = { strength = 8 } },
 } })
 return {}
 `;
 
+const PREFABS = [
+	['cartlib/world/prefab.lua', 'return {define=function() end}'],
+	['prefabs.lua', "local prefab=require('cartlib/world/prefab')\nprefab.define({def_id='actor.first',class=require('cartlib/world/object_3d')})\nprefab.define({def_id='actor.second',class=require('cartlib/world/object_3d')})"],
+] as const;
+
 function fixture(t: TestContext, attach = true, source = SOURCE, imports: readonly (readonly [string, string])[] = []) {
 	configureFontVariant('tiny');
-	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, imports), document = f.documents.get(f.model);
+	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [...PREFABS, ...imports]), document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents);
 	const view = new SceneDetailsViewState(context);
 	const scope = new InputFocusScope(Symbol('independent Details'), inputFocus.workbenchScope);
@@ -67,13 +72,13 @@ test('Details fields edit and undo canonical source with no hierarchy or documen
 	position.field.focusTarget.focus(); setFieldText(position.field, '19', true);
 	assert.equal(position.commit(), true);
 	f.control.update();
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 19,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,'));
 	setFieldText(f.control.options.controls[0].field, 'math.max(7, 9)', true);
 	assert.equal(f.control.options.controls[0].commit(), true);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 19,').replace('strength = 5', 'strength = math.max(7, 9)'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,').replace('strength = 5', 'strength = math.max(7, 9)'));
 	inputFocus.executeCommand('undo', position.field.focusTarget.commandContext);
 	f.control.update();
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 19,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,'));
 	inputFocus.executeCommand('undo', f.parent);
 	assert.equal(f.model.buffer.getText(), SOURCE);
 });
@@ -167,11 +172,11 @@ test('a Details detach callback may attach a new presentation without outgoing c
 	assert.equal(f.control.controls[0].field.text, '1');
 	setFieldText(f.control.controls[0].field, '23', true);
 	assert.equal(f.control.controls[0].commit(), true);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 23,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 23,'));
 });
 
 test('old model disposal cannot clear the Details presentation attached by an earlier disposal observer', t => {
-	const f = fixture(t, false), nextSource = createSceneSourceFixture(t, SOURCE, 'next.lua');
+	const f = fixture(t, false), nextSource = createSceneSourceFixture(t, SOURCE, 'next.lua', undefined, PREFABS);
 	const nextContext = new SceneAuthoringContext(nextSource.model, nextSource.documents), next = new SceneDetailsViewState(nextContext);
 	const document = nextContext.document!, scene = document.scenes[0];
 	nextContext.select(document, nextSource.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
@@ -223,7 +228,7 @@ test('outgoing field cancellation cannot make a reattached Details field read-on
 	assert.equal(field.field.readOnly, false);
 	setFieldText(field.field, '23', true);
 	assert.equal(field.commit(), true);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 23,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 23,'));
 });
 
 test('scroll-focus departure can attach another Details view without clearing its new scroll input', t => {

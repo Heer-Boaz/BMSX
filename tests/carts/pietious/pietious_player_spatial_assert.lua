@@ -13,8 +13,7 @@ return {
 			player:cancel_sword()
 			player.facing = 1
 			player:apply_presentation_state()
-			local pose<const> = player.spatial:resolve_world()
-			local x<const>, y<const> = pose.wox, pose.woy
+			local x<const>, y<const> = player:get_global_position()
 			assert(player.x == nil and player.y == nil and player.z == nil,
 			'player retained a second actor-position authority')
 			assert(player.collider.id_local == 'body' and player.sword_collider.id_local == 'sword'
@@ -54,10 +53,10 @@ return {
 			player:cancel_sword()
 			player:apply_presentation_state()
 			player:begin_pause_presentation()
-			player.spatial:resolve_world()
+			local paused_x<const>, paused_y<const> = player:get_global_position()
 			local body<const> = player.collider:resolve_pose()
 			local visual<const> = player.sprite_component:resolve_pose()
-			assert(pose.wox == x and pose.woy == y and body.wox == x and body.woy == y,
+			assert(paused_x == x and paused_y == y and body.wox == x and body.woy == y,
 			'pause presentation moved the physical player or body collider')
 			assert(visual.wox == x - 2 and visual.woy == y - 8,
 			'pause sprite did not apply its presentation-only displacement')
@@ -72,11 +71,11 @@ return {
 			player.timelines:seek('p.tl.se', 1)
 			player.sprite_component:resolve_pose()
 			player.collider:resolve_pose()
-			player.spatial:resolve_world()
+			local cropped_x<const>, cropped_y<const> = player:get_global_position()
 			assert(visual.wox == x and visual.woy == y + 1
 			and visual.region_y == 0 and visual.region_height == player_height - 1,
 			'shrine passage did not crop and displace its actual sprite component')
-			assert(pose.wox == x and pose.woy == y and body.wox == x and body.woy == y,
+			assert(cropped_x == x and cropped_y == y and body.wox == x and body.woy == y,
 			'shrine crop leaked presentation placement into physical collision')
 			player.timelines:seek_to_end('p.tl.se')
 			assert(not visual.visible, 'terminal shrine crop left its empty sprite visible')

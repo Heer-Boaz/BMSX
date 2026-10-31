@@ -48,12 +48,13 @@ function enemy_base.bind(self)
 end
 
 function enemy_base.spawn_death_effect(self)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.room.scene:spawn('enemy_explosion', {
+		position = { x = pose_x, y = pose_y },
 		room = self.room,
 		player = self.player,
 		loot_type = self:choose_drop_type(),
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
+	})
 end
 
 function enemy_base.apply_damage(self, request)
@@ -88,12 +89,12 @@ function enemy_base.on_overlap(self, event_type, _emitter, event)
 	if event_type == 'overlap.begin'
 	and event.other_collider_local_id == 'body'
 	and self.dangerous then
-		local pose<const> = self.spatial
+		local pose_x<const>, pose_y<const> = self:get_global_position()
 		local sprite<const> = self.sprite_component
 		player.events:emit('enemy.contact_damage', {
 			amount = self.damage,
-			source_x = pose.ox + (sprite.source_width // 2),
-			source_y = pose.oy + (sprite.source_height // 2),
+			source_x = pose_x + (sprite.source_width // 2),
+			source_y = pose_y + (sprite.source_height // 2),
 			reason = self.enemy_kind,
 			enemy_id = self.id,
 			contact_kind = 'body',

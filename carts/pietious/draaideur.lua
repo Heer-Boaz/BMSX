@@ -32,24 +32,25 @@ local opening_rightward_timeline_id<const> = 'draaideur.opening_rightward'
 
 local draaideur<const> = {}
 draaideur.__index = draaideur
+setmetatable(draaideur, { __index = sprite_object })
 
 function draaideur:onspawn()
-	local pose<const> = self.spatial
-	self.tile_x = pose.ox // room_tile_size + 1
-	self.tile_y = (pose.oy - room_tile_origin_y) // room_tile_size + 1
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	self.tile_x = pose_x // room_tile_size + 1
+	self.tile_y = (pose_y - room_tile_origin_y) // room_tile_size + 1
 end
 
 function draaideur:touches_player(player, walking_left, walking_right)
-	local pose<const> = self.spatial
-	local target<const> = player.spatial:resolve_world()
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	local target_x<const>, target_y<const> = player:get_global_position()
 	if walking_left then
 		return rect_overlaps(
-			target.wox,
-			target.woy,
+			target_x,
+			target_y,
 			player.width,
 			player.height,
-			pose.ox + room_tile_unit,
-			pose.oy,
+			pose_x + room_tile_unit,
+			pose_y,
 			room_tile_size,
 			room_tile_size2
 		)
@@ -59,12 +60,12 @@ function draaideur:touches_player(player, walking_left, walking_right)
 		return false
 	end
 	return rect_overlaps(
-		target.wox,
-		target.woy,
+		target_x,
+		target_y,
 		player.width,
 		player.height,
-		pose.ox - room_tile_unit,
-		pose.oy,
+		pose_x - room_tile_unit,
+		pose_y,
 		room_tile_size,
 		room_tile_size2
 	)
@@ -194,8 +195,6 @@ local register_draaideur_definition<const> = function()
 	prefab.define({
 		def_id = 'draaideur',
 		class = draaideur,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { timeline_component.new, fsm_component.factory({ 'draaideur' }) },
 		defaults = {
 			order = 22,

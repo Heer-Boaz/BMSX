@@ -21,28 +21,19 @@ function scene_plan.compile(declaration)
 		if definition == nil then
 			error('scene prefab is not registered: ' .. source.definition_id)
 		end
-		local local_transform = definition.default_local_transform
-		local spatial_source<const> = source.spatial
-		if spatial_source ~= nil then
-			if definition.spatial_constructor == nil then
-				error('scene spatial input belongs to a nonspatial member: ' .. member_id)
-			end
-			if spatial_source.local_transform ~= nil then
-				local_transform = shallow_copy(spatial_source.local_transform)
-				local validate_local<const> = definition.spatial_validate_local
-				if validate_local ~= nil then
-					validate_local(local_transform)
-				end
-			end
-		end
+		local options = source.options
+		if options == nil then options = empty_options end
 		local member<const> = {
 			index = index,
 			member_id = member_id,
 			definition_id = definition.definition_id,
 			definition = definition,
-			options = shallow_copy(source.options or empty_options),
-			local_transform = local_transform,
+			options = shallow_copy(options),
 		}
+		local compile_pose<const> = definition.compile_pose
+		if compile_pose ~= nil and not compile_pose(member, definition, source) then
+			error('scene placement cannot preserve unspecified rotation or skew: ' .. member_id)
+		end
 		objects[index] = member
 		members_by_id[member_id] = member
 	end
@@ -54,20 +45,16 @@ function scene_plan.compile(declaration)
 	local ready<const> = {}
 	for index = 1, #objects do
 		local member<const> = objects[index]
-		local spatial_source<const> = declared_objects[index].spatial
-		local parent_id<const> = spatial_source and spatial_source.parent_id
+		local parent_id<const> = declared_objects[index].parent
 		if parent_id ~= nil then
-			if member.definition.spatial_root_origin then
-				error('scene root-origin member cannot have a parent: ' .. member.member_id)
-			end
 			local parent<const> = members_by_id[parent_id]
 			if parent == nil then
 				error('scene spatial parent is not declared: ' .. parent_id)
 			end
-			if parent.definition.spatial_constructor == nil then
+			if parent.definition.initialize_transform == nil then
 				error('scene spatial parent is nonspatial: ' .. parent_id)
 			end
-			if parent.definition.spatial_family ~= member.definition.spatial_family then
+			if parent.definition.transform_family ~= member.definition.transform_family then
 				error('scene spatial parent belongs to another family: ' .. member.member_id)
 			end
 			local parent_index<const> = parent.index

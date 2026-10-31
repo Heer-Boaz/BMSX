@@ -1,3 +1,4 @@
+local object_2d<const> = require('cartlib/world/object_2d')
 local collider_2d_component<const> = require('cartlib/collision/collider_2d_component')
 local visual_2d<const> = require('cartlib/component/visual_2d_component')
 local gp0<const> = require('cartlib/gx/gp0')
@@ -8,12 +9,12 @@ local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
-local world_object<const> = require('cartlib/world/world_object')
 local player_state<const> = require('player/player_state')
 require('constants')
 
 local option_pickup<const> = {}
 option_pickup.__index = option_pickup
+setmetatable(option_pickup, { __index = object_2d })
 
 local hit_area<const> = {
 	left = 2,
@@ -59,8 +60,8 @@ function option_pickup:ctor()
 end
 
 function option_pickup:update_active()
-	local pose<const> = self.spatial
-	if pose.ox < -player_width then
+	local pose_x<const> = self:get_global_position()
+	if pose_x < -player_width then
 		self:mark_for_disposal()
 	end
 end
@@ -95,8 +96,6 @@ function option_pickup.register()
 	prefab.define({
 		def_id = ids_option_pickup_def,
 		class = option_pickup,
-		base = world_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			option_visual.new,
 			new_collider,

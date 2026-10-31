@@ -13,6 +13,7 @@ require('constants')
 
 local rook_generator<const> = {}
 rook_generator.__index = rook_generator
+setmetatable(rook_generator, { __index = ground_foe })
 
 local generation_started_event<const> = 'rook_generator.generation.started'
 local spawn_event<const> = 'rook_generator.spawn'
@@ -47,17 +48,18 @@ function rook_generator:enter_generating()
 end
 
 function rook_generator:spawn_rook(_state, rise_distance)
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	self.scene:spawn(ids_rook_def, {
+		position = { x = pose_x + rook_spawn_offset_x, y = pose_y + rook_spawn_offset_y },
 		stage = self.stage,
 		rise_distance = rise_distance,
-	}, { local_transform = { 1, 0, 0, 1, pose.ox + rook_spawn_offset_x, pose.oy + rook_spawn_offset_y } })
+	})
 	self.events:emit('enemy.spawned')
 end
 
 function rook_generator:on_destroyed(projectile)
-	local pose<const> = self.spatial
-	self.spatial:set_world_origin(pose.ox - 4, pose.oy - 4)
+	local pose_x<const>, pose_y<const> = self:get_global_position()
+	self:set_global_position(pose_x - 4, pose_y - 4)
 	ground_foe.on_destroyed(self, projectile)
 end
 
@@ -140,8 +142,6 @@ local register_definition<const> = function()
 	prefab.define({
 		def_id = ids_rook_generator_def,
 		class = rook_generator,
-		base = ground_foe,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = {
 			enemy.collider_factory(assets.collision_shape_rook_generator_body_addr),
 			stage_scroll_follower_component.new,

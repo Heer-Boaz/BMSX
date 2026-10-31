@@ -16,7 +16,7 @@ function title_scene.register()
 			{
 				member_id = 'selector',
 				definition_id = presentation.sprite_definition_id,
-				spatial = { local_transform = { 1, 0, 0, 1, 80, 136 } },
+				position = { x = 80, y = 136 },
 				options = {
 					imgid = 'title_selector',
 					order = 1,
@@ -32,7 +32,7 @@ function title_scene.register()
 					order = 2,
 					visible = false,
 				},
-				spatial = { local_transform = { 1, 0, 0, 1, 104, 136 } },
+				position = { x = 104, y = 136 },
 			},
 		},
 	})

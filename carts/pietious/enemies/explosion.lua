@@ -8,6 +8,7 @@ require('constants')
 
 local enemy_explosion<const> = {}
 enemy_explosion.__index = enemy_explosion
+setmetatable(enemy_explosion, { __index = sprite_object })
 
 local explosion_frames<const> = timeline.build_frame_sequence({
 	{ value = 'explosion_2', hold = enemy_explosion_pose_frames },
@@ -39,7 +40,7 @@ function enemy_explosion:sync_explosion_sprite(imgid)
 end
 
 function enemy_explosion:spawn_loot()
-	local pose<const> = self.spatial
+	local pose_x<const>, pose_y<const> = self:get_global_position()
 	if self.loot_type == nil then
 		return
 	end
@@ -47,13 +48,14 @@ function enemy_explosion:spawn_loot()
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id<const> = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
 	self.room.scene:spawn('loot_drop', {
+		position = { x = pose_x, y = pose_y },
 		imgid = self.loot_type == 'life' and 'item_health' or 'ammo',
 		id = loot_id,
 		room = self.room,
 		player = self.player,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
+	})
 end
 
 local define_enemy_explosion_fsm<const> = function()
@@ -90,8 +92,6 @@ local register_enemy_explosion_definition<const> = function()
 	prefab.define({
 		def_id = 'enemy_explosion',
 		class = enemy_explosion,
-		base = sprite_object,
-		spatial = { family = '2d', authority = 'root_origin' },
 		components = { timeline_component.new, fsm_component.factory({ 'enemy_explosion' }) },
 		defaults = {
 			order = 114,

@@ -1,3 +1,4 @@
+local world_object<const> = require('cartlib/world/world_object')
 local fsm_component<const> = require('cartlib/fsm/fsm_component')
 local fsm_library<const> = require('cartlib/fsm/library')
 local prefab<const> = require('cartlib/world/prefab')
@@ -19,6 +20,7 @@ local story_director_fsm_id<const> = 'p3.director.fsm'
 
 local director<const> = {}
 director.__index = director
+setmetatable(director, { __index = world_object })
 
 function director:apply_effects(effects)
 	for i = 1, #effects do

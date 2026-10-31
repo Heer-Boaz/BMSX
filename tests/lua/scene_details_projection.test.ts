@@ -1,3 +1,4 @@
+import type { LuaTableConstructorExpression } from '../../toolchain/ts/lua/syntax/ast';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
@@ -10,7 +11,7 @@ import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('first', { objects = {
- { member_id = 'same', definition_id = 'actor.first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 11, -2, 3 } }, options = {
+ { member_id = 'same', definition_id = 'actor.first', position = { x = 11, y = -2, z = 3 }, options = {
    enabled = true, title = 'Keep Exact Case',
    nested = { amount = evaluate_amount() }, message = [[line one
 line two]],
@@ -20,8 +21,13 @@ line two]],
 } })
 scenes.register('first', { objects = {} })`;
 
+const PREFABS = [
+	['cartlib/world/prefab.lua', 'return {define=function() end}'],
+	['prefabs.lua', "local prefab=require('cartlib/world/prefab')\nprefab.define({def_id='actor.first',class=require('cartlib/world/object_3d')})\nprefab.define({def_id='actor.second',class=require('cartlib/world/object_3d')})"],
+] as const;
+
 function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [string, string])[] = []) {
-	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, imports), document = f.documents.get(f.model);
+	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [...PREFABS, ...imports]), document = f.documents.get(f.model);
 	const authoring = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
 	t.after(() => authoring.dispose());
 	return { ...f, document, authoring, projection: new SceneDetailsProjection(authoring) };
@@ -38,9 +44,9 @@ test('Details projects the exact semantic member with no hierarchy, view or cont
 	assert.equal(subject.selection.kind, 'member'); assert.equal(subject.resolution, 'partial');
 	assert.equal(subject.label, 'same'); assert.equal(subject.detail, 'actor.first');
 	assert.equal(subject.preserveLabelCase, true); assert.equal(subject.preserveDetailCase, true);
-	assert.deepEqual(subject.properties.map(property => [property.axis, property.value, property.sourceText]), [['x', 11, '11'], ['y', -2, '-2'], ['z', 3, '3']]);
-	const member = scene.objects[0]; assert.ok(member.kind === 'object' && member.spatial !== null);
-	assert.ok(subject.properties[0].field === member.spatial!.origin[0]);
+	assert.deepEqual(subject.properties.map(property => [property.axis, property.value]), [['x', 11], ['y', -2], ['z', 3]]);
+	const member = scene.objects[0]; assert.ok(member.kind === 'object' && member.position !== null);
+	assert.equal(f.authoring.selectedLocalTransform!.ox, subject.properties[0].value);
 	const title = subject.optionProperties.find(property => property.label === 'title')!;
 	assert.equal(title.sourceText, "'Keep Exact Case'"); assert.equal(title.editable, true);
 	const amount = subject.optionProperties.find(property => property.label === 'nested.amount')!;
@@ -85,7 +91,7 @@ test('Details follows its own context selection, not another source view or a sa
 	f.authoring.select(f.document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
 	assert.equal(f.projection.refresh(), true); assert.equal(f.projection.subject!.detail, 'actor.second');
 	assert.ok(f.projection.subject!.selection.kind === 'member' && f.projection.subject!.selection.entry === scene.objects[1]);
-	assert.equal(f.projection.subject!.properties.length, 0);
+	assert.deepEqual(f.projection.subject!.properties.map(property => property.value), [0, 0, 0], 'the second prefab supplies its implicit local transform');
 	assert.equal(f.projection.subject!.optionProperties.length, 0);
 });
 
@@ -93,12 +99,12 @@ test('same-occurrence source edits replace Details source descriptors while reta
 	const f = fixture(t), scene = f.document.scenes[0];
 	f.authoring.select(f.document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }); f.projection.refresh();
 	const before = f.projection.subject!, selectionRevision = f.authoring.selectionRevision;
-	const property = before.properties[0];
-	f.model.pushEditOperations(createLuaTableFieldNumberEdits(f.model.buffer, before.document.analysis.chunk.locations, property.field!, 12345)!);
+	const entry = scene.objects[0]; assert.ok(entry.kind === 'object' && entry.position !== null);
+	f.model.pushEditOperations(createLuaTableFieldNumberEdits(f.model.buffer, before.document.analysis.chunk.locations, (entry.position!.value as LuaTableConstructorExpression).fields[0], 12345)!);
 	assert.equal(f.projection.refresh(), true);
 	const after = f.projection.subject!;
 	assert.ok(after !== before && after.document === f.documents.get(f.model));
-	assert.equal(after.sourceVersion, f.model.version); assert.equal(after.properties[0].value, 12345); assert.equal(after.properties[0].sourceText, '12345');
+	assert.equal(after.sourceVersion, f.model.version); assert.equal(after.properties[0].value, 12345);
 	assert.equal(f.authoring.selectionRevision, selectionRevision); assert.equal(after.detail, before.detail);
 });
 
