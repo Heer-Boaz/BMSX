@@ -64,13 +64,14 @@ local register_definition<const> = function()
 		class = roodje,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_roodje, order = roodje_draw_z } },
 		components = {
 			new_collider,
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_roodje_fsm }),
 		},
 		defaults = {
+			imgid = assets_roodje,
+			order = roodje_draw_z,
 		},
 	})
 end

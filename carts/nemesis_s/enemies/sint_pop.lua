@@ -97,7 +97,6 @@ function sint_pop.register()
 		class = sint_pop,
 		base = foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_sint_pop, order = sint_pop_draw_z } },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,
@@ -107,6 +106,8 @@ function sint_pop.register()
 			fsm_component.factory({ ids_sint_pop_fsm }),
 		},
 		defaults = {
+			imgid = assets_sint_pop,
+			order = sint_pop_draw_z,
 			group_type = sint_pop_group_up,
 			max_health = 1,
 			small_fry = true,

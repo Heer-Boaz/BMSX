@@ -22,12 +22,15 @@ function stafffoe.spawn_burst(self)
 		local speed_x_num<const> = staff_shot_speed_x[vector_index]
 		local speed_y_num<const> = staff_shot_speed_y[vector_index]
 		self.room.scene:spawn('enemy.staffspawn', {
+			speed_x_num = speed_x_num,
+			speed_y_num = speed_y_num,
+			speed_den = enemy_staff_bullet_speed_den,
 			castle = self.castle,
 			room = self.room,
 			player = player,
 			direction = speed_x_num < 0 and 'left' or 'right',
 			dangerous = bullets_dangerous,
-		}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } }, { velocity = { speed_x_num = speed_x_num, speed_y_num = speed_y_num, speed_den = enemy_staff_bullet_speed_den } })
+		}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
 	end
 	self.castle.events:emit('staffspawn')
 	return bt_success
@@ -84,12 +87,14 @@ function stafffoe.register()
 		class = stafffoe,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250, imgid = 'stafffoe' } },
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
+			order = 250,
+			imgid = 'stafffoe',
 			damage = 4,
 			max_health = 10,
-			health = 10,dangerous = true,
+			health = 10,
+			dangerous = true,
 			direction = 'right',
 			enemy_kind = 'stafffoe',
 		},

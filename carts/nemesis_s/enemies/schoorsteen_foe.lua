@@ -220,7 +220,6 @@ local register_definition<const> = function()
 		class = schoorsteen_foe,
 		base = ground_foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_schoorsteen_foe_1, order = schoorsteen_foe_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_schoorsteen_foe_body_addr),
 			new_flash_animation,
@@ -229,6 +228,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_schoorsteen_foe_fsm }),
 		},
 		defaults = {
+			imgid = assets_schoorsteen_foe_1,
+			order = schoorsteen_foe_draw_z,
 			max_health = schoorsteen_foe_health,
 			small_fry = false,
 			stage_scroll_width = schoorsteen_foe_width,

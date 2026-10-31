@@ -10,8 +10,7 @@ local definition_id<const> = 'cartlib_test.overlap_actor'
 prefab.define({
 	def_id = definition_id, class = {},
 	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 32, 32 } },
-	initial = { collider = { geometry_pool = pool, local_area = { left = 0, top = 0, right = 8, bottom = 8 }, layer = 1, mask = 1 } },
-	components = { collider_2d_component.new },
+	components = { collider_2d_component.factory({ geometry_pool = pool, local_area = { left = 0, top = 0, right = 8, bottom = 8 }, layer = 1, mask = 1 }) },
 })
 
 local record_phase<const> = function(self, _event, _emitter, payload)

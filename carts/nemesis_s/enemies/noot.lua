@@ -69,7 +69,6 @@ local register_definition<const> = function()
 		class = noot,
 		base = foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_noot, order = noot_draw_z } },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,
@@ -79,6 +78,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_noot_fsm }),
 		},
 		defaults = {
+			imgid = assets_noot,
+			order = noot_draw_z,
 			max_health = 1,
 			small_fry = true,
 		},

@@ -121,7 +121,6 @@ function zakfoe.register()
 		class = zakfoe,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250, imgid = 'zakfoe_stand' } },
 		components = {
 			enemy_base.new_collider,
 			kinematic_movement_component.factory({
@@ -139,6 +138,8 @@ function zakfoe.register()
 			bt_component.factory(tree_id),
 		},
 		defaults = {
+			order = 250,
+			imgid = 'zakfoe_stand',
 			damage = 2,
 			max_health = 2,
 			health = 2,

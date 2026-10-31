@@ -209,7 +209,7 @@ function show_background(background, id)
 	if id ~= nil then
 		background:set_imgid(id)
 	end
-	background.visible = true
+	background.owner.visible = true
 	background.color = p3_white_color
 	return background
 end
@@ -224,21 +224,21 @@ end
 
 function hide_transition_layers(transition_visual)
 	local overlay<const> = transition_visual.overlay
-	overlay.visible = false
+	overlay.owner.visible = false
 	overlay.color = 0
 	overlay.blend_color = 0
 	for i = 1, #transition_visual.panels do
 		local panel<const> = transition_visual.panels[i]
-		panel.visible = false
+		panel.owner.visible = false
 		panel.color = 0
 	end
 	local accent<const> = transition_visual.accent
-	accent.visible = false
+	accent.owner.visible = false
 	accent.color = 0
 end
 
 function hide_combat_visuals(visuals)
 	for i = 1, #visuals do
-		visuals[i].visible = false
+		visuals[i].owner.visible = false
 	end
 end

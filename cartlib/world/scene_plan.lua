@@ -2,7 +2,6 @@
 -- never resolving a member's prefab name again during staged construction.
 local prefab<const> = require('cartlib/world/prefab')
 local shallow_copy<const> = require('cartlib/util/shallow_copy')
-local component_inputs<const> = require('cartlib/world/component_inputs')
 
 local scene_plan<const> = {}
 local empty_options<const> = {}
@@ -43,7 +42,6 @@ function scene_plan.compile(declaration)
 			definition = definition,
 			options = shallow_copy(source.options or empty_options),
 			local_transform = local_transform,
-			initial = component_inputs.merge(definition.initial, source.initial),
 		}
 		objects[index] = member
 		members_by_id[member_id] = member

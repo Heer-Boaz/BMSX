@@ -8,8 +8,8 @@ function scene.register()
 				member_id = 'player',
 				definition_id = 'player',
 				spatial = { local_transform = { 1, 0, 0, 1, 160, 104 } },
-				initial = { base_sprite = { order = 250 } },
 				options = {
+					order = 250,
 					id = 'pietolon',
 					space_id = 'main',
 				},
@@ -17,8 +17,8 @@ function scene.register()
 			{
 				member_id = 'hud',
 				definition_id = 'ui',
-				initial = { visual = { order = 1000 } },
 				options = {
+					order = 1000,
 					id = 'ui',
 					space_id = 'ui',
 				},

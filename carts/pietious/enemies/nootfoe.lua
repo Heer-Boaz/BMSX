@@ -1,6 +1,13 @@
 local prefab<const> = require('cartlib/world/prefab')
 local velocity_component<const> = require('cartlib/physics/velocity_component')
 local enemy_base<const> = require('enemies/enemy_base')
+local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
+require('constants')
+
+local new_boundary<const> = screen_boundary_component.factory({
+	left = 0, top = room_hud_height, right = room_width, bottom = room_height,
+	local_left = 0, local_top = 0, local_right = 8, local_bottom = 8,
+})
 
 local nootfoe<const> = {}
 nootfoe.__index = nootfoe
@@ -16,6 +23,7 @@ local noot_colors<const> = {
 }
 
 function nootfoe:ctor()
+	self:add_component(velocity_component.new(self, self))
 	self.sprite_component.color = noot_colors[math.random(1, #noot_colors)]
 	self.castle.events:emit('muzieknootspawn')
 end
@@ -30,12 +38,17 @@ function nootfoe.register()
 		class = nootfoe,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250, imgid = 'muzieknootfoe' }, boundary = { local_right = 8, local_bottom = 8 }, velocity = { speed_x_num = 0, speed_y_num = 0, speed_den = 1 } },
-		components = { enemy_base.new_collider, velocity_component.new, enemy_base.projectile_boundary },
+		components = { enemy_base.new_collider, new_boundary },
 		defaults = {
+			speed_x_num = 0,
+			speed_y_num = 0,
+			speed_den = 1,
+			order = 250,
+			imgid = 'muzieknootfoe',
 			damage = 2,
 			max_health = 1,
-			health = 1,dangerous = true,
+			health = 1,
+			dangerous = true,
 			direction = 'right',
 			enemy_kind = 'nootfoe',
 		},

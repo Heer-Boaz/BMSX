@@ -6,10 +6,10 @@ local slash_component<const> = {}
 slash_component.__index = slash_component
 setmetatable(slash_component, { __index = custom_visual_component })
 
-function slash_component.new(context)
-	local self<const> = custom_visual_component.new(context, 'slash')
+function slash_component.new(owner)
+	local self<const> = custom_visual_component.new(owner, owner, 'slash')
 	setmetatable(self, slash_component)
-	self.monster = context.owner.monster
+	self.monster = owner.monster
 	self.slash_active = false
 	self.slash_x0, self.slash_y0, self.slash_x1, self.slash_y1 = 0, 0, 0, 0
 	self.slash_thickness = 0

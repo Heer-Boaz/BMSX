@@ -66,7 +66,7 @@ function item_screen:reset_for_open()
 			and (item_type ~= 'map_world1' or world_number > 0)
 	end
 	local show_map<const> = world_number > 0 and (world_number ~= 1 or inventory.map_world1)
-	members.map.visual.visible = show_map
+	members.map.visible = show_map
 	members.map_title.sprite_component.visible = show_map
 	self:apply_selected_secondary_weapon()
 end

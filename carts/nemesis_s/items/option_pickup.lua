@@ -45,8 +45,8 @@ function option_visual:draw_option(draw)
 	end
 end
 
-function option_visual.new(context)
-	local self<const>, input<const> = visual_2d.new(context, 'option_visual')
+function option_visual.new(owner)
+	local self<const>, input<const> = visual_2d.new(owner, owner, 'option_visual')
 	setmetatable(self, option_visual)
 	self.frames = input.frames
 	self.animation_owner = input.animation_owner
@@ -97,16 +97,16 @@ function option_pickup.register()
 		class = option_pickup,
 		base = world_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { option_visual = { order = 70 }, fixed_velocity = {
-			velocity_x = velocity.pixels_per_second_to_velocity_q8(player_option_pickup_speed_x_px_per_second), velocity_y = 0,
-		} },
 		components = {
 			option_visual.new,
 			new_collider,
-			fixed_point_velocity_component.new,
+			function(owner) return fixed_point_velocity_component.new(owner, owner) end,
 			fsm_component.factory({ ids_option_pickup_fsm }),
 		},
 		defaults = {
+			order = 70,
+			velocity_x = velocity.pixels_per_second_to_velocity_q8(player_option_pickup_speed_x_px_per_second),
+			velocity_y = 0,
 		},
 	})
 end

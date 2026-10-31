@@ -137,7 +137,7 @@ fsm_drag_target = { id = 'drag-target', active = true, tags = {}, allowed = fals
 function fsm_drag_target:_retain_tag(tag) self.tags[tag] = true end
 function fsm_drag_target:_release_tag(tag) self.tags[tag] = nil end
 fsm_drag_target.events = events.events_of(fsm_drag_target)
-fsm_drag_component = component.factory({'fixture.drag.one', 'fixture.drag.two'})({ owner = fsm_drag_target })
+fsm_drag_component = component.factory({'fixture.drag.one', 'fixture.drag.two'})(fsm_drag_target)
 fsm_drag_component.id = 'drag-target-fsm'
 fsm_drag_component:on_attach()
 registry:register(fsm_drag_component)

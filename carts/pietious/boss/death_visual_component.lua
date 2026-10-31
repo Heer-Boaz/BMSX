@@ -41,8 +41,10 @@ function death_visual:draw_overlay(draw)
 	end
 end
 
-function death_visual.new(context)
-	local self<const> = visual_2d.new(context, 'death')
+local death_profile<const> = { order = 251 }
+
+function death_visual.new(owner)
+	local self<const> = visual_2d.new(owner, death_profile, 'death')
 	setmetatable(self, death_visual)
 	self.stage = 1
 	return self

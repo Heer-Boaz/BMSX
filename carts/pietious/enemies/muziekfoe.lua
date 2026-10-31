@@ -72,11 +72,16 @@ function muziekfoe.spawn_note(self)
 	)
 	local delta_divisor<const> = math.random(1, 2)
 	self.room.scene:spawn('enemy.nootfoe', {
+		speed_x_num = delta_x,
+		speed_y_num = delta_y,
+		speed_den = delta_scale * delta_divisor,
+		speed_accum_x = 0,
+		speed_accum_y = 0,
 		castle = self.castle,
 		room = self.room,
 		player = player,
 		direction = delta_x < 0 and 'left' or 'right',
-	}, { local_transform = { 1, 0, 0, 1, pose.ox + 12, pose.oy } }, { velocity = { speed_x_num = delta_x, speed_y_num = delta_y, speed_den = delta_scale * delta_divisor, speed_accum_x = 0, speed_accum_y = 0 } })
+	}, { local_transform = { 1, 0, 0, 1, pose.ox + 12, pose.oy } })
 	return bt_success
 end
 
@@ -131,7 +136,6 @@ function muziekfoe.register()
 		class = muziekfoe,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250, imgid = 'muziekfoe' } },
 		components = {
 			enemy_base.new_collider,
 			kinematic_movement_component.factory({
@@ -149,6 +153,8 @@ function muziekfoe.register()
 			bt_component.factory(tree_id),
 		},
 		defaults = {
+			order = 250,
+			imgid = 'muziekfoe',
 			damage = 4,
 			max_health = 3,
 			health = 3,

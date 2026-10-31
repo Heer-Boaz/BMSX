@@ -215,8 +215,8 @@ local projectile_collider_definition<const> = {
 	local_area = { left = 0, top = 0, right = 0, bottom = 0 },
 }
 
-local attach_projectile_collider<const> = function(owner, projectile, local_id, context)
-	local collider<const> = collider_2d_component.new(context, local_id, projectile_collider_definition)
+local attach_projectile_collider<const> = function(owner, projectile, local_id)
+	local collider<const> = collider_2d_component.new(owner, projectile_collider_definition, local_id)
 	projectile.collider = collider
 	owner.projectiles_by_collider_local_id[local_id] = projectile
 	owner:add_component(collider)
@@ -478,8 +478,8 @@ function vessel_visual:draw_visual(draw)
 	sprite_component.draw_visual(self, draw)
 end
 
-function vessel_visual.new(context, id_local)
-	local self<const> = sprite_component.new(context, id_local)
+function vessel_visual.new(owner, configuration, id_local)
+	local self<const> = sprite_component.new(owner, configuration, id_local)
 	setmetatable(self, vessel_visual)
 	self:set_draw_function(vessel_visual.draw_visual)
 	return self
@@ -1229,9 +1229,12 @@ function player:enter_dying()
 		if pickup_x > playfield_width then
 			pickup_x = playfield_width
 		end
-		self.scene:spawn(ids_option_pickup_def, {},
-			{ local_transform = { 1, 0, 0, 1, pickup_x, option.y } },
-			{ option_visual = { frames = animation_frames, animation_owner = self, order = 70 } })
+		self.scene:spawn(ids_option_pickup_def, {
+			frames = animation_frames,
+			animation_owner = self,
+			order = 70,
+		},
+			{ local_transform = { 1, 0, 0, 1, pickup_x, option.y } })
 	end
 	self.sprite_component.visible = false
 	self.body_collider:set_enabled(false)
@@ -1286,7 +1289,7 @@ function player:on_body_overlap(_state, event)
 	return '/dying'
 end
 
-function player:ctor(_options, _definition_id, context)
+function player:ctor()
 	self.death_visual = self:get_component(sprite_component, player_death_visual_id)
 	self.force_field_visual = self:get_component(
 		sprite_animation_component,
@@ -1330,9 +1333,9 @@ function player:ctor(_options, _definition_id, context)
 		self.missile_projectiles[vessel_id] = missile
 		self.secondary_projectiles[vessel_id] = secondary
 		local collider_base<const> = (vessel_id - 1) * 3
-		attach_projectile_collider(self, primary, collider_base + 1, context)
-		attach_projectile_collider(self, missile, collider_base + 2, context)
-		attach_projectile_collider(self, secondary, collider_base + 3, context)
+		attach_projectile_collider(self, primary, collider_base + 1)
+		attach_projectile_collider(self, missile, collider_base + 2)
+		attach_projectile_collider(self, secondary, collider_base + 3)
 	end
 end
 
@@ -1431,7 +1434,6 @@ local register_player_definition<const> = function()
 		class = player,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_player_n, order = player_draw_z } },
 		components = {
 			new_name_table_weapon_visual,
 			new_sprite_projectile_visual,
@@ -1443,6 +1445,8 @@ local register_player_definition<const> = function()
 			actioneffect_component.factory({ player_actioneffects.effect_ids.fire_salvo }),
 		},
 		defaults = {
+			imgid = assets_player_n,
+			order = player_draw_z,
 			player_index = 1,
 			frame = 0,
 			last_dx = 0,

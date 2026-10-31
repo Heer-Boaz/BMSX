@@ -23,17 +23,16 @@ export function collectSceneOptionProperties(buffer: TextBuffer, locations: LuaS
 				if (member.spatial !== null && member.spatial.origin.includes(child)) continue;
 				const key = child.kind === LuaTableFieldKind.IdentifierKey ? child.name
 					: child.kind === LuaTableFieldKind.ExpressionKey ? `[${readLuaSourceRange(buffer, locations.range(child.key.span))}]` : `[${++arrayIndex}]`;
-				append(child, label === '' ? key : `${label}${key[0] === '[' ? '' : '.'}${key}`);
+				append(child, label ? `${label}${key[0] === '[' ? '' : '.'}${key}` : key);
 			}
 		} else {
 			const sourceText = readLuaSourceRange(buffer, locations.range(field.value.span));
-			properties.push({ field, label: label === '' ? 'options' : label, sourceText, editable: !sourceText.includes('\n'),
+			properties.push({ field, label: label || 'options', sourceText, editable: !sourceText.includes('\n'),
 				preview: readLuaExpressionPreview(buffer, locations, field.value) });
 		}
 	};
 	const options = member.options;
 	if (options !== null) append(options, options.value.kind === LuaSyntaxKind.TableConstructorExpression ? '' : 'options');
 	if (member.spatial !== null) append(member.spatial.field, 'spatial');
-	if (member.initial !== null) append(member.initial, 'initial');
 	return properties;
 }

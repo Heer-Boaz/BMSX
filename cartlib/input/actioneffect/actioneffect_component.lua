@@ -8,24 +8,21 @@ input_actioneffect_component.__index = input_actioneffect_component
 input_actioneffect_component.unique = true
 setmetatable(input_actioneffect_component, { __index = base_component })
 
-local empty_input<const> = {}
-
-function input_actioneffect_component.new(context, defaults)
-	local definition<const> = defaults or empty_input
+function input_actioneffect_component.new(owner, configuration)
+	local self<const>, definition<const> = base_component.new(owner, configuration)
+	setmetatable(self, input_actioneffect_component)
 	local id_local<const> = definition.id_local or 'input'
-	local initial<const> = context.initial[id_local] or empty_input
-	local self<const> = setmetatable(base_component.new(context), input_actioneffect_component)
 	self.id_local = id_local
-	self.source_program = initial.program or definition.program
-	self.clock_source = initial.clock_source or definition.clock_source or clock.gameplay
+	self.source_program = definition.program
+	self.clock_source = definition.clock_source or clock.gameplay
 	self:set_tick_clock_enabled(self.clock_source, true)
 	return self
 end
 
 function input_actioneffect_component.factory(definition)
 	local defaults<const> = shallow_copy(definition)
-	return function(context)
-		return input_actioneffect_component.new(context, defaults)
+	return function(owner)
+		return input_actioneffect_component.new(owner, defaults)
 	end
 end
 

@@ -42,12 +42,12 @@ local register_loot_drop_definition<const> = function()
 		class = loot_drop,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 113 } },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_pickup_layer, mask = collision_pickup_mask }),
 			fsm_component.factory({ 'loot_drop' }),
 		},
 		defaults = {
+			order = 113,
 			loot_type = 'life',
 			loot_value = enemy_loot_life_regen,
 		},

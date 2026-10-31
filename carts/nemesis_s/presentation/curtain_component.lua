@@ -33,8 +33,8 @@ function curtain_component:set_mode(mode)
 	else self:set_draw_function(draw_window) end
 end
 
-function curtain_component.new(context)
-	local self<const>, input<const> = visual_2d.new(context, 'curtain')
+function curtain_component.new(owner)
+	local self<const>, input<const> = visual_2d.new(owner, owner, 'curtain')
 	setmetatable(self, curtain_component)
 	self.width, self.height = input.width, input.height
 	self.count = input.count or 0

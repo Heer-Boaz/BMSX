@@ -8,8 +8,8 @@ local enemy<const> = {}
 enemy.__index = enemy
 setmetatable(enemy, { __index = sprite_object })
 
-function enemy.initialize(self, context)
-	sprite_object.initialize(self, context)
+function enemy.initialize(self)
+	sprite_object.initialize(self)
 	self.health = self.max_health
 	self.vulnerable = true
 end

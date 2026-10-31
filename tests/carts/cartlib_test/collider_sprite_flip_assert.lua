@@ -9,13 +9,11 @@ bss geometry: word[32]
 local pool<const> = geometry_pool.new(geometry, 64, 2)
 prefab.define({ def_id = 'cartlib_test.flipped_sprite', class = {},
 	spatial = { family = '2d', authority = 'affine', local_transform = { 1,0,0,1,10,20 } },
-	initial = { collider = { geometry_pool = pool, sprite_id_local = 'sprite' } },
-	components = { sprite.factory({ imgid = 'collision_asymmetric' }), collider.new_for_sprite },
+	components = { sprite.factory({ imgid = 'collision_asymmetric' }), collider.factory_for_sprite({ geometry_pool = pool, sprite_id_local = 'sprite' }) },
 })
 prefab.define({ def_id = 'cartlib_test.flip_probe', class = {},
 	spatial = { family = '2d', authority = 'affine', local_transform = { 1,0,0,1,12.25,20.25 } },
-	initial = { collider = { geometry_pool = pool, local_area = { left=0,top=0,right=0.5,bottom=0.5 } } },
-	components = { collider.new },
+	components = { collider.factory({ geometry_pool = pool, local_area = { left=0,top=0,right=0.5,bottom=0.5 } }) },
 })
 
 return {

@@ -9,8 +9,8 @@ function scene.register()
 			{
 				member_id = 'background',
 				definition_id = 'pietious.sprite',
-				initial = { base_sprite = { imgid = 'end_demo' } },
 				options = {
+					imgid = 'end_demo',
 					id = 'end_demo.background',
 					space_id = 'end_demo',
 				},
@@ -19,8 +19,11 @@ function scene.register()
 				member_id = 'cover',
 				definition_id = 'pietious.rectangle',
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 176 } },
-				initial = { rectangle = { order = 1, width = 256, height = 8, color = 0xff000000 } },
 				options = {
+					order = 1,
+					width = 256,
+					height = 8,
+					color = 0xff000000,
 					id = 'end_demo.cover',
 					space_id = 'end_demo',
 				},
@@ -29,8 +32,9 @@ function scene.register()
 				member_id = 'caption',
 				definition_id = 'pietious.caption',
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 176 } },
-				initial = { text = { order = 2, text = game_text[0].end_demo_message } },
 				options = {
+					order = 2,
+					text = game_text[0].end_demo_message,
 					id = 'end_demo.caption',
 					space_id = 'end_demo',
 				},

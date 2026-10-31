@@ -174,11 +174,12 @@ local finish_entry<const> = function(self, entry)
 	end
 end
 
-function timeline_component.new(opts)
-	local self<const> = setmetatable(base_component.new(opts), timeline_component)
+function timeline_component.new(owner, configuration)
+	local self<const>, input<const> = base_component.new(owner, configuration)
+	setmetatable(self, timeline_component)
 	self._entries_by_id = {}
-	self._clock_mode = opts.clock_mode or 'world'
-	if self._clock_mode == 'world' then self._world = opts.owner.world end
+	self._clock_mode = input.clock_mode or 'world'
+	if self._clock_mode == 'world' then self._world = owner.world end
 	return self
 end
 

@@ -31,11 +31,11 @@ function sprite_animation_component.factory(definition)
 		local frame_run<const> = definition.frame_run or 1
 		local loop<const> = definition.loop
 		local default_id<const> = defaults.id_local
-		return function(context, id_local)
+		return function(owner, configuration, id_local)
 			if frame_duration_ms == nil then
 				frame_duration_ms = frame_run * clock.gameplay_delta_milliseconds()
 			end
-			local self<const> = sprite_component.new(context, id_local or default_id, defaults, default_source)
+			local self<const> = sprite_component.new(owner, configuration, id_local or default_id, defaults, default_source)
 			setmetatable(self, sprite_animation_component)
 			self.frames = frames
 			self.frame_sources = frame_sources
@@ -70,7 +70,7 @@ function sprite_animation_component.factory(definition)
 	local durations_resolved = false
 	local initial_animation_name<const> = definition.animation
 	local default_id<const> = defaults.id_local
-	return function(context, id_local)
+	return function(owner, configuration, id_local)
 		if not durations_resolved then
 			local gameplay_delta_milliseconds<const> = clock.gameplay_delta_milliseconds()
 			for _, animation in pairs(animations) do
@@ -80,7 +80,7 @@ function sprite_animation_component.factory(definition)
 			end
 			durations_resolved = true
 		end
-		local self<const>, input<const> = sprite_component.new(context, id_local or default_id, defaults, default_source)
+		local self<const>, input<const> = sprite_component.new(owner, configuration, id_local or default_id, defaults, default_source)
 		setmetatable(self, sprite_animation_component)
 		local animation_name<const> = input.animation or initial_animation_name
 		local initial_animation<const> = animations[animation_name]

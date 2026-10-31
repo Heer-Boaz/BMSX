@@ -16,7 +16,7 @@ local function configure<init>()
 	} } })
 end
 configure()
-game.actor = component.new({ owner = { executions = 0, id = 'fixture_actor' } }, 'preload.tree')
+game.actor = component.new({ executions = 0, id = 'fixture_actor' }, 'preload.tree')
 game.actor.id = 'fixture.tree'
 registry:register(game.actor)
 registry:index(game.actor, component)

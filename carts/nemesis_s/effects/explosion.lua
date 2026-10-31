@@ -59,13 +59,14 @@ local register_variant<const> = function(definition_id, machine_id, frames, draw
 		class = explosion,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = frames[1], order = draw_z } },
 		components = {
 			stage_scroll_follower_component.new,
 			timeline_component.new,
 			fsm_component.factory({ machine_id }),
 		},
 		defaults = {
+			imgid = frames[1],
+			order = draw_z,
 		},
 	})
 end

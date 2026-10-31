@@ -41,8 +41,8 @@ function probe.compile(width, retain)
 	probe.weak_inputs = setmetatable({ definition, shared }, { __mode = 'v' })
 	if retain then probe.definition = definition else probe.definition = nil end
 	if probe.first == nil then
-		probe.first = component.new({ owner = { ticks = 0, services = 0, predicates = 0 } }, 'probe')
-		probe.second = component.new({ owner = { ticks = 0, services = 0, predicates = 0 } }, 'probe')
+		probe.first = component.new({ ticks = 0, services = 0, predicates = 0 }, 'probe')
+		probe.second = component.new({ ticks = 0, services = 0, predicates = 0 }, 'probe')
 		probe.first.id = 'probe.first'
 		probe.second.id = 'probe.second'
 		for _, instance in ipairs({ probe.first, probe.second }) do

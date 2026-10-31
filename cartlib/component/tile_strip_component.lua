@@ -52,8 +52,8 @@ function tile_strip_component.factory(definition)
 	local defaults<const> = shallow_copy(definition)
 	local source<const> = image.resolve(defaults.imgid)
 	local id_local<const> = defaults.id_local or 'tile_strip'
-	return function(context)
-		local self<const>, input<const> = visual_2d_component.new(context, id_local, defaults)
+	return function(owner, configuration)
+		local self<const>, input<const> = visual_2d_component.new(owner, configuration, id_local, defaults)
 		setmetatable(self, tile_strip_component)
 		local selected_source<const> = input.imgid and image.resolve(input.imgid) or source
 		self._source = selected_source

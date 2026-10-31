@@ -4,22 +4,18 @@ local prohibit_leaving_screen_component<const> = {}
 prohibit_leaving_screen_component.__index = prohibit_leaving_screen_component
 setmetatable(prohibit_leaving_screen_component, { __index = screen_boundary_component })
 
-function prohibit_leaving_screen_component.new(context, definition)
-	local self<const> = setmetatable(screen_boundary_component.new(context, definition), prohibit_leaving_screen_component)
+function prohibit_leaving_screen_component.new(owner, definition)
+	local self<const> = setmetatable(screen_boundary_component.new(owner, definition), prohibit_leaving_screen_component)
 	self.stick_to_edge = true
 	if definition ~= nil and definition.stick_to_edge ~= nil then
 		self.stick_to_edge = definition.stick_to_edge
-	end
-	local initial<const> = context.initial[self.id_local]
-	if initial ~= nil and initial.stick_to_edge ~= nil then
-		self.stick_to_edge = initial.stick_to_edge
 	end
 	return self
 end
 
 function prohibit_leaving_screen_component.factory(definition)
-	return function(context)
-		return prohibit_leaving_screen_component.new(context, definition)
+	return function(owner)
+		return prohibit_leaving_screen_component.new(owner, definition)
 	end
 end
 

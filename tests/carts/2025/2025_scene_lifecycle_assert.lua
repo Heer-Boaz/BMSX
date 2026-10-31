@@ -32,19 +32,17 @@ return {
 			world:clear()
 			assert(registry:get('p3.combat.monster') == nil, 'clear retains old scene members')
 
-			-- Authored placement belongs to spatial and named component input, not
-			-- options spread over a WorldObject. Text keeps a local layout rectangle.
+			-- Authored placement belongs to spatial and explicit primary visual options.
+			-- Text keeps its own layout inputs; these are not another object pose.
 			scene_library.register('p3.test.placement', { objects = {
 				{ member_id = 'monster', definition_id = presentation.sprite,
-					options = { id = 'p3.test.monster' },
-					spatial = { local_transform = { 1, 0, 0, 1, 8, 8 } },
-					initial = { base_sprite = { imgid = 'monster_snoozer', order = 205,
-						attachment_affine = { 1, 0, 0, 1, 208, 60 } } } },
+					options = { id = 'p3.test.monster', imgid = 'monster_snoozer', order = 205,
+						attachment_affine = { 1, 0, 0, 1, 208, 60 } },
+					spatial = { local_transform = { 1, 0, 0, 1, 8, 8 } } },
 				{ member_id = 'main', definition_id = presentation.text,
-					options = { id = 'p3.test.text' },
-					spatial = { local_transform = { 1, 0, 0, 1, 8, 8 } },
-					initial = { text = { attachment_affine = { 1, 0, 0, 1, 32, 96 },
-						layout_rect = { left = 0, right = 256, top = 0, bottom = 64 } } } },
+					options = { id = 'p3.test.text', attachment_affine = { 1, 0, 0, 1, 32, 96 },
+						layout_rect = { left = 0, right = 256, top = 0, bottom = 64 } },
+					spatial = { local_transform = { 1, 0, 0, 1, 8, 8 } } },
 			} })
 			local edited<const> = scene_library.instantiate('p3.test.placement')
 			local edited_monster<const> = edited.members.monster.sprite_component

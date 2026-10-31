@@ -24,15 +24,18 @@ function end_demo_scene.register()
 				member_id = 'caption',
 				definition_id = caption.definition_id,
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 8 } },
-				initial = { text = { order = 1 } },
+				options = { order = 1 },
 			},
 			{
 				member_id = 'curtain',
 				definition_id = curtain.definition_id,
 				options = {
+					width = 256,
+					height = 192,
+					mode = 1,
+					order = 2,
 					visible = false,
 				},
-				initial = { curtain = { width = 256, height = 192, mode = 1, order = 2 } },
 			},
 		},
 	})

@@ -112,13 +112,13 @@ end
 
 -- Concrete area/asset/sprite/strip constructors share this physical identity
 -- setup, then admit their own shape source before returning to World.
-function collider_2d_component.construct(context, id_local, defaults)
+function collider_2d_component.construct(owner, configuration, id_local, defaults)
 	local definition<const> = defaults or empty_input
-	local local_id<const> = id_local or definition.id_local or 'collider'
-	local input<const> = context.initial[local_id] or empty_input
-	local spatial<const> = context.owner.spatial
+	local self<const>, input<const> = base_component.new(owner, configuration)
+	setmetatable(self, collider_2d_component)
+	local local_id<const> = id_local or input.id_local or definition.id_local or 'collider'
+	local spatial<const> = owner.spatial
 	if spatial == nil or spatial._family ~= affine2 then error('Collider2D requires its owner\'s Transform2D') end
-	local self<const> = setmetatable(base_component.new(context), collider_2d_component)
 	self.id_local = local_id
 	self.spatial = spatial
 	self.geometry_pool = input.geometry_pool or definition.geometry_pool
@@ -143,8 +143,8 @@ function collider_2d_component.construct(context, id_local, defaults)
 	return self, input, definition
 end
 
-function collider_2d_component.new(context, id_local, defaults)
-	local self<const>, input<const>, definition<const> = collider_2d_component.construct(context, id_local, defaults)
+function collider_2d_component.new(owner, configuration, id_local, defaults)
+	local self<const>, input<const>, definition<const> = collider_2d_component.construct(owner, configuration, id_local, defaults)
 	local asset<const> = input.shape_asset or definition.shape_asset
 	if asset ~= nil then
 		self:set_shape_asset(asset)
@@ -159,8 +159,8 @@ end
 
 function collider_2d_component.factory(definition)
 	local defaults<const> = shallow_copy(definition)
-	return function(context, id_local)
-		return collider_2d_component.new(context, id_local, defaults)
+	return function(owner, configuration, id_local)
+		return collider_2d_component.new(owner, configuration, id_local, defaults)
 	end
 end
 
@@ -192,10 +192,10 @@ function collider_2d_component:set_sprite(sprite)
 	return self
 end
 
-function collider_2d_component.new_for_sprite(context, id_local, defaults)
-	local self<const>, input<const>, definition<const> = collider_2d_component.construct(context, id_local, defaults)
+function collider_2d_component.new_for_sprite(owner, configuration, id_local, defaults)
+	local self<const>, input<const>, definition<const> = collider_2d_component.construct(owner, configuration, id_local, defaults)
 	local sprite_id<const> = input.sprite_id_local or definition.sprite_id_local or 'base_sprite'
-	local sprite<const> = context.owner:get_component(sprite_component, sprite_id)
+	local sprite<const> = owner:get_component(sprite_component, sprite_id)
 	if sprite == nil then error('sprite-derived collider requires its declared sprite component') end
 	self:set_sprite(sprite)
 	return self
@@ -203,8 +203,8 @@ end
 
 function collider_2d_component.factory_for_sprite(definition)
 	local defaults<const> = shallow_copy(definition)
-	return function(context, id_local)
-		return collider_2d_component.new_for_sprite(context, id_local, defaults)
+	return function(owner, configuration, id_local)
+		return collider_2d_component.new_for_sprite(owner, configuration, id_local, defaults)
 	end
 end
 

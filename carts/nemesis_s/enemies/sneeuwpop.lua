@@ -112,7 +112,6 @@ local register_definition<const> = function()
 		class = sneeuwpop,
 		base = ground_foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_sneeuwpop, order = sneeuwpop_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_sneeuwpop_body_addr),
 			new_flash_animation,
@@ -121,6 +120,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_sneeuwpop_fsm }),
 		},
 		defaults = {
+			imgid = assets_sneeuwpop,
+			order = sneeuwpop_draw_z,
 			max_health = sneeuwpop_health,
 			small_fry = false,
 			stage_scroll_width = sneeuwpop_width,

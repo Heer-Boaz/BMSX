@@ -14,10 +14,10 @@ local origin_dirty<const> = 2
 local all_dirty<const> = basis_dirty | origin_dirty
 local identity<const> = affine2.identity
 
-function visual_2d_component.new(context, id_local, defaults)
-	local self<const>, input<const> = visual_component.new(context, id_local, defaults)
+function visual_2d_component.new(owner, configuration, id_local, defaults)
+	local self<const>, input<const> = visual_component.new(owner, configuration, id_local, defaults)
 	setmetatable(self, visual_2d_component)
-	local spatial<const> = context.owner.spatial
+	local spatial<const> = owner.spatial
 	if spatial == nil or spatial._family ~= affine2 then
 		error('2D visual requires its owner\'s Transform2D')
 	end

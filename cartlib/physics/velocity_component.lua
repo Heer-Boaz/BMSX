@@ -10,8 +10,10 @@ velocity_component.unique = true
 velocity_component._tick_clocks = clock.gameplay
 setmetatable(velocity_component, { __index = base_component })
 
-function velocity_component.new(context, id_local)
-	local self<const> = setmetatable(base_component.new(context), velocity_component)
+function velocity_component.new(owner, configuration, id_local)
+	local self<const>, input<const> = base_component.new(owner, configuration)
+	setmetatable(self, velocity_component)
+	if id_local == nil then id_local = input.id_local end
 	if id_local == nil then id_local = 'velocity' end
 	self.id_local = id_local
 	self.speed_x_num = 0
@@ -19,16 +21,19 @@ function velocity_component.new(context, id_local)
 	self.speed_den = 1
 	self.speed_accum_x = 0
 	self.speed_accum_y = 0
-	local initial<const> = context.initial[self.id_local]
-	if initial ~= nil then
-		if initial.speed_x_num ~= nil then self.speed_x_num = initial.speed_x_num end
-		if initial.speed_y_num ~= nil then self.speed_y_num = initial.speed_y_num end
-		if initial.speed_den ~= nil then self.speed_den = initial.speed_den end
-		if initial.speed_accum_x ~= nil then self.speed_accum_x = initial.speed_accum_x end
-		if initial.speed_accum_y ~= nil then self.speed_accum_y = initial.speed_accum_y end
-	end
+	if input.speed_x_num ~= nil then self.speed_x_num = input.speed_x_num end
+	if input.speed_y_num ~= nil then self.speed_y_num = input.speed_y_num end
+	if input.speed_den ~= nil then self.speed_den = input.speed_den end
+	if input.speed_accum_x ~= nil then self.speed_accum_x = input.speed_accum_x end
+	if input.speed_accum_y ~= nil then self.speed_accum_y = input.speed_accum_y end
 	self.motion_committed = true
 	return self
+end
+
+function velocity_component.factory(configuration)
+	return function(owner)
+		return velocity_component.new(owner, configuration)
+	end
 end
 
 function velocity_component:on_attach()

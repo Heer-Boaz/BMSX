@@ -8,15 +8,13 @@ bss geometry: word[32]
 local pool<const> = geometry_pool.new(geometry, 64, 2)
 prefab.define({ def_id = 'cartlib_test.query_body', class = {},
 	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 1, 1, 10, 10 } },
-	initial = { collider = { geometry_pool = pool, local_affine = { 1, 0, 0, 1, 2, 1 },
-		local_area = { left = 0, top = 0, right = 4, bottom = 4 } } },
-	components = { collider.new },
+	components = { collider.factory({ geometry_pool = pool, local_affine = { 1, 0, 0, 1, 2, 1 },
+		local_area = { left = 0, top = 0, right = 4, bottom = 4 } }) },
 })
 prefab.define({ def_id = 'cartlib_test.query_target', class = {},
 	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 57.25, 33.25 } },
-	initial = { collider = { geometry_pool = pool,
-		local_area = { left = 0, top = 0, right = 0.5, bottom = 0.5 } } },
-	components = { collider.new },
+	components = { collider.factory({ geometry_pool = pool,
+		local_area = { left = 0, top = 0, right = 0.5, bottom = 0.5 } }) },
 })
 
 return { kind = 'unit', tests = {

@@ -14,26 +14,27 @@ function gameplay_scene.register()
 				member_id = 'starfield',
 				definition_id = starfield.definition_id,
 				options = {
-					id = starfield.instance_id, space_id = 'main',
+					order = 16,
+					id = starfield.instance_id,
+					space_id = 'main',
 				},
-				initial = { stars = { order = 16 } },
 			},
 			{
 				member_id = 'stage',
 				definition_id = stage.stage_def_id,
 				options = {
-					id = stage.stage_instance_id, space_id = 'main',
+					order = 16,
+					id = stage.stage_instance_id,
+					space_id = 'main',
 				},
-				initial = { tile_layer = { order = 16 } },
 			},
 			{
 				member_id = 'status_bar',
 				definition_id = status_bar.definition_id,
 				options = {
-					id = status_bar.instance_id, space_id = 'game_start',
+					id = status_bar.instance_id, space_id = 'game_start', order = 100,
 				},
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 176 } },
-				initial = { status = { order = 100 }, life_1 = { order = 101 }, life_2 = { order = 101 } },
 			},
 			{
 				member_id = 'player_start_1',
@@ -55,9 +56,13 @@ function gameplay_scene.register()
 				member_id = 'game_over_curtain',
 				definition_id = presentation.cover_definition_id,
 				options = {
-					space_id = 'main', visible = false,
+					width = 0,
+					height = 192,
+					color = 0xff000000,
+					order = 200,
+					space_id = 'main',
+					visible = false,
 				},
-				initial = { rectangle = { width = 0, height = 192, color = 0xff000000, order = 200 } },
 			},
 		},
 	})

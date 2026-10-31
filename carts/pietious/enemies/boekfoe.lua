@@ -24,11 +24,16 @@ function boekfoe.spawn_paper(self)
 	local y_speed_num<const> = math.random(-5, 4)
 	self.castle.events:emit('paperspawn')
 	self.room.scene:spawn('enemy.paperfoe', {
+		speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5,
+		speed_y_num = y_speed_num,
+		speed_den = 5,
+		speed_accum_x = 0,
+		speed_accum_y = 0,
 		castle = self.castle,
 		room = self.room,
 		player = self.player,
 		direction = self.direction == 'left' and 'left' or 'right',
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } }, { velocity = { speed_x_num = (self.direction == 'left' and -enemy_paper_speed_x or enemy_paper_speed_x) * 5, speed_y_num = y_speed_num, speed_den = 5, speed_accum_x = 0, speed_accum_y = 0 } })
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
 	return bt_success
 end
 
@@ -107,12 +112,14 @@ function boekfoe.register()
 		class = boekfoe,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250, imgid = 'boekfoe_closed' } },
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
+			order = 250,
+			imgid = 'boekfoe_closed',
 			damage = 4,
 			max_health = 6,
-			health = 6,dangerous = true,
+			health = 6,
+			dangerous = true,
 			direction = 'right',
 			enemy_kind = 'boekfoe',
 		},

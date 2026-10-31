@@ -31,7 +31,7 @@ test('written cubic geometry agrees with the native Hermite slopes at O0 and O3'
 		const { cpu } = createCartlibProgramHarness(`
 			local component=require('cartlib/timeline/timeline_component')
 			local owner={x=-1,y=-1}
-			local timelines=component.new({owner=owner,clock_mode='manual'})
+			local timelines=component.new(owner,{clock_mode='manual'})
 			timelines:define('curve',require('animation')); timelines:play('curve')
 			timelines:seek_time('curve',25); assert(owner.x==43.75)
 		`, { optLevel, modules: [{ path: 'animation', source }] });
@@ -44,7 +44,7 @@ test('a step channel has no authored value before its first key, as in the nativ
 	for (const optLevel of [0, 3] as const) {
 		const { cpu } = createCartlibProgramHarness(`
 			local component=require('cartlib/timeline/timeline_component'); local owner={x=17}
-			local timeline=component.new({owner=owner,clock_mode='manual'}); timeline:define('step',require('animation')); timeline:play('step')
+			local timeline=component.new(owner,{clock_mode='manual'}); timeline:define('step',require('animation')); timeline:play('step')
 			timeline:seek_time('step',25); assert(owner.x==17)
 			timeline:seek_time('step',75); assert(owner.x==10)
 		`, { optLevel, modules: [{ path: 'animation', source }] });
@@ -106,7 +106,7 @@ test('cubic display requires the slopes used by native segments, not unused endp
 		view.range.layout(0, 0, 806, 20); view.curve.layout(0, 30, 806, 230); view.curve.update(view);
 		for (const optLevel of [0, 3] as const) {
 			const { cpu } = createCartlibProgramHarness(`local component=require('cartlib/timeline/timeline_component'); local owner={x=-1}
-				local timelines=component.new({owner=owner,clock_mode='manual'}); timelines:define('curve',require('animation')); timelines:play('curve')
+				local timelines=component.new(owner,{clock_mode='manual'}); timelines:define('curve',require('animation')); timelines:play('curve')
 				timelines:seek_time('curve',25); assert(owner.x==${value})
 			`, { optLevel, modules: [{ path: 'animation', source }] });
 			assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);

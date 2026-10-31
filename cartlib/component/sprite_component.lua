@@ -7,8 +7,8 @@ local sprite_component<const> = {}
 sprite_component.__index = sprite_component
 setmetatable(sprite_component, { __index = visual_2d_component })
 
-function sprite_component.new(context, id_local, defaults, default_source)
-	local self<const>, input<const> = visual_2d_component.new(context, id_local or 'sprite', defaults)
+function sprite_component.new(owner, configuration, id_local, defaults, default_source)
+	local self<const>, input<const> = visual_2d_component.new(owner, configuration, id_local or 'sprite', defaults)
 	setmetatable(self, sprite_component)
 	local color = input.color
 	if color == nil then color = defaults and defaults.color end
@@ -44,8 +44,8 @@ function sprite_component.factory(definition)
 	local imgid<const> = defaults.imgid
 	local source<const> = imgid and image.resolve(imgid)
 	local default_id<const> = defaults.id_local
-	return function(context, id_local)
-		return sprite_component.new(context, id_local or default_id, defaults, source)
+	return function(owner, configuration, id_local)
+		return sprite_component.new(owner, configuration, id_local or default_id, defaults, source)
 	end
 end
 

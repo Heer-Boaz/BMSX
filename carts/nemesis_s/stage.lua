@@ -754,12 +754,12 @@ local register_stage_definition<const> = function()
 		def_id = ids_stage_def,
 		class = stage,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { tile_layer = { order = 16 } },
 		components = {
-			tile_layer_component.new,
+			function(owner) return tile_layer_component.new(owner, owner) end,
 			fsm_component.factory({ ids_stage_fsm }),
 		},
 		defaults = {
+			order = 16,
 			restarting = false,
 		},
 	})

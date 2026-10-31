@@ -7,13 +7,12 @@ setmetatable(visual_component, { __index = base_component })
 
 local empty_input<const> = {}
 
--- The construction context is shared by every component of this object.
--- Only this constructor selects its named input; neither input record is
--- retained on the live component or spread onto the WorldObject.
-function visual_component.new(context, id_local, defaults)
-	local input<const> = context.initial[id_local] or empty_input
+-- Configuration belongs to this visual. Admission consumes the borrowed
+-- values directly; the component retains its own scalar state.
+function visual_component.new(owner, configuration, id_local, defaults)
+	local self<const>, input<const> = base_component.new(owner, configuration)
+	setmetatable(self, visual_component)
 	local definition<const> = defaults or empty_input
-	local self<const> = setmetatable(base_component.new(context), visual_component)
 	self.id_local = id_local
 	local enabled = input.enabled
 	if enabled == nil then enabled = definition.enabled end

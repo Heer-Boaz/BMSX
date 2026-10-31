@@ -84,7 +84,7 @@ local register_definition<const> = function()
 		class = portrait,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'affine' },
-		initial = { base_sprite = { imgid = 'quiz' } },
+		defaults = { imgid = 'quiz' },
 		components = {
 			fsm_component.factory({ portrait_fsm_id }),
 		},

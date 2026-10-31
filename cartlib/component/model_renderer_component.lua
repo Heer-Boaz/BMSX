@@ -7,27 +7,27 @@ local model_batch<const> = require('cartlib/gx/model_batch')
 local affine3<const> = require('cartlib/math/affine3')
 local hierarchy<const> = require('cartlib/world/spatial_hierarchy')
 local shallow_copy<const> = require('cartlib/util/shallow_copy')
-local component_inputs<const> = require('cartlib/world/component_inputs')
+local empty_configuration<const> = {}
 
 local renderer<const> = {}
 renderer.__index = renderer
 setmetatable(renderer, { __index = visual_component })
 
-function renderer.new(context, id_local, defaults)
-	local self<const>, input<const> = visual_component.new(context, id_local or 'camera', defaults)
+function renderer.new(owner, configuration, id_local, defaults)
+	local self<const>, input<const> = visual_component.new(owner, configuration, id_local or 'camera', defaults)
 	setmetatable(self, renderer)
-	local spatial<const> = context.owner.spatial
+	local spatial<const> = owner.spatial
 	self.spatial = spatial
-	self._models = context.owner.world:active_component_view(model_component)
+	self._models = owner.world:active_component_view(model_component)
 	self._batch = model_batch.new()
 	self._view, self._world, self._instance_view, self._part_view = {}, {}, {}, {}
 	self._seen, self._revisions, self._visible = {}, {}, {}
 	self._seen_count = 0
 	self._basis_revision, self._origin_revision = -1, -1
 	self._projection_revision, self._observed_projection_revision = 0, -1
-	local definition<const> = defaults or component_inputs.empty
-	local width<const> = input.width or definition.width or (context.owner.world._page_size & 0x0000ffff)
-	local height<const> = input.height or definition.height or (context.owner.world._page_size >> 16)
+	local definition<const> = defaults or empty_configuration
+	local width<const> = input.width or definition.width or (owner.world._page_size & 0x0000ffff)
+	local height<const> = input.height or definition.height or (owner.world._page_size >> 16)
 	self:set_projection(width, height,
 		input.focal_length or definition.focal_length or width*0.5, input.near or definition.near or 0.1,
 		input.center_x or definition.center_x, input.center_y or definition.center_y)
@@ -37,8 +37,8 @@ end
 
 function renderer.factory(definition)
 	local defaults<const> = shallow_copy(definition)
-	return function(context, id_local)
-		return renderer.new(context, id_local or defaults.id_local, defaults)
+	return function(owner, configuration, id_local)
+		return renderer.new(owner, configuration, id_local or defaults.id_local, defaults)
 	end
 end
 

@@ -14,10 +14,9 @@ local definition_id<const> = 'cartlib_test.empty_strip'
 prefab.define({
 	def_id = definition_id, class = {},
 	spatial = { family = '2d', authority = 'affine', local_transform = { 1, 0, 0, 1, 32, 32 } },
-	initial = { collider = { geometry_pool = pool, layer = 1, mask = 1 } },
 	components = {
 		tile_strip_component.factory({ imgid = 'collision_tile', first_tile = 0, step_x = 4, step_y = 0, maximum_tiles = 3 }),
-		tile_strip_collider.factory({}),
+		tile_strip_collider.factory({ geometry_pool = pool, layer = 1, mask = 1 }),
 	},
 })
 

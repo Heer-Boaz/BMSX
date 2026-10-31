@@ -176,11 +176,11 @@ probe = { recorder = recorder }
 
 local first<const> = compiler.compile('shared', definition)
 component.install_program(first)
-probe.first = component.new({ owner = {} }, 'shared')
+probe.first = component.new({}, 'shared')
 probe.old = setmetatable({ first, recorder.programs[first], probe.first }, weak_values)
 local second<const> = compiler.compile('shared', definition)
 component.install_program(second)
-probe.second = component.new({ owner = {} }, 'shared')
+probe.second = component.new({}, 'shared')
 assert(first ~= second and first.evaluate == second.evaluate and first.reset == second.reset)
 assert(recorder.completed_bindings[probe.first] == first)
 assert(recorder.completed_bindings[probe.second] == second)
@@ -192,7 +192,7 @@ probe.unused = setmetatable({ unused, recorder.programs[unused] }, weak_values)
 
 local make_cycle<const> = function()
 	component.install_program(compiler.compile('cyclic', definition))
-	local actor<const> = component.new({ owner = {} }, 'cyclic')
+	local actor<const> = component.new({}, 'cyclic')
 	local cyclic<const> = compiler.compile('cyclic', { root = { type = 'task', task = {
 		execute = function() return actor.enabled and result.success or result.failure end,
 	} } })
@@ -250,7 +250,7 @@ initial = compiler.compile('same', { root = { type = 'task', task = {
 	end,
 } } })
 component.install_program(initial)
-local actor<const> = component.new({ owner = {} }, 'same')
+local actor<const> = component.new({}, 'same')
 actor.evaluate(actor.owner, actor, actor.operand)
 actor:rebind_program(outer)
 assert(saw_nested and recorder.completed_bindings[actor] == outer)

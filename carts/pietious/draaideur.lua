@@ -196,9 +196,9 @@ local register_draaideur_definition<const> = function()
 		class = draaideur,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 22 } },
 		components = { timeline_component.new, fsm_component.factory({ 'draaideur' }) },
 		defaults = {
+			order = 22,
 			kind = 1,
 			collision_enabled = true,
 		},

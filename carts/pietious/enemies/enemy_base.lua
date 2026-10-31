@@ -10,8 +10,8 @@ local collision_storage<const> = require('collision_storage')
 local enemy_base<const> = {}
 enemy_base.__index = enemy_base
 setmetatable(enemy_base, { __index = sprite_object })
-function enemy_base.initialize(self, context)
-	sprite_object.initialize(self, context)
+function enemy_base.initialize(self)
+	sprite_object.initialize(self)
 	self.last_sword_strike_id = 0
 end
 

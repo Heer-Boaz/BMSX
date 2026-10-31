@@ -12,9 +12,9 @@ return {
 			local player_member<const> = definition.members_by_id.player
 			local hud_member<const> = definition.members_by_id.hud
 			scenes.register('pietious.gameplay', { objects = {
-				{ member_id = 'hud', definition_id = 'ui', options = hud_member.options, initial = hud_member.initial },
+				{ member_id = 'hud', definition_id = 'ui', options = hud_member.options },
 				{ member_id = 'player', definition_id = 'player', options = player_member.options,
-					spatial = { local_transform = player_member.local_transform }, initial = player_member.initial },
+					spatial = { local_transform = player_member.local_transform } },
 			} })
 			local old_player<const> = registry:get('pietolon')
 			new_game()

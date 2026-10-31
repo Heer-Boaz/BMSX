@@ -5,8 +5,8 @@ local rectangle_component<const> = {}
 rectangle_component.__index = rectangle_component
 setmetatable(rectangle_component, { __index = visual_2d_component })
 
-function rectangle_component.new(context)
-	local self<const>, input<const> = visual_2d_component.new(context, 'rectangle')
+function rectangle_component.new(owner, configuration, id_local)
+	local self<const>, input<const> = visual_2d_component.new(owner, configuration, id_local or 'rectangle')
 	setmetatable(self, rectangle_component)
 	self.width, self.height, self.color = input.width, input.height, input.color
 	self:set_draw_function(rectangle_component.draw_rectangle)

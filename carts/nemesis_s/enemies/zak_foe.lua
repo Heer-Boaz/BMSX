@@ -170,7 +170,6 @@ local register_definition<const> = function()
 		class = zak_foe,
 		base = foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_zak_foe_stand, order = zak_foe_draw_z } },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,
@@ -183,6 +182,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_zak_foe_fsm }),
 		},
 		defaults = {
+			imgid = assets_zak_foe_stand,
+			order = zak_foe_draw_z,
 			max_health = zak_foe_health,
 			small_fry = true,
 			drop_definition_id = ids_roodje_def,
@@ -222,8 +223,10 @@ function zak_foe.register()
 				return
 			end
 			self.scene:spawn(ids_enemy_bullet_def, {
+				velocity_x = velocity_x,
+				velocity_y = velocity_y,
 				stage = self.stage,
-			}, { local_transform = { 1, 0, 0, 1, bullet_x, bullet_y } }, { fixed_velocity = { velocity_x = velocity_x, velocity_y = velocity_y } })
+			}, { local_transform = { 1, 0, 0, 1, bullet_x, bullet_y } })
 		end,
 	})
 	define_fsm()

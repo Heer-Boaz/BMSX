@@ -30,13 +30,14 @@ local register_definition<const> = function()
 		class = destroyed_sneeuwpop,
 		base = enemy,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_sneeuwpop_destroyed, order = sneeuwpop_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_sneeuwpop_destroyed_body_addr),
 			stage_scroll_follower_component.new,
 			fsm_component.factory({ ids_destroyed_sneeuwpop_fsm }),
 		},
 		defaults = {
+			imgid = assets_sneeuwpop_destroyed,
+			order = sneeuwpop_draw_z,
 			max_health = 0,
 			small_fry = false,
 			stage_scroll_width = sneeuwpop_width,

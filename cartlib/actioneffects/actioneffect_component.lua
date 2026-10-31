@@ -41,8 +41,8 @@ function actioneffect_component.set_definition(id, definition)
 	definitions_by_id[id] = definition
 end
 
-function actioneffect_component.new(opts)
-	local self<const> = setmetatable(base_component.new(opts), actioneffect_component)
+function actioneffect_component.new(owner)
+	local self<const> = setmetatable(base_component.new(owner), actioneffect_component)
 	self.effects = {}
 	self.periodic_effects = {}
 	self.periodic_effect_count = 0
@@ -51,8 +51,8 @@ function actioneffect_component.new(opts)
 end
 
 function actioneffect_component.factory(effect_ids)
-	return function(opts)
-		local self<const> = actioneffect_component.new(opts)
+	return function(owner)
+		local self<const> = actioneffect_component.new(owner)
 		self._initial_effect_ids = effect_ids
 		return self
 	end

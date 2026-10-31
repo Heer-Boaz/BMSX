@@ -478,7 +478,6 @@ local register_definition<const> = function()
 		class = moon,
 		base = enemy,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_moon_down_right, order = moon_draw_z } },
 		components = {
 			new_core_collider,
 			new_armor_collider,
@@ -489,6 +488,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_moon_fsm }),
 		},
 		defaults = {
+			imgid = assets_moon_down_right,
+			order = moon_draw_z,
 			max_health = moon_health,
 			rotation = moon_rotation_down_right,
 			vertical_direction = moon_vertical_direction_down,

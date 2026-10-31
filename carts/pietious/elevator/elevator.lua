@@ -87,12 +87,13 @@ local register_elevator_definition<const> = function()
 		class = elevator,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 21, imgid = 'elevator_platform' } },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_world_layer, mask = collision_player_layer }),
 			fsm_component.factory({ 'elevator_platform' }),
 		},
 		defaults = {
+			order = 21,
+			imgid = 'elevator_platform',
 			path = nil,
 			vertical_to_point = nil,
 			going_to = 1,

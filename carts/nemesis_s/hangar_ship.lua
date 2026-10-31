@@ -19,7 +19,10 @@ function hangar_ship.register()
 		class = ship,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'affine' },
-		initial = { base_sprite = { imgid = 'title_startup_metalion', order = 3 } },
+		defaults = {
+			imgid = 'title_startup_metalion',
+			order = 3,
+		},
 		components = {
 			-- The ship body is behind the hangar lip; its exhaust is in front.
 			sprite_component.factory({

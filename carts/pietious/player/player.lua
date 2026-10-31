@@ -622,27 +622,29 @@ function player:finish_victory_dance()
 	return '/quiet'
 end
 
-function player:ctor(_options, _definition_id, context)
-	self:add_component(actioneffect_component.new(context))
+local sword_profile<const> = { imgid = 'sword_r', order = 251, enabled = false }
+
+function player:ctor()
+	self:add_component(actioneffect_component.new(self))
 	self.actioneffects:grant_effect('halo')
 	self.actioneffects:grant_effect('pepernoot')
 	self.actioneffects:grant_effect('spyglass')
-	self:add_component(input_actioneffect_component.new(context, {
+	self:add_component(input_actioneffect_component.new(self, {
 		program = player_actioneffects.build_input_actioneffect_program(),
 	}))
 	self.width = player_width
 	self.height = player_height
 	self.collider = self:get_component(collider_2d_component, 'body')
 
-	self.sword_sprite = sprite_component.new(context, 'sword_visual')
+	self.sword_sprite = sprite_component.new(self, sword_profile, 'sword_visual')
 	self:add_component(self.sword_sprite)
-	self.sword_collider = collider_2d_component.new_for_sprite(context, 'sword', {
+	self.sword_collider = collider_2d_component.new_for_sprite(self, {
 		geometry_pool = collision_storage.sprite,
 		sprite_id_local = 'sword_visual',
 		layer = collision_projectile_layer,
 		mask = collision_projectile_mask,
 		enabled = false,
-	})
+	}, 'sword')
 	self:add_component(self.sword_collider)
 	self:define_runtime_timelines()
 	self.hit_invulnerability_timeline = self.timelines:get(player_hit_invulnerability_timeline_id)
@@ -3390,10 +3392,6 @@ local register_player_definition<const> = function()
 		class = player,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = {
-			base_sprite = { imgid = 'pietolon_stand_r', order = 250 },
-			sword_visual = { imgid = 'sword_r', order = 251, enabled = false },
-		},
 		components = {
 			collider_2d_component.factory_for_sprite({ id_local = 'body', geometry_pool = collision_storage.sprite,
 				layer = collision_player_layer, mask = collision_player_mask }),
@@ -3401,6 +3399,8 @@ local register_player_definition<const> = function()
 			fsm_component.factory({ 'player' }),
 		},
 		defaults = {
+			imgid = 'pietolon_stand_r',
+			order = 250,
 			player_index = 1,
 			width = player_width,
 			height = player_height,

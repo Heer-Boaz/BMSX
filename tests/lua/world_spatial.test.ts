@@ -49,60 +49,46 @@ assert(supplied.wxx==2 and supplied.wyx==1 and supplied.wyy==3 and supplied.wox=
 		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	});
 
-	test(`Constructor-only inputs are pinned by local slot and share one final-owner context (O${optLevel})`, () => {
+	test(`Construction hooks share the final owner and raw options before Scene and procedural admission (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local component<const> = setmetatable({}, {__index=base_component})
 component.__index=component
-local initialized_context
-local shared<const> = { retained=true }
-local input<const> = { part={value=10,other=2,shared=shared}, extra={value=11} }
+local shared<const> = {retained=true}
+local initialized<const> = {}
 local class<const> = {
- initialize=function(self,context)
-  initialized_context=context
-  assert(context.owner==self and context.initial.part.shared==shared,
-   'initializer received an input DTO or replacement owner')
+ initialize=function(self,options)
+  initialized[self]=options
+  assert(self.value==20 and self.other==2 and self.shared==shared and self.flag==false,
+   'effective gameplay defaults/options were unavailable before component construction')
  end,
- ctor=function(self,options,_definition,context)
-  assert(context==initialized_context and self.part.value==context.initial.part.value
-   and self.extra.value==context.initial.extra.value and options.player_data==shared,
-   'constructor/factories did not consume the same admitted context')
+ ctor=function(self,options)
+  assert(initialized[self]==options and self.part.owner==self and self.part.value==self.value,
+   'construction replaced the final owner or raw options identity')
  end,
 }
-prefab.define({def_id='inputs.actor',class=class,initial=input,components={
- function(context)
-  assert(context==initialized_context, 'primary construction received another request table')
-  local self<const> = setmetatable(base_component.new(context),component)
-  self.id_local='part'
-  self.value=context.initial.part.value
-  self.other=context.initial.part.other
-  context.owner.part=self
-  return self
- end,
- function(context)
-  assert(context==initialized_context, 'additional construction received another request table')
-  local self<const> = setmetatable(base_component.new(context),component)
-  self.id_local='extra'
-  self.value=context.initial.extra.value
-  context.owner.extra=self
-  return self
+prefab.define({def_id='inputs.actor',class=class,defaults={value=10,other=2,shared=shared,flag=true},components={
+ function(owner)
+  assert(initialized[owner]~=nil and owner.value==20 and owner.flag==false)
+  local part<const> = setmetatable(base_component.new(owner),component)
+  part.id_local='part'
+  part.value=owner.value
+  owner.part=part
+  return part
  end,
 }})
-input.part.value=90
-local member_input<const> = {part={value=20}}
 scenes.register('inputs.scene',{objects={
- {member_id='actor',definition_id='inputs.actor',initial=member_input,options={player_data=shared}},
+ {member_id='actor',definition_id='inputs.actor',options={value=20,flag=false}},
 }})
-member_input.part.value=99
 local scene<const> = scenes.instantiate('inputs.scene')
 local actor<const> = scene.members.actor
-assert(actor.part.value==20 and actor.part.other==2 and actor.extra.value==11
- and actor.initial==nil and actor.value==nil and actor.other==nil
- and actor._construction_initial==nil and actor.player_data==shared,
- 'constructor inputs leaked onto gameplay state or shared mutable declaration records')
-local procedural<const> = world:spawn('inputs.actor',{player_data=shared},nil,{part={value=30}})
-assert(procedural.part.value==30 and procedural.part.other==2 and procedural.extra.value==11
- and prefab.definition('inputs.actor').initial.part.value==10,
- 'procedural input admission changed prefab defaults or another component slot')
+local options<const> = {value=20,flag=false}
+local procedural<const> = world:spawn('inputs.actor',options)
+assert(initialized[procedural]==options and options.other==nil and options.shared==nil,
+ 'construction mutated or replaced caller-owned raw options')
+assert(actor.part.owner==actor and procedural.part.owner==procedural and actor.part~=procedural.part
+ and actor.other==2 and procedural.other==2 and actor.shared==shared and procedural.shared==shared,
+ 'Scene and procedural construction disagree about actual owner state')
+assert(prefab.definition('inputs.actor').defaults.value==10 and prefab.definition('inputs.actor').defaults.flag==true)
 scene:dispose()
 procedural:mark_for_disposal()
 `, { optLevel, modules });

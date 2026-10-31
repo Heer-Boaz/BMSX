@@ -47,7 +47,7 @@ local event_emitter<const> = require('cartlib/event_emitter')
 local graph<const> = h.new()
 local actor<const> = { id = 'rational', x = 991, y = 992 }
 actor.spatial = t.root_origin.new(graph,actor,{1,0,0,1,10,20})
-local r<const> = rational.new({owner=actor,initial={velocity={speed_x_num=3,speed_y_num=-3,speed_den=2}}})
+local r<const> = rational.new(actor,{speed_x_num=3,speed_y_num=-3,speed_den=2})
 r:on_attach()
 assert(r:move() and actor.spatial:resolve_world().wox == 11 and actor.spatial.woy == 19)
 assert(r.speed_accum_x == 1 and r.speed_accum_y == -1 and actor.x == 991 and actor.y == 992)
@@ -56,16 +56,16 @@ local singular<const> = t.new(graph,{}, {1,0,0,0,0,0})
 local rejected_owner<const> = {}
 rejected_owner.spatial = t.new(graph,rejected_owner,{1,0,0,1,5,0})
 h.reparent(rejected_owner.spatial,singular,false)
-local reject<const> = rational.new({owner=rejected_owner,initial={velocity={speed_x_num=1,speed_den=2,speed_accum_x=1}}})
+local reject<const> = rational.new(rejected_owner,{speed_x_num=1,speed_den=2,speed_accum_x=1})
 reject:on_attach()
 assert(not reject:move() and not reject.motion_committed and reject.speed_accum_x == 1)
-local f<const> = fixed.new({owner=actor,initial={fixed_velocity={velocity_x=128,velocity_y=384}}})
+local f<const> = fixed.new(actor,{velocity_x=128,velocity_y=384})
 f:on_attach()
 local bowner<const> = {}
 bowner.spatial=t.root_origin.new(graph,bowner,{1,0,0,1,0,0})
-local b<const> = ballistic.new({owner=bowner,initial={fixed_velocity={velocity_x=256,acceleration_x=256}}})
+local b<const> = ballistic.new(bowner,{velocity_x=256,acceleration_x=256})
 b:on_attach()
-local q<const> = fixed.new({owner=rejected_owner,initial={fixed_velocity={velocity_x=384,fraction_x=1}}})
+local q<const> = fixed.new(rejected_owner,{velocity_x=384,fraction_x=1})
 q:on_attach()
 local system<const> = {_fixed_point_component_view={components={f,b,q}},_ballistic_component_view={components={b}}}
 velocity_system.update_fixed_point(system)
@@ -76,7 +76,7 @@ velocity_system.update_fixed_point(system)
 assert(actor.spatial.wox == 14 and actor.spatial.woy == 20 and bowner.spatial.wox == 3 and b.velocity_x == 768)
 local mover<const> = {}
 mover.spatial=t.root_origin.new(graph,mover,{1,0,0,1,0,0})
-local m<const> = motor.new({owner=mover,initial={}},{
+local m<const> = motor.new(mover,{
  local_left=0,local_top=0,local_right=4,local_bottom=4,
  world_left=0,world_top=0,world_right=100,world_bottom=100,
  collision_mask=1,include_elevators=false})
@@ -105,8 +105,8 @@ assert(mover.spatial.wox == 95 and mover.spatial.woy == 92)
 local edge_actor<const> = {id='boundary'}
 edge_actor.spatial=t.new(graph,edge_actor,{1,0,0,1,5,5})
 edge_actor.events=event_emitter.events_of(edge_actor)
-local edge<const> = prohibit.new({owner=edge_actor,initial={boundary={left=0,top=0,right=100,bottom=100,
- local_left=0,local_top=0,local_right=10,local_bottom=10}}})
+local edge<const> = prohibit.new(edge_actor,{left=0,top=0,right=100,bottom=100,
+ local_left=0,local_top=0,local_right=10,local_bottom=10})
 edge:on_attach()
 local view<const> = {components={edge}}
 local capture<const> = {_component_view=view}
@@ -137,8 +137,8 @@ local failed_actor<const> = {id='failed_boundary'}
 failed_actor.spatial=t.new(graph,failed_actor,{1,0,0,1,5,0})
 h.reparent(failed_actor.spatial,singular,false)
 failed_actor.events=event_emitter.events_of(failed_actor)
-local failed_edge<const> = prohibit.new({owner=failed_actor,initial={boundary={
- left=0,top=0,right=100,bottom=100,local_left=0,local_top=0,local_right=10,local_bottom=10}}})
+local failed_edge<const> = prohibit.new(failed_actor,{
+ left=0,top=0,right=100,bottom=100,local_left=0,local_top=0,local_right=10,local_bottom=10})
 failed_edge:on_attach()
 local failed_view<const> = {components={failed_edge}}
 local failed_events = 0
@@ -156,8 +156,8 @@ assert(failed_events == 1 and failed_actor.spatial.ox == -1,
 local terminal_actor<const> = {id='terminal_boundary'}
 terminal_actor.spatial=t.root_origin.new(graph,terminal_actor,{1,0,0,1,5,5})
 terminal_actor.events=event_emitter.events_of(terminal_actor)
-local terminal_edge<const> = prohibit.new({owner=terminal_actor,initial={boundary={
- left=0,top=0,right=100,bottom=100,local_left=0,local_top=0,local_right=10,local_bottom=10}}})
+local terminal_edge<const> = prohibit.new(terminal_actor,{
+ left=0,top=0,right=100,bottom=100,local_left=0,local_top=0,local_right=10,local_bottom=10})
 terminal_edge:on_attach()
 local terminal_view<const> = {components={terminal_edge}}
 local terminal_events = 0

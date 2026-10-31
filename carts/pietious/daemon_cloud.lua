@@ -62,9 +62,9 @@ local register_daemon_cloud_definition<const> = function()
 		class = daemon_cloud,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 23 } },
 		components = { timeline_component.new, fsm_component.factory({ 'daemon_cloud' }) },
 		defaults = {
+			order = 23,
 			daemon_cloud_fx = true,
 		},
 	})

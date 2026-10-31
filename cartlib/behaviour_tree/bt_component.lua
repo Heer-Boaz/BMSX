@@ -13,8 +13,8 @@ function bt_component.install_program(program)
 	programs_by_id[program.id] = program
 end
 
-function bt_component.new(opts, tree_id)
-	local self<const> = setmetatable(base_component.new(opts), bt_component)
+function bt_component.new(owner, tree_id)
+	local self<const> = setmetatable(base_component.new(owner), bt_component)
 	local program<const> = programs_by_id[tree_id]
 	self.tree_id = tree_id
 	self:rebind_program(program)
@@ -22,8 +22,8 @@ function bt_component.new(opts, tree_id)
 end
 
 function bt_component.factory(tree_id)
-	return function(opts)
-		return bt_component.new(opts, tree_id)
+	return function(owner)
+		return bt_component.new(owner, tree_id)
 	end
 end
 

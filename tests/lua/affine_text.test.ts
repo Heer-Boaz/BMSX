@@ -42,8 +42,7 @@ local draw<const> = commands.new(text_words,512)
 
 const plain = `
 prefab.define({def_id='text.plain',class={},spatial={family='2d',authority='affine',
- local_transform={0,1,-1,0,10,20}},components={text_component.new},
- initial={text={font=font,text='aa\\nb',color=0xffffffff}}})
+ local_transform={0,1,-1,0,10,20}},components={text_component.factory({font=font,text='aa\\nb',color=0xffffffff})}})
 local actor<const> = world:spawn('text.plain',{})
 local text<const> = actor:get_component(text_component)
 local rows<const> = text.glyph_lines
@@ -102,8 +101,8 @@ return failed
 
 const rich = `
 prefab.define({def_id='text.rich',class={},base=text_object,spatial={family='2d',authority='affine',
- local_transform={0,1,-1,0,40,50}},initial={text={font=font,text='aa b\\nb',
- layout_rect={left=0,top=2,right=20,bottom=30},wrap_chars=3,color=0xffffffff,background_color=0xff000000}}})
+ local_transform={0,1,-1,0,40,50}},defaults={font=font,text='aa b\\nb',
+ layout_rect={left=0,top=2,right=20,bottom=30},wrap_chars=3,color=0xffffffff,background_color=0xff000000}})
 local actor<const> = world:spawn('text.rich',{})
 local text<const> = actor.text_component
 assert(actor.maximum_characters_per_line==3 and #actor.full_text_lines==3

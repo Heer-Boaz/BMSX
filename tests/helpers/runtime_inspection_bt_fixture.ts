@@ -32,7 +32,7 @@ function trees.configure(revision)
 	library.register('unused', { root = { type = 'sequence', children = {} } })
 end
 local function attach(owner, id, tree_id)
-	local instance<const> = component.new({ owner = owner }, tree_id)
+	local instance<const> = component.new(owner, tree_id)
 	instance.id = id
 	registry:register(instance)
 	registry:index(instance, component)

@@ -317,6 +317,8 @@ function world1_daemon:spawn_potato(x, y)
 		if existing == nil or not existing.active then
 			local speed_x<const> = self.direction == 'right' and 4 or -4
 			self.potatoes[index] = self.room.scene:spawn('enemy.marspeinenaardappel', {
+				speed_x_num = speed_x,
+				speed_y_num = 4,
 				space_id = self.space_id,
 				castle = self.castle,
 				room = self.room,
@@ -324,7 +326,7 @@ function world1_daemon:spawn_potato(x, y)
 				drop_health_chance_pct = 0,
 				drop_ammo_chance_pct = 0,
 				direction = self.direction,
-			}, { local_transform = { 1, 0, 0, 1, x, y } }, { movement = { speed_x_num = speed_x, speed_y_num = 4 } })
+			}, { local_transform = { 1, 0, 0, 1, x, y } })
 			return
 		end
 	end
@@ -356,12 +358,15 @@ function world1_daemon:spawn_attack_burst(burst_count)
 			speed_x = -speed_x
 		end
 		local projectile<const> = self.room.scene:spawn('enemy.daemon_spawn', {
+			speed_x_num = speed_x,
+			speed_y_num = math.random(-12, 11) * 4,
+			order = 251,
 			space_id = self.space_id,
 			castle = self.castle,
 			room = self.room,
 			player = self.player,
 			direction = self.direction,
-		}, { local_transform = { 1, 0, 0, 1, x, y } }, { velocity = { speed_x_num = speed_x, speed_y_num = math.random(-12, 11) * 4 }, base_sprite = { order = 251 } })
+		}, { local_transform = { 1, 0, 0, 1, x, y } })
 		projectiles[#projectiles + 1] = projectile
 	end
 
@@ -620,7 +625,10 @@ local register_world1_daemon_definition<const> = function()
 		class = world1_daemon_key,
 		base = world_item,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = 'world_key', order = 142 } },
+		defaults = {
+			imgid = 'world_key',
+			order = 142,
+		},
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_pickup_layer, mask = collision_pickup_mask }),
 			fsm_component.factory({ 'world_item' }),
@@ -631,7 +639,6 @@ local register_world1_daemon_definition<const> = function()
 		class = world1_daemon,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = 'world1_daemon_walk_1', order = 250 }, death = { order = 251 } },
 		components = {
 			new_collider,
 			behaviour_tree_component.factory(world1_daemon.tree_id),
@@ -640,6 +647,8 @@ local register_world1_daemon_definition<const> = function()
 			fsm_component.factory({ 'world1_daemon' }),
 		},
 		defaults = {
+			imgid = 'world1_daemon_walk_1',
+			order = 250,
 			damage = boss_world1_contact_damage,
 			max_health = boss_world1_max_health,
 			health = boss_world1_max_health,

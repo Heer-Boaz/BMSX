@@ -40,7 +40,6 @@ local gx_gpu<const> = require('cartlib/gx/gpu')
 local gx_vram<const> = require('cartlib/gx/vram')
 local gp0<const> = require('cartlib/gx/gp0')
 local component_class_chain<const> = require('cartlib/component/component_class').chain
-local component_inputs<const> = require('cartlib/world/component_inputs')
 local prefab<const> = require('cartlib/world/prefab')
 local registry<const> = require('cartlib/registry')
 local shallow_copy<const> = require('cartlib/util/shallow_copy')
@@ -729,7 +728,6 @@ function world_class:_flush_admissions()
 		self._pending_admission_first = index + 1
 		obj._construction_definition = nil
 		obj._construction_options = nil
-		obj._construction_initial = nil
 	end
 	if self._pending_admission_count == last then
 		self._pending_admission_count = 0
@@ -741,7 +739,7 @@ end
 
 -- Allocate the final object identity and all common metadata before entering
 -- any initializer, component factory or constructor.
-function world_class:_prepare_spawn(definition, options, local_transform, initial, scene, member_id)
+function world_class:_prepare_spawn(definition, options, local_transform, scene, member_id)
 	local obj<const> = setmetatable(shallow_copy(definition.defaults), definition.instance_metatable)
 	for key, value in pairs(options) do
 		obj[key] = value
@@ -763,7 +761,6 @@ function world_class:_prepare_spawn(definition, options, local_transform, initia
 	end
 	obj._construction_definition = definition
 	obj._construction_options = options
-	obj._construction_initial = initial
 	local index<const> = self._pending_admission_count + 1
 	self._pending_admission_count = index
 	self._pending_admissions[index] = obj
@@ -788,29 +785,23 @@ function world_class:_construct_spawn(obj)
 	local initialize<const> = definition.initialize
 	local component_factories<const> = definition.components
 	local ctor<const> = definition.ctor
-	local context
-	if initialize ~= nil or ctor ~= nil or #component_factories > 0 then
-		context = { owner = obj, initial = obj._construction_initial }
-	end
 	if initialize ~= nil then
-		initialize(obj, context)
+		initialize(obj, options)
 	end
 	if obj.marked_for_disposal then
 		return
 	end
-	if #component_factories > 0 then
-		for index = 1, #component_factories do
-			local component<const> = component_factories[index](context)
-			-- A factory may close the Scene. Its returned component still belongs
-			-- to this shell and is torn down through the common disposal path.
-			obj:add_component(component)
-			if obj.marked_for_disposal then
-				return
-			end
+	for index = 1, #component_factories do
+		local component<const> = component_factories[index](obj)
+		-- A factory may close the Scene. Its returned component still belongs
+		-- to this shell and is torn down through the common disposal path.
+		obj:add_component(component)
+		if obj.marked_for_disposal then
+			return
 		end
 	end
 	if ctor ~= nil then
-		ctor(obj, options, definition.definition_id, context)
+		ctor(obj, options)
 	end
 	obj._constructed = true
 	obj._construction_definition = nil
@@ -819,7 +810,7 @@ end
 -- Procedural requests resolve once; retained Scene rows call the concrete
 -- definition boundary without re-resolving an identifier.
 -- Options may be omitted; explicit inputs retain their caller-owned identity.
-function world_class:spawn(definition_id, options, spatial_input, initial, scene)
+function world_class:spawn(definition_id, options, spatial_input, scene)
 	if options == nil then
 		options = empty_spawn_options
 	end
@@ -840,11 +831,10 @@ function world_class:spawn(definition_id, options, spatial_input, initial, scene
 		end
 		parent = spatial_input.parent
 	end
-	return self:_spawn_definition(definition, options, local_transform, parent,
-		component_inputs.merge(definition.initial, initial), scene)
+	return self:_spawn_definition(definition, options, local_transform, parent, scene)
 end
 
-function world_class:_spawn_definition(definition, options, local_transform, parent, initial, scene, member_id)
+function world_class:_spawn_definition(definition, options, local_transform, parent, scene, member_id)
 	if scene ~= nil then
 		assert(not scene.closed, 'cannot spawn into an unloaded scene')
 		if member_id ~= nil and scene.members[member_id] ~= nil then
@@ -864,7 +854,7 @@ function world_class:_spawn_definition(definition, options, local_transform, par
 	if own_barrier then
 		self:_open_mutation_barrier()
 	end
-	local obj<const> = self:_prepare_spawn(definition, options, local_transform, initial, scene, member_id)
+	local obj<const> = self:_prepare_spawn(definition, options, local_transform, scene, member_id)
 	if parent ~= nil then
 		spatial_hierarchy.attach_local(obj.spatial, parent)
 	end
@@ -908,7 +898,7 @@ function world_class:spawn_members(scene, members, selected, overrides)
 				options[key] = value
 			end
 		end
-		self:_prepare_spawn(member.definition, options, member.local_transform, member.initial, scene, member.member_id)
+		self:_prepare_spawn(member.definition, options, member.local_transform, scene, member.member_id)
 	end
 	local last<const> = self._pending_admission_count
 	local pending<const> = self._pending_admissions

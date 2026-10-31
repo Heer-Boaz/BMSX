@@ -34,8 +34,8 @@ function fsm_component:machine_frame_work_changed(machine, active)
 	self:set_tick_clock_enabled(clock_source, count ~= 0)
 end
 
-function fsm_component.new(opts, machine_ids)
-	local self<const> = setmetatable(base_component.new(opts), fsm_component)
+function fsm_component.new(owner, machine_ids)
+	local self<const> = setmetatable(base_component.new(owner), fsm_component)
 	self._machines_by_id = {}
 	self._machines = {}
 	self._machines_by_clock = {
@@ -75,8 +75,8 @@ function fsm_component.new(opts, machine_ids)
 end
 
 function fsm_component.factory(machine_ids)
-	return function(opts)
-		return fsm_component.new(opts, machine_ids)
+	return function(owner)
+		return fsm_component.new(owner, machine_ids)
 	end
 end
 

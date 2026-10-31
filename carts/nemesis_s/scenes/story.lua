@@ -32,18 +32,26 @@ function story_scene.register()
 				member_id = 'primary_caption',
 				definition_id = caption.definition_id,
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 144 } },
-				initial = { text = { order = 1 } },
+				options = { order = 1 },
 			},
 			{
 				member_id = 'secondary_caption',
 				definition_id = caption.definition_id,
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 136 } },
-				initial = { text = { text = game_text[0].story_piet_text, order = 2 } },
+				options = {
+					text = game_text[0].story_piet_text,
+					order = 2,
+				},
 			},
 			{
 				member_id = 'curtain',
 				definition_id = curtain.definition_id,
-				initial = { curtain = { width = 256, height = 192, opening_bottom = 128, order = 3 } },
+				options = {
+					width = 256,
+					height = 192,
+					opening_bottom = 128,
+					order = 3,
+				},
 			},
 		},
 	})

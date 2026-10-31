@@ -49,8 +49,8 @@ local configure_rows<const> = function(self, previous_tile_count)
 	self._coordinate_domain_columns = gp0.signed_coordinate_extent // self._tile_size
 end
 
-function tile_layer_component.new(context, id_local)
-	local self<const>, input<const> = visual_2d_component.new(context, id_local or 'tile_layer')
+function tile_layer_component.new(owner, configuration, id_local)
+	local self<const>, input<const> = visual_2d_component.new(owner, configuration, id_local or 'tile_layer')
 	setmetatable(self, tile_layer_component)
 	self._sources = {}
 	-- Semantic image ids resolve once. Ordered row views retain the source

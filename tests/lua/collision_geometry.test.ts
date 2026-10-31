@@ -54,13 +54,11 @@ assert(sprite_shapes.image('reflected')==source and sprite_shapes.image('reflect
 prefab.define({def_id='collision.reflected',class={},spatial={family='2d',authority='affine'}})
 local actor<const> = world:spawn('collision.reflected',{})
 local undersized<const> = pool.new(geometry,64,1)
-local admitted<const> = pcall(collider.new,{owner=actor,
- initial={collider={geometry_pool=undersized,shape_asset=assets.reflected}}})
+local admitted<const> = pcall(collider.new,actor,{geometry_pool=undersized,shape_asset=assets.reflected})
 assert(not admitted and undersized._next_slot==0,
  'asset admission reserved only the original variant or consumed an undersized slot')
 local storage<const> = pool.new(geometry,160,1)
-local body<const> = collider.new({owner=actor,
- initial={collider={geometry_pool=storage,shape_asset=assets.reflected}}})
+local body<const> = collider.new(actor,{geometry_pool=storage,shape_asset=assets.reflected})
 actor:add_component(body)
 assert(body:resolve_shape()==source.original,'translation-only binding copied its original descriptor')
 body:set_shape_flip(true,true)
@@ -96,8 +94,7 @@ bss cache: word[16]
 local storage<const> = pool.new(cache,64,1)
 prefab.define({def_id='collision.moving_area',class={},
  spatial={family='2d',authority='root_origin',local_transform={1,0,0,1,0,0}},
- initial={collider={geometry_pool=storage,local_area={left=0,top=0,right=8,bottom=2}}},
- components={collider.new}})
+ components={collider.factory({geometry_pool=storage,local_area={left=0,top=0,right=8,bottom=2}})}})
 local actor<const> = world:spawn('collision.moving_area',{})
 local body<const> = actor:get_component(collider)
 body:resolve_shape()
@@ -180,9 +177,8 @@ bss caches: word[128]
 local storage<const> = pool.new(caches,256,2)
 prefab.define({def_id='collision.actor',class={},
  spatial={family='2d',authority='affine',local_transform={1,0,0,1,10,20}},
- initial={collider={geometry_pool=storage,sprite_id_local='sprite'}},
  components={animation.factory({frames={'small','wide'},frame_duration_ms=20,loop=true}),
- collider.new_for_sprite}})
+ collider.factory_for_sprite({geometry_pool=storage,sprite_id_local='sprite'})}})
 local actor<const> = world:spawn('collision.actor',{})
 local body<const> = actor:get_component(collider)
 local visual<const> = actor:get_component(sprite)
@@ -235,11 +231,10 @@ local storage<const> = pool.new(canceled_storage,64,1)
 local returned_component
 prefab.define({def_id='collision.canceled',class={},
  spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
- initial={collider={geometry_pool=storage,local_area={left=0,top=0,right=2,bottom=1}}},
- components={function(context)
-  local part<const> = collider.new(context)
+ components={function(owner)
+  local part<const> = collider.new(owner,{geometry_pool=storage,local_area={left=0,top=0,right=2,bottom=1}})
   returned_component=part
-  context.owner.scene:dispose()
+  owner.scene:dispose()
   return part
  end}})
 scenes.register('collision.canceled.scene',{objects={{member_id='actor',definition_id='collision.canceled'}}})
@@ -264,9 +259,8 @@ bss strip_geometry: word[128]
 local storage<const> = pool.new(strip_geometry,256,2)
 prefab.define({def_id='collision.strip',class={},
  spatial={family='2d',authority='affine',local_transform={1,0,0,1,10,20}},
- initial={collider={geometry_pool=storage}},
- components={strip_component.factory({imgid='small',first_tile=0,step_x=4,step_y=0,maximum_tiles=3}),
- strip_collider.factory({})}})
+  components={strip_component.factory({imgid='small',first_tile=0,step_x=4,step_y=0,maximum_tiles=3}),
+ strip_collider.factory({geometry_pool=storage,})}})
 local actor<const> = world:spawn('collision.strip',{})
 local strip<const> = actor:get_component(strip_component)
 local body<const> = actor:get_component(collider)
@@ -290,7 +284,7 @@ assert(body:resolve_shape()==address and words[1]==3,'source re-expansion lost i
 local too_many<const> = pcall(strip.set_range,strip,7,10)
 assert(not too_many and strip.first_tile==0 and strip.last_tile==2,
  'range overflow published a source outside its admitted capacity')
-local duplicate<const> = pcall(strip_collider.factory({}),{owner=actor,initial={}})
+local duplicate<const> = pcall(strip_collider.factory({geometry_pool=storage}),actor)
 assert(not duplicate and strip._collider==body and storage._next_slot==1,
  'second binding replaced source ownership or acquired geometry before composition admission')
 kernel=function(count)
@@ -325,9 +319,8 @@ bss strip_geometry: word[16]
 local storage<const> = pool.new(strip_geometry,64,1)
 prefab.define({def_id='collision.contiguous_strip',class={},
  spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
- initial={collider={geometry_pool=storage}},
- components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
- strip_collider.factory({})}})
+  components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
+ strip_collider.factory({geometry_pool=storage,})}})
 local actor<const> = world:spawn('collision.contiguous_strip',{})
 local strip<const> = actor:get_component(strip_component)
 local body<const> = actor:get_component(collider)
@@ -363,17 +356,16 @@ local strip_component<const> = require('cartlib/component/tile_strip_component')
 local strip_collider<const> = require('cartlib/collision/tile_strip_collider_2d_component')
 bss strip_geometry: word[16]
 local storage<const> = pool.new(strip_geometry,64,1)
-local construct_collider<const> = strip_collider.factory({})
+local construct_collider<const> = strip_collider.factory({geometry_pool=storage,})
 local returned_collider
 local returned_strip
 prefab.define({def_id='collision.canceled_strip',class={},
  spatial={family='2d',authority='affine',local_transform={1,0,0,1,0,0}},
- initial={collider={geometry_pool=storage}},
- components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
- function(context)
-  returned_strip=context.owner:get_component(strip_component)
-  returned_collider=construct_collider(context)
-  context.owner.scene:dispose()
+  components={strip_component.factory({imgid='small',first_tile=0,step_x=2,step_y=0,maximum_tiles=3}),
+ function(owner)
+  returned_strip=owner:get_component(strip_component)
+  returned_collider=construct_collider(owner)
+  owner.scene:dispose()
   return returned_collider
  end}})
 scenes.register('collision.canceled_strip.scene',{objects={{member_id='actor',definition_id='collision.canceled_strip'}}})

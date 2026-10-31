@@ -45,11 +45,11 @@ end
 
 function tile_strip_collider_2d_component.factory(definition)
 	local defaults<const> = shallow_copy(definition)
-	return function(context, id_local)
-		local self<const>, input<const> = collider_2d_component.construct(context, id_local, defaults)
+	return function(owner, configuration, id_local)
+		local self<const>, input<const> = collider_2d_component.construct(owner, configuration, id_local, defaults)
 		setmetatable(self, tile_strip_collider_2d_component)
 		local source_id<const> = input.tile_strip_id_local or defaults.tile_strip_id_local or 'tile_strip'
-		local strip<const> = context.owner:get_component(tile_strip_component, source_id)
+		local strip<const> = owner:get_component(tile_strip_component, source_id)
 		if strip._collider ~= nil then error('tile-strip geometry already belongs to another collider binding') end
 		self.tile_strip = strip
 		local area<const> = input.local_area or defaults.local_area

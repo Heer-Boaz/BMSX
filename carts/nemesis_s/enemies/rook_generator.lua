@@ -142,7 +142,6 @@ local register_definition<const> = function()
 		class = rook_generator,
 		base = ground_foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_rook_generator_closed, order = rook_generator_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_rook_generator_body_addr),
 			stage_scroll_follower_component.new,
@@ -150,6 +149,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_rook_generator_fsm }),
 		},
 		defaults = {
+			imgid = assets_rook_generator_closed,
+			order = rook_generator_draw_z,
 			max_health = rook_generator_health,
 			small_fry = false,
 			stage_scroll_width = rook_generator_width,

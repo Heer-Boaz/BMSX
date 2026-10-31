@@ -28,8 +28,9 @@ local new_collider<const> = collider_2d_component.factory({
 })
 
 function spawn_projectile:ctor()
+	local velocity<const> = self:add_component(velocity_component.new(self, self))
 	self.sprite_component:set_imgid(projectile_images[math.random(1, #projectile_images)])
-	self.sprite_component.flip_h = self:get_component(velocity_component).speed_x_num < 0
+	self.sprite_component.flip_h = velocity.speed_x_num < 0
 end
 
 function spawn_projectile.choose_drop_type(_self)
@@ -42,9 +43,10 @@ function spawn_projectile.register()
 		class = spawn_projectile,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250 }, velocity = { speed_den = 10 } },
-		components = { new_collider, velocity_component.new, enemy_base.projectile_boundary },
+		components = { new_collider, enemy_base.projectile_boundary },
 		defaults = {
+			speed_den = 10,
+			order = 250,
 			damage = 1,
 			max_health = 1,
 			health = 1,

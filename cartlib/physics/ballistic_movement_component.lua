@@ -10,23 +10,28 @@ ballistic_movement_component.__index = ballistic_movement_component
 ballistic_movement_component._tick_clocks = clock.gameplay
 setmetatable(ballistic_movement_component, { __index = fixed_point_velocity_component })
 
-function ballistic_movement_component.new(context, id_local)
+function ballistic_movement_component.new(owner, configuration, id_local)
 	local self<const> = setmetatable(
-		fixed_point_velocity_component.new(context, id_local),
+		fixed_point_velocity_component.new(owner, configuration, id_local),
 		ballistic_movement_component
 	)
 	self.acceleration_x = 0
 	self.acceleration_y = 0
-	local initial<const> = context.initial[self.id_local]
-	if initial ~= nil then
-		if initial.acceleration_x ~= nil then self.acceleration_x = initial.acceleration_x end
-		if initial.acceleration_y ~= nil then self.acceleration_y = initial.acceleration_y end
+	if configuration ~= nil then
+		if configuration.acceleration_x ~= nil then self.acceleration_x = configuration.acceleration_x end
+		if configuration.acceleration_y ~= nil then self.acceleration_y = configuration.acceleration_y end
 	end
 	return self
 end
 
 -- Converts authored acceleration once. Velocity and acceleration then remain
 -- signed Q8.8 displacement words for the cart's fixed gameplay cadence.
+function ballistic_movement_component.factory(configuration)
+	return function(owner)
+		return ballistic_movement_component.new(owner, configuration)
+	end
+end
+
 function ballistic_movement_component:set_acceleration_pixels_per_second_squared(
 	acceleration_x,
 	acceleration_y

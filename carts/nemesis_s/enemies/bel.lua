@@ -48,9 +48,12 @@ function bel:ring()
 			math.cos(angle + math.pi * 0.5) * (math.random() + 0.5) * noot_velocity_scale_px_per_second)
 		local velocity_y<const> = velocity.pixels_per_second_to_velocity_q8(
 			math.sin(angle - math.pi * 0.5) * noot_velocity_scale_px_per_second)
-		self.scene:spawn(ids_noot_def, { stage = self.stage },
-			{ local_transform = { 1, 0, 0, 1, spawn_x, spawn_y } },
-			{ fixed_velocity = { velocity_x = velocity_x, velocity_y = velocity_y } })
+		self.scene:spawn(ids_noot_def, {
+			velocity_x = velocity_x,
+			velocity_y = velocity_y,
+			stage = self.stage,
+		},
+			{ local_transform = { 1, 0, 0, 1, spawn_x, spawn_y } })
 	end
 	self.events:emit('enemy.bel.ring')
 end
@@ -192,7 +195,6 @@ local register_definition<const> = function()
 		class = bel,
 		base = enemy,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_bel_middle, order = bel_draw_z } },
 		components = {
 			enemy.collider_factory(assets.collision_shape_bel_middle_body_addr),
 			stage_scroll_follower_component.new,
@@ -200,6 +202,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_bel_fsm }),
 		},
 		defaults = {
+			imgid = assets_bel_middle,
+			order = bel_draw_z,
 			max_health = bel_health,
 			small_fry = false,
 		},

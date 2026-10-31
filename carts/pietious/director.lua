@@ -200,23 +200,23 @@ end
 
 function director:begin_curtain()
 	self.effects.curtain.visual.width = 0
-	self.effects.curtain.visual.visible = true
+	self.effects.curtain.visible = true
 end
 
 function director:end_curtain()
-	self.effects.curtain.visual.visible = false
+	self.effects.curtain.visible = false
 end
 
 function director:begin_victory_dance()
 	self:set_active_space('main')
-	self.effects.victory_caption.text_component.visible = true
-	self.effects.victory_cover.visual.visible = true
+	self.effects.victory_caption.visible = true
+	self.effects.victory_cover.visible = true
 	self.events:emit('victory_dance')
 end
 
 function director:end_victory_dance()
-	self.effects.victory_caption.text_component.visible = false
-	self.effects.victory_cover.visual.visible = false
+	self.effects.victory_caption.visible = false
+	self.effects.victory_cover.visible = false
 end
 
 function director:enter_intro()
@@ -309,7 +309,7 @@ local define_director_fsm<const> = function()
 		-- T9F68 selects VDP backdrop 14 while countdown bit 1 is set,
 		-- retaining each color for two admitted bottom halves. The authored
 		-- backdrop belongs to this sequence, independently of the room actors.
-		self.effects.seal_backdrop.visual.visible = frame_value < flow_seal_flash_frames and (frame_value & 3) < 2
+		self.effects.seal_backdrop.visible = frame_value < flow_seal_flash_frames and (frame_value & 3) < 2
 		self.castle:apply_seal_timeline_frame(frame_value)
 	end
 	local apply_curtain_frame<const> = function(self, frame_value)
@@ -851,7 +851,7 @@ local define_director_fsm<const> = function()
 					self.events:emit('seal_dissolution')
 				end,
 				exiting_state = function(self)
-					self.effects.seal_backdrop.visual.visible = false
+					self.effects.seal_backdrop.visible = false
 					world:set_gameplay_clock_running(true)
 				end,
 			},

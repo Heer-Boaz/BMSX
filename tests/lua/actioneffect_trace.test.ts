@@ -113,7 +113,7 @@ actioneffect_component.set_definition('outer', {
 actioneffect_component.set_definition('nested', {})
 actioneffect_component.set_definition('plain', {})
 
-local component<const> = actioneffect_component.new({ owner = owner })
+local component<const> = actioneffect_component.new(owner)
 owner.actioneffects = component
 local recorder<const> = actioneffect_recorder.new(component, 16)
 local effect_ids<const> = {
@@ -195,7 +195,7 @@ function owner.state_machines:bind_state_path(path)
 end
 
 actioneffect_component.set_definition('periodic', { period_ms = 25 })
-local component<const> = actioneffect_component.new({ owner = owner })
+local component<const> = actioneffect_component.new(owner)
 owner.actioneffects = component
 component:grant_effect('periodic')
 component:on_activate()

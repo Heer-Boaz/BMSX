@@ -4,14 +4,17 @@ local base_component<const> = {}
 base_component.__index = base_component
 base_component._tick_clocks = 0
 
-function base_component.new(opts)
+local empty_configuration<const> = {}
+
+function base_component.new(owner, configuration)
+	if configuration == nil then configuration = empty_configuration end
 	local self<const> = setmetatable({}, base_component)
-	self.owner = opts.owner
-	self.id_local = opts.id_local
-	self.enabled = opts.enabled == nil or opts.enabled
+	self.owner = owner
+	self.id_local = configuration.id_local
+	self.enabled = configuration.enabled == nil or configuration.enabled
 	self._attached = false
 	self._bound = false
-	return self
+	return self, configuration
 end
 
 function base_component:set_enabled(enabled)

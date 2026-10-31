@@ -23,7 +23,10 @@ function hangar_scene.register()
 				member_id = 'foreground',
 				definition_id = presentation.sprite_definition_id,
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 128 } },
-				initial = { base_sprite = { imgid = 'title_hangar_bottom_hider', order = 4 } },
+				options = {
+					imgid = 'title_hangar_bottom_hider',
+					order = 4,
+				},
 			},
 		},
 	})

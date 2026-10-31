@@ -13,7 +13,7 @@ local target<const> = { id = 'entry_order', active = true }
 function target:_retain_tag() end
 function target:_release_tag() end
 target.events = events.events_of(target)
-local transport<const> = timeline.new({ owner = target, clock_mode = 'manual' })
+local transport<const> = timeline.new(target,{clock_mode='manual'})
 transport:on_attach()
 local order<const> = {}
 local record<const> = function(value) order[#order + 1] = value end
@@ -66,7 +66,7 @@ library.register('entry_order', {
 		},
 	},
 })
-local machine<const> = fsm.factory({ 'entry_order' })({ owner = target })
+local machine<const> = fsm.factory({ 'entry_order' })(target)
 machine:on_attach()
 machine:_bind()
 machine:start()

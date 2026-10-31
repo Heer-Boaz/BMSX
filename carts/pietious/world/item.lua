@@ -53,12 +53,12 @@ local register_world_item_definition<const> = function()
 		class = world_item,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 130 } },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_pickup_layer, mask = collision_pickup_mask }),
 			fsm_component.factory({ 'world_item' }),
 		},
 		defaults = {
+			order = 130,
 			item_type = nil,
 		},
 	})

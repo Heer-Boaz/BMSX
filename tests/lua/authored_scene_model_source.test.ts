@@ -28,11 +28,10 @@ test('model construction retains exact occurrence, local inputs and owner x atta
 	const f = fixture(t, `
 prefab.define({def_id='parent',class={},spatial={family='3d',authority='affine'}})
 prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},defaults={visible=false},
- initial={body={model_id='prefab',scene_index=2,enabled=false,visible=false}},
- components={models.factory({id_local='body',model_id='factory',scene_index=3,
+ components={models.factory({id_local='body',model_id='scene',scene_index=0,enabled=0,visible='',
  attachment_affine={1,1,0,0,1,0,0,0,1,2,3,4},presentation_affine={-1,0,0,2,1,0,0,0,0.5,4,5,6}})}})`, `
  {member_id='child',definition_id='model',spatial={parent_id='parent',local_transform={1,0,0,0,1,0,0,0,1,4,5,6}},
-  options={visible=0,active=false},initial={body={model_id='scene',scene_index=0,enabled=0,visible=''}}},
+  options={visible=0,active=false,model_id='not-component-config'}},
  {member_id='parent',definition_id='parent',spatial={local_transform={2,0,0,1,3,0,0,0,-2,10,20,30}}}`);
 	const read = f.context.visualScene!, model = read.models[0];
 	assert.equal(read.models.length, 1); assert.equal(read.sprites.length, 0);
@@ -43,21 +42,21 @@ prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
 	assert.equal(f.context.selection, undefined); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
-test('model factory or defaults differ from nil input merge and direct new needs no factory declaration', t => {
+test('model factories own static configuration rather than reading gameplay options', t => {
 	const f = fixture(t, `
 prefab.define({def_id='factory',class={},spatial={family='3d',authority='affine'},
- initial={body={model_id='prefab',scene_index=2}},components={models.factory({id_local='body',model_id='factory',scene_index=3,
+ components={models.factory({id_local='body',model_id='factory',scene_index=3,
  attachment_affine={2,0,0,0,3,0,0,0,4,5,6,7}})}})
 prefab.define({def_id='direct',class={},spatial={family='3d',authority='affine'},
- initial={model={model_id='direct'}},components={models.new}})
+ components={models.factory({model_id='direct'})}})
 prefab.define({def_id='missing_factory_source',class={},spatial={family='3d',authority='affine'},
  components={models.factory({})}})`, `
- {member_id='nil',definition_id='factory',initial={body={model_id=nil,scene_index=nil,attachment_affine=false}}},
- {member_id='false',definition_id='factory',initial={body={model_id=false,scene_index=false}}},
+ {member_id='nil',definition_id='factory',options={model_id=nil,scene_index=nil,attachment_affine=false}},
+ {member_id='false',definition_id='factory',options={model_id=false,scene_index=false}},
  {member_id='direct',definition_id='direct'},
- {member_id='cannot_rescue_factory',definition_id='missing_factory_source',initial={model={model_id='override'}}}`);
+ {member_id='cannot_rescue_factory',definition_id='missing_factory_source',options={model_id='override'}}`);
 	const models = f.context.visualScene!.models;
-	assert.deepEqual(models.map(model => [model.model, model.sceneIndex]), [['prefab', 2], ['factory', 3], ['direct', undefined]]);
+	assert.deepEqual(models.map(model => [model.model, model.sceneIndex]), [['factory', 3], ['factory', 3], ['direct', undefined]]);
 	assert.deepEqual(models[0].affine, { xx: 2, xy: 0, xz: 0, yx: 0, yy: 3, yz: 0,
 		zx: 0, zy: 0, zz: 4, ox: 5, oy: 6, oz: 7 });
 });
@@ -68,7 +67,7 @@ local bridge=require('model_bridge')
 local admitted=bridge.factory({id_local='body',model_id='alias'})
 local function factory() return models.factory({model_id='guessed'}) end
 prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
- initial={model={model_id='direct'}},components={admitted,bridge.new,factory()}})`, `{member_id='source',definition_id='model'}`, [
+ components={admitted,bridge.factory({model_id='direct'}),factory()}})`, `{member_id='source',definition_id='model'}`, [
 		['model_bridge.lua', "return require('cartlib/component/static_model_component')"],
 	]);
 	assert.deepEqual(f.context.visualScene!.models.map(model => model.model), ['alias', 'direct']);
@@ -77,43 +76,43 @@ prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
 test('production model component exports retain their authored constructor correspondence without executing resource resolution', t => {
 	const f = fixture(t, `
 prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
- initial={model={model_id='direct'}},components={models.new,models.factory({id_local='body',model_id='factory',scene_index=0})}})`,
+ components={models.new,models.factory({id_local='body',model_id='factory',scene_index=0})}})`,
 		`{member_id='source',definition_id='model'}`, [
 			['cartlib/component/static_model_component.lua', readFileSync('cartlib/component/static_model_component.lua', 'utf8')],
 		]);
-	assert.deepEqual(f.context.visualScene!.models.map(model => [model.model, model.sceneIndex]), [['direct', undefined], ['factory', 0]]);
+	assert.deepEqual(f.context.visualScene!.models.map(model => [model.model, model.sceneIndex]), [['factory', 0]]);
 });
 
-test('model computed inputs, unknown affine/defaults and competing definitions never gain guessed geometry', t => {
+test('model profiles ignore unrelated gameplay options while dynamic owner visibility and unresolved factories remain unavailable', t => {
 	const f = fixture(t, `
 prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},components={models.factory({model_id='factory'})}})
 prefab.define({def_id='unknown_id',class={},spatial={family='3d',authority='affine'},components={models.factory({model_id='factory',id_local=choose()})}})
 prefab.define({def_id='unknown_default',class={},spatial={family='3d',authority='affine'},components={models.factory({model_id=choose()})}})
 prefab.define({def_id='duplicate',class={},spatial={family='3d',authority='affine'},components={models.new}})
 prefab.define({def_id='duplicate',class={},spatial={family='3d',authority='affine'},components={models.new}})`, `
- {member_id='dynamic_model',definition_id='model',initial={model={model_id=choose()}}},
- {member_id='dynamic_scene',definition_id='model',initial={model={scene_index=choose()}}},
- {member_id='dynamic_inputs',definition_id='model',initial=choose()},
- {member_id='dynamic_attachment',definition_id='model',initial={model={attachment_affine=choose()}}},
- {member_id='dynamic_presentation',definition_id='model',initial={model={presentation_affine=choose()}}},
- {member_id='wrong_family',definition_id='model',initial={model={attachment_affine={1,0,0,1,0,0}}}},
- {member_id='unknown_keys',definition_id='model',initial={model={[choose()]=false}}},
+ {member_id='dynamic_model',definition_id='model',options={model_id=choose()}},
+ {member_id='dynamic_scene',definition_id='model',options={scene_index=choose()}},
+ {member_id='dynamic_inputs',definition_id='model',options=choose()},
+ {member_id='dynamic_attachment',definition_id='model',options={attachment_affine=choose()}},
+ {member_id='dynamic_presentation',definition_id='model',options={presentation_affine=choose()}},
+ {member_id='wrong_family',definition_id='model',options={attachment_affine={1,0,0,1,0,0}}},
+ {member_id='unknown_keys',definition_id='model',options={[choose()]=false}},
  {member_id='dynamic_options',definition_id='model',options=choose()},
  {member_id='unknown_id',definition_id='unknown_id'},
- {member_id='unknown_default',definition_id='unknown_default',initial={model={model_id='override'}}},
- {member_id='duplicate',definition_id='duplicate',initial={model={model_id='duplicate'}}},
+ {member_id='unknown_default',definition_id='unknown_default',options={model_id='override'}},
+ {member_id='duplicate',definition_id='duplicate',options={model_id='duplicate'}},
  {member_id='proved',definition_id='model'}`);
 	const models = f.context.visualScene!.models;
-	assert.equal(models.length, 1); assert.ok(models[0].entry === f.context.subject!.objects[11]);
+	assert.deepEqual(models.map(model => f.context.subject!.objects.indexOf(model.entry)), [0, 1, 3, 4, 5, 8, 11]);
 	assert.equal(models[0].sceneIndex, undefined);
 });
 
 test('model owner options, defaults and class visibility share component nil-only visibility semantics', t => {
 	const f = fixture(t, `
 prefab.define({def_id='hidden',class={visible=false},spatial={family='3d',authority='affine'},
- initial={model={model_id='hidden'}},components={models.new}})
+ components={models.factory({model_id='hidden'})}})
 prefab.define({def_id='visible',class={visible=0},base={visible=false},spatial={family='3d',authority='affine'},
- initial={model={model_id='visible'}},components={models.new}})
+ components={models.factory({model_id='visible'})}})
 prefab.define({def_id='defaults',class={visible=false},defaults={visible=true},spatial={family='3d',authority='affine'},
  components={models.factory({model_id='defaults',enabled=false,visible=false})}})
 prefab.define({def_id='unknown',class={},base=unknown,spatial={family='3d',authority='affine'},
@@ -123,13 +122,13 @@ prefab.define({def_id='unknown',class={},base=unknown,spatial={family='3d',autho
  {member_id='options_show',definition_id='hidden',options={visible=''}},
  {member_id='options_hide',definition_id='visible',options={visible=false}},
  {member_id='disabled',definition_id='defaults'},
- {member_id='false_enabled',definition_id='visible',initial={model={enabled=false}}},
- {member_id='false_visible',definition_id='visible',initial={model={visible=false}}},
- {member_id='truthy',definition_id='defaults',initial={model={enabled=0,visible=''}}},
+ {member_id='false_enabled',definition_id='visible',options={enabled=false}},
+ {member_id='false_visible',definition_id='visible',options={visible=false}},
+ {member_id='truthy',definition_id='defaults',options={enabled=0,visible=''}},
  {member_id='unknown_inheritance',definition_id='unknown'},
  {member_id='known_override',definition_id='unknown',options={visible=true}}`);
 	const scene = f.context.subject!;
-	assert.deepEqual(f.context.visualScene!.models.map(model => scene.objects.indexOf(model.entry)), [1, 2, 7, 9]);
+	assert.deepEqual(f.context.visualScene!.models.map(model => scene.objects.indexOf(model.entry)), [1, 2, 5, 9]);
 });
 
 test('replaced model constructor members and prefab registration cannot grant builtin source correspondence', t => {
@@ -141,8 +140,8 @@ test('replaced model constructor members and prefab registration cannot grant bu
 	]) {
 		const f = fixture(t, `${replacement}
 prefab.define({def_id='model',class={},spatial={family='3d',authority='affine'},
- initial={model={model_id='direct'}},components={models.new,models.factory({model_id='factory'})}})`, `{member_id='source',definition_id='model'}`);
-		assert.deepEqual(f.context.visualScene!.models.map(model => model.model), replacement.startsWith('models.factory=') ? ['direct'] : []);
+ components={models.new,models.factory({model_id='factory'})}})`, `{member_id='source',definition_id='model'}`);
+		assert.deepEqual(f.context.visualScene!.models.map(model => model.model), []);
 	}
 });
 

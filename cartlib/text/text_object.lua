@@ -22,11 +22,21 @@ local text_object_component<const> = {}
 text_object_component.__index = text_object_component
 setmetatable(text_object_component, { __index = text_component })
 
-function text_object_component.new(context)
-	local self<const>, input<const> = visual_2d_component.new(context, 'text')
+function text_object_component.new(owner)
+	local self<const> = visual_2d_component.new(owner, nil, 'text')
 	setmetatable(self, text_object_component)
-	text_component._initialize(self, input)
-	return self, input
+	text_component._initialize(self, owner)
+	if owner.order ~= nil then self:set_order(owner.order or 0) end
+	if owner.presentation_order ~= nil then self:set_presentation_order(owner.presentation_order or 0) end
+	local attachment<const> = owner.attachment_affine
+	if attachment then
+		self:set_attachment_affine(attachment[1], attachment[2], attachment[3], attachment[4], attachment[5], attachment[6])
+	end
+	local presentation<const> = owner.presentation_affine
+	if presentation then
+		self:set_presentation_affine(presentation[1], presentation[2], presentation[3], presentation[4], presentation[5], presentation[6])
+	end
+	return self, owner
 end
 
 function text_object_component:draw_visual(draw)
@@ -355,10 +365,10 @@ fsm_library.register(text_object_fsm_id, {
 	},
 })
 
-function text_object.initialize(self, context)
-	self:add_component(timeline_component.new(context))
-	self:add_component(fsm_component.new(context, text_object_machine_ids))
-	local component<const>, input<const> = text_object_component.new(context)
+function text_object.initialize(self)
+	self:add_component(timeline_component.new(self))
+	self:add_component(fsm_component.new(self, text_object_machine_ids))
+	local component<const>, input<const> = text_object_component.new(self)
 	self.text_component = component
 	self.is_text_object = true
 	self.text = input.text

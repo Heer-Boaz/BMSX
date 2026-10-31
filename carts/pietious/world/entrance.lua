@@ -123,9 +123,10 @@ local register_world_entrance_definition<const> = function()
 		class = world_entrance,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 22, imgid = world_entrance_sprite_ids.closed } },
 		components = { timeline_component.new, fsm_component.factory({ 'world_entrance' }) },
 		defaults = {
+			order = 22,
+			imgid = world_entrance_sprite_ids.closed,
 			target = nil,
 			entrance_state = 'closed',
 		},

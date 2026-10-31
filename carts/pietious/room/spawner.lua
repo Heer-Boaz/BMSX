@@ -145,12 +145,13 @@ local spawn_destroyed_rock_inventory_items<const> = function(room)
 			local already_owned<const> = player.status.inventory_items[item_type]
 			if not picked and not already_owned then
 				room.scene:spawn('world_item', {
+					imgid = world_item_sprite[item_type],
 					space_id = 'main',
 					room = room,
 					player = player,
 					item_id = item_id,
 					item_type = item_type,
-				}, { local_transform = { 1, 0, 0, 1, def.spatial.local_transform[5], def.spatial.local_transform[6] + world_item_drop_offset_y[item_type] } }, { base_sprite = { imgid = world_item_sprite[item_type] } })
+				}, { local_transform = { 1, 0, 0, 1, def.spatial.local_transform[5], def.spatial.local_transform[6] + world_item_drop_offset_y[item_type] } })
 			end
 		end
 	end
@@ -160,13 +161,14 @@ local spawn_rock_drops<const> = function(room)
 	for id, drop in pairs(room.castle.session.region_drops) do
 		if drop.scene_id == room.scene_id then
 			room.scene:spawn('world_item', {
+				imgid = world_item_sprite[drop.item_type],
 				space_id = 'main',
 				room = room,
 				player = room.player,
 				item_id = id,
 				item_type = drop.item_type,
 				rock_drop_id = id,
-			}, { local_transform = { 1, 0, 0, 1, drop.x, drop.y } }, { base_sprite = { imgid = world_item_sprite[drop.item_type] } })
+			}, { local_transform = { 1, 0, 0, 1, drop.x, drop.y } })
 		end
 	end
 end

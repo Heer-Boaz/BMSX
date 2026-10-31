@@ -17,8 +17,8 @@ const setup = WORLD_CPU_SETUP + `
 local timeline_component<const> = require('cartlib/timeline/timeline_component')
 local program<const> = require('cartlib/timeline/program')
 local visual2<const> = require('cartlib/component/visual_2d_component')
-local manual_factory<const> = function(context)
-	return timeline_component.new({owner=context.owner,clock_mode='manual'})
+local manual_factory<const> = function(owner)
+	return timeline_component.new(owner,{clock_mode='manual'})
 end
 prefab.define({def_id='timeline.pose2',class={},spatial={family='2d',authority='affine',
 	local_transform={1,0,0,1,3,7}},components={manual_factory}})
@@ -89,7 +89,7 @@ function actor:ctor()
 end
 prefab.define({def_id='timeline.constructor_alias',class=actor,
  spatial={family='2d',authority='affine',local_transform={1,0,0,1,40,50}},
- components={manual_factory,function(context) return visual2.new(context,'sample') end,
+ components={manual_factory,function(owner) return visual2.new(owner,nil,'sample') end,
  fsm.factory({'timeline.component_binding'})}})
 local owner<const> = world:spawn('timeline.constructor_alias',{})
 local visual<const> = owner.sample
@@ -238,7 +238,7 @@ assert(not rebound, 'explicit rebind admitted a newly protected receiver')
 	test(`visual groups and scalar property channels invoke their owning invalidation writers (O${optLevel})`, () => {
 		const { cpu } = createCartlibProgramHarness(setup + `
 local owner<const> = world:spawn('timeline.pose2',{})
-local visual<const> = visual2.new({owner=owner,initial={}},'sprite')
+local visual<const> = visual2.new(owner,nil,'sprite')
 visual:set_draw_function(function() end)
 owner:add_component(visual)
 local revision<const> = world._visual_revision

@@ -64,7 +64,10 @@ local register_room_shrine_definition<const> = function()
 		class = room_shrine,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = 'shrine', order = 22 } },
+		defaults = {
+			imgid = 'shrine',
+			order = 22,
+		},
 	})
 end
 

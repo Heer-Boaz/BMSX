@@ -124,13 +124,14 @@ local register_definition<const> = function()
 		class = enemy_bullet,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_enemy_bullet, order = enemy_bullet_draw_z } },
 		components = {
 			new_enemy_bullet_collider,
-			fixed_point_velocity_component.new,
+			function(owner) return fixed_point_velocity_component.new(owner, owner) end,
 			fsm_component.factory({ ids_enemy_bullet_fsm }),
 		},
 		defaults = {
+			imgid = assets_enemy_bullet,
+			order = enemy_bullet_draw_z,
 			force_field_hit = player_force_field_hit_standard,
 		},
 	})

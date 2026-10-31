@@ -102,7 +102,6 @@ local register_definition<const> = function()
 		class = rook,
 		base = foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_rook_1, order = rook_draw_z } },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,
@@ -113,6 +112,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_rook_fsm }),
 		},
 		defaults = {
+			imgid = assets_rook_1,
+			order = rook_draw_z,
 			max_health = rook_health,
 			small_fry = true,
 		},

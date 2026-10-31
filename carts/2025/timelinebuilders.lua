@@ -198,7 +198,7 @@ function builders.apply_combat_focus_frames(target, frame_index, params)
 
 		target:set_presentation_affine(s, 0, 0, s, x - target.attachment_ox, y - target.attachment_oy)
 
-		target.visible = true
+		target.owner.visible = true
 
 		target.color = p3_white_color
 		return
@@ -219,7 +219,7 @@ function builders.apply_combat_focus_frames(target, frame_index, params)
 
 	target:set_presentation_affine(sx, 0, 0, sy, x - target.attachment_ox, y - target.attachment_oy)
 
-	target.visible = level > 0
+	target.owner.visible = level > 0
 
 	target.color = color.mix_rgb_with_alpha(p3_black_color, p3_white_color, level, 1)
 
@@ -271,15 +271,15 @@ function builders.apply_combat_intro_frames(target, frame_index, params)
 
 		combat_pose.write(target.monster, monster_hidden_x, monster_hidden_y, monster_start_scale, monster_start_scale, params.enemy_weight, params.camera_y)
 
-		target.monster.visible = false
+		target.monster.owner.visible = false
 
 		combat_pose.write(target.maya_a, maya_a_start_x, maya_a_hidden_y, maya_a_start_scale, maya_a_start_scale, params.hero_weight, params.camera_y)
 
-		target.maya_a.visible = false
+		target.maya_a.owner.visible = false
 
 		target.maya_b:set_presentation_affine(s, 0, 0, s, x - target.maya_b.attachment_ox, y - target.maya_b.attachment_oy)
 
-		target.maya_b.visible = true
+		target.maya_b.owner.visible = true
 		return
 	end
 
@@ -302,15 +302,15 @@ function builders.apply_combat_intro_frames(target, frame_index, params)
 
 	combat_pose.write(target.monster, monster_x, monster_y, monster_scale, monster_scale, params.enemy_weight, params.camera_y)
 
-	target.monster.visible = true
+	target.monster.owner.visible = true
 
 	combat_pose.write(target.maya_a, maya_a_x, maya_a_y, maya_a_scale, maya_a_scale, params.hero_weight, params.camera_y)
 
-	target.maya_a.visible = true
+	target.maya_a.owner.visible = true
 
 	target.maya_b:set_presentation_affine(1, 0, 0, 1, maya_b_base_x - target.maya_b.attachment_ox, maya_b_base_y - target.maya_b.attachment_oy)
 
-	target.maya_b.visible = false
+	target.maya_b.owner.visible = false
 
 end
 
@@ -649,13 +649,13 @@ function builders.apply_transition_frame(target, frame_index, params)
 		local panel<const> = panels[i]
 		local visual<const> = target.panels[i]
 		local x<const> , y<const> , a<const> = panel_motion(frame_index, panel, transition_panel_in_frames, transition_panel_hold_frames, transition_panel_out_frames)
-		visual.visible = a > 0
+		visual.owner.visible = a > 0
 		visual:set_presentation_origin(x - visual.attachment_ox, y - visual.attachment_oy)
 		visual.color = a > 0 and panel.color or 0
 	end
 
 	local ax<const> , ay<const> , aa<const> = panel_motion(frame_index, accent_panel, transition_accent_in_frames, transition_accent_hold_frames, transition_accent_out_frames)
-	target.accent.visible = aa > 0
+	target.accent.owner.visible = aa > 0
 	target.accent:set_presentation_origin(ax - target.accent.attachment_ox, ay - target.accent.attachment_oy)
 	target.accent.color = aa > 0 and accent_panel.color or 0
 

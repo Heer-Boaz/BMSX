@@ -49,13 +49,14 @@ function new_game()
 	world:spawn(sint.portrait_def_id, {
 		id = sint.portrait_instance_id,
 	})
-	local text<const> = world:spawn(quiz.text_def_id, { id = quiz.text_instance_id }, nil, {
-		text = {
-			font = font.get(sint_font.font_id),
-			layout_rect = { left = 0, right = 256, top = 16, bottom = 192 },
-			blank_lines = 0, wrap_chars = 28,
-			color = 0xffffffff, background_color = 0xff000000,
-		},
+	local text<const> = world:spawn(quiz.text_def_id, {
+		font = font.get(sint_font.font_id),
+		layout_rect = { left = 0, right = 256, top = 16, bottom = 192 },
+		blank_lines = 0,
+		wrap_chars = 28,
+		color = 0xffffffff,
+		background_color = 0xff000000,
+		id = quiz.text_instance_id,
 	})
 	world:spawn(quiz.controller_def_id, {
 		id = quiz.controller_instance_id,

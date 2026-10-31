@@ -27,8 +27,8 @@ local affine2<const> = require('cartlib/math/affine2')
 local affine3<const> = require('cartlib/math/affine3')
 local visual2<const> = require('cartlib/component/visual_2d_component')
 local timelines<const> = require('cartlib/timeline/timeline_component')
-local manual<const> = function(context)
- return timelines.new({owner=context.owner,clock_mode='manual'})
+local manual<const> = function(owner)
+ return timelines.new(owner,{clock_mode='manual'})
 end
 prefab.define({def_id='emitted.2d',class={},spatial={family='2d',authority='affine'},components={manual}})
 prefab.define({def_id='emitted.3d',class={},spatial={family='3d',authority='affine'},components={manual}})
@@ -39,7 +39,7 @@ local actor3<const> = world:spawn('emitted.3d',{})
 local child2<const>,child3<const> = actor2.spatial,actor3.spatial
 hierarchy.reparent(child2,root2,false)
 hierarchy.reparent(child3,root3,false)
-local visual<const> = visual2.new({owner=actor2,initial={}},'visual')
+local visual<const> = visual2.new(actor2,nil,'visual')
 actor2:add_component(visual)
 hierarchy.resolve(child2)
 hierarchy.resolve(child3)
@@ -120,8 +120,8 @@ function inspectInstalledKernel(cpu: CPU, image: Blua32ImageLayout, closure: Clo
 	const maxStackSlots = cpu.memory.readMappedU32LE(address + BLUA32_FUNCTION_MAX_STACK_OFFSET);
 	const bytes = new Uint8Array(codeBytes);
 	cpu.memory.readBytesInto(codeAddress, bytes, bytes.length);
-	const calls = [];
-	const reads = [];
+	const calls: { pc: number; calleeSlot: number }[] = [];
+	const reads: { pc: number; op: OpCode; tableSlot: number }[] = [];
 	let methodLookups = 0;
 	for (let pc = codeAddress; pc < codeAddress + codeBytes; pc += INSTRUCTION_BYTES) {
 		// Firmware functions have a captured constant pool, not the ROM image's
@@ -143,7 +143,7 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 	assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
 	const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
 	const exports = probe.getStringKey(cpu.stringPool.find('kernels')!) as Table;
-	const kernels = [];
+	const kernels: ReturnType<typeof inspectInstalledKernel>[] = [];
 	for (const name of ['resolve','write_origin2','write_origin3','write_local2','write_local3','evaluate2','evaluate3','visual']) {
 		const closure = exports.getStringKey(cpu.stringPool.find(name)!) as Closure;
 		const inspected = inspectInstalledKernel(cpu, images.cartImage, closure, name);
@@ -182,8 +182,8 @@ for (const optLevel of [0, 3] as const) test(`actual spatial AOT and firmware ke
 			if (!kernels.some(kernel => kernel.closure.functionAddress === inspected.closure.functionAddress)) kernels.push(inspected);
 		}
 	}
-	const sites = new Map(kernels.flatMap(kernel => kernel.calls.map(call => [call.pc, { ...call, owner: kernel.owner }])));
-	const readSites = new Map(kernels.flatMap(kernel => kernel.reads.map(read => [read.pc, { ...read, owner: kernel.owner }])));
+	const sites = new Map(kernels.flatMap(kernel => kernel.calls.map(call => [call.pc, { ...call, owner: kernel.owner }] as const)));
+	const readSites = new Map(kernels.flatMap(kernel => kernel.reads.map(read => [read.pc, { ...read, owner: kernel.owner }] as const)));
 	const coefficientOwners = probe.getStringKey(cpu.stringPool.find('coefficient_owners')!) as Table;
 	const actualOwners = new Set(Array.from({ length: 5 }, (_, index) => coefficientOwners.getInteger(index + 1)));
 	const coefficients = ['xx','xy','xz','yx','yy','yz','zx','zy','zz','ox','oy','oz'];

@@ -134,8 +134,8 @@ local sweep_y<const> = function(self, collision_world, start_x, start_y, delta_y
 	return target_y, contact
 end
 
-function kinematic_movement_component.new(context, profile)
-	local self<const> = setmetatable(base_component.new(context), kinematic_movement_component)
+function kinematic_movement_component.new(owner, profile)
+	local self<const> = setmetatable(base_component.new(owner, profile), kinematic_movement_component)
 	self.id_local = profile.id_local
 	if self.id_local == nil then self.id_local = 'movement' end
 	self.local_left = profile.local_left
@@ -148,20 +148,7 @@ function kinematic_movement_component.new(context, profile)
 	self.world_bottom = profile.world_bottom
 	self.collision_mask = profile.collision_mask
 	self.include_elevators = profile.include_elevators
-	local initial<const> = context.initial[self.id_local]
-	if initial ~= nil then
-		if initial.local_left ~= nil then self.local_left = initial.local_left end
-		if initial.local_top ~= nil then self.local_top = initial.local_top end
-		if initial.local_right ~= nil then self.local_right = initial.local_right end
-		if initial.local_bottom ~= nil then self.local_bottom = initial.local_bottom end
-		if initial.world_left ~= nil then self.world_left = initial.world_left end
-		if initial.world_top ~= nil then self.world_top = initial.world_top end
-		if initial.world_right ~= nil then self.world_right = initial.world_right end
-		if initial.world_bottom ~= nil then self.world_bottom = initial.world_bottom end
-		if initial.collision_mask ~= nil then self.collision_mask = initial.collision_mask end
-		if initial.include_elevators ~= nil then self.include_elevators = initial.include_elevators end
-		self.collision_world = initial.collision_world
-	end
+	self.collision_world = profile.collision_world
 	self.contacts = 0
 	return self
 end
@@ -181,8 +168,8 @@ function kinematic_movement_component:on_detach()
 end
 
 function kinematic_movement_component.factory(profile)
-	return function(opts)
-		return kinematic_movement_component.new(opts, profile)
+	return function(owner)
+		return kinematic_movement_component.new(owner, profile)
 	end
 end
 

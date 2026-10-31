@@ -7,9 +7,10 @@ local overlay_component<const> = {}
 overlay_component.__index = overlay_component
 setmetatable(overlay_component, { __index = visual_2d_component })
 
-function overlay_component.new(context)
-	local self<const>, input<const> = visual_2d_component.new(context, 'overlay')
+function overlay_component.new(owner)
+	local self<const>, input<const> = visual_2d_component.new(owner, owner, 'overlay')
 	setmetatable(self, overlay_component)
+	self.visible = true
 	self.width = input.width
 	self.height = input.height
 	self.color = input.color

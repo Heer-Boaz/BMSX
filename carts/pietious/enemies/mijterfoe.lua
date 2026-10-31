@@ -241,13 +241,14 @@ function mijterfoe.register()
 		class = mijterfoe,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250, imgid = 'meijter_up' } },
 		components = {
 			enemy_base.new_collider,
 			fixed_point_velocity_component.new,
 			bt_component.factory(tree_id),
 		},
 		defaults = {
+			order = 250,
+			imgid = 'meijter_up',
 			damage = 2,
 			max_health = 1,
 			health = 1,

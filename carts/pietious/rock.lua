@@ -63,13 +63,14 @@ function rock:begin_break()
 		}
 	end
 	room.scene:spawn('world_item', {
+		imgid = world_item_sprite[self.item_type],
 		space_id = 'main',
 		room = room,
 		player = self.player,
 		item_id = id,
 		item_type = self.item_type,
 		rock_drop_id = rock_drop_id,
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, drop_y } }, { base_sprite = { imgid = world_item_sprite[self.item_type] } })
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, drop_y } })
 end
 
 local define_rock_fsm<const> = function()
@@ -131,13 +132,14 @@ local register_rock_definition<const> = function()
 		class = rock,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 140, imgid = 'stone' } },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_enemy_layer, mask = collision_enemy_mask }),
 			timeline_component.new,
 			fsm_component.factory({ 'rock' }),
 		},
 		defaults = {
+			order = 140,
+			imgid = 'stone',
 			item_type = nil,
 			max_health = rock_max_health,
 			health = rock_max_health,

@@ -2,7 +2,6 @@ local world_object<const> = require('cartlib/world/world_object')
 local shallow_copy<const> = require('cartlib/util/shallow_copy')
 local transform_2d<const> = require('cartlib/component/transform_2d_component')
 local transform_3d<const> = require('cartlib/component/transform_3d_component')
-local component_inputs<const> = require('cartlib/world/component_inputs')
 
 local definitions<const> = {}
 local prefab<const> = {}
@@ -88,7 +87,6 @@ function prefab.define(source)
 		initialize = methods.initialize,
 		defaults = shallow_copy(source.defaults or empty_values),
 		components = components,
-		initial = component_inputs.merge(component_inputs.empty, source.initial),
 		spatial_constructor = spatial_constructor,
 		spatial_family = spatial_family,
 		spatial_root_origin = spatial_root_origin,

@@ -4,8 +4,8 @@ local input_actioneffect_component<const> = require('cartlib/input/actioneffect/
 local seal<const> = {}
 seal.__index = seal
 
-function seal:ctor(_options, _definition_id, context)
-	self:add_component(input_actioneffect_component.new(context, {
+function seal:ctor()
+	self:add_component(input_actioneffect_component.new(self, {
 		program = {
 			bindings = {
 				{
@@ -34,8 +34,9 @@ local register_seal_definition<const> = function()
 		class = seal,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 23, imgid = 'seal' } },
 		defaults = {
+			order = 23,
+			imgid = 'seal',
 		},
 	})
 end

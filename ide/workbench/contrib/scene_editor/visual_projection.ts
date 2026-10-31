@@ -32,39 +32,36 @@ export type SceneModelSource = {
 /** Declared constructor inputs, not a guest instance or a gameplay-time frame. */
 export type SceneVisualReadModel = { readonly sprites: readonly SceneSpriteSource[]; readonly models: readonly SceneModelSource[] };
 type SourceState = LuaWrittenExpression | null | undefined;
-type ComponentProducer = { readonly kind: 'sprite' | 'model'; readonly id: string; readonly defaults: SourceState; readonly primary?: true };
+type ComponentProducer = { readonly kind: 'sprite' | 'model'; readonly defaults: SourceState; readonly primary?: true };
 const SPRITE_NEW: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['new'] };
 const SPRITE_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['factory'] };
 const MODEL_NEW: LuaModuleImportTarget = { module: 'cartlib/component/static_model_component', memberPath: ['new'] };
 const MODEL_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/static_model_component', memberPath: ['factory'] };
 const SPRITE_OBJECT: LuaModuleImportTarget = { module: 'cartlib/sprite', memberPath: [] };
-const SPRITE_COMPONENT = { kind: 'sprite' as const, constructor: SPRITE_NEW, id: 'sprite' };
-const MODEL_COMPONENT = { kind: 'model' as const, constructor: MODEL_NEW, id: 'model' };
+const SPRITE_COMPONENT = { kind: 'sprite' as const, constructor: SPRITE_NEW };
+const MODEL_COMPONENT = { kind: 'model' as const, constructor: MODEL_NEW };
 const IDENTITY_2D: SceneSourceAffine = { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 };
 const IDENTITY_3D: SceneSourceAffine = { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
 
-/** Selects the real shallow component-input merge before the constructor's
- * distinct nil-only and `or` default rules. Unknown writes never grant defaults. */
+/** Resolves concrete constructor configuration using the producer's nil-only
+ * and `or` default rules. Unknown writes never grant defaults. */
 class ComponentConstructorInputs {
-	public constructor(private readonly reader: LuaSourceReader, private readonly scene: SourceState,
-		private readonly prefab: SourceState, private readonly defaults: SourceState) {}
+	public constructor(private readonly reader: LuaSourceReader, private readonly input: SourceState,
+		private readonly defaults: SourceState) {}
 	public member(source: SourceState, name: string): SourceState {
 		if (source === undefined || source === null) return source;
 		if (source.expression.kind === LuaSyntaxKind.NilLiteralExpression) return null;
 		const value = this.reader.memberState(source.file, source.expression, name);
 		return value?.expression.kind === LuaSyntaxKind.NilLiteralExpression ? null : value;
 	}
-	public value(name: string, truthyDefault = false): SourceState {
-		let input = this.member(this.scene, name);
-		if (input === null) input = this.member(this.prefab, name);
-		if (input === undefined) return;
-		if (input !== null && (!truthyDefault || readLuaSourceTruth(input) !== false)) return input;
-		return this.member(this.defaults, name);
+	public value(name: string): SourceState {
+		const input = this.member(this.input, name);
+		return input === null ? this.member(this.defaults, name) : input;
 	}
-	public number(name: string, fallback: number): number | undefined {
+	public number(name: string, fallback: number): number | null | undefined {
 		const value = this.value(name), truth = readLuaSourceTruth(value);
 		if (truth === undefined) return;
-		return truth === false ? fallback : readLuaNumberExpression(value!.expression) ?? undefined;
+		return truth === false ? fallback : readLuaNumberExpression(value!.expression);
 	}
 	public flag(name: string, fallback: boolean): boolean | undefined {
 		const value = this.value(name);
@@ -81,7 +78,7 @@ export class SceneVisualProjection {
 	private readonly reader: LuaSourceReader;
 	private readonly fields: ComponentConstructorInputs;
 	public constructor(private readonly prefabs: ScenePrefabSources, private readonly spatial: SceneSpatialProjection) {
-		this.reader = prefabs.reader; this.fields = new ComponentConstructorInputs(this.reader, null, null, null);
+		this.reader = prefabs.reader; this.fields = new ComponentConstructorInputs(this.reader, null, null);
 	}
 	public readScene(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneVisualReadModel {
 		const retained = this.scenes.get(scene); if (retained !== undefined) return retained;
@@ -95,21 +92,20 @@ export class SceneVisualProjection {
 			const definition = id === undefined ? undefined : this.prefabs.all.get(id); if (definition === undefined) continue;
 			const options = fields.member(member, 'options'), defaults = fields.member(definition, 'defaults');
 			const ownerInputs = new ComponentConstructorInputs(reader, readLuaSourceTruth(options) === false ? null : options,
-				readLuaSourceTruth(defaults) === false ? null : defaults, null);
+				readLuaSourceTruth(defaults) === false ? null : defaults);
 			let ownerVisible = ownerInputs.value('visible');
 			if (ownerVisible === null) ownerVisible = this.classVisibility(definition);
 			if (ownerVisible !== null && readLuaSourceTruth(ownerVisible) !== true) continue;
-			const memberInitial = fields.member(member, 'initial'), prefabInitial = fields.member(definition, 'initial');
 			for (const producer of this.readProducers(definition)) {
 				if ((producer.kind === 'sprite') !== (world.family === '2d')) continue;
 				if (producer.primary && ownerInputs.value('primary_sprite_factory') !== null) continue;
-				const inputs = new ComponentConstructorInputs(reader, fields.member(memberInitial, producer.id), fields.member(prefabInitial, producer.id), producer.defaults);
-				if (inputs.flag('enabled', true) !== true || inputs.flag('visible', true) !== true) continue;
-				const attachment = this.affine(inputs.value('attachment_affine', true), world.family);
-				const presentation = this.affine(inputs.value('presentation_affine', true), world.family);
+				const inputs = producer.primary ? ownerInputs : new ComponentConstructorInputs(reader, null, producer.defaults);
+				if (!producer.primary && (inputs.flag('enabled', true) !== true || inputs.flag('visible', true) !== true)) continue;
+				const attachment = this.affine(inputs.value('attachment_affine'), world.family);
+				const presentation = this.affine(inputs.value('presentation_affine'), world.family);
 				if (world.family === '3d') {
 					if (attachment?.family !== '3d' || presentation?.family !== '3d') continue;
-					const modelSource = inputs.value('model_id', true), sceneSource = inputs.value('scene_index', true);
+					const modelSource = inputs.value('model_id'), sceneSource = inputs.value('scene_index');
 					if (modelSource == null || sceneSource === undefined) continue;
 					const model = reader.stringValue(modelSource.file, modelSource.expression);
 					if (model === undefined) continue;
@@ -127,8 +123,9 @@ export class SceneVisualProjection {
 				if (image === undefined) continue;
 				const color = inputs.number('color', 0xffffffff), flipH = inputs.flag('flip_h', false), flipV = inputs.flag('flip_v', false);
 				const order = inputs.number('order', 0), presentationOrder = inputs.number('presentation_order', 0);
-				if (color === undefined || flipH === undefined || flipV === undefined || order === undefined || presentationOrder === undefined) continue;
-				const regionSource = inputs.value('region', true);
+				if (color == null || flipH === undefined || flipV === undefined || order == null || presentationOrder == null) continue;
+				let regionSource = inputs.value('region');
+				if (producer.primary && readLuaSourceTruth(regionSource) === false) regionSource = null;
 				let region: SceneSpriteSource['region'];
 				if (regionSource === undefined) continue;
 				if (regionSource !== null) {
@@ -194,7 +191,7 @@ export class SceneVisualProjection {
 						const initialize = fields.member(selected, 'initialize'), primary = fields.member(selected, 'primary_sprite_factory');
 						if (initialize?.expression.kind === LuaSyntaxKind.FunctionExpression && primary?.expression.kind === LuaSyntaxKind.FunctionExpression
 							&& primary === constructor)
-							producers.push({ kind: 'sprite', id: 'base_sprite', defaults: null, primary: true });
+							producers.push({ kind: 'sprite', defaults: null, primary: true });
 					}
 				}
 			}
@@ -212,7 +209,7 @@ export class SceneVisualProjection {
 						const module = this.reader.module(components.file, builtinNew.constructor.module), constructor = fields.member(module, 'new');
 						if (constructor?.expression.kind === LuaSyntaxKind.FunctionExpression
 							&& this.reader.callable(components.file, field.value) === constructor)
-							producers.push({ kind: builtinNew.kind, id: builtinNew.id, defaults: null });
+							producers.push({ kind: builtinNew.kind, defaults: null });
 						continue;
 					}
 					const call = this.reader.call(components.file, field.value); if (call === undefined || call.expression.method !== null) continue;
@@ -229,14 +226,12 @@ export class SceneVisualProjection {
 					if (defaults?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) continue;
 					if (builtinFactory.kind === 'model') {
 						// Model factories resolve their default resource before any instance
-						// override is applied. Unknown defaults cannot be rescued by initial.
+						// instance exists. Unknown resource input cannot be projected.
 						const model = fields.member(defaults, 'model_id'), scene = fields.member(defaults, 'scene_index');
 						if (model == null || this.reader.stringValue(model.file, model.expression) === undefined
 							|| scene === undefined || scene !== null && readLuaNumberExpression(scene.expression) === null) continue;
 					}
-					const identity = fields.member(defaults, 'id_local');
-					const id = readLuaSourceTruth(identity) === false ? builtinFactory.id : identity == null ? undefined : this.reader.stringValue(identity.file, identity.expression);
-					if (id !== undefined) producers.push({ kind: builtinFactory.kind, id, defaults });
+					producers.push({ kind: builtinFactory.kind, defaults });
 				}
 			}
 			this.producers.set(definition, producers);

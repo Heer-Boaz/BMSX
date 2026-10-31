@@ -83,4 +83,35 @@ probe = {
 		assert.equal(implicitProfile.reservations, explicitProfile.reservations);
 		assert.equal(implicitProfile.reservedBytes, explicitProfile.reservedBytes);
 	});
+
+	test(`Construction hooks do not allocate an owner-forwarding context (O${optLevel})`, () => {
+		const { cpu } = createCartlibProgramHarness(setup + `
+local input<const> = {}
+local actor<const> = {}
+function actor:initialize(options)
+ assert(self.world == world and options == input)
+end
+function actor:ctor(options)
+ assert(self.world == world and options == input)
+end
+prefab.define({ def_id = 'inputs.plain', class = {}, defaults = { id = 'inputs.reused' } })
+prefab.define({ def_id = 'inputs.hooks', class = actor, defaults = { id = 'inputs.reused' } })
+probe = {
+ plain = function(count)
+  for index = 1, count do world:spawn('inputs.plain', input):mark_for_disposal() end
+ end,
+ hooks = function(count)
+  for index = 1, count do world:spawn('inputs.hooks', input):mark_for_disposal() end
+ end,
+}
+`, { optLevel, modules });
+		assert.equal(cpu.runUntilDepth(0, 20_000_000), RunResult.Halted);
+		const probe = cpu.getGlobalByKey(cpu.stringPool.find('probe')!) as Table;
+		const plain = probe.getStringKey(cpu.stringPool.find('plain')!) as Closure;
+		const hooks = probe.getStringKey(cpu.stringPool.find('hooks')!) as Closure;
+		const plainProfile = profileWarmGuestKernel(cpu, plain, 32);
+		const hookProfile = profileWarmGuestKernel(cpu, hooks, 32);
+		assert.equal(hookProfile.reservations, plainProfile.reservations);
+		assert.equal(hookProfile.reservedBytes, plainProfile.reservedBytes);
+	});
 }

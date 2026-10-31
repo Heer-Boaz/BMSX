@@ -45,10 +45,10 @@ function component:on_attach()
 	owner.part = self
 	order[#order + 1] = 'component:' .. owner.scene_member_id
 end
-function actor:ctor(options, definition_id)
+function actor:ctor(options)
 	assert(self.part.owner == self and self.spatial.wox == self.expected_x and self.spatial.woy == self.expected_y
 		and self.spatial.woz == self.expected_z, 'constructor did not receive final identity and pose')
-	assert(definition_id == 'batch.actor' and options.expected_x == self.expected_x,
+	assert(self.definition_id == 'batch.actor' and options.expected_x == self.expected_x,
 		'constructor arguments changed')
 	constructed = constructed + 1
 	order[#order + 1] = 'ctor:' .. self.scene_member_id
@@ -125,7 +125,7 @@ prefab.define({ def_id = 'single.actor', base = single_base,
 			'procedural ready callback ran before publication or after activation')
 	end },
 	components = { function(options)
-		assert(options.owner.spatial.wox == 0 and options.owner.spatial.woy == 0 and options.owner.spatial.woz == 0,
+		assert(options.spatial.wox == 0 and options.spatial.woy == 0 and options.spatial.woz == 0,
 			'procedural component factory ran before its requested position')
 		return base_component.new(options)
 	end } })
@@ -230,7 +230,7 @@ prefab.define({ def_id = 'closing.factory', class = {
 	ctor = function() factory_ctor = factory_ctor + 1 end,
 	ondespawn = function() factory_despawn = factory_despawn + 1 end,
 }, components = { function(options)
-	options.owner.scene:dispose()
+	options.scene:dispose()
 	return setmetatable(base_component.new(options), factory_component)
 end } })
 scenes.register('factory_closing', { objects = {
@@ -362,11 +362,11 @@ local class<const> = {
 	onspawn = function(self) self.ready = self:helper() end,
 }
 local first_factory<const> = function(options)
-	options.owner.component_order = options.owner.component_order .. 'a'
+	options.component_order = options.component_order .. 'a'
 	return base_component.new(options)
 end
 local second_factory<const> = function(options)
-	options.owner.component_order = options.owner.component_order .. 'b'
+	options.component_order = options.component_order .. 'b'
 	return base_component.new(options)
 end
 local components<const> = { first_factory, second_factory }
@@ -563,7 +563,7 @@ prefab.define({ def_id = 'cleanup.owner', class = {
 	unbind = function(self)
 		owner_unbound = owner_unbound + 1
 		self.events:on({ event = 'cleanup.event', handler = function() events_delivered = events_delivered + 1 end })
-		self.late_component = self:add_component(setmetatable(base_component.new({ owner = self }), late_component))
+		self.late_component = self:add_component(setmetatable(base_component.new(self), late_component))
 	end,
 } })
 local owner<const> = world:spawn('cleanup.owner', {})
@@ -591,7 +591,7 @@ removing_component.__index = removing_component
 prefab.define({ def_id = 'attachment.owner', class = {} })
 local live_owner<const> = world:spawn('attachment.owner', {})
 local view<const> = world:active_component_view(removing_component)
-local component<const> = live_owner:add_component(setmetatable(base_component.new({ owner = live_owner }), removing_component))
+local component<const> = live_owner:add_component(setmetatable(base_component.new(live_owner), removing_component))
 assert(attached == 1 and detached == 1 and bound == 0 and activated == 0,
 	'on_attach self-removal was lost or continued into binding/activation')
 assert(not component._attached and #live_owner._components == 0 and live_owner:get_component(removing_component) == nil

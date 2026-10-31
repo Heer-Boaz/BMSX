@@ -4,8 +4,8 @@ local stage_scroll_follower_component<const> = {}
 stage_scroll_follower_component.__index = stage_scroll_follower_component
 setmetatable(stage_scroll_follower_component, { __index = base_component })
 
-function stage_scroll_follower_component.new(opts)
-	return setmetatable(base_component.new(opts), stage_scroll_follower_component)
+function stage_scroll_follower_component.new(owner)
+	return setmetatable(base_component.new(owner), stage_scroll_follower_component)
 end
 
 function stage_scroll_follower_component:on_attach()

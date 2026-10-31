@@ -126,7 +126,6 @@ function buildSceneObject(field: LuaTableField, table: LuaTableConstructorExpres
 		memberId: memberId.value,
 		definitionId: definitionId.value,
 		options,
-		initial: findNamedLuaTableField(table, 'initial'),
 		spatial: spatial === null ? null : readSceneSpatial(spatial),
 	};
 }

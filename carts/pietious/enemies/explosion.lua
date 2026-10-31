@@ -47,12 +47,13 @@ function enemy_explosion:spawn_loot()
 	loot_spawn_sequence = loot_spawn_sequence + 1
 	local loot_id<const> = string.format('%s.loot.%d', self.id, loot_spawn_sequence)
 	self.room.scene:spawn('loot_drop', {
+		imgid = self.loot_type == 'life' and 'item_health' or 'ammo',
 		id = loot_id,
 		room = self.room,
 		player = self.player,
 		loot_type = self.loot_type,
 		loot_value = loot_value_for_type(self.loot_type),
-	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } }, { base_sprite = { imgid = self.loot_type == 'life' and 'item_health' or 'ammo' } })
+	}, { local_transform = { 1, 0, 0, 1, pose.ox, pose.oy } })
 end
 
 local define_enemy_explosion_fsm<const> = function()
@@ -91,9 +92,10 @@ local register_enemy_explosion_definition<const> = function()
 		class = enemy_explosion,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 114, imgid = 'explosion_2' } },
 		components = { timeline_component.new, fsm_component.factory({ 'enemy_explosion' }) },
 		defaults = {
+			order = 114,
+			imgid = 'explosion_2',
 			loot_type = nil,
 		},
 	})

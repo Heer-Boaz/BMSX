@@ -16,10 +16,11 @@ local prefab=require('cartlib/world/prefab')
 local sprites=require('cartlib/component/sprite_component')
 prefab.define({def_id='paint',class={},spatial={family='2d',authority='affine'},
  components={sprites.factory({id_local='picture',imgid='sheet'})}})
+prefab.define({def_id='paint.front',class={},spatial={family='2d',authority='affine'},
+ components={sprites.factory({id_local='picture',imgid='sheet',order=1,flip_h=true})}})
 scenes.register('painting',{objects={
  {member_id='back',definition_id='paint'},
- {member_id='front',definition_id='paint',spatial={local_transform={1,0.25,0.5,1,0,0}},
-  initial={picture={order=1,flip_h=true}}},
+ {member_id='front',definition_id='paint.front',spatial={local_transform={1,0.25,0.5,1,0,0}}},
 }})`;
 
 async function fixture(t: TestContext, font: 'tiny' | 'msx') {

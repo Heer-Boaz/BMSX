@@ -1,7 +1,7 @@
 -- A model is placement data, not a visual callback. One camera pass consumes
 -- the active component view and orders triangles across all model instances.
 local base_component<const> = require('cartlib/component/base_component')
-local component_inputs<const> = require('cartlib/world/component_inputs')
+local empty_configuration<const> = {}
 local affine3<const> = require('cartlib/math/affine3')
 local hierarchy<const> = require('cartlib/world/spatial_hierarchy')
 local static_model<const> = require('cartlib/gx/static_model')
@@ -11,13 +11,13 @@ local model_component<const> = {}
 model_component.__index = model_component
 setmetatable(model_component, { __index = base_component })
 
-function model_component.new(context, id_local, defaults, default_source)
+function model_component.new(owner, configuration, id_local, defaults, default_source)
 	id_local = id_local or 'model'
-	local input<const> = context.initial[id_local] or component_inputs.empty
-	local definition<const> = defaults or component_inputs.empty
-	local self<const> = setmetatable(base_component.new(context), model_component)
+	local self<const>, input<const> = base_component.new(owner, configuration)
+	setmetatable(self, model_component)
+	local definition<const> = defaults or empty_configuration
 	self.id_local = id_local
-	local spatial<const> = context.owner.spatial
+	local spatial<const> = owner.spatial
 	self.spatial = spatial
 	local enabled = input.enabled
 	if enabled == nil then enabled = definition.enabled end
@@ -67,8 +67,8 @@ end
 function model_component.factory(definition)
 	local defaults<const> = shallow_copy(definition)
 	local source<const> = static_model.resolve(defaults.model_id, defaults.scene_index)
-	return function(context, id_local)
-		return model_component.new(context, id_local or defaults.id_local, defaults, source)
+	return function(owner, configuration, id_local)
+		return model_component.new(owner, configuration, id_local or defaults.id_local, defaults, source)
 	end
 end
 

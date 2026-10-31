@@ -50,9 +50,9 @@ function text_component._initialize(self, input, defaults)
 	self._bounds_layout_revision = -1
 end
 
-function text_component.new(context, id_local, defaults)
+function text_component.new(owner, configuration, id_local, defaults)
 	if id_local == nil then id_local = 'text' end
-	local self<const>, input<const> = visual_2d_component.new(context, id_local, defaults)
+	local self<const>, input<const> = visual_2d_component.new(owner, configuration, id_local, defaults)
 	setmetatable(self, text_component)
 	text_component._initialize(self, input, defaults)
 	local text = input.text
@@ -63,8 +63,8 @@ end
 
 function text_component.factory(definition)
 	local defaults<const> = shallow_copy(definition)
-	return function(context)
-		return text_component.new(context, defaults.id_local, defaults)
+	return function(owner, configuration, id_local)
+		return text_component.new(owner, configuration, id_local or defaults.id_local, defaults)
 	end
 end
 

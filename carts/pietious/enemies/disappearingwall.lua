@@ -21,16 +21,17 @@ function disappearingwall.register()
 		def_id = 'enemy.disappearingwall',
 		class = disappearingwall,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { tile_layer = { tile_size = room_tile_size, order = 140 } },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area,
 				layer = collision_enemy_layer, mask = collision_enemy_mask,
 				local_area = { left = 0, top = 0, right = room_tile_size, bottom = room_tile_size },
 			}),
-			tile_layer_component.new,
+			function(owner) return tile_layer_component.new(owner, owner) end,
 		},
 		defaults = {
+			tile_size = room_tile_size,
+			order = 140,
 			damage = 0,
 			max_health = 1,
 			health = 1,

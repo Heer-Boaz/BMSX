@@ -21,7 +21,7 @@ const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('fixture', { objects = {
  { member_id = 'child', definition_id = 'sprite',
    spatial = { parent_id = 'parent', local_transform = { -1, 0.5, 2, 1, 12.25, -3.5 } },
-   initial = { base_sprite = { imgid = 'image', order = 5 } }, options = { health = 7 } },
+   options = { imgid = 'image', order = 5, health = 7 } },
  { member_id = 'parent', definition_id = 'mesh',
    spatial = { local_transform = { 1, 0, 0, 0.5, 1, 0, 0, 0, -2, 30, 40, 50 } } },
  { member_id = 'built', definition_id = 'sprite', spatial = { local_transform = build_pose() } },
@@ -35,14 +35,14 @@ test('Scene source retains full 2D/3D affines, authored parents and component in
 	const child = scene.objects[0]; assert.ok(child.kind === 'object' && child.spatial !== null);
 	assert.equal(child.spatial.coefficients!.length, 6);
 	assert.deepEqual(child.spatial.origin.map(field => readLuaNumberLiteral(field.value)), [12.25, -3.5]);
-	assert.ok(child.spatial.parentId !== null && child.initial !== null);
+	assert.ok(child.spatial.parentId !== null && child.options !== null);
 	authoring.select(document, f.model.version, { kind: 'member', scene, entry: child, index: 0 }); projection.refresh();
 	assert.deepEqual(projection.subject!.properties.map(property => [property.axis, property.value]), [['x', 12.25], ['y', -3.5]]);
 	const fields = projection.subject!.optionProperties;
 	assert.ok(fields.some(property => property.field === child.spatial!.parentId));
 	assert.equal(fields.filter(property => child.spatial!.coefficients!.includes(property.field)).length, 4,
 		'local origin is not duplicated in the generic authored-property lane');
-	assert.ok(fields.some(property => property.label === 'initial.base_sprite.order' && property.sourceText === '5'));
+	assert.ok(fields.some(property => property.label === 'order' && property.sourceText === '5'));
 	const parent = scene.objects[1]; assert.ok(parent.kind === 'object' && parent.spatial !== null);
 	assert.equal(parent.spatial.coefficients!.length, 12);
 	authoring.select(document, f.model.version, { kind: 'member', scene, entry: parent, index: 1 }); projection.refresh();

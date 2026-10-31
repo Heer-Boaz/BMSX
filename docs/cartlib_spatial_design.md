@@ -535,20 +535,27 @@ structural changes join World's ordered drain rather than recursively
 publishing a half-constructed batch.
 
 Construction invokes the captured class initializer as
-`initialize(owner, options)`, then each ordered `factory(owner, options)`, then
-`ctor(owner, options)`. Initializer and constructor hooks are optional. They all
-receive the same final owner and the existing construction input; the definition
+`initialize(owner, options)`, then each ordered `factory(owner)`, then
+`ctor(owner, options)`. Initializer and constructor hooks are optional. Every
+hook receives the final owner; initializer and constructor also borrow the
+existing construction input. The definition
 identity is already on that owner, not another positional constructor argument.
 Admission has already installed effective pose and gameplay defaults before the
 first hook. This ordering preserves initialization needed by component factories
 and component access needed by the constructor without an extra context object.
 
-Component factories receive the actual owner and the existing gameplay
-construction options directly. Immutable component configuration is bound once
+Component factories receive the actual owner, with effective gameplay fields
+already installed. Immutable component configuration is bound once
 by the admitted factory; a game-specific factory may select configuration from
 its real gameplay parameters before constructing the component. World does not
 allocate another per-object context table merely to wrap `owner` or route a
-generic component-initialization inventory. Passing a different domain input
+generic component-initialization inventory. A built-in factory's optional
+explicit configuration is the concrete component's input, not the actor's raw
+spawn input. SpriteObject and TextObject consume their concrete primary visual
+properties from the actual owner; ordinary additional components consume their
+own bound configuration. Whole-object visibility remains distinct from an
+individual component's enabled/visible state. Object placement likewise remains
+separate from visual-local placement. Passing a different domain input
 must carry actual additional meaning, not duplicate state already available on
 the owner.
 

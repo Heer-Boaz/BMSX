@@ -9,8 +9,10 @@ function scene.register()
 			{
 				member_id = 'background',
 				definition_id = 'pietious.rectangle',
-				initial = { rectangle = { width = 256, height = 192, color = 0xff000000 } },
 				options = {
+					width = 256,
+					height = 192,
+					color = 0xff000000,
 					id = 'transition.background',
 					space_id = 'transition',
 				},
@@ -19,8 +21,9 @@ function scene.register()
 				member_id = 'banner',
 				definition_id = 'pietious.caption',
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 104 } },
-				initial = { text = { order = 1, center_block_width = 256 } },
 				options = {
+					order = 1,
+					center_block_width = 256,
 					id = 'transition.banner',
 					space_id = 'transition',
 				},
@@ -29,8 +32,10 @@ function scene.register()
 				member_id = 'death_caption',
 				definition_id = 'pietious.caption',
 				spatial = { local_transform = { 1, 0, 0, 1, 0, 80 } },
-				initial = { text = { order = 1, center_block_width = 256, text = game_text[0].death_screen } },
 				options = {
+					order = 1,
+					center_block_width = 256,
+					text = game_text[0].death_screen,
 					id = 'transition.death',
 					space_id = 'transition',
 				},

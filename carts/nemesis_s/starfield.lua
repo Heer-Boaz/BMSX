@@ -141,8 +141,8 @@ local starfield_visual<const> = {}
 starfield_visual.__index = starfield_visual
 setmetatable(starfield_visual, { __index = visual_2d })
 
-function starfield_visual.new(context)
-	local self<const> = visual_2d.new(context, 'stars')
+function starfield_visual.new(owner)
+	local self<const> = visual_2d.new(owner, owner, 'stars')
 	setmetatable(self, starfield_visual)
 	self:set_draw_function(draw_stars)
 	return self
@@ -157,7 +157,11 @@ function starfield.register()
 			starfield_visual.new,
 			timeline_component.new,
 		},
-		defaults = { wrap_width = 256, yellow_points = yellow_points, blue_points = blue_points },
+		defaults = {
+			wrap_width = 256,
+			yellow_points = yellow_points,
+			blue_points = blue_points,
+		},
 	})
 end
 

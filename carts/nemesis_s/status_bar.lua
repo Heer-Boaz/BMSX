@@ -96,8 +96,8 @@ local status_visual<const> = {}
 status_visual.__index = status_visual
 setmetatable(status_visual, { __index = visual_2d })
 
-function status_visual.new(context)
-	local self<const> = visual_2d.new(context, 'status')
+function status_visual.new(owner)
+	local self<const> = visual_2d.new(owner, owner, 'status')
 	setmetatable(self, status_visual)
 	self:set_draw_function(draw_status_bar)
 	return self
@@ -176,11 +176,13 @@ function status_bar:bind()
 	end
 end
 
-function status_bar:ctor(_options, _definition_id, context)
+local life_text_profiles<const> = {}
+
+function status_bar:ctor()
 	local rows<const> = {}
 	self.rows = rows
 	for player_index = 1, #self.player_states do
-		local life_text<const> = text_component.new(context, 'life_' .. tostring(player_index))
+		local life_text<const> = text_component.new(self, life_text_profiles[player_index], 'life_' .. tostring(player_index))
 		self:add_component(life_text)
 		local row<const> = {
 			player_state = self.player_states[player_index],
@@ -195,14 +197,16 @@ function status_bar:ctor(_options, _definition_id, context)
 end
 
 local register_definition<const> = function()
+	for row_index = 1, 2 do
+		life_text_profiles[row_index] = {
+			font = font.get(nemesis_font.font_id), order = 101,
+			attachment_affine = { 1, 0, 0, 1, life_x, bar_y + (row_index - 1) * row_height },
+		}
+	end
 	prefab.define({
 		def_id = definition_id,
 		class = status_bar,
 		spatial = { family = '2d', authority = 'affine' },
-		initial = {
-			life_1 = { font = font.get(nemesis_font.font_id), attachment_affine = { 1, 0, 0, 1, life_x, bar_y } },
-			life_2 = { font = font.get(nemesis_font.font_id), attachment_affine = { 1, 0, 0, 1, life_x, bar_y + row_height } },
-		},
 		components = {
 			status_visual.new,
 		},

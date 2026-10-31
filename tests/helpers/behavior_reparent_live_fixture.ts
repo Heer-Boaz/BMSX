@@ -35,7 +35,7 @@ local function register_tree<init>()
 end
 register_tree()
 bt_live_target = { order = 0, executions = 0, retained = 0 }
-bt_live_tree = component.factory('fixture.live')({ owner = bt_live_target })
+bt_live_tree = component.factory('fixture.live')(bt_live_target)
 bt_live_tree.id = 'fixture.live.tree'
 registry:register(bt_live_tree)
 registry:index(bt_live_tree, component)

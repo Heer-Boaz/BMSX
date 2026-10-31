@@ -18,9 +18,9 @@ assert(owner:get_component(component_class) == nil
 	and owner:get_component(base_component, 'missing') == nil,
 	'component lookup did not return absence before attachment')
 
-local first<const> = setmetatable(base_component.new({ owner = owner, id_local = 'first' }), component_class)
-local second<const> = setmetatable(base_component.new({ owner = owner, id_local = 'second' }), derived_class)
-local third<const> = setmetatable(base_component.new({ owner = owner, id_local = 'third' }), component_class)
+local first<const> = setmetatable(base_component.new(owner, { id_local = 'first' }), component_class)
+local second<const> = setmetatable(base_component.new(owner, { id_local = 'second' }), derived_class)
+local third<const> = setmetatable(base_component.new(owner, { id_local = 'third' }), component_class)
 owner:add_component(first)
 owner:add_component(second)
 owner:add_component(third)

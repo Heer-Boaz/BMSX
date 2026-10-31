@@ -216,7 +216,6 @@ function crossfoe.register()
 		class = crossfoe,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250, imgid = 'crossfoe' } },
 		components = {
 			enemy_base.new_collider,
 			kinematic_movement_component.factory({
@@ -234,6 +233,8 @@ function crossfoe.register()
 			bt_component.factory(tree_id),
 		},
 		defaults = {
+			order = 250,
+			imgid = 'crossfoe',
 			damage = 4,
 			max_health = 3,
 			health = 3,

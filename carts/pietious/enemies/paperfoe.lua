@@ -1,12 +1,20 @@
 local prefab<const> = require('cartlib/world/prefab')
 local velocity_component<const> = require('cartlib/physics/velocity_component')
 local enemy_base<const> = require('enemies/enemy_base')
+local screen_boundary_component<const> = require('cartlib/physics/screen_boundary_component')
+require('constants')
+
+local new_boundary<const> = screen_boundary_component.factory({
+	left = 0, top = room_hud_height, right = room_width, bottom = room_height,
+	local_left = 0, local_top = 0, local_right = 20, local_bottom = 22,
+})
 
 local paperfoe<const> = {}
 paperfoe.__index = paperfoe
 
 function paperfoe:ctor()
-	self.sprite_component.flip_h = self:get_component(velocity_component).speed_x_num < 0
+	local velocity<const> = self:add_component(velocity_component.new(self, self))
+	self.sprite_component.flip_h = velocity.speed_x_num < 0
 end
 
 function paperfoe.choose_drop_type(_self, _random_percent_hit)
@@ -19,9 +27,13 @@ function paperfoe.register()
 		class = paperfoe,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250, imgid = 'boekfoe_paper' }, boundary = { local_right = 20, local_bottom = 22 }, velocity = { speed_x_num = 0, speed_y_num = 0, speed_den = 1 } },
-		components = { enemy_base.new_collider, velocity_component.new, enemy_base.projectile_boundary },
+		components = { enemy_base.new_collider, new_boundary },
 		defaults = {
+			speed_x_num = 0,
+			speed_y_num = 0,
+			speed_den = 1,
+			order = 250,
+			imgid = 'boekfoe_paper',
 			damage = 2,
 			max_health = 1,
 			health = 1,

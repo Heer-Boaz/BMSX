@@ -167,19 +167,19 @@ function transition.register_states(states)
 			show_background(self.background, nil)
 			local overlay<const> = self.transition_visual.overlay
 			local background<const> = self.background
-			overlay.visible = true
+			overlay.owner.visible = true
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
 			overlay.color = 0
 			for i = 1, #self.transition_panels do
 				local panel<const> = self.transition_panels[i]
 				local visual<const> = self.transition_visual.panels[i]
-				visual.visible = true
+				visual.owner.visible = true
 				visual:set_presentation_origin(panel.x_in - visual.attachment_ox, 0)
 				visual.color = 0
 			end
 			local accent<const> = self.transition_visual.accent
-			accent.visible = true
+			accent.owner.visible = true
 			accent:set_presentation_origin(self.transition_accent.x_in - accent.attachment_ox, 0)
 			accent.color = 0
 			if self.skip_transition_fade then
@@ -324,7 +324,7 @@ function transition.register_states(states)
 			hide_transition_layers(self.transition_visual)
 			local overlay<const> = self.transition_visual.overlay
 			local background<const> = self.background
-			overlay.visible = true
+			overlay.owner.visible = true
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0

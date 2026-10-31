@@ -197,7 +197,7 @@ local register_ui_definition<const> = function()
 		def_id = 'ui',
 		class = ui,
 		components = {
-			custom_visual_component.new,
+			function(owner) return custom_visual_component.new(owner, owner) end,
 			timeline_component.new,
 			fsm_component.factory({ 'ui' }),
 		},

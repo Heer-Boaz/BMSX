@@ -8,9 +8,9 @@ screen_boundary_component.__index = screen_boundary_component
 screen_boundary_component.unique = true
 setmetatable(screen_boundary_component, { __index = base_component })
 
-function screen_boundary_component.new(context, definition)
+function screen_boundary_component.new(owner, definition)
 	if definition == nil then definition = empty_definition end
-	local self<const> = setmetatable(base_component.new(context), screen_boundary_component)
+	local self<const> = setmetatable(base_component.new(owner, definition), screen_boundary_component)
 	self.id_local = definition.id_local
 	if self.id_local == nil then self.id_local = 'boundary' end
 	self.old_x = 0
@@ -23,25 +23,14 @@ function screen_boundary_component.new(context, definition)
 	self.local_top = definition.local_top
 	self.local_right = definition.local_right
 	self.local_bottom = definition.local_bottom
-	local initial<const> = context.initial[self.id_local]
-	if initial ~= nil then
-		if initial.left ~= nil then self.left = initial.left end
-		if initial.top ~= nil then self.top = initial.top end
-		if initial.right ~= nil then self.right = initial.right end
-		if initial.bottom ~= nil then self.bottom = initial.bottom end
-		if initial.local_left ~= nil then self.local_left = initial.local_left end
-		if initial.local_top ~= nil then self.local_top = initial.local_top end
-		if initial.local_right ~= nil then self.local_right = initial.local_right end
-		if initial.local_bottom ~= nil then self.local_bottom = initial.local_bottom end
-	end
 	self._footprint_basis_revision = -1
 	self.correction_committed = true
 	return self
 end
 
 function screen_boundary_component.factory(definition)
-	return function(context)
-		return screen_boundary_component.new(context, definition)
+	return function(owner)
+		return screen_boundary_component.new(owner, definition)
 	end
 end
 

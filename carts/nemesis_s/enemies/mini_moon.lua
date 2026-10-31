@@ -64,7 +64,6 @@ local register_definition<const> = function()
 		class = mini_moon,
 		base = foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_mini_moon, order = mini_moon_draw_z } },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,
@@ -74,6 +73,8 @@ local register_definition<const> = function()
 			fsm_component.factory({ ids_mini_moon_fsm }),
 		},
 		defaults = {
+			imgid = assets_mini_moon,
+			order = mini_moon_draw_z,
 			max_health = mini_moon_health,
 			red = false,
 			small_fry = true,

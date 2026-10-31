@@ -11,8 +11,8 @@ local map_visual<const> = {}
 map_visual.__index = map_visual
 setmetatable(map_visual, { __index = visual_2d })
 
-function map_visual.new(context)
-	local self<const> = visual_2d.new(context, 'map')
+function map_visual.new(owner)
+	local self<const> = visual_2d.new(owner, owner, 'map')
 	setmetatable(self, map_visual)
 	self.highlight = true
 	self:set_draw_function(map_visual.draw_map)

@@ -95,11 +95,14 @@ function cloud.spawn_vlok_burst(self)
 			random_y = math.random(-5, 4)
 		end
 		self.room.scene:spawn('enemy.vlokfoe', {
+			speed_x_num = random_x,
+			speed_y_num = random_y,
+			speed_den = 5,
 			castle = self.castle,
 			room = room,
 			player = self.player,
 			direction = random_x < 0 and 'left' or 'right',
-		}, { local_transform = { 1, 0, 0, 1, pose.ox + 16, pose.oy + 12 } }, { velocity = { speed_x_num = random_x, speed_y_num = random_y, speed_den = 5 } })
+		}, { local_transform = { 1, 0, 0, 1, pose.ox + 16, pose.oy + 12 } })
 	end
 	return bt_success
 end
@@ -149,12 +152,13 @@ function cloud.register()
 		class = cloud,
 		base = enemy_base,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 250 } },
 		components = { enemy_base.new_collider, bt_component.factory(tree_id) },
 		defaults = {
+			order = 250,
 			damage = 2,
 			max_health = 15,
-			health = 15,dangerous = true,
+			health = 15,
+			dangerous = true,
 			direction = 'right',
 			enemy_kind = 'cloud',
 		},

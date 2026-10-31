@@ -100,7 +100,7 @@ local component<const> = require('cartlib/behaviour_tree/bt_component')
 library.register('early', { root = { type = 'sequence', children = {
 	{ type = 'task', task = { execute = function() return 1 end } },
 } } })
-return component.new({ owner = {} }, 'early')` },
+return component.new({}, 'early')` },
 		],
 	});
 	assert.ok(cart.staticModulePaths.indexOf('fixture/observation') < cart.staticModulePaths.indexOf('fixture/game'));

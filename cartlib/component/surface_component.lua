@@ -7,8 +7,8 @@ local surface_component<const> = {}
 surface_component.__index = surface_component
 setmetatable(surface_component, { __index = visual_2d_component })
 
-function surface_component.new(context, id_local)
-	local self<const>, input<const> = visual_2d_component.new(context, id_local or 'surface')
+function surface_component.new(owner, configuration, id_local)
+	local self<const>, input<const> = visual_2d_component.new(owner, configuration, id_local or 'surface')
 	setmetatable(self, surface_component)
 	self.color = input.color or 0xffffffff
 	self:set_imgid(input.imgid)

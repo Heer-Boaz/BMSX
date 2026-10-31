@@ -13,23 +13,28 @@ fixed_point_velocity_component.unique = true
 fixed_point_velocity_component._tick_clocks = clock.gameplay
 setmetatable(fixed_point_velocity_component, { __index = base_component })
 
-function fixed_point_velocity_component.new(context, id_local)
-	local self<const> = setmetatable(base_component.new(context), fixed_point_velocity_component)
+function fixed_point_velocity_component.new(owner, configuration, id_local)
+	local self<const>, input<const> = base_component.new(owner, configuration)
+	setmetatable(self, fixed_point_velocity_component)
+	if id_local == nil then id_local = input.id_local end
 	if id_local == nil then id_local = 'fixed_velocity' end
 	self.id_local = id_local
 	self.velocity_x = 0
 	self.velocity_y = 0
 	self.fraction_x = 0
 	self.fraction_y = 0
-	local initial<const> = context.initial[self.id_local]
-	if initial ~= nil then
-		if initial.velocity_x ~= nil then self.velocity_x = initial.velocity_x end
-		if initial.velocity_y ~= nil then self.velocity_y = initial.velocity_y end
-		if initial.fraction_x ~= nil then self.fraction_x = initial.fraction_x end
-		if initial.fraction_y ~= nil then self.fraction_y = initial.fraction_y end
-	end
+	if input.velocity_x ~= nil then self.velocity_x = input.velocity_x end
+	if input.velocity_y ~= nil then self.velocity_y = input.velocity_y end
+	if input.fraction_x ~= nil then self.fraction_x = input.fraction_x end
+	if input.fraction_y ~= nil then self.fraction_y = input.fraction_y end
 	self.motion_committed = true
 	return self
+end
+
+function fixed_point_velocity_component.factory(configuration)
+	return function(owner)
+		return fixed_point_velocity_component.new(owner, configuration)
+	end
 end
 
 function fixed_point_velocity_component:on_attach()

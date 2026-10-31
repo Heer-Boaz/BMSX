@@ -208,7 +208,7 @@ function combat.define_fsm()
 
 	local finish_combat_results_fade_in<const> = function(self)
 		local bg<const> = self.combat_results_visual
-		bg.visible = true
+		bg.owner.visible = true
 		bg.color = combat_results_bg_visible_color
 		local maya_b<const> = self.maya_b
 		maya_b.color = p3_white_color
@@ -221,11 +221,11 @@ function combat.define_fsm()
 
 	local finish_combat_results_fade_out<const> = function(self)
 		local maya_b<const> = self.maya_b
-		maya_b.visible = false
+		maya_b.owner.visible = false
 		maya_b:set_presentation_order(0)
 		self.text_results:clear_text()
 		local bg<const> = self.combat_results_visual
-		bg.visible = false
+		bg.owner.visible = false
 		bg.color = p3_black_color
 		hide_combat_visuals(self.combat_visuals)
 		local next_kind<const> = story[self.node_id].kind
@@ -266,7 +266,7 @@ function combat.define_fsm()
 			local transition_visual<const> = self.transition_visual
 			hide_transition_layers(transition_visual)
 			local overlay<const> = transition_visual.overlay
-			overlay.visible = true
+			overlay.owner.visible = true
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
@@ -278,7 +278,7 @@ function combat.define_fsm()
 		},
 		exiting_state = function(self)
 			local overlay<const> = self.transition_visual.overlay
-			overlay.visible = false
+			overlay.owner.visible = false
 			overlay.color = 0
 			overlay.blend_color = 0
 		end,
@@ -297,7 +297,7 @@ function combat.define_fsm()
 			local transition_visual<const> = self.transition_visual
 			hide_transition_layers(transition_visual)
 			local overlay<const> = transition_visual.overlay
-			overlay.visible = true
+			overlay.owner.visible = true
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_subtract
 			overlay.blend_color = 0
@@ -317,7 +317,7 @@ function combat.define_fsm()
 			hide_transition_layers(self.transition_visual)
 
 			local bg<const> = self.background
-			bg.visible = false
+			bg.owner.visible = false
 
 			self.combat_round_index = 1
 			self.combat_points = 0
@@ -326,7 +326,7 @@ function combat.define_fsm()
 			local monster<const> = self.monster
 			atlas.load(image.atlas_id(node.monster_imgid))
 			monster:set_imgid(node.monster_imgid)
-			monster.visible = false
+			monster.owner.visible = false
 			monster.color = p3_white_color
 			monster:set_presentation_order(0)
 			monster:set_presentation_affine(1, 0, 0, 1, -monster.source_width / 2, -monster.source_height / 3)
@@ -339,7 +339,7 @@ function combat.define_fsm()
 
 			local maya_a<const> = self.maya_a
 			maya_a:set_imgid('maya_a')
-			maya_a.visible = false
+			maya_a.owner.visible = false
 			maya_a:set_presentation_origin(0, -maya_a.source_height)
 			maya_a:set_presentation_order(0)
 			self.combat_maya_a_base_x = (maya_a.attachment_ox + maya_a.presentation_ox)
@@ -348,13 +348,13 @@ function combat.define_fsm()
 			self.combat_maya_a_start_scale = combat_intro_maya_a_scale_ratio
 
 			local all_out<const> = self.all_out
-			all_out.visible = false
+			all_out.owner.visible = false
 			all_out:set_presentation_origin(0, 0)
 			all_out:set_presentation_order(0)
 
 			local maya_b<const> = self.maya_b
 			maya_b:set_imgid('maya_b')
-			maya_b.visible = true
+			maya_b.owner.visible = true
 			maya_b.color = p3_white_color
 			maya_b:set_presentation_origin(-maya_b.source_width, -maya_b.source_height)
 			maya_b:set_presentation_order(0)
@@ -428,15 +428,15 @@ function combat.define_fsm()
 		exiting_state = function(self)
 			local monster<const> = self.monster
 			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
-			monster.visible = true
+			monster.owner.visible = true
 
 			local maya_a<const> = self.maya_a
 			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
-			maya_a.visible = true
+			maya_a.owner.visible = true
 
 			local maya_b<const> = self.maya_b
 			maya_b:set_presentation_affine(1, 0, 0, 1, maya_b.presentation_ox, maya_b.presentation_oy)
-			maya_b.visible = false
+			maya_b.owner.visible = false
 			maya_b:set_presentation_origin(self.combat_maya_b_start_x - maya_b.attachment_ox, self.combat_maya_b_base_y - maya_b.attachment_oy)
 		end,
 	}
@@ -446,16 +446,16 @@ function combat.define_fsm()
 			local node<const> = story[self.node_id]
 			clear_texts(self.transition_result_texts)
 			local bg<const> = self.background
-			bg.visible = false
+			bg.owner.visible = false
 			local monster<const> = self.monster
 			monster:set_imgid(node.monster_imgid)
-			monster.visible = true
+			monster.owner.visible = true
 			local maya_a<const> = self.maya_a
 			maya_a:set_imgid('maya_a')
-			maya_a.visible = true
-			self.all_out.visible = false
+			maya_a.owner.visible = true
+			self.all_out.owner.visible = false
 			local maya_b<const> = self.maya_b
-			maya_b.visible = false
+			maya_b.owner.visible = false
 			self:apply_combat_round(node)
 			self.timelines:play(combat_hover_timeline_id, {
 				rewind = true,
@@ -657,13 +657,13 @@ function combat.define_fsm()
 			local overlay<const> = self.transition_visual.overlay
 			clear_texts(self.choice_prompt_texts)
 			self:push_combat_momentum('monster', combat_parallax_momentum_step)
-			monster.visible = true
-			maya_a.visible = true
+			monster.owner.visible = true
+			maya_a.owner.visible = true
 			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
 			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
 			monster.color = p3_white_color
 			maya_a.color = p3_white_color
-			overlay.visible = true
+			overlay.owner.visible = true
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_add
 			overlay.blend_color = 0
@@ -722,7 +722,7 @@ function combat.define_fsm()
 			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
 			monster.color = p3_white_color
 			maya_a.color = p3_white_color
-			overlay.visible = false
+			overlay.owner.visible = false
 			overlay.color = 0
 			overlay.blend_color = 0
 		end,
@@ -745,13 +745,13 @@ function combat.define_fsm()
 			local maya_a<const> = self.maya_a
 			local overlay<const> = self.transition_visual.overlay
 			clear_texts(self.choice_prompt_texts)
-			monster.visible = true
-			maya_a.visible = true
+			monster.owner.visible = true
+			maya_a.owner.visible = true
 			monster:set_presentation_affine(1, 0, 0, 1, self.combat_monster_base_x - monster.attachment_ox, self.combat_monster_base_y - monster.attachment_oy)
 			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
 			monster.color = p3_white_color
 			maya_a.color = p3_white_color
-			overlay.visible = true
+			overlay.owner.visible = true
 			overlay.color = 0
 			overlay.blend_mode = gp0.draw_mode_blend_add
 			overlay.blend_color = 0
@@ -810,7 +810,7 @@ function combat.define_fsm()
 			maya_a:set_presentation_affine(1, 0, 0, 1, self.combat_maya_a_base_x - maya_a.attachment_ox, self.combat_maya_a_base_y - maya_a.attachment_oy)
 			monster.color = p3_white_color
 			maya_a.color = p3_white_color
-			overlay.visible = false
+			overlay.owner.visible = false
 			overlay.color = 0
 			overlay.blend_color = 0
 		end,
@@ -827,7 +827,7 @@ function combat.define_fsm()
 			local maya_a<const> = self.maya_a
 			local portrait<const> = self.all_out_portrait
 			portrait:set_imgid('maya_v_s')
-			portrait.visible = true
+			portrait.owner.visible = true
 			portrait:set_presentation_order(0)
 			portrait:set_presentation_affine(1, 0, 0, 1, portrait.presentation_ox, portrait.presentation_oy)
 			local target_x<const> = portrait.attachment_ox
@@ -897,7 +897,7 @@ function combat.define_fsm()
 			self.timelines:stop(combat_all_out_prompt_timeline_id)
 
 			local portrait<const> = self.all_out_portrait
-			portrait.visible = false
+			portrait.owner.visible = false
 			portrait:set_presentation_affine(1, 0, 0, 1, portrait.presentation_ox, portrait.presentation_oy)
 			self.text_choice:set_highlight_jitter_enabled(false)
 		end,
@@ -916,7 +916,7 @@ function combat.define_fsm()
 			clear_texts(self.texts)
 			local all_out<const> = self.all_out
 			atlas.load('all_out')
-			all_out.visible = true
+			all_out.owner.visible = true
 			all_out:set_presentation_origin(0, 0)
 			all_out:set_presentation_order(0)
 			local monster<const> = self.monster
@@ -933,9 +933,9 @@ function combat.define_fsm()
 			self.all_out_shake_maya_b_y = (maya_b.attachment_oy + maya_b.presentation_oy)
 			self.all_out_shake_bg_x = (bg.attachment_ox + bg.presentation_ox)
 			self.all_out_shake_bg_y = (bg.attachment_oy + bg.presentation_oy)
-			monster.visible = false
-			maya_a.visible = false
-			maya_b.visible = false
+			monster.owner.visible = false
+			maya_a.owner.visible = false
+			maya_b.owner.visible = false
 			self.timelines:play(combat_all_out_timeline_id, {
 				rewind = true,
 				snap_to_start = true,
@@ -975,7 +975,7 @@ function combat.define_fsm()
 			local maya_b<const> = self.maya_b
 			local bg<const> = self.background
 			all_out:set_presentation_origin(self.all_out_shake_all_out_x - all_out.attachment_ox, self.all_out_shake_all_out_y - all_out.attachment_oy)
-			all_out.visible = false
+			all_out.owner.visible = false
 			monster:set_presentation_origin(self.all_out_shake_monster_x - monster.attachment_ox, self.all_out_shake_monster_y - monster.attachment_oy)
 			maya_a:set_presentation_origin(self.all_out_shake_maya_a_x - maya_a.attachment_ox, self.all_out_shake_maya_a_y - maya_a.attachment_oy)
 			maya_b:set_presentation_origin(self.all_out_shake_maya_b_x - maya_b.attachment_ox, self.all_out_shake_maya_b_y - maya_b.attachment_oy)
@@ -986,7 +986,7 @@ function combat.define_fsm()
 	states.combat_focus = {
 		entering_state = function(self)
 			local monster<const> = self.monster
-			monster.visible = true
+			monster.owner.visible = true
 
 			self.timelines:play(combat_focus_timeline_id, {
 				rewind = true,
@@ -1039,19 +1039,19 @@ function combat.define_fsm()
 			clear_texts(self.story_texts)
 
 			local monster<const> = self.monster
-			monster.visible = false
+			monster.owner.visible = false
 			local maya_a<const> = self.maya_a
-			maya_a.visible = false
+			maya_a.owner.visible = false
 			local all_out<const> = self.all_out
-			all_out.visible = false
+			all_out.owner.visible = false
 
 			local bg<const> = self.combat_results_visual
-			bg.visible = true
+			bg.owner.visible = true
 			bg.color = p3_black_color
 
 			local maya_b<const> = self.maya_b
 			maya_b:set_imgid('maya_b')
-			maya_b.visible = true
+			maya_b.owner.visible = true
 			maya_b:set_presentation_order(combat_results_maya_order - maya_b.order)
 			self.combat_results_maya_target_x = maya_b.attachment_ox - maya_b.source_width
 			self.combat_results_maya_start_x = screen_width
@@ -1372,8 +1372,8 @@ function combat.register_director()
 			timeline_component.new,
 			fsm_component.factory({ combat_director_fsm_id }),
 		},
-		initial = { slash = { order = combat_hit_slash_order } },
 		defaults = {
+			order = combat_hit_slash_order,
 			player_index = 1,
 			node_id = nil,
 			choice_index = 1,

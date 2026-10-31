@@ -824,7 +824,16 @@ function room_object:switch_room(direction)
 	}
 end
 
-function room_object:ctor(_options, _definition_id, context)
+local room_layer_profile<const> = {
+	columns = 1, tile_size = room_tile_size,
+	attachment_affine = { 1, 0, 0, 1, room_tile_origin_x, room_tile_origin_y }, visible = false,
+}
+local water_layer_profile<const> = {
+	columns = 1, tile_size = room_tile_size,
+	attachment_affine = { 1, 0, 0, 1, room_tile_origin_x, room_tile_origin_y }, visible = false, order = 1,
+}
+
+function room_object:ctor()
 	self.wall_instances = {}
 	self.draaideur_instances = {}
 	self.lithograph_instances = {}
@@ -837,9 +846,9 @@ function room_object:ctor(_options, _definition_id, context)
 	self.water_surface_tile_indices = {}
 	self.water_surface_tile_count = 0
 	self.last_water_surface_frame = 1
-	self.room_tile_layer = tile_layer_component.new(context, 'room')
+	self.room_tile_layer = tile_layer_component.new(self, room_layer_profile, 'room')
 	self:add_component(self.room_tile_layer)
-	self.water_tile_layer = tile_layer_component.new(context, 'water')
+	self.water_tile_layer = tile_layer_component.new(self, water_layer_profile, 'water')
 	self:add_component(self.water_tile_layer)
 	self.tiles_visible = false
 	apply_room_template(self, self.template)
@@ -1013,10 +1022,6 @@ local register_room_definition<const> = function()
 		def_id = 'room',
 		class = room_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = {
-			room = { columns = 1, tile_size = room_tile_size, attachment_affine = { 1, 0, 0, 1, room_tile_origin_x, room_tile_origin_y }, visible = false },
-			water = { columns = 1, tile_size = room_tile_size, attachment_affine = { 1, 0, 0, 1, room_tile_origin_x, room_tile_origin_y }, visible = false, order = 1 },
-		},
 		components = {
 			timeline_component.new,
 			fsm_component.factory({ 'room' }),

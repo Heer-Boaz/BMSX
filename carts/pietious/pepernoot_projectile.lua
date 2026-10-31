@@ -27,6 +27,8 @@ local query_terrain<const> = function(_component, owner, payload)
 	return collision_flags
 end
 
+local terrain_collision<const> = { query = query_terrain }
+
 function pepernoot_projectile:onspawn()
 	local pose<const> = self.spatial
 	local snapped_x<const>, snapped_y<const> = self.room:snap_world_to_tile(pose.ox, pose.oy)
@@ -72,13 +74,14 @@ local register_pepernoot_projectile_definition<const> = function()
 		class = pepernoot_projectile,
 		base = sprite_object,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { order = 140, imgid = 'pepernoot_16' }, tile_collision = { query = query_terrain } },
 		components = {
 			collider_2d_component.factory_for_sprite({ geometry_pool = collision_storage.sprite, layer = collision_projectile_layer, mask = collision_projectile_mask }),
-			tile_collision_component.new,
+			function(owner) return tile_collision_component.new(owner, terrain_collision) end,
 			fsm_component.factory({ 'pepernoot_projectile' }),
 		},
 		defaults = {
+			order = 140,
+			imgid = 'pepernoot_16',
 			owner_id = 'pietolon',
 			direction = 1,
 		},

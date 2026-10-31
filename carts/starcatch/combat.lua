@@ -64,8 +64,13 @@ function combat.install()
 	prefab.define({ def_id = 'starcatch.backdrop', class = backdrop,
 		components = { custom_visual.factory({ draw = renderer.draw, order = -1000 }) } })
 	prefab.define({ def_id = 'starcatch.caption', class = caption, spatial = spatial2,
-		initial = { text = { text = '', color = 0xffffffff, center_block_width = 320, order = 1000 } },
-		components = { text_component.new } })
+		defaults = {
+			text = '',
+			color = 0xffffffff,
+			center_block_width = 320,
+			order = 1000,
+		},
+		components = { function(owner) return text_component.new(owner, owner) end } })
 end
 
 return combat

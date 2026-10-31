@@ -90,7 +90,6 @@ function mijter_foe.register()
 		class = mijter_foe,
 		base = foe,
 		spatial = { family = '2d', authority = 'root_origin' },
-		initial = { base_sprite = { imgid = assets_mijter_foe_blue_neutral, order = mijter_foe_draw_z } },
 		components = {
 			collider_2d_component.factory({
 				geometry_pool = collision_storage.area, local_area = hit_area,
@@ -100,6 +99,8 @@ function mijter_foe.register()
 			fsm_component.factory({ ids_mijter_foe_fsm }),
 		},
 		defaults = {
+			imgid = assets_mijter_foe_blue_neutral,
+			order = mijter_foe_draw_z,
 			mijter_type = mijter_foe_type_blue,
 			max_health = 1,
 			small_fry = true,

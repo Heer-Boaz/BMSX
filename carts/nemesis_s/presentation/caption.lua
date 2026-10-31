@@ -9,6 +9,7 @@ function caption:ctor()
 	local text<const> = self:get_component(text_component)
 	text:set_glyph_visible_height(0)
 	self.text_component = text
+	text.visible = true
 end
 
 function caption.register()
@@ -16,8 +17,11 @@ function caption.register()
 		def_id = caption.definition_id,
 		class = caption,
 		spatial = { family = '2d', authority = 'affine' },
-		components = { text_component.new },
-		initial = { text = { font = font.get(nemesis_font.font_id), text = '' } },
+		components = { function(owner) return text_component.new(owner, owner) end },
+		defaults = {
+			font = font.get(nemesis_font.font_id),
+			text = '',
+		},
 	})
 end
 

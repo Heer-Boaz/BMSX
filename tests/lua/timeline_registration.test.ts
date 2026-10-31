@@ -13,7 +13,7 @@ local secondary<const> = {value=-2}
 local replacement_primary<const> = {value=-3}
 local replacement_secondary<const> = {value=-4}
 local owner<const> = {}
-local timelines<const> = component.new({owner=owner,clock_mode='manual'})
+local timelines<const> = component.new(owner,{clock_mode='manual'})
 local definition<const> = {duration_ms=100,bindings={'other'},tracks={{
  kind='value',path={'value'},interpolation='linear',
  keys={{time_ms=0,value=0},{time_ms=100,value=20}},
@@ -39,7 +39,7 @@ assert(primary.value==0 and secondary.value==10
  and entry.sequence_state.entries[1]==child,
  'play override changed defaults or rebuilt retained child transport')
 local other_owner<const> = {value=91}
-local other<const> = component.new({owner=other_owner,clock_mode='manual'})
+local other<const> = component.new(other_owner,{clock_mode='manual'})
 local shared<const> = other:define('sample',definition,{other=replacement_secondary})
 assert(shared.program==entry.program and shared.primary_binding==other_owner
  and shared.program.default_binding==nil,
@@ -54,7 +54,7 @@ return true
 		const { cpu } = createCartlibProgramHarness(`
 local component<const> = require('cartlib/timeline/timeline_component')
 local owner<const> = {}
-local timelines<const> = component.new({owner=owner,clock_mode='manual'})
+local timelines<const> = component.new(owner,{clock_mode='manual'})
 local definition<const> = {frames={7,8},frame_duration=50,duration_ms=100,subsequences={{
  duration_ms=100,sequence={frames={1,2},frame_duration=50,tracks={{
   kind='value',path={'panel','value'},interpolation='linear',

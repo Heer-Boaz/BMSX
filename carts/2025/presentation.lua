@@ -16,13 +16,21 @@ local spatial<const> = {
 	family = '2d', authority = 'affine',
 }
 
+function surface:ctor()
+	self:get_component(surface_component).visible = true
+end
+
+function rectangle:ctor()
+	self:get_component(rectangle_component).visible = true
+end
+
 function presentation.register()
 	prefab.define({ def_id = presentation.sprite, class = sprite_object, spatial = spatial })
 	prefab.define({ def_id = presentation.text, class = text_object, spatial = spatial })
 	prefab.define({ def_id = presentation.surface, class = surface, spatial = spatial,
-		components = { surface_component.new } })
+		components = { function(owner) return surface_component.new(owner, owner) end } })
 	prefab.define({ def_id = presentation.rectangle, class = rectangle, spatial = spatial,
-		components = { rectangle_component.new } })
+		components = { function(owner) return rectangle_component.new(owner, owner) end } })
 	prefab.define({ def_id = presentation.overlay, class = overlay, spatial = spatial,
 		components = { overlay_component.new } })
 end

@@ -11,7 +11,6 @@ export const WORLD_CPU_MODULES = [
 	'cartlib/world/space', 'cartlib/world/system_manager', 'cartlib/world/system_schedule_syntax',
 	'cartlib/world/tick_schedule', 'cartlib/world/scene_plan', 'cartlib/world/world', 'cartlib/world/world_object',
 	'cartlib/world/spatial_hierarchy', 'cartlib/math/affine2', 'cartlib/math/affine3',
-	'cartlib/world/component_inputs',
 	'cartlib/component/transform_2d_component', 'cartlib/component/transform_3d_component',
 ].map(path => ({ path, source: readFileSync(`${path}.lua`, 'utf8') }));
 WORLD_CPU_MODULES.push(
