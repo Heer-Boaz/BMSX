@@ -374,10 +374,10 @@ export class WebGPUBackend implements GPUBackend {
 		return texture;
 	}
 
-	createDepthTexture(desc: { width: number; height: number }): TextureHandle {
+	createDepthTexture(desc: { width: number; height: number; format?: string | number }): TextureHandle {
 		return this.device.createTexture({
 			size: { width: desc.width, height: desc.height },
-			format: 'depth24plus-stencil8', // Or 'depth32float' if no stencil needed
+			format: desc.format === 'depth32float' ? 'depth32float' : 'depth24plus-stencil8',
 			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
 		});
 	}
@@ -461,6 +461,9 @@ export class WebGPUBackend implements GPUBackend {
 			depthStencilAttachment.depthClearValue = depthClear != null ? depthClear : 1.0;
 			depthStencilAttachment.depthLoadOp = depthClear != null ? 'clear' : 'load';
 			depthStencilAttachment.depthStoreOp = depth.discardAfter ? 'discard' : 'store';
+			const stencil = (depth.tex as GPUTexture).format === 'depth24plus-stencil8';
+			depthStencilAttachment.stencilLoadOp = stencil ? 'load' : undefined;
+			depthStencilAttachment.stencilStoreOp = stencil ? 'store' : undefined;
 			passDesc.depthStencilAttachment = depthStencilAttachment;
 		} else {
 			passDesc.depthStencilAttachment = undefined;

@@ -15,5 +15,6 @@ void main() {
 	if (v_texture_kind == 1u) texColor = texture(u_texture0, v_texcoord);
 	if (v_texture_kind == 2u) texColor = vec4(texture(u_frame, vec2(v_texcoord.x, 1.0 - v_texcoord.y)).rgb, 1.0);
 	if (v_texture_kind == 3u) texColor = texture(u_frame, v_texcoord);
+	if (v_texture_kind == 4u) texColor = texture(u_frame, vec2(v_texcoord.x, 1.0 - v_texcoord.y));
 	outputColor = texColor * v_color_override;
 }

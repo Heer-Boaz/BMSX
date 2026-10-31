@@ -23,6 +23,8 @@ import type { FontGlyph } from '../shared/bitmap_font';
 import type { HostOverlayClipRect, HostOverlayClipState } from '../host_overlay/clip';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../host_overlay/transform';
 import { blitOpaquePixels } from '../shared/software_pixels';
+import type { HostMeshSceneTargets, HostMeshSceneRenderSubmission } from '../host_overlay/mesh';
+import { drawHeadlessHostMeshScene, type HeadlessHostMeshTarget } from '../host_overlay/headless/mesh';
 
 export type HeadlessHost2DContext = {
 	target: Uint8Array;
@@ -36,6 +38,7 @@ export type HeadlessHost2DContext = {
 	framePixels: Uint8Array;
 	frameWidth: number;
 	frameHeight: number;
+	meshScenes: HostMeshSceneTargets<HeadlessHostMeshTarget>;
 };
 
 export function beginHeadlessHost2D(context: HeadlessHost2DContext, target: Uint8Array, width: number, height: number): void {
@@ -64,6 +67,9 @@ export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: 
 			return;
 		case Host2DKind.Bitmap:
 			drawHostBitmap(context, item as HostBitmapRenderSubmission);
+			return;
+		case Host2DKind.MeshScene:
+			drawHeadlessHostMeshScene(context, item as HostMeshSceneRenderSubmission);
 			return;
 		case Host2DKind.Frame:
 			drawFrame(context, item as HostFrameRenderSubmission);

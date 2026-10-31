@@ -11,6 +11,7 @@ export function registerHostOverlayPass_Headless(registry: RenderPassLibrary): v
 		initialState: createHostOverlayState(),
 		graph: { writeState: writeHostOverlayState },
 		shouldExecute: presenter => presenter.hostOverlayQueue.hasPendingOverlayFrame(),
+		teardown: backend => (backend as HeadlessGPUBackend).hostOverlayContext.meshScenes.dispose(),
 		exec: (backend, _fbo, state) => {
 			drawHeadlessHostOverlayFrame(backend as HeadlessGPUBackend, state);
 		},

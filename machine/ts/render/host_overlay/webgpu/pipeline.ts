@@ -1,4 +1,6 @@
 import { HostBitmapTextures, type HostBitmap } from '../bitmap';
+import type { HostMeshScene } from '../mesh';
+import { WebGPUHostMeshScenes } from './mesh';
 import type {
 	ColorAttachmentSpec,
 	Host2DPipelineState,
@@ -25,6 +27,8 @@ import fragmentShaderCode from './shaders/host_overlay.frag.wgsl';
 type HostOverlayRuntime = {
 	pipeline: GPURenderPipeline;
 	bitmaps: HostBitmapTextures<{ texture: GPUTexture; bindGroup: GPUBindGroup }>;
+	meshScenes: WebGPUHostMeshScenes;
+	meshBindGroups: (GPUBindGroup | undefined)[];
 	bindGroup: GPUBindGroup;
 	frameBindGroups: WeakMap<GPUTexture, GPUBindGroup>;
 	uniformBuffer: GPUBuffer;
@@ -131,6 +135,8 @@ function createRuntime(backend: WebGPUBackend): HostOverlayRuntime {
 	const colorAttachment: ColorAttachmentSpec = { tex: null as TextureHandle };
 	return {
 		pipeline,
+		meshScenes: new WebGPUHostMeshScenes(backend),
+		meshBindGroups: [],
 		bitmaps: new HostBitmapTextures(image => {
 			const texture = backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as GPUTexture;
 			return { texture, bindGroup: device.createBindGroup({ layout: pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: texture.createView() }] }) };
@@ -190,6 +196,20 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	device.queue.writeBuffer(runtime.instanceTextureKindBuffer, 0, stream.textureKinds.buffer, stream.textureKinds.byteOffset, textureKindBytes);
 	backend.accountUpload('uniform', uniformScratch.byteLength);
 	backend.accountUpload('vertex', floatBytes + textureKindBytes);
+	// Nested render passes cannot share the backend's encoder. Finish dirty
+	// mesh targets first; their cached textures then compose at command order.
+	runtime.meshBindGroups.length = stream.batchCount;
+	for (let index = 0; index < stream.batchCount; index++) {
+		const scene = stream.batches[index].scene;
+		if (scene === undefined) { runtime.meshBindGroups[index] = undefined; continue; }
+		const texture = runtime.meshScenes.targets.get(scene).color;
+		let group = runtime.frameBindGroups.get(texture);
+		if (group === undefined) {
+			group = device.createBindGroup({ layout: runtime.pipeline.getBindGroupLayout(1), entries: [{ binding: 0, resource: texture.createView() }] });
+			runtime.frameBindGroups.set(texture, group);
+		}
+		runtime.meshBindGroups[index] = group;
+	}
 	runtime.colorAttachment.tex = backend.context.getCurrentTexture() as TextureHandle;
 	const pass = backend.beginRenderPass(runtime.passDesc) as WebGPUPassEncoder;
 	pass.encoder.setPipeline(runtime.pipeline);
@@ -200,14 +220,17 @@ function renderStream(backend: WebGPUBackend, runtime: HostOverlayRuntime, state
 	const clip = runtime.clip;
 	clip.reset(state.overlayWidth, state.overlayHeight, state.width, state.height);
 	let bitmap: HostBitmap | undefined;
+	let scene: HostMeshScene | undefined;
 	for (let index = 0; index < stream.batchCount; index += 1) {
 		const batch = stream.batches[index];
 		const end = index + 1 < stream.batchCount ? stream.batches[index + 1].start : count;
 		clip.set(batch.clip);
 		if (end === batch.start || clip.left === clip.right || clip.top === clip.bottom) continue;
-		if (bitmap !== batch.bitmap) {
+		if (bitmap !== batch.bitmap || scene !== batch.scene) {
 			bitmap = batch.bitmap;
-			pass.encoder.setBindGroup(1, bitmap === undefined ? frameBindGroup : runtime.bitmaps.get(bitmap).bindGroup);
+			scene = batch.scene;
+			pass.encoder.setBindGroup(1, scene !== undefined ? runtime.meshBindGroups[index]!
+				: bitmap === undefined ? frameBindGroup : runtime.bitmaps.get(bitmap).bindGroup);
 		}
 		pass.encoder.setScissorRect(clip.left, clip.top, clip.right - clip.left, clip.bottom - clip.top);
 		pass.encoder.draw(6, end - batch.start, 0, batch.start);
@@ -228,6 +251,7 @@ export function registerHostOverlayPassesWebGPU(registry: RenderPassLibrary): vo
 		},
 		teardown: (backend) => {
 			runtime.bitmaps.dispose();
+			runtime.meshScenes.dispose();
 			runtime.uniformBuffer.destroy();
 			runtime.instanceFloatBuffer.destroy();
 			runtime.instanceTextureKindBuffer.destroy();

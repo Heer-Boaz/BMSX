@@ -1,4 +1,5 @@
 import type { HostBitmap, HostBitmapRenderSubmission } from './bitmap';
+import type { HostMeshScene, HostMeshSceneRenderSubmission } from './mesh';
 import {
 	HOST_SYSTEM_ATLAS,
 	hostSystemAtlasImage,
@@ -27,6 +28,7 @@ export const HOST_OVERLAY_TEXTURE_SOLID = 0;
 export const HOST_OVERLAY_TEXTURE_ATLAS = 1;
 export const HOST_OVERLAY_TEXTURE_FRAME = 2;
 export const HOST_OVERLAY_TEXTURE_BITMAP = 3;
+export const HOST_OVERLAY_TEXTURE_MESH_SCENE = 4;
 
 const INITIAL_INSTANCE_CAPACITY = 4096;
 const HOST_ATLAS_U_SCALE = 1 / HOST_SYSTEM_ATLAS.width;
@@ -36,6 +38,7 @@ export type HostOverlayBatch = {
 	start: number;
 	clip: HostOverlayClipRect;
 	bitmap: HostBitmap | undefined;
+	scene: HostMeshScene | undefined;
 };
 
 export class HostOverlayQuadStream {
@@ -44,7 +47,7 @@ export class HostOverlayQuadStream {
 	public capacity = INITIAL_INSTANCE_CAPACITY;
 	public count = 0;
 	private readonly fullClip: HostOverlayClipRect = { left: 0, top: 0, right: 0, bottom: 0 };
-	public readonly batches: HostOverlayBatch[] = [{ start: 0, clip: this.fullClip, bitmap: undefined }];
+	public readonly batches: HostOverlayBatch[] = [{ start: 0, clip: this.fullClip, bitmap: undefined, scene: undefined }];
 	public batchCount = 1;
 	private hasBitmaps = false;
 	private glyphBackgroundLineHeight = 0;
@@ -54,7 +57,9 @@ export class HostOverlayQuadStream {
 
 	public reset(logicalWidth: number, logicalHeight: number): void {
 		if (this.hasBitmaps) {
-			for (let index = 0; index < this.batchCount; index++) this.batches[index].bitmap = undefined;
+			for (let index = 0; index < this.batchCount; index++) {
+				this.batches[index].bitmap = undefined; this.batches[index].scene = undefined;
+			}
 			this.hasBitmaps = false;
 		}
 		this.count = 0;
@@ -83,6 +88,9 @@ export class HostOverlayQuadStream {
 			case Host2DKind.Bitmap:
 				this.appendBitmap(command as HostBitmapRenderSubmission);
 				return;
+			case Host2DKind.MeshScene:
+				this.appendMeshScene(command as HostMeshSceneRenderSubmission);
+				return;
 			case Host2DKind.Frame:
 				this.appendFrame(command as HostFrameRenderSubmission);
 				return;
@@ -106,32 +114,42 @@ export class HostOverlayQuadStream {
 		}
 		let batch = this.batches[this.batchCount];
 		if (batch === undefined) {
-			batch = { start: 0, clip, bitmap: current.bitmap };
+			batch = { start: 0, clip, bitmap: current.bitmap, scene: current.scene };
 			this.batches.push(batch);
 		}
 		batch.start = this.count;
 		batch.clip = clip;
 		batch.bitmap = current.bitmap;
+		batch.scene = current.scene;
 		this.batchCount += 1;
 	}
 
-	private setBitmap(bitmap: HostBitmap | undefined): void {
+	private setTexture(bitmap: HostBitmap | undefined, scene: HostMeshScene | undefined): void {
 		const current = this.batches[this.batchCount - 1];
-		if (current.bitmap === bitmap) return;
-		if (current.start === this.count) { current.bitmap = bitmap; return; }
+		if (current.bitmap === bitmap && current.scene === scene) return;
+		if (current.start === this.count) { current.bitmap = bitmap; current.scene = scene; return; }
 		let batch = this.batches[this.batchCount];
-		if (batch === undefined) { batch = { start: 0, clip: current.clip, bitmap }; this.batches.push(batch); }
-		batch.start = this.count; batch.clip = current.clip; batch.bitmap = bitmap;
+		if (batch === undefined) { batch = { start: 0, clip: current.clip, bitmap, scene }; this.batches.push(batch); }
+		batch.start = this.count; batch.clip = current.clip; batch.bitmap = bitmap; batch.scene = scene;
 		this.batchCount++;
 	}
 
 	private appendBitmap(command: HostBitmapRenderSubmission): void {
 		this.hasBitmaps = true;
-		this.setBitmap(command.bitmap);
+		this.setTexture(command.bitmap, undefined);
 		const { scale, offsetX, offsetY } = this.transform;
 		this.appendQuad(command.originX * scale + offsetX, command.originY * scale + offsetY,
 			command.axisXX * scale, command.axisXY * scale, command.axisYX * scale, command.axisYY * scale,
 			command.u0, command.v0, command.u1, command.v1, HOST_OVERLAY_TEXTURE_BITMAP, command.color);
+	}
+
+	private appendMeshScene(command: HostMeshSceneRenderSubmission): void {
+		this.hasBitmaps = true;
+		this.setTexture(undefined, command.scene);
+		const { scale, offsetX, offsetY } = this.transform;
+		this.appendQuad(command.left * scale + offsetX, command.top * scale + offsetY,
+			(command.right - command.left) * scale, 0, 0, (command.bottom - command.top) * scale,
+			0, 0, 1, 1, HOST_OVERLAY_TEXTURE_MESH_SCENE, 0xffffffff);
 	}
 
 	private ensureCapacity(required: number): void {
@@ -213,7 +231,7 @@ export class HostOverlayQuadStream {
 	}
 
 	private appendFrame(command: HostFrameRenderSubmission): void {
-		this.setBitmap(undefined);
+		this.setTexture(undefined, undefined);
 		const { area } = command;
 		const { scale, offsetX, offsetY } = this.transform;
 		this.appendQuad(area.left * scale + offsetX, area.top * scale + offsetY,

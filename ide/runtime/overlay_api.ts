@@ -1,4 +1,5 @@
 import type { HostBitmap } from '../../machine/ts/render/host_overlay/bitmap';
+import type { HostMeshScene } from '../../machine/ts/render/host_overlay/mesh';
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { type color } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
@@ -55,6 +56,9 @@ export class OverlayApi {
 
 	public drawBitmap(bitmap: HostBitmap, left: number, top: number, right: number, bottom: number): void {
 		this.renderer.drawBitmap(bitmap, left, top, right, bottom);
+	}
+	public drawMeshScene(scene: HostMeshScene, left: number, top: number, right: number, bottom: number): void {
+		this.renderer.drawMeshScene(scene, left, top, right, bottom);
 	}
 
 	public drawBitmapAffine(bitmap: HostBitmap, originX: number, originY: number,

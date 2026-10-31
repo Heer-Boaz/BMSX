@@ -352,13 +352,15 @@ export class WebGLBackend implements GPUBackend {
 		this.texInfo.set(tex, { w: desc.width, h: desc.height, srgb: false });
 		return tex;
 	}
-	createDepthTexture(desc: { width: number; height: number }): WebGLTexture {
+	createDepthTexture(desc: { width: number; height: number; format?: string | number }): WebGLTexture {
 		const gl = this.gl;
 		const tex = gl.createTexture()!;
 		this.setActiveTexture(TEXTURE_UNIT_UPLOAD);
 		this.bindTexture2D(tex);
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.width, desc.height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
-		this.accountUpload('texture', desc.width * desc.height * 2);
+		const floating = desc.format === 'depth32float';
+		gl.texImage2D(gl.TEXTURE_2D, 0, floating ? gl.DEPTH_COMPONENT32F : gl.DEPTH_COMPONENT16,
+			desc.width, desc.height, 0, gl.DEPTH_COMPONENT, floating ? gl.FLOAT : gl.UNSIGNED_SHORT, null);
+		this.accountUpload('texture', desc.width * desc.height * (floating ? 4 : 2));
 		GLR.glSetTexture2DParams(gl, RGBA8_LINEAR_TEXTURE_PARAMS);
 		return tex;
 	}

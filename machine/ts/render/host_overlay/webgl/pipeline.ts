@@ -1,4 +1,6 @@
 import { HostBitmapTextures, type HostBitmap } from '../bitmap';
+import type { HostMeshScene } from '../mesh';
+import { WebGLHostMeshScenes } from './mesh';
 import type { RenderPassLibrary } from '../../backend/pass/library';
 import type {
 	Host2DPipelineState,
@@ -25,6 +27,8 @@ import fragmentShaderCode from './shaders/host_overlay.frag.glsl';
 type HostOverlayRuntime = {
 	gl: WebGL2RenderingContext;
 	bitmaps: HostBitmapTextures<WebGLTexture>;
+	meshScenes: WebGLHostMeshScenes;
+	meshTextures: (WebGLTexture | undefined)[];
 	program: WebGLProgram;
 	vao: WebGLVertexArrayObject;
 	cornerBuffer: WebGLBuffer;
@@ -112,6 +116,8 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 
 	return {
 		gl,
+		meshScenes: new WebGLHostMeshScenes(backend),
+		meshTextures: [],
 		bitmaps: new HostBitmapTextures(
 			image => backend.createTexture(image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS) as WebGLTexture,
 			(texture, image) => backend.updateTexture(texture, image.pixels, image.width, image.height, RGBA8_LINEAR_TEXTURE_PARAMS),
@@ -135,6 +141,7 @@ function createRuntime(backend: WebGLBackend, program: WebGLProgram, frameUnifor
 
 function destroyRuntime(backend: WebGLBackend, runtimeToDestroy: HostOverlayRuntime): void {
 	runtimeToDestroy.bitmaps.dispose();
+	runtimeToDestroy.meshScenes.dispose();
 	backend.destroyBuffer(runtimeToDestroy.cornerBuffer);
 	backend.destroyBuffer(runtimeToDestroy.instanceFloatBuffer);
 	backend.destroyBuffer(runtimeToDestroy.instanceTextureKindBuffer);
@@ -167,6 +174,12 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 	if (count === 0) {
 		return;
 	}
+	// Render each changed 3D viewport before rebinding the 2D overlay pass.
+	state.meshTextures.length = stream.batchCount;
+	for (let index = 0; index < stream.batchCount; index++) {
+		const scene = stream.batches[index].scene;
+		state.meshTextures[index] = scene === undefined ? undefined : state.meshScenes.targets.get(scene).color;
+	}
 	bindPassState(backend, state, passState);
 	if (state.instanceCapacity !== stream.capacity) {
 		backend.updateVertexBuffer(state.instanceFloatBuffer, stream.floatData);
@@ -181,14 +194,17 @@ function renderStream(backend: WebGLBackend, state: HostOverlayRuntime, passStat
 	clip.reset(passState.overlayWidth, passState.overlayHeight, passState.width, passState.height);
 	gl.enable(gl.SCISSOR_TEST);
 	let bitmap: HostBitmap | undefined;
+	let scene: HostMeshScene | undefined;
 	for (let index = 0; index < stream.batchCount; index += 1) {
 		const batch = stream.batches[index];
 		const end = index + 1 < stream.batchCount ? stream.batches[index + 1].start : count;
 		clip.set(batch.clip);
 		if (end === batch.start || clip.left === clip.right || clip.top === clip.bottom) continue;
-		if (bitmap !== batch.bitmap) {
+		if (bitmap !== batch.bitmap || scene !== batch.scene) {
 			bitmap = batch.bitmap;
-			const texture = bitmap === undefined ? passState.frameTexture as WebGLTexture : state.bitmaps.get(bitmap);
+			scene = batch.scene;
+			const texture = scene !== undefined ? state.meshTextures[index]!
+				: bitmap === undefined ? passState.frameTexture as WebGLTexture : state.bitmaps.get(bitmap);
 			// Uploads use their own texture unit. Bind the draw unit after resource admission.
 			backend.setActiveTexture(HOST_OVERLAY_TEXTURE_UNIT + 1);
 			backend.bindTexture2D(texture);

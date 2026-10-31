@@ -24,6 +24,8 @@ import type { HeadlessHost2DContext } from './host_2d';
 import { blitOpaquePixels } from '../shared/software_pixels';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../host_overlay/transform';
 import { HostOverlayClipState } from '../host_overlay/clip';
+import { HostMeshSceneTargets } from '../host_overlay/mesh';
+import { createHeadlessHostMeshTarget, disposeHeadlessHostMeshTarget, renderHeadlessHostMeshScene } from '../host_overlay/headless/mesh';
 
 export interface HeadlessPresentedFrame {
 	frameIndex: number;
@@ -147,6 +149,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 		backgroundColor: 0,
 		lineHeight: 0,
 		clip: new HostOverlayClipState(),
+		meshScenes: new HostMeshSceneTargets(createHeadlessHostMeshTarget, renderHeadlessHostMeshScene, disposeHeadlessHostMeshTarget),
 	};
 
 	constructor(

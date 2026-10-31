@@ -20,5 +20,8 @@ fn main(input: FragmentInput) -> @location(0) vec4<f32> {
 	if (input.texture_kind == 3u) {
 		texel = textureSampleLevel(frame_texture, host_sampler, input.texcoord, 0.0);
 	}
+	if (input.texture_kind == 4u) {
+		texel = textureSampleLevel(frame_texture, host_sampler, input.texcoord, 0.0);
+	}
 	return texel * input.color;
 }

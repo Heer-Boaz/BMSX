@@ -1,4 +1,5 @@
 import type { HostBitmap, HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
+import type { HostMeshScene, HostMeshSceneRenderSubmission } from '../../machine/ts/render/host_overlay/mesh';
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayClipRect } from '../../machine/ts/render/host_overlay/clip';
@@ -27,6 +28,8 @@ type OverlayCommandBuffer = {
 	framePool: HostFrameRenderSubmission[];
 	bitmapPool: HostBitmapRenderSubmission[];
 	bitmapCount: number;
+	meshScenePool: HostMeshSceneRenderSubmission[];
+	meshSceneCount: number;
 	itemPool: GlyphRenderSubmission[];
 	polyPool: PolyRenderSubmission[];
 	polyPointPool: number[][];
@@ -105,6 +108,8 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 		framePool: [],
 		bitmapPool: [],
 		bitmapCount: 0,
+		meshScenePool: [],
+		meshSceneCount: 0,
 		itemPool: [],
 		polyPool: [],
 		polyPointPool: [],
@@ -171,6 +176,8 @@ export class OverlayRenderer {
 		buffer.frameCount = 0;
 		for (let index = 0; index < buffer.bitmapCount; index++) buffer.bitmapPool[index].bitmap = undefined;
 		buffer.bitmapCount = 0;
+		for (let index = 0; index < buffer.meshSceneCount; index++) buffer.meshScenePool[index].scene = undefined;
+		buffer.meshSceneCount = 0;
 		buffer.itemCount = 0;
 		buffer.polyCount = 0;
 		buffer.polyPointCount = 0;
@@ -238,6 +245,18 @@ export class OverlayRenderer {
 
 	public drawBitmap(bitmap: HostBitmap, left: number, top: number, right: number, bottom: number): void {
 		this.drawBitmapAffine(bitmap, left, top, right - left, 0, 0, bottom - top);
+	}
+	public drawMeshScene(scene: HostMeshScene, left: number, top: number, right: number, bottom: number): void {
+		const buffer = this.activeBuffer;
+		let submission = buffer.meshScenePool[buffer.meshSceneCount];
+		if (submission === undefined) {
+			submission = { scene, left, top, right, bottom };
+			buffer.meshScenePool.push(submission);
+		}
+		buffer.meshSceneCount++;
+		submission.scene = scene;
+		submission.left = left; submission.top = top; submission.right = right; submission.bottom = bottom;
+		this.queueCommand(Host2DKind.MeshScene, submission);
 	}
 
 	/** Snapshot a textured unit square; the bitmap pixels and their revision stay unchanged. */
