@@ -19,7 +19,10 @@ type SceneOutlineSource = {
 	displayLabel: string;
 	labelClipped: boolean;
 };
-export type SceneMemberElement = SceneOutlineSource & { readonly kind: 'member'; readonly entry: SceneSourceEntry; readonly index: number };
+export type SceneMemberElement = SceneOutlineSource & {
+	readonly kind: 'member'; readonly entry: SceneSourceEntry; readonly index: number;
+	readonly unresolvedParent: boolean;
+};
 export type SceneOutlineElement = SceneOutlineSource & { readonly kind: 'scene' } | SceneMemberElement;
 
 /** Source correspondence belongs to this outline, not to labels or the generic tree. */
@@ -31,11 +34,15 @@ export function installSceneOutline(input: SceneHierarchyViewState): void {
 	const { outline } = input;
 	const { buffer } = input.authoring.workingCopy;
 	const previous = new Map<number, WorkbenchTreeNode<SceneOutlineElement>>();
-	for (const root of outline.roots) {
-		if (root.element.span.start !== root.element.span.end) previous.set(root.element.span.start, root);
+	const previousNodes = [...outline.roots];
+	while (previousNodes.length > 0) {
+		const node = previousNodes.pop()!;
+		if (node.element.span.start !== node.element.span.end) previous.set(node.element.span.start, node);
+		for (const child of node.children) previousNodes.push(child);
 	}
 	outline.roots.length = 0;
 	input.outlineRanges.clear();
+	input.outlineParents.clear();
 	for (const scene of input.authoring.scenes) {
 		const span = luaSourceRangeToTextRange(buffer, scene.range);
 		const prior = previous.get(span.start);
@@ -51,8 +58,23 @@ export function installSceneOutline(input: SceneHierarchyViewState): void {
 			displayLabel: '', labelClipped: false,
 		}, prior !== undefined && prior.element.span.end === span.end && prior.collapsed);
 		input.outlineRanges.set(root.element, root.element.span);
+		const parents = input.authoring.getSpatialParents(scene);
+		input.outlineParents.set(scene, parents);
+		const children = new Map<SceneSourceEntry, number[]>(), roots: number[] = [];
 		for (let index = 0; index < scene.objects.length; index += 1) {
 			const entry = scene.objects[index];
+			const parent = entry.kind === 'object' ? parents.get(entry) : undefined;
+			if (parent === undefined) roots.push(index);
+			else {
+				let entries = children.get(parent);
+				if (entries === undefined) { entries = []; children.set(parent, entries); }
+				entries.push(index);
+			}
+		}
+		const nodes = new Map<SceneSourceEntry, WorkbenchTreeNode<SceneOutlineElement>>();
+		const pending = roots.reverse();
+		while (pending.length > 0) {
+			const index = pending.pop()!, entry = scene.objects[index];
 			const range = locations.range(entry.field.span);
 			const expression = entry.kind === 'object' ? entry.memberId : entry.field.value;
 			const memberId = entry.kind === 'object' ? stringLiteralValue(entry.memberId) : undefined;
@@ -60,21 +82,30 @@ export function installSceneOutline(input: SceneHierarchyViewState): void {
 			const identity = memberId === undefined ? readLuaSourceRange(buffer, locations.range(expression.span)) : memberId;
 			const definition = entry.kind === 'object'
 				? definitionId === undefined ? readLuaSourceRange(buffer, locations.range(entry.definitionId.span)) : definitionId : '';
-			const member = appendWorkbenchTreeNode(outline, root, {
-				kind: 'member', scene, entry, index, source: range,
-				span: luaSourceRangeToTextRange(buffer, range),
+			const parent = entry.kind === 'object' ? parents.get(entry) : undefined;
+			const memberSpan = luaSourceRangeToTextRange(buffer, range), previousMember = previous.get(memberSpan.start);
+			const unresolvedParent = entry.kind === 'object' && entry.spatial !== null && !parents.has(entry);
+			const member = appendWorkbenchTreeNode(outline, parent === undefined ? root : nodes.get(parent)!, {
+				kind: 'member', scene, entry, index, source: range, unresolvedParent,
+				span: memberSpan,
 				label: memberId === undefined ? readLuaExpressionPreview(buffer, locations, expression) : memberId,
 				preserveLabelCase: memberId !== undefined,
 				detail: entry.kind === 'object'
 					? definitionId === undefined ? readLuaExpressionPreview(buffer, locations, entry.definitionId) : definitionId : 'Dynamic Lua composition',
 				preserveDetailCase: definitionId !== undefined,
-				identity: `${sourceTabDescription(input.authoring.workingCopy.resource)}:${range.start.line}:${range.start.column}\nScene ${sceneIdentity}\n${entry.kind === 'object' ? `Member ${identity}\nDefinition ${definition}` : `Composition ${identity}`}`,
+				identity: `${sourceTabDescription(input.authoring.workingCopy.resource)}:${range.start.line}:${range.start.column}\nScene ${sceneIdentity}\n${entry.kind === 'object' ? `Member ${identity}\nDefinition ${definition}` : `Composition ${identity}`}${unresolvedParent ? '\nParent unavailable' : ''}`,
 				displayLabel: '', labelClipped: false,
-			});
+			}, previousMember !== undefined && previousMember.element.kind === 'member'
+				&& previousMember.element.span.end === memberSpan.end && previousMember.collapsed);
+			nodes.set(entry, member);
 			input.outlineRanges.set(member.element, member.element.span);
+			const descendants = children.get(entry);
+			if (descendants !== undefined) for (let child = descendants.length - 1; child >= 0; child--) pending.push(descendants[child]);
 		}
 	}
 	rebuildWorkbenchTreeRows(outline, null);
+	input.outlineGeneration++;
+	input.outlineParentGeneration = input.authoring.spatialGeneration;
 	projectSceneSelection(input);
 }
 

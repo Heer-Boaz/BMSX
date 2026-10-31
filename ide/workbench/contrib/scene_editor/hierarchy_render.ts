@@ -15,7 +15,8 @@ export function drawSceneHierarchy(view: SceneHierarchyViewState, focused: boole
 	for (let index = firstRow; index < end; index++) {
 		const node = outline.rows[index], y = outline.layout.contentTop + (index - firstRow) * rowHeight;
 		const x = outline.layout.contentLeft + node.depth * outline.layout.indentWidth, selected = index === outline.selectionIndex;
-		const color = selected ? focused ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INACTIVE_SELECTION_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT;
+		const color = selected ? focused ? colors.COLOR_SELECTION_TEXT : colors.COLOR_INACTIVE_SELECTION_TEXT
+			: node.element.kind === 'member' && node.element.unresolvedParent ? colors.COLOR_CONTENT_WARNING_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT;
 		if (selected) api.fill_rect(outline.layout.contentLeft, y, outline.layout.contentRight, y + rowHeight, 0,
 			focused ? colors.SELECTION_OVERLAY : colors.INACTIVE_SELECTION_OVERLAY);
 		if (node.children.length > 0) drawWorkbenchIcon(node.collapsed ? 'chevronRight' : 'chevronDown',

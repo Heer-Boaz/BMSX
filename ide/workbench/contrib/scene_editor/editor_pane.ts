@@ -6,6 +6,7 @@ import type { EditorTextSelection } from '../../../editor/navigation/text_select
 import type { InputFocusScope } from '../../../input/focus';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { QuickInputController } from '../../services/quick_input/controller';
 import { EditorPane } from '../../services/editor/editor_pane';
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -18,9 +19,9 @@ export class SceneEditorPane extends EditorPane<SceneEditorInput> {
 	public readonly control: SceneEditorControl;
 
 	public constructor(commands: EditorCommandRunner, sources: RuntimeSourceState, contextMenu: ContextMenuController,
-		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, scope: InputFocusScope, quickInput: QuickInputController) {
 		super();
-		this.control = new SceneEditorControl(commands, sources, contextMenu, surfaces, owner, workArea, scope);
+		this.control = new SceneEditorControl(commands, sources, contextMenu, surfaces, owner, workArea, scope, quickInput);
 	}
 
 	public override get commandTarget() { return this.control.commandTarget; }

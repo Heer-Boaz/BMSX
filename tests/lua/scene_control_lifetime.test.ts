@@ -7,6 +7,7 @@ import { SceneEditorControl } from '../../ide/workbench/contrib/scene_editor/con
 import { SceneEditorViewState } from '../../ide/workbench/contrib/scene_editor/view_state';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { QuickInputController } from '../../ide/workbench/services/quick_input/controller';
 import { WorkbenchSurfaceService } from '../../ide/workbench/services/windows/service';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
@@ -31,10 +32,11 @@ function fixture(t: TestContext) {
 		isEnabled: (command, target) => inputFocus.getCommand(command, target)?.isEnabled() === true,
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
-	const control = new SceneEditorControl(commands, source.sources, menu, surfaces, owner, bounds, scope);
+	const picker = new QuickInputController(menu, undefined, undefined, { scope: inputFocus.workbenchScope, bounds, kind: 'workspace' });
+	const control = new SceneEditorControl(commands, source.sources, menu, surfaces, owner, bounds, scope, picker);
 	control.setView(view, bounds); control.update();
 	t.after(() => {
-		control.dispose(); view.dispose(); context.dispose(); menu.dispose(); surfaces.dispose();
+		picker.dispose(); control.dispose(); view.dispose(); context.dispose(); menu.dispose(); surfaces.dispose();
 		inputFocus.setTarget(null); pointerCapture.cancel();
 	});
 	return { ...source, context, view, control, bounds };

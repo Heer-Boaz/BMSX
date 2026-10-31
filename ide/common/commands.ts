@@ -194,6 +194,8 @@ export type EditorCommandId =
 	| 'behaviorLens.duplicateChild'
 	| 'behaviorLens.setInitialState'
 	| 'sceneEditor.removeMember'
+	| 'sceneEditor.removeSubtree' | 'sceneEditor.renameMember'
+	| 'sceneEditor.reparentMember' | 'sceneEditor.reparentMemberKeepLocal'
 	| 'sceneEditor.chooseMain'
 	| 'sceneEditor.details' | 'sceneEditor.outline'
 	| 'sceneEditor.moveMemberUp'

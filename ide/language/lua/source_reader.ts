@@ -49,6 +49,22 @@ export class LuaSourceReader {
 		return this.resolve(this.snapshot.symbolResolver.authoredSources.member(query.expression(file, expression), name));
 	}
 
+	/** A unique value, a proved unwritten member (null), or unresolved source
+	 * (undefined). Optional authored defaults require the unwritten proof;
+	 * an unknown/computed write is not an absent field. */
+	public memberState(file: FileSemanticData, expression: LuaExpression, name: string): LuaWrittenExpression | null | undefined {
+		const query = this.snapshot.symbolResolver.writtenSources;
+		const trace = this.snapshot.symbolResolver.authoredSources.member(query.expression(file, expression), name);
+		const source = this.resolve(trace);
+		if (source !== undefined) return source;
+		if (trace.terminals.length === 0 && trace.boundaries.length === 1) {
+			const boundary = trace.boundaries[0];
+			if (boundary.reason === 'unwritten-member' && boundary.source === trace.root
+				&& this.expression(file, expression)?.expression.kind === LuaSyntaxKind.TableConstructorExpression) return null;
+		}
+		return undefined;
+	}
+
 	private resolve(trace: LuaAuthoredSourceTrace): LuaWrittenExpression | undefined {
 		if (!this.traces.has(trace)) {
 			this.traces.add(trace);

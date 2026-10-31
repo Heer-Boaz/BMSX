@@ -14,7 +14,7 @@ import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
 import { WorkbenchMenu } from '../../ui/menu/model';
-import { navigateWorkbenchTree, setWorkbenchTreeCollapsed, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
+import { navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed, workbenchTreeRoot, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { SceneOutlineFeedback } from './feedback';
 import { layoutSceneHierarchy } from './hierarchy_layout';
 import { drawSceneHierarchy } from './hierarchy_render';
@@ -28,7 +28,7 @@ export class SceneHierarchyControl {
 	public readonly focusTarget: InputFocusTarget;
 	private viewValue: SceneHierarchyViewState | undefined;
 	private bounds!: Readonly<RectBounds>;
-	private measuredRevision = -1;
+	private measuredGeneration = -1;
 	private attachmentRevision = 0;
 	private presented = false;
 	private readonly feedback: SceneOutlineFeedback;
@@ -64,7 +64,7 @@ export class SceneHierarchyControl {
 		const revision = ++this.attachmentRevision;
 		this.detach();
 		if (revision !== this.attachmentRevision) return;
-		this.viewValue = view; this.bounds = bounds; this.measuredRevision = -1;
+		this.viewValue = view; this.bounds = bounds; this.measuredGeneration = -1;
 		this.unsubscribeDispose = view.authoring.workingCopy.onWillDispose(() => {
 			if (revision === this.attachmentRevision) this.clearView();
 		});
@@ -76,8 +76,8 @@ export class SceneHierarchyControl {
 		const view = this.view, scope = this.inputScope, generation = scope.contextGeneration, revision = this.attachmentRevision;
 		view.refresh();
 		if (this.viewValue !== view || scope.contextGeneration !== generation) return;
-		layoutSceneHierarchy(view, this.bounds, this.measuredRevision !== view.authoring.revision);
-		this.measuredRevision = view.authoring.revision;
+		layoutSceneHierarchy(view, this.bounds, this.measuredGeneration !== view.outlineGeneration);
+		this.measuredGeneration = view.outlineGeneration;
 		const available = this.canFocus;
 		if (this.presented && !available) {
 			this.presented = false;
@@ -97,13 +97,28 @@ export class SceneHierarchyControl {
 	}
 	public revealSelection(): void {
 		const view = this.view, scroll = view.outline.scroll;
+		const selection = view.authoring.selection;
+		let expanded = false;
+		if (selection !== undefined && view.outline.selectionIndex === -1) {
+			const pending = [...view.outline.roots];
+			while (pending.length > 0) {
+				const node = pending.pop()!, element = node.element;
+				if (element.scene === selection.scene && (selection.kind === 'scene' ? element.kind === 'scene'
+					: element.kind === 'member' && element.entry === selection.entry)) {
+					for (let parent = node.parent; parent !== null; parent = parent.parent) parent.collapsed = false;
+					rebuildWorkbenchTreeRows(view.outline, node); expanded = true;
+					break;
+				}
+				for (const child of node.children) pending.push(child);
+			}
+		}
 		revealWorkbenchListSelection(view.outline);
-		if (scroll !== view.outline.scroll) view.notifyPresentationChanged();
+		if (expanded || scroll !== view.outline.scroll) view.notifyPresentationChanged();
 	}
 
 	private select(index: number, toggle: boolean): boolean {
 		const view = this.view, incoming = view.outline.rows[index];
-		const span = incoming.element.span, sceneSpan = (incoming.parent ?? incoming).element.span;
+		const span = incoming.element.span, sceneSpan = workbenchTreeRoot(incoming).element.span;
 		const intent = view.authoring.selectionRevision, scope = this.inputScope, generation = scope.contextGeneration;
 		if (!this.focus()) return false;
 		const focused = inputFocus.admittedTarget;
@@ -112,9 +127,11 @@ export class SceneHierarchyControl {
 		view.refresh();
 		if (this.viewValue !== view || scope.contextGeneration !== generation || view.authoring.selectionRevision !== intent
 			|| span.start === span.end || sceneSpan.start === sceneSpan.end) return false;
-		index = view.outline.rows.findIndex(row => row.element.kind === incoming.element.kind
-			&& row.element.span.start === span.start && row.element.span.end === span.end
-			&& (row.parent ?? row).element.span.start === sceneSpan.start && (row.parent ?? row).element.span.end === sceneSpan.end);
+		index = view.outline.rows.findIndex(row => {
+			if (row.element.kind !== incoming.element.kind || row.element.span.start !== span.start || row.element.span.end !== span.end) return false;
+			const root = workbenchTreeRoot(row);
+			return root.element.span.start === sceneSpan.start && root.element.span.end === sceneSpan.end;
+		});
 		if (index === -1) return false;
 		const row = view.outline.rows[index], version = view.authoring.workingCopy.version;
 		if (toggle && setWorkbenchTreeCollapsed(view.outline, index, !row.collapsed)) view.notifyPresentationChanged();

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { layoutWorkbenchList, workbenchListRowIndexAtPosition } from '../../ide/workbench/ui/list_view';
 import {
 	appendWorkbenchTreeNode, navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed,
-	workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult, type WorkbenchTreeState,
+	workbenchTreeTwistieContainsPosition, workbenchTreeRoot, WorkbenchTreeNavigationResult, type WorkbenchTreeState,
 } from '../../ide/workbench/ui/tree_view';
 
 function tree(): WorkbenchTreeState<string> {
@@ -27,9 +27,26 @@ test('tree topology retains actual parents, nested depth and childless roots', (
 	assert.deepEqual(state.rows.map(node => node.depth), [0, 0, 1, 2]);
 	assert.equal(leaf.parent, branch);
 	assert.equal(branch.parent, root);
+	assert.equal(workbenchTreeRoot(leaf), root, 'nested source correspondence belongs to the actual root, not its immediate parent');
+	assert.equal(workbenchTreeRoot(root), root);
+	assert.equal(workbenchTreeRoot(empty), empty);
 	assert.equal(state.selectionIndex, 3);
 	assert.equal(setWorkbenchTreeCollapsed(state, 0, true), false);
 	assert.equal(empty.collapsed, false);
+});
+
+test('deep tree disclosure follows retained topology without a host call-stack depth limit', () => {
+	const state = tree(), root = appendWorkbenchTreeNode(state, null, 'root');
+	let leaf = root;
+	for (let depth = 1; depth < 6000; depth++) leaf = appendWorkbenchTreeNode(state, leaf, String(depth));
+	rebuildWorkbenchTreeRows(state, leaf);
+	assert.equal(state.rows.length, 6000);
+	assert.equal(state.rows[5999], leaf); assert.equal(state.selectionIndex, 5999);
+	assert.equal(workbenchTreeRoot(leaf), root);
+	assert.equal(setWorkbenchTreeCollapsed(state, 0, true), true);
+	assert.equal(state.rows.length, 1); assert.equal(state.rows[0], root); assert.equal(state.selectionIndex, 0);
+	assert.equal(setWorkbenchTreeCollapsed(state, 0, false), true);
+	assert.equal(state.rows.length, 6000); assert.equal(state.rows[5999], leaf);
 });
 
 test('tree collapse retains nodes and nested expansion but never an invisible edit target', () => {

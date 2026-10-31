@@ -20,7 +20,12 @@ export type SceneReadingSnapshot = {
 /** Passive reading correspondence is shared by the document and the primary context, not their placement. */
 export function captureSceneReading(view: SceneReadingView, reference: SceneAuthoredSourceReference = view.authoring.captureSourceReference()): SceneReadingSnapshot {
 	const collapsed: TrackedTextRange[] = [];
-	for (const root of view.hierarchy.outline.roots) if (root.collapsed) collapsed.push({ ...root.element.span });
+	const pending = [...view.hierarchy.outline.roots];
+	while (pending.length > 0) {
+		const node = pending.pop()!;
+		if (node.collapsed) collapsed.push({ ...node.element.span });
+		for (const child of node.children) pending.push(child);
+	}
 	return { selected: reference.selected, collapsed, outlineScroll: view.hierarchy.position ?? view.hierarchy.outline.scroll,
 		detailsScroll: view.details.position ?? view.details.viewport.scrollTop };
 }
@@ -38,9 +43,13 @@ export function restoreSceneReading(view: SceneReadingView, snapshot: SceneReadi
 	view.hierarchy.refresh();
 	if (!request.isCurrent()) return false;
 	const tree = view.hierarchy.outline;
-	for (const root of tree.roots) {
-		const span = root.element.span;
-		root.collapsed = snapshot.collapsed.some(previous => previous.start !== previous.end && previous.start === span.start && previous.end === span.end);
+	const collapsedEnds = new Map<number, number>();
+	for (const span of snapshot.collapsed) if (span.start !== span.end) collapsedEnds.set(span.start, span.end);
+	const pending = [...tree.roots];
+	while (pending.length > 0) {
+		const node = pending.pop()!, span = node.element.span;
+		node.collapsed = collapsedEnds.get(span.start) === span.end;
+		for (const child of node.children) pending.push(child);
 	}
 	rebuildWorkbenchTreeRows(tree, null);
 	projectSceneSelection(view.hierarchy);

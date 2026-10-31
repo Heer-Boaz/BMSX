@@ -105,7 +105,7 @@ test('Scene pane source production and member commands retain their input when a
 	let parts: EditorParts;
 	const contributions = createTestEditorPaneContributions(commands, menu);
 	contributions.scene_editor = { create: group => new SceneEditorPane(commands as IdeCommandController, sources, menu,
-		surfaces, group.paneSurface, bounds, group.focusScope), measure: measureSceneEditor };
+		surfaces, group.paneSurface, bounds, group.focusScope, parts.partForGroup(group).quickInput), measure: measureSceneEditor };
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds, mainPresentation: main,
 		commands, contextMenu: menu, renderContext: presentation.renderContext, contributions,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),
@@ -172,7 +172,7 @@ scenes.register('incomplete', {})
 	let parts: EditorParts;
 	const contributions = createTestEditorPaneContributions(commands, menu);
 	contributions.scene_editor = { create: group => new SceneEditorPane(commands as IdeCommandController, sources, menu,
-		surfaces, group.paneSurface, bounds, group.focusScope), measure: measureSceneEditor };
+		surfaces, group.paneSurface, bounds, group.focusScope, parts.partForGroup(group).quickInput), measure: measureSceneEditor };
 	parts = new EditorParts({ surfaces, owner: presentation.owner, scope: presentation.focusScope, workArea: bounds, mainPresentation: main,
 		commands, contextMenu: menu, renderContext: presentation.renderContext, contributions,
 		focusReturn: inputFocus.createTarget(null, presentation.focusScope),

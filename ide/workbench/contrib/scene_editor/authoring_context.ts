@@ -7,6 +7,7 @@ import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, Scen
 import type { SceneSourceDocuments } from './source_documents';
 import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
+import type { SceneReparentChoice, SceneReparentMode, SceneSpatialParents, SceneSpatialProjection } from './spatial_projection';
 
 /** Admission proof for one exact authored declaration, not a name or a document tab. */
 export type SceneAuthoredSubject = {
@@ -16,6 +17,17 @@ export type SceneAuthoredSubject = {
 };
 
 const EMPTY_SCENES: readonly SceneSourceDefinition[] = [];
+const EMPTY_SPATIAL_PARENTS: SceneSpatialParents = new Map();
+
+export type SceneReparentRequest = {
+	readonly choices: readonly SceneReparentChoice[];
+	apply(choice: SceneReparentChoice): boolean;
+};
+export type SceneRenameRequest = {
+	readonly initialName: string;
+	validate(name: string): string | undefined;
+	apply(name: string): boolean;
+};
 
 export type SceneAuthoredSelection = {
 	readonly kind: 'scene';
@@ -48,6 +60,9 @@ export type SceneAuthoredSourceReference = {
 
 /** Retained source editing context. Trees, Details and document containers do not own its selection. */
 export class SceneAuthoringContext {
+	private spatialProjection: SceneSpatialProjection | undefined;
+	/** Opaque producer generation; controls refresh once, then consume retained facts. */
+	public get spatialGeneration(): object | undefined { return this.spatialProjection; }
 	private documentValue: SceneSourceDocument | undefined;
 	private revisionValue = 0;
 	private selectionRevisionValue = 0;
@@ -58,6 +73,7 @@ export class SceneAuthoringContext {
 	private sourceVersion = -1;
 	private readonly lifetime = new DisposableStore();
 	private readonly selectionListeners = new Set<() => void>();
+	private readonly spatialGenerationListeners = new Set<() => void>();
 	private readonly copies: readonly EditorTextModel[];
 	private readonly subjectRange: TrackedTextRange | undefined;
 	private readonly subjectScenes: SceneSourceDefinition[] | undefined;
@@ -180,7 +196,17 @@ export class SceneAuthoringContext {
 	/** Authoring admission reads the producer, even when only an API provider changed. */
 	public refresh(): boolean {
 		if (this.lifetime.isDisposed) return false;
-		return this.install(this.documents.get(this.workingCopy));
+		const previous = this.spatialProjection;
+		const document = this.documents.get(this.workingCopy);
+		this.spatialProjection = this.documents.getSpatialProjection(this.workingCopy, document);
+		const changed = this.install(document);
+		if (previous !== this.spatialProjection) for (const listener of this.spatialGenerationListeners) listener();
+		return changed;
+	}
+
+	public onDidChangeSpatialGeneration(listener: () => void): () => void {
+		this.spatialGenerationListeners.add(listener);
+		return () => this.spatialGenerationListeners.delete(listener);
 	}
 
 	public onDidChangeSelection(listener: () => void): () => void {
@@ -281,13 +307,15 @@ export class SceneAuthoringContext {
 
 	public canRemoveSelectedMember(): boolean {
 		const selected = this.editableMember();
-		return selected !== undefined && this.documents.memberRemovalEdits(this.workingCopy, this.document!, selected.scene, selected.entry) !== undefined;
+		return selected !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)
+			?.memberRemovalEdits(this.workingCopy.buffer, this.document!, selected.scene, selected.entry) !== undefined;
 	}
 
 	public removeSelectedMember(): boolean {
 		const selected = this.editableMember();
 		if (selected === undefined) return false;
-		const edits = this.documents.memberRemovalEdits(this.workingCopy, this.document!, selected.scene, selected.entry);
+		const edits = this.documents.getSpatialProjection(this.workingCopy, this.document!)
+			?.memberRemovalEdits(this.workingCopy.buffer, this.document!, selected.scene, selected.entry);
 		if (edits === undefined || !this.isCurrent || this.selectionValue !== selected) return false;
 		this.workingCopy.pushEditOperations(edits);
 		// Content publication may already have selected another surviving occurrence.
@@ -295,26 +323,96 @@ export class SceneAuthoringContext {
 		return true;
 	}
 
+	/** Known source edges, not runtime instances or inferred fallback roots. */
+	public getSpatialParents(scene: SceneSourceDefinition): SceneSpatialParents {
+		return this.spatialProjection === undefined ? EMPTY_SPATIAL_PARENTS : this.spatialProjection.getSpatialParents(this.documentValue!, scene);
+	}
+
+	public canReparentSelectedMember(mode: SceneReparentMode = 'keep_world'): boolean {
+		const selected = this.editableMember();
+		return selected !== undefined && (this.documents.getSpatialProjection(this.workingCopy, this.document!)
+			?.reparentChoices(this.document!, selected.scene, selected.entry, mode).length ?? 0) > 0;
+	}
+
+	public captureReparent(mode: SceneReparentMode = 'keep_world'): SceneReparentRequest | undefined {
+		const selected = this.editableMember(); if (selected === undefined) return;
+		const document = this.document!, projection = this.documents.getSpatialProjection(this.workingCopy, document);
+		if (projection === undefined) return;
+		const choices = projection.reparentChoices(document, selected.scene, selected.entry, mode);
+		if (choices.length === 0) return;
+		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
+		const isCurrent = () => !this.lifetime.isDisposed && !this.workingCopy.readOnly && this.workingCopy.version === version
+			&& this.selectionRevisionValue === selection && this.isCurrent && this.documentValue === document && this.selectionValue === selected
+			&& this.documents.getSpatialProjection(this.workingCopy, document) === projection
+			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
+		return { choices, apply: choice => {
+			if (!isCurrent()) return false;
+			this.workingCopy.pushEditOperations(projection.reparentEdits(this.workingCopy.buffer, document, selected.scene, selected.entry, choice)); return true;
+		} };
+	}
+
+	public canRenameSelectedMember(): boolean {
+		const selected = this.editableMember();
+		return selected !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)
+			?.renamePlan(this.document!, selected.scene, selected.entry) !== undefined;
+	}
+
+	public captureRename(): SceneRenameRequest | undefined {
+		const selected = this.editableMember(); if (selected === undefined) return;
+		const document = this.document!, projection = this.documents.getSpatialProjection(this.workingCopy, document);
+		if (projection === undefined) return;
+		const plan = projection.renamePlan(document, selected.scene, selected.entry); if (plan === undefined) return;
+		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
+		const isCurrent = () => !this.lifetime.isDisposed && !this.workingCopy.readOnly && this.workingCopy.version === version
+			&& this.selectionRevisionValue === selection && this.isCurrent && this.documentValue === document && this.selectionValue === selected
+			&& this.documents.getSpatialProjection(this.workingCopy, document) === projection
+			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
+		const validate = (name: string) => name.length === 0 ? 'Enter a nonempty member ID.'
+			: plan.occupied.has(name) ? 'Another member already has this ID.' : undefined;
+		return { initialName: plan.initialName, validate, apply: name => {
+			if (!isCurrent() || validate(name) !== undefined) return false;
+			this.workingCopy.pushEditOperations(projection.renameEdits(this.workingCopy.buffer, document, selected.scene, selected.entry, plan, name)); return true;
+		} };
+	}
+
+	public canRemoveSelectedSubtree(): boolean {
+		const selected = this.editableMember();
+		return selected !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)
+			?.subtreeRemovalEdits(this.workingCopy.buffer, this.document!, selected.scene, selected.entry) !== undefined;
+	}
+
+	public removeSelectedSubtree(): boolean {
+		const selected = this.editableMember(); if (selected === undefined) return false;
+		const edits = this.documents.getSpatialProjection(this.workingCopy, this.document!)
+			?.subtreeRemovalEdits(this.workingCopy.buffer, this.document!, selected.scene, selected.entry);
+		if (edits === undefined || !this.isCurrent || this.selectionValue !== selected) return false;
+		this.workingCopy.pushEditOperations(edits);
+		if (this.selectionValue === selected) this.clearSelection(); return true;
+	}
+
 	public canMoveSelectedMember(direction: -1 | 1): boolean {
 		const selected = this.editableMember();
-		return selected !== undefined && selected.scene.resolution === 'complete'
-			&& selected.index + direction >= 0 && selected.index + direction < selected.scene.objects.length;
+		return selected !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)
+			?.sibling(this.document!, selected.scene, selected.entry, direction) !== undefined;
 	}
 
 	public moveSelectedMember(direction: -1 | 1): boolean {
 		const selected = this.editableMember();
-		if (selected === undefined || selected.scene.resolution !== 'complete'
-			|| selected.index + direction < 0 || selected.index + direction >= selected.scene.objects.length) return false;
+		if (selected === undefined) return false;
+		const sibling = this.documents.getSpatialProjection(this.workingCopy, this.document!)?.sibling(this.document!, selected.scene, selected.entry, direction);
+		if (sibling === undefined) return false;
 		this.workingCopy.pushEditOperations(createLuaTableFieldMoveEdits(this.workingCopy.buffer, this.document!.analysis.chunk,
-			selected.scene.objectsTable, selected.index, selected.index + direction));
+			selected.scene.objectsTable, selected.scene.objectsTable.fields.indexOf(selected.entry.field), selected.scene.objectsTable.fields.indexOf(sibling.field)));
 		return true;
 	}
 
 	public dispose(): void {
 		this.lifetime.dispose();
 		this.selectionListeners.clear();
+		this.spatialGenerationListeners.clear();
 		this.selectionValue = undefined;
 		this.documentValue = undefined;
+		this.spatialProjection = undefined;
 		if (this.subjectScenes !== undefined) this.subjectScenes.length = 0;
 	}
 }

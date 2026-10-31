@@ -29,20 +29,24 @@ export function appendWorkbenchTreeNode<Element>(
 	return node;
 }
 
+/** Follow actual topology; a nested row's immediate parent is not its tree root. */
+export function workbenchTreeRoot<Element>(node: WorkbenchTreeNode<Element>): WorkbenchTreeNode<Element> {
+	while (node.parent !== null) node = node.parent;
+	return node;
+}
+
 /** Called on topology/collapse changes, never during layout or rendering. */
 export function rebuildWorkbenchTreeRows<Element>(state: WorkbenchTreeState<Element>, selected: WorkbenchTreeNode<Element> | null): void {
 	state.rows.length = 0;
-	appendVisibleNodes(state.roots, state.rows);
+	const pending = [...state.roots].reverse();
+	while (pending.length > 0) {
+		const node = pending.pop()!;
+		state.rows.push(node);
+		if (!node.collapsed) for (let index = node.children.length - 1; index >= 0; index--) pending.push(node.children[index]);
+	}
 	state.selectionIndex = selected === null ? -1 : state.rows.indexOf(selected);
 	state.hoverIndex = -1;
 	clampWorkbenchListScroll(state);
-}
-
-function appendVisibleNodes<Element>(nodes: readonly WorkbenchTreeNode<Element>[], rows: WorkbenchTreeNode<Element>[]): void {
-	for (const node of nodes) {
-		rows.push(node);
-		if (!node.collapsed) appendVisibleNodes(node.children, rows);
-	}
 }
 
 export function setWorkbenchTreeCollapsed<Element>(state: WorkbenchTreeState<Element>, index: number, collapsed: boolean): boolean {

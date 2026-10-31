@@ -9,6 +9,7 @@ import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../inp
 import { pointerCapture } from '../../../input/pointer/capture';
 import { pointerHover } from '../../../input/pointer/hover';
 import type { RuntimeSourceState } from '../../../runtime/sources';
+import type { QuickInputController } from '../../services/quick_input/controller';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import type { WorkbenchSurface } from '../../services/windows/model';
@@ -55,7 +56,7 @@ export class SceneEditorControl {
 
 	public constructor(commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
 		contextMenu: ContextMenuController, surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface,
-		private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope) {
+		private readonly workArea: Readonly<RectBounds>, scope: InputFocusScope, quickInput: QuickInputController) {
 		this.focusTarget = inputFocus.createTarget(null, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.canFocus = () => this.hasView && (this.hierarchy.canFocus || this.details.canFocus || this.actionBar.focusTarget.canFocus!());
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(event => this.handleKeyboard(event));
@@ -84,7 +85,7 @@ export class SceneEditorControl {
 			lifetime.add({ dispose: view.authoring.onDidChangeSelection(() => contextMenu.hide()) });
 		};
 		this.tooltip.attach(surfaces, owner, workArea);
-		this.authoringCommands = new SceneAuthoringCommands(this.focusTarget, context => {
+		this.authoringCommands = new SceneAuthoringCommands(this.focusTarget, quickInput, context => {
 			if (this.viewValue?.authoring !== context) return;
 			this.hierarchy.update(); this.hierarchy.revealSelection();
 		});

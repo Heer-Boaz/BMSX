@@ -378,7 +378,11 @@ Contribution history and independent views store the viewport's camera state,
 not host-pixel offsets interpreted by individual tools.
 
 Scene source documents are generation-cached at `contrib/scene_editor/source_documents.ts`
-and shared with project-content discovery. `SceneAuthoringContext` retains source
+and shared with project-content discovery. `SceneSpatialProjection` owns authored
+topology, prefab capabilities and structural edit admission for that semantic
+generation; `spatial_edits.ts` preserves the consuming source expressions, while
+shared affine math owns composition and parent-space conversion.
+`SceneAuthoringContext` retains source
 correspondence, semantic selection and member editing independently of outline
 rows and document placement. A primary context scopes one exact declaration;
 independent Scene inputs retain their own contexts over shared source models.

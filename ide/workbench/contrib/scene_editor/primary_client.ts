@@ -8,6 +8,7 @@ import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { MainWorkspace } from '../../main_workspace';
 import type { MainWorkspaceClient, MainWorkspaceRegionId, MainWorkspaceRegionSurfaces } from '../../common/main_workspace_client';
 import type { ContextMenuController } from '../../services/context_menu/controller';
+import type { QuickInputController } from '../../services/quick_input/controller';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import type { TextFileSaveService } from '../../services/working_copy/text_file_save';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
@@ -34,6 +35,7 @@ export type ScenePrimaryClientOptions = {
 	readonly sources: RuntimeSourceState;
 	readonly saves: TextFileSaveService;
 	readonly contextMenu: ContextMenuController;
+	readonly quickInput: QuickInputController;
 	readonly surfaces: WorkbenchSurfaceService;
 	readonly regions: MainWorkspaceRegionSurfaces;
 	readonly workArea: Readonly<RectBounds>;
@@ -73,7 +75,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		};
 		this.commandTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.commandTarget.registerCommand('sceneEditor.details', sections.details);
-		this.authoringCommands = new SceneAuthoringCommands(this.commandTarget, context => {
+		this.authoringCommands = new SceneAuthoringCommands(this.commandTarget, options.quickInput, context => {
 			if (context !== consumer || !this.hierarchy.attached) return;
 			this.hierarchy.control.update(); this.hierarchy.control.revealSelection();
 		});

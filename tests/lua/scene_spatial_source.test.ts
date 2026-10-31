@@ -12,7 +12,7 @@ import { ContextMenuController } from '../../ide/workbench/services/context_menu
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { parseLuaNumberInput } from '../../ide/language/lua/source_edits';
 import { readLuaNumberLiteral, readLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
-import { SceneMemberRemovalProjection } from '../../ide/workbench/contrib/scene_editor/member_removal';
+import { SceneSpatialProjection } from '../../ide/workbench/contrib/scene_editor/spatial_projection';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
@@ -101,7 +101,7 @@ scenes.register('fixture', { objects = {
 	t.after(() => authoring.dispose());
 	const document = f.documents.get(f.model), scene = document.scenes[0];
 	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[2], index: 2 });
-	const projection = t.mock.method(SceneMemberRemovalProjection.prototype, 'edits');
+	const projection = t.mock.method(SceneSpatialProjection.prototype, 'memberRemovalEdits');
 	assert.equal(authoring.canRemoveSelectedMember(), true);
 	const edits = projection.mock.calls[0].result;
 	for (let index = 0; index < 20; index++) assert.equal(authoring.canRemoveSelectedMember(), true);

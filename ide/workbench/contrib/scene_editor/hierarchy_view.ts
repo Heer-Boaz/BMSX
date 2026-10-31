@@ -1,6 +1,6 @@
 import type { TrackedTextRange } from '../../../editor/text/text_change';
 import type { SceneAuthoringContext } from './authoring_context';
-import type { SceneSourceDocument } from './model';
+import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceObject } from './model';
 import { installSceneOutline, projectSceneSelection, type SceneOutlineElement } from './outline';
 import type { WorkbenchTreeState } from '../../ui/tree_view';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
@@ -10,8 +10,11 @@ export class SceneHierarchyViewState {
 	public outlineDocument: SceneSourceDocument | undefined;
 	public outlineRevision = -1;
 	public outlineSourceVersion = -1;
+	public outlineGeneration = 0;
+	public outlineParentGeneration: object | undefined;
 	public position: number | undefined;
 	public readonly outlineRanges = new Map<SceneOutlineElement, TrackedTextRange>();
+	public readonly outlineParents = new Map<SceneSourceDefinition, ReadonlyMap<SceneSourceObject, SceneSourceObject | undefined>>();
 	public readonly layout: FullWidthWorkbenchLayout = { left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null };
 	public readonly outline: WorkbenchTreeState<SceneOutlineElement> = {
 		roots: [], rows: [], selectionIndex: -1, scroll: 0, hoverIndex: -1,
@@ -26,12 +29,22 @@ export class SceneHierarchyViewState {
 	public refresh(): void {
 		this.authoring.refresh();
 		if (this.outlineDocument === this.authoring.document && this.outlineSourceVersion === this.authoring.workingCopy.version) {
-			if (this.outlineRevision !== this.authoring.revision) projectSceneSelection(this);
-			return;
+			let topologyChanged = false;
+			if (this.outlineParentGeneration !== this.authoring.spatialGeneration) {
+				topologyChanged = this.outlineParents.size !== this.authoring.scenes.length;
+				if (!topologyChanged) for (const scene of this.authoring.scenes) {
+					if (this.outlineParents.get(scene) !== this.authoring.getSpatialParents(scene)) { topologyChanged = true; break; }
+				}
+				this.outlineParentGeneration = this.authoring.spatialGeneration;
+			}
+			if (!topologyChanged) {
+				if (this.outlineRevision !== this.authoring.revision) projectSceneSelection(this);
+				return;
+			}
 		}
 		installSceneOutline(this);
 	}
 	public onDidChange(listener: () => void): () => void { this.changeListeners.add(listener); return () => this.changeListeners.delete(listener); }
 	public notifyPresentationChanged(): void { for (const listener of this.changeListeners) listener(); }
-	public dispose(): void { this.releaseRanges(); this.changeListeners.clear(); }
+	public dispose(): void { this.releaseRanges(); this.outlineParents.clear(); this.changeListeners.clear(); }
 }

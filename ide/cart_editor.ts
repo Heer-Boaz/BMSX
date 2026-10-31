@@ -543,7 +543,7 @@ export class RuntimeCartEditor implements CartEditor {
 				group, this.editorParts.partForGroup(group).quickInput, group.focusScope), measure: measureUnconstrainedEditor },
 			game_view: { create: group => new GameViewEditorPane(this.commands, this.contextMenu, runtime, input, presenter, group.focusScope), measure: measureUnconstrainedEditor },
 			cart_map: { create: group => new CartMapPane(this.cartMaps, this.commands, this.sources, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.contextMenu), measure: measureCartMapEditor },
-			scene_editor: { create: group => new SceneEditorPane(this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope), measure: measureSceneEditor },
+			scene_editor: { create: group => new SceneEditorPane(this.commands, this.sources, this.contextMenu, this.surfaces, group.paneSurface, group.workArea, group.focusScope, this.editorParts.partForGroup(group).quickInput), measure: measureSceneEditor },
 			scenario_lab: { create: group => new ScenarioLabEditorPane(
 				this.scenarioLab,
 				this.commands,
@@ -657,7 +657,7 @@ export class RuntimeCartEditor implements CartEditor {
 			resource_view: new ResourceViewerInputSerializer(sources.catalog),
 		};
 		this.scenePrimaryOptions = {
-			commands: this.commands, sources: this.sources, saves: textFileSaves, contextMenu: this.contextMenu, surfaces: this.surfaces,
+			commands: this.commands, sources: this.sources, saves: textFileSaves, contextMenu: this.contextMenu, quickInput: this.quickInput, surfaces: this.surfaces,
 			workArea: getWorkbenchWorkArea(), main: this.mainWorkspace,
 			focusReturn: this.editorParts.main.focusTarget,
 			restoreNavigation: this.restoreSceneNavigation,

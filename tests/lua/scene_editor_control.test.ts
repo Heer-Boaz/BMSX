@@ -20,7 +20,7 @@ function fixture(t: TestContext) {
 	const view = new SceneEditorViewState(context);
 	const control = new SceneEditorControl(f.editor.commands, f.sources, f.editor.contextMenu,
 		f.editor.surfaces, f.editor.editorParts.main.clientSurface, f.editor.editorParts.main.clientBounds,
-		new InputFocusScope(f.editor.editorParts.main.scope.surfaceScope, f.editor.editorParts.main.scope));
+		new InputFocusScope(f.editor.editorParts.main.scope.surfaceScope, f.editor.editorParts.main.scope), f.editor.editorParts.main.quickInput);
 	const bounds = { left: 0, top: 30, right: 800, bottom: 300 };
 	view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	control.setView(view, bounds); control.update();
