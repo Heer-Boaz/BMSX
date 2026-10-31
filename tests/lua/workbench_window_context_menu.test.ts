@@ -269,7 +269,7 @@ for (const operation of ['move', 'resize'] as const) for (const origin of ['neut
 		if (origin === 'neutral') {
 			f.key('F10');
 			while (f.editor.menubar.activeMenu !== 'window') f.key('ArrowRight');
-			assert.equal(f.editor.contextMenu.model.rows.find(row => row.command === command)!.enabled, false);
+			assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === command), false, 'global Window does not offer contextual geometry commands');
 			f.key('Escape'); assert.equal(inputFocus.admittedTarget, null);
 		}
 		window.focusTarget.focus();
@@ -280,16 +280,15 @@ for (const operation of ['move', 'resize'] as const) for (const origin of ['neut
 		assert.equal(f.firstInput.workingCopy.buffer.getText(), source);
 	});
 
-for (const operation of ['move', 'resize'] as const) for (const route of ['menubar', 'palette'] as const)
+for (const operation of ['move', 'resize'] as const) for (const route of ['system-menu', 'palette'] as const)
 	test(`${route} keeps keyboard ${operation} admitted through its real native invocation and focus handoff`, t => {
 		const f = createActualSourcePanes(t), u = utility(t, f), window = u.window, command = `window.${operation}` as const;
 		const requested = { ...u.model.requestedBounds }, documentRequested = { ...f.firstPart.window!.model.requestedBounds };
 		const model = f.firstInput.workingCopy, source = model.buffer.getText(), version = model.version;
 		window.clientFocusTarget.focus();
 		assert.equal(f.editor.commands.isEnabled(command, window.clientFocusTarget), true);
-		if (route === 'menubar') {
-			f.key('F10');
-			while (f.editor.menubar.activeMenu !== 'window') f.key('ArrowRight');
+		if (route === 'system-menu') {
+			f.key('Space', KeyModifier.alt);
 			assert.equal(f.editor.contextMenu.model.rows.find(row => row.command === command)!.enabled, true);
 			choose(f, command);
 		} else {

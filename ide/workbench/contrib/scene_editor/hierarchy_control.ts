@@ -13,13 +13,12 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
-import { WorkbenchMenu } from '../../ui/menu/model';
+import type { WorkbenchMenuPresentation } from '../../ui/menu/model';
 import { navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed, workbenchTreeRoot, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import { SceneOutlineFeedback } from './feedback';
 import { layoutSceneHierarchy } from './hierarchy_layout';
 import { drawSceneHierarchy } from './hierarchy_render';
 import type { SceneHierarchyViewState } from './hierarchy_view';
-import { SCENE_HIERARCHY_CONTEXT_ACTIONS } from './menus';
 import type { SceneEditorSectionCommands } from './option_editor';
 import { selectSceneOutlineRow } from './outline';
 
@@ -32,7 +31,6 @@ export class SceneHierarchyControl {
 	private attachmentRevision = 0;
 	private presented = false;
 	private readonly feedback: SceneOutlineFeedback;
-	private readonly contextActions = new WorkbenchMenu(SCENE_HIERARCHY_CONTEXT_ACTIONS, undefined);
 	private readonly unbindKeyboard: () => void;
 	private unsubscribeDispose!: () => void;
 	public get view(): SceneHierarchyViewState { return this.viewValue!; }
@@ -42,7 +40,8 @@ export class SceneHierarchyControl {
 
 	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, scope: InputFocusScope,
-		private readonly commandTarget: InputFocusTarget, private readonly sections: SceneEditorSectionCommands) {
+		private readonly commandTarget: InputFocusTarget, private readonly sections: SceneEditorSectionCommands,
+		private readonly contextActions: WorkbenchMenuPresentation) {
 		this.focusTarget = inputFocus.createTarget(commandTarget, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.commandContext = commandTarget;
 		this.focusTarget.canFocus = () => this.canFocus;

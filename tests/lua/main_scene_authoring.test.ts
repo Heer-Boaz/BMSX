@@ -312,3 +312,39 @@ test('Files primary admission cannot outlive its captured origin generation duri
 	assert.ok(origin.scope.contextGeneration !== before);
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
 });
+
+for (const placement of ['dockedMain', 'floatingWindow'] as const)
+test(`Main hierarchy offers Details only when its ${placement} sibling is not displayed`, async t => {
+	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
+	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
+	selectSceneOutlineRow(client.view.hierarchy, 1); f.update();
+	assert.equal(main.setRegionPlacement('details', placement), true); f.update();
+	assert.equal(main.regions.details.displayed, true);
+	main.focusPrimary('hierarchy'); f.key('ContextMenu');
+	assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.details'), false);
+	f.key('Escape');
+	if (placement === 'floatingWindow') assert.equal(main.minimizeRegion('details'), true);
+	else assert.equal(main.setRegionVisible('details', false), true);
+	f.update(); assert.equal(main.regions.details.displayed, false);
+	main.focusPrimary('hierarchy'); f.key('ContextMenu');
+	const rows = f.editor.contextMenu.model.rows, index = rows.findIndex(row => row.command === 'sceneEditor.details');
+	assert.ok(index >= 0 && rows[index].enabled, 'a genuinely hidden sibling retains its reveal action');
+	f.key('Home'); for (let row = 0; row < index; row++) if (rows[row].enabled) f.key('ArrowDown'); f.key('Enter'); f.update();
+	assert.equal(main.regions.details.displayed, true);
+	assert.ok(client.details.scope.contains(inputFocus.admittedTarget!.scope));
+	assert.equal(main.regions.details.placement, placement);
+	assert.equal(f.model.canUndo, false);
+});
+
+test('Main panel section membership retires an armed popup when its hidden sibling is shown', async t => {
+	const f = fixture(t); assert.equal(await f.open(0), true); f.update();
+	const main = f.editor.mainWorkspace, client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
+	selectSceneOutlineRow(client.view.hierarchy, 1); f.update();
+	assert.equal(main.setRegionVisible('details', false), true); main.focusPrimary('hierarchy'); f.key('ContextMenu');
+	assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.details' && row.enabled));
+	assert.equal(main.setRegionVisible('details', true), true); f.update();
+	assert.equal(f.editor.contextMenu.visible, false);
+	assert.equal(client.consumer.selection?.kind, 'member');
+	assert.equal(f.model.canUndo, false);
+});

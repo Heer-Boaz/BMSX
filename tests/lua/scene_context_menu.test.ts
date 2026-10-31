@@ -118,11 +118,15 @@ for (const code of ['ContextMenu', 'F10']) test(`Scene ${code} uses the selected
 });
 
 
-for (const command of ['editor.source', 'editor.sourceToSide'] as const) test(`Scene context ${command} opens the exact selected canonical source without rewriting it`, async t => {
+for (const command of ['editor.source', 'editor.sourceToSide'] as const) test(`Scene ${command} opens the exact selected canonical source without rewriting it`, async t => {
 	const f = fixture(t); f.firstGroup.model.pin(f.input); selectSceneOutlineRow(f.input.view.hierarchy, 2); f.pane.update();
 	const expected = f.pane.getSourceLocation!()!, source = f.model.buffer.getText(), version = f.model.version;
 	const opening = t.mock.method(f.editor.navigation, 'openSource');
-	secondary(f, 2); accept(f, command); assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result;
+	secondary(f, 2);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.sourceToSide'), false, 'placement variants stay out of the routine tool menu');
+	if (command === 'editor.source') accept(f, command);
+	else { f.key('Escape'); f.editor.commands.execute(command, f.pane.commandTarget); }
+	assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result;
 	const group = command === 'editor.source' ? f.firstGroup : f.firstPart.groups.find(candidate => candidate !== f.firstGroup)!;
 	const input = group.model.activeTab; assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);
 	assert.equal(input.context.view.cursorRow, expected.selection!.row); assert.equal(input.context.view.cursorColumn, expected.selection!.startColumn);
@@ -131,7 +135,7 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const) test(`S
 });
 
 test('Scene menu Details keeps the selected occurrence and its container owns keyboard menus, not property fields', t => {
-	const f = fixture(t); secondary(f, 1); accept(f, 'sceneEditor.details');
+	const f = fixture(t); f.firstBounds.right = 160; f.update(); secondary(f, 1); accept(f, 'sceneEditor.details');
 	assert.equal(f.input.view.section, 'details'); const origin = inputFocus.admittedTarget;
 	assert.ok(origin === f.pane.commandTarget && origin !== null);
 	f.key('ContextMenu'); assert.equal(f.editor.contextMenu.visible, true); f.key('Escape'); assert.ok(inputFocus.admittedTarget === origin);
@@ -249,7 +253,7 @@ for (const rebind of [false, true]) test(`Scene retained member command ${rebind
 });
 
 test('Scene Details background secondary uses its selected member without treating its value field as an outline action', t => {
-	const f = fixture(t); secondary(f, 1); accept(f, 'sceneEditor.details');
+	const f = fixture(t); f.firstBounds.right = 160; f.update(); secondary(f, 1); accept(f, 'sceneEditor.details');
 	const origin = f.pane.commandTarget, before = f.model.buffer.getText(), bounds = f.input.view.details.viewport.bounds;
 	for (const down of [true, false]) f.editor.dispatchPointer({ x: bounds.left + 1, y: bounds.top + 1,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
@@ -377,4 +381,21 @@ test('Scene section navigation accepts its exact draft without overwriting forei
 	assert.equal(publications, 1);
 	assert.ok(inputFocus.admittedTarget === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
 	assert.equal(f.input.view.section, 'details');
+});
+
+for (const font of ['tiny', 'msx'] as const) test(`${font} split Scene omits section-switch menu entries without disabling Enter and Escape focus navigation`, t => {
+	const f = fixture(t, font); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.pane.update();
+	assert.equal(f.input.view.layout.mode, 'split');
+	secondary(f, 1);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.details' || row.command === 'sceneEditor.outline'), false);
+	f.input.view.contextActions.refresh();
+	assert.equal(f.input.view.contextActions.visibleItems.some(item => item.type === 'command' && (item.command === 'sceneEditor.details' || item.command === 'sceneEditor.outline')), false,
+		'the header and body follow the same actual presentation contract');
+	f.key('Escape'); f.key('Enter');
+	assert.equal(f.input.view.section, 'details');
+	assert.ok(f.pane.control.details.inputScope.contains(inputFocus.admittedTarget!.scope));
+	f.key('Escape');
+	assert.equal(f.input.view.section, 'outline');
+	assert.ok(inputFocus.admittedTarget === f.pane.control.hierarchy.focusTarget);
+	assert.equal(f.model.canUndo, false);
 });

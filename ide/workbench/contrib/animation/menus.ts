@@ -21,7 +21,5 @@ export const ANIMATION_CONTEXT_ACTIONS: WorkbenchMenuDefinition<AnimationEditorI
 	{ type: 'command', command: 'animation.edit' },
 	{ type: 'command', command: 'animation.remove' },
 	{ type: 'command', command: 'editor.source' },
-	{ type: 'command', command: 'editor.sourceToSide' },
 	{ type: 'command', command: 'animation.producerSource' },
-	{ type: 'command', command: 'animation.producerSourceToSide' },
 ];

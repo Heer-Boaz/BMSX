@@ -86,3 +86,25 @@ test('game frame controls share commands and use distinct non-repeating Studio k
 		assert.ok(WORKBENCH_MENUS['menubar.run'].some(item => item.type === 'command' && item.command === command));
 	}
 });
+
+// Menu ownership is the contract: discover global windows here, manipulate a specific part at its chrome/tab/group.
+test('Window menu keeps discovery without duplicating contextual placement and focus operations', () => {
+	const windowMenu = WORKBENCH_MENUS['menubar.window'];
+	for (const command of ['window.showAll', 'window.newEditor', 'window.restoreMinimized', 'workspace.hierarchy.toggle', 'workspace.details.toggle', 'workspace.resetLayout'] as const)
+		assert.ok(windowMenu.some(item => item.type === 'command' && item.command === command));
+	for (const command of ['window.move', 'window.resize', 'window.snapLeft', 'window.snapRight', 'window.maximize', 'window.restore', 'window.minimize', 'window.hide',
+		'window.copyEditor', 'window.moveEditor', 'group.focusNext', 'group.focusTabs', 'group.focusPrevious', 'group.move', 'workspace.hierarchy.float', 'workspace.details.dock'] as const)
+		assert.equal(windowMenu.some(item => item.type === 'command' && item.command === command), false);
+	for (const command of ['window.move', 'window.resize', 'window.snapLeft', 'window.snapRight', 'window.maximize', 'window.restore', 'window.hide'] as const)
+		assert.ok(WORKBENCH_MENUS['window.context'].some(item => item.type === 'command' && item.command === command));
+	for (const command of ['window.copyEditor', 'window.moveEditor'] as const)
+		assert.ok(WORKBENCH_MENUS['editorTabs.context'].some(item => item.type === 'command' && item.command === command));
+});
+
+test('routine tool menus expose one primary Source action rather than placement variants', () => {
+	for (const id of ['editor.source.actions', 'behaviorLens.graph.actions', 'behaviorLens.stateGraph.actions', 'behaviorLens.properties.actions',
+		'behaviorLens.node.context', 'behaviorLens.state.context', 'behaviorLens.edge.context', 'behaviorLens.property.context', 'aem.context'] as const) {
+		assert.ok(WORKBENCH_MENUS[id].some(item => item.type === 'command' && item.command === 'editor.source'));
+		assert.equal(WORKBENCH_MENUS[id].some(item => item.type === 'command' && item.command === 'editor.sourceToSide'), false);
+	}
+});

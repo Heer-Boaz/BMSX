@@ -59,7 +59,7 @@ function detailsControl(t: TestContext, view: SceneEditorViewState) {
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const navigation = { isEnabled: () => true, run: () => assert.fail('layout/paint invoked navigation') };
-	const control = new SceneDetailsControl(commands, menu, scope, parent, { outline: navigation, details: navigation });
+	const control = new SceneDetailsControl(commands, menu, scope, parent, { outline: navigation, details: navigation }, view.contextActions);
 	control.setView(view.details, view.layout.detailsBounds);
 	t.after(() => { control.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return control;

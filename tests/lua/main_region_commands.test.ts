@@ -10,7 +10,6 @@ import { UnavailableScenePrimaryClient } from '../../ide/workbench/contrib/scene
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { buildCommandQuickPickItems } from '../../ide/workbench/contrib/commands/quick_access';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 const SOURCE = "local scenes=require('cartlib/world/scene_library'); scenes.register('room',{objects={{member_id='unit',definition_id='actor',spatial={local_transform={1,0,0,0,1,0,0,0,1,1,2,3}}}}})";
@@ -36,10 +35,9 @@ async function fixture(t: TestContext, unavailable = false) {
 	return { ...f, main, primary, model };
 }
 
-test('Window contributes both explicit region placements while unbound Main cannot acquire an authored subject', t => {
+test('unbound Main cannot acquire an authored subject through region placement commands', t => {
 	const f = createActualSourcePanes(t), main = f.editor.mainWorkspace;
 	for (const command of ['workspace.hierarchy.float', 'workspace.hierarchy.dock', 'workspace.details.float', 'workspace.details.dock'] as const) {
-		assert.ok(WORKBENCH_MENUS['menubar.window'].some(item => item.type === 'command' && item.command === command));
 		assert.equal(f.editor.commands.isEnabled(command, f.first.commandTarget), false);
 		f.editor.commands.execute(command, f.first.commandTarget);
 	}

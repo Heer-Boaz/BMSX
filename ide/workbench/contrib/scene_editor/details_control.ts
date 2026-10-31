@@ -9,13 +9,12 @@ import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_inp
 import { pointerCapture } from '../../../input/pointer/capture';
 import { createLuaTableFieldNumberEdits, parseLuaNumberInput } from '../../../language/lua/source_edits';
 import type { ContextMenuController } from '../../services/context_menu/controller';
-import { WorkbenchMenu } from '../../ui/menu/model';
+import type { WorkbenchMenuPresentation } from '../../ui/menu/model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import { POSITION_AXES } from './details_projection';
 import { layoutSceneDetails } from './details_layout';
 import { drawSceneDetails } from './details_render';
 import type { SceneDetailsFieldBinding, SceneDetailsViewState, SceneOptionViewProperty } from './details_view';
-import { SCENE_DETAILS_CONTEXT_ACTIONS } from './menus';
 import { SceneOptionEditor, type SceneEditorSectionCommands } from './option_editor';
 
 export type ScenePositionInputValue = {
@@ -30,7 +29,6 @@ export class SceneDetailsControl {
 	public readonly controls: readonly ValueInput<ScenePositionInputValue>[];
 	public readonly options: SceneOptionEditor;
 	private readonly scroll: WorkbenchScrollControl;
-	private readonly menu = new WorkbenchMenu(SCENE_DETAILS_CONTEXT_ACTIONS, undefined);
 	private readonly unbindFocus: readonly (() => void)[];
 	private readonly fields: ({ readonly binding: SceneDetailsFieldBinding; readonly field: LuaTableField } | undefined)[] = [];
 	private viewValue: SceneDetailsViewState | undefined;
@@ -48,7 +46,7 @@ export class SceneDetailsControl {
 
 	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
 		scope: InputFocusScope, private readonly parentCommandTarget: InputFocusTarget,
-		sectionCommands: SceneEditorSectionCommands) {
+		sectionCommands: SceneEditorSectionCommands, private readonly menu: WorkbenchMenuPresentation) {
 		this.scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, parentCommandTarget, event => {
 			if (!isKeyJustPressed('Escape', event)) return false;
 			consumeIdeKey('Escape', event);

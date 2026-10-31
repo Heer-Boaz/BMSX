@@ -21,7 +21,7 @@ import { SceneHierarchyControl } from './hierarchy_control';
 import { SceneDetailsControl } from './details_control';
 import { measureSceneHierarchy } from './hierarchy_layout';
 import { measureSceneDetails } from './details_layout';
-import { SCENE_DETAILS_CONTEXT_ACTIONS, SCENE_HIERARCHY_CONTEXT_ACTIONS } from './menus';
+import { SCENE_AUTHORING_CONTEXT_ACTIONS } from './menus';
 import { ScenePrimaryBookmark } from './primary_bookmark';
 import { ScenePrimaryNavigationLocation, type RestoreScenePrimaryBookmark } from './primary_location';
 import { captureScenePrimary, restoreScenePrimaryView, type ScenePrimaryViewSnapshot } from './primary_snapshot';
@@ -47,10 +47,16 @@ export type ScenePrimaryClientOptions = {
 	save(model: EditorTextModel): void;
 };
 const PRIMARY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'editor.source' }];
-const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<undefined> = [...SCENE_HIERARCHY_CONTEXT_ACTIONS,
-	{ type: 'separator' }, { type: 'command', command: 'workspace.hierarchy.toggle' }];
-const DETAILS_CONTEXT: WorkbenchMenuDefinition<undefined> = [...SCENE_DETAILS_CONTEXT_ACTIONS,
-	{ type: 'separator' }, { type: 'command', command: 'workspace.details.toggle' }];
+const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
+	{ type: 'command', command: 'sceneEditor.details', when: main => !main.regions.details.displayed },
+	...SCENE_AUTHORING_CONTEXT_ACTIONS,
+];
+const DETAILS_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
+	{ type: 'command', command: 'sceneEditor.outline', when: main => !main.regions.hierarchy.displayed },
+	...SCENE_AUTHORING_CONTEXT_ACTIONS,
+];
+const HIERARCHY_PANEL_CONTEXT: WorkbenchMenuDefinition<undefined> = [{ type: 'command', command: 'workspace.hierarchy.toggle' }];
+const DETAILS_PANEL_CONTEXT: WorkbenchMenuDefinition<undefined> = [{ type: 'command', command: 'workspace.details.toggle' }];
 
 /** One exact Scene context, presented by independently attached hierarchy and Details regions. */
 export class ScenePrimaryClient implements MainWorkspaceClient {
@@ -100,17 +106,19 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		const common = { commands: options.commands, contextMenu: options.contextMenu, surfaces: options.surfaces,
 			workArea: options.workArea, scope: this.scope, commandTarget: this.commandTarget, focusReturn: options.focusReturn,
 			description: consumer.workingCopy.resource.path, onDidOpenActions: observeActions, isPresented: () => options.main.primary === this };
-		const hierarchyMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(HIERARCHY_CONTEXT, undefined), options.main.regions.hierarchy.actions]);
+		const hierarchyContext = new WorkbenchMenu(HIERARCHY_CONTEXT, options.main);
+		const hierarchyMenu = new WorkbenchCompositeMenu([hierarchyContext, new WorkbenchMenu(HIERARCHY_PANEL_CONTEXT, undefined), options.main.regions.hierarchy.actions]);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', view: this.view.hierarchy,
 			surface: options.regions.hierarchy, actions: createWorkbenchActionBar(new WorkbenchMenu(PRIMARY_ACTIONS, undefined), true, hierarchyMenu),
 			contextActions: hierarchyMenu, measureContent: measureSceneHierarchy,
 			createControl: (scope, _target, surface) => new SceneHierarchyControl(options.commands, options.contextMenu, options.surfaces,
-				surface, options.workArea, scope, this.commandTarget, sections) });
-		const detailsMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(DETAILS_CONTEXT, undefined), options.main.regions.details.actions]);
+				surface, options.workArea, scope, this.commandTarget, sections, hierarchyContext) });
+		const detailsContext = new WorkbenchMenu(DETAILS_CONTEXT, options.main);
+		const detailsMenu = new WorkbenchCompositeMenu([detailsContext, new WorkbenchMenu(DETAILS_PANEL_CONTEXT, undefined), options.main.regions.details.actions]);
 		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', view: this.view.details,
 			surface: options.regions.details, actions: createWorkbenchActionBar(new WorkbenchMenu(PRIMARY_ACTIONS, undefined), true, detailsMenu),
 			contextActions: detailsMenu, measureContent: measureSceneDetails,
-			createControl: scope => new SceneDetailsControl(options.commands, options.contextMenu, scope, this.commandTarget, sections) });
+			createControl: scope => new SceneDetailsControl(options.commands, options.contextMenu, scope, this.commandTarget, sections, detailsContext) });
 		this.unbindInteraction = inputFocus.onDidActivateInteraction(target => {
 			if (this.disposed) return;
 			if (this.hierarchy.attached && this.hierarchy.scope.contains(target.scope)) this.view.preferredRegion = 'hierarchy';

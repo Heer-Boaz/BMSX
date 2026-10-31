@@ -1,3 +1,4 @@
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
@@ -63,7 +64,7 @@ test('local-origin input accepts fractional Lua Numbers and preserves the basis,
 	const control = new SceneDetailsControl({
 		isEnabled: (id, target) => inputFocus.getCommand(id, target)?.isEnabled() === true,
 		execute: (id, target) => inputFocus.executeCommand(id, target),
-	}, menu, scope, parent, { outline: command, details: command });
+	}, menu, scope, parent, { outline: command, details: command }, new WorkbenchMenu([], undefined));
 	t.after(() => { control.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
 	control.setView(view, bounds);

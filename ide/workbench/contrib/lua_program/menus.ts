@@ -14,7 +14,6 @@ export const LUA_PROGRAM_CONTEXT_ACTIONS: WorkbenchMenuDefinition<LuaProgramInpu
 	{ type: 'command', command: 'luaProgram.edit', when: input => !input.liveVisible },
 	{ type: 'command', command: 'luaProgram.remove', when: input => !input.liveVisible },
 	{ type: 'command', command: 'editor.source' },
-	{ type: 'command', command: 'editor.sourceToSide' },
 	{ type: 'command', command: 'luaProgram.live', when: input => !input.liveVisible },
 	{ type: 'command', command: 'luaProgram.authoring', when: input => input.liveVisible },
 	{ type: 'command', command: 'luaProgram.selectInstance' },

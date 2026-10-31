@@ -1,3 +1,4 @@
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
@@ -41,7 +42,7 @@ function fixture(t: TestContext, source = SOURCE) {
 		execute: (command, target) => inputFocus.executeCommand(command, target),
 	};
 	const navigation = { isEnabled: () => true, run: () => assert.fail('source editing invoked view navigation') };
-	const details = new SceneDetailsControl(commands, menu, scope, parent, { outline: navigation, details: navigation });
+	const details = new SceneDetailsControl(commands, menu, scope, parent, { outline: navigation, details: navigation }, new WorkbenchMenu([], undefined));
 	details.setView(view, bounds);
 	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return { model, view, editor: details.options, refresh: () => details.update(),

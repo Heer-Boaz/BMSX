@@ -1,3 +1,4 @@
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
@@ -41,7 +42,7 @@ function fixture(t: TestContext, attach = true, source = SOURCE, imports: readon
 	};
 	parent.registerCommand('undo', { isEnabled: () => f.model.canUndo, run: () => f.model.undo() });
 	parent.registerCommand('redo', { isEnabled: () => f.model.canRedo, run: () => f.model.redo() });
-	control = new SceneDetailsControl(commands, menu, scope, parent, sections);
+	control = new SceneDetailsControl(commands, menu, scope, parent, sections, new WorkbenchMenu([], undefined));
 	const select = (index: number) => {
 		context.refresh();
 		const document = context.document!, scene = document.scenes[0];
@@ -80,7 +81,7 @@ test('Details fields edit and undo canonical source with no hierarchy or documen
 test('two Details presentations share selection but own independent drafts, scrolling and font reflow', t => {
 	const f = fixture(t); f.select(0);
 	const view = new SceneDetailsViewState(f.context);
-	const other = new SceneDetailsControl(f.commands, f.menu, f.scope, f.parent, f.sections);
+	const other = new SceneDetailsControl(f.commands, f.menu, f.scope, f.parent, f.sections, new WorkbenchMenu([], undefined));
 	other.setView(view, f.bounds);
 	t.after(() => { other.dispose(); view.dispose(); });
 	const field = f.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '31', true);

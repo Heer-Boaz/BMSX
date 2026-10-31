@@ -18,7 +18,6 @@ const ACTIONS: WorkbenchMenuDefinition<WorkspaceSearchInput> = [
 ];
 const CONTEXT: WorkbenchMenuDefinition<WorkspaceSearchInput> = [
 	{ type: 'command', command: 'editor.source' },
-	{ type: 'command', command: 'editor.sourceToSide' },
 	{ type: 'separator' }, ...OPTIONS,
 ];
 let nextId = 0;

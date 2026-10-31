@@ -14,14 +14,10 @@ import type { ScenePrimarySnapshot } from './primary_snapshot';
 const SOURCE_PRIMARY: WorkbenchMenuDefinition<EditorTextModel | undefined> = [
 	{ type: 'command', command: 'editor.source', when: model => model !== undefined },
 ];
-const SOURCE_ACTIONS: WorkbenchMenuDefinition<EditorTextModel | undefined> = [
-	...SOURCE_PRIMARY,
-	{ type: 'command', command: 'editor.sourceToSide', when: model => model !== undefined },
-];
-const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_ACTIONS,
-	{ type: 'separator' }, { type: 'command', command: 'workspace.details.focus' }, { type: 'command', command: 'workspace.hierarchy.toggle' }];
-const DETAILS_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_ACTIONS,
-	{ type: 'separator' }, { type: 'command', command: 'workspace.hierarchy.focus' }, { type: 'command', command: 'workspace.details.toggle' }];
+const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_PRIMARY,
+	{ type: 'separator' }, { type: 'command', command: 'workspace.hierarchy.toggle' }];
+const DETAILS_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_PRIMARY,
+	{ type: 'separator' }, { type: 'command', command: 'workspace.details.toggle' }];
 
 /** Unavailable keeps the exact reference and both honest region presentations, without an editable Scene context. */
 export class UnavailableScenePrimaryClient implements MainWorkspaceClient {

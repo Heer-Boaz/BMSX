@@ -15,11 +15,13 @@ import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runt
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WorkbenchActionBarControl } from '../../ui/action_bar_control';
+import { WorkbenchMenu } from '../../ui/menu/model';
 import { WorkbenchTooltip } from '../../ui/tooltip';
 import { SceneDetailsControl } from './details_control';
 import { SceneAuthoringCommands } from './authoring_commands';
 import { SceneHierarchyControl } from './hierarchy_control';
 import { layoutSceneEditor } from './layout';
+import { SCENE_AUTHORING_CONTEXT_ACTIONS } from './menus';
 import { SceneEditorNavigationSelection } from './navigation_selection';
 import { drawSceneEditor } from './render';
 import type { SceneEditorSectionCommands } from './option_editor';
@@ -67,8 +69,13 @@ export class SceneEditorControl {
 		};
 		this.focusTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.focusTarget.registerCommand('sceneEditor.details', sections.details);
-		this.hierarchy = new SceneHierarchyControl(commands, contextMenu, surfaces, owner, workArea, this.inputScope, this.focusTarget, sections);
-		this.details = new SceneDetailsControl(commands, contextMenu, this.inputScope, this.focusTarget, sections);
+		const contextActions = new WorkbenchMenu<SceneEditorControl>([
+			{ type: 'command', command: 'sceneEditor.details', when: control => control.hasView && control.view.layout.mode === 'outline' },
+			{ type: 'command', command: 'sceneEditor.outline', when: control => control.hasView && control.view.layout.mode === 'details' },
+			...SCENE_AUTHORING_CONTEXT_ACTIONS,
+		], this);
+		this.hierarchy = new SceneHierarchyControl(commands, contextMenu, surfaces, owner, workArea, this.inputScope, this.focusTarget, sections, contextActions);
+		this.details = new SceneDetailsControl(commands, contextMenu, this.inputScope, this.focusTarget, sections, contextActions);
 		this.focusTarget.registerCommand('contextMenu', {
 			isEnabled: () => this.hasView && (this.view.section === 'details' ? this.details.canFocus : this.hierarchy.canFocus)
 				&& this.commandTarget.getCommand('contextMenu')!.isEnabled(),

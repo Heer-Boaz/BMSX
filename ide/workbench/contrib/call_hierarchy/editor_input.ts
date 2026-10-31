@@ -12,7 +12,6 @@ const TITLE_ACTIONS: WorkbenchMenuDefinition<CallHierarchyInput> = [
 ];
 const CONTEXT_ACTIONS: WorkbenchMenuDefinition<CallHierarchyInput> = [
 	{ type: 'command', command: 'editor.source' },
-	{ type: 'command', command: 'editor.sourceToSide' },
 	{ type: 'separator' },
 	{ type: 'command', command: 'callHierarchy.incoming' },
 	{ type: 'command', command: 'callHierarchy.outgoing' },
