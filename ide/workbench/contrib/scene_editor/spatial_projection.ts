@@ -18,6 +18,13 @@ type SpatialInput = { readonly file: FileSemanticData; readonly table: LuaTableC
 	readonly local: LuaWrittenExpression | null | undefined; readonly localSupplied: boolean };
 export type SceneSpatialParents = ReadonlyMap<SceneSourceObject, SceneSourceObject | undefined>;
 export type SceneSpatialTopology = { readonly parents: SceneSpatialParents; readonly capabilities: ReadonlyMap<SceneSourceObject, PrefabSpatial | false | undefined> };
+/** Authored source occurrences and derived poses, shared by viewport rendering and manipulation.
+ * An unavailable world pose is not an identity transform or invented geometry. */
+export type SceneSpatialReadModel = {
+	readonly entries: readonly SceneSourceObject[];
+	readonly parents: SceneSpatialParents;
+	readonly worlds: ReadonlyMap<SceneSourceObject, Readonly<SceneSourceAffine> | undefined>;
+};
 type SceneSpatialGraph = SceneSpatialTopology & {
 	readonly entries: readonly SceneSourceObject[];
 	readonly ids: ReadonlyMap<SceneSourceObject, string | undefined>;
@@ -29,6 +36,7 @@ type SceneSpatialGraph = SceneSpatialTopology & {
 	readonly relationshipsComplete: boolean;
 	readonly locals: Map<SceneSourceObject, SceneSourceAffine | undefined>;
 	readonly worlds: Map<SceneSourceObject, SceneSourceAffine | undefined>;
+	worldsProjected: boolean;
 	readonly previous: ReadonlyMap<SceneSourceEntry, SceneSourceEntry>;
 	readonly next: ReadonlyMap<SceneSourceEntry, SceneSourceEntry>;
 };
@@ -58,6 +66,15 @@ export class SceneSpatialProjection {
 		private readonly previousTopologies: WeakMap<SceneSourceDefinition, SceneSpatialTopology>) { this.reader = new LuaSourceReader(snapshot); }
 
 	public getSpatialParents(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneSpatialParents { return this.graph(document, scene).parents; }
+	/** Materialize the complete authored scene once; steady readers borrow the existing graph and pose cache. */
+	public readScene(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneSpatialReadModel {
+		const graph = this.graph(document, scene);
+		if (!graph.worldsProjected) {
+			for (const entry of graph.entries) this.worldAffine(graph, entry);
+			graph.worldsProjected = true;
+		}
+		return graph;
+	}
 	public sibling(document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject, direction: -1 | 1): SceneSourceEntry | undefined {
 		const graph = this.graph(document, scene);
 		return (direction < 0 ? graph.previous : graph.next).get(member);
@@ -252,12 +269,13 @@ export class SceneSpatialProjection {
 		}
 		const graph = { entries, ids, byId, inputs, parentIds, references, children, capabilities, parents, previous, next,
 			relationshipsComplete: scene.resolution === 'complete' && parentIds.size === entries.length,
-			locals: new Map<SceneSourceObject, SceneSourceAffine | undefined>(), worlds: new Map<SceneSourceObject, SceneSourceAffine | undefined>() };
+			locals: new Map<SceneSourceObject, SceneSourceAffine | undefined>(), worlds: new Map<SceneSourceObject, SceneSourceAffine | undefined>(), worldsProjected: false };
 		this.graphs.set(scene, graph); return graph;
 	}
 
 	private worldAffine(graph: SceneSpatialGraph, member: SceneSourceObject): SceneSourceAffine | undefined {
 		if (!graph.parents.has(member)) return undefined;
+		if (graph.worlds.has(member)) return graph.worlds.get(member);
 		const chain: SceneSourceObject[] = [];
 		let current: SceneSourceObject | undefined = member, valid = true;
 		while (current !== undefined && !graph.worlds.has(current)) {

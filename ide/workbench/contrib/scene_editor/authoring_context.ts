@@ -7,7 +7,7 @@ import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, Scen
 import type { SceneSourceDocuments } from './source_documents';
 import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
-import type { SceneReparentChoice, SceneReparentMode, SceneSpatialParents, SceneSpatialProjection } from './spatial_projection';
+import type { SceneReparentChoice, SceneReparentMode, SceneSpatialParents, SceneSpatialProjection, SceneSpatialReadModel } from './spatial_projection';
 
 /** Admission proof for one exact authored declaration, not a name or a document tab. */
 export type SceneAuthoredSubject = {
@@ -326,6 +326,11 @@ export class SceneAuthoringContext {
 	/** Known source edges, not runtime instances or inferred fallback roots. */
 	public getSpatialParents(scene: SceneSourceDefinition): SceneSpatialParents {
 		return this.spatialProjection === undefined ? EMPTY_SPATIAL_PARENTS : this.spatialProjection.getSpatialParents(this.documentValue!, scene);
+	}
+	/** Only an explicitly bound authored subject supplies Main's spatial content. Read after coordinated refresh. */
+	public get spatialScene(): SceneSpatialReadModel | undefined {
+		const scene = this.subject;
+		return scene === undefined ? undefined : this.spatialProjection?.readScene(this.documentValue!, scene);
 	}
 
 	public canReparentSelectedMember(mode: SceneReparentMode = 'keep_world'): boolean {
