@@ -353,6 +353,14 @@ function rom_dir.texture(id)
 	return record_for_entry(rom, entry_base, id)
 end
 
+function rom_dir.model(id)
+	local rom<const>, entry_base<const> = find_in_roms(active_plus_system_roms, id, kind_model)
+	if rom == nil then
+		return nil
+	end
+	return record_for_entry(rom, entry_base, id)
+end
+
 function rom_dir.system_image(id)
 	local rom<const>, entry_base<const> = find_in_roms(system_roms, id, kind_image)
 	if rom == nil then
