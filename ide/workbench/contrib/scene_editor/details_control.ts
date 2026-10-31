@@ -274,7 +274,7 @@ export class SceneDetailsControl {
 	}
 	public focus(): boolean { return this.commandTarget.focus(); }
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
-		if (!this.hasView) return false;
+		if (!this.hasView || !this.canFocus || !this.fieldsBound) return false;
 		const view = this.view, bounds = view.viewport.bounds;
 		for (let index = 0; index < view.properties.length; index++) {
 			const control = this.controls[index], field = view.properties[index].bounds;
@@ -302,7 +302,8 @@ export class SceneDetailsControl {
 		return this.scroll.handlePointer(snapshot);
 	}
 	public handleWheel(event: WheelInputSnapshot): boolean {
-		if (!this.hasView || !this.scroll.handleWheel(event, event.deltaY * this.scroll.lineStep * 3)) return false;
+		if (!this.hasView || !this.canFocus || !this.fieldsBound
+			|| !this.scroll.handleWheel(event, event.deltaY * this.scroll.lineStep * 3)) return false;
 		layoutSceneDetails(this.view, false, this.bounds);
 		return true;
 	}
