@@ -148,8 +148,11 @@ end
 
 function world_object:get_component(component_class, id_local)
 	local list<const> = self._components_by_class[component_class]
+	if list == nil then
+		return
+	end
 	if id_local == nil then
-		return list and list[1]
+		return list[1]
 	end
 	for index = 1, #list do
 		local component<const> = list[index]

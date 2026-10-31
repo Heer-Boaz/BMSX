@@ -53,6 +53,7 @@ local world
 local clear_color<const> = 0xff000000
 local render_command_capacity<const> = 4096
 local empty_object_bucket<const> = {}
+local empty_spawn_options<const> = {}
 local mutation_admission<const> = 0x01
 local mutation_component_attach<const> = 0x02
 local mutation_object<const> = 0x04
@@ -817,7 +818,11 @@ end
 
 -- Procedural requests resolve once; retained Scene rows call the concrete
 -- definition boundary without re-resolving an identifier.
+-- Options may be omitted; explicit inputs retain their caller-owned identity.
 function world_class:spawn(definition_id, options, spatial_input, initial, scene)
+	if options == nil then
+		options = empty_spawn_options
+	end
 	local definition<const> = prefab.definition(definition_id)
 	local local_transform = definition.default_local_transform
 	local parent
