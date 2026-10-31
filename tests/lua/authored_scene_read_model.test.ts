@@ -16,7 +16,7 @@ require('prefabs')
 scenes.register('first',{objects={${objects}}})
 scenes.register('second',{objects={{member_id='other',definition_id='node2'}}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
-		[['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', prefabs]]);
+		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabs]]);
 	const document = f.documents.get(f.model), scene = document.scenes[index];
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, scene, sourceVersion: f.model.version });
 	t.after(() => context.dispose());

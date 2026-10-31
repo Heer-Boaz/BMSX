@@ -27,10 +27,10 @@ function pointer(x: number, y: number, buttons: number, pressed = 0, released = 
 }
 function fixture(t: TestContext, objects = OBJECTS, attach = true) {
 	const source = `local scenes=require('cartlib/world/scene_library')\nscenes.register('main',{objects={${objects}}})`;
-	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', PREFABS]]);
+	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFABS]]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
-	const view = new SceneViewportViewState(context), scope = new InputFocusScope(Symbol('authored viewport'), inputFocus.workbenchScope);
+	const view = new SceneViewportViewState(context, f.sources.catalog), scope = new InputFocusScope(Symbol('authored viewport'), inputFocus.workbenchScope);
 	const semantic = inputFocus.createTarget(null, scope), panel = inputFocus.createTarget(semantic, new InputFocusScope(scope.surfaceScope, scope));
 	panel.commandContext = semantic;
 	semantic.registerCommand('sceneEditor.outline', { contextual: true, isEnabled: () => true, run: () => { semantic.focus(); } });
@@ -50,14 +50,16 @@ test('authored helper projection consumes actual affine families and retains unc
 	assert.equal(f.view.camera.mode, '2d'); assert.equal(entries.length, 2);
 	assert.ok(entries[1] === f.context.subject!.objects[1]);
 	// Focused projection contract: the X helper endpoint is the full world basis times the declared helper unit.
-	const index = SCENE_VIEWPORT_POINT_STRIDE, scale = f.view.camera.scale;
-	assert.equal(points[index + 2] - points[index], 32 * scale);
-	assert.equal(points[index + 4] - points[index], 16 * scale);
+	const index = SCENE_VIEWPORT_POINT_STRIDE;
+	assert.equal(points[index + 2] - points[index], 32);
+	assert.equal(points[index + 4] - points[index], 16);
 	const projection = t.mock.method(f.view.camera, 'projectX'), revision = f.view.projectionRevision;
 	for (let frame = 0; frame < 100; frame++) f.control.update();
 	assert.equal(projection.mock.callCount(), 0); assert.equal(f.view.projectionRevision, revision);
 	f.view.camera.pan(11, -7); f.control.update();
 	assert.ok(f.view.points === points && f.view.entries === entries);
+	f.view.camera.zoom(1, 0, 0); f.control.update();
+	assert.equal(points[index + 2] - points[index], 32, 'diagnostic basis units stay screen-sized while actual images zoom');
 	inputFocus.executeCommand('sceneViewport.view3d', f.panel);
 	assert.equal(f.view.entries.length, 1); assert.ok(f.view.entries[0] === f.context.subject!.objects[2]);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
@@ -76,9 +78,18 @@ for (const mode of ['2d', '3d'] as const) test(`${mode} camera zoom keeps the so
 	assert.deepEqual(restored.capture(), snapshot);
 });
 
+test('camera framing fits actual image or line extents without imposing the origin-helper reading span', () => {
+	const camera = new SceneViewportCamera();
+	// Focused camera-fit contract: an 8-unit quad occupies the 80-unit inset allocation.
+	camera.frame(0, 0, 8, 8, 112, 112); assert.equal(camera.scale, 10);
+	assert.equal(camera.projectX(0, 0, 0), -40); assert.equal(camera.projectY(8, 8, 0), 40);
+	camera.frame(0, 0, 8, 0, 112, 112); assert.equal(camera.scale, 10);
+	camera.frame(0, 0, 0, 0, 112, 112); assert.equal(camera.scale, 80 / 64);
+});
+
 test('camera persisted before first layout retains pending source-derived 3D admission', t => {
 	const objects = `{member_id='mesh',definition_id='node3',spatial={local_transform={1,0,0,0,1,0,0,0,1,70,110,130}}}`;
-	const f = fixture(t, objects, false), restored = new SceneViewportViewState(f.context); t.after(() => restored.dispose());
+	const f = fixture(t, objects, false), restored = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => restored.dispose());
 	const snapshot = f.view.camera.capture(); assert.equal(snapshot.reading, 'initial');
 	restored.camera.restore(snapshot); f.control.setView(restored, BOUNDS);
 	assert.equal(restored.camera.mode, '3d'); assert.equal(restored.camera.initial, false); assert.equal(restored.entries.length, 1);
@@ -93,7 +104,12 @@ test('picking a drawn origin admits its exact authored occurrence and only local
 	assert.equal(f.control.handlePointer(pointer(f.view.points[index], f.view.points[index + 1], PointerButton.Primary, PointerButton.Primary), true), true);
 	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === f.context.subject!.objects[1]);
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), true);
-	const camera = f.view.camera.capture(); inputFocus.handleKeyboard(new KeyInputEvent('Digit3', KeyModifier.none));
+	const camera = f.view.camera.capture();
+	for (const [code, modifier] of [['KeyF', KeyModifier.ctrl], ['Digit3', KeyModifier.meta], ['Digit2', KeyModifier.alt], ['Digit2', KeyModifier.shift]] as const) {
+		const modified = new KeyInputEvent(code, modifier); inputFocus.handleKeyboard(modified);
+		assert.equal(modified.consumed, false); assert.deepEqual(f.view.camera.capture(), camera);
+	}
+	inputFocus.handleKeyboard(new KeyInputEvent('Digit3', KeyModifier.none));
 	assert.equal(f.view.camera.mode, '3d'); assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
 	f.semantic.focus(); const event = new KeyInputEvent('Digit2', KeyModifier.none);
 	// A foreign keyboard recipient never runs the viewport handler or claims gameplay keys.
@@ -106,7 +122,7 @@ test('picking a drawn origin admits its exact authored occurrence and only local
 test('frame commands are disabled for absent or unresolved geometry instead of becoming no-op menu actions', t => {
 	const f = fixture(t); f.select(3);
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
-	const empty = new SceneViewportViewState(f.context); t.after(() => empty.dispose());
+	const empty = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => empty.dispose());
 	f.view.camera.setMode('3d'); f.select(0);
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
 	const g = fixture(t, `{member_id='dynamic',definition_id='node2',spatial={local_transform=runtime_pose()}}`);
@@ -134,7 +150,7 @@ test('pan and orbit use native capture, preserve same-panel focus, and cancel ac
 });
 
 test('an older frame invocation cannot retarget the canvas rebound by source admission', t => {
-	const f = fixture(t), incoming = new SceneViewportViewState(f.context); t.after(() => incoming.dispose());
+	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
 	incoming.camera.pan(31, -47); const before = incoming.camera.capture();
 	const release = f.context.onDidChangeSpatialGeneration(() => { release(); f.control.setView(incoming, BOUNDS); }); t.after(release);
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- dependency admission\n' }]);
@@ -150,7 +166,7 @@ test('a captured frame request cannot survive detach/rebind or a newer selection
 });
 
 test('reentrant attachment retirement preserves the newer binding and disposal releases source projections', t => {
-	const f = fixture(t), incoming = new SceneViewportViewState(f.context), superseded = new SceneViewportViewState(f.context);
+	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog), superseded = new SceneViewportViewState(f.context, f.sources.catalog);
 	t.after(() => { incoming.dispose(); superseded.dispose(); });
 	const release = f.control.focusTarget.scope.onDidRetireContext(() => { release(); f.control.setView(incoming, BOUNDS); }); t.after(release);
 	f.control.setView(superseded, BOUNDS); assert.ok(f.control.view === incoming);

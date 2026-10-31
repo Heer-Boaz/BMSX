@@ -11,7 +11,7 @@ export class AnimationFramePreview {
 	public label = '';
 	private image: string | undefined;
 	private rom: Uint8Array | undefined;
-	private readonly texture: RomTextureDecodeCache = {};
+	private readonly texture: RomTextureDecodeCache = new Map();
 	public update(document: AnimationSourceDocument | undefined, index: number, contextId: string, catalog: WorkspaceSourceCatalog): void {
 		const image = document?.family === 'sprite' ? document.frames[index]?.image : undefined;
 		if (image === undefined) {
@@ -24,7 +24,7 @@ export class AnimationFramePreview {
 		if (mounted === null) { this.bitmap?.dispose(); this.bitmap = undefined; this.image = undefined; this.label = `${image} / no packed preview`; return; }
 		if (image === this.image && mounted.bytes === this.rom) return;
 		this.bitmap?.dispose(); this.bitmap = undefined; this.image = image; this.label = '';
-		if (this.rom !== mounted.bytes) this.texture.current = undefined;
+		if (this.rom !== mounted.bytes) this.texture.clear();
 		this.rom = mounted.bytes;
 		const asset = binding.value;
 		this.label = image;
@@ -32,5 +32,5 @@ export class AnimationFramePreview {
 		this.bitmap = new HostBitmap({ width: decoded.width, height: decoded.height, pixels: decoded.rgba });
 		this.view.setImage(decoded.width, decoded.height);
 	}
-	public dispose(): void { this.bitmap?.dispose(); this.bitmap = undefined; this.texture.current = undefined; this.rom = undefined; }
+	public dispose(): void { this.bitmap?.dispose(); this.bitmap = undefined; this.texture.clear(); this.rom = undefined; }
 }

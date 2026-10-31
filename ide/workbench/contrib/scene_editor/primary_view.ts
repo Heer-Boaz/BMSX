@@ -1,4 +1,5 @@
 import type { MainWorkspacePrimaryPartId } from '../../common/main_workspace_client';
+import type { WorkspaceSourceCatalog } from '../../../workspace/source_catalog';
 import type { SceneAuthoringContext } from './authoring_context';
 import { SceneHierarchyViewState } from './hierarchy_view';
 import { SceneDetailsViewState } from './details_view';
@@ -12,9 +13,9 @@ export class ScenePrimaryViewState {
 	private preferred: MainWorkspacePrimaryPartId = 'viewport';
 	private readonly listeners = new Set<() => void>();
 	private readonly subscriptions: readonly (() => void)[];
-	public constructor(public readonly authoring: SceneAuthoringContext) {
+	public constructor(public readonly authoring: SceneAuthoringContext, catalog: WorkspaceSourceCatalog) {
 		this.hierarchy = new SceneHierarchyViewState(authoring); this.details = new SceneDetailsViewState(authoring);
-		this.viewport = new SceneViewportViewState(authoring);
+		this.viewport = new SceneViewportViewState(authoring, catalog);
 		this.subscriptions = [authoring.workingCopy.onDidChangeContent(() => this.changed()),
 			authoring.onDidChangeSelection(() => this.changed()), this.hierarchy.onDidChange(() => this.changed()), this.details.onDidChange(() => this.changed()),
 			this.viewport.onDidChange(() => this.changed())];

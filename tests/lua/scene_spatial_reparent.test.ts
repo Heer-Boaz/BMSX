@@ -20,7 +20,7 @@ prefab.define({def_id='body',class={},spatial={family='2d',authority='root_origi
 
 function fixture(t: TestContext, objects: string, prefabs = PREFABS) {
 	const source = `local scenes = require('cartlib/world/scene_library')\nrequire('prefabs')\nscenes.register('fixture', {objects={\n${objects}\n}})`;
-	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', prefabs], ['other.lua', 'return false']]);
+	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabs], ['other.lua', 'return false']]);
 	const context = new SceneAuthoringContext(f.model, f.documents); t.after(() => context.dispose());
 	const select = (id: string) => {
 		const document = f.documents.get(f.model), scene = document.scenes[0];

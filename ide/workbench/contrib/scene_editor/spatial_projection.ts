@@ -1,17 +1,17 @@
-import { LuaSyntaxKind, LuaTableFieldKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
+import { LuaSyntaxKind, type LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
-import { readLuaNumberExpression } from '../../../../toolchain/ts/lua/syntax/number_expression';
-import { getLuaModuleAliasTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
-import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../../toolchain/ts/lua/semantic/model';
+import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
 import type { LuaWrittenExpression } from '../../../../toolchain/ts/lua/semantic/written_sources';
 import { appendAffine2, relativeAffine2 } from '../../../common/affine2';
 import { appendAffine3, relativeAffine3 } from '../../../common/affine3';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
-import { LuaSourceReader } from '../../../language/lua/source_reader';
-import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, SceneSourceObject } from './model';
-import { createSceneNameEdit, createScenePlacementEdits, finishSceneSpatialEdits, type SceneSourceAffine } from './spatial_edits';
+import type { LuaSourceReader } from '../../../language/lua/source_reader';
+import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, SceneSourceObject } from './model';
+import { createSceneNameEdit, createScenePlacementEdits, finishSceneSpatialEdits } from './spatial_edits';
+import { readSceneSourceAffine } from './authored_affine';
+import type { ScenePrefabSources } from './prefab_sources';
 
 type PrefabSpatial = { readonly family: '2d' | '3d'; readonly authority: 'affine' | 'root_origin'; readonly local: SceneSourceAffine | undefined };
 type SpatialInput = { readonly file: FileSemanticData; readonly table: LuaTableConstructorExpression;
@@ -22,11 +22,13 @@ export type SceneSpatialTopology = { readonly parents: SceneSpatialParents; read
  * An unavailable world pose is not an identity transform or invented geometry. */
 export type SceneSpatialReadModel = {
 	readonly entries: readonly SceneSourceObject[];
+	readonly constructionOrder: readonly SceneSourceObject[];
 	readonly parents: SceneSpatialParents;
 	readonly worlds: ReadonlyMap<SceneSourceObject, Readonly<SceneSourceAffine> | undefined>;
 };
 type SceneSpatialGraph = SceneSpatialTopology & {
 	readonly entries: readonly SceneSourceObject[];
+	readonly constructionOrder: SceneSourceObject[];
 	readonly ids: ReadonlyMap<SceneSourceObject, string | undefined>;
 	readonly byId: ReadonlyMap<string, SceneSourceObject | undefined>;
 	readonly inputs: ReadonlyMap<SceneSourceObject, SpatialInput | undefined>;
@@ -62,14 +64,15 @@ export class SceneSpatialProjection {
 	private readonly reparentings = new WeakMap<SceneSourceObject, Map<SceneReparentMode, readonly SceneReparentChoice[]>>();
 	private readonly renames = new WeakMap<SceneSourceObject, SceneRenamePlan | undefined>();
 	private prefabs: Map<string, PrefabSpatial | false | undefined> | undefined;
-	public constructor(private readonly snapshot: LuaSemanticWorkspaceSnapshot,
-		private readonly previousTopologies: WeakMap<SceneSourceDefinition, SceneSpatialTopology>) { this.reader = new LuaSourceReader(snapshot); }
+	public constructor(private readonly previousTopologies: WeakMap<SceneSourceDefinition, SceneSpatialTopology>,
+		private readonly prefabSources: ScenePrefabSources) { this.reader = prefabSources.reader; }
 
 	public getSpatialParents(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneSpatialParents { return this.graph(document, scene).parents; }
 	/** Materialize the complete authored scene once; steady readers borrow the existing graph and pose cache. */
 	public readScene(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneSpatialReadModel {
 		const graph = this.graph(document, scene);
 		if (!graph.worldsProjected) {
+			this.projectConstructionOrder(graph);
 			for (const entry of graph.entries) this.worldAffine(graph, entry);
 			graph.worldsProjected = true;
 		}
@@ -267,10 +270,46 @@ export class SceneSpatialProjection {
 			const parent = parents.get(entry), sibling = last.get(parent);
 			if (sibling !== undefined) { previous.set(entry, sibling); next.set(sibling, entry); } last.set(parent, entry);
 		}
-		const graph = { entries, ids, byId, inputs, parentIds, references, children, capabilities, parents, previous, next,
+		const constructionOrder: SceneSourceObject[] = [];
+		const graph = { entries, constructionOrder, ids, byId, inputs, parentIds, references, children, capabilities, parents, previous, next,
 			relationshipsComplete: scene.resolution === 'complete' && parentIds.size === entries.length,
 			locals: new Map<SceneSourceObject, SceneSourceAffine | undefined>(), worlds: new Map<SceneSourceObject, SceneSourceAffine | undefined>(), worldsProjected: false };
 		this.graphs.set(scene, graph); return graph;
+	}
+
+	private projectConstructionOrder(graph: SceneSpatialGraph): void {
+		// Match ScenePlan's smallest-ready authored ordering using the admitted
+		// parent/child index, not a separately constructed scene tree.
+		const { entries, parents, children, constructionOrder } = graph;
+		const ready: number[] = [], indices = new Map<SceneSourceObject, number>();
+		for (let index = 0; index < entries.length; index++) {
+			const entry = entries[index]; indices.set(entry, index);
+			if (parents.has(entry) && parents.get(entry) === undefined) ready.push(index);
+		}
+		while (ready.length > 0) {
+			const index = ready[0], last = ready.pop()!;
+			if (ready.length > 0) {
+				let position = 0, child = 1;
+				while (child < ready.length) {
+					if (child + 1 < ready.length && ready[child + 1] < ready[child]) child++;
+					if (last < ready[child]) break;
+					ready[position] = ready[child]; position = child; child = position * 2 + 1;
+				}
+				ready[position] = last;
+			}
+			const entry = entries[index]; constructionOrder.push(entry);
+			const descendants = children.get(entry);
+			if (descendants !== undefined) for (const descendant of descendants) {
+				const index = indices.get(descendant)!;
+				let position = ready.length; ready.push(index);
+				while (position > 0) {
+					const parent = (position - 1) >>> 1;
+					if (ready[parent] < index) break;
+					ready[position] = ready[parent]; position = parent;
+				}
+				ready[position] = index;
+			}
+		}
 	}
 
 	private worldAffine(graph: SceneSpatialGraph, member: SceneSourceObject): SceneSourceAffine | undefined {
@@ -301,7 +340,7 @@ export class SceneSpatialProjection {
 			const input = graph.inputs.get(member);
 			const capability = graph.capabilities.get(member);
 			let local: SceneSourceAffine | undefined;
-			if (input?.localSupplied) local = input.local === undefined ? undefined : readAuthoredAffine(this.reader, input.local!.file, input.local!.expression);
+			if (input?.localSupplied) local = input.local === undefined ? undefined : readSceneSourceAffine(this.reader, input.local!.file, input.local!.expression);
 			else if (graph.inputs.has(member)) local = capability ? capability.local : undefined;
 			graph.locals.set(member, local);
 		}
@@ -309,17 +348,9 @@ export class SceneSpatialProjection {
 	}
 
 	private readPrefabs(): Map<string, PrefabSpatial | false | undefined> {
-		const prefabs = new Map<string, PrefabSpatial | false | undefined>(), imports = this.snapshot.symbolResolver.moduleImports, reader = this.reader;
-		for (const file of this.snapshot.files) for (const call of file.callSites) {
-			if (call.expression.method !== null) continue;
-			const target = getLuaModuleAliasTarget(file, call.call.callee);
-			if (target === null || !imports.matchesImport(target, { module: 'cartlib/world/prefab', memberPath: ['define'] })) continue;
-			const argument = call.expression.arguments[0], definition = argument === undefined ? undefined : reader.expression(file, argument);
-			if (definition?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) continue;
-			const identity = reader.member(definition.file, definition.expression, 'def_id');
-			const id = identity === undefined ? undefined : reader.stringValue(identity.file, identity.expression);
-			if (id === undefined) continue;
-			if (prefabs.has(id)) { prefabs.set(id, undefined); continue; }
+		const prefabs = new Map<string, PrefabSpatial | false | undefined>(), reader = this.reader;
+		for (const [id, definition] of this.prefabSources.all) {
+			if (definition === undefined) { prefabs.set(id, undefined); continue; }
 			const spatial = reader.memberState(definition.file, definition.expression, 'spatial');
 			if (spatial === null || spatial?.expression.kind === LuaSyntaxKind.NilLiteralExpression) { prefabs.set(id, false); continue; }
 			if (spatial?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) { prefabs.set(id, undefined); continue; }
@@ -331,7 +362,7 @@ export class SceneSpatialProjection {
 			const local = transform === null || transform?.expression.kind === LuaSyntaxKind.NilLiteralExpression
 				? family === '2d' ? { family: '2d' as const, xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 }
 					: { family: '3d' as const, xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 }
-				: transform === undefined ? undefined : readAuthoredAffine(reader, transform.file, transform.expression);
+				: transform === undefined ? undefined : readSceneSourceAffine(reader, transform.file, transform.expression);
 			prefabs.set(id, { family, authority, local: local?.family === family ? local : undefined });
 		}
 		return prefabs;
@@ -340,20 +371,4 @@ export class SceneSpatialProjection {
 
 function sameCapability(left: PrefabSpatial | false | undefined, right: PrefabSpatial | false | undefined): boolean {
 	return left === right || !!left && !!right && left.family === right.family && left.authority === right.authority;
-}
-
-/** Only the central closed Number-source representation and unique written aliases. */
-function readAuthoredAffine(reader: LuaSourceReader, file: FileSemanticData, value: LuaExpression): SceneSourceAffine | undefined {
-	const source = reader.expression(file, value), expression = source?.expression;
-	if (expression?.kind !== LuaSyntaxKind.TableConstructorExpression || reader.snapshot.symbolResolver.authoredSources.tableMutations().has(expression)
-		|| expression.fields.length !== 6 && expression.fields.length !== 12) return;
-	const values: number[] = [];
-	for (const field of expression.fields) {
-		if (field.kind !== LuaTableFieldKind.Array) return;
-		let value = readLuaNumberExpression(field.value);
-		if (value === null) { const resolved = reader.expression(source.file, field.value)?.expression; value = resolved === undefined ? null : readLuaNumberExpression(resolved); }
-		if (value === null) return; values.push(value);
-	}
-	return values.length === 6 ? { family: '2d', xx: values[0], xy: values[1], yx: values[2], yy: values[3], ox: values[4], oy: values[5] }
-		: { family: '3d', xx: values[0], xy: values[1], xz: values[2], yx: values[3], yy: values[4], yz: values[5], zx: values[6], zy: values[7], zz: values[8], ox: values[9], oy: values[10], oz: values[11] };
 }

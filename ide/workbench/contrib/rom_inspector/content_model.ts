@@ -28,7 +28,7 @@ export class RomInspectorContentModel {
 	public collision: CollisionShapeVariant | undefined;
 	public collisionPaths: readonly number[][] = NO_COLLISION_PATHS;
 	private rangeIndex = 0;
-	private readonly texture: RomTextureDecodeCache = {};
+	private readonly texture: RomTextureDecodeCache = new Map();
 
 	public constructor(public readonly snapshot: RomInspectorSnapshot) {}
 	public get ranges(): readonly RomInspectorByteRange[] { return this.subject?.ranges ?? NO_RANGES; }
@@ -153,6 +153,6 @@ export class RomInspectorContentModel {
 
 	public dispose(): void {
 		this.preview?.dispose(); this.preview = undefined;
-		this.texture.current = undefined;
+		this.texture.clear();
 	}
 }

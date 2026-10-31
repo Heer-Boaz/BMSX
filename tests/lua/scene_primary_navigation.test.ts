@@ -21,7 +21,7 @@ function fixture(t: TestContext) {
 	const f = createSceneSourceFixture(t, SOURCE), workspace = createTestEditorWorkspace(t);
 	const document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	const view = new ScenePrimaryViewState(context); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
+	const view = new ScenePrimaryViewState(context, f.sources.catalog); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	t.after(() => { view.dispose(); context.dispose(); resetNavigationHistoryState(); });
 	return { ...f, ...workspace, context, view, bookmark: () => new ScenePrimaryBookmark(context, view) };
 }

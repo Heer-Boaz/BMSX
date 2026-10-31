@@ -9,6 +9,7 @@ import { PNG } from 'pngjs';
 import type { createHostBitmapTest } from '../conformance/runtime_replay/host_bitmap';
 import type { HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
 import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
+import type { HostOverlayClipRect } from '../../machine/ts/render/host_overlay/clip';
 
 const colors: Record<string, number[]> = {
 	'.': [32, 64, 96, 255], R: [255, 0, 0, 255], G: [0, 255, 0, 255], B: [0, 0, 255, 255], Y: [255, 255, 0, 255],
@@ -20,7 +21,16 @@ const command: Omit<HostBitmapRenderSubmission, 'bitmap'> = {
 	originX: 2, originY: 1, axisXX: 8, axisXY: 0, axisYX: 0, axisYY: 4,
 	u0: 0, v0: 0, u1: 1, v1: 1, color: 0xffffffff,
 };
-const affineCases = [
+type AffineCase = {
+	readonly name: string;
+	readonly command: typeof command;
+	readonly rows: readonly string[];
+	readonly clip?: HostOverlayClipRect;
+	readonly scopes?: readonly HostOverlayTransform[];
+	readonly alpha?: boolean;
+	readonly exactEdgeTies?: boolean;
+};
+const affineCases: readonly AffineCase[] = [
 	{ name: 'rotation', command: { ...command, originX: 8, axisXX: 0, axisXY: 4, axisYX: -2, axisYY: 0 },
 		rows: ['................', '......CR........', '......MG........', '......WB........', '......KY........', '................', '................', '................'] },
 	{ name: 'shear', command: { ...command, axisYX: 2 },

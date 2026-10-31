@@ -22,6 +22,11 @@ export class LuaModuleImportQuery {
 		}
 	}
 
+	/** The admitted module file for this referrer, without export/value inference. */
+	public resolveModule(referrer: string, module: string): string | undefined {
+		return this.moduleBindings.get(referrer)!.get(module);
+	}
+
 	/** Target objects are retained API descriptors; results live with this snapshot. */
 	public matchesImport(source: ModuleAliasTarget, target: LuaModuleImportTarget): boolean {
 		const remaining = this.removeSuffix(target.memberPath, target.memberPath.length, source.memberPath);

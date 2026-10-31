@@ -388,7 +388,7 @@ return imgdec
 		assert.deepEqual(loadedFirst.imgmeta!.boundingbox, assets[1].imgmeta!.boundingbox);
 		assert.deepEqual(loadedSecond.imgmeta!.boundingbox, assets[2].imgmeta!.boundingbox);
 
-		const decodedTexture = {};
+		const decodedTexture = new Map<string, Uint8Array>();
 		const modalContext = {
 			rombin: rom,
 			assetList: loaded.entries,

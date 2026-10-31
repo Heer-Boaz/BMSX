@@ -76,7 +76,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	public readonly statusItems = [this.statusItem];
 
 	public constructor(public readonly consumer: SceneAuthoringContext, private readonly options: ScenePrimaryClientOptions) {
-		this.scope = options.scope; this.view = new ScenePrimaryViewState(consumer);
+		this.scope = options.scope; this.view = new ScenePrimaryViewState(consumer, options.sources.catalog);
 		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
 		this.commandTarget.canFocus = () => false;
 		const sections: SceneEditorSectionCommands = {

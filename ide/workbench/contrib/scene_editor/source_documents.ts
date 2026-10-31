@@ -12,6 +12,9 @@ import { SceneSpatialProjection, type SceneSpatialTopology } from './spatial_pro
 import type { LuaSourceRange } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
 import { luaSourceLocation } from '../../../language/lua/source_location';
+import { LuaSourceReader } from '../../../language/lua/source_reader';
+import { ScenePrefabSources } from './prefab_sources';
+import { SceneVisualProjection } from './visual_projection';
 
 /** Shared immutable source projections; selections and controls belong to their authored contexts. */
 export class SceneSourceDocuments {
@@ -20,6 +23,8 @@ export class SceneSourceDocuments {
 	private readonly modelGenerations = new WeakMap<EditorTextModel, { readonly snapshot: LuaSemanticWorkspaceSnapshot; readonly document: SceneSourceDocument }>();
 	private readonly spatialProjections = new WeakMap<LuaSemanticWorkspaceSnapshot, SceneSpatialProjection>();
 	private readonly previousSpatialTopologies = new WeakMap<SceneSourceDefinition, SceneSpatialTopology>();
+	private readonly prefabSources = new WeakMap<LuaSemanticWorkspaceSnapshot, ScenePrefabSources>();
+	private readonly visualProjections = new WeakMap<LuaSemanticWorkspaceSnapshot, SceneVisualProjection>();
 
 	public constructor(private readonly models: EditorTextModelService, private readonly catalog: WorkspaceSourceCatalog) {}
 
@@ -46,10 +51,31 @@ export class SceneSourceDocuments {
 		const snapshot = generation.snapshot;
 		let projection = this.spatialProjections.get(snapshot);
 		if (projection === undefined) {
-			projection = new SceneSpatialProjection(snapshot, this.previousSpatialTopologies);
+			projection = new SceneSpatialProjection(this.previousSpatialTopologies, this.getPrefabSources(snapshot));
 			this.spatialProjections.set(snapshot, projection);
 		}
 		return projection;
+	}
+
+	public getVisualProjection(model: EditorTextModel, document: SceneSourceDocument): SceneVisualProjection | undefined {
+		const generation = this.modelGenerations.get(model);
+		if (generation?.document !== document) return;
+		const snapshot = generation.snapshot;
+		let projection = this.visualProjections.get(snapshot);
+		if (projection === undefined) {
+			projection = new SceneVisualProjection(this.getPrefabSources(snapshot), this.getSpatialProjection(model, document)!);
+			this.visualProjections.set(snapshot, projection);
+		}
+		return projection;
+	}
+
+	private getPrefabSources(snapshot: LuaSemanticWorkspaceSnapshot): ScenePrefabSources {
+		let sources = this.prefabSources.get(snapshot);
+		if (sources === undefined) {
+			sources = new ScenePrefabSources(new LuaSourceReader(snapshot));
+			this.prefabSources.set(snapshot, sources);
+		}
+		return sources;
 	}
 
 	/** Discovery already owns this semantic proof; it neither opens models nor requests another snapshot. */

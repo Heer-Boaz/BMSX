@@ -75,9 +75,11 @@ export class SceneViewportCamera {
 		const x = (left + right) / 2 - this.horizontal(this.centerX, this.centerY, this.centerZ);
 		const y = (top + bottom) / 2 - this.vertical(this.centerX, this.centerY, this.centerZ);
 		this.centerX += this.rx * x + this.dx * y; this.centerY += this.dy * y; this.centerZ += this.rz * x + this.dz * y;
-		// A lone origin has no geometric extent; the camera retains a useful reading span, not fake object bounds.
-		this.scaleValue = clamp(Math.min(Math.max(1, width - 32) / Math.max(64, right - left),
-			Math.max(1, height - 32) / Math.max(64, bottom - top)), 1 / 64, 64);
+		const extentX = right - left, extentY = bottom - top;
+		// A lone origin has no geometric extent. Real quads and lines fit their actual span.
+		const point = extentX === 0 && extentY === 0;
+		this.scaleValue = clamp(Math.min(extentX === 0 && !point ? Infinity : Math.max(1, width - 32) / (point ? 64 : extentX),
+			extentY === 0 && !point ? Infinity : Math.max(1, height - 32) / (point ? 64 : extentY)), 1 / 64, 64);
 		this.changed();
 	}
 	private updateBasis(): void {

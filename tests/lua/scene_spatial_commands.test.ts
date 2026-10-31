@@ -48,7 +48,7 @@ return {}
 
 async function fixture(t: TestContext, placement: 'document' | 'Main' = 'document') {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['poses.lua', POSES], ['prefabs.lua', PREFABS],
-		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/prefab.lua', 'return {}']]);
+		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/prefab.lua', 'return { define=function() end }']]);
 	f.editor.setFontVariant('tiny'); f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);

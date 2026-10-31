@@ -400,11 +400,19 @@ tree highlighting; disclosure does not determine whether Details has a subject.
 A document pane adapts the composition to a group; `ScenePrimaryClient` supplies
 the viewport and independent region controls directly to Main without an editor
 input. `scene_editor/viewport/` owns retained editor-camera intent, source-pose
-screen projection, helper painting and its concrete native input/capture
+screen projection, asset-quad painting/picking and its concrete native input/capture
 lifetime. Camera reading state persists with the primary subject, independently
 of document topology. It consumes the existing spatial projection's readonly
 world-affine cache and the context's exact source selection, not another Scene
-forest or a running machine frame.
+forest or a running machine frame. A separate snapshot-cached visual projection
+reads declared cartlib constructor inputs and borrows that spatial graph; it
+does not evaluate custom initialization or gameplay. Shared prefab provenance
+and authored-affine reading belong to source projection, not viewport controls.
+`workspace/image_assets.ts` retains a reader's exact provider/packed-generation
+atlas resources and logical image regions. Camera motion changes projected
+quads, not decoded pixels or texture revisions. The host overlay snapshots full
+Number affine bitmap quads, UVs and tint into its retained command pool; software
+and accelerated host renderers consume that same presentation representation.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
 An input's optional fresh-view capability belongs to its contribution. It creates

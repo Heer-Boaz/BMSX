@@ -22,8 +22,8 @@ scenes.register('fixture', { objects = {
 
 test('Scene outline follows authored parent references, forward references and sibling order without moving source', t => {
 	const f = createSceneSourceFixture(t, SOURCE, 'scene.lua', undefined,
-		[['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', PREFAB]]);
-	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context);
+		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB]]);
+	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context, f.sources.catalog);
 	t.after(() => { view.dispose(); context.dispose(); });
 	view.hierarchy.refresh();
 	const tree = view.hierarchy.outline, scene = context.scenes[0], members = scene.objects;
@@ -40,8 +40,8 @@ test('Scene outline follows authored parent references, forward references and s
 
 test('nested Scene disclosure survives canonical edits and reading-state restoration', t => {
 	const f = createSceneSourceFixture(t, SOURCE, 'scene.lua', undefined,
-		[['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', PREFAB]]);
-	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context);
+		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB]]);
+	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context, f.sources.catalog);
 	t.after(() => { view.dispose(); context.dispose(); });
 	view.hierarchy.refresh();
 	assert.equal(setWorkbenchTreeCollapsed(view.hierarchy.outline, 3, true), true);
@@ -65,8 +65,8 @@ scenes.register('fixture', { objects = {
  { member_id = 'missing', definition_id = 'node', spatial = { parent_id = 'absent' } },
 } })`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
-		[['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', PREFAB]]);
-	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context);
+		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB]]);
+	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context, f.sources.catalog);
 	t.after(() => { view.dispose(); context.dispose(); });
 	view.hierarchy.refresh();
 	const tree = view.hierarchy.outline;
@@ -81,9 +81,9 @@ scenes.register('fixture', { objects = {
 
 test('Scene hierarchy follows provider capabilities without rebuilding for unrelated dependency changes', t => {
 	const f = createSceneSourceFixture(t, SOURCE, 'scene.lua', undefined, [
-		['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', PREFAB], ['unrelated.lua', 'return 1'],
+		['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB], ['unrelated.lua', 'return 1'],
 	]);
-	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context);
+	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context, f.sources.catalog);
 	t.after(() => { view.dispose(); context.dispose(); });
 	view.hierarchy.refresh();
 	const root = view.hierarchy.outline.roots[0], version = f.model.version;
@@ -108,8 +108,8 @@ test('Scene hierarchy follows provider capabilities without rebuilding for unrel
 test('Scene reading position restores without remeasuring unchanged hierarchy content', t => {
 	configureFontVariant('tiny');
 	const f = createSceneSourceFixture(t, SOURCE, 'scene.lua', undefined,
-		[['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', PREFAB]]);
-	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context);
+		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB]]);
+	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context, f.sources.catalog);
 	t.after(() => { view.dispose(); context.dispose(); });
 	view.hierarchy.refresh();
 	// Focused layout contract: pending reading state is independent of content/font/bounds changes.
@@ -130,8 +130,8 @@ test('flat authored source can project and measure a deep hierarchy without recu
 		: `, spatial = { parent_id = 'm${index - 1}' }`} }`);
 	const source = `local scenes = require('cartlib/world/scene_library')\nscenes.register('deep', { objects = {\n${members.join(',\n')}\n} })`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
-		[['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', PREFAB]]);
-	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context);
+		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFAB]]);
+	const context = new SceneAuthoringContext(f.model, f.documents), view = new ScenePrimaryViewState(context, f.sources.catalog);
 	t.after(() => { view.dispose(); context.dispose(); });
 	view.hierarchy.refresh();
 	assert.equal(view.hierarchy.outline.rows.length, 6001);

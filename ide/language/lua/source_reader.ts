@@ -2,8 +2,24 @@ import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression } from '../../../t
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import { writtenSourceExpression, type LuaWrittenExpression } from '../../../toolchain/ts/lua/semantic/written_sources';
 import type { LuaAuthoredSourceTrace } from '../../../toolchain/ts/lua/semantic/authored_sources';
+import type { CallValueEntry } from '../../../toolchain/ts/lua/semantic/value_graph';
+import { readLuaNumberExpression } from '../../../toolchain/ts/lua/syntax/number_expression';
 
 export type LuaWrittenProducer = { readonly kind: 'value' | 'definition' | 'call'; readonly source: LuaWrittenExpression };
+type OwnMemberRead = 'value' | 'raw';
+
+/** Source-level truthiness, not host-value classification or guest execution.
+ * Null is a proved unwritten member; undefined is unresolved source. */
+export function readLuaSourceTruth(source: LuaWrittenExpression | null | undefined): boolean | undefined {
+	if (source === undefined) return;
+	if (source === null || source.expression.kind === LuaSyntaxKind.NilLiteralExpression) return false;
+	const expression = source.expression;
+	if (expression.kind === LuaSyntaxKind.BooleanLiteralExpression) return expression.value;
+	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression || expression.kind === LuaSyntaxKind.StringLiteralExpression
+		|| expression.kind === LuaSyntaxKind.TableConstructorExpression || expression.kind === LuaSyntaxKind.FunctionExpression
+		|| readLuaNumberExpression(expression) !== null) return true;
+	return undefined;
+}
 
 /** Source projection over one workspace, not an evaluator or a runtime instance resolver. */
 export class LuaSourceReader {
@@ -18,6 +34,23 @@ export class LuaSourceReader {
 	public expression(file: FileSemanticData, expression: LuaExpression): LuaWrittenExpression | undefined {
 		const query = this.snapshot.symbolResolver.writtenSources;
 		return this.resolve(this.snapshot.symbolResolver.authoredSources.trace(query.expression(file, expression)));
+	}
+
+	/** The admitted single module publication, not a runtime require invocation. */
+	public module(file: FileSemanticData, specifier: string): LuaWrittenExpression | undefined {
+		const path = this.snapshot.symbolResolver.moduleImports.resolveModule(file.file, specifier);
+		if (path === undefined) return;
+		const owner = this.snapshot.getFileData(path)!, publication = owner.moduleValues[0];
+		if (owner.syntaxError !== null || publication === undefined || publication.bypassingReturns.length !== 0) return;
+		return this.expression(owner, publication.statement.expressions[0]);
+	}
+
+	/** A unique callable's authored identity. Import provenance alone does not
+	 * grant this proof when the callable's member has competing/unknown writes. */
+	public callable(file: FileSemanticData, expression: LuaExpression): LuaWrittenExpression | undefined {
+		const query = this.snapshot.symbolResolver.writtenSources;
+		const source = this.resolve(this.snapshot.symbolResolver.authoredSources.trace(query.expression(file, expression)), 'value');
+		return source?.expression.kind === LuaSyntaxKind.FunctionExpression ? source : undefined;
 	}
 
 	/** String content over this immutable snapshot, independent of represented source ownership. */
@@ -46,7 +79,7 @@ export class LuaSourceReader {
 	/** Select a field's authored source independently of mutation in the field's descendants. */
 	public member(file: FileSemanticData, expression: LuaExpression, name: string): LuaWrittenExpression | undefined {
 		const query = this.snapshot.symbolResolver.writtenSources;
-		return this.resolve(this.snapshot.symbolResolver.authoredSources.member(query.expression(file, expression), name));
+		return this.resolve(this.snapshot.symbolResolver.authoredSources.member(query.expression(file, expression), name), 'value');
 	}
 
 	/** A unique value, a proved unwritten member (null), or unresolved source
@@ -55,7 +88,7 @@ export class LuaSourceReader {
 	public memberState(file: FileSemanticData, expression: LuaExpression, name: string): LuaWrittenExpression | null | undefined {
 		const query = this.snapshot.symbolResolver.writtenSources;
 		const trace = this.snapshot.symbolResolver.authoredSources.member(query.expression(file, expression), name);
-		const source = this.resolve(trace);
+		const source = this.resolve(trace, 'value');
 		if (source !== undefined) return source;
 		if (trace.terminals.length === 0 && trace.boundaries.length === 1) {
 			const boundary = trace.boundaries[0];
@@ -65,7 +98,40 @@ export class LuaSourceReader {
 		return undefined;
 	}
 
-	private resolve(trace: LuaAuthoredSourceTrace): LuaWrittenExpression | undefined {
+	/** Raw own storage, as copied by pairs/rawget: __index cannot supply or
+	 * hide a key. Nil remains explicit; null proves no own write. */
+	public ownMemberState(file: FileSemanticData, expression: LuaExpression, name: string): LuaWrittenExpression | null | undefined {
+		const query = this.snapshot.symbolResolver.writtenSources;
+		const trace = this.snapshot.symbolResolver.authoredSources.member(query.expression(file, expression), name);
+		const source = this.resolve(trace, 'raw');
+		if (source !== undefined) return source;
+		if (trace.terminals.length !== 0) return;
+		let unwritten = false;
+		for (const boundary of trace.boundaries) {
+			if (boundary.reason === 'prototype-write') continue;
+			if (boundary.reason !== 'unwritten-member' || boundary.source !== trace.root) return;
+			unwritten = true;
+		}
+		if (unwritten && this.expression(file, expression)?.expression.kind === LuaSyntaxKind.TableConstructorExpression) return null;
+	}
+
+	/** A unique written call application, including aliases to its result. Its
+	 * arguments remain source; this never resolves or executes the called value. */
+	public call(file: FileSemanticData, expression: LuaExpression): CallValueEntry | undefined {
+		const query = this.snapshot.symbolResolver.writtenSources;
+		const trace = this.snapshot.symbolResolver.authoredSources.trace(query.expression(file, expression));
+		this.observe(trace);
+		if (trace.terminals.length !== 0 || trace.boundaries.length !== 1) return;
+		const boundary = trace.boundaries[0];
+		return boundary.reason === 'call-result' ? boundary.call : undefined;
+	}
+
+	private resolve(trace: LuaAuthoredSourceTrace, ownMember?: OwnMemberRead): LuaWrittenExpression | undefined {
+		this.observe(trace);
+		return this.selectExpression(trace, ownMember);
+	}
+
+	private observe(trace: LuaAuthoredSourceTrace): void {
 		if (!this.traces.has(trace)) {
 			this.traces.add(trace);
 			for (const source of trace.sources) {
@@ -73,15 +139,21 @@ export class LuaSourceReader {
 				if (source.file.syntaxError !== null) this.syntaxComplete = false;
 			}
 		}
-		return this.selectExpression(trace);
 	}
 
 	/** Unique authored syntax is independent of whether the consumer represents that source. */
-	private selectExpression(trace: LuaAuthoredSourceTrace): LuaWrittenExpression | undefined {
-		if (trace.boundaries.length !== 0 || trace.terminals.length !== 1) return undefined;
+	private selectExpression(trace: LuaAuthoredSourceTrace, ownMember?: OwnMemberRead): LuaWrittenExpression | undefined {
+		if (trace.terminals.length !== 1 || trace.boundaries.length !== 0
+			&& (!ownMember || trace.boundaries.some(boundary => boundary.reason !== 'prototype-write'))) return undefined;
 		const source = trace.terminals[0];
 		const syntax = source.value.root.kind === 'owned' ? source.value.root.syntax : writtenSourceExpression(source);
-		return syntax === undefined ? undefined : this.snapshot.symbolResolver.writtenSources.expression(source.file, syntax);
+		if (syntax === undefined) return;
+		const written = this.snapshot.symbolResolver.writtenSources.expression(source.file, syntax);
+		// Lua consults __index only after an absent/nil own key. A unique
+		// non-nil own field cannot be replaced by changing the prototype.
+		if (trace.boundaries.length !== 0 && ownMember !== 'raw'
+			&& (syntax.kind === LuaSyntaxKind.NilLiteralExpression || readLuaSourceTruth(written) === undefined)) return;
+		return written;
 	}
 
 	/** Named definitions and called producers are navigation evidence, not resolved runtime values. */

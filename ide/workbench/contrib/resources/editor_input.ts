@@ -45,7 +45,7 @@ export class ResourceViewerInput extends ReadonlyEditorInput<ResourceViewerTabId
 	public preparePreview(asset: RomAsset, rom: RomToolingLayer): ResourceImagePreview {
 		if (this.preview?.asset === asset && this.preview.rom === rom.bytes) return this.preview;
 		this.preview?.bitmap.dispose();
-		const decoded = decodeRomAssetImage(rom.bytes, rom.index.entries, asset, {});
+		const decoded = decodeRomAssetImage(rom.bytes, rom.index.entries, asset, new Map());
 		const view = new WorkbenchImageViewport();
 		view.setImage(decoded.width, decoded.height);
 		return this.preview = { asset, rom: rom.bytes, bitmap: new HostBitmap({ width: decoded.width, height: decoded.height, pixels: decoded.rgba }), view };

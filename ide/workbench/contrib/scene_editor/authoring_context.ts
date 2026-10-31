@@ -8,6 +8,7 @@ import type { SceneSourceDocuments } from './source_documents';
 import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { SceneReparentChoice, SceneReparentMode, SceneSpatialParents, SceneSpatialProjection, SceneSpatialReadModel } from './spatial_projection';
+import type { SceneVisualProjection, SceneVisualReadModel } from './visual_projection';
 
 /** Admission proof for one exact authored declaration, not a name or a document tab. */
 export type SceneAuthoredSubject = {
@@ -61,6 +62,7 @@ export type SceneAuthoredSourceReference = {
 /** Retained source editing context. Trees, Details and document containers do not own its selection. */
 export class SceneAuthoringContext {
 	private spatialProjection: SceneSpatialProjection | undefined;
+	private visualProjection: SceneVisualProjection | undefined;
 	/** Opaque producer generation; controls refresh once, then consume retained facts. */
 	public get spatialGeneration(): object | undefined { return this.spatialProjection; }
 	private documentValue: SceneSourceDocument | undefined;
@@ -199,6 +201,7 @@ export class SceneAuthoringContext {
 		const previous = this.spatialProjection;
 		const document = this.documents.get(this.workingCopy);
 		this.spatialProjection = this.documents.getSpatialProjection(this.workingCopy, document);
+		this.visualProjection = this.documents.getVisualProjection(this.workingCopy, document);
 		const changed = this.install(document);
 		if (previous !== this.spatialProjection) for (const listener of this.spatialGenerationListeners) listener();
 		return changed;
@@ -332,6 +335,12 @@ export class SceneAuthoringContext {
 		const scene = this.subject;
 		return scene === undefined ? undefined : this.spatialProjection?.readScene(this.documentValue!, scene);
 	}
+	/** Only the bound authored declaration supplies a constructor preview, never
+	 * the selected document or a fabricated/runtime scene. Read after refresh. */
+	public get visualScene(): SceneVisualReadModel | undefined {
+		const scene = this.subject;
+		return scene === undefined ? undefined : this.visualProjection?.readScene(this.documentValue!, scene);
+	}
 
 	public canReparentSelectedMember(mode: SceneReparentMode = 'keep_world'): boolean {
 		const selected = this.editableMember();
@@ -418,6 +427,7 @@ export class SceneAuthoringContext {
 		this.selectionValue = undefined;
 		this.documentValue = undefined;
 		this.spatialProjection = undefined;
+		this.visualProjection = undefined;
 		if (this.subjectScenes !== undefined) this.subjectScenes.length = 0;
 	}
 }

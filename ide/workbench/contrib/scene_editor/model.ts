@@ -6,6 +6,10 @@ import type {
 } from '../../../../toolchain/ts/lua/syntax/ast';
 import type { ResourceIdentity } from '../../../common/resource';
 import type { FileSemanticData } from '../../../../toolchain/ts/lua/semantic/model';
+import type { Affine2 } from '../../../common/affine2';
+import type { Affine3 } from '../../../common/affine3';
+
+export type SceneSourceAffine = Affine2 & { readonly family: '2d' } | Affine3 & { readonly family: '3d' };
 
 export type SceneSourceSpatial = {
 	readonly field: LuaTableField;

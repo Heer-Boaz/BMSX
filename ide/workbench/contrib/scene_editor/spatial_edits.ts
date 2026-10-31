@@ -2,16 +2,12 @@ import { LuaSyntaxKind, type LuaExpression, type LuaTableConstructorExpression }
 import { staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
 import { formatLuaNumberExpression } from '../../../../toolchain/ts/lua/syntax/number_expression';
 import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
-import type { Affine2 } from '../../../common/affine2';
-import type { Affine3 } from '../../../common/affine3';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaStringValueEdit, createLuaTableFieldNumberEdits, createLuaTableFieldRemovalEdits,
 	luaSourceRangeToTextRange, readLuaSourceRange } from '../../../language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits } from '../../../language/lua/table_field_insertion';
-import type { SceneSourceDocument, SceneSourceObject } from './model';
-
-export type SceneSourceAffine = Affine2 & { readonly family: '2d' } | Affine3 & { readonly family: '3d' };
+import type { SceneSourceAffine, SceneSourceDocument, SceneSourceObject } from './model';
 
 /** Rename the consuming expression, never its shared written provider. */
 export function createSceneNameEdit(buffer: TextBuffer, document: SceneSourceDocument, expression: LuaExpression, name: string): EditorTextEdit {

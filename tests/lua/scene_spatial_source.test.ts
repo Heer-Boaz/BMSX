@@ -159,7 +159,7 @@ scenes.register('fixture', { objects = {
  { member_id = 'nonspatial', definition_id = 'controller', spatial = nil },
 } })`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
-		[['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', prefabSource]]);
+		[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabSource]]);
 	const authoring = new SceneAuthoringContext(f.model, f.documents); t.after(() => authoring.dispose());
 	const document = f.documents.get(f.model), scene = document.scenes[0];
 	authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });
@@ -241,7 +241,7 @@ prefab.define({ def_id = ids.parent, class = {}, spatial = spatial })
 prefab.define({ def_id = ids.child, class = {}, spatial = spatial })`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [
 		['ids.lua', "return { parent = 'group', child = 'part' }"],
-		['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', prefabs],
+		['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabs],
 	]);
 	const authoring = new SceneAuthoringContext(f.model, f.documents); t.after(() => authoring.dispose());
 	const document = f.documents.get(f.model), scene = document.scenes[0];
@@ -269,7 +269,7 @@ scenes.register('fixture', { objects = {
 prefab.define({ def_id = 'parent', class = {}, spatial = { family = '${family}', authority = 'affine' } })
 prefab.define({ def_id = 'child', class = {}, spatial = { family = '${family}', authority = 'affine', local_transform = { ${affine} } } })`;
 		const f = createSceneSourceFixture(t, source, `scene_${family}.lua`, undefined,
-			[['cartlib/world/prefab.lua', 'return {}'], ['prefabs.lua', prefabs]]);
+			[['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', prefabs]]);
 		const authoring = new SceneAuthoringContext(f.model, f.documents); t.after(() => authoring.dispose());
 		const document = f.documents.get(f.model), scene = document.scenes[0];
 		authoring.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[1], index: 1 });

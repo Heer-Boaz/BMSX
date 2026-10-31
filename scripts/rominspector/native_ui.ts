@@ -1104,7 +1104,7 @@ export async function runNativeInspectorUI(ctx: NativeUiContext): Promise<void> 
 	let modalScroll = 0;
 	let modalScrollX = 0;
 	const modalContentByTab: ModalTabContent[] = [];
-	const decodedTexture: TextureDecodeCache = {};
+	const decodedTexture: TextureDecodeCache = new Map();
 	let modalPreviewZoom = 1;
 	let loadingModal = false;
 	let lastLayout: UiLayout | null = null;

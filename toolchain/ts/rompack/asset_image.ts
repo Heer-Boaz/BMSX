@@ -5,13 +5,8 @@ import { decodeGxTextureImage, type GxDecodedImage } from './gx_texture_codec';
 import { decodeImgDecStream } from './imgdec_codec';
 import { GX_SYSTEM_TEXTURE_ASSET_ID } from './system_texture';
 
-/** One decoded atlas, owned by the inspector of a single immutable ROM image. */
-export type RomTextureDecodeCache = {
-	current?: {
-		resid: string;
-		payload: Uint8Array;
-	};
-};
+/** Decoded atlas payloads owned by a reader of one immutable ROM image. */
+export type RomTextureDecodeCache = Map<string, Uint8Array>;
 
 /** Decode an image region or an entire texture from its physical ROM asset representation. */
 export function decodeRomAssetImage(
@@ -19,9 +14,10 @@ export function decodeRomAssetImage(
 	assets: readonly RomAsset[],
 	asset: RomAsset,
 	cache: RomTextureDecodeCache,
+	view: 'asset' | 'atlas' = 'asset',
 ): GxDecodedImage {
 	const image = asset.type === 'image' ? asset.imgmeta : undefined;
-	const region = image === undefined ? undefined : {
+	const region = image === undefined || view === 'atlas' ? undefined : {
 		width: image.width,
 		height: image.height,
 		textureU: image.texture_u,
@@ -38,16 +34,13 @@ export function decodeRomAssetImage(
 		);
 	}
 	const texture = image === undefined ? asset : assets.find(entry => entry.resid === image.gx_atlas_id)!;
-	let decoded = cache.current;
-	if (decoded === undefined || decoded.resid !== texture.resid) {
-		decoded = {
-			resid: texture.resid,
-			payload: decodeImgDecStream(rom, texture.start, texture.end - texture.start).payload,
-		};
-		cache.current = decoded;
+	let payload = cache.get(texture.resid);
+	if (payload === undefined) {
+		payload = decodeImgDecStream(rom, texture.start, texture.end - texture.start).payload;
+		cache.set(texture.resid, payload);
 	}
 	const metadata = texture.texturemeta;
-	return decodeGxTextureImage(decoded.payload, {
+	return decodeGxTextureImage(payload, {
 		mode: metadata.mode,
 		wordWidth: metadata.word_width,
 		height: metadata.height,

@@ -50,8 +50,8 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		const actions: readonly CameraAction[] = [
 			{ command: 'sceneViewport.frameAll', isEnabled: view => view.entries.length > 0, run: view => { view.frame(undefined); } },
 			{ command: 'sceneViewport.frameSelection', isEnabled: view => view.canFrameSelection, run: view => { view.frame(view.selected); } },
-			{ command: 'sceneViewport.view2d', isEnabled: () => true, run: view => view.camera.setMode('2d') },
-			{ command: 'sceneViewport.view3d', isEnabled: () => true, run: view => view.camera.setMode('3d') },
+			{ command: 'sceneViewport.view2d', isEnabled: view => view.camera.initial || view.camera.mode !== '2d', run: view => view.camera.setMode('2d') },
+			{ command: 'sceneViewport.view3d', isEnabled: view => view.camera.initial || view.camera.mode !== '3d', run: view => view.camera.setMode('3d') },
 		];
 		for (const action of actions) {
 			// Capture the concrete canvas before source admission can publish a different attachment or selection.
@@ -109,18 +109,20 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) return false;
 		if (snapshot.justPressedButtons === 0 && !justPressed) return true;
 		const view = this.view, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;
-		const source = view.source, version = view.authoring.workingCopy.version, intent = view.authoring.selectionRevision;
+		const source = view.source, version = view.authoring.workingCopy.version, intent = view.authoring.selectionRevision, projection = view.projectionRevision;
 		let picked = -1, distance = 36;
 		if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) for (let index = 0; index < view.entries.length; index++) {
+			if (view.entries[index] !== view.selected && view.sprites.represented.has(view.entries[index])) continue;
 			const offset = index * SCENE_VIEWPORT_POINT_STRIDE, dx = view.points[offset] - snapshot.viewportX, dy = view.points[offset + 1] - snapshot.viewportY;
 			const squared = dx * dx + dy * dy;
 			if (squared <= distance) { distance = squared; picked = index; }
 		}
-		const entry = picked === -1 ? undefined : view.entries[picked];
+		const entry = picked === -1 ? view.camera.mode === '2d' ? view.sprites.pick(snapshot.viewportX, snapshot.viewportY) : undefined : view.entries[picked];
 		if (!this.focus() || this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation) return true;
 		view.refresh();
 		if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation
 			|| view.source !== source || view.authoring.workingCopy.version !== version || view.authoring.selectionRevision !== intent
+			|| view.projectionRevision !== projection
 			|| inputFocus.admittedTarget !== this.focusTarget) return true;
 		const orbit = view.camera.mode === '3d' && (snapshot.modifiers & KeyModifier.alt) !== 0 && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 		if ((snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0 || orbit) {
@@ -162,10 +164,11 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			if (this.gesture !== undefined) pointerCapture.cancelTarget(this);
 			else inputFocus.executeCommand('sceneEditor.outline', this.focusTarget.commandContext); return;
 		}
+		if ((event.modifiers & (KeyModifier.ctrl | KeyModifier.meta | KeyModifier.alt)) !== 0) return;
 		if (isKeyJustPressed('KeyF', event)) {
 			consumeIdeKey('KeyF', event);
 			inputFocus.executeCommand((event.modifiers & KeyModifier.shift) !== 0 ? 'sceneViewport.frameAll' : 'sceneViewport.frameSelection', this.focusTarget);
-		} else if (isKeyJustPressed('Digit2', event) || isKeyJustPressed('Digit3', event)) {
+		} else if (event.modifiers === KeyModifier.none && (isKeyJustPressed('Digit2', event) || isKeyJustPressed('Digit3', event))) {
 			consumeIdeKey(event.code, event); inputFocus.executeCommand(event.code === 'Digit2' ? 'sceneViewport.view2d' : 'sceneViewport.view3d', this.focusTarget);
 		}
 	}

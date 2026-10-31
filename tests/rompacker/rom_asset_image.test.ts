@@ -35,15 +35,22 @@ for (const encode of [encodeDirect16GxTexture, encodePalette4GxTexture]) {
 			imgmeta: { width: 2, height: 1, texture_u: 1, texture_v: 0, gx_atlas_id: 'atlas' },
 		};
 		const assets = [image, textureAsset];
-		const cache: RomTextureDecodeCache = {};
+		const cache: RomTextureDecodeCache = new Map();
 		const crop = decodeRomAssetImage(rom, assets, image, cache);
 		assert.deepEqual([crop.width, crop.height], [2, 1]);
 		assert.deepEqual(crop.rgba, new Uint8Array(pixels.slice(4, 12)));
-		const atlasPayload = cache.current!.payload;
+		const atlasPayload = cache.get('atlas');
 		const atlas = decodeRomAssetImage(rom, assets, textureAsset, cache);
 		assert.deepEqual([atlas.width, atlas.height], [4, 1]);
 		assert.deepEqual(atlas.rgba, new Uint8Array(pixels));
-		assert.strictEqual(cache.current!.payload, atlasPayload);
+		assert.deepEqual(decodeRomAssetImage(rom, assets, image, cache, 'atlas').rgba, atlas.rgba);
+		assert.strictEqual(cache.get('atlas'), atlasPayload);
+		// A Scene can interleave sprites from several atlases. Revisit does not decode an evicted payload again.
+		const otherAtlas = { ...textureAsset, resid: 'other-atlas' };
+		decodeRomAssetImage(rom, [image, textureAsset, otherAtlas], otherAtlas, cache);
+		decodeRomAssetImage(rom, assets, image, cache);
+		assert.equal(cache.size, 2);
+		assert.strictEqual(cache.get('atlas'), atlasPayload);
 		assert.deepEqual(rom.subarray(3, 3 + compressed.length), new Uint8Array(compressed));
 		assert.equal(image.buffer, undefined);
 		assert.equal(textureAsset.buffer, undefined);
@@ -61,7 +68,7 @@ test('system image preview follows its raw upload packet and respects a ROM suba
 		imgmeta: { width: 1, height: 1, texture_u: 2, texture_v: 0 },
 	};
 	const uploadAsset: RomAsset = { resid: GX_SYSTEM_TEXTURE_ASSET_ID, type: 'bin', start: 4, end: 4 + upload.length };
-	const preview = decodeRomAssetImage(rom, [image, uploadAsset], image, {});
+	const preview = decodeRomAssetImage(rom, [image, uploadAsset], image, new Map());
 	assert.deepEqual([preview.width, preview.height], [1, 1]);
 	assert.deepEqual(Array.from(preview.rgba), [0, 0, 255, 255]);
 });
@@ -91,7 +98,7 @@ test('multi-page images remain contiguous in their produced atlas while drawing 
 	texture.start = 0;
 	texture.end = texture.buffer!.length;
 	assert.equal(image.imgmeta!.gx_page_tiles!.length, 4);
-	const preview = decodeRomAssetImage(texture.buffer!, assets, image, {});
+	const preview = decodeRomAssetImage(texture.buffer!, assets, image, new Map());
 	assert.deepEqual([preview.width, preview.height], [264, 264]);
 	const expected = context.getImageData(0, 0, 264, 264).data;
 	assert.deepEqual(preview.rgba, new Uint8Array(expected));

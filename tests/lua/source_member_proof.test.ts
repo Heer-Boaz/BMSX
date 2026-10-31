@@ -56,3 +56,43 @@ test('cross-module member proofs retain provider ownership without executing a f
 	assert.equal(f.reader.memberState(f.file, f.expressions[0], 'missing'), null);
 	assert.deepEqual([...f.reader.files].map(file => file.file).sort(), ['member.lua', 'provider.lua']);
 });
+
+test('a unique non-nil own member precedes an unknown prototype without granting inherited or competing values', () => {
+	const f = fixture('local value={present=7, disabled=false, missing=nil}; setmetatable(value,external); return value');
+	const present = f.reader.memberState(f.file, f.expressions[0], 'present');
+	assert.ok(present != null); assert.equal(readLuaNumberExpression(present.expression), 7);
+	const disabled = f.reader.memberState(f.file, f.expressions[0], 'disabled');
+	assert.ok(disabled != null && disabled.expression.kind === LuaSyntaxKind.BooleanLiteralExpression && disabled.expression.value === false);
+	assert.equal(f.reader.memberState(f.file, f.expressions[0], 'missing'), undefined);
+	assert.equal(f.reader.memberState(f.file, f.expressions[0], 'inherited'), undefined);
+	for (const source of [
+		'local value={present=7}; setmetatable(value,external); value.present=8; return value',
+		'local value={present=7}; setmetatable(value,external); value[key()]=8; return value',
+	]) {
+		const unknown = fixture(source); assert.equal(unknown.reader.memberState(unknown.file, unknown.expressions[0], 'present'), undefined);
+	}
+});
+
+test('raw own source reads prove absent and nil keys independently of prototypes without ignoring computed or competing writes', () => {
+	const f = fixture('local value={present=false, nil_key=nil}; setmetatable(value,external); return value');
+	const present = f.reader.ownMemberState(f.file, f.expressions[0], 'present');
+	assert.ok(present != null && present.expression.kind === LuaSyntaxKind.BooleanLiteralExpression && present.expression.value === false);
+	assert.equal(f.reader.ownMemberState(f.file, f.expressions[0], 'absent'), null);
+	assert.equal(f.reader.ownMemberState(f.file, f.expressions[0], 'nil_key')?.expression.kind, LuaSyntaxKind.NilLiteralExpression);
+	for (const source of [
+		'local value={present=false}; setmetatable(value,external); value.present=true; return value',
+		'local value={}; setmetatable(value,external); value[key()]=true; return value',
+	]) {
+		const unknown = fixture(source); assert.equal(unknown.reader.ownMemberState(unknown.file, unknown.expressions[0], 'present'), undefined);
+	}
+});
+
+test('callable identity requires unique authored function source rather than an unchanged imported access path', () => {
+	const providers = { 'api.lua': 'return {new=function() end, factory=function() end}' };
+	const original = fixture("local api=require('api'); return api.new,api.factory", providers);
+	assert.ok(original.reader.callable(original.file, original.expressions[0]));
+	assert.ok(original.reader.callable(original.file, original.expressions[1]));
+	const changed = fixture("local api=require('api'); api.new=function() return false end; return api.new,api.factory", providers);
+	assert.equal(changed.reader.callable(changed.file, changed.expressions[0]), undefined);
+	assert.ok(changed.reader.callable(changed.file, changed.expressions[1]));
+});

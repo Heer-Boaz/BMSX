@@ -26,7 +26,7 @@ function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [s
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, imports);
 	const document = f.documents.get(f.model);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, sourceVersion: f.model.version, scene: document.scenes[0] });
-	const view = new ScenePrimaryViewState(context); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
+	const view = new ScenePrimaryViewState(context, f.sources.catalog); view.refresh(); selectSceneOutlineRow(view.hierarchy, 1);
 	t.after(() => { view.dispose(); context.dispose(); });
 	const bookmark = () => {
 		const location = new ScenePrimaryBookmark(context, view); t.after(() => location.dispose()); return location;

@@ -25,7 +25,7 @@ prefab.define({def_id='node3',class={},spatial={family='3d',authority='affine'}}
 
 async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['prefabs.lua', PREFABS],
-		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/prefab.lua', 'return {}']]);
+		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/prefab.lua', 'return { define=function() end }']]);
 	f.editor.setFontVariant(font); f.first.focus();
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);
