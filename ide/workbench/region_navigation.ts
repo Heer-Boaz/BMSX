@@ -6,8 +6,8 @@ import type { WorkbenchSurface } from './services/windows/model';
 import type { WorkbenchSurfaceService } from './services/windows/service';
 import type { WorkbenchStatusBar } from './ui/status_bar/control';
 
-const enum Region { Files, Hierarchy, Documents, Details, Activity, Status }
-const REGION_COUNT = 6;
+const enum Region { Files, Hierarchy, Viewport, Documents, Details, Activity, Status }
+const REGION_COUNT = 7;
 
 /** Outer workbench composition; document groups, local Tab and floating windows keep their own navigation. */
 export class WorkbenchRegionNavigation {
@@ -26,6 +26,7 @@ export class WorkbenchRegionNavigation {
 		switch (destination) {
 			case Region.Files: this.files.setFocused(true); break;
 			case Region.Hierarchy: this.main.focusPrimary('hierarchy'); break;
+			case Region.Viewport: this.main.focusPrimary('viewport'); break;
 			case Region.Documents: this.documents.focus(); break;
 			case Region.Details: this.main.focusPrimary('details'); break;
 			case Region.Activity: this.main.focusActivity(); break;
@@ -54,6 +55,7 @@ export class WorkbenchRegionNavigation {
 			else if (window === this.main.surface) {
 				const primary = this.main.primary;
 				if (primary?.hierarchy.scope.contains(origin.scope)) current = Region.Hierarchy;
+				else if (primary?.viewport.scope.contains(origin.scope)) current = Region.Viewport;
 				else if (primary?.details.scope.contains(origin.scope)) current = Region.Details;
 				else if (this.documents.scope.contains(origin.scope)) current = Region.Documents;
 				else if (this.main.activityPlacement === 'dockedMain' && this.main.activities.scope.contains(origin.scope)) current = Region.Activity;
@@ -73,6 +75,7 @@ export class WorkbenchRegionNavigation {
 		switch (region) {
 			case Region.Files: return this.files.isVisible() ? this.files.focusTarget.scope : undefined;
 			case Region.Hierarchy: return this.main.primary?.hierarchy.attached ? this.main.primary.hierarchy.scope : undefined;
+			case Region.Viewport: return this.main.primary?.viewport.attached ? this.main.primary.viewport.scope : undefined;
 			case Region.Documents: return !this.documents.retired && this.documents.operation === 'none' ? this.documents.scope : undefined;
 			case Region.Details: return this.main.primary?.details.attached ? this.main.primary.details.scope : undefined;
 			case Region.Activity: return this.main.activityPlacement === 'dockedMain' && this.main.activityDisplayed

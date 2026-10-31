@@ -200,18 +200,18 @@ test('inactive recovery retains Main primary and preferred Details region until 
 	f.editor.mainWorkspace.focusPrimary('details');
 	const payload = f.checkpoint();
 	assert.equal(payload.filesBrowser.focused, false); assert.equal(payload.editorParts.active, 0);
-	assert.equal(payload.mainWorkspace.activeClient, 'primary'); assert.equal(payload.mainWorkspace.activeRegion, 'details');
+	assert.equal(payload.mainWorkspace.activeClient, 'primary'); assert.equal(payload.mainWorkspace.activePrimaryPart, 'details');
 	f.editor.deactivate(); f.update(); await f.restore(payload); f.update();
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(f.editor.isActive, false); assert.equal(f.editor.acceptsInput, false);
 	assert.equal(primary.hierarchy.attached, false); assert.equal(primary.details.attached, false);
-	assert.equal(primary.view.preferredRegion, 'details'); assert.deepEqual(primary.serialize(), payload.mainWorkspace.primary);
+	assert.equal(primary.view.preferredPart, 'details'); assert.deepEqual(primary.serialize(), payload.mainWorkspace.primary);
 	const documents = f.editor.editorParts.serialize(f.editor.editorInputSerializers);
 	assert.deepEqual(documents.main.layout, payload.editorParts.main.layout);
 	assert.deepEqual(documents.documents.map(part => part.layout), payload.editorParts.documents.map(part => part.layout));
 	assert.equal(pointerCapture.guestBinding, undefined);
 	f.editor.activate(); f.update();
-	assert.ok(f.editor.mainWorkspace.primary === primary); assert.equal(primary.view.preferredRegion, 'details');
+	assert.ok(f.editor.mainWorkspace.primary === primary); assert.equal(primary.view.preferredPart, 'details');
 	assert.ok(inputFocus.admittedTarget !== null && primary.details.scope.contains(inputFocus.admittedTarget.scope),
 		`native focus: Files=${inputFocus.admittedTarget === f.panel.focusTarget}, Main=${inputFocus.admittedTarget === f.editor.mainWorkspace.focusTarget}, activeClient=${f.editor.mainWorkspace.serialize().activeClient}, Details attached=${primary.details.attached}`);
 	assert.equal(f.editor.guestInputRecipient, null); assert.equal(pointerCapture.guestBinding, undefined);

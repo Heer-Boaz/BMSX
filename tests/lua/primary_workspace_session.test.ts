@@ -80,7 +80,7 @@ for (const clearSelection of [false, true]) test(`primary recovery shares one di
 	if (!clearSelection) {
 		const selection = restored.consumer.selection; assert.ok(selection?.kind === 'member');
 		assert.ok(selection.entry === restored.consumer.subject!.objects[0]);
-		assert.equal(restored.view.preferredRegion, 'details');
+		assert.equal(restored.view.preferredPart, 'details');
 	}
 	const code = f.editor.editorParts.main.activeGroup.model.activeTab; assert.ok(code?.kind === 'code_editor');
 	assert.ok(code.workingCopy === restored.consumer.workingCopy);

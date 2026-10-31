@@ -320,10 +320,12 @@ address an exact input alongside their concrete control origin; popup projection
 does not change group selection to manufacture that subject.
 An input identifies an editor and retains its view state and model references;
 it is not the document itself. Different inputs can present the same document.
-`workbench/main_workspace.ts` owns Main's permanent presentation family and its
-named Hierarchy, document, Details and activity regions. `common/main_workspace_layout.ts`
-allocates their measured constraints, requested side widths/visibility and
-overflow. The frontend composition measures the document part, allocates Main,
+`workbench/main_workspace.ts` owns Main's permanent presentation family, primary
+viewport, independent document part, Hierarchy/Details sides and activity area.
+`common/main_workspace_layout.ts` allocates measured constraints, the central
+viewport/document split, requested side widths/visibility and overflow. Logical
+client allocations are separate from effective visible clips and sticky scroll
+chrome. The frontend composition measures the document part, allocates Main,
 then arranges its actual clients before publishing input routing. The composition
 root retains concrete clients; layout owners exchange constraints and extents.
 `EditorParts.main` is its document child; the Game companion is nested with that
@@ -331,7 +333,10 @@ child, not painted or routed through shell chrome. Parent reveal precedes child
 focus admission when the composition overflows. Main is unbound until an explicit
 contribution action supplies a primary subject. Ordinary document navigation does
 not replace it. `common/main_workspace_client.ts` separates the contribution's
-single semantic consumer from its independently attached region presentations.
+single semantic consumer from its independently attached content presentations.
+Primary focus destinations include the viewport; side-region placement remains
+a separate contract. The viewport is a native child of the primary family,
+never a hidden document input or a runtime Game companion.
 `ui/view_panel/` owns shared region chrome, client bounds, native focus order and
 the exact panel's surface/capture lifetime; Main's region surfaces own allocation
 and clipping, not the contribution's input attachment. Contributions supply the
@@ -393,7 +398,13 @@ reading/placement state and attach through separate controls and input scopes.
 shared chrome and region allocation. Semantic selection restore precedes optional
 tree highlighting; disclosure does not determine whether Details has a subject.
 A document pane adapts the composition to a group; `ScenePrimaryClient` supplies
-the independent region controls directly to Main without an editor input.
+the viewport and independent region controls directly to Main without an editor
+input. `scene_editor/viewport/` owns retained editor-camera intent, source-pose
+screen projection, helper painting and its concrete native input/capture
+lifetime. Camera reading state persists with the primary subject, independently
+of document topology. It consumes the existing spatial projection's readonly
+world-affine cache and the context's exact source selection, not another Scene
+forest or a running machine frame.
 Source inputs own their model-to-view subscriptions. Closing one releases its
 view without disposing the canonical model or another input's view.
 An input's optional fresh-view capability belongs to its contribution. It creates

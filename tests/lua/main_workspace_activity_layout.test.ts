@@ -18,7 +18,7 @@ const ACTIVITY = { minimumWidth: 0, minimumHeight: 60, preferredHeight: 120 };
 test('Main retains its full family while allocating the complete named row above a bottom activity', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 519 };
 	layout.activityVisible = true;
-	const vertical = { rowMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
+	const vertical = { rowMinimumHeight: 100, viewport: undefined, documentMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
 	assert.equal(layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical), true);
 	assert.deepEqual(layout.bounds, bounds);
 	assert.deepEqual(layout.rowBounds, { left: 37, top: 19, right: 837, bottom: 391 });
@@ -39,7 +39,7 @@ test('Main retains its full family while allocating the complete named row above
 
 test('passive activity contraction and later growth preserve requested pixels rather than a height ratio', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 20, right: 800, bottom: 520 };
-	const vertical = { rowMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
+	const vertical = { rowMinimumHeight: 100, viewport: undefined, documentMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
 	layout.activityVisible = true; layout.activityHeight = 220;
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	assert.equal(layout.activityBounds.bottom - layout.activityBounds.top, 220);
@@ -58,7 +58,7 @@ test('passive activity contraction and later growth preserve requested pixels ra
 
 test('a constrained activity resize records the admitted side height without resizing it again during reflow', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 800, bottom: 200 };
-	const vertical = { rowMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
+	const vertical = { rowMinimumHeight: 100, viewport: undefined, documentMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
 	layout.activityVisible = true; layout.activityHeight = 220;
 	layout.hierarchyWidth = 160; layout.detailsWidth = 180;
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
@@ -72,7 +72,7 @@ test('a constrained activity resize records the admitted side height without res
 
 test('activity visibility and consumer absence preserve the independent request without a phantom allocation', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 800, bottom: 500 };
-	const vertical = { rowMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
+	const vertical = { rowMinimumHeight: 100, viewport: undefined, documentMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
 	layout.activityVisible = true; layout.activityHeight = 175;
 	layout.layout(bounds, 200, undefined, undefined, 6, 0);
 	assert.equal(layout.activityVisible, true); assert.equal(layout.activityPresented, false);
@@ -95,7 +95,7 @@ test('activity visibility and consumer absence preserve the independent request 
 test('horizontal row overflow does not translate or widen the activity client', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 337, bottom: 519 };
 	layout.activityVisible = true;
-	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 1000, { rowMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 });
+	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 1000, { rowMinimumHeight: 100, viewport: undefined, documentMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 });
 	assert.equal(layout.contentWidth, 386); assert.equal(layout.scrollX, 86);
 	assert.equal(layout.hierarchyBounds.left, bounds.left - 86); assert.equal(layout.detailsBounds.right, bounds.right);
 	assert.equal(layout.activityBounds.left, bounds.left); assert.equal(layout.activityBounds.right, bounds.right);
@@ -110,7 +110,7 @@ for (const cause of ['horizontal-admits-vertical', 'vertical-admits-horizontal']
 		const layout = new WorkbenchMainWorkspaceLayout();
 		const bounds = { left: 0, top: 0, right: cause === 'horizontal-admits-vertical' ? 380 : 390,
 			bottom: cause === 'horizontal-admits-vertical' ? 170 : 160 };
-		const vertical = { rowMinimumHeight: 100, activity: ACTIVITY, scrollY: 1000 };
+		const vertical = { rowMinimumHeight: 100, viewport: undefined, documentMinimumHeight: 100, activity: ACTIVITY, scrollY: 1000 };
 		layout.activityVisible = true; layout.activityHeight = 220;
 		layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 1000, vertical);
 		assert.deepEqual(layout.bounds, bounds); assert.equal(layout.contentHeight, 174);
@@ -118,7 +118,10 @@ for (const cause of ['horizontal-admits-vertical', 'vertical-admits-horizontal']
 		assert.equal(layout.verticalScrollTrack.right - layout.verticalScrollTrack.left, 6);
 		assert.equal(layout.scrollTrack.bottom - layout.scrollTrack.top, 6);
 		assert.equal(layout.rowBounds.bottom - layout.rowBounds.top, 106);
-		assert.equal(layout.viewport.bottom - layout.viewport.top, 100);
+		// Logical client minima survive scrolling; the physical row clip excludes its sticky scrollbar.
+		assert.equal(layout.viewport.top, bounds.top);
+		assert.equal(layout.viewport.bottom, layout.scrollTrack.top);
+		assert.equal(layout.viewport.bottom - layout.viewport.top, 100 - layout.scrollY);
 		assert.equal(layout.documentBounds.bottom - layout.documentBounds.top, 100);
 		assert.equal(layout.documentBounds.right - layout.documentBounds.left, 200);
 		assert.equal(layout.hierarchyBounds.right - layout.hierarchyBounds.left, 80);
@@ -136,7 +139,7 @@ for (const cause of ['horizontal-admits-vertical', 'vertical-admits-horizontal']
 
 test('activity default measurement changes reflow once while explicit requests survive font-derived minima', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 800, bottom: 500 };
-	const activity = { minimumWidth: 0, minimumHeight: 60, preferredHeight: 120 }, vertical = { rowMinimumHeight: 100, activity, scrollY: 0 };
+	const activity = { minimumWidth: 0, minimumHeight: 60, preferredHeight: 120 }, vertical = { rowMinimumHeight: 100, viewport: undefined, documentMinimumHeight: 100, activity, scrollY: 0 };
 	layout.activityVisible = true;
 	layout.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0, vertical);
 	activity.preferredHeight = 160;
@@ -157,11 +160,11 @@ test('activity default measurement changes reflow once while explicit requests s
 test('activity placement publishes with both side regions before a reentrant newer activity intent', () => {
 	const layout = new WorkbenchMainWorkspaceLayout(), observed: WorkbenchMainWorkspaceState[] = [];
 	layout.onDidChange(() => {
-		observed.push({ hierarchyVisible: layout.hierarchyVisible, detailsVisible: layout.detailsVisible, activityVisible: layout.activityVisible,
+		observed.push({ hierarchyVisible: layout.hierarchyVisible, detailsVisible: layout.detailsVisible, activityVisible: layout.activityVisible, viewportRatio: layout.viewportSplit.ratio,
 			hierarchyWidth: layout.hierarchyWidth, detailsWidth: layout.detailsWidth, activityHeight: layout.activityHeight });
 		if (observed.length === 1) { layout.activityVisible = false; layout.activityHeight = 175; }
 	});
-	const state = { hierarchyVisible: false, detailsVisible: false, activityVisible: true,
+	const state = { hierarchyVisible: false, detailsVisible: false, activityVisible: true, viewportRatio: 0.65,
 		hierarchyWidth: 180, detailsWidth: 190, activityHeight: 220 };
 	layout.setState(state);
 	assert.deepEqual(observed[0], state);
@@ -174,7 +177,7 @@ test('activity placement publishes with both side regions before a reentrant new
 
 test('the activity sash uses the actual shared vertical pointer and keyboard lifecycle', t => {
 	const layout = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 837, bottom: 519 };
-	const vertical = { rowMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
+	const vertical = { rowMinimumHeight: 100, viewport: undefined, documentMinimumHeight: 100, activity: ACTIVITY, scrollY: 0 };
 	const focus = new InputFocusService(), capture = new PointerCaptureService(), hover = new PointerHoverService();
 	const parent = focus.createTarget(), control = new WorkbenchSplitControl(focus, capture, hover, parent);
 	t.after(() => control.dispose());

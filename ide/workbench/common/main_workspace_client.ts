@@ -11,22 +11,26 @@ import type { WorkbenchStatusSource } from './status_bar';
 import type { WorkbenchMenuPresentation } from '../ui/menu/model';
 
 export type MainWorkspaceRegionId = 'hierarchy' | 'details';
-export type MainWorkspaceRegionSurfaces = Readonly<Record<MainWorkspaceRegionId, WorkbenchSurface>>;
+export type MainWorkspacePrimaryPartId = MainWorkspaceRegionId | 'viewport';
+export type MainWorkspaceClientSurfaces = Readonly<Record<MainWorkspacePrimaryPartId, WorkbenchSurface>>;
 
-/** A real region presentation over a retained contribution view, not another document input. */
-export interface MainWorkspaceRegionClient {
+/** A real presentation over a retained contribution view, not another document input. */
+export interface MainWorkspaceContentClient {
 	readonly scope: InputFocusScope;
 	readonly commandTarget: InputFocusTarget;
 	readonly attached: boolean;
 	readonly contextActions: WorkbenchMenuPresentation;
 	readonly description: string;
-	setHeaderVisible(visible: boolean): void;
 	measure(font: EditorFont, target: WorkbenchViewSizeConstraints): void;
 	attach(bounds: Readonly<RectBounds>): void;
 	detach(): void;
 	layout(bounds: Readonly<RectBounds>): void;
 	update(): void;
 	focus(): void;
+}
+
+export interface MainWorkspaceRegionClient extends MainWorkspaceContentClient {
+	setHeaderVisible(visible: boolean): void;
 }
 
 /** One semantic subject and working-copy consumer, with independently attached named presentations. */
@@ -36,7 +40,8 @@ export interface MainWorkspaceClient extends WorkbenchStatusSource {
 	readonly commandTarget: InputFocusTarget;
 	readonly hierarchy: MainWorkspaceRegionClient;
 	readonly details: MainWorkspaceRegionClient;
-	readonly preferredRegion: MainWorkspaceRegionId;
+	readonly viewport: MainWorkspaceContentClient;
+	readonly preferredPart: MainWorkspacePrimaryPartId;
 	readonly canOpenSource?: boolean;
 	captureSourceLocation?(): EditorSourceLocationRequest | undefined;
 	serialize(): SerializedPrimaryClient;
@@ -44,8 +49,8 @@ export interface MainWorkspaceClient extends WorkbenchStatusSource {
 	captureNavigationLocation(): PrimaryNavigationLocation | undefined;
 	isCurrent(): boolean;
 	update(): void;
-	focus(region?: MainWorkspaceRegionId): void;
+	focus(part?: MainWorkspacePrimaryPartId): void;
 	dispose(): void;
 }
 
-export type MainWorkspaceClientFactory = (surfaces: MainWorkspaceRegionSurfaces, scope: InputFocusScope) => MainWorkspaceClient | undefined;
+export type MainWorkspaceClientFactory = (surfaces: MainWorkspaceClientSurfaces, scope: InputFocusScope) => MainWorkspaceClient | undefined;

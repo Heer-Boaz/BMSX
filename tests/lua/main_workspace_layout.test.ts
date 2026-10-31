@@ -149,17 +149,17 @@ test('Main placement publishes a complete state before reentrant observers reque
 	let redirected = false;
 	view.onDidChange(() => {
 		observed.push({ hierarchyVisible: view.hierarchyVisible, detailsVisible: view.detailsVisible,
-			activityVisible: view.activityVisible, hierarchyWidth: view.hierarchyWidth, detailsWidth: view.detailsWidth });
+			activityVisible: view.activityVisible, viewportRatio: view.viewportSplit.ratio, hierarchyWidth: view.hierarchyWidth, detailsWidth: view.detailsWidth });
 		if (redirected) return;
 		redirected = true; view.detailsVisible = true; view.detailsWidth = 175;
 	});
-	const state = { hierarchyVisible: false, detailsVisible: false, activityVisible: false, hierarchyWidth: 180, detailsWidth: 190 };
+	const state = { hierarchyVisible: false, detailsVisible: false, activityVisible: false, viewportRatio: 0.65, hierarchyWidth: 180, detailsWidth: 190 };
 	view.setState(state);
 	assert.deepEqual(observed[0], state, 'the first observer sees all four requested fields, not an intermediate restore');
 	assert.equal(view.hierarchyVisible, false); assert.equal(view.hierarchyWidth, 180);
 	assert.equal(view.detailsVisible, true); assert.equal(view.detailsWidth, 175);
 	assert.equal(observed.length, 3);
-	view.setState({ hierarchyVisible: false, detailsVisible: true, activityVisible: false, hierarchyWidth: 180, detailsWidth: 175 });
+	view.setState({ hierarchyVisible: false, detailsVisible: true, activityVisible: false, viewportRatio: 0.65, hierarchyWidth: 180, detailsWidth: 175 });
 	assert.equal(observed.length, 3, 'an unchanged state does not publish another placement');
 });
 
@@ -168,7 +168,7 @@ test('Main owns coordinated width publication while the fixed sash reports only 
 	let changes = 0, resizes = 0;
 	view.onDidChange(() => changes++);
 	view.hierarchySash.onDidResize(() => resizes++); view.detailsSash.onDidResize(() => resizes++);
-	view.setState({ hierarchyVisible: true, detailsVisible: true, activityVisible: false, hierarchyWidth: 160, detailsWidth: 180 });
+	view.setState({ hierarchyVisible: true, detailsVisible: true, activityVisible: false, viewportRatio: 0.65, hierarchyWidth: 160, detailsWidth: 180 });
 	assert.equal(changes, 1); assert.equal(resizes, 0);
 	view.layout(bounds, 200, HIERARCHY, DETAILS, 6, 0);
 	view.hierarchySash.moveTo(view.hierarchySash.position + 20);

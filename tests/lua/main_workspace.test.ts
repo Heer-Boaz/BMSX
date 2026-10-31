@@ -12,7 +12,7 @@ import { copy_rect_bounds, create_rect_bounds } from '../../machine/ts/common/re
 import { InputFocusScope } from '../../ide/input/focus';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import type { EditorTextModel } from '../../ide/editor/model/text_model';
-import type { MainWorkspaceClient, MainWorkspaceRegionClient, MainWorkspaceRegionSurfaces } from '../../ide/workbench/common/main_workspace_client';
+import type { MainWorkspaceClient, MainWorkspaceRegionClient, MainWorkspaceClientSurfaces } from '../../ide/workbench/common/main_workspace_client';
 import type { WorkbenchViewSizeConstraints } from '../../ide/workbench/common/layout';
 import type { EditorFont } from '../../ide/editor/ui/view/font';
 import type { WorkbenchSurface } from '../../ide/workbench/services/windows/model';
@@ -58,26 +58,28 @@ class FixtureMainClient implements MainWorkspaceClient {
 	public readonly consumer;
 	public readonly hierarchy: FixtureMainRegion;
 	public readonly details: FixtureMainRegion;
-	public readonly preferredRegion = 'hierarchy' as const;
+	public readonly viewport: FixtureMainRegion;
+	public readonly preferredPart = 'hierarchy' as const;
 	public disposed = 0;
 	public focused = 0;
 	public onDispose: (() => void) | undefined;
-	public constructor(public readonly model: EditorTextModel, public readonly scope: InputFocusScope, surfaces: MainWorkspaceRegionSurfaces) {
+	public constructor(public readonly model: EditorTextModel, public readonly scope: InputFocusScope, surfaces: MainWorkspaceClientSurfaces) {
 		const models = [model]; this.consumer = { getWorkingCopies: () => models };
 		this.commandTarget = inputFocus.createTarget(null, scope);
 		this.hierarchy = new FixtureMainRegion(scope, surfaces.hierarchy);
 		this.details = new FixtureMainRegion(scope, surfaces.details);
+		this.viewport = new FixtureMainRegion(scope, surfaces.viewport);
 	}
 	public isCurrent(): boolean { return this.disposed === 0 && editorTextModelService.get(this.model.resource) === this.model; }
 	public serialize() { return { kind: 'scene' as const, value: this.model.identity.path }; }
 	public onDidChange(): () => void { return () => {}; }
 	public captureNavigationLocation() { return undefined; }
 	public update(): void {}
-	public focus(region: 'hierarchy' | 'details' = this.preferredRegion): void { this.focused++; this[region].focus(); }
+	public focus(region: 'hierarchy' | 'details' | 'viewport' = this.preferredPart): void { this.focused++; this[region].focus(); }
 	public readonly statusItems = [];
 	public updateStatus(): void {}
 	public dispose(): void {
-		this.disposed++; this.hierarchy.detach(); this.details.detach(); this.commandTarget.release(); this.onDispose?.();
+		this.disposed++; this.hierarchy.detach(); this.details.detach(); this.viewport.detach(); this.commandTarget.release(); this.onDispose?.();
 	}
 }
 

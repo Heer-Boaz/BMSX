@@ -62,7 +62,7 @@ test('actual F6 and Shift+F6 traverse fixed outer regions without changing retai
 	const source = model.buffer.getText(), version = model.version, selection = primary.consumer.selection;
 	const filesSelection = editor.resourcePanel.files.selectedNode, diagnostic = editor.problems.selectedDiagnostic;
 	const tabs = [...group.model.tabs], cycles = f.host.runtime.machine.scheduler.nowCycles;
-	const regions = [primary.hierarchy.scope, group.focusScope, primary.details.scope, editor.problems.scope,
+	const regions = [primary.hierarchy.scope, primary.viewport.scope, group.focusScope, primary.details.scope, editor.problems.scope,
 		editor.statusBar.focusTarget.scope, editor.resourcePanel.focusTarget.scope];
 	for (const scope of regions) {
 		f.key('F6');
@@ -91,6 +91,7 @@ test('outer navigation skips hidden clients and floating or minimized activity w
 	const hierarchyGeneration = primary.hierarchy.scope.contextGeneration, detailsGeneration = primary.details.scope.contextGeneration;
 	const activityGeneration = editor.problems.scope.contextGeneration;
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === editor.statusBar.focusTarget);
+	f.key('F6'); assert.ok(primary.viewport.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === group.panes.activePane!.commandTarget);
 	assert.equal(primary.hierarchy.attached, false); assert.equal(primary.details.attached, false);
 	assert.equal(editor.problems.attached, false); assert.equal(editor.resourcePanel.isVisible(), false);
@@ -113,6 +114,7 @@ test('a floating document or activity is outside the ring and cannot replace the
 	f.firstPart.focus(); f.update(); assert.ok(parts.activePart === f.firstPart);
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === editor.resourcePanel.focusTarget);
 	f.key('F6'); assert.ok(primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('F6'); assert.ok(primary.viewport.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === group.panes.activePane!.commandTarget);
 	assert.ok(parts.activePart === parts.main && group.model.activeTab === f.input);
 	f.firstPart.focus(); f.key('F6', KeyModifier.shift);
@@ -133,6 +135,7 @@ test('scroll-clipped but attached Main regions stay eligible and their concrete 
 	editor.resourcePanel.focusTarget.focus();
 	f.key('F6'); assert.ok(primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
 	assert.ok(main.regionLayout.scrollY < scrollY, 'the owning Main arrangement reveals its retained hierarchy');
+	f.key('F6'); assert.ok(primary.viewport.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === group.panes.activePane!.commandTarget);
 	f.key('F6'); assert.ok(primary.details.scope.contains(inputFocus.admittedTarget!.scope));
 	f.key('F6'); assert.ok(inputFocus.admittedTarget === editor.problems.focusTarget);
@@ -225,6 +228,7 @@ test('root and part-local modal origins cannot escape with either region key whi
 	}
 	assert.equal(f.editor.resourcePanel.focusTarget.focus(), true);
 	f.key('F6'); assert.ok(f.primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
+	f.key('F6'); assert.ok(f.primary.viewport.scope.contains(inputFocus.admittedTarget!.scope), 'the primary viewport is independent of document-local modality');
 	f.key('F6'); assert.ok(f.primary.details.scope.contains(inputFocus.admittedTarget!.scope), 'only the modal document family is skipped');
 	assert.equal(prompt.visible, true); assert.ok(f.group.model.contains(f.input));
 	prompt.close('cancel'); assert.equal(await localDecision, 'cancel');

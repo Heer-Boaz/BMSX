@@ -6,7 +6,7 @@ import type { EditorTextModel } from '../../../editor/model/text_model';
 import { inputFocus, type FocusCommand, type InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { MainWorkspace } from '../../main_workspace';
-import type { MainWorkspaceClient, MainWorkspaceRegionId, MainWorkspaceRegionSurfaces } from '../../common/main_workspace_client';
+import type { MainWorkspaceClient, MainWorkspacePrimaryPartId, MainWorkspaceClientSurfaces } from '../../common/main_workspace_client';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { QuickInputController } from '../../services/quick_input/controller';
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
@@ -29,6 +29,9 @@ import { ScenePrimaryViewState } from './primary_view';
 import type { SceneSourceDocuments } from './source_documents';
 import type { SceneHierarchyViewState } from './hierarchy_view';
 import type { SceneDetailsViewState } from './details_view';
+import type { SceneEditorSectionCommands } from './option_editor';
+import { SceneViewportControl, measureSceneViewport, VIEWPORT_CONTEXT_ACTIONS } from './viewport/control';
+import type { SceneViewportViewState } from './viewport/view_state';
 
 export type ScenePrimaryClientOptions = {
 	readonly commands: EditorCommandRunner;
@@ -37,7 +40,7 @@ export type ScenePrimaryClientOptions = {
 	readonly contextMenu: ContextMenuController;
 	readonly quickInput: QuickInputController;
 	readonly surfaces: WorkbenchSurfaceService;
-	readonly regions: MainWorkspaceRegionSurfaces;
+	readonly presentations: MainWorkspaceClientSurfaces;
 	readonly workArea: Readonly<RectBounds>;
 	readonly scope: InputFocusScope;
 	readonly focusReturn: InputFocusTarget;
@@ -58,11 +61,12 @@ const DETAILS_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
 const HIERARCHY_PANEL_CONTEXT: WorkbenchMenuDefinition<undefined> = [{ type: 'command', command: 'workspace.hierarchy.toggle' }];
 const DETAILS_PANEL_CONTEXT: WorkbenchMenuDefinition<undefined> = [{ type: 'command', command: 'workspace.details.toggle' }];
 
-/** One exact Scene context, presented by independently attached hierarchy and Details regions. */
+/** One exact Scene context, with an authored viewport and independent hierarchy/Details presentations. */
 export class ScenePrimaryClient implements MainWorkspaceClient {
 	public readonly view: ScenePrimaryViewState;
 	public readonly hierarchy: WorkbenchViewPanel<SceneHierarchyViewState, SceneHierarchyControl>;
 	public readonly details: WorkbenchViewPanel<SceneDetailsViewState, SceneDetailsControl>;
+	public readonly viewport: WorkbenchViewPanel<SceneViewportViewState, SceneViewportControl>;
 	public readonly scope: InputFocusScope;
 	public readonly commandTarget: InputFocusTarget;
 	private readonly authoringCommands: SceneAuthoringCommands;
@@ -75,9 +79,9 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		this.scope = options.scope; this.view = new ScenePrimaryViewState(consumer);
 		this.commandTarget = inputFocus.createTarget(options.focusReturn, this.scope);
 		this.commandTarget.canFocus = () => false;
-		const sections = {
-			outline: { isEnabled: () => !this.disposed, run: () => options.main.focusPrimary('hierarchy') },
-			details: { isEnabled: () => !this.disposed && consumer.hasSelection, run: () => options.main.focusPrimary('details') },
+		const sections: SceneEditorSectionCommands = {
+			outline: { contextual: true, isEnabled: () => !this.disposed, run: () => options.main.focusPrimary('hierarchy') },
+			details: { contextual: true, isEnabled: () => !this.disposed && consumer.hasSelection, run: () => options.main.focusPrimary('details') },
 		};
 		this.commandTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.commandTarget.registerCommand('sceneEditor.details', sections.details);
@@ -109,23 +113,32 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		const hierarchyContext = new WorkbenchMenu(HIERARCHY_CONTEXT, options.main);
 		const hierarchyMenu = new WorkbenchCompositeMenu([hierarchyContext, new WorkbenchMenu(HIERARCHY_PANEL_CONTEXT, undefined), options.main.regions.hierarchy.actions]);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', view: this.view.hierarchy,
-			surface: options.regions.hierarchy, actions: createWorkbenchActionBar(new WorkbenchMenu(PRIMARY_ACTIONS, undefined), true, hierarchyMenu),
+			bodyContextMenu: 'content',
+			surface: options.presentations.hierarchy, actions: createWorkbenchActionBar(new WorkbenchMenu(PRIMARY_ACTIONS, undefined), true, hierarchyMenu),
 			contextActions: hierarchyMenu, measureContent: measureSceneHierarchy,
 			createControl: (scope, _target, surface) => new SceneHierarchyControl(options.commands, options.contextMenu, options.surfaces,
 				surface, options.workArea, scope, this.commandTarget, sections, hierarchyContext) });
 		const detailsContext = new WorkbenchMenu(DETAILS_CONTEXT, options.main);
 		const detailsMenu = new WorkbenchCompositeMenu([detailsContext, new WorkbenchMenu(DETAILS_PANEL_CONTEXT, undefined), options.main.regions.details.actions]);
 		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', view: this.view.details,
-			surface: options.regions.details, actions: createWorkbenchActionBar(new WorkbenchMenu(PRIMARY_ACTIONS, undefined), true, detailsMenu),
+			bodyContextMenu: 'content',
+			surface: options.presentations.details, actions: createWorkbenchActionBar(new WorkbenchMenu(PRIMARY_ACTIONS, undefined), true, detailsMenu),
 			contextActions: detailsMenu, measureContent: measureSceneDetails,
 			createControl: scope => new SceneDetailsControl(options.commands, options.contextMenu, scope, this.commandTarget, sections, detailsContext) });
+		const viewportMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(VIEWPORT_CONTEXT_ACTIONS, this.view.viewport), new WorkbenchMenu(PRIMARY_ACTIONS, undefined)]);
+		this.viewport = new WorkbenchViewPanel({ ...common, title: 'Scene', view: this.view.viewport, surface: options.presentations.viewport,
+			bodyContextMenu: 'container',
+			actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined)), contextActions: viewportMenu, measureContent: measureSceneViewport,
+			createControl: (scope, target) => new SceneViewportControl(scope, target) });
+		this.viewport.setHeaderVisible(false);
 		this.unbindInteraction = inputFocus.onDidActivateInteraction(target => {
 			if (this.disposed) return;
-			if (this.hierarchy.attached && this.hierarchy.scope.contains(target.scope)) this.view.preferredRegion = 'hierarchy';
-			else if (this.details.attached && this.details.scope.contains(target.scope)) this.view.preferredRegion = 'details';
+			if (this.hierarchy.attached && this.hierarchy.scope.contains(target.scope)) this.view.preferredPart = 'hierarchy';
+			else if (this.details.attached && this.details.scope.contains(target.scope)) this.view.preferredPart = 'details';
+			else if (this.viewport.attached && this.viewport.scope.contains(target.scope)) this.view.preferredPart = 'viewport';
 		});
 	}
-	public get preferredRegion(): MainWorkspaceRegionId { return this.view.preferredRegion; }
+	public get preferredPart(): MainWorkspacePrimaryPartId { return this.view.preferredPart; }
 	public serialize() { return { kind: 'scene' as const, value: JSON.stringify(captureScenePrimary(this.view)) }; }
 	public onDidChange(listener: () => void): () => void { return this.view.onDidChange(listener); }
 	public captureNavigationLocation(): ScenePrimaryNavigationLocation | undefined {
@@ -139,7 +152,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	public update(): void {
 		this.consumer.refresh();
 	}
-	public focus(region: MainWorkspaceRegionId = this.preferredRegion): void { this[region].focus(); }
+	public focus(region: MainWorkspacePrimaryPartId = this.preferredPart): void { this[region].focus(); }
 	public updateStatus(): void {
 		const status = getTextFileRuntimeSourceStatus(this.options.sources, this.consumer.workingCopy);
 		this.statusItem.text = SOURCE_STATUS[status];
@@ -148,7 +161,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	}
 	public dispose(): void {
 		this.disposed = true; this.authoringCommands.dispose(); this.unbindInteraction();
-		this.hierarchy.dispose(); this.details.dispose(); this.view.dispose(); this.consumer.dispose();
+		this.hierarchy.dispose(); this.details.dispose(); this.viewport.dispose(); this.view.dispose(); this.consumer.dispose();
 	}
 }
 

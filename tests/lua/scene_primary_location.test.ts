@@ -47,7 +47,7 @@ test('primary snapshots keep declaration identity independently from a cleared m
 });
 
 test('primary capture observes a newer domain selection published by semantic retirement', t => {
-	const f = fixture(t); f.view.preferredRegion = 'details';
+	const f = fixture(t); f.view.preferredPart = 'details';
 	let selected = false;
 	const release = f.context.onDidChangeSelection(() => {
 		if (selected || f.context.selection !== undefined) return;
@@ -213,7 +213,7 @@ test('member removal clears only bookmarked sub-selection and leaves its authore
 
 test('bookmark matching identifies source subjects and selection, not reading sections or scroll', t => {
 	const f = fixture(t), first = f.bookmark();
-	f.view.preferredRegion = 'details'; f.view.hierarchy.position = 23; f.view.details.position = 51;
+	f.view.preferredPart = 'details'; f.view.hierarchy.position = 23; f.view.details.position = 51;
 	const same = f.bookmark();
 	assert.equal(first.matches(same), true);
 	selectSceneOutlineRow(f.view.hierarchy, 2);

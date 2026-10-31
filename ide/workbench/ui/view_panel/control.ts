@@ -43,6 +43,7 @@ export type WorkbenchViewPanelOptions<View, Content extends WorkbenchViewPanelCo
 	readonly view: View;
 	readonly actions: WorkbenchActionBarState;
 	readonly contextActions: WorkbenchMenuPresentation;
+	readonly bodyContextMenu: 'container' | 'content';
 	readonly commands: EditorCommandRunner;
 	readonly contextMenu: ContextMenuController;
 	readonly surfaces: WorkbenchSurfaceService;
@@ -106,6 +107,10 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 			options.onDidOpenActions?.(lifetime);
 		};
 		this.control = options.createControl(this.scope, this.commandTarget, this.surface);
+		if (options.bodyContextMenu === 'container') this.control.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => this.attached && this.control.canFocus,
+			run: () => this.openContextMenu(this.layoutState.client.left + 4, this.layoutState.client.top + 4, true, this.control.focusTarget),
+		});
 		this.tooltip.attach(options.surfaces, this.surface, options.workArea);
 	}
 	public measure(font: EditorFont, target: WorkbenchViewSizeConstraints): void {
@@ -200,10 +205,13 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 		const interaction = inputFocus.interactionRevision;
 		const header = this.headerVisible && snapshot.valid && snapshot.insideViewport
 			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layoutState.header);
-		// The panel owns its complete header context, including the toolbar's Source and More targets.
-		if (header && (snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
-			this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
-			if (interaction === inputFocus.interactionRevision) this.commandTarget.activate();
+		// Header commands belong to chrome; body menu ownership is declared by its concrete contribution.
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0 && snapshot.valid && snapshot.insideViewport
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layoutState)
+			&& (header || this.options.bodyContextMenu === 'container')) {
+			const origin = header ? this.commandTarget : this.control.focusTarget;
+			this.openContextMenu(snapshot.viewportX, snapshot.viewportY, false, origin);
+			if (interaction === inputFocus.interactionRevision) origin.activate();
 			return;
 		}
 		if (this.headerVisible && this.actionBar.handlePointer(snapshot)) return;
@@ -221,7 +229,7 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 		const revision = this.revision;
 		this.tooltip.hide(); this.titleHovered = false;
 		this.options.contextMenu.show(x, y, this.options.contextActions, this.options.commands, {
-			selectFirst: keyboard, invocationOrigin: origin, returnFocus: origin, commandTarget: this.options.commandTarget,
+			selectFirst: keyboard, invocationOrigin: origin, returnFocus: origin, commandTarget: origin,
 			onWillShow: lifetime => {
 				this.options.onDidOpenActions?.(lifetime);
 				if (!this.attached || revision !== this.revision) this.options.contextMenu.hide(false);

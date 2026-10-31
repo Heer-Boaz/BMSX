@@ -197,6 +197,7 @@ export type EditorCommandId =
 	| 'sceneEditor.removeSubtree' | 'sceneEditor.renameMember'
 	| 'sceneEditor.reparentMember' | 'sceneEditor.reparentMemberKeepLocal'
 	| 'sceneEditor.chooseMain'
+	| 'sceneViewport.frameAll' | 'sceneViewport.frameSelection' | 'sceneViewport.view2d' | 'sceneViewport.view3d'
 	| 'sceneEditor.details' | 'sceneEditor.outline'
 	| 'sceneEditor.moveMemberUp'
 	| 'sceneEditor.moveMemberDown'

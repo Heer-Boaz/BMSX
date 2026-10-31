@@ -3,7 +3,7 @@ import { WorkbenchInteraction } from './workbench/services/execution/interaction
 import { MainWorkspace } from './workbench/main_workspace';
 import { WorkbenchRegionNavigation } from './workbench/region_navigation';
 import { drawWorkbenchSplit } from './workbench/render/split_view';
-import type { MainWorkspaceClient, MainWorkspaceRegionSurfaces } from './workbench/common/main_workspace_client';
+import type { MainWorkspaceClient, MainWorkspaceClientSurfaces } from './workbench/common/main_workspace_client';
 import type { SerializedPrimaryClient } from './workbench/common/main_workspace_serialization';
 import type { FontVariant } from '../machine/ts/render/shared/bmsx_font';
 import { HomeInput } from './workbench/contrib/home/editor_input';
@@ -248,7 +248,7 @@ export type CartEditor = TextInputHost & {
 	readonly cartMaps: CartMapController;
 	readonly sceneEditor: SceneEditorController;
 	openSceneInMain(produce: () => ScenePrimarySource | undefined, origin: InputFocusTarget | null): Promise<boolean>;
-	restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceRegionSurfaces, scope: InputFocusScope, isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined>;
+	restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceClientSurfaces, scope: InputFocusScope, isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined>;
 	readonly animations: AnimationEditorController;
 	readonly actorLab: ActorLabController;
 	readonly actionPrompt: ActionPrompt;
@@ -314,7 +314,7 @@ export class RuntimeCartEditor implements CartEditor {
 	public readonly statusBar: WorkbenchStatusBar;
 	public readonly problems: ProblemsPanelController;
 	public readonly buildOutput: BuildOutputActivity;
-	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'regions' | 'scope'>;
+	private readonly scenePrimaryOptions: Omit<ScenePrimaryClientOptions, 'presentations' | 'scope'>;
 	private readonly windowStatus: WorkbenchWindowStatus;
 	public readonly surfaces: WorkbenchSurfaceService;
 	private readonly chromeScope = Symbol('workbench chrome');
@@ -769,7 +769,7 @@ export class RuntimeCartEditor implements CartEditor {
 			if (source === undefined) return;
 			const { model, subject } = source;
 			context = this.sources.catalog.getContext(model.identity.contextId);
-			return createScenePrimaryClient(model, this.workbench.sceneSources, subject, { ...this.scenePrimaryOptions, regions, scope });
+			return createScenePrimaryClient(model, this.workbench.sceneSources, subject, { ...this.scenePrimaryOptions, presentations: regions, scope });
 		}, this.editorParts.closeController, origin, { isCurrent: () => source !== undefined
 			&& this.sources.catalog.contexts.get(context.id) === context && this.workbench.models.get(source.model.identity) === source.model });
 	}
@@ -778,14 +778,14 @@ export class RuntimeCartEditor implements CartEditor {
 		this.mainWorkspace.openPrimary((regions, scope) => {
 			const subject = bookmark.resolve(this.workbench.sceneSources);
 			return subject === undefined ? undefined : createScenePrimaryClient(bookmark.model, this.workbench.sceneSources,
-				subject, { ...this.scenePrimaryOptions, regions, scope }, bookmark.view);
+				subject, { ...this.scenePrimaryOptions, presentations: regions, scope }, bookmark.view);
 		}, this.editorParts.closeController, inputFocus.target, { ...options, recordNavigation: false });
 
-	public restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceRegionSurfaces, scope: InputFocusScope,
+	public restorePrimaryClient(record: SerializedPrimaryClient, regions: MainWorkspaceClientSurfaces, scope: InputFocusScope,
 		isCurrent: () => boolean): Promise<MainWorkspaceClient | undefined> {
 		switch (record.kind) {
 			case 'scene': return restoreScenePrimaryClient(record.value, editorTextModelService, this.sources.catalog,
-				this.workbench.sceneSources, { ...this.scenePrimaryOptions, regions, scope }, isCurrent);
+				this.workbench.sceneSources, { ...this.scenePrimaryOptions, presentations: regions, scope }, isCurrent);
 		}
 	}
 
@@ -886,7 +886,7 @@ export class RuntimeCartEditor implements CartEditor {
 		part.prepareLayout();
 		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
 		layoutChanged = this.mainWorkspace.layout(bounds, minimum, part.minimumClientHeight) || layoutChanged;
-		const finalMinimum = part.minimumClientWidth(this.mainWorkspace.regionLayout.viewport.bottom - this.mainWorkspace.regionLayout.viewport.top);
+		const finalMinimum = part.minimumClientWidth(this.mainWorkspace.documentBounds.bottom - this.mainWorkspace.documentBounds.top);
 		if (finalMinimum !== minimum) layoutChanged = this.mainWorkspace.layout(bounds, finalMinimum, part.minimumClientHeight) || layoutChanged;
 		this.gamePanel.prepareLayout(this.mainWorkspace.documentBounds);
 		layoutChanged = part.layoutPrepared(this.mainWorkspace.documentBounds) || layoutChanged;

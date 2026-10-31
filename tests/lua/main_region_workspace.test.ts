@@ -124,7 +124,7 @@ test('Main Back returns to the exact same-named member and invoking Details regi
 	assert.ok(selected?.kind === 'member' && selected.scene === restored.consumer.document!.scenes[0]
 		&& selected.entry === selected.scene.objects[1]);
 	assert.ok(inputFocus.admittedTarget !== null && restored.details.scope.contains(inputFocus.admittedTarget.scope));
-	assert.equal(restored.view.preferredRegion, 'details'); assert.equal(f.main.regionLayout.detailsVisible, true);
+	assert.equal(restored.view.preferredPart, 'details'); assert.equal(f.main.regionLayout.detailsVisible, true);
 	assert.ok(navigationState.activeOwner === f.main);
 	assert.ok(f.parts.groups.every(group => group.model.tabs.every(input => input.kind !== 'scene_editor')));
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.dirty, false);
