@@ -185,12 +185,30 @@ negative scale remains signed. Quaternion production and interpolation belong to
 the central math owners; setters consume their representation without repeated
 normalization or validation.
 
-UE's signed-scale multiplication/relative-transform paths are not established
-merely by writing the common positive-scale formula. Its documented
-[matrix-with-desired-scale operation](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/TTransform/MultiplyUsingMatrixWithScale)
-is part of the numerical reference to examine. Arithmetic kernels need explicit
-reflection, nonuniform-scale and relative-transform examples before coding;
-selecting UE's semantic model is not a claim of verified numerical parity.
+### Signed-scale arithmetic boundary
+
+Unreal's ordinary composition multiplies rotations and axis scales and transforms
+the child's translation through its parent. Its negative-scale path is materially
+different: the inspected historical
+[Epic implementation](https://github.com/folgerwang/UnrealEngine/blob/release/Engine/Source/Runtime/Core/Public/Math/TransformNonVectorized.h)
+uses matrix-based orientation extraction when either input has negative scale.
+The current API also documents that
+[matrix-with-desired-scale operation](https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Core/TTransform/MultiplyUsingMatrixWithScale).
+The historical implementation is a reference for that distinction, not proof of
+the current UE5 function body or numerical parity.
+
+For example, a parent with scale `(-1, 1, 1)` and a child rotated 90 degrees
+around Z distinguish `R(90) * S(-1, 1, 1)` from
+`S(-1, 1, 1) * R(90)`. Applying ordinary quaternion multiplication to all signed
+scales does not merely introduce a rounding difference; it changes reflection
+behavior.
+
+The historical matrix path also loses axes at zero scale and contains degenerate
+rotation recovery. Cartlib does not import that recovery, replace scale with
+epsilon, or silently substitute another reflection algebra. The signed/singular
+composition and relative-pose rules remain an explicit implementation gate.
+They must define forward zero-scale results as well as nonuniform reflections;
+selecting the local/world TRS model alone does not settle that arithmetic.
 
 ### Gameplay operations
 
@@ -258,14 +276,46 @@ parent scale fail explicitly. All required local values are calculated before
 changing the edge or local pose. There is no partial channel write, rollback,
 identity substitution or failure-induced parent change.
 
+### World mutation and completion
+
 World commits topology at its existing structural barriers. Parent links refer
 to concrete objects in the same World and dimension, not necessarily the same
-concrete gameplay class. Cycle, retired-target and incompatible-type outcomes
-are determined against the topology at that commit. Completion reports that
-actual terminal result; queue admission and preflight are not reported as a
-completed attachment. Outside a structural group the same operation may finish
-inline. Completion uses World's existing callback/context convention, not a new
-promise or operation-broker service.
+concrete gameplay class. Rule operands are copied when the request is admitted;
+pose and topology are evaluated when it commits. Keep World therefore uses the
+object's world pose at that commit, not a stale pose captured when enqueuing.
+Requests for the same object apply in their queue order.
+
+Attachment and detachment have no success return that could mean either queued
+or committed. An optional `on_completed(context, result)` observes exactly one
+terminal result per admitted request:
+
+| Result | Meaning at commit |
+| --- | --- |
+| `committed` | The requested relationship and placement rules have been applied. |
+| `retired_target` | A participant is retiring or retired, including when World clear closes its generation. |
+| `invalid_relationship` | The World, dimension or cycle relationship is incompatible. |
+| `singular_parent` | A selected world-preserving operation requires an unavailable parent inverse. |
+
+These are shared result constants, not newly allocated result records. A request
+without a completion observer is a normal operation; it does not require a
+no-op closure. Outside a structural group completion may run inline. Inside a
+group it runs after that request's result is determined at the barrier, not at
+enqueue or preflight.
+
+World retains actual object references, captured channel rules and caller
+callback/context in reusable queue storage. It removes the request's retained
+references and advances the drain cursor before invoking user code. Reentrant
+requests join the drain with the barrier still open; they do not recursively
+publish a partially constructed batch. No promise, request object or separate
+operation-broker service is needed.
+
+Synchronous world-position assignment returns `true` on publication and `false`
+when the required inverse is unavailable. Inverse point/vector conversion
+returns `true` followed by its scalar coordinates, or `false` without fabricated
+coordinates. Failed writes change no local pose, parent edge or dependent
+contact latch and cause no write-induced invalidation. Resolving an existing
+dirty cache still reflects its actual inputs; it is not an authoritative write
+to undo.
 
 ### Ownership and removal
 
@@ -288,7 +338,10 @@ At removal of a parent:
    still present.
 3. Those children detach with Keep World into roots; their Scene membership and
    local descendant relationships remain intact.
-4. World retires the selected objects and their owned components normally.
+4. World disconnects the retiring objects from the hierarchy across the whole
+   set before invoking any retirement hook.
+5. Normal object/component teardown follows. Removals requested by hooks join
+   the next removal batch in the same drain.
 
 No new inverse is needed for this detach, including when the old world scale is
 zero. Removing one Scene cannot thereby destroy a child owned by another Scene.
@@ -296,6 +349,11 @@ A separately requested subtree removal is an explicit operation over the actual
 hierarchy, not an implicit side effect of removing one object. An unadmitted
 batch child whose required parent is canceled is canceled before publication;
 it is not a live independent child undergoing this detachment policy.
+
+An attachment result callback is distinct from a Scene-unload continuation.
+World clear supersedes pending unload continuations so they cannot start an
+incoming Scene while the World is closing. It still completes observed
+attachment requests with their terminal result.
 
 ## Physical movement
 
@@ -474,6 +532,27 @@ and lifetime bookkeeping. An empty grouping node must be measured as an actual
 WorldObject, not advertised as cheap by counting only its transform scalars.
 It does not justify allocating unused tick/visual work or manufacturing such
 nodes to compensate for an unsupported transform operation.
+Intrinsic pose storage removes a separate identity; it does not make the whole
+object a single allocation. Eager tags, event ports and component containers
+need justification for empty grouping objects rather than automatic inheritance
+from the existing base initializer. Shared methods already exist and are not a
+new allocation saving to claim again.
+
+Separate registration, instance admission, steady evaluation and retirement:
+
+| Boundary | Account for |
+| --- | --- |
+| Prefab/Scene registration | Shared compiled methods, factory bindings, retained defaults and construction plans. |
+| Object admission | The final object, tags, component indexes, event port, Registry/Space/Scene membership and queue growth. |
+| Spatial admission | Intrinsic scalar/link fields and shared scratch capacity, without a Transform component or its class-index buckets. |
+| Component admission | Actual component identities, geometry bindings and subscriptions, separately from an empty spatial object. |
+| Steady evaluation | Allocations, emitted calls, cycles and repeated work at actual pose, animation, render and collision consumers. |
+| Retirement | Teardown work, collected allocations and released queue, scratch and subscription references. |
+
+Temporary construction records and table-capacity growth count even if they are
+later collected. Measure empty WorldObject, Object2D and Object3D admissions
+separately from component-bearing instances. A combined spawn/attach/remove
+benchmark cannot establish a fixed per-object construction cost.
 
 A world-position change does not run trigonometry, rebuild quaternion matrices
 or rewrite an unchanged world basis. Rotation/scale changes rebuild the affected
@@ -565,16 +644,19 @@ Scene/component lifetime ownership, an optional world-pixel tile motor, and one
 actual local pose per visual component. No editor metadata or parseability
 requirement defines those contracts.
 
-Before integrating that design into the runtime:
+The remaining integration criteria are:
 
 1. Specify and check central 2D/3D composition and relative-pose arithmetic,
    especially reflected/nonuniform scales. Do not claim that a convenient
    quaternion/component-scale formula is verified Unreal numerical behavior.
-2. Specify terminal attachment outcomes and synchronous inverse-failure results
-   at the existing World mutation owner, including zero-scale parents and
-   removal during pending construction.
-3. Account for complete object/component storage and emitted hot-path work on
-   both compiler paths. Any additional cache needs an actual consumer and cost
+2. Implement the specified terminal results at World, including observerless
+   requests, inline/deferred completion, reentrant callbacks, clear and removal
+   during pending construction. Establish inverse availability before any pose,
+   edge, revision or contact-latch publication.
+3. Measure complete object/component storage and emitted hot-path work on both
+   compiler paths against the existing baseline. Those measurements are
+   implementation acceptance evidence, not performance already established by
+   this design. Any additional cache needs an actual consumer and cost
    comparison, not an assumed O3 optimization.
 
 The existing implementation is not made conformant by hiding old fields,
