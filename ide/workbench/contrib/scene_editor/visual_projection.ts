@@ -4,9 +4,10 @@ import { readLuaNumberExpression } from '../../../../toolchain/ts/lua/syntax/num
 import { getLuaModuleAliasTarget, type LuaModuleImportTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { LuaWrittenExpression } from '../../../../toolchain/ts/lua/semantic/written_sources';
 import { appendAffine2, type Affine2 } from '../../../common/affine2';
+import { appendAffine3, type Affine3 } from '../../../../machine/ts/common/affine3';
 import { readLuaSourceTruth, type LuaSourceReader } from '../../../language/lua/source_reader';
 import { readSceneSourceAffine } from './authored_affine';
-import type { SceneSourceDefinition, SceneSourceDocument, SceneSourceObject } from './model';
+import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceObject } from './model';
 import type { ScenePrefabSources } from './prefab_sources';
 import type { SceneSpatialProjection } from './spatial_projection';
 
@@ -21,18 +22,30 @@ export type SceneSpriteSource = {
 	readonly flipV: boolean;
 	readonly order: number;
 };
+export type SceneModelSource = {
+	readonly entry: SceneSourceObject;
+	readonly model: string;
+	/** Proved absent selects the model asset's declared default scene. */
+	readonly sceneIndex?: number;
+	readonly affine: Readonly<Affine3>;
+};
 /** Declared constructor inputs, not a guest instance or a gameplay-time frame. */
-export type SceneVisualReadModel = { readonly sprites: readonly SceneSpriteSource[] };
+export type SceneVisualReadModel = { readonly sprites: readonly SceneSpriteSource[]; readonly models: readonly SceneModelSource[] };
 type SourceState = LuaWrittenExpression | null | undefined;
-type SpriteProducer = { readonly id: string; readonly defaults: SourceState; readonly primary?: true };
+type ComponentProducer = { readonly kind: 'sprite' | 'model'; readonly id: string; readonly defaults: SourceState; readonly primary?: true };
 const SPRITE_NEW: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['new'] };
 const SPRITE_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['factory'] };
+const MODEL_NEW: LuaModuleImportTarget = { module: 'cartlib/component/static_model_component', memberPath: ['new'] };
+const MODEL_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/static_model_component', memberPath: ['factory'] };
 const SPRITE_OBJECT: LuaModuleImportTarget = { module: 'cartlib/sprite', memberPath: [] };
-const IDENTITY: Readonly<Affine2> = { xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 };
+const SPRITE_COMPONENT = { kind: 'sprite' as const, constructor: SPRITE_NEW, id: 'sprite' };
+const MODEL_COMPONENT = { kind: 'model' as const, constructor: MODEL_NEW, id: 'model' };
+const IDENTITY_2D: SceneSourceAffine = { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 };
+const IDENTITY_3D: SceneSourceAffine = { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
 
 /** Selects the real shallow component-input merge before the constructor's
  * distinct nil-only and `or` default rules. Unknown writes never grant defaults. */
-class SpriteConstructorInputs {
+class ComponentConstructorInputs {
 	public constructor(private readonly reader: LuaSourceReader, private readonly scene: SourceState,
 		private readonly prefab: SourceState, private readonly defaults: SourceState) {}
 	public member(source: SourceState, name: string): SourceState {
@@ -63,41 +76,58 @@ class SpriteConstructorInputs {
  * spatial owner's poses/order and does no asset lookup, Lua execution or paint. */
 export class SceneVisualProjection {
 	private readonly scenes = new WeakMap<SceneSourceDefinition, SceneVisualReadModel>();
-	private readonly producers = new WeakMap<LuaWrittenExpression, SpriteProducer[]>();
+	private readonly producers = new WeakMap<LuaWrittenExpression, ComponentProducer[]>();
 	private readonly inheritedVisibility = new WeakMap<LuaWrittenExpression, SourceState>();
 	private readonly reader: LuaSourceReader;
-	private readonly fields: SpriteConstructorInputs;
+	private readonly fields: ComponentConstructorInputs;
 	public constructor(private readonly prefabs: ScenePrefabSources, private readonly spatial: SceneSpatialProjection) {
-		this.reader = prefabs.reader; this.fields = new SpriteConstructorInputs(this.reader, null, null, null);
+		this.reader = prefabs.reader; this.fields = new ComponentConstructorInputs(this.reader, null, null, null);
 	}
 	public readScene(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneVisualReadModel {
 		const retained = this.scenes.get(scene); if (retained !== undefined) return retained;
-		const sprites: SceneSpriteSource[] = [], reader = this.reader, fields = this.fields, spatial = this.spatial.readScene(document, scene);
+		const sprites: SceneSpriteSource[] = [], models: SceneModelSource[] = [];
+		const reader = this.reader, fields = this.fields, spatial = this.spatial.readScene(document, scene);
 		for (const entry of spatial.constructionOrder) {
-			const world = spatial.worlds.get(entry); if (world?.family !== '2d') continue;
+			const world = spatial.worlds.get(entry); if (world === undefined) continue;
 			const member = reader.expression(document.analysis, entry.field.value)!;
 			const definitionSource = reader.member(member.file, member.expression, 'definition_id');
 			const id = definitionSource === undefined ? undefined : reader.stringValue(definitionSource.file, definitionSource.expression);
 			const definition = id === undefined ? undefined : this.prefabs.all.get(id); if (definition === undefined) continue;
 			const options = fields.member(member, 'options'), defaults = fields.member(definition, 'defaults');
-			const ownerInputs = new SpriteConstructorInputs(reader, readLuaSourceTruth(options) === false ? null : options,
+			const ownerInputs = new ComponentConstructorInputs(reader, readLuaSourceTruth(options) === false ? null : options,
 				readLuaSourceTruth(defaults) === false ? null : defaults, null);
 			let ownerVisible = ownerInputs.value('visible');
 			if (ownerVisible === null) ownerVisible = this.classVisibility(definition);
 			if (ownerVisible !== null && readLuaSourceTruth(ownerVisible) !== true) continue;
 			const memberInitial = fields.member(member, 'initial'), prefabInitial = fields.member(definition, 'initial');
 			for (const producer of this.readProducers(definition)) {
+				if ((producer.kind === 'sprite') !== (world.family === '2d')) continue;
 				if (producer.primary && ownerInputs.value('primary_sprite_factory') !== null) continue;
-				const inputs = new SpriteConstructorInputs(reader, fields.member(memberInitial, producer.id), fields.member(prefabInitial, producer.id), producer.defaults);
+				const inputs = new ComponentConstructorInputs(reader, fields.member(memberInitial, producer.id), fields.member(prefabInitial, producer.id), producer.defaults);
 				if (inputs.flag('enabled', true) !== true || inputs.flag('visible', true) !== true) continue;
+				const attachment = this.affine(inputs.value('attachment_affine', true), world.family);
+				const presentation = this.affine(inputs.value('presentation_affine', true), world.family);
+				if (world.family === '3d') {
+					if (attachment?.family !== '3d' || presentation?.family !== '3d') continue;
+					const modelSource = inputs.value('model_id', true), sceneSource = inputs.value('scene_index', true);
+					if (modelSource == null || sceneSource === undefined) continue;
+					const model = reader.stringValue(modelSource.file, modelSource.expression);
+					if (model === undefined) continue;
+					const sceneIndex = sceneSource === null ? undefined : readLuaNumberExpression(sceneSource.expression);
+					if (sceneIndex === null) continue;
+					const affine: Affine3 = { xx: world.xx, xy: world.xy, xz: world.xz, yx: world.yx, yy: world.yy, yz: world.yz,
+						zx: world.zx, zy: world.zy, zz: world.zz, ox: world.ox, oy: world.oy, oz: world.oz };
+					appendAffine3(affine, attachment); appendAffine3(affine, presentation);
+					models.push({ entry, model, sceneIndex, affine });
+					continue;
+				}
+				if (attachment?.family !== '2d' || presentation?.family !== '2d') continue;
 				const imageSource = inputs.value('imgid');
 				const image = imageSource === undefined || imageSource === null ? undefined : reader.stringValue(imageSource.file, imageSource.expression);
 				if (image === undefined) continue;
 				const color = inputs.number('color', 0xffffffff), flipH = inputs.flag('flip_h', false), flipV = inputs.flag('flip_v', false);
 				const order = inputs.number('order', 0), presentationOrder = inputs.number('presentation_order', 0);
 				if (color === undefined || flipH === undefined || flipV === undefined || order === undefined || presentationOrder === undefined) continue;
-				const attachment = this.affine(inputs.value('attachment_affine', true)), presentation = this.affine(inputs.value('presentation_affine', true));
-				if (attachment === undefined || presentation === undefined) continue;
 				const regionSource = inputs.value('region', true);
 				let region: SceneSpriteSource['region'];
 				if (regionSource === undefined) continue;
@@ -118,13 +148,13 @@ export class SceneVisualProjection {
 		}
 		// Stable host sort preserves the already admitted fresh-instance sequence.
 		sprites.sort((a, b) => a.order - b.order);
-		const result = { sprites }; this.scenes.set(scene, result); return result;
+		const result = { sprites, models }; this.scenes.set(scene, result); return result;
 	}
-	private affine(source: SourceState): Readonly<Affine2> | undefined {
-		if (readLuaSourceTruth(source) === false) return IDENTITY;
+	private affine(source: SourceState, family: '2d' | '3d'): Readonly<SceneSourceAffine> | undefined {
+		if (readLuaSourceTruth(source) === false) return family === '2d' ? IDENTITY_2D : IDENTITY_3D;
 		if (source === undefined || source === null) return;
 		const affine = readSceneSourceAffine(this.reader, source.file, source.expression);
-		return affine?.family === '2d' ? affine : undefined;
+		return affine?.family === family ? affine : undefined;
 	}
 	/** Prefab admission copies own class members before its chosen base. A
 	 * class's preexisting __index is replaced unless class and base are the same
@@ -147,25 +177,25 @@ export class SceneVisualProjection {
 		this.inheritedVisibility.set(definition, value);
 		return value;
 	}
-	private readProducers(definition: LuaWrittenExpression): readonly SpriteProducer[] {
+	private readProducers(definition: LuaWrittenExpression): readonly ComponentProducer[] {
 		let producers = this.producers.get(definition);
 		if (producers === undefined) {
 			producers = [];
 			const fields = this.fields;
-			const componentModule = this.reader.module(definition.file, SPRITE_NEW.module);
-			const constructor = fields.member(componentModule, 'new'), factory = fields.member(componentModule, 'factory');
 			const raw = definition.expression;
 			if (raw.kind === LuaSyntaxKind.TableConstructorExpression) {
 				const classField = findNamedLuaTableField(raw, 'class');
 				if (classField !== null) {
 					const source = this.reader.snapshot.symbolResolver.writtenSources.expression(definition.file, classField.value);
 					const target = getLuaModuleAliasTarget(definition.file, source.value);
-					const selected = fields.member(definition, 'class');
-					const initialize = fields.member(selected, 'initialize'), primary = fields.member(selected, 'primary_sprite_factory');
-					if (target !== null && this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, SPRITE_OBJECT)
-						&& initialize?.expression.kind === LuaSyntaxKind.FunctionExpression && primary?.expression.kind === LuaSyntaxKind.FunctionExpression
-						&& primary === constructor)
-						producers.push({ id: 'base_sprite', defaults: null, primary: true });
+					if (target !== null && this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, SPRITE_OBJECT)) {
+						const componentModule = this.reader.module(definition.file, SPRITE_NEW.module), constructor = fields.member(componentModule, 'new');
+						const selected = fields.member(definition, 'class');
+						const initialize = fields.member(selected, 'initialize'), primary = fields.member(selected, 'primary_sprite_factory');
+						if (initialize?.expression.kind === LuaSyntaxKind.FunctionExpression && primary?.expression.kind === LuaSyntaxKind.FunctionExpression
+							&& primary === constructor)
+							producers.push({ kind: 'sprite', id: 'base_sprite', defaults: null, primary: true });
+					}
 				}
 			}
 			const components = fields.member(definition, 'components');
@@ -175,19 +205,38 @@ export class SceneVisualProjection {
 				for (const field of components.expression.fields) {
 					const source = this.reader.snapshot.symbolResolver.writtenSources.expression(components.file, field.value);
 					const direct = getLuaModuleAliasTarget(components.file, source.value);
-					if (direct !== null && this.reader.snapshot.symbolResolver.moduleImports.matchesImport(direct, SPRITE_NEW)
-						&& constructor?.expression.kind === LuaSyntaxKind.FunctionExpression
-						&& this.reader.callable(components.file, field.value) === constructor) { producers.push({ id: 'sprite', defaults: null }); continue; }
+					const builtinNew = direct === null ? undefined
+						: this.reader.snapshot.symbolResolver.moduleImports.matchesImport(direct, SPRITE_NEW) ? SPRITE_COMPONENT
+							: this.reader.snapshot.symbolResolver.moduleImports.matchesImport(direct, MODEL_NEW) ? MODEL_COMPONENT : undefined;
+					if (builtinNew !== undefined) {
+						const module = this.reader.module(components.file, builtinNew.constructor.module), constructor = fields.member(module, 'new');
+						if (constructor?.expression.kind === LuaSyntaxKind.FunctionExpression
+							&& this.reader.callable(components.file, field.value) === constructor)
+							producers.push({ kind: builtinNew.kind, id: builtinNew.id, defaults: null });
+						continue;
+					}
 					const call = this.reader.call(components.file, field.value); if (call === undefined || call.expression.method !== null) continue;
 					const file = this.reader.snapshot.getFileData(call.file)!, target = getLuaModuleAliasTarget(file, call.callee);
-					if (target === null || !this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, SPRITE_FACTORY)
-						|| constructor?.expression.kind !== LuaSyntaxKind.FunctionExpression || factory?.expression.kind !== LuaSyntaxKind.FunctionExpression
+					const builtinFactory = target === null ? undefined
+						: this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, SPRITE_FACTORY) ? SPRITE_COMPONENT
+							: this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, MODEL_FACTORY) ? MODEL_COMPONENT : undefined;
+					if (builtinFactory === undefined) continue;
+					const module = this.reader.module(file, builtinFactory.constructor.module);
+					const constructor = fields.member(module, 'new'), factory = fields.member(module, 'factory');
+					if (constructor?.expression.kind !== LuaSyntaxKind.FunctionExpression || factory?.expression.kind !== LuaSyntaxKind.FunctionExpression
 						|| this.reader.callable(file, call.expression.callee) !== factory) continue;
 					const argument = call.expression.arguments[0], defaults = argument === undefined ? undefined : this.reader.expression(file, argument);
 					if (defaults?.expression.kind !== LuaSyntaxKind.TableConstructorExpression) continue;
+					if (builtinFactory.kind === 'model') {
+						// Model factories resolve their default resource before any instance
+						// override is applied. Unknown defaults cannot be rescued by initial.
+						const model = fields.member(defaults, 'model_id'), scene = fields.member(defaults, 'scene_index');
+						if (model == null || this.reader.stringValue(model.file, model.expression) === undefined
+							|| scene === undefined || scene !== null && readLuaNumberExpression(scene.expression) === null) continue;
+					}
 					const identity = fields.member(defaults, 'id_local');
-					const id = readLuaSourceTruth(identity) === false ? 'sprite' : identity == null ? undefined : this.reader.stringValue(identity.file, identity.expression);
-					if (id !== undefined) producers.push({ id, defaults });
+					const id = readLuaSourceTruth(identity) === false ? builtinFactory.id : identity == null ? undefined : this.reader.stringValue(identity.file, identity.expression);
+					if (id !== undefined) producers.push({ kind: builtinFactory.kind, id, defaults });
 				}
 			}
 			this.producers.set(definition, producers);
