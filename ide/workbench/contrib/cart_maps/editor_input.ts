@@ -1,4 +1,3 @@
-import { WORKBENCH_MENUS } from '../../ui/menu/registry';
 import { create_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { resourceIdentityKey } from '../../../common/resource';
 import type { EditorTextModel } from '../../../editor/model/text_model';
@@ -15,7 +14,7 @@ import { CartMapGrid, type MapGridContent, type MapGridMarker } from './grid';
 import type { PietiousObject, PietiousSource } from './pietious_source';
 import type { NemesisMarker, NemesisSource } from './nemesis_source';
 import { captureCartMapView, restoreCartMapView } from './view_snapshot';
-import { CART_MAP_TITLE_ACTIONS } from './menus';
+import { CART_MAP_CONTEXT_ACTIONS, CART_MAP_TITLE_ACTIONS } from './menus';
 
 export type CartMapKind = 'pietious' | 'nemesis';
 export type CartMapSection = 'outline' | 'map';
@@ -63,6 +62,8 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 	public readonly editSource: EditorEditSource = Symbol('cart-map-view');
 	public version = -1;
 	public viewRevision = 0;
+	private selectionRevisionValue = 0;
+	private readonly selectionListeners = new Set<() => void>();
 	public activeSheet: string | undefined;
 	public section: CartMapSection = 'outline';
 	public restoredTreeScroll: number | undefined;
@@ -71,7 +72,8 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 	public readonly selectionRange: TrackedTextRange = { start: 0, end: 0 };
 	public readonly tree = new ScrollableWorkbenchTree<CartMapTreeElement>();
 	public readonly grid = new CartMapGrid();
-	public readonly actionBar = createWorkbenchActionBar(new WorkbenchMenu(CART_MAP_TITLE_ACTIONS, this), true, WORKBENCH_MENUS['editor.source.actions']);
+	public readonly contextActions = new WorkbenchMenu(CART_MAP_CONTEXT_ACTIONS, this);
+	public readonly actionBar = createWorkbenchActionBar(new WorkbenchMenu(CART_MAP_TITLE_ACTIONS, this), true, this.contextActions);
 	public readonly fieldBounds = [create_rect_bounds(), create_rect_bounds()] as const;
 	public readonly layout: CartMapLayout = {
 		minimumFont: undefined,
@@ -80,8 +82,18 @@ export class CartMapInput extends WorkingCopyEditorInput<`map:${string}`, 'cart_
 		sourceBounds: create_rect_bounds(), selectionBounds: create_rect_bounds(),
 	};
 	public get selected(): CartMapItem | undefined { return this.tree.rows[this.tree.selectionIndex]?.element.item; }
+	public get selectionRevision(): number { return this.selectionRevisionValue; }
+	public onDidChangeSelection(listener: () => void): () => void {
+		this.selectionListeners.add(listener);
+		return () => this.selectionListeners.delete(listener);
+	}
+	public notifySelectionChanged(): void {
+		this.selectionRevisionValue++;
+		for (const listener of this.selectionListeners) listener();
+	}
 	public constructor(public readonly workingCopy: EditorTextModel, public readonly mapKind: CartMapKind) {
 		super(`map:${resourceIdentityKey(workingCopy.resource)}`, 'cart_map', 'MAP EDITOR', true);
+		this.disposables.add({ dispose: () => this.selectionListeners.clear() });
 		this.sourceCaption = computeResourceTabTitle(workingCopy.resource);
 		this.setLabel(this.title, sourceTabDescription(workingCopy.resource));
 		this.disposables.add({ dispose: workingCopy.onDidChangeContent(event => {

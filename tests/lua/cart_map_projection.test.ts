@@ -36,6 +36,7 @@ test('map projection retains source identity, not object ordinal or type', t => 
 	const { model, input } = fixture();
 	t.after(() => { input.dispose(); model.dispose(); });
 	selectCartMapRow(input, 1);
+	const intent = input.selectionRevision;
 	const original = input.selectionRange.start;
 	const prefix = '  - { type: rock, x: 0, y: 1 } # new object\n';
 	model.pushEditOperations([{ offset: SOURCE.indexOf('  -'), deleteLength: 0, text: prefix }]);
@@ -44,10 +45,12 @@ test('map projection retains source identity, not object ordinal or type', t => 
 	assert.equal(input.selected!.x, 1);
 	assert.ok(input.selected?.kind === 'object');
 	assert.equal(input.selected.source.index, 1);
+	assert.equal(input.selectionRevision, intent, 'mapping the same occurrence preserves its captured navigation intent');
 	const range = input.selectionRange;
 	model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: '{ type: rock, x: 3, y: 1 }' }]);
 	projectCartMap(input);
 	assert.equal(input.selected, undefined);
+	assert.equal(input.selectionRevision, intent + 1, 'losing the selected occurrence revokes its captured navigation intent');
 	model.undo();
 	projectCartMap(input);
 	assert.equal(input.selected, undefined, 'undo must not attach a removed source selection to newly inserted text');

@@ -13,6 +13,7 @@ export function projectCartMap(input: CartMapInput): void {
 	const initial = input.version === -1;
 	input.version = model.version;
 	const source = model.buffer.getText(), tree = input.tree;
+	const hadSelection = tree.selectionIndex >= 0;
 	const collapsed = new Set(tree.roots.filter(root => root.collapsed).map(root => root.element.sheet.key));
 	tree.roots.length = 0;
 	const append = (sheet: CartMapSheet, label: string, diagnostic: string | null) => appendWorkbenchTreeNode(tree, null,
@@ -58,10 +59,10 @@ export function projectCartMap(input: CartMapInput): void {
 	if (initial && tree.roots.length > 0) selected = tree.roots[0];
 	input.grid.content = tree.roots.find(root => root.element.sheet.key === input.activeSheet)?.element.sheet;
 	rebuildWorkbenchTreeRows(tree, selected);
-	selectCartMapRow(input, tree.selectionIndex);
+	selectCartMapRow(input, tree.selectionIndex, hadSelection && selected === null ? 'select' : 'refresh');
 }
 
-export function selectCartMapRow(input: CartMapInput, index: number): void {
+export function selectCartMapRow(input: CartMapInput, index: number, intent: 'select' | 'refresh' = 'select'): void {
 	input.tree.selectionIndex = index;
 	const element = input.tree.rows[index]?.element;
 	input.selectionRange.start = element === undefined ? 0 : element.range.start;
@@ -72,6 +73,7 @@ export function selectCartMapRow(input: CartMapInput, index: number): void {
 	}
 	input.grid.selected = element?.item;
 	input.viewRevision++;
+	if (intent === 'select') input.notifySelectionChanged();
 }
 
 /** A coordinate edit belongs to the actual authored representation, never to a cooked actor. */

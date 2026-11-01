@@ -1,0 +1,20 @@
+# Dedicated authored-map context-menu fixture, not a gameplay map.
+1:
+  map:
+    - "##########"
+    - "#........#"
+    - "#........#"
+    - "#........#"
+    - "#........#"
+    - "##########"
+  objects:
+    - { type: context_first, x: 2, y: 2 }
+    - { type: context_second, x: 6, y: 3 }
+2:
+  map:
+    - "######"
+    - "#....#"
+    - "#....#"
+    - "######"
+  objects:
+    - { type: context_third, x: 3, y: 2 }

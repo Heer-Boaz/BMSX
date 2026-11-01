@@ -1,6 +1,6 @@
 import { STATUS_PRIORITY_CONTENT, type WorkbenchStatusItem } from '../../common/status_bar';
 import type { ContextMenuController } from '../../services/context_menu/controller';
-import type { EditorSourceLocation } from '../../../editor/navigation/source_location';
+import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import type { KeyInputEvent } from '../../../../hosts/common/input/text';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
@@ -46,6 +46,15 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		const input = this.input;
 		return this.controller.getSourceLocation(input);
 	}
+	public override captureSourceLocation(): EditorSourceLocationRequest {
+		const input = this.input, selection = input.selectionRevision;
+		const isCurrent = () => this.hasInput && this.input === input && input.selectionRevision === selection;
+		return { isCurrent, readLocation: () => {
+			if (!isCurrent()) return;
+			const location = this.controller.getSourceLocation(input);
+			return isCurrent() ? location : undefined;
+		} };
+	}
 
 	public readonly controls: readonly ValueInput<CartMapCoordinateEdit>[];
 	private readonly actions: WorkbenchActionBarControl;
@@ -73,20 +82,31 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		else if (mode === 'outline') this.gridFocus.cancelInput();
 	};
 	private readonly beforeFieldHide = (axis: number): void => { this.controls[axis].field.focusTarget.cancelInput(); };
-	public constructor(private readonly controller: CartMapController, commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
+	public constructor(private readonly controller: CartMapController, private readonly commands: EditorCommandRunner, private readonly sources: RuntimeSourceState,
 		surfaces: WorkbenchSurfaceService, paneSurface: WorkbenchSurface, private readonly workArea: Readonly<RectBounds>,
-		scope: InputFocusScope, contextMenu: ContextMenuController) {
+		scope: InputFocusScope, private readonly contextMenu: ContextMenuController) {
 		super(scope);
 		this.tooltip.attach(surfaces, paneSurface, workArea);
 		this.focusTarget.canFocus = () => this.hasInput && this.input.layout.mode !== 'map';
 		this.gridFocus.canFocus = () => this.hasInput && this.input.layout.mode !== 'outline';
 		this.gridFocus.commandContext = this.focusTarget;
 		this.actions = new WorkbenchActionBarControl(inputFocus, pointerCapture, pointerHover, commands, this.focusTarget, () => this.focus(), contextMenu);
+		this.actions.onDidOpenOverflow = lifetime => {
+			this.tooltip.hide();
+			lifetime.add({ dispose: this.input.workingCopy.onDidChangeContent(() => contextMenu.hide()) });
+			lifetime.add({ dispose: this.input.onDidChangeSelection(() => contextMenu.hide()) });
+		};
 		const map = { isEnabled: () => this.hasInput && this.input.grid.content !== undefined, run: () => this.showSection('map') };
 		const outline = { isEnabled: () => this.hasInput, run: () => this.showSection('outline') };
 		for (const target of [this.focusTarget, this.gridFocus]) {
 			target.registerCommand('cartMap.map', map);
 			target.registerCommand('cartMap.outline', outline);
+			target.registerCommand('contextMenu', { isEnabled: () => this.hasInput, run: () => {
+				const input = this.input, grid = target === this.gridFocus;
+				const x = grid ? input.grid.bounds.left : input.tree.layout.contentLeft;
+				const y = grid ? input.grid.bounds.top : input.tree.layout.contentTop;
+				this.openContextMenu(x + 4, y + 4, target, true);
+			} });
 		}
 		for (const direction of ['undo', 'redo'] as const) {
 			const historyCommand = {
@@ -219,6 +239,17 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		if (index >= 0 && this.input.layout.mode !== 'map') revealWorkbenchListSelection(this.input.tree);
 		if (this.input.selected !== undefined) this.input.grid.reveal(this.input.selected);
 	}
+	private openContextMenu(x: number, y: number, origin: InputFocusTarget, keyboard = false): void {
+		this.tooltip.hide();
+		const input = this.input;
+		this.contextMenu.show(x, y, input.contextActions, this.commands, { selectFirst: keyboard,
+			invocationOrigin: origin, returnFocus: origin, commandTarget: this.focusTarget,
+			onWillShow: lifetime => {
+				lifetime.add({ dispose: input.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
+				lifetime.add({ dispose: input.onDidChangeSelection(() => this.contextMenu.hide()) });
+			},
+		});
+	}
 	public handleKeyboard(input: KeyInputEvent): void {
 		for (const [code, command] of NAVIGATION) if (isKeyDown(code, input)) {
 			consumeIdeKey(code, input);
@@ -246,6 +277,8 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 	}
 	protected override handleViewPointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		const layout = this.input.layout;
+		const primary = (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
+		const secondary = (snapshot.justPressedButtons & PointerButton.Secondary) !== 0;
 		this.gridHovered = false;
 		this.headerHovered = !snapshot.valid || !snapshot.insideViewport ? undefined
 			: point_in_rect(snapshot.viewportX, snapshot.viewportY, layout.sourceBounds) ? 'source'
@@ -266,23 +299,25 @@ export class CartMapPane extends WorkbenchViewEditorPane<CartMapInput> {
 		if (layout.mode !== 'outline' && point_in_rect(snapshot.viewportX, snapshot.viewportY, grid.bounds)) {
 			this.gridHovered = true; this.gridPointerX = snapshot.viewportX; this.gridPointerY = snapshot.viewportY;
 			pointerHover.visit(this);
-			if (justPressed) {
+			if (primary || secondary) {
 				this.gridFocus.focus(); this.update();
 				const x = grid.columnAt(snapshot.viewportX), y = grid.rowAt(snapshot.viewportY);
 				const tree = this.input.tree;
 				const node = tree.roots.find(root => root.element.sheet === grid.content)?.children.find(child => child.element.item?.x === x && child.element.item.y === y);
 				if (node !== undefined) setWorkbenchTreeCollapsed(tree, tree.rows.indexOf(node.parent!), false);
 				this.select(node === undefined ? -1 : tree.rows.indexOf(node), true);
+				if (secondary) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.gridFocus);
 			}
 			return true;
 		}
 		if (layout.mode === 'map') return false;
 		if (justPressed && workbenchListContainsPosition(this.input.tree, snapshot.viewportX, snapshot.viewportY)) { this.focusTarget.focus(); this.update(); }
 		const index = workbenchListRowIndexAtPosition(this.input.tree, snapshot.viewportX, snapshot.viewportY);
-		if (justPressed && index >= 0) {
+		if ((primary || secondary) && index >= 0) {
 			this.focusTarget.focus(); projectCartMap(this.input);
-			if (workbenchTreeTwistieContainsPosition(this.input.tree, index, snapshot.viewportX)) setWorkbenchTreeCollapsed(this.input.tree, index, !this.input.tree.rows[index].collapsed);
+			if (primary && workbenchTreeTwistieContainsPosition(this.input.tree, index, snapshot.viewportX)) setWorkbenchTreeCollapsed(this.input.tree, index, !this.input.tree.rows[index].collapsed);
 			this.select(index);
+			if (secondary) this.openContextMenu(snapshot.viewportX, snapshot.viewportY, this.focusTarget);
 		}
 		return index >= 0;
 	}
