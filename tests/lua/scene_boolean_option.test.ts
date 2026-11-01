@@ -63,6 +63,20 @@ test('only authored boolean literals become checkbox controls, not truthiness, n
 	assert.equal(f.checkbox().input!.checked, true); assert.equal(f.model.canUndo, false);
 });
 
+test('the actually hovered checkbox discloses its label before another focused checkbox', t => {
+	const first = `property_${'a'.repeat(100)}`, second = `property_${'b'.repeat(100)}`;
+	const source = SOURCE.replace("score = 7, visible = true, caption = 'false'", `${first} = true, ${second} = false`);
+	const f = fixture(t, source), a = f.checkbox(first), b = f.checkbox(second);
+	a.focusTarget.focus(); assert.ok(f.details.tooltipItem === a.tooltipItem);
+	const bounds = b.bounds;
+	f.details.handlePointer({ valid: true, insideViewport: true, viewportX: b.labelX + 1,
+		viewportY: (bounds.top + bounds.bottom) / 2, modifiers: KeyModifier.none, spaceDown: false,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0 }, false);
+	assert.equal(b.hovered, true); assert.ok(f.details.tooltipItem === b.tooltipItem);
+	f.details.onPointerLeave(); assert.ok(f.details.tooltipItem === a.tooltipItem);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
 for (const font of ['tiny', 'msx'] as const) test(`${font} checkbox acceptance replaces only its boolean token and has exactly one document Undo`, t => {
 	const source = SOURCE.replace('visible = true,', 'visible = (( --[[group]] true )), -- keep trivia\n');
 	const f = fixture(t, source, font), checkbox = f.checkbox(), version = f.model.version;

@@ -115,12 +115,17 @@ export class SceneDetailsControl {
 	public get tooltipItem(): WorkbenchTooltipTarget | undefined {
 		if (!this.canFocus || !this.fieldsBound) return undefined;
 		const view = this.view, identity = view.identity, bounds = view.viewport.bounds;
+		const identityVisible = identity.clipped && identity.bounds.top >= bounds.top && identity.bounds.bottom <= bounds.bottom;
+		if (identityVisible && this.identityHovered && this.feedbackScroll === view.viewport.scrollTop) return identity;
+		let focused: WorkbenchTooltipTarget | undefined;
 		for (const entry of this.options.controls) if (entry.kind === 'boolean') {
 			const tooltip = entry.control.tooltipItem;
-			if (tooltip !== undefined && tooltip.bounds.top >= bounds.top && tooltip.bounds.bottom <= bounds.bottom) return tooltip;
+			if (tooltip === undefined || tooltip.bounds.top < bounds.top || tooltip.bounds.bottom > bounds.bottom) continue;
+			if (entry.control.hovered) return tooltip;
+			focused = tooltip;
 		}
-		if (!identity.clipped || identity.bounds.top < bounds.top || identity.bounds.bottom > bounds.bottom) return undefined;
-		return this.focusTarget.hasFocus || this.identityHovered && this.feedbackScroll === view.viewport.scrollTop ? identity : undefined;
+		if (focused !== undefined) return focused;
+		return identityVisible && this.focusTarget.hasFocus ? identity : undefined;
 	}
 	public getSourceLocation() { return this.viewValue?.authoring.getSourceLocation(); }
 	public captureSourceLocation() { return this.viewValue?.authoring.captureSourceLocation(); }
