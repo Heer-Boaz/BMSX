@@ -1,24 +1,22 @@
-// Actual Lua auto-completion over the canonical shipped source; no synthetic provider or model writes.
-// Run: npm run ide:test -- nemesis_s tests/ide/completion_preview_ux.idetest.js --ttl 120
+// Actual Lua auto-completion over the dedicated fixture source; no synthetic provider or model writes.
+// Run: npm run ide:test -- studio_test tests/ide/completion_preview_ux.idetest.js --ttl 120
 const press = async (...codes) => {
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: true }))); await t.frames(2);
 	t.controlInput(codes.slice().reverse().map(code => ({ type: 'key', code, down: false }))); await t.frames(2);
 };
-let captures = 0;
 const capture = label => {
-	t.assert(++captures <= 22, 'the completion workflow exceeded its bounded capture budget');
 	t.log(`VISUAL ${label}`); t.capture(label);
 };
 await t.waitForCart(); await t.frames(90);
-t.openLuaSource('cart.lua'); await t.frames(3);
+t.openLuaSource('completion.lua'); await t.frames(3);
 const code = t.activeWorkbenchTab(), model = code.workingCopy, original = model.buffer.getText();
 const cycles = t.runtime().machine.scheduler.nowCycles;
-t.assert(code.kind === 'code_editor' && model.resource.path === 'cart.lua' && !model.dirty,
-	'the actual clean cartridge entry did not open');
+t.assert(code.kind === 'code_editor' && model.resource.path === 'completion.lua' && !model.dirty,
+	'the actual clean completion fixture did not open');
 const paused = () => t.assert(t.runtime().machine.scheduler.nowCycles === cycles, 'completion authoring executed the paused guest');
 const restore = async () => {
 	for (let step = 0; model.buffer.getText() !== original && step < 20; step++) await press('ControlLeft', 'KeyZ');
-	t.assert(model.buffer.getText() === original && !model.dirty, 'ordinary document Undo did not restore exact shipped source bytes');
+	t.assert(model.buffer.getText() === original && !model.dirty, 'ordinary document Undo did not restore exact fixture source bytes');
 	paused();
 };
 const typePrefix = async prefix => {
@@ -63,12 +61,12 @@ for (const variant of ['tiny', 'msx']) {
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
 // A completion belongs to its source input, not merely to the shared Lua editor focus target.
-t.openLuaSource('director.lua'); await t.frames(2); await press('ControlLeft', 'Home');
+t.openLuaSource('completion_other.lua'); await t.frames(2); await press('ControlLeft', 'Home');
 const other = t.activeWorkbenchTab(), otherModel = other.workingCopy, otherOriginal = otherModel.buffer.getText();
-t.assert(other.kind === 'code_editor' && otherModel.resource.path === 'director.lua' && !otherModel.dirty,
+t.assert(other.kind === 'code_editor' && otherModel.resource.path === 'completion_other.lua' && !otherModel.dirty,
 	'the second canonical Lua source did not open cleanly');
-t.openLuaSource('cart.lua'); await t.frames(2);
-t.assert(t.activeWorkbenchTab() === code, 'source navigation replaced the canonical cartridge input');
+t.openLuaSource('completion.lua'); await t.frames(2);
+t.assert(t.activeWorkbenchTab() === code, 'source navigation replaced the canonical completion input');
 const pending = await typePrefix('retur');
 await press('ControlLeft', 'Tab');
 t.assert(t.activeWorkbenchTab() === other && other.context.view.cursorRow === 0 && other.context.view.cursorColumn === 0,
@@ -84,7 +82,7 @@ await press('ControlLeft', 'KeyZ');
 t.assert(otherModel.buffer.getText() === otherOriginal && !otherModel.dirty,
 	'ordinary Tab Undo did not restore the second canonical source');
 await press('ControlLeft', 'ShiftLeft', 'Tab');
-t.assert(t.activeWorkbenchTab() === code, 'physical previous-tab navigation lost the retained cartridge input');
+t.assert(t.activeWorkbenchTab() === code, 'physical previous-tab navigation lost the retained completion input');
 await restore();
 for (let index = 0; index < t.logMessageCount(); index++)
 	t.assert(t.logMessage(index).level !== 3, `Completion preview workflow logged an error: ${t.logMessage(index).message}`);

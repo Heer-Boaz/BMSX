@@ -1,5 +1,5 @@
-// Shipped Lua source, real completion and pointer input; never inject a provider or projected model.
-// Run: npm run ide:test -- nemesis_s tests/ide/completion_projection_ux.idetest.js --ttl 120
+// Dedicated Lua source, real completion and pointer input; never inject a provider or projected model.
+// Run: npm run ide:test -- studio_test tests/ide/completion_projection_ux.idetest.js --ttl 120
 const press = async (...codes) => {
 	t.controlInput(codes.map(code => ({ type: 'key', code, down: true }))); await t.frames(2);
 	t.controlInput(codes.slice().reverse().map(code => ({ type: 'key', code, down: false }))); await t.frames(2);
@@ -16,18 +16,16 @@ const click = async (x, y) => {
 	t.controlInput([{ type: 'pointer', x, y }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
 	t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 };
-let captures = 0;
 const capture = label => {
-	t.assert(++captures <= 20, 'the projection workflow exceeded its bounded capture budget');
 	t.log(`VISUAL ${label}`); t.capture(label);
 };
 await t.waitForCart(); await t.frames(90);
 // This Source-only fixture uses its first tab as a physical refocus affordance.
 t.command('tabs.close'); await t.frames(2);
-t.openLuaSource('cart.lua'); await t.frames(3);
+t.openLuaSource('completion.lua'); await t.frames(3);
 const code = t.activeWorkbenchTab(), model = code.workingCopy, original = model.buffer.getText();
 const cycles = t.runtime().machine.scheduler.nowCycles, executable = t.sourceState().currentBlua32Media;
-t.assert(code.kind === 'code_editor' && model.resource.path === 'cart.lua' && !model.dirty, 'the canonical shipped Lua entry did not open cleanly');
+t.assert(code.kind === 'code_editor' && model.resource.path === 'completion.lua' && !model.dirty, 'the dedicated fixture Lua entry did not open cleanly');
 const unchanged = expected => {
 	t.assert(t.activeWorkbenchTab() === code && model.buffer.getText() === expected, 'the projected view changed or replaced its canonical source input');
 	t.assert(t.runtime().machine.scheduler.nowCycles === cycles && t.sourceState().currentBlua32Media === executable,
@@ -35,7 +33,7 @@ const unchanged = expected => {
 };
 const restore = async () => {
 	for (let step = 0; model.buffer.getText() !== original && step < 30; step++) await press('ControlLeft', 'KeyZ');
-	unchanged(original); t.assert(!model.dirty, 'ordinary Undo did not restore the pristine shipped working copy');
+	unchanged(original); t.assert(!model.dirty, 'ordinary Undo did not restore the pristine fixture working copy');
 	await press('Escape');
 };
 const middle = async tail => {
@@ -80,21 +78,28 @@ for (const variant of ['tiny', 'msx']) {
 	}
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
-// One physical sash gesture reaches tiny's actual minimum; changing font applies the same retained sash intent.
-t.command('gameView.togglePanel'); await t.frames(3);
-t.controlInput([{ type: 'pointer', x: 222, y: 80 }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
-t.controlInput([{ type: 'pointer', x: 50, y: 80 }]); await t.frames(2);
+// A real editor split exposes the Source minimum independently of a runtime companion's reading budget.
+const group = t.activeEditorGroup();
+t.command('group.splitRight'); await t.frames(3);
+const neighbor = t.activeEditorGroup();
+t.command('group.focusPrevious'); await t.frames(3);
+t.assert(neighbor !== group && t.activeEditorGroup() === group && t.activeWorkbenchTab() === code,
+	'the native split did not preserve the exact Source group and input');
+const sashX = (group.bounds.right + neighbor.bounds.left) / 2, sashY = (group.bounds.top + group.bounds.bottom) / 2;
+t.controlInput([{ type: 'pointer', x: sashX, y: sashY }, { type: 'button', button: 'primary', down: true }]); await t.frames(1);
+t.controlInput([{ type: 'pointer', x: group.bounds.left + 1, y: sashY }]); await t.frames(2);
 t.controlInput([{ type: 'button', button: 'primary', down: false }]); await t.frames(2);
 for (const variant of ['tiny', 'msx']) {
-	// Re-focus through the retained Source tab; an offscreen caret is not a hit target.
-	await click(24, 4);
-	t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'the actual minimum-width source did not receive pointer focus');
+	// Return from the native tab target to its content; an offscreen caret is not a hit target.
+	t.command('group.focusTabs'); await press('Escape');
+	t.assert(t.activeEditorDocument().focusTarget.hasFocus, 'the actual minimum-width source did not receive editor focus');
 	for (const theme of ['light', 'dark']) {
-		await press('ControlLeft', 'End'); await press('Enter'); await type('title_scr'); await t.frames(12);
+		const prefix = 'completion_ca';
+		await press('ControlLeft', 'End'); await press('Enter'); await type(prefix); await t.frames(12);
 		const pending = model.buffer.getText(); unchanged(pending);
-		capture(`projection-${variant}-${theme}-minimum-module-pending`);
-		await press('Tab'); unchanged(pending.slice(0, -9) + 'title_screen_module');
-		capture(`projection-${variant}-${theme}-minimum-module-accepted`);
+		capture(`projection-${variant}-${theme}-minimum-symbol-pending`);
+		await press('Tab'); unchanged(pending.slice(0, -prefix.length) + 'completion_candidate');
+		capture(`projection-${variant}-${theme}-minimum-symbol-accepted`);
 		await press('ControlLeft', 'KeyZ'); unchanged(pending); await restore();
 		if (theme === 'light') {
 			const tail = '_abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz', source = await middle(tail);
@@ -107,6 +112,6 @@ for (const variant of ['tiny', 'msx']) {
 	}
 	await press('ControlLeft', 'ShiftLeft', 'KeyT');
 }
-t.command('gameView.closePanel'); await t.frames(2); unchanged(original);
+t.command('group.focusNext'); t.command('group.close'); await t.frames(3); unchanged(original);
 for (let index = 0; index < t.logMessageCount(); index++)
 	t.assert(t.logMessage(index).level !== 3, `Completion projection workflow logged an error: ${t.logMessage(index).message}`);

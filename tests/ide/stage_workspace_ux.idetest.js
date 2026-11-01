@@ -56,6 +56,13 @@ for (let font = 0; font < 2; font++) {
 		t.assert(details.controls[0].field.focusTarget.hasFocus && details.tooltipItem === undefined,
 			'entering a field retained the preceding physical identity hover');
 		retained(); await capture(`${label}-identity-hover-to-field`);
+		const field = details.controls[0], text = field.field.text;
+		await press('ControlLeft', 'KeyA'); await press('Digit9');
+		t.assert(field.pending && field.field.text === '9', 'ordinary numeric typing did not establish a modified local draft');
+		retained(); await capture(`${label}-modified-position-draft`);
+		await press('Escape');
+		t.assert(!field.pending && field.field.text === text, 'Escape did not restore the exact accepted position without publishing the draft');
+		retained();
 		t.command('sceneEditor.outline'); await t.frames(3);
 		t.controlInput([{ type: 'pointer', x: canvas.left + 2, y: canvas.top + 2 }]); await t.frames(3);
 		t.assert(details.tooltipItem === undefined, 'leaving the identity retained a stale body tooltip');
