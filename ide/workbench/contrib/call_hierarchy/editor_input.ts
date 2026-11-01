@@ -8,7 +8,6 @@ import { CallHierarchyTree } from './tree';
 const TITLE_ACTIONS: WorkbenchMenuDefinition<CallHierarchyInput> = [
 	{ type: 'command', command: 'callHierarchy.incoming' },
 	{ type: 'command', command: 'callHierarchy.outgoing' },
-	{ type: 'command', command: 'editor.source', icon: 'source' },
 ];
 const CONTEXT_ACTIONS: WorkbenchMenuDefinition<CallHierarchyInput> = [
 	{ type: 'command', command: 'editor.source' },

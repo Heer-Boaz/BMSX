@@ -155,7 +155,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'group.close' },
 	],
 	'home.work': [
-		{ type: 'command', command: 'sceneEditor', icon: 'scene' },
 		{ type: 'command', command: 'resources.focus', icon: 'source' },
 		{ type: 'command', command: 'resourceSearch', icon: 'filter' },
 		{ type: 'command', command: 'createResource', icon: 'source' },
@@ -266,7 +265,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'separator' },
 		{ type: 'command', command: 'propertyInspector.source' },
 	],
-	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.source' }, { type: 'command', command: 'propertyInspector.close' }],
+	'propertyInspector.title': [{ type: 'command', command: 'propertyInspector.close' }],
 	'problems.title': [{ type: 'command', command: 'problems.coverage', icon: 'info' }],
 	'window.status': [{ type: 'command', command: 'window.showAll', icon: 'restore', showLabel: true }],
 	'window.context': WINDOW_CONTEXT_ACTIONS,
@@ -347,7 +346,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'romInspector.structure' },
 		{ type: 'command', command: 'romInspector.code' },
 		{ type: 'command', command: 'romInspector.sort' },
-		{ type: 'command', command: 'romInspector.source', icon: 'source' },
 	],
 	'gpu.title': [
 		{ type: 'command', command: 'gpu.follow', icon: 'follow' },
@@ -367,8 +365,7 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'gte.details', icon: 'info' },
 	],
 	'gte.inspector.content': [{ type: 'command', command: 'gte.view' }],
-	'gte.details.title': [{ type: 'command', command: 'gte.source', icon: 'source' },
-		{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
+	'gte.details.title': [{ type: 'command', command: 'window.maximize', icon: 'maximize', checkedIcon: 'restore' },
 		{ type: 'command', command: 'window.hide', icon: 'close' }],
 	'gte.context': [
 		{ type: 'command', command: 'gte.view' },
@@ -398,7 +395,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 	],
 	'workspaceEditReview.evidence.title': [
 		{ type: 'command', command: 'workspaceEditReview.apply', icon: 'accept' },
-		{ type: 'command', command: 'workspaceEditReview.source', icon: 'source' },
 		{ type: 'command', command: 'workspaceEditReview.impacts', icon: 'info' },
 		{ type: 'command', command: 'workspaceEditReview.discard', icon: 'close' },
 	],
@@ -507,22 +503,18 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'scenarioLab.playWithCompanion' },
 	],
 	'behaviorLens.graph.title': [
-		{ type: 'command', command: 'editor.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeTree' },
 	],
 	'behaviorLens.title': [
-		{ type: 'command', command: 'editor.source' },
 		{ type: 'command', command: 'behaviorLens.details' },
 	],
 	'behaviorLens.stateGraph.title': [
-		{ type: 'command', command: 'editor.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeStateMachine' },
 	],
 	'aem.title': [
 		{ type: 'command', command: 'aem.add' },
 		{ type: 'command', command: 'aem.edit' },
 		{ type: 'command', command: 'aem.remove' },
-		{ type: 'command', command: 'editor.source' },
 		{ type: 'command', command: 'aem.apply' },
 		{ type: 'command', command: 'aem.testEvent' },
 	],
@@ -545,7 +537,6 @@ export const WORKBENCH_MENUS: WorkbenchMenuContributions = {
 		{ type: 'command', command: 'aem.testEvent' },
 	],
 	'behaviorLens.properties.title': [
-		{ type: 'command', command: 'editor.source' },
 		{ type: 'command', command: 'behaviorLens.inspectRuntimeEffect' },
 	],
 };

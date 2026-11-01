@@ -12,21 +12,26 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { UnavailableScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/unavailable_primary';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { SCENE_AUTHORING_IMPORTS } from '../fixtures/studio/scene_authoring';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
+local prefab = require('cartlib/world/prefab')
+prefab.define({def_id='first',class=require('cartlib/world/object_3d')})
+prefab.define({def_id='second',class=require('cartlib/world/object_3d')})
+prefab.define({def_id='other',class=require('cartlib/world/object_3d')})
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'first', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = { strength = 5 } },
- { member_id = 'same', definition_id = 'second', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6 } }, options = { strength = 8 } },
+ { member_id = 'same', definition_id = 'first', position = { x = 1, y = 2, z = 3 }, options = { strength = 5 } },
+ { member_id = 'same', definition_id = 'second', position = { x = 4, y = 5, z = 6 }, options = { strength = 8 } },
 } })
 scenes.register('same', { objects = {
- { member_id = 'same', definition_id = 'other', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } },
+ { member_id = 'same', definition_id = 'other', position = { x = 7, y = 8, z = 9 } },
 } })
 return {}
 `;
 
 async function fixture(t: TestContext, bind = true) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_AUTHORING_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny'); f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
@@ -80,7 +85,7 @@ test('hiding Main hierarchy preserves the exact pending Details field and its so
 	assert.ok(inputFocus.admittedTarget === field.field.focusTarget && primary.consumer.selection === selected);
 	assert.equal(field.pending, true); assert.equal(field.field.text, '31'); assert.equal(f.model.buffer.getText(), SOURCE);
 	f.key('Enter');
-	assert.equal(field.pending, false); assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
+	assert.equal(field.pending, false); assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1', 'x = 31'));
 	assert.equal(primary.hierarchy.control.hasView, false); assert.equal(primary.details.scope.contextGeneration, detailsGeneration);
 	assert.ok(primary.consumer.selection?.kind === 'member' && primary.consumer.selection.entry === primary.consumer.subject!.objects[0]);
 	const consumers = [...f.main.workingCopyConsumers()]; assert.equal(consumers.length, 1); assert.ok(consumers[0] === primary.consumer);
@@ -251,12 +256,12 @@ test('hiding the focused Main Details region requires its actual draft acceptanc
 	assert.equal(f.main.setRegionVisible('details', false), true); f.update();
 	assert.equal(field.pending, false); assert.equal(primary.details.attached, false);
 	assert.ok(primary.hierarchy.attached && primary.details.scope.contextGeneration > generation);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1', 'x = 31'));
 	assert.equal(f.parts.main.contentPresented, false);
 	assert.ok(inputFocus.admittedTarget !== null && primary.viewport.scope.contains(inputFocus.admittedTarget.scope));
 });
 
-test('a real Details toolbar Source invocation keeps its native region authority instead of borrowing the shared semantic root lifetime', async t => {
+test('a real Details context Source invocation keeps its native region authority instead of borrowing the shared semantic root lifetime', async t => {
 	const f = await fixture(t), primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true); f.update();
 	const ready = Promise.withResolvers<void>(), capture = primary.consumer.captureSourceLocation.bind(primary.consumer);
@@ -264,7 +269,11 @@ test('a real Details toolbar Source invocation keeps its native region authority
 		const lease = capture();
 		return { ...lease, readLocation: async () => { await ready.promise; return lease.readLocation(); } };
 	});
-	assert.equal(primary.details.actionBar.focusTarget.focus(), true); f.key('Home');
+	assert.equal(primary.details.control.focusTarget.focus(), true); f.key('ContextMenu');
+	const menu = f.editor.contextMenu;
+	assert.equal(menu.visible, true);
+	for (let step = 0; menu.model.rows[menu.model.selectedIndex]?.command !== 'editor.source' && step < menu.model.rows.length; step++) f.key('ArrowDown');
+	assert.ok(menu.model.rows[menu.model.selectedIndex]?.command === 'editor.source' && menu.model.rows[menu.model.selectedIndex].enabled);
 	const request = t.mock.method(f.editor.navigation, 'openSource'), opening = t.mock.method(f.editor.navigation, 'openResource');
 	f.key('Enter'); assert.equal(request.mock.callCount(), 1); assert.equal(opening.mock.callCount(), 0);
 	const generation = primary.scope.contextGeneration;
@@ -284,7 +293,7 @@ test('a Main region hide cannot steal a newer document interaction published by 
 	const release = f.model.onDidChangeContent(() => { release(); published = true; f.second.focus(); }); t.after(release);
 	assert.equal(f.main.setRegionVisible('details', false), false); f.update();
 	assert.equal(published, true); assert.equal(field.pending, false);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('0, 0, 1, 1,', '0, 0, 1, 31,'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1', 'x = 31'));
 	assert.equal(f.main.regionLayout.detailsVisible, true); assert.ok(primary.details.attached && f.main.primary === primary);
 	assert.ok(inputFocus.admittedTarget !== null && f.secondPart.scope.contains(inputFocus.admittedTarget.scope));
 	assert.ok(navigationState.activeOwner === f.secondGroup);

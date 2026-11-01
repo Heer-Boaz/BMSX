@@ -279,12 +279,12 @@ test('inspector rows and its header actions receive independent leave without cl
 	assert.equal(f.inspector.actionBar.hoveredCommand, null);
 });
 
-test('read-only evidence without source destinations hides the unused Source action', t => {
+test('inspector headers retain dismissal without promoting Source capability into a toolbar action', t => {
 	const f = fixture(t);
 	f.inspector.show({ title: 'Compiled source', items: [{ label: 'Code', value: 'return 42', description: 'Read-only compiled source', warning: false }],
 		canOpenSource: () => false, openSource: () => assert.fail('No source navigation offered') });
-	assert.equal(f.inspector.actionBar.items[0].visible, false);
-	assert.equal(f.inspector.actionBar.items[1].visible, true);
+	assert.deepEqual(f.inspector.actionBar.items.map(item => item.command), ['propertyInspector.close']);
+	assert.equal(f.inspector.actionBar.items[0].visible, true);
 	f.layout();
 	f.inspector.hide();
 	f.show(); assert.equal(f.inspector.actionBar.items[0].visible, true);
@@ -316,32 +316,29 @@ test('embedded inspector joins pane focus order and distinguishes dismissal from
 	assert.equal(f.inspector.visible, false);
 });
 
-test('persistent inspector skips a disabled Source action in both directions and retires its last actionable toolbar focus', t => {
+test('persistent inspector skips its empty toolbar in both directions while row Source admission changes', t => {
 	const f = fixture(t), before = f.focus.createTarget(f.parent), after = f.focus.createTarget(f.parent);
 	f.inspector.setFocusOrder(before, after);
 	f.inspector.show({ title: 'Details', items: f.items, dismissible: false,
 		canOpenSource: item => item === f.items[1] || item === f.items[2], openSource() {} }, false);
 	f.inspector.update();
 	f.inspector.focusTarget.focus();
-	assert.equal(f.inspector.actionBar.items[0].visible, true);
-	assert.equal(f.inspector.actionBar.items[0].enabled, false);
+	assert.equal(f.inspector.actionBar.items.some(item => item.visible), false);
+	assert.equal(f.inspector.isEnabled('propertyInspector.source'), false);
 	f.focus.moveFocus(false);
-	assert.ok(f.focus.target === after, 'a visible disabled action is not a tab stop');
+	assert.ok(f.focus.target === after, 'an empty action bar is not a tab stop');
 	f.focus.moveFocus(true);
 	assert.ok(f.focus.target === f.inspector.focusTarget);
 	f.press('ArrowDown'); f.inspector.update();
-	f.focus.moveFocus(false);
-	const toolbar = f.focus.target;
-	assert.ok(toolbar !== null && toolbar !== f.inspector.focusTarget && toolbar.parent === f.inspector.focusTarget);
+	assert.equal(f.inspector.isEnabled('propertyInspector.source'), true);
 	f.focus.moveFocus(false);
 	assert.ok(f.focus.target === after);
 	f.focus.moveFocus(true);
-	assert.ok(f.focus.target === toolbar, 'an enabled Source remains in the reverse focus order');
+	assert.ok(f.focus.target === f.inspector.focusTarget, 'Source capability does not create an extra toolbar focus stop');
 	f.inspector.updateItems([f.items[0], { ...f.items[1] }, f.items[2]], (left, right) => left.label === right.label);
 	f.inspector.update();
-	assert.equal(f.inspector.actionBar.items[0].visible, true);
-	assert.equal(f.inspector.actionBar.items[0].enabled, false);
-	assert.ok(f.focus.target === f.inspector.focusTarget, 'revoking the last action returns to live inspector content');
+	assert.equal(f.inspector.isEnabled('propertyInspector.source'), false);
+	assert.ok(f.focus.target === f.inspector.focusTarget);
 	f.focus.moveFocus(false);
 	assert.ok(f.focus.target === after);
 	f.focus.moveFocus(true);

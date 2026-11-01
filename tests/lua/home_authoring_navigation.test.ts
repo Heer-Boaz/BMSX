@@ -16,7 +16,7 @@ import type { BehaviorQuickPickItem } from '../../ide/workbench/contrib/behavior
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { HomeEditorPane } from '../../ide/workbench/contrib/home/editor_pane';
 import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_input';
-import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
@@ -53,7 +53,7 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 type Fixture = ReturnType<typeof fixture>;
 
 /** Card geometry locates real pointer input; assertions concern command and document ownership. */
-function invoke(f: Fixture, command: EditorCommandId): void {
+function invoke(f: Fixture, command: EditorCommandId, picker = f.picker): void {
 	const section = f.home.sections.find(section => section.actions.items.some(item => item.command === command));
 	assert.ok(section !== undefined);
 	f.home.viewport.scrollbar.setScroll(section.bounds.top); f.update();
@@ -63,7 +63,7 @@ function invoke(f: Fixture, command: EditorCommandId): void {
 	for (const down of [true, false]) f.editor.dispatchPointer({ x, y, buttons: down ? PointerButton.Primary : 0,
 		pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
-	assert.equal(f.picker.visible, true);
+	assert.equal(picker.visible, true);
 }
 
 test('Home exposes the actual authored kind entrypoints rather than a generic Behavior Lens substitute', t => {
@@ -257,27 +257,23 @@ for (const interaction of ['newerEditor', 'foreignFocus'] as const)
 		assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
 	});
 
-test('Home Scene acceptance retains newer popup-return focus while opening its captured canonical group', t => {
-	const f = fixture(t);
-	invoke(f, 'sceneEditor');
-	const origin = f.picker.invocationOrigin;
+test('Home Scene acceptance does not publish a Main subject over newer popup-return focus', t => {
+	const f = fixture(t), picker = f.editor.quickInput;
+	invoke(f, 'sceneEditor', picker);
 	let moved = false;
-	t.after(f.picker.field.focusTarget.onDidBlur(next => {
-		if (next === origin) { moved = true; f.second.focus(); }
-	}));
+	const release = picker.field.focusTarget.onDidBlur(() => { release(); moved = true; f.second.focus(); }); t.after(release);
 	f.key('Enter');
 	assert.equal(moved, true);
-	const input = f.firstGroup.model.activeTab;
-	assert.ok(input instanceof SceneEditorInput && input.workingCopy === editorTextModelService.get(f.sceneResource));
+	assert.equal(f.editor.mainWorkspace.primary, undefined); assert.equal(f.firstGroup.model.activeTab, f.home);
 	assert.ok(inputFocus.target === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
 	assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
 });
 
 for (const interaction of ['newerEditor', 'foreignFocus'] as const)
-	test(`Home Scene production respects ${interaction} from canonical model admission`, t => {
-		const f = fixture(t);
+	test(`Home Main Scene production respects ${interaction} from canonical model admission`, t => {
+		const f = fixture(t), picker = f.editor.quickInput;
 		let newer: HostErrorInput | undefined;
-		invoke(f, 'sceneEditor');
+		invoke(f, 'sceneEditor', picker);
 		t.after(editorTextModelService.onDidAddModel(model => {
 			if (model.resource !== f.sceneResource) return;
 			if (interaction === 'newerEditor') {
@@ -285,39 +281,45 @@ for (const interaction of ['newerEditor', 'foreignFocus'] as const)
 			} else f.second.focus();
 		}));
 		f.key('Enter');
+		assert.equal(f.editor.mainWorkspace.primary, undefined);
 		if (interaction === 'newerEditor') assert.ok(newer !== undefined && f.firstGroup.model.activeTab === newer && f.firstGroup.panes.activePane?.input === newer);
 		else {
-			const input = f.firstGroup.model.activeTab;
-			assert.ok(input instanceof SceneEditorInput && input.workingCopy === editorTextModelService.get(f.sceneResource));
+			assert.equal(f.firstGroup.model.activeTab, f.home);
 			assert.ok(inputFocus.target === f.second.commandTarget && f.editor.editorParts.activeGroup === f.secondGroup);
 		}
 		assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
 	});
 
-test('Home Scene filtering observes source published by the actual outgoing control blur', t => {
-	const f = fixture(t), model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.sceneResource);
+test('Home Main Scene filtering observes outgoing blur and binds the canonical subject without creating a document tab', t => {
+	const f = fixture(t), picker = f.editor.quickInput, model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.sceneResource);
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return {}\n' }]);
 	const origin = inputFocus.target!;
 	t.after(origin.onDidBlur(next => {
-		if (next === f.picker.field.focusTarget) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SCENE_SOURCE }]);
+		if (next === picker.field.focusTarget) model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: SCENE_SOURCE }]);
 	}));
-	invoke(f, 'sceneEditor');
-	assert.equal(f.picker.model.list.rows.length, 1);
+	invoke(f, 'sceneEditor', picker);
+	assert.equal(picker.model.list.rows.length, 1);
 	f.key('Enter');
-	assert.ok(f.firstGroup.model.activeTab instanceof SceneEditorInput && f.firstGroup.model.activeTab.workingCopy === model);
+	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
+	assert.equal(primary.consumer.workingCopy, model); assert.deepEqual(primary.consumer.getWorkingCopies(), [model]);
+	assert.equal(primary.consumer.subject, primary.consumer.document!.scenes[0]);
+	assert.equal(f.firstGroup.model.activeTab, f.home); assert.equal(f.secondGroup.model.activeTab, f.secondInput);
+	assert.equal(model.buffer.getText(), SCENE_SOURCE);
+	primary.hierarchy.contextActions.refresh();
+	assert.ok(primary.hierarchy.contextActions.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'));
 });
 
-test('a changed canonical Scene source retires its fixed Home document chooser', t => {
-	const f = fixture(t), model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.sceneResource);
-	invoke(f, 'sceneEditor');
+test('a changed canonical Scene source retires its Home Main chooser without opening a document', t => {
+	const f = fixture(t), picker = f.editor.quickInput, model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.sceneResource);
+	invoke(f, 'sceneEditor', picker);
 	model.pushEditOperations([{ offset: 0, deleteLength: model.buffer.length, text: 'return {}\n' }]);
-	assert.equal(f.picker.visible, false); assert.ok(f.firstGroup.model.activeTab === f.home);
+	assert.equal(picker.visible, false); assert.equal(f.editor.mainWorkspace.primary, undefined); assert.equal(f.firstGroup.model.activeTab, f.home);
 });
 
 for (const replacement of ['return {}\n', SCENE_SOURCE])
-	test(`Home Scene rejects an accepted ${replacement === SCENE_SOURCE ? 'byte-identical source replacement' : 'removed declaration'} during model admission`, t => {
-		const f = fixture(t);
-		invoke(f, 'sceneEditor');
+	test(`Home Main Scene rejects an accepted ${replacement === SCENE_SOURCE ? 'byte-identical source replacement' : 'removed declaration'} during model admission`, t => {
+		const f = fixture(t), picker = f.editor.quickInput;
+		invoke(f, 'sceneEditor', picker);
 		let changed = false;
 		t.after(editorTextModelService.onDidAddModel(model => {
 			if (model.resource === f.sceneResource) {
@@ -326,5 +328,6 @@ for (const replacement of ['return {}\n', SCENE_SOURCE])
 		}));
 		f.key('Enter');
 		assert.equal(changed, true); assert.ok(f.firstGroup.model.activeTab === f.home);
+		assert.equal(f.editor.mainWorkspace.primary, undefined);
 		assert.ok(f.secondGroup.model.activeTab === f.secondInput && f.secondGroup.panes.activePane === f.second);
 	});

@@ -15,6 +15,10 @@ import {
 	layoutWorkbenchActionBar,
 } from '../../ide/workbench/ui/action_bar';
 import { WORKBENCH_MENUS } from '../../ide/workbench/ui/menu/registry';
+import { ANIMATION_CONTEXT_ACTIONS, ANIMATION_TITLE_ACTIONS } from '../../ide/workbench/contrib/animation/menus';
+import { CART_MAP_TITLE_ACTIONS } from '../../ide/workbench/contrib/cart_maps/menus';
+import { LUA_PROGRAM_CONTEXT_ACTIONS, LUA_PROGRAM_TITLE_ACTIONS } from '../../ide/workbench/contrib/lua_program/menus';
+import { ROM_READER_CONTENT_ACTIONS } from '../../ide/workbench/contrib/rom_inspector/menus';
 function enabledCommands(...enabled: EditorCommandId[]): EditorCommandEnablement {
 	const commands = new Set(enabled);
 	return {
@@ -101,10 +105,28 @@ test('Window menu keeps discovery without duplicating contextual placement and f
 		assert.ok(WORKBENCH_MENUS['editorTabs.context'].some(item => item.type === 'command' && item.command === command));
 });
 
-test('routine tool menus expose one primary Source action rather than placement variants', () => {
+test('routine tool context menus retain Source without duplicating placement variants', () => {
 	for (const id of ['editor.source.actions', 'behaviorLens.graph.actions', 'behaviorLens.stateGraph.actions', 'behaviorLens.properties.actions',
 		'behaviorLens.node.context', 'behaviorLens.state.context', 'behaviorLens.edge.context', 'behaviorLens.property.context', 'aem.context'] as const) {
 		assert.ok(WORKBENCH_MENUS[id].some(item => item.type === 'command' && item.command === 'editor.source'));
 		assert.equal(WORKBENCH_MENUS[id].some(item => item.type === 'command' && item.command === 'editor.sourceToSide'), false);
 	}
+});
+
+test('tool title bars reserve primary actions for their tool while Source remains contextual', () => {
+	for (const id of ['behaviorLens.graph.title', 'behaviorLens.title', 'behaviorLens.stateGraph.title', 'behaviorLens.properties.title',
+		'aem.title', 'propertyInspector.title', 'romInspector.title', 'gte.details.title', 'workspaceEditReview.evidence.title'] as const)
+		assert.equal(WORKBENCH_MENUS[id].some(item => item.command === 'editor.source' || item.command === 'propertyInspector.source'
+			|| item.command === 'romInspector.source' || item.command === 'gte.source' || item.command === 'workspaceEditReview.source'), false, id);
+	for (const actions of [ANIMATION_TITLE_ACTIONS, CART_MAP_TITLE_ACTIONS, LUA_PROGRAM_TITLE_ACTIONS, ROM_READER_CONTENT_ACTIONS])
+		assert.equal(actions.some(item => item.command === 'editor.source' || item.command === 'romInspector.source'), false);
+	for (const actions of [ANIMATION_CONTEXT_ACTIONS, LUA_PROGRAM_CONTEXT_ACTIONS])
+		assert.ok(actions.some(item => item.type === 'command' && item.command === 'editor.source'));
+	assert.ok(ANIMATION_CONTEXT_ACTIONS.some(item => item.type === 'command' && item.command === 'animation.producerSource'));
+	assert.ok(WORKBENCH_MENUS['gte.context'].some(item => item.type === 'command' && item.command === 'gte.source'));
+});
+
+test('Home contributes the Scene editor only through its Content entrypoints', () => {
+	assert.equal(WORKBENCH_MENUS['home.work'].some(item => item.command === 'sceneEditor'), false);
+	assert.equal(WORKBENCH_MENUS['home.author'].filter(item => item.command === 'sceneEditor').length, 1);
 });

@@ -103,13 +103,14 @@ test('Cart Map retains supported source secondary actions and an input replaceme
 	pane.focus();
 	const origin = pane.commandTarget;
 	let sourceOpens = 0;
-	origin.registerCommand('editor.sourceToSide', { isEnabled: () => true, run: () => { sourceOpens++; } });
+	origin.registerCommand('editor.source', { isEnabled: () => true, run: () => { sourceOpens++; } });
 	const button = input.actionBar.overflow!.button;
-	assert.equal(button.visible, true, 'source-to-side is a supported secondary placement even when the source primary fits');
+	assert.equal(input.actionBar.items.some(item => item.command === 'editor.source'), false);
+	assert.equal(button.visible, true, 'Source remains a supported secondary action without a primary toolbar button');
 	f.pointer((button.bounds.left + button.bounds.right) / 2, (button.bounds.top + button.bounds.bottom) / 2,
 		0, PointerButton.Primary, PointerButton.Primary);
 	assert.equal(menu.visible, true);
-	assert.equal(menu.model.rows[menu.model.selectedIndex].command, 'editor.sourceToSide');
+	assert.equal(menu.model.rows[menu.model.selectedIndex].command, 'editor.source');
 	f.press('Enter'); assert.equal(sourceOpens, 1); assert.equal(menu.visible, false);
 	f.pointer((button.bounds.left + button.bounds.right) / 2, (button.bounds.top + button.bounds.bottom) / 2,
 		0, PointerButton.Primary, PointerButton.Primary);

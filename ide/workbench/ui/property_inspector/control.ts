@@ -128,8 +128,7 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.focusTarget.scope.runtime = input.interaction === undefined ? undefined : { target: this.focusTarget, interaction: input.interaction };
 		this.returnFocus = input.focusReturn ?? (focus ? this.focus.target : this.focusTarget.parent);
 		this.input = input;
-		this.actionBar.items[0].visible = this.chrome === 'header' && input.items.some(item => input.canOpenSource(item));
-		this.actionBar.items[1].visible = this.chrome === 'header' && input.dismissible !== false;
+		this.actionBar.items[0].visible = this.chrome === 'header' && input.dismissible !== false;
 		this.updateFocusOrder();
 		this.lifetime = new DisposableStore();
 		this.model.setItems(input.items);
@@ -191,12 +190,6 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 			if (!retained) this.retireFeedback();
 		}
 		this.model.updateItems(items, equals);
-		const canOpenSource = this.chrome === 'header' && items.some(item => this.input!.canOpenSource(item));
-		if (this.actionBar.items[0].visible !== canOpenSource) {
-			this.actionBar.items[0].visible = canOpenSource;
-			this.updateFocusOrder();
-			this.layoutDirty = true;
-		}
 	}
 
 	/** A new subject ends document-local attempts, not the inspector's attachment or focus. */
@@ -205,7 +198,6 @@ export class WorkbenchPropertyInspector<Element extends InspectedProperty> imple
 		this.scroll.cancelPointer(); this.actions.cancelPointer();
 		this.retireFeedback(); this.hover.release(this);
 		this.model.setItems(items);
-		this.actionBar.items[0].visible = this.chrome === 'header' && items.some(item => this.input!.canOpenSource(item));
 		this.updateFocusOrder(); this.layoutDirty = true;
 	}
 

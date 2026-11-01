@@ -4,7 +4,6 @@ import type { LuaProgramInput } from './editor_input';
 export const LUA_PROGRAM_TITLE_ACTIONS: readonly WorkbenchMenuCommandDefinition<LuaProgramInput>[] = [
 	{ type: 'command', command: 'luaProgram.add', when: input => !input.liveVisible },
 	{ type: 'command', command: 'luaProgram.edit', when: input => !input.liveVisible },
-	{ type: 'command', command: 'editor.source' },
 	{ type: 'command', command: 'luaProgram.live', when: input => !input.liveVisible },
 	{ type: 'command', command: 'luaProgram.authoring', when: input => input.liveVisible },
 ];

@@ -19,7 +19,6 @@ export const SCENE_AUTHORING_CONTEXT_ACTIONS = [
 export const SCENE_TITLE_ACTIONS: readonly WorkbenchMenuCommandDefinition<SceneEditorViewState>[] = [
 	{ type: 'command', command: 'sceneEditor.details', icon: 'info', when: input => input.layout.mode === 'outline' },
 	{ type: 'command', command: 'sceneEditor.outline', icon: 'back', when: input => input.layout.mode === 'details' },
-	{ type: 'command', command: 'editor.source' },
 ];
 export const SCENE_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneEditorViewState> = [
 	{ type: 'command', command: 'sceneEditor.details', when: input => input.layout.mode === 'outline' },

@@ -11,8 +11,8 @@ import { WORKBENCH_ACTION_BAR_OVERFLOW } from '../../ide/workbench/ui/action_bar
 import { SCENE_AUTHORING_SOURCE } from '../fixtures/studio/scene_authoring';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-for (const font of ['tiny', 'msx'] as const) for (const actionKind of ['source', 'more'] as const)
-	test(`Main ${font} header Secondary opens its region context even over the native ${actionKind} action`, async t => {
+for (const font of ['tiny', 'msx'] as const) for (const region of ['hierarchy', 'details'] as const)
+	test(`Main ${font} ${region} header Secondary opens its region context over More without a primary Source button`, async t => {
 	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_AUTHORING_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant(font); f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -20,12 +20,11 @@ for (const font of ['tiny', 'msx'] as const) for (const actionKind of ['source',
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	const primary = f.editor.mainWorkspace.primary; assert.ok(primary instanceof ScenePrimaryClient);
 	f.editor.editorParts.main.activeGroup.openEditor(new CodeEditorInput(model)); f.update();
-	f.editor.commands.execute('workspace.details.focus', primary.commandTarget);
-	const panel = primary.details;
+	f.editor.mainWorkspace.focusPrimary(region);
+	const panel = primary[region];
 	assert.equal(panel.actionBar.focusTarget.focus(), true); f.update();
-	if (actionKind === 'more') f.key('ArrowRight');
 	const action = panel.actionBar.tooltipItem;
-	assert.ok(action?.command === (actionKind === 'source' ? 'editor.source' : WORKBENCH_ACTION_BAR_OVERFLOW));
+	assert.ok(action?.command === WORKBENCH_ACTION_BAR_OVERFLOW);
 	const source = model.buffer.getText();
 	// Geometry drives the real hit target. The assertions concern native routing and ownership.
 	const x = (action.bounds.left + action.bounds.right) / 2, y = (action.bounds.top + action.bounds.bottom) / 2;
@@ -34,7 +33,8 @@ for (const font of ['tiny', 'msx'] as const) for (const actionKind of ['source',
 		pressedButtons: down ? PointerButton.Secondary : 0, releasedButtons: down ? 0 : PointerButton.Secondary,
 		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	assert.equal(f.editor.contextMenu.visible, true);
-	assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === 'workspace.details.toggle' && row.enabled));
+	assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === `workspace.${region}.toggle` && row.enabled));
+	assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source' && row.enabled));
 	assert.ok(f.editor.mainWorkspace.primary === primary && primary.hierarchy.attached && primary.details.attached);
 	assert.equal(model.buffer.getText(), source);
 });

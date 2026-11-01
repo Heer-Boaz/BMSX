@@ -125,7 +125,7 @@ export class GteDetailsWindow {
 			if (target !== this.window.focusTarget) target.registerCommand('window.hide', this.window.focusTarget.getCommand('window.hide')!);
 		}
 		this.unbindSelection = input.onWillChangeSelection(() => {
-			this.retireChooser(); this.retireOverflow(); this.window.actions.cancelCommand('gte.source');
+			this.retireChooser(); this.retireOverflow();
 			this.retireClient(); this.diagram.reset(); this.documentRevision = -1; this.diagramRevision = -1;
 		});
 		this.unbindSource = source.onDidChange(() => this.updateSource());
@@ -202,7 +202,6 @@ export class GteDetailsWindow {
 		const { input } = this, record = input.selected;
 		const expired = record.sequence >= 0 && (record.sequence < input.history.firstSequence || record.sequence >= input.history.endSequence);
 		if (this.captionRevision === input.selectionRevision && this.expired === expired) return;
-		if (this.captionRevision !== input.selectionRevision) this.window.actions.cancelCommand('gte.source');
 		this.captionRevision = input.selectionRevision; this.expired = expired;
 		input.detailsWindow.title = record.sequence < 0 ? 'GTE Details' : `${gteCommandName(record.commandWord, record.kind)} #${record.sequence}${expired ? ' (expired)' : ''}`;
 		this.titleTooltip = record.sequence < 0 ? 'GTE Details — no command selected'
@@ -215,12 +214,11 @@ export class GteDetailsWindow {
 		return this.source.status === 'available';
 	}
 
-	/** Provenance changes revoke only Source; Follow must not make Close or Collapse unclickable. */
+	/** Provenance changes revoke only a held Source row activation. */
 	private updateSource(): void {
 		this.source.update();
 		if (this.actionSourceRevision === this.source.revision) return;
 		this.actionSourceRevision = this.source.revision;
-		this.window.actions.cancelCommand('gte.source');
 		if (this.sourceRow !== undefined && this.inspector.model.rows[this.inspector.model.selectionIndex]?.element === this.sourceRow)
 			this.inspector.focusTarget.cancelInput();
 	}

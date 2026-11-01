@@ -143,22 +143,20 @@ test('Source picker admission owns settlement before outgoing focus can publish 
 	assert.equal(f.editor.editorParts.main.activeGroup.model.activeTab, review);
 });
 
-test('pointer Source keeps the review picker alive when an unrelated focused Part closes its source', async t => {
+test('the review Source command keeps its picker alive when an unrelated Part closes its source', async t => {
 	const f = createActualSourcePanes(t), model = f.firstInput.workingCopy;
 	const proposal = new WorkspaceEditProposal('Retained source origin', new WorkspaceSourceContext(editorTextModelService, f.sources.catalog), {
 		kind: 'edit', edits: new Map([[model, { version: model.version, edits: [{ offset: 0, deleteLength: 0, text: '-- proposed\n' }] }]]),
 	});
 	const review = new WorkspaceEditReviewInput(proposal, { summary: 'Captured source', items: [{ label: 'Declaration', value: 'alpha',
 		description: 'The captured authoring source', location: { model, version: model.version, offset: 6 } }] });
-	f.firstGroup.openEditor(review); f.update(); f.second.focus();
-	const foreign = inputFocus.target!, pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
+	f.firstGroup.openEditor(review); f.update();
+	const origin = f.firstGroup.panes.activePane!.commandTarget;
+	f.second.focus();
+	const pointer = new RemoteInput(f.host.input, f.host.clock, undefined, event => f.editor.dispatchPointer(event));
 	t.after(() => pointer.release());
-	const source = review.actionBar.items.find(item => item.command === 'workspaceEditReview.source')!;
-	assert.equal(source.visible && !source.overflowed, true);
-	pointer.apply([{ type: 'pointer', x: (source.bounds.left + source.bounds.right) / 2, y: (source.bounds.top + source.bounds.bottom) / 2 },
-		{ type: 'button', button: 'primary', down: true }]);
-	assert.ok(inputFocus.target === foreign, 'pointer admission does not replace the unrelated keyboard focus');
-	pointer.apply([{ type: 'button', button: 'primary', down: false }]); f.update();
+	assert.equal(review.actionBar.items.some(item => item.command === 'workspaceEditReview.source'), false);
+	f.editor.commands.execute('workspaceEditReview.source', origin); f.update();
 	const picker = f.firstPart.quickInput;
 	assert.equal(picker.visible, true);
 	const tab = f.secondGroup.tabStrip.layoutState.items.peek(f.secondGroup.model.indexOf(f.secondInput));

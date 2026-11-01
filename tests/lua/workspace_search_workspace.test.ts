@@ -81,6 +81,9 @@ test('workspace search is admitted by the workspace root, not the kind or existe
 	workspaceState.context = f.context;
 	assert.equal(f.editor.commands.isEnabled('findGlobal', f.firstGroup.panes.activePane!.commandTarget), true);
 	const { input, pane } = f.open();
+	assert.equal(input.actions.items.some(item => item.command === 'editor.source'), false);
+	input.contextMenu.refresh();
+	assert.ok(input.contextMenu.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'));
 	f.submit(pane, 'needle'); await f.drain(input);
 	assert.equal(input.search.matchCount, 32); assert.equal(input.contextId, f.context.id);
 	assert.ok(f.editor.mainWorkspace.primary === f.primary);

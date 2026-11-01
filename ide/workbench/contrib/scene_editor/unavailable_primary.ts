@@ -12,12 +12,12 @@ import type { ScenePrimaryClientOptions } from './primary_client';
 import type { ScenePrimarySnapshot } from './primary_snapshot';
 import { measureSceneViewport } from './viewport/control';
 
-const SOURCE_PRIMARY: WorkbenchMenuDefinition<EditorTextModel | undefined> = [
+const SOURCE_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [
 	{ type: 'command', command: 'editor.source', when: model => model !== undefined },
 ];
-const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_PRIMARY,
+const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_CONTEXT,
 	{ type: 'separator' }, { type: 'command', command: 'workspace.hierarchy.toggle' }];
-const DETAILS_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_PRIMARY,
+const DETAILS_CONTEXT: WorkbenchMenuDefinition<EditorTextModel | undefined> = [...SOURCE_CONTEXT,
 	{ type: 'separator' }, { type: 'command', command: 'workspace.details.toggle' }];
 
 /** Unavailable retains the exact reference and honest presentations, without an editable Scene context. */
@@ -55,12 +55,12 @@ export class UnavailableScenePrimaryClient implements MainWorkspaceClient {
 		const hierarchyActions = new WorkbenchCompositeMenu([new WorkbenchMenu(HIERARCHY_CONTEXT, model), options.main.regions.hierarchy.actions]);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', surface: options.presentations.hierarchy,
 			view: { paragraphs: ['Scene unavailable', snapshot.source.resource.path], warning: true },
-			actions: createWorkbenchActionBar(new WorkbenchMenu(SOURCE_PRIMARY, model), true, hierarchyActions), contextActions: hierarchyActions, measureContent: measureSceneHierarchy });
+			actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined), true, hierarchyActions), contextActions: hierarchyActions, measureContent: measureSceneHierarchy });
 		const detailsActions = new WorkbenchCompositeMenu([new WorkbenchMenu(DETAILS_CONTEXT, model), options.main.regions.details.actions]);
 		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', surface: options.presentations.details,
 			view: { paragraphs: ['No available Scene selection'], warning: true },
-			actions: createWorkbenchActionBar(new WorkbenchMenu(SOURCE_PRIMARY, model), true, detailsActions), contextActions: detailsActions, measureContent: measureSceneDetails });
-		const viewportActions = new WorkbenchMenu(SOURCE_PRIMARY, model);
+			actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined), true, detailsActions), contextActions: detailsActions, measureContent: measureSceneDetails });
+		const viewportActions = new WorkbenchMenu(SOURCE_CONTEXT, model);
 		this.viewport = new WorkbenchViewPanel({ ...common, title: 'Scene', surface: options.presentations.viewport,
 			view: { paragraphs: ['Scene unavailable', snapshot.source.resource.path], warning: true },
 			actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined)), contextActions: viewportActions, measureContent: measureSceneViewport });

@@ -60,6 +60,8 @@ for (const visible of [false, true]) test(`Call Hierarchy opening and Source nav
 	const selection = panel.files.selectedNode, disclosure = selected.collapsed, scroll = panel.scroll, hscroll = panel.hscroll;
 	const primarySelection = f.primary.consumer.selection;
 	const { input, pane } = f.open();
+	assert.equal(input.actions.items.some(item => item.command === 'editor.source'), false);
+	assert.ok(input.contextActions.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'));
 	assert.ok(f.editor.mainWorkspace.primary === f.primary && f.primary.consumer.selection === primarySelection);
 	assert.ok(panel.files.selectedNode === selection); assert.equal(selected.collapsed, disclosure);
 	assert.equal(panel.scroll, scroll); assert.equal(panel.hscroll, hscroll); assert.equal(panel.visible, visible);

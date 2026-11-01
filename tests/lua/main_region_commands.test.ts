@@ -10,12 +10,16 @@ import { UnavailableScenePrimaryClient } from '../../ide/workbench/contrib/scene
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { buildCommandQuickPickItems } from '../../ide/workbench/contrib/commands/quick_access';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
+import { SCENE_AUTHORING_IMPORTS } from '../fixtures/studio/scene_authoring';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-const SOURCE = "local scenes=require('cartlib/world/scene_library'); scenes.register('room',{objects={{member_id='unit',definition_id='actor',spatial={local_transform={1,0,0,0,1,0,0,0,1,1,2,3}}}}})";
+const SOURCE = `local scenes=require('cartlib/world/scene_library')
+local prefab=require('cartlib/world/prefab')
+prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})
+scenes.register('room',{objects={{member_id='unit',definition_id='actor',position={x=1,y=2,z=3}}}})`;
 
 async function fixture(t: TestContext, unavailable = false) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_AUTHORING_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny'); f.first.focus();
 	const main = f.editor.mainWorkspace;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -143,12 +147,15 @@ test('Palette physical Window actions retain the restored region body rather tha
 });
 
 for (const hide of [false, true])
-	test(`Palette from native titlebar actions retains primary Source and ${hide ? 'revokes' : 'admits'} its asynchronous request after return`, async t => {
+	test(`Palette from native titlebar actions retains contextual Source and ${hide ? 'revokes' : 'admits'} its asynchronous request after return`, async t => {
 		const f = await fixture(t); assert.ok(f.primary instanceof ScenePrimaryClient);
 		const part = f.main.regions.details, primary = f.primary, ready = Promise.withResolvers<void>();
 		f.main.setRegionPlacement('details', 'floatingWindow'); f.main.focusPrimary('details'); f.update();
 		const origin = part.window.actionFocusTarget;
 		assert.equal(origin.focus(), true); assert.ok(origin.commandContext !== primary.commandTarget);
+		f.editor.commands.execute('window.systemMenu', origin);
+		assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source' && row.enabled));
+		f.key('Escape'); assert.equal(origin.focus(), true);
 		const capture = primary.consumer.captureSourceLocation.bind(primary.consumer);
 		let focusedAtRead: InputFocusTarget | null = null;
 		t.mock.method(primary.consumer, 'captureSourceLocation', () => {

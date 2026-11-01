@@ -14,7 +14,6 @@ const OPTIONS: WorkbenchMenuDefinition<WorkspaceSearchInput> = [
 const ACTIONS: WorkbenchMenuDefinition<WorkspaceSearchInput> = [
 	{ type: 'command', command: 'workspaceSearch.run', icon: 'refresh' },
 	{ type: 'command', command: 'workspaceSearch.cancel', icon: 'close', when: input => input.running },
-	{ type: 'command', command: 'editor.source', icon: 'source' },
 ];
 const CONTEXT: WorkbenchMenuDefinition<WorkspaceSearchInput> = [
 	{ type: 'command', command: 'editor.source' },
