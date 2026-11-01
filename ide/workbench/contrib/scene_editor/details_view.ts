@@ -21,9 +21,6 @@ export class SceneDetailsViewState {
 	public readonly properties: ScenePositionViewProperty[] = [];
 	public readonly optionProperties: SceneOptionViewProperty[] = [];
 	public readonly detailsText: { text: string; top: number; tone: 'normal' | 'description' | 'warning' }[] = [];
-	public readonly identity = {
-		tooltip: '', clipped: false, contentBounds: create_rect_bounds(), bounds: create_rect_bounds(),
-	};
 	public readonly wrappedLines: string[] = [];
 	public position: number | undefined;
 	public readonly layout: FullWidthWorkbenchLayout & { projectedOffsetTop: number } = {

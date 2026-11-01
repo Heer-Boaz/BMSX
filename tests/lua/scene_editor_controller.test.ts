@@ -226,7 +226,7 @@ test('Scene definition opening selects the exact table among duplicate semantic 
 });
 
 test('reopening a surviving Scene occurrence keeps its subject and reading; explicit switches and history rebind controls', t => {
-	const f = definitionOpeningFixture(t, 90);
+	const f = definitionOpeningFixture(t, 65);
 	assert.equal(f.controller.openDefinition(f.group, f.resource, f.ranges[0]), true);
 	const input = f.group.model.activeTab;
 	assert.ok(input instanceof SceneEditorInput);

@@ -76,9 +76,9 @@ test('Details fields edit and undo canonical source with no hierarchy or documen
 	f.control.update();
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,'));
 	const optionEdit = f.control.options.controls[0]; assert.ok(optionEdit.kind === 'value');
-	setFieldText(optionEdit.control.field, 'math.max(7, 9)', true);
+	setFieldText(optionEdit.control.field, '9', true);
 	assert.equal(optionEdit.control.commit(), true);
-	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,').replace('strength = 5', 'strength = math.max(7, 9)'));
+	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,').replace('strength = 5', 'strength = 9'));
 	inputFocus.executeCommand('undo', position.field.focusTarget.commandContext);
 	f.control.update();
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,'));

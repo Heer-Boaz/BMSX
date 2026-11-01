@@ -60,6 +60,11 @@ test('only authored boolean literals become checkbox controls, not truthiness, n
 	const f = fixture(t, source);
 	assert.ok(f.entry('visible').kind === 'boolean');
 	for (const key of ['score', 'caption', 'alias', 'call', 'number', 'unary']) assert.ok(f.entry(key).kind === 'value');
+	for (const key of ['alias', 'call', 'unary']) {
+		assert.equal(f.value(key).field.readOnly, true);
+		assert.equal(f.value(key).field.focusTarget.focus(), false);
+	}
+	for (const key of ['score', 'caption', 'number']) assert.equal(f.value(key).field.readOnly, false);
 	assert.equal(f.checkbox().input!.checked, true); assert.equal(f.model.canUndo, false);
 });
 

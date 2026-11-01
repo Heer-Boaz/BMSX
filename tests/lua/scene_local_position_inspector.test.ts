@@ -48,6 +48,28 @@ scenes.register('other',{objects={{member_id='other',definition_id='node2'}}})`;
 	return { ...f, source, authoring, view, control, select, provider };
 }
 
+for (const font of ['tiny', 'msx'] as const) test(`${font} vector layout groups independently editable axes and wraps when narrow`, t => {
+	const f = fixture(t, `{member_id='node',definition_id='node3',position={x=1.25,y=2.5,z=3.75}}`);
+	configureFontVariant(font);
+	const bounds = { left: 0, top: 0, right: 320, bottom: 240 };
+	f.control.layout(bounds);
+	const [x, y, z] = f.view.properties.map(property => property.contentBounds);
+	// This is a focused layout algorithm contract: columns group without overlapping.
+	assert.equal(x.top, y.top); assert.equal(y.top, z.top);
+	assert.ok(x.right < y.left && y.right < z.left);
+	bounds.right = 50; f.control.layout(bounds);
+	assert.ok(x.top < y.top && y.top < z.top);
+	const field = f.control.controls[1];
+	assert.equal(f.control.controls[0].field.focusTarget.focus(), true);
+	assert.equal(inputFocus.moveFocus(false), true);
+	assert.equal(inputFocus.target, field.field.focusTarget);
+	assert.equal(field.field.text, '2.5');
+	setFieldText(field.field, '7.125', true);
+	assert.equal(field.commit(), true); f.control.update();
+	assert.equal(f.authoring.selectedLocalTransform!.oy, 7.125);
+	f.model.undo(); f.control.update(); assert.equal(f.model.buffer.getText(), f.source);
+});
+
 test('implicit identity is a semantic local position; accepting unchanged values writes nothing', t => {
 	const f = fixture(t, `{member_id='node',definition_id='node2'}`), field = f.control.controls[0], version = f.model.version;
 	assert.deepEqual(f.view.properties.map(property => property.descriptor.value), [0, 0]);

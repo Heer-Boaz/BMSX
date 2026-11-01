@@ -55,13 +55,14 @@ function fixture(t: TestContext, source = SOURCE) {
 		} };
 }
 
-test('scene inspector admits typed strings and expressions without exposing spatial matrix storage', t => {
+test('scene inspector admits literal values without exposing spatial matrix storage', t => {
 	const f = fixture(t);
 	assert.deepEqual(f.view.optionProperties.map(property => property.descriptor.label),
 		['color', 'visible', 'imgid', 'region.x', 'region.width', 'items[1]', 'items[2]', "['custom-key']", 'callback']);
 	assert.equal(f.control('imgid').field.text, 'hero');
 	assert.equal(f.control('items[1]').field.text, 'a');
 	assert.equal(f.control("['custom-key']").field.text, 'math.max(1, 2)');
+	assert.equal(f.control("['custom-key']").field.readOnly, true);
 	assert.equal(f.control('callback').field.readOnly, true, 'multiline implementation remains source-owned');
 	assert.equal(f.view.optionProperties.find(property => property.descriptor.label === 'callback')!.descriptor.preview, 'function()');
 	assert.equal(f.view.projection.subject!.resolution, 'complete');
@@ -99,7 +100,7 @@ test('option acceptance edits only its source expression and shares document und
 test('invalid and revoked option drafts cannot damage enclosing Lua or a different source field', t => {
 	const f = fixture(t);
 	const control = f.control('color');
-	for (const text of ['1, visible = false', '17 -- eats the separator', 'math.max(']) {
+	for (const text of ['1, visible = false', '7 + 1', 'math.max(']) {
 		setFieldText(control.field, text, true);
 		assert.equal(control.commit(), false); assert.notEqual(control.error, '');
 		assert.equal(f.model.buffer.getText(), SOURCE);
@@ -119,6 +120,7 @@ test('dynamic option builders and empty authored tables remain their actual expr
 		const f = fixture(t, `local scenes = require('cartlib/world/scene_library')\nscenes.register('r', { objects = { { member_id = 'x', definition_id = 'p', options = ${value} } } })`);
 		assert.deepEqual(f.view.optionProperties.map(property => property.descriptor.label), ['options']);
 		assert.equal(f.control('options').field.text, value);
+		assert.equal(f.control('options').field.readOnly, true);
 	}
 });
 
@@ -144,14 +146,49 @@ for (const { literal, value, quote } of STRING_CASES) test(`string property roun
 	f.model.redo(); f.refresh(); assert.equal(f.model.buffer.getText(), source.replace(literal, encoded)); assert.equal(f.control('imgid').field.text, changed);
 });
 
-test('literal text never becomes executable source; an actual expression keeps expression editing', t => {
+test('literal text never becomes executable source and computed expressions remain source-owned', t => {
 	const f = fixture(t), literal = f.control('imgid'), text = 'math.max(7, 9)';
 	setFieldText(literal.field, text, true); assert.equal(literal.commit(), true); f.refresh();
 	assert.equal(f.model.buffer.getText(), SOURCE.replace("'hero'", "'math.max(7, 9)'"));
 	assert.equal(f.control('imgid').field.text, text);
 	const expression = f.control("['custom-key']");
-	setFieldText(expression.field, 'math.min(3, 4)', true); assert.equal(expression.commit(), true); f.refresh();
-	assert.equal(f.model.buffer.getText(), SOURCE.replace("'hero'", "'math.max(7, 9)'").replace('math.max(1, 2)', 'math.min(3, 4)'));
+	assert.equal(expression.field.readOnly, true); assert.equal(expression.field.focusTarget.focus(), false);
+	assert.equal(f.model.buffer.getText(), SOURCE.replace("'hero'", "'math.max(7, 9)'"));
+});
+
+test('numeric literals preserve surrounding trivia and hexadecimal formatting as one undoable edit', t => {
+	const source = SOURCE.replace('0xff00aabb', '-( --[[ keep ]] 0x10 )'), f = fixture(t, source);
+	const number = f.control('color');
+	assert.equal(f.view.optionProperties.find(property => property.descriptor.label === 'color')!.descriptor.kind, 'number');
+	setFieldText(number.field, '32', true); assert.equal(number.commit(), true); f.refresh();
+	const expected = source.replace('-( --[[ keep ]] 0x10 )', '( --[[ keep ]] 0x20 )');
+	assert.equal(f.model.buffer.getText(), expected);
+	f.model.undo(); f.refresh(); assert.equal(f.model.buffer.getText(), source);
+	assert.equal(f.model.canUndo, false);
+	f.model.redo(); f.refresh(); assert.equal(f.model.buffer.getText(), expected);
+});
+
+test('a multiline numeric literal uses a single-line draft without rewriting its trivia', t => {
+	const source = SOURCE.replace('0xff00aabb', '-( --[[ keep\ntrivia ]] 0x10 )'), f = fixture(t, source);
+	const number = f.control('color');
+	assert.equal(number.field.text, '-16');
+	assert.equal(number.commit(), true); assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+	setFieldText(number.field, '32', true); assert.equal(number.commit(), true); f.refresh();
+	const expected = source.replace('-( --[[ keep\ntrivia ]] 0x10 )', '( --[[ keep\ntrivia ]] 0x20 )');
+	assert.equal(f.model.buffer.getText(), expected);
+	f.model.undo(); f.refresh(); assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
+test('numeric input cannot change the source to an expression or copy input comments', t => {
+	const f = fixture(t), number = f.control('region.x');
+	setFieldText(number.field, '0x8', true); assert.equal(number.commit(), true);
+	assert.equal(number.field.text, '8'); assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+	setFieldText(number.field, '20 -- not source', true); assert.equal(number.commit(), true); f.refresh();
+	const expected = SOURCE.replace('region = { x = 8,', 'region = { x = 20,');
+	assert.equal(f.model.buffer.getText(), expected);
+	setFieldText(number.field, '2 * 10', true); assert.equal(number.commit(), false);
+	assert.equal(f.model.buffer.getText(), expected); f.model.undo(); f.refresh();
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
 
 test('multiline string values retain decoded read-only previews instead of exposing source delimiters', t => {
@@ -168,4 +205,5 @@ test('a revoked string draft cannot quote or overwrite the replacement expressio
 	f.model.pushEditOperations([{ offset, deleteLength: "'hero'".length, text: 'choose_image()' }]);
 	const external = f.model.buffer.getText(); assert.equal(literal.commit(), true);
 	assert.equal(f.model.buffer.getText(), external); assert.equal(f.control('imgid').field.text, 'choose_image()');
+	assert.equal(f.control('imgid').field.readOnly, true);
 });

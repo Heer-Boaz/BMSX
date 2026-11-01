@@ -50,7 +50,7 @@ test('Details projects the exact semantic member with no hierarchy, view or cont
 	const title = subject.optionProperties.find(property => property.label === 'title')!;
 	assert.equal(title.sourceText, "'Keep Exact Case'"); assert.equal(title.editable, true);
 	const amount = subject.optionProperties.find(property => property.label === 'nested.amount')!;
-	assert.equal(amount.sourceText, 'evaluate_amount()'); assert.equal(amount.editable, true);
+	assert.equal(amount.sourceText, 'evaluate_amount()'); assert.equal(amount.editable, false);
 	const message = subject.optionProperties.find(property => property.label === 'message')!;
 	assert.equal(message.sourceText, '[[line one\nline two]]'); assert.equal(message.editable, false);
 	assert.equal(subject.optionProperties.some(property => property.label.startsWith('pos.')), false);

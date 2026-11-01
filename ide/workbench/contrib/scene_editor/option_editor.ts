@@ -7,13 +7,13 @@ import { point_in_rect } from '../../../../machine/ts/common/rect';
 import { PointerButton } from '../../../../hosts/common/input/pointer_event';
 import type { FocusCommand, InputFocusTarget } from '../../../input/focus';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
-import { parseLuaFieldValueEdit } from '../../../language/lua/field_value_edit';
-import { createLuaBooleanValueEdit, createLuaStringValueEdit, luaSourceRangeMatchesTextRange, luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
+import { createLuaBooleanValueEdit, createLuaStringValueEdit, createLuaTableFieldNumberEdits, luaSourceRangeMatchesTextRange,
+	luaSourceRangeToTextRange, parseLuaNumberInput } from '../../../language/lua/source_edits';
 import type { SceneDetailsFieldBinding, SceneDetailsViewState, SceneOptionViewProperty } from './details_view';
 import type { SceneOptionProperty } from './option_properties';
 
 export type SceneEditorSectionCommands = { readonly outline: FocusCommand; readonly details: FocusCommand };
-export type SceneOptionInputValue = { readonly binding: SceneDetailsFieldBinding; readonly text: string; readonly edit: EditorTextEdit };
+export type SceneOptionInputValue = { readonly binding: SceneDetailsFieldBinding; readonly text: string; readonly edits: readonly EditorTextEdit[] };
 export type SceneBooleanOptionInput = WorkbenchCheckboxInput & {
 	readonly binding: SceneDetailsFieldBinding;
 	readonly property: Extract<SceneOptionProperty, { kind: 'boolean' }>;
@@ -39,7 +39,7 @@ export class SceneOptionEditor {
 	public bind(input: SceneDetailsViewState, binding: SceneDetailsFieldBinding, retainDrafts: boolean): void {
 		const revision = ++this.revision;
 		this.input = input;
-		const model = input.authoring.workingCopy, locations = binding.subject.document.analysis.chunk.locations;
+		const model = input.authoring.workingCopy;
 		let retiring: InputFocusTarget | undefined;
 		while (this.controls.length > input.optionProperties.length) {
 			const target = this.removeLast();
@@ -47,7 +47,7 @@ export class SceneOptionEditor {
 			if (revision !== this.revision) return;
 		}
 		for (let index = 0; index < input.optionProperties.length; index++) {
-			const property = input.optionProperties[index].descriptor, field = property.field;
+			const property = input.optionProperties[index].descriptor;
 			this.fields[index] = { binding, property };
 			const kind = property.kind === 'boolean' ? 'boolean' : 'value';
 			let entry = this.controls[index];
@@ -64,9 +64,9 @@ export class SceneOptionEditor {
 				entry.control.setInput({ binding, property, checked: property.literal.value, label: input.optionProperties[index].text,
 					enabled: this.parent.canFocus!() && !model.readOnly });
 			} else if (entry.kind === 'value' && !retainDrafts) {
-				const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
-				entry.control.setValue({ binding, text: property.kind === 'string' ? property.literal.value : property.sourceText,
-					edit: { offset: span.start, deleteLength: span.end - span.start, text: property.sourceText } });
+				entry.control.setValue({ binding, text: property.kind === 'string' ? property.literal.value
+					: property.kind === 'number' ? property.inputText : property.sourceText,
+					edits: [] });
 			}
 			if (revision !== this.revision || !binding.isCurrent()) return;
 		}
@@ -177,19 +177,21 @@ export class SceneOptionEditor {
 		} else {
 			const control = new ValueInput<SceneOptionInputValue>(this.parent, {
 				options: { allowSpace: true, singleLine: true },
-				invalidBlurMessage: 'Invalid expression edit cancelled; source unchanged.',
+				invalidBlurMessage: 'Invalid value edit cancelled; source unchanged.',
 				format: value => value.text,
 				parse: text => {
 					const field = this.fields[index], binding = field.binding, property = field.property;
 					const buffer = binding.view.authoring.workingCopy.buffer, locations = binding.subject.document.analysis.chunk.locations;
-					if (property.kind === 'string') return { value: { binding, text, edit: createLuaStringValueEdit(buffer, locations, property.literal, text) } };
-					const result = parseLuaFieldValueEdit(buffer, locations, property.field, text);
-					return 'error' in result ? result : { value: { binding, text, edit: result.value.edit } };
+					if (property.kind === 'string') return { value: { binding, text, edits: [createLuaStringValueEdit(buffer, locations, property.literal, text)] } };
+					const result = parseLuaNumberInput(text);
+					if ('error' in result) return result;
+					const edits = createLuaTableFieldNumberEdits(buffer, locations, property.field, result.value)!;
+					return { value: { binding, text: edits.length === 0 && property.kind === 'number' ? property.inputText : text, edits } };
 				},
 			}, value => {
 				const binding = value.binding, authoring = binding.view.authoring;
 				if (!binding.isCurrent() || !authoring.isCurrent || !binding.isCurrent() || authoring.workingCopy.readOnly) return;
-				authoring.workingCopy.pushEditOperations([value.edit]);
+				authoring.workingCopy.pushEditOperations(value.edits);
 			}, this.beforeCommit);
 			entry = { kind, control, focusTarget: control.field.focusTarget };
 			control.field.focusTarget.canFocus = () => this.input !== undefined && this.parent.canFocus!() && !control.field.readOnly;

@@ -1,7 +1,7 @@
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import { formatNumber } from '../../../../machine/ts/common/number_format';
 import * as constants from '../../../common/constants';
-import { firstLineTextPreview, uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
+import { forEachWrappedMeasuredRange, uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
 import { measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorFont } from '../../../editor/ui/view/font';
@@ -32,7 +32,6 @@ export function layoutSceneDetails(view: SceneDetailsViewState, contentChanged: 
 		view.position = undefined;
 	}
 	if (measured || view.layout.projectedOffsetTop !== view.viewport.offsetTop) {
-		view.viewport.project(view.identity.contentBounds, view.identity.bounds);
 		for (const property of view.properties) view.viewport.project(property.contentBounds, property.bounds);
 		for (const property of view.optionProperties) view.viewport.project(property.contentBounds, property.bounds);
 		view.layout.projectedOffsetTop = view.viewport.offsetTop;
@@ -50,31 +49,31 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 	// Only decoded equal identifiers prove a redundant description; equal dynamic
 	// expressions can still produce different identities at their two callsites.
 	const showDetail = !(subject.preserveLabelCase && subject.preserveDetailCase && subject.label === subject.detail);
-	const displayLabel = truncateTextToWidth(firstLineTextPreview(label), textWidth, 'middle');
-	const displayDetail = showDetail ? truncateTextToWidth(firstLineTextPreview(detail), textWidth, 'middle') : '';
-	view.identity.tooltip = label + (showDetail ? '\n' + detail : '');
-	view.identity.clipped = displayLabel !== label || showDetail && displayDetail !== detail;
-	let top = PADDING;
-	view.detailsText.push({ text: displayLabel, top, tone: 'normal' });
-	top += view.layout.rowHeight;
-	if (showDetail) {
-		view.detailsText.push({ text: displayDetail, top, tone: 'description' });
-		top += view.layout.rowHeight;
-	}
-	write_rect_bounds(view.identity.contentBounds, PADDING, PADDING, width - PADDING, top);
+	let top = appendIdentity(view, label, textWidth, PADDING, 'normal');
+	if (showDetail) top = appendIdentity(view, detail, textWidth, top, 'description');
 	top += PADDING;
 	if (subject.selection.kind === 'scene') return top;
-	if (view.properties.length > 0) top = appendText(view, 'LOCAL POSITION', textWidth, top);
 	const fieldHeight = view.layout.rowHeight + PADDING;
-	const fieldLeft = PADDING * 2 + editorViewState.font.advance('X');
-	for (const property of view.properties) {
-		write_rect_bounds(property.contentBounds, fieldLeft, top, Math.max(fieldLeft, width - PADDING), top + fieldHeight);
-		const { family, value } = property.descriptor;
-		// Compact coordinate readings are presentation only; focusing still exposes the
-		// exact editable value and an unchanged acceptance publishes no source edit.
-		const text = family === '2d' ? String(Number(value.toFixed(2))) : formatNumber(value);
-		property.text = truncateTextToWidth(text, width - PADDING - fieldLeft - 6);
-		top += fieldHeight + PADDING;
+	if (view.properties.length > 0) {
+		top = appendText(view, 'LOCAL POSITION', textWidth, top);
+		const labelWidth = Math.max(editorViewState.font.advance('X'), editorViewState.font.advance('Y'), editorViewState.font.advance('Z'));
+		const available = width - PADDING * 2;
+		const minimumCell = labelWidth + PADDING + editorViewState.font.charAdvance * 6;
+		const columns = Math.min(view.properties.length, Math.max(1, ((available + PADDING) / (minimumCell + PADDING)) | 0));
+		const cellSpace = available - PADDING * (columns - 1);
+		for (let index = 0; index < view.properties.length; index++) {
+			const property = view.properties[index], column = index % columns;
+			const cellLeft = PADDING + ((cellSpace * column / columns) | 0) + PADDING * column;
+			const cellRight = PADDING + ((cellSpace * (column + 1) / columns) | 0) + PADDING * column;
+			const fieldLeft = cellLeft + labelWidth + PADDING;
+			write_rect_bounds(property.contentBounds, fieldLeft, top, Math.max(fieldLeft, cellRight), top + fieldHeight);
+			const { family, value } = property.descriptor;
+			// Compact coordinate readings are presentation only; focusing still exposes the
+			// exact editable value and an unchanged acceptance publishes no source edit.
+			const text = family === '2d' ? String(Number(value.toFixed(2))) : formatNumber(value);
+			property.text = truncateTextToWidth(text, cellRight - fieldLeft - 6);
+			if (column === columns - 1 || index === view.properties.length - 1) top += fieldHeight + PADDING;
+		}
 	}
 	for (const property of view.optionProperties) {
 		if (property.descriptor.kind !== 'boolean') top = appendText(view, uppercaseOutsideStrings(property.descriptor.label), textWidth, top);
@@ -85,6 +84,14 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 		top += fieldHeight + PADDING;
 	}
 	return subject.resolution === 'partial' ? appendText(view, 'PARTIAL DEFINITION', textWidth, top, 'warning') : top;
+}
+
+/** Wrap identity data without dropping spaces or authored line breaks. */
+function appendIdentity(view: SceneDetailsViewState, text: string, width: number, top: number, tone: 'normal' | 'description'): number {
+	for (const line of text.split(/\r\n|\r|\n/)) forEachWrappedMeasuredRange(line, width, measureTextRange, (start, end) => {
+		view.detailsText.push({ text: line.slice(start, end), top, tone }); top += view.layout.rowHeight;
+	}, true);
+	return top;
 }
 
 function appendText(view: SceneDetailsViewState, text: string, width: number, top: number, tone: 'normal' | 'warning' = 'normal'): number {

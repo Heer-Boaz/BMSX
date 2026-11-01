@@ -57,32 +57,23 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SOURCE)
 	return { ...f, context, view, panel, bounds, focusReturn, menu, saved, actions };
 }
 
-test('body identity feedback uses the containing panel tooltip without borrowing header text or stealing field focus', t => {
+test('header feedback does not borrow the focused body or steal field focus', t => {
 	const id = 'authored.namespace.with.a.long.shared.prefix.SelectedMember01';
 	const source = SOURCE.replace("member_id = 'first'", `member_id = '${id}'`), f = fixture(t, 'msx', source);
-	f.focusReturn.focus();
-	const identity = f.view.identity, selection = f.context.selection, version = f.model.version;
+	const selection = f.context.selection, version = f.model.version;
 	const show = t.mock.method(WorkbenchTooltip.prototype, 'show');
-	pointerHover.beginDispatch(f.panel.scope.surfaceScope);
-	f.panel.handlePointer({ valid: true, insideViewport: true, viewportX: identity.bounds.left + 1, viewportY: identity.bounds.top + 1,
-		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false });
-	pointerHover.endDispatch(); f.panel.update();
-	assert.equal(f.panel.control.tooltipItem, identity); assert.equal(show.mock.callCount(), 1);
-	// The tooltip producer preserves actual identifier data, not a frozen UI label.
-	assert.equal(show.mock.calls[0].arguments[0], id + '\nactor'); assert.equal(show.mock.calls[0].arguments[1], identity.bounds);
-	assert.ok(inputFocus.target === f.focusReturn && f.context.selection === selection);
-	pointerHover.clear(); f.panel.update(); assert.equal(show.mock.callCount(), 1);
-	f.panel.control.focus(); f.panel.update(); assert.equal(show.mock.callCount(), 2);
+	f.panel.control.focus(); f.panel.update(); assert.equal(show.mock.callCount(), 0);
 	const title = f.panel.layoutState.titleBounds;
 	pointerHover.beginDispatch(f.panel.scope.surfaceScope);
 	f.panel.handlePointer({ valid: true, insideViewport: true, viewportX: title.left + 1, viewportY: title.top + 1,
 		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false });
 	pointerHover.endDispatch(); f.panel.update();
-	assert.equal(show.mock.callCount(), 3); assert.equal(show.mock.calls[2].arguments[0], f.resource.path);
+	assert.equal(show.mock.callCount(), 1); assert.equal(show.mock.calls[0].arguments[0], f.resource.path);
 	assert.equal(f.panel.control.focusTarget.hasFocus, true, 'explicit chrome hover does not borrow body keyboard focus');
+	assert.equal(f.context.selection, selection);
 	pointerHover.clear();
 	const field = f.panel.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '31', true);
-	f.panel.update(); assert.equal(show.mock.callCount(), 3); assert.equal(field.pending, true);
+	f.panel.update(); assert.equal(show.mock.callCount(), 1); assert.equal(field.pending, true);
 	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
 	f.panel.detach(); assert.equal(f.panel.control.tooltipItem, undefined); assert.equal(pointerHover.has(f.panel.control), false);
 });
