@@ -51,10 +51,13 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 	const fieldLeft = PADDING * 2 + editorViewState.font.advance('X');
 	for (const property of view.properties) {
 		write_rect_bounds(property.contentBounds, fieldLeft, top, Math.max(fieldLeft, width - PADDING), top + fieldHeight);
-		property.text = truncateTextToWidth(String(property.descriptor.value), width - PADDING - fieldLeft - 6);
+		const { family, value } = property.descriptor;
+		// Compact pixel readings are presentation only; focusing still exposes the
+		// exact editable value and an unchanged acceptance publishes no source edit.
+		const text = family === '2d' ? String(Number(value.toFixed(2))) : String(value);
+		property.text = truncateTextToWidth(text, width - PADDING - fieldLeft - 6);
 		top += fieldHeight + PADDING;
 	}
-	if (view.optionProperties.length > 0) top = appendText(view, 'AUTHORED VALUES', textWidth, top);
 	for (const property of view.optionProperties) {
 		top = appendText(view, uppercaseOutsideStrings(property.descriptor.label), textWidth, top);
 		write_rect_bounds(property.contentBounds, PADDING, top, Math.max(PADDING, width - PADDING), top + fieldHeight);

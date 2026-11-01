@@ -24,7 +24,7 @@ scenes.register('main',{objects={${members}}})`;
 	return { ...f, context, source };
 }
 
-test('model construction retains exact occurrence, local inputs and owner x attachment x presentation Number affine', t => {
+test('model construction retains exact occurrence and separate borrowed world, attachment and presentation', t => {
 	const f = fixture(t, `
 prefab.define({def_id='parent',class=require('cartlib/world/object_3d')})
 prefab.define({def_id='model',class=require('cartlib/world/object_3d'),defaults={visible=false},
@@ -37,8 +37,11 @@ prefab.define({def_id='model',class=require('cartlib/world/object_3d'),defaults=
 	assert.equal(read.models.length, 1); assert.equal(read.sprites.length, 0);
 	assert.ok(model.entry === f.context.subject!.objects[0]);
 	assert.equal(model.model, 'scene'); assert.equal(model.sceneIndex, 0);
-	assert.deepEqual(model.affine, { xx: -3, xy: -3, xz: 0, yx: 7, yy: 9, yz: 0,
-		zx: 0, zy: 0, zz: -1, ox: 47, oy: 71, oz: -2 });
+	assert.ok(model.world === f.context.spatialScene!.worlds.get(model.entry));
+	assert.deepEqual(model.attachment, { family: '3d', xx: 1, xy: 1, xz: 0, yx: 0, yy: 1, yz: 0,
+		zx: 0, zy: 0, zz: 1, ox: 2, oy: 3, oz: 4 });
+	assert.deepEqual(model.presentation, { family: '3d', xx: -1, xy: 0, xz: 0, yx: 2, yy: 1, yz: 0,
+		zx: 0, zy: 0, zz: 0.5, ox: 4, oy: 5, oz: 6 });
 	assert.equal(f.context.selection, undefined); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
@@ -57,8 +60,10 @@ prefab.define({def_id='missing_factory_source',class=require('cartlib/world/obje
  {member_id='cannot_rescue_factory',definition_id='missing_factory_source',options={model_id='override'}}`);
 	const models = f.context.visualScene!.models;
 	assert.deepEqual(models.map(model => [model.model, model.sceneIndex]), [['factory', 3], ['factory', 3], ['direct', undefined]]);
-	assert.deepEqual(models[0].affine, { xx: 2, xy: 0, xz: 0, yx: 0, yy: 3, yz: 0,
+	assert.deepEqual(models[0].attachment, { family: '3d', xx: 2, xy: 0, xz: 0, yx: 0, yy: 3, yz: 0,
 		zx: 0, zy: 0, zz: 4, ox: 5, oy: 6, oz: 7 });
+	assert.deepEqual(models[0].presentation, { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0,
+		zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 });
 });
 
 test('model aliases and reexports need actual builtin callable identities, not similarly named wrappers', t => {

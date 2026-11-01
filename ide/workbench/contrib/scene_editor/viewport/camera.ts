@@ -68,15 +68,27 @@ export class SceneViewportCamera {
 		const s = this.space;
 		return s.distance - this.bx * (((originX - s.originX) + x) - s.centerX) - this.by * (((originY - s.originY) + y) - s.centerY) - this.bz * (((originZ - s.originZ) + z) - s.centerZ);
 	}
-	public projectX(x: number, y: number, z: number): number {
-		if (this.mode === '2d') return (x - this.canvas.centerX) * this.canvas.scale;
+	/** Project an origin plus local offset without adding the small offset to a large world coordinate first. */
+	public projectX(x: number, y: number, z: number, originX = 0, originY = 0, originZ = 0): number {
+		if (this.mode === '2d') return ((originX - this.canvas.centerX) + x) * this.canvas.scale;
 		const s = this.space;
-		return this.horizontal((x - s.originX) - s.centerX, (y - s.originY) - s.centerY, (z - s.originZ) - s.centerZ) * this.focalLength / this.depth(x, y, z);
+		return this.horizontal(((originX - s.originX) + x) - s.centerX, ((originY - s.originY) + y) - s.centerY,
+			((originZ - s.originZ) + z) - s.centerZ) * this.focalLength / this.depth(x, y, z, originX, originY, originZ);
 	}
-	public projectY(x: number, y: number, z: number): number {
-		if (this.mode === '2d') return (y - this.canvas.centerY) * this.canvas.scale;
+	public projectY(x: number, y: number, z: number, originX = 0, originY = 0, originZ = 0): number {
+		if (this.mode === '2d') return ((originY - this.canvas.centerY) + y) * this.canvas.scale;
 		const s = this.space;
-		return this.vertical((x - s.originX) - s.centerX, (y - s.originY) - s.centerY, (z - s.originZ) - s.centerZ) * this.focalLength / this.depth(x, y, z);
+		return this.vertical(((originX - s.originX) + x) - s.centerX, ((originY - s.originY) + y) - s.centerY,
+			((originZ - s.originZ) + z) - s.centerZ) * this.focalLength / this.depth(x, y, z, originX, originY, originZ);
+	}
+	/** Inverse canvas projection; inputs are offsets from the viewport center. */
+	public unproject2d(x: number, y: number, target: { x: number; y: number }): void {
+		target.x = this.canvas.centerX + x / this.canvas.scale;
+		target.y = this.canvas.centerY + y / this.canvas.scale;
+	}
+	/** Local projection scale for world-sized handles with a stable screen footprint. */
+	public unitsPerPixel(x: number, y: number, z: number): number {
+		return this.mode === '2d' ? 1 / this.canvas.scale : this.depth(x, y, z) / this.focalLength;
 	}
 	/** Screen-plane movement is measured at the orbit pivot's depth. */
 	public pan(x: number, y: number): void {

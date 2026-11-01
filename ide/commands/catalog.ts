@@ -287,6 +287,7 @@ export const EDITOR_COMMAND_PRESENTATION: Readonly<
 	'behaviorLens.removeChild': { category: 'Behavior Lens', title: 'Remove BT Child', shortTitle: 'Remove' },
 	'behaviorLens.duplicateChild': { category: 'Behavior Lens', title: 'Duplicate BT Child', shortTitle: 'Duplicate' },
 	'behaviorLens.setInitialState': { category: 'State Machine', title: 'Set Selected State as Initial', shortTitle: 'Set Initial' },
+	'sceneEditor.addMember': { category: 'Scene Editor', title: 'Add Member…', shortTitle: 'Add' },
 	'sceneEditor.removeMember': { category: 'Scene Editor', title: 'Remove Member', shortTitle: 'Remove' },
 	'sceneEditor.removeSubtree': { category: 'Scene Editor', title: 'Remove Member and Descendants', shortTitle: 'Remove Subtree' },
 	'sceneEditor.renameMember': { category: 'Scene Editor', title: 'Rename Member…', shortTitle: 'Rename…' },

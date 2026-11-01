@@ -9,6 +9,7 @@ export const POSITION_AXES = ['x', 'y', 'z'] as const;
 /** Semantic local coordinates, independent of written overrides, controls and measured presentation. */
 export type ScenePositionProperty = {
 	readonly axis: typeof POSITION_AXES[number];
+	readonly family: '2d' | '3d';
 	readonly value: number;
 };
 
@@ -33,13 +34,16 @@ export class SceneDetailsProjection {
 	/** Descriptor publication, including authority retirement without a new semantic document. */
 	public revision = 0;
 	private sourceRevision = -1;
+	private spatialGeneration: object | undefined;
 
 	public constructor(public readonly authoring: SceneAuthoringContext) {}
 
 	public refresh(): boolean {
 		const selection = this.authoring.selection, sourceRevision = this.authoring.revision;
-		if (sourceRevision === this.sourceRevision && selection === this.subject?.selection) return false;
+		const spatialGeneration = this.authoring.spatialGeneration;
+		if (sourceRevision === this.sourceRevision && selection === this.subject?.selection && spatialGeneration === this.spatialGeneration) return false;
 		this.sourceRevision = sourceRevision;
+		this.spatialGeneration = spatialGeneration;
 		this.revision++;
 		if (selection === undefined) { this.subject = undefined; return true; }
 		const document = this.authoring.document!, locations = document.analysis.chunk.locations;
@@ -64,8 +68,8 @@ export class SceneDetailsProjection {
 			} else { detail = 'Dynamic Lua composition'; preserveDetailCase = false; }
 			const local = this.authoring.selectedLocalTransform;
 			if (local !== undefined) {
-				properties = local.family === '2d' ? [{ axis: 'x', value: local.ox }, { axis: 'y', value: local.oy }]
-					: [{ axis: 'x', value: local.ox }, { axis: 'y', value: local.oy }, { axis: 'z', value: local.oz }];
+				properties = local.family === '2d' ? [{ axis: 'x', family: '2d', value: local.ox }, { axis: 'y', family: '2d', value: local.oy }]
+					: [{ axis: 'x', family: '3d', value: local.ox }, { axis: 'y', family: '3d', value: local.oy }, { axis: 'z', family: '3d', value: local.oz }];
 			}
 		}
 		this.subject = { selection, document, sourceVersion: version, label, preserveLabelCase, detail, preserveDetailCase,

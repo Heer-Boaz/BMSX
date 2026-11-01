@@ -20,10 +20,10 @@ import { LuaProgramInput } from '../../ide/workbench/contrib/lua_program/editor_
 import { ResourceViewerInput } from '../../ide/workbench/contrib/resources/editor_input';
 import { captureWorkbenchTreeView } from '../../ide/workbench/ui/tree_view';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 test('Scene move retains its exact member and canonical history while Source belongs to the destination window', async t => {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', '']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', '']]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.sceneEditor.openResource(f.firstGroup, resource);
 	const input = f.firstGroup.model.activeTab;

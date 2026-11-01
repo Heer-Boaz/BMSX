@@ -12,6 +12,7 @@ import type { QuickInputController } from '../../services/quick_input/controller
 import { getTextFileRuntimeSourceStatus } from '../../services/working_copy/runtime_source_status';
 import type { TextFileSaveService } from '../../services/working_copy/text_file_save';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
+import { TextQuickPickProvider } from '../../services/quick_input/text_provider';
 import { createWorkbenchActionBar } from '../../ui/action_bar';
 import { WorkbenchCompositeMenu, WorkbenchMenu, type WorkbenchMenuCommandDefinition, type WorkbenchMenuDefinition } from '../../ui/menu/model';
 import { WorkbenchViewPanel } from '../../ui/view_panel/control';
@@ -50,7 +51,9 @@ export type ScenePrimaryClientOptions = {
 	save(model: EditorTextModel): void;
 };
 const PRIMARY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'editor.source' }];
+const HIERARCHY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'sceneEditor.addMember', icon: 'add' }];
 const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
+	{ type: 'command', command: 'sceneEditor.addMember' },
 	{ type: 'command', command: 'sceneEditor.details', when: main => !main.regions.details.displayed },
 	...SCENE_AUTHORING_CONTEXT_ACTIONS,
 ];
@@ -114,7 +117,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		const hierarchyMenu = new WorkbenchCompositeMenu([hierarchyContext, new WorkbenchMenu(HIERARCHY_PANEL_CONTEXT, undefined), options.main.regions.hierarchy.actions]);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', view: this.view.hierarchy,
 			bodyContextMenu: 'content',
-			surface: options.presentations.hierarchy, actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined), true, hierarchyMenu),
+			surface: options.presentations.hierarchy, actions: createWorkbenchActionBar(new WorkbenchMenu(HIERARCHY_ACTIONS, undefined), true, hierarchyMenu),
 			contextActions: hierarchyMenu, measureContent: measureSceneHierarchy,
 			createControl: (scope, _target, surface) => new SceneHierarchyControl(options.commands, options.contextMenu, options.surfaces,
 				surface, options.workArea, scope, this.commandTarget, sections, hierarchyContext) });
@@ -124,19 +127,48 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 			bodyContextMenu: 'content',
 			surface: options.presentations.details, actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined), true, detailsMenu),
 			contextActions: detailsMenu, measureContent: measureSceneDetails,
-			createControl: scope => new SceneDetailsControl(options.commands, options.contextMenu, scope, this.commandTarget, sections, detailsContext) });
+			createControl: (scope, target) => new SceneDetailsControl(options.commands, options.contextMenu, scope, target, sections, detailsContext) });
 		const viewportMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(VIEWPORT_CONTEXT_ACTIONS, this.view.viewport), new WorkbenchMenu(PRIMARY_ACTIONS, undefined)]);
 		this.viewport = new WorkbenchViewPanel({ ...common, title: 'Scene', view: this.view.viewport, surface: options.presentations.viewport,
 			bodyContextMenu: 'container',
 			actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined)), contextActions: viewportMenu, measureContent: measureSceneViewport,
 			createControl: (scope, target) => new SceneViewportControl(scope, target) });
 		this.viewport.setHeaderVisible(false);
+		this.commandTarget.registerCommand('sceneEditor.addMember', {
+			contextual: true,
+			isEnabled: () => this.canAddMember,
+			run: () => this.addMember(),
+			capture: () => {
+				const generation = this.scope.contextGeneration;
+				return { editScope: this.scope, isEnabled: () => this.scope.contextGeneration === generation && this.canAddMember,
+					run: () => { if (this.scope.contextGeneration === generation && this.canAddMember) this.addMember(); } };
+			},
+		});
 		this.unbindInteraction = inputFocus.onDidActivateInteraction(target => {
 			if (this.disposed) return;
 			if (this.hierarchy.attached && this.hierarchy.scope.contains(target.scope)) this.view.preferredPart = 'hierarchy';
 			else if (this.details.attached && this.details.scope.contains(target.scope)) this.view.preferredPart = 'details';
 			else if (this.viewport.attached && this.viewport.scope.contains(target.scope)) this.view.preferredPart = 'viewport';
 		});
+	}
+	private get canAddMember(): boolean {
+		return !this.disposed && this.viewport.attached && this.view.viewport.camera.mode === '2d' && this.consumer.canAddMember();
+	}
+	private addMember(): void {
+		const request = this.consumer.captureAddMember(); if (request === undefined) return;
+		const generation = this.scope.contextGeneration;
+		const items = request.choices.map(choice => ({ choice, label: choice.id, description: '', detail: '' }));
+		this.options.quickInput.pick('Add', 'Choose a prefab, then click the scene', () => new TextQuickPickProvider(items), item => {
+			if (this.disposed || this.scope.contextGeneration !== generation || !request.isCurrent()) return;
+			this.viewport.control.beginAddMember(request, item.choice, () => {
+				if (this.hierarchy.attached) { this.hierarchy.control.update(); this.hierarchy.control.revealSelection(); }
+			});
+		}, lifetime => {
+			lifetime.add({ dispose: this.consumer.workingCopy.onDidChangeContent(() => this.options.quickInput.hide()) });
+			lifetime.add({ dispose: this.consumer.onDidChangeSelection(() => this.options.quickInput.hide()) });
+			lifetime.add({ dispose: this.consumer.onDidChangeSpatialGeneration(() => this.options.quickInput.hide()) });
+			lifetime.add({ dispose: this.consumer.workingCopy.onDidChangeReadOnly(() => this.options.quickInput.hide()) });
+		}, { commandTarget: this.commandTarget });
 	}
 	public get preferredPart(): MainWorkspacePrimaryPartId { return this.view.preferredPart; }
 	public serialize() { return { kind: 'scene' as const, value: JSON.stringify(captureScenePrimary(this.view)) }; }

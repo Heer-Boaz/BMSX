@@ -12,11 +12,11 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 async function documentFixture(t: TestContext, kind: 'source' | 'scene') {
-	const f = createActualSourcePanes(t, false, [
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
 	]);
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
@@ -70,7 +70,7 @@ test('a Scene document cannot reacquire retired Save authority after its accepte
 	assert.ok(f.pane.inputScope.contextGeneration > context);
 	assert.equal(f.firstGroup.panes.activePane, f.pane); assert.equal(f.firstGroup.model.activeTab, tab);
 	assert.equal(f.firstGroup.panes.openGeneration, generation);
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
 	assert.equal(f.model.dirty, true); assert.equal(f.saves.canSave(f.model), false);
 	assert.equal(f.editor.commands.isEnabled('save', target), false);
 	f.editor.commands.execute('save', target); await setImmediate();

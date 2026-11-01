@@ -6,7 +6,7 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { ScenarioLabEditorPane } from '../../ide/workbench/contrib/scenario_lab/editor_pane';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { TOP_BAR_MENU_ENTRIES } from '../../ide/workbench/ui/top_bar/menu';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 const EFFECT_SOURCE = `local effects = require('cartlib/actioneffects')
@@ -16,7 +16,7 @@ return {}
 type Opener = 'behaviorLens' | 'scenarioLab';
 
 async function fixture(t: TestContext, command: Opener) {
-	const f = createActualSourcePanes(t, false, [
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['effects.lua', EFFECT_SOURCE], ['cartlib/actioneffects.lua', 'return {}'],
 		['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
 	]);

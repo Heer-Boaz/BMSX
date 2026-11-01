@@ -4,6 +4,8 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import { api } from '../../../runtime/overlay_api';
 import type { ContextMenuController } from './controller';
 import { CONTEXT_MENU_PADDING } from './model';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
+import { drawWorkbenchIcon } from '../../render/icon';
 import { drawWorkbenchSurfaceShadow } from '../../render/surface';
 
 export function layoutContextMenu(menu: ContextMenuController): void {
@@ -33,9 +35,8 @@ export function drawContextMenu(menu: ContextMenuController): void {
 		}
 		const selected = index === model.selectedIndex && row.enabled;
 		if (selected) api.fill_rect(view.bounds.left, top, view.bounds.right, bottom, 0, constants.COLOR_MENU_SELECTION_BACKGROUND);
-		const markerSize = Math.max(editorViewState.lineHeight >> 1, 2);
-		if (row.active) api.fill_rect(view.bounds.left + CONTEXT_MENU_PADDING, top + ((model.rowHeight - markerSize) >> 1),
-			view.bounds.left + CONTEXT_MENU_PADDING + markerSize, top + ((model.rowHeight - markerSize) >> 1) + markerSize, 0,
+		const markerSize = WORKBENCH_ICON_SIZE;
+		if (row.active) drawWorkbenchIcon('accept', view.bounds.left + CONTEXT_MENU_PADDING, top + ((model.rowHeight - markerSize) >> 1),
 			!row.enabled ? constants.COLOR_DISABLED_TEXT : selected ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT);
 		api.blit_text_inline_with_font(row.label, view.bounds.left + CONTEXT_MENU_PADDING * 2 + markerSize, top + 2, 0,
 			!row.enabled ? constants.COLOR_DISABLED_TEXT : selected ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT, font);

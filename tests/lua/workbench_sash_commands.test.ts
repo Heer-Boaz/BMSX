@@ -11,14 +11,14 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { WorkbenchFixedEdgeSplitView, WorkbenchSplitView } from '../../ide/workbench/ui/split_view';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 const COMMANDS = ['workspace.resizeViewWidth', 'workspace.resizeViewHeight',
 	'workspace.resetViewWidth', 'workspace.resetViewHeight'] as const;
 
 async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const editor = f.editor, parts = editor.editorParts, main = editor.mainWorkspace;
 	editor.updateViewport({ width: 1600, height: 800 }); editor.setFontVariant(font);
 	parts.minimize(f.firstPart); parts.minimize(f.secondPart);

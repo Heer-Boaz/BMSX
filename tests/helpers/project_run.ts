@@ -24,7 +24,7 @@ import { linkTestBlua32Pair } from './blua32';
 import { cartridgeSlots } from './cartridge';
 import { createHostFrameFixture } from './host_frame';
 import { createTestRuntimeSourceState, createTestRomToolingLayer, TEST_SYSTEM_CONTEXT_ID, TEST_CARTRIDGE_CONTEXT_IDS } from './runtime_sources';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 const SYSTEM_SOURCE = 'return true', CART_SOURCE = 'return 1';
 const IMAGES = linkTestBlua32Pair(
@@ -34,7 +34,7 @@ const IMAGES = linkTestBlua32Pair(
 
 function registry(root: string, bootable: boolean) {
 	const result = createLuaSourceRegistry(root, 'entry.lua');
-	for (const [path, source] of [['entry.lua', CART_SOURCE], ['file.lua', 'return 2'], ['scene.lua', SCENE_VIEWPORT_SOURCE],
+	for (const [path, source] of [...SCENE_VIEWPORT_IMPORTS, ['entry.lua', CART_SOURCE], ['file.lua', 'return 2'], ['scene.lua', SCENE_VIEWPORT_SOURCE],
 		['cartlib/world/scene_library.lua', 'return {}']]) registerLuaSourceRecord(result, {
 		resid: path, type: 'lua', src: source, base_src: source, source_path: path, normalized_source_path: `${root}/${path}`,
 		module_path: path.slice(0, -4), update_timestamp: 0, base_update_timestamp: 0, generated: false,

@@ -30,7 +30,7 @@ import { captureWorkbenchTreeView } from '../../ide/workbench/ui/tree_view';
 import { createTestEditorGroup } from '../helpers/editor_panes';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createTestRuntime, createTestRuntimeRomPayload, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 beforeEach(() => configureFontVariant('tiny'));
@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 test('Scene fresh views preserve the selected source occurrence while retaining independent presentation and construction', t => {
-	const sources = createScenarioTestSourceState([
+	const sources = createScenarioTestSourceState([...SCENE_VIEWPORT_IMPORTS.map(([path, source]) => createScenarioTestSourceRecord(path, 1, source)),
 		createScenarioTestSourceRecord('scene.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, ''),
 	]);

@@ -1,3 +1,5 @@
+import { clamp } from './clamp';
+
 export type vec2 = { x: number; y: number };
 export type vec3 = { x: number; y: number; z: number };
 export type vec4 = { x: number; y: number; z: number; w: number };
@@ -235,4 +237,15 @@ export function set_inplace_vec3(to_overwrite: vec3, data: vec3): void {
  */
 export function line_length(p1: vec3, p2: vec3): number {
 	return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2) - 1;
+}
+
+/** Squared distance to the closed segment, including a point-sized segment. */
+export function segmentDistanceSquared(x: number, y: number, x0: number, y0: number, x1: number, y1: number): number {
+	const dx = x1 - x0;
+	const dy = y1 - y0;
+	const lengthSquared = dx * dx + dy * dy;
+	const t = lengthSquared === 0 ? 0 : clamp(((x - x0) * dx + (y - y0) * dy) / lengthSquared, 0, 1);
+	const distanceX = x - x0 - t * dx;
+	const distanceY = y - y0 - t * dy;
+	return distanceX * distanceX + distanceY * distanceY;
 }

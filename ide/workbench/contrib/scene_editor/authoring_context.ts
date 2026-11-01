@@ -9,6 +9,10 @@ import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../..
 import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { SceneReparentChoice, SceneReparentMode, SceneSpatialParents, SceneSpatialProjection, SceneSpatialReadModel } from './spatial_projection';
 import type { SceneVisualProjection, SceneVisualReadModel } from './visual_projection';
+import { SceneTranslationProposal, type SceneTransformPreview } from './transform_proposal';
+import { createSceneMemberInsertionEdits, type SceneAddMemberChoice } from './member_insertion';
+
+export type { SceneAddMemberChoice } from './member_insertion';
 
 /** Admission proof for one exact authored declaration, not a name or a document tab. */
 export type SceneAuthoredSubject = {
@@ -31,6 +35,23 @@ export type SceneRenameRequest = {
 };
 
 export type SceneLocalPositionRequest = { apply(axis: 'x' | 'y' | 'z', value: number): boolean };
+
+export type SceneAddMemberRequest = {
+	readonly choices: readonly SceneAddMemberChoice[];
+	isCurrent(): boolean;
+	apply(choice: SceneAddMemberChoice, x: number, y: number): boolean;
+};
+
+export type SceneTranslationRequest = {
+	readonly entry: SceneSourceObject;
+	readonly initialWorld: Readonly<SceneSourceAffine>;
+	readonly currentWorld: Readonly<SceneSourceAffine>;
+	readonly preview: SceneTransformPreview;
+	translate(dx: number, dy: number, dz: number): boolean;
+	isCurrent(): boolean;
+	commit(): boolean;
+	cancel(): void;
+};
 
 export type SceneAuthoredSelection = {
 	readonly kind: 'scene';
@@ -310,6 +331,53 @@ export class SceneAuthoringContext {
 			? selection as Extract<SceneAuthoredSelection, { kind: 'member' }> & { readonly entry: SceneSourceObject } : undefined;
 	}
 
+	private editableSubject(): SceneSourceDefinition | undefined {
+		const intent = this.selectionRevisionValue;
+		return this.isCurrent && intent === this.selectionRevisionValue && !this.workingCopy.readOnly && this.document!.analysis.chunk.syntaxError === null
+			? this.subject : undefined;
+	}
+
+	public canAddMember(): boolean {
+		const scene = this.editableSubject();
+		return scene !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)?.addMemberPlan(this.document!, scene) !== undefined;
+	}
+
+	/** One retained placement is admitted against the exact primary declaration,
+	 * not the selected row, a scene name or a runtime instance. */
+	public captureAddMember(): SceneAddMemberRequest | undefined {
+		const scene = this.editableSubject(); if (scene === undefined) return;
+		const document = this.document!, projection = this.documents.getSpatialProjection(this.workingCopy, document);
+		const plan = projection?.addMemberPlan(document, scene); if (plan === undefined) return;
+		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
+		let consumed = false;
+		const isCurrent = () => !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly && this.workingCopy.version === version
+			&& this.selectionRevisionValue === selection && this.isCurrent && this.documentValue === document && this.subject === scene
+			&& this.documents.getSpatialProjection(this.workingCopy, document) === projection
+			&& !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly
+			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
+		if (!isCurrent()) return;
+		return { choices: plan.choices, isCurrent, apply: (choice, x, y) => {
+			if (!isCurrent()) return false;
+			let memberId = choice.id, suffix = 2;
+			while (plan.occupied.has(memberId)) memberId = choice.id + '_' + suffix++;
+			const edits = createSceneMemberInsertionEdits(this.workingCopy.buffer, document, scene, memberId, choice.id, x, y);
+			if (!isCurrent()) return false;
+			const selectionRequest = this.captureSelectionRequest();
+			consumed = true;
+			this.workingCopy.pushEditOperations(edits);
+			// Content publication may retire the subject or admit a newer explicit
+			// selection. Only this exact append can supply the new occurrence.
+			if (selectionRequest.isCurrent() && !this.workingCopy.readOnly && this.workingCopy.version === version + 1 && this.isCurrent
+				&& selectionRequest.isCurrent() && this.workingCopy.version === version + 1) {
+				const current = this.subject, entry = current?.objects[scene.objects.length];
+				if (current !== undefined && entry !== undefined) selectionRequest.restore({ kind: 'member',
+					root: luaSourceRangeToTextRange(this.workingCopy.buffer, current.range),
+					span: luaSourceRangeToTextRange(this.workingCopy.buffer, this.document!.analysis.chunk.locations.range(entry.field.span)) });
+			}
+			return true;
+		} };
+	}
+
 	public canRemoveSelectedMember(): boolean {
 		const selected = this.editableMember();
 		return selected !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)
@@ -378,6 +446,40 @@ export class SceneAuthoringContext {
 			if (edits.length === 0) return true;
 			consumed = true; this.workingCopy.pushEditOperations(edits); return true;
 		} };
+	}
+
+	public canTranslateSelectedMember(): boolean {
+		const selected = this.editableMember();
+		return selected !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)
+			?.translationPlan(this.document!, selected.scene, selected.entry) !== undefined;
+	}
+
+	/** A retained, single-consuming source request. Pointer ownership stays in the control. */
+	public captureTranslation(): SceneTranslationRequest | undefined {
+		const selected = this.editableMember(); if (selected === undefined) return;
+		const document = this.document!, projection = this.documents.getSpatialProjection(this.workingCopy, document);
+		if (projection === undefined) return;
+		const plan = projection.translationPlan(document, selected.scene, selected.entry); if (plan === undefined) return;
+		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
+		let consumed = false;
+		const isCurrent = () => !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly && this.workingCopy.version === version
+			&& this.selectionRevisionValue === selection && this.isCurrent && this.documentValue === document && this.selectionValue === selected
+			&& this.documents.getSpatialProjection(this.workingCopy, document) === projection
+			&& !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly
+			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
+		if (!isCurrent()) return;
+		const proposal = new SceneTranslationProposal(plan);
+		return { entry: selected.entry, initialWorld: proposal.initialWorld, currentWorld: proposal.currentWorld, preview: proposal,
+			isCurrent, translate: (dx, dy, dz) => isCurrent() && proposal.translate(dx, dy, dz),
+			commit: () => {
+				if (!isCurrent()) return false;
+				const edits = projection.translationEdits(this.workingCopy.buffer, document, selected.entry, proposal.currentLocal, plan.local);
+				if (!isCurrent()) return false;
+				consumed = true;
+				this.workingCopy.pushEditOperations(edits); return true;
+			},
+			cancel: () => { consumed = true; },
+		};
 	}
 
 	public captureReparent(mode: SceneReparentMode = 'keep_world'): SceneReparentRequest | undefined {

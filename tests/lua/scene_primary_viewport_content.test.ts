@@ -6,6 +6,7 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
 import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/viewport/control';
 import { SceneViewportViewState, SCENE_VIEWPORT_POINT_STRIDE } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
@@ -26,6 +27,7 @@ function pointer(x: number, y: number, buttons: number, pressed = 0, released = 
 		justPressedButtons: pressed, justReleasedButtons: released, modifiers, spaceDown: false };
 }
 function fixture(t: TestContext, objects = OBJECTS, attach = true) {
+	configureFontVariant('tiny');
 	const source = `local scenes=require('cartlib/world/scene_library')\nscenes.register('main',{objects={${objects}}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFABS]]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,

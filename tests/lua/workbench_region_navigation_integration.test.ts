@@ -12,7 +12,7 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import type { ActionPromptRequest } from '../../ide/workbench/contrib/modal/action_prompt_view';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 const DECISION: ActionPromptRequest = { title: 'Pending source action', message: 'Continue with the captured source?',
 	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
@@ -36,7 +36,7 @@ test('a modeless window inside a local modal cannot use outer-region traversal t
 });
 
 async function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const editor = f.editor, parts = editor.editorParts, main = editor.mainWorkspace;
 	// Invalid-field warnings belong to this test's Workbench presentation, not its successor.
 	t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
@@ -152,7 +152,7 @@ for (const draft of ['123', '-'] as const) test(`ordinary region blur ${draft ==
 	assert.equal(field.pending, false);
 	assert.equal(changes, draft === '123' ? 1 : 0);
 	assert.equal(f.model.version, version + changes);
-	assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('0, 0, 1, 11,', '0, 0, 1, 123,') : source);
+	assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('position = { x = 11,', 'position = { x = 123,') : source);
 });
 
 test('direct sibling-primary focus applies the actual invalid-field blur policy instead of a universal commit veto', async t => {
@@ -174,7 +174,7 @@ for (const command of ['workspace.hierarchy.focus', 'sceneEditor.outline'] as co
 		assert.ok(f.primary.hierarchy.scope.contains(inputFocus.admittedTarget!.scope));
 		assert.equal(field.pending, false);
 		assert.equal(f.model.version, version + (draft === '123' ? 1 : 0));
-		assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('0, 0, 1, 11,', '0, 0, 1, 123,') : source);
+		assert.equal(f.model.buffer.getText(), draft === '123' ? source.replace('position = { x = 11,', 'position = { x = 123,') : source);
 	});
 
 test('actual empty Problems makes status ineligible while Files restores its own native status destination', async t => {
@@ -195,7 +195,7 @@ test('a newer real focus selected during departing draft publication wins withou
 	const release = f.model.onDidChangeContent(() => { release(); f.secondPart.focus(); }); t.after(release);
 	f.key('F6');
 	assert.ok(inputFocus.admittedTarget === f.second.code.focusTarget && f.parts.activePart === f.secondPart);
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
 	assert.equal(field.pending, false);
 });
 
@@ -209,7 +209,7 @@ test('replacing the selected activity during blur revokes the captured destinati
 	assert.notEqual(inputFocus.admittedTarget, f.editor.statusBar.focusTarget);
 	assert.notEqual(inputFocus.admittedTarget, f.editor.resourcePanel.focusTarget);
 	assert.equal(f.editor.problems.attached, false);
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
 });
 
 test('root and part-local modal origins cannot escape with either region key while sibling regions honor local admission', async t => {

@@ -4,6 +4,7 @@ local vblank<const> = require('cartlib/gx/vblank')
 local world<const> = require('cartlib/world/world')
 local prefab<const> = require('cartlib/world/prefab')
 local object_2d<const> = require('cartlib/world/object_2d')
+local sprite_object<const> = require('cartlib/sprite')
 local input_system<const> = require('cartlib/input/input_system')
 local custom_visual<const> = require('cartlib/component/custom_visual_component')
 local scene_library<const> = require('cartlib/world/scene_library')
@@ -27,6 +28,8 @@ end
 prefab.define({ def_id = 'studio_test.actor', class = object_2d,
 	position = { x = 16, y = 24 },
 	components = { custom_visual.factory({ draw = draw }) } })
+prefab.define({ def_id = 'studio_test.marker', class = sprite_object,
+	defaults = { imgid = 'studio_test_marker' } })
 local root_scene<const> = require('scenes/root')
 root_scene.register()
 

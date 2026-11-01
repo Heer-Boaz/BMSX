@@ -13,12 +13,12 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 async function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'], ['clean.lua', 'return true\n'],
 		['animation.lua', "return {duration_ms=100,tracks=require('tracks')}"],
 		['tracks.lua', "return {{kind='value',interpolation='linear',path={'x'},keys={{time_ms=0,value=0},{time_ms=100,value=1}}}}"],
@@ -143,7 +143,7 @@ for (const valid of [true, false]) test(`Save All ${valid ? 'accepts' : 'refuses
 	}
 	const ownSave = f.saves.latestOperation(f.model), otherSave = f.saves.latestOperation(other);
 	assert.ok(ownSave !== undefined); assert.equal(otherSave, undefined);
-	assert.equal(ownSave.snapshot.source, SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
+	assert.equal(ownSave.snapshot.source, SCENE_VIEWPORT_SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
 	assert.equal((await ownSave.completion).status, 'saved');
 	assert.equal(f.editor.commands.isEnabled('saveAll', f.field.field.focusTarget), false);
 });

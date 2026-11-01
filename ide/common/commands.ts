@@ -192,7 +192,7 @@ export type EditorCommandId =
 	| 'behaviorLens.removeChild'
 	| 'behaviorLens.duplicateChild'
 	| 'behaviorLens.setInitialState'
-	| 'sceneEditor.removeMember'
+	| 'sceneEditor.addMember' | 'sceneEditor.removeMember'
 	| 'sceneEditor.removeSubtree' | 'sceneEditor.renameMember'
 	| 'sceneEditor.reparentMember' | 'sceneEditor.reparentMemberKeepLocal'
 	| 'sceneEditor'

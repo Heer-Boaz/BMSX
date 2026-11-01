@@ -5,7 +5,7 @@ import { InputFocusScope, InputFocusService, inputFocus } from '../../ide/input/
 import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 test('retiring a control follows its declared return chain past unavailable controls and denied surfaces', () => {
@@ -59,7 +59,7 @@ test('retirement preserves a newer foreign focus selected by the departing contr
 });
 
 for (const invocation of ['command', 'compact command'] as const) test(`Scene ${invocation} removal returns a retired numeric field to Outline for canonical keyboard Undo`, t => {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny');
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.sceneEditor.openResource(f.firstGroup, resource);
@@ -77,7 +77,7 @@ for (const invocation of ['command', 'compact command'] as const) test(`Scene ${
 	assert.equal(field.focusTarget.focus(), true);
 	assert.equal(field.replaceText(0, field.readText().text.length, '789'), true);
 	assert.equal(field.focusTarget.edit!.pending, true);
-	const accepted = original.replace('0, 0, 1, 11,', '0, 0, 1, 789,');
+	const accepted = original.replace('position = { x = 11,', 'position = { x = 789,');
 
 	f.editor.commands.execute('sceneEditor.removeMember', field.focusTarget.commandContext);
 	assert.equal(field.focusTarget.edit!.pending, false);

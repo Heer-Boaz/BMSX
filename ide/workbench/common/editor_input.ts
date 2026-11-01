@@ -28,6 +28,8 @@ export abstract class AbstractEditorInput<
 	public toResourceEditor?(): ResourceEditorIdentity;
 	/** A live physical session or host diagnostic cannot be reconstructed from editor-session storage. */
 	public readonly serializable: boolean = true;
+	/** An unpinned placeholder yields Main's document allocation to authored content. */
+	public readonly isPlaceholder: boolean = false;
 	/** Retained utility placement belongs to this input even while its native pane is detached. */
 	public readonly windowPlacements: readonly WorkbenchWindowModel[] = EMPTY_WINDOW_PLACEMENTS;
 	public onDidChangeDirty?(listener: () => void): () => void;

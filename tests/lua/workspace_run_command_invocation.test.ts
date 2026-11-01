@@ -27,7 +27,7 @@ import { createHostFrameFixture } from '../helpers/host_frame';
 import { createLoadedTestRuntimeSourceState, createTestRuntime, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { buildScenarioMediaFixture, type ScenarioMediaFixture } from '../helpers/scenario_media';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 let directory: string, media: ScenarioMediaFixture;
 before(async () => {
@@ -35,7 +35,8 @@ before(async () => {
 	media = await buildScenarioMediaFixture(directory, [], {
 		systemSource: 'module<entry>\nreturn true', systemModules: [],
 		cartSource: "module<entry>\nrequire('scene')\nreturn require('alpha') + require('beta')",
-		cartModules: [{ path: 'alpha', source: 'return 1' }, { path: 'beta', source: 'return 2' },
+		cartModules: [...SCENE_VIEWPORT_IMPORTS.map(([path, source]) => ({ path: path.slice(0, -4), source })),
+			{ path: 'alpha', source: 'return 1' }, { path: 'beta', source: 'return 2' },
 			{ path: 'scene', source: SCENE_VIEWPORT_SOURCE },
 			{ path: 'cartlib/world/scene_library', source: 'return {register=function() end}' }],
 	});
@@ -159,7 +160,7 @@ for (const command of ['runCurrentFile', 'runProject'] as const) {
 		f.editor.commands.execute(command, target); f.update();
 		if (command === 'runProject') {
 			assert.equal(parts.main.quickInput.visible, true); assert.equal(parts.main.quickInput.model.items.length, 1);
-			assert.equal(model.version, version + 1); assert.equal(model.buffer.getText(), text.replace('0, 0, 1, 11,', '0, 0, 1, 17,'));
+			assert.equal(model.version, version + 1); assert.equal(model.buffer.getText(), text.replace('position = { x = 11,', 'position = { x = 17,'));
 			assert.equal(control.pending, false); assert.equal(f.part.quickInput.visible, false);
 			await parts.main.quickInput.accept(); assert.equal(f.editor.actionPrompt.visible, true);
 			f.editor.actionPrompt.close('secondary'); await setImmediate();

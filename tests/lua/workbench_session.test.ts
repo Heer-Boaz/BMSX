@@ -47,7 +47,7 @@ import { workspaceDirtyRecords } from '../../ide/workbench/workspace/state';
 import { buildWorkspaceDirtyEntryPath } from '../../ide/workspace/files';
 import { getTextSnapshotFingerprint } from '../../ide/editor/text/source_text';
 import { captureTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { BT_TRANSFER_SOURCE } from '../helpers/behavior_transfer_fixture';
 import { ScenarioLabInputSerializer } from '../../ide/workbench/contrib/scenario_lab/editor_serializer';
 import { ScenarioLabController } from '../../ide/workbench/contrib/scenario_lab/controller';
@@ -76,6 +76,9 @@ function fixture(t: TestContext) {
 	const system = registry('system', '-- system');
 	for (const module of ['cartlib/behaviour_tree/library', 'cartlib/world/scene_library']) {
 		registerLuaSourceRecord(system, createScenarioTestSourceRecord(`${module}.lua`, 0, '', `system/${module}.lua`));
+	}
+	for (const [path, source] of SCENE_VIEWPORT_IMPORTS) {
+		registerLuaSourceRecord(system, createScenarioTestSourceRecord(path, 0, source, `system/${path}`));
 	}
 	const sources = createTestRuntimeSourceState(system, [registry('game', SOURCE), registry('extension', '-- second slot')], 0);
 	const { editorParts, mainWorkspace } = createTestEditorWorkspace(t);

@@ -6,10 +6,10 @@ import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 test('a pending Main replacement cannot retain another dirty Source view through its unrelated last-view close decision', async t => {
-	const f = createActualSourcePanes(t, false, [['scene-a.lua', SCENE_VIEWPORT_SOURCE], ['scene-b.lua', SCENE_VIEWPORT_SOURCE],
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene-a.lua', SCENE_VIEWPORT_SOURCE], ['scene-b.lua', SCENE_VIEWPORT_SOURCE],
 		['cartlib/world/scene_library.lua', 'return {}']]);
 	const model = (path: string) => resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path })!);

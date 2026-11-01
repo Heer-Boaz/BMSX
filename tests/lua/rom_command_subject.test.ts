@@ -9,13 +9,13 @@ import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { findEditorGroup } from '../../ide/workbench/services/editor/editor_group';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createRomInspectorImageSnapshot } from '../fixtures/studio/rom_inspector';
 
 const MODES = ['assets', 'structure', 'code'] as const;
 
 function fixture(t: TestContext, image = false) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const rom = f.sources.systemRom;
 	const input = new RomInspectorInput(image ? createRomInspectorImageSnapshot(-1, f.sources.systemContextId, { bounds: { left: 0, top: 0, right: 2, bottom: 2 } }) : {
 		domain: -1, sourceContextId: f.sources.systemContextId, label: 'Synthetic compiled system',

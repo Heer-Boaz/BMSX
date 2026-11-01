@@ -9,7 +9,7 @@ import { pointerCapture } from '../../ide/input/pointer/capture';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 test('reserving document recovery retains its published groups, controls and inputs until explicit preparation', t => {
@@ -251,7 +251,7 @@ test('disposing superseded recovery consumes its departure before reentrant clea
 });
 
 test('fresh routing construction cannot retire a Main gesture before every pure preparation is published', async t => {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const parts = f.editor.editorParts, main = f.editor.mainWorkspace;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!);

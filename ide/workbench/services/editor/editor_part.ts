@@ -93,6 +93,11 @@ export class EditorPart {
 		for (const group of this.groups) if (group.model.tabs.length !== 0) return true;
 		return false;
 	}
+	/** Groups publish retained participation independently of placeholder membership. */
+	public get hasDocumentContent(): boolean {
+		for (const group of this.groups) if (group.model.hasDocumentContent) return true;
+		return false;
+	}
 	/** Logical document allocation; the retained family still owns its local modals. */
 	public get contentPresented(): boolean {
 		return this.presented && (this.options.kind === 'document' || this.options.mainPresentation.documentsPresented);
@@ -222,6 +227,7 @@ export class EditorPart {
 				layout: () => { if (!this.retired) this.relayout(); },
 			}, presented);
 		group.setOpenAdmission(this.operationValue === 'none');
+		let documentContent = group.model.hasDocumentContent;
 		this.groupSubscriptions.set(group, [group.onWillFocus(() => this.prepareGroupFocus(group)),
 			group.onWillCloseEditor((_input, revision) => { if (revision !== undefined) this.closedFocusRevision = revision; }),
 			group.panes.onDidBeginOpen(() => {
@@ -229,11 +235,13 @@ export class EditorPart {
 			}), group.model.onDidChange(change => {
 			if (this.restoreLifetime !== undefined && this.groups.includes(group)) this.restoreLifetime.abort();
 			if (group === this.activeGroup && this.window !== undefined) this.window.model.title = group.model.activeTab?.title ?? 'Editor';
+			const participationChanged = documentContent !== group.model.hasDocumentContent;
+			documentContent = group.model.hasDocumentContent;
 			if (change === 'editors' && !this.hasEditors) {
 				const revision = this.closedFocusRevision; this.closedFocusRevision = undefined;
 				this.relayout();
 				if (this.operationValue === 'none' && revision !== undefined && inputFocus.revision === revision && inputFocus.target === null) this.focus();
-			}
+			} else if (participationChanged && this.groups.includes(group)) this.relayout();
 			this.options.onDidChange();
 		}), group.panes.onDidClearEditor(this.options.onDidChange), group.panes.onWillShowEditor(openOptions => {
 			this.closedFocusRevision = undefined;

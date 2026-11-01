@@ -25,7 +25,7 @@ export function drawSceneDetails(view: SceneDetailsViewState, controls: readonly
 		const property = view.properties[index];
 		if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
 		api.blit_text_inline_with_font(POSITION_LABELS[property.descriptor.axis], bounds.left + 4, property.bounds.top + 2, 0, color, font);
-		if (!controls[index].field.readOnly) drawValueInput(controls[index], property.bounds);
+		if (!controls[index].field.readOnly) drawValueInput(controls[index], property.bounds, property.text);
 		else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, constants.COLOR_DESCRIPTION_TEXT, font);
 	}
 	for (let index = 0; index < view.optionProperties.length; index++) {

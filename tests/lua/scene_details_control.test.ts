@@ -22,6 +22,8 @@ scenes.register('room', { objects = {
 return {}
 `;
 
+const SCROLL_SOURCE = SOURCE.replace('strength = 5', 'strength = 5, armor = 2, speed = 3, score = 4');
+
 const PREFABS = [
 	['cartlib/world/prefab.lua', 'return {define=function() end}'],
 	['prefabs.lua', "local prefab=require('cartlib/world/prefab')\nprefab.define({def_id='actor.first',class=require('cartlib/world/object_3d')})\nprefab.define({def_id='actor.second',class=require('cartlib/world/object_3d')})"],
@@ -84,7 +86,7 @@ test('Details fields edit and undo canonical source with no hierarchy or documen
 });
 
 test('two Details presentations share selection but own independent drafts, scrolling and font reflow', t => {
-	const f = fixture(t); f.select(0);
+	const f = fixture(t, true, SCROLL_SOURCE); f.select(0);
 	const view = new SceneDetailsViewState(f.context);
 	const other = new SceneDetailsControl(f.commands, f.menu, f.scope, f.parent, f.sections, new WorkbenchMenu([], undefined));
 	other.setView(view, f.bounds);
@@ -97,7 +99,7 @@ test('two Details presentations share selection but own independent drafts, scro
 	assert.equal(field.field.text, '31', 'a font change preserves the human draft, not a rendered label');
 	assert.equal(other.controls[0].pending, false);
 	assert.equal(f.context.selection, view.projection.subject!.selection);
-	assert.equal(f.model.buffer.getText(), SOURCE);
+	assert.equal(f.model.buffer.getText(), SCROLL_SOURCE);
 	f.select(1);
 	assert.equal(field.pending, false);
 	assert.equal(f.control.controls[0].field.text, '4');
@@ -232,7 +234,7 @@ test('outgoing field cancellation cannot make a reattached Details field read-on
 });
 
 test('scroll-focus departure can attach another Details view without clearing its new scroll input', t => {
-	const f = fixture(t); f.select(0);
+	const f = fixture(t, true, SCROLL_SOURCE); f.select(0);
 	const next = new SceneDetailsViewState(f.context);
 	t.after(() => next.dispose());
 	f.control.focus();

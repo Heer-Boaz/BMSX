@@ -3,6 +3,7 @@ import type { StudioSourceContext } from '../../../../hosts/common/studio_projec
 import { ReadonlyEditorInput, type AbstractEditorInput } from '../../common/editor_input';
 import type { FullWidthWorkbenchLayout } from '../../common/layout';
 import type { EditorGroupView } from '../../services/editor/editor_group';
+import type { EditorOpenOptions } from '../../ui/tab/group_model';
 import { createWorkbenchActionBar, type WorkbenchActionBarState } from '../../ui/action_bar';
 import type { WorkbenchActionMenuId } from '../../ui/menu/registry';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
@@ -26,6 +27,7 @@ export type HomeSection = {
 
 /** Home observes the attached workspace; it neither selects projects nor owns a machine. */
 export class HomeInput extends ReadonlyEditorInput<'home', 'home'> {
+	public override readonly isPlaceholder = true;
 	public get resource(): undefined { return undefined; }
 	public readonly layout: FullWidthWorkbenchLayout = {
 		left: 0, top: 0, right: 0, bottom: 0, rowHeight: 0, font: null,
@@ -45,6 +47,6 @@ export class HomeInput extends ReadonlyEditorInput<'home', 'home'> {
 	}
 }
 
-export function openHome(group: EditorGroupView, workspaceContext: StudioSourceContext | null): void {
-	group.openEditor(group.model.findById('home') ?? new HomeInput(workspaceContext));
+export function openHome(group: EditorGroupView, workspaceContext: StudioSourceContext | null, options?: EditorOpenOptions): void {
+	group.openEditor(group.model.findById('home') ?? new HomeInput(workspaceContext), options);
 }

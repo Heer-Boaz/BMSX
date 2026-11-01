@@ -22,7 +22,7 @@ export class SceneOptionEditor {
 		private readonly beforeCommit: () => void, private readonly reveal: (property: SceneOptionViewProperty, index: number) => void,
 		private readonly sectionCommands: SceneEditorSectionCommands) {}
 
-	public bind(input: SceneDetailsViewState, binding: SceneDetailsFieldBinding): void {
+	public bind(input: SceneDetailsViewState, binding: SceneDetailsFieldBinding, retainDrafts: boolean): void {
 		const revision = ++this.revision;
 		this.input = input;
 		const model = input.authoring.workingCopy, locations = binding.subject.document.analysis.chunk.locations;
@@ -36,9 +36,11 @@ export class SceneOptionEditor {
 			const property = input.optionProperties[index].descriptor, field = property.field;
 			this.fields[index] = { binding, property };
 			if (index === this.controls.length) this.append(index);
-			const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
-			this.controls[index].setValue({ binding, text: property.kind === 'string' ? property.literal.value : property.sourceText,
-				edit: { offset: span.start, deleteLength: span.end - span.start, text: property.sourceText } });
+			if (!retainDrafts) {
+				const span = luaSourceRangeToTextRange(model.buffer, locations.range(field.value.span));
+				this.controls[index].setValue({ binding, text: property.kind === 'string' ? property.literal.value : property.sourceText,
+					edit: { offset: span.start, deleteLength: span.end - span.start, text: property.sourceText } });
+			}
 			if (revision !== this.revision || !binding.isCurrent()) return;
 		}
 		this.updateControlAdmission();

@@ -17,7 +17,7 @@ import type { QuickPickItem } from '../../ide/workbench/services/quick_input/pro
 import { resolveLuaCodeEditorInput } from '../../ide/workbench/ui/code_tab/io';
 import { createScenarioTestSourceRecord, createScenarioTestSourceState } from '../helpers/scenario_sources';
 import { createHostFrameFixture } from '../helpers/host_frame';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 function fixture(t: TestContext, path: string, canonicalPath: string, generated = false) {
 	const clock = new VirtualHeadlessClock();
@@ -40,7 +40,7 @@ function commandFixture(t: TestContext) {
 	configureFontVariant('tiny');
 	editorViewState.viewportWidth = 384; editorViewState.viewportHeight = 288;
 	const host = createHostFrameFixture();
-	const sources = createScenarioTestSourceState([
+	const sources = createScenarioTestSourceState([...SCENE_VIEWPORT_IMPORTS.map(([path, source]) => createScenarioTestSourceRecord(path, 1, source)),
 		createScenarioTestSourceRecord('scripts/background.lua', 1, SCENE_VIEWPORT_SOURCE),
 		createScenarioTestSourceRecord('receiver/target.lua', 1),
 		createScenarioTestSourceRecord('cartlib/world/scene_library.lua', 1, 'return {}'),

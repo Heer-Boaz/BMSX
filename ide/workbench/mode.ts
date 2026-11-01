@@ -137,7 +137,8 @@ export async function initializeIdeFeatures(
 		workspacePayload,
 	);
 	if (!restored) throw new Error('Workspace recovery was cancelled by workspace retirement.');
-	if (state.editor.editorParts.main.groups.every(group => group.model.tabs.length === 0)) openHome(state.editor.editorParts.main.activeGroup, workspaceState.context);
+	if (state.editor.editorParts.main.groups.every(group => group.model.tabs.length === 0))
+		openHome(state.editor.editorParts.main.activeGroup, workspaceState.context, { pinned: false });
 	registerRuntimeShortcuts(state, runtime, input);
 	return state;
 }

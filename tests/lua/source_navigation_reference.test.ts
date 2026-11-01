@@ -8,10 +8,10 @@ import { HostErrorInput } from '../../ide/workbench/contrib/host_error/editor_in
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 async function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
 	]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;

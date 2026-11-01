@@ -5,6 +5,7 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { api } from '../../ide/runtime/overlay_api';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/details_control';
 import { SceneDetailsViewState } from '../../ide/workbench/contrib/scene_editor/details_view';
@@ -82,7 +83,7 @@ test('explicit local-axis acceptance changes only that numeric token and keeps p
 test('a singular parent cannot veto a local-origin edit that needs no world inverse', t => {
 	const f = fixture(t, `{member_id='parent',definition_id='node2',transform = { xx = 0, xy = 0, yx = 0, yy = 0, ox = 100, oy = 200 }},
  {member_id='child',definition_id='node2',parent='parent',transform = { xx = 2, xy = 0, yx = 1, yy = 3, ox = 0, oy = 0 },position={x=7,y=8}}`);
-	f.select(1);
+	f.select(1); assert.equal(f.authoring.canTranslateSelectedMember(), false);
 	assert.deepEqual(f.view.properties.map(property => property.descriptor.value), [7, 8]); assert.equal(f.control.controls[0].field.readOnly, false);
 	setFieldText(f.control.controls[0].field, '19', true); assert.equal(f.control.controls[0].commit(), true); f.control.update();
 	assert.equal(f.model.buffer.getText(), f.source.replace('x=7', 'x=19'));
@@ -95,6 +96,63 @@ test('Escape cancels a semantic position draft before any default override is ma
 	field.field.focusTarget.focus(); setFieldText(field.field, '73', true);
 	inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
 	assert.equal(field.pending, false); assert.equal(field.field.text, '0'); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('compact pixel readings keep exact fractional drafts and source through focus, cancel and unchanged acceptance', t => {
+	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=0.7761194029850,y=8.6567164179104}}`);
+	const version = f.model.version, field = f.control.controls[0];
+	assert.deepEqual(f.view.properties.map(property => property.text), ['0.78', '8.66']);
+	assert.equal(field.field.text, '0.776119402985');
+	assert.equal(field.field.focusTarget.focus(), true);
+	assert.equal(field.pending, false);
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.version, version); assert.equal(f.model.canUndo, false);
+	field.field.focusTarget.focus(); setFieldText(field.field, '9.75', true);
+	inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
+	assert.equal(field.field.text, '0.776119402985'); assert.equal(field.pending, false);
+	field.field.focusTarget.focus(); setFieldText(field.field, '0.7761194029850', true);
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none));
+	f.control.update();
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.version, version);
+	assert.equal(f.model.dirty, false); assert.equal(f.model.canUndo, false);
+});
+
+test('editing a compact pixel reading accepts the entered value rather than restoring hidden precision', t => {
+	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=0.7761194029850,y=8.6567164179104}}`);
+	const field = f.control.controls[0]; field.field.focusTarget.focus(); setFieldText(field.field, '0.78', true);
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none)); f.control.update();
+	assert.equal(f.model.buffer.getText(), f.source.replace('0.7761194029850', '0.78'));
+	assert.equal(f.authoring.selectedLocalTransform!.ox, 0.78);
+	f.model.undo(); f.control.update(); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('3D coordinates retain their full precision independently of compact pixel readings', t => {
+	const f = fixture(t, `{member_id='node',definition_id='node3',position={x=0.7761194029850,y=8.6567164179104,z=0.0000123456789}}`);
+	assert.deepEqual(f.view.properties.map(property => property.text), ['0.776119402985', '8.6567164179104', '0.0000123456789']);
+	assert.equal(f.control.controls[0].field.text, '0.776119402985'); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('two-decimal pixel readings preserve whole-pixel digits and omit insignificant trailing zeros', t => {
+	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=1234.56789,y=-8.5}}`);
+	assert.deepEqual(f.view.properties.map(property => property.text), ['1234.57', '-8.5']);
+	assert.equal(f.control.controls[0].field.text, '1234.56789'); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+for (const font of ['tiny', 'msx'] as const) test(`${font} Details paints compact idle pixels and exact focused drafts without the internal authored heading`, t => {
+	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=0.7761194029850,y=8.6567164179104},options={order=7}}`);
+	configureFontVariant(font); f.control.update();
+	const labels: string[] = [];
+	for (const method of ['pushClipRect', 'popClipRect', 'fill_rect', 'fill_rect_color', 'blit_rect'] as const) t.mock.method(api, method, () => {});
+	t.mock.method(api, 'blit_text_inline_with_font', text => labels.push(text));
+	t.mock.method(api, 'blit_text_inline_span_with_font', (text, start, end) => labels.push(text.slice(start, end)));
+	f.control.draw();
+	assert.ok(labels.includes('0.78') && labels.includes('8.66'));
+	assert.equal(labels.includes('0.776119402985'), false);
+	// The user explicitly removed this internal heading, not the Order property.
+	assert.equal(labels.includes('AUTHORED VALUES'), false); assert.ok(labels.includes('ORDER'));
+	f.control.controls[0].field.focusTarget.focus(); labels.length = 0; f.control.draw();
+	assert.ok(labels.includes('0.776119402985')); assert.equal(labels.includes('0.78'), false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
 test('stale local-position requests cannot cross source, provider, selection or read-only authority', t => {
@@ -120,4 +178,49 @@ test('unknown/nonspatial prefabs never gain semantic position from an array shap
 		assert.equal(f.view.properties.length, 0); assert.equal(f.authoring.captureLocalPosition(), undefined);
 		assert.equal(f.control.controls[0].field.readOnly, true); assert.equal(f.model.buffer.getText(), f.source);
 	}
+});
+
+test('retained Details fields rebind their editing authority after scope retirement without a source change', t => {
+	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=16,y=24}}`);
+	const version = f.model.version, field = f.control.controls[0];
+	f.control.inputScope.retireContext(); f.control.update();
+	assert.equal(f.model.version, version); assert.equal(f.model.buffer.getText(), f.source);
+	assert.equal(field.field.focusTarget.focus(), true);
+	setFieldText(field.field, '0.7761194029850746', true); assert.equal(field.commit(), true); f.control.update();
+	assert.equal(f.authoring.selectedLocalTransform!.ox, 0.7761194029850746);
+	assert.equal(f.model.version, version + 1);
+});
+
+test('retained Details fields renew their request after an unchanged scene gets a new provider generation', t => {
+	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=16,y=24}}`);
+	const document = f.authoring.document, version = f.model.version, field = f.control.controls[0];
+	f.provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- refreshed provider\n' }]);
+	f.control.update();
+	assert.equal(f.authoring.document, document); assert.equal(f.model.version, version);
+	assert.equal(field.field.focusTarget.focus(), true);
+	setFieldText(field.field, '0.7761194029850746', true);
+	assert.equal(field.commit(), true); f.control.update();
+	assert.equal(f.authoring.selectedLocalTransform!.ox, 0.7761194029850746);
+	assert.equal(f.model.version, version + 1);
+});
+
+for (const valid of [true, false]) test(`provider renewal preserves an unchanged ${valid ? 'valid' : 'invalid'} position draft through acceptance`, t => {
+	const f = fixture(t, `{member_id='node',definition_id='node2',position={x=16,y=24}}`);
+	const field = f.control.controls[0]; field.field.focusTarget.focus();
+	setFieldText(field.field, valid ? '12.75' : '-', true);
+	f.provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated semantic generation\n' }]);
+	assert.equal(field.commit(), valid); f.control.update();
+	assert.equal(field.pending, !valid);
+	assert.equal(f.authoring.selectedLocalTransform!.ox, valid ? 12.75 : 16);
+	assert.equal(f.model.buffer.getText(), valid ? f.source.replace('x=16', 'x=12.75') : f.source);
+});
+
+test('provider renewal preserves an unchanged authored option draft without preserving its expired binding', t => {
+	const f = fixture(t, `{member_id='node',definition_id='node2',options={order=7}}`);
+	const field = f.control.options.controls[0]; field.field.focusTarget.focus();
+	setFieldText(field.field, '9', true);
+	f.provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated semantic generation\n' }]);
+	assert.equal(field.commit(), true); f.control.update();
+	assert.equal(field.pending, false);
+	assert.equal(f.model.buffer.getText(), f.source.replace('order=7', 'order=9'));
 });

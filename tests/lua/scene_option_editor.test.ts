@@ -1,3 +1,4 @@
+import { quoteLuaString } from '../../toolchain/ts/lua/syntax/string_literal';
 import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
@@ -49,13 +50,17 @@ function fixture(t: TestContext, source = SOURCE) {
 		control: (label: string) => details.options.controls[view.optionProperties.findIndex(property => property.descriptor.label === label)] };
 }
 
-test('scene inspector projects written leaves, expressions and arrays without evaluating them', t => {
+test('scene inspector admits typed strings and expressions without exposing spatial matrix storage', t => {
 	const f = fixture(t);
 	assert.deepEqual(f.view.optionProperties.map(property => property.descriptor.label),
 		['color', 'visible', 'imgid', 'region.x', 'region.width', 'items[1]', 'items[2]', "['custom-key']", 'callback']);
+	assert.equal(f.control('imgid').field.text, 'hero');
+	assert.equal(f.control('items[1]').field.text, 'a');
 	assert.equal(f.control("['custom-key']").field.text, 'math.max(1, 2)');
 	assert.equal(f.control('callback').field.readOnly, true, 'multiline implementation remains source-owned');
 	assert.equal(f.view.optionProperties.find(property => property.descriptor.label === 'callback')!.descriptor.preview, 'function()');
+	assert.equal(f.view.projection.subject!.resolution, 'complete');
+	assert.equal(f.view.detailsText.some(line => line.warning), false, 'complete authored content does not claim an unavailable or partial state');
 	assert.equal(f.model.dirty, false);
 });
 
@@ -106,4 +111,52 @@ test('dynamic option builders and empty authored tables remain their actual expr
 		assert.deepEqual(f.view.optionProperties.map(property => property.descriptor.label), ['options']);
 		assert.equal(f.control('options').field.text, value);
 	}
+});
+
+const STRING_CASES = [
+	{ literal: String.raw`'A\x42\\C\'D'`, value: "AB\\C'D", quote: "'" },
+	{ literal: String.raw`"A\x42\\C\"D"`, value: 'AB\\C"D', quote: '"' },
+	{ literal: "[=[MiXeD ` ' \" \\value]=]", value: "MiXeD ` ' \" \\value", quote: "'" },
+	{ literal: "''", value: '', quote: "'" },
+] as const;
+for (const { literal, value, quote } of STRING_CASES) test(`string property round-trips decoded content and canonical source from ${literal}`, t => {
+	const source = SOURCE.replace("'hero'", literal), f = fixture(t, source), control = f.control('imgid');
+	assert.equal(control.field.text, value, 'the string control receives decoded value, not source quotes or escapes');
+	assert.equal(f.view.optionProperties.find(property => property.descriptor.label === 'imgid')!.text, value);
+	assert.equal(control.pending, false); assert.equal(control.commit(), true);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false, 'reading/accepting unchanged values preserves original spelling');
+	const changed = "MiXeD ` ' \" \\end\t\x00x; visible=false --", encoded = quoteLuaString(changed, quote);
+	setFieldText(control.field, changed, true); assert.equal(control.commit(), true); f.refresh();
+	assert.equal(f.model.buffer.getText(), source.replace(literal, encoded), 'only the original literal token changes, preserving its short-quote style');
+	const property = f.view.optionProperties.find(property => property.descriptor.label === 'imgid')!.descriptor;
+	assert.equal(property.kind, 'string'); if (property.kind === 'string') assert.equal(property.literal.value, changed);
+	assert.equal(f.control('imgid').field.text, changed);
+	f.model.undo(); f.refresh(); assert.equal(f.model.buffer.getText(), source); assert.equal(f.control('imgid').field.text, value);
+	f.model.redo(); f.refresh(); assert.equal(f.model.buffer.getText(), source.replace(literal, encoded)); assert.equal(f.control('imgid').field.text, changed);
+});
+
+test('literal text never becomes executable source; an actual expression keeps expression editing', t => {
+	const f = fixture(t), literal = f.control('imgid'), text = 'math.max(7, 9)';
+	setFieldText(literal.field, text, true); assert.equal(literal.commit(), true); f.refresh();
+	assert.equal(f.model.buffer.getText(), SOURCE.replace("'hero'", "'math.max(7, 9)'"));
+	assert.equal(f.control('imgid').field.text, text);
+	const expression = f.control("['custom-key']");
+	setFieldText(expression.field, 'math.min(3, 4)', true); assert.equal(expression.commit(), true); f.refresh();
+	assert.equal(f.model.buffer.getText(), SOURCE.replace("'hero'", "'math.max(7, 9)'").replace('math.max(1, 2)', 'math.min(3, 4)'));
+});
+
+test('multiline string values retain decoded read-only previews instead of exposing source delimiters', t => {
+	const source = SOURCE.replace("'hero'", '[[MiXeD first\nsecond]]'), f = fixture(t, source);
+	const property = f.view.optionProperties.find(property => property.descriptor.label === 'imgid')!;
+	assert.equal(property.descriptor.preview, 'MiXeD first…'); assert.equal(property.text, 'MiXeD first…');
+	assert.equal(f.control('imgid').field.readOnly, true); assert.equal(f.model.buffer.getText(), source);
+});
+
+test('a revoked string draft cannot quote or overwrite the replacement expression', t => {
+	const f = fixture(t), literal = f.control('imgid');
+	setFieldText(literal.field, "discard ' this", true);
+	const offset = SOURCE.indexOf("'hero'");
+	f.model.pushEditOperations([{ offset, deleteLength: "'hero'".length, text: 'choose_image()' }]);
+	const external = f.model.buffer.getText(); assert.equal(literal.commit(), true);
+	assert.equal(f.model.buffer.getText(), external); assert.equal(f.control('imgid').field.text, 'choose_image()');
 });

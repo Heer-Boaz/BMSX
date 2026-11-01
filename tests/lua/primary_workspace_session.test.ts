@@ -24,16 +24,16 @@ import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import type { KeyValueStorage } from '../../ide/workspace/key_value_storage';
 import { joinWorkspacePaths } from '../../ide/workspace/path';
 import { readLocalWorkspaceRecord, WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE } from '../../ide/workspace/records';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 const SOURCE = `${SCENE_VIEWPORT_SOURCE}\nviewport_scenes.register('viewport proof with a deliberately long scene name', {
-	objects = { { member_id = 'other', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } } },
+	objects = { { member_id = 'other', definition_id = 'proof.actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 7, 8, 9 } } } },
 })\n`;
 
 function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const identity = { contextId: f.sources.systemContextId, path: 'scene.lua' };
 	const model = () => resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, f.sources.catalog.resolveResource(identity)!);
 	const open = (index: number) => {

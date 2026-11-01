@@ -2,8 +2,8 @@ import { LuaSyntaxKind, LuaTableFieldKind } from '../../../../toolchain/ts/lua/s
 import { readLuaNumberExpression } from '../../../../toolchain/ts/lua/syntax/number_expression';
 import { getLuaModuleAliasTarget, type LuaModuleImportTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
 import type { LuaWrittenExpression } from '../../../../toolchain/ts/lua/semantic/written_sources';
-import { appendAffine2, type Affine2 } from '../../../common/affine2';
-import { appendAffine3, type Affine3 } from '../../../../machine/ts/common/affine3';
+import type { Affine2 } from '../../../common/affine2';
+import type { Affine3 } from '../../../../machine/ts/common/affine3';
 import { readLuaSourceTruth, type LuaSourceReader } from '../../../language/lua/source_reader';
 import { readSceneSourceAffine } from './authored_affine';
 import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceObject } from './model';
@@ -13,7 +13,10 @@ import type { SceneSpatialProjection } from './spatial_projection';
 export type SceneSpriteSource = {
 	readonly entry: SceneSourceObject;
 	readonly image: string;
-	readonly affine: Readonly<Affine2>;
+	/** Borrowed admitted spatial pose; visual placement never rewrites it. */
+	readonly world: Readonly<Affine2>;
+	readonly attachment: Readonly<Affine2>;
+	readonly presentation: Readonly<Affine2>;
 	readonly region?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 	/** Opaque host tint: the sprite packet consumes the authored color's RGB only. */
 	readonly color: number;
@@ -26,7 +29,10 @@ export type SceneModelSource = {
 	readonly model: string;
 	/** Proved absent selects the model asset's declared default scene. */
 	readonly sceneIndex?: number;
-	readonly affine: Readonly<Affine3>;
+	/** Borrowed admitted spatial pose; attachment and presentation keep their append order. */
+	readonly world: Readonly<Affine3>;
+	readonly attachment: Readonly<Affine3>;
+	readonly presentation: Readonly<Affine3>;
 };
 /** Declared constructor inputs, not a guest instance or a gameplay-time frame. */
 export type SceneVisualReadModel = { readonly sprites: readonly SceneSpriteSource[]; readonly models: readonly SceneModelSource[] };
@@ -110,10 +116,7 @@ export class SceneVisualProjection {
 					if (model === undefined) continue;
 					const sceneIndex = sceneSource === null ? undefined : readLuaNumberExpression(sceneSource.expression);
 					if (sceneIndex === null) continue;
-					const affine: Affine3 = { xx: world.xx, xy: world.xy, xz: world.xz, yx: world.yx, yy: world.yy, yz: world.yz,
-						zx: world.zx, zy: world.zy, zz: world.zz, ox: world.ox, oy: world.oy, oz: world.oz };
-					appendAffine3(affine, attachment); appendAffine3(affine, presentation);
-					models.push({ entry, model, sceneIndex, affine });
+					models.push({ entry, model, sceneIndex, world, attachment, presentation });
 					continue;
 				}
 				if (attachment?.family !== '2d' || presentation?.family !== '2d') continue;
@@ -136,10 +139,7 @@ export class SceneVisualProjection {
 					if (nx === null || ny === null || nw === null || nh === null) continue;
 					region = { x: nx, y: ny, width: nw, height: nh };
 				}
-				const affine: Affine2 = { xx: world.xx, xy: world.xy, yx: world.yx, yy: world.yy, ox: world.ox, oy: world.oy };
-				appendAffine2(affine, attachment.xx, attachment.xy, attachment.yx, attachment.yy, attachment.ox, attachment.oy);
-				appendAffine2(affine, presentation.xx, presentation.xy, presentation.yx, presentation.yy, presentation.ox, presentation.oy);
-				sprites.push({ entry, image, affine, region, color: (color | 0xff000000) >>> 0, flipH, flipV, order: order + presentationOrder });
+				sprites.push({ entry, image, world, attachment, presentation, region, color: (color | 0xff000000) >>> 0, flipH, flipV, order: order + presentationOrder });
 			}
 		}
 		// Stable host sort preserves the already admitted fresh-instance sequence.

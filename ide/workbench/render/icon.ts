@@ -3,6 +3,7 @@ import type { WorkbenchIcon } from '../ui/icon';
 
 /** Retained horizontal/vertical pixel runs: left, top, right, bottom, in a 7x7 cell. */
 const ICON_RUNS: Record<WorkbenchIcon, readonly number[]> = {
+	add: [3, 0, 4, 7, 0, 3, 3, 4, 4, 3, 7, 4],
 	menu: [0, 1, 7, 2, 0, 3, 7, 4, 0, 5, 7, 6],
 	copy: [0, 0, 5, 1, 0, 1, 1, 5, 2, 2, 7, 3, 2, 3, 3, 7, 6, 3, 7, 7, 3, 6, 6, 7],
 	refresh: [2, 0, 5, 1, 1, 1, 2, 2, 5, 1, 6, 2, 0, 2, 1, 5, 6, 2, 7, 5,

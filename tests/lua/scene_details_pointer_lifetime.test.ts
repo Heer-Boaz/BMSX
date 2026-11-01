@@ -5,10 +5,10 @@ import { KeyModifier } from '../../hosts/common/input/text';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
 import { measureSceneEditorMinimumWidth } from '../../ide/workbench/contrib/scene_editor/layout';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} hidden Details cannot handle pointer input through a retired field binding`, t => {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant(font);
 	f.firstBounds.right = measureSceneEditorMinimumWidth() + 40;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;

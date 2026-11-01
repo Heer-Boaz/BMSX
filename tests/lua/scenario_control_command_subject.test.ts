@@ -8,7 +8,7 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { ScenarioLabEditorPane } from '../../ide/workbench/contrib/scenario_lab/editor_pane';
 import type { CommandQuickPickItem } from '../../ide/workbench/contrib/commands/quick_pick_provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 const CONTROL_COMMANDS = [
 	'scenarioLab.continue', 'scenarioLab.stepInto', 'scenarioLab.stepOver',
@@ -16,7 +16,7 @@ const CONTROL_COMMANDS = [
 ] as const;
 
 async function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS,
 		['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}'],
 	]);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;

@@ -5,6 +5,7 @@ import { EDITOR_COMMAND_KEYBINDING_LABELS } from '../../../input/keyboard/comman
 import type { EditorCommandId } from '../../../common/commands';
 import { SCROLLBAR_WIDTH } from '../../../common/constants';
 import type { WorkbenchMenuItem } from '../../ui/menu/registry';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import { WorkbenchScrollViewport } from '../../ui/scroll_viewport';
 
 export type ContextMenuPlacement = 'point' | 'below';
@@ -86,7 +87,7 @@ export class ContextMenuModel {
 			}
 			contentWidth = Math.max(contentWidth, row.labelWidth + (row.keybinding === undefined ? 0 : CONTEXT_MENU_PADDING * 2 + row.keybindingWidth));
 		}
-		const menuWidth = Math.min(width - 4, contentWidth + CONTEXT_MENU_PADDING * 3 + Math.max(lineHeight >> 1, 2) + SCROLLBAR_WIDTH + 2);
+		const menuWidth = Math.min(width - 4, contentWidth + CONTEXT_MENU_PADDING * 3 + WORKBENCH_ICON_SIZE + SCROLLBAR_WIDTH + 2);
 		const availableHeight = this.placement === 'below' ? Math.min(height - 4, area.bottom - this.anchorY - 2) : height - 4;
 		const menuHeight = Math.min(availableHeight, contentHeight + 2);
 		const left = clamp(this.anchorX, area.left + 2, area.right - menuWidth - 2);

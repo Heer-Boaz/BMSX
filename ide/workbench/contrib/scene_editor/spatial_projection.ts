@@ -11,6 +11,8 @@ import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, Sce
 import { createSceneNameEdit, createScenePlacementEdits, createSceneTranslationEdits, finishSceneSpatialEdits } from './spatial_edits';
 import { readSceneSourcePose, type SceneAuthoredPose } from './authored_pose';
 import type { ScenePrefabSources } from './prefab_sources';
+import type { SceneTranslationPlan } from './transform_proposal';
+import type { SceneAddMemberChoice, SceneAddMemberPlan } from './member_insertion';
 
 type PrefabSpatial = { readonly family: '2d' | '3d'; readonly pose: SceneAuthoredPose | undefined };
 type SpatialInput = { readonly file: FileSemanticData; readonly table: LuaTableConstructorExpression };
@@ -61,11 +63,38 @@ export class SceneSpatialProjection {
 	private readonly subtrees = new WeakMap<SceneSourceObject, readonly EditorTextEdit[] | undefined>();
 	private readonly reparentings = new WeakMap<SceneSourceObject, Map<SceneReparentMode, readonly SceneReparentChoice[]>>();
 	private readonly renames = new WeakMap<SceneSourceObject, SceneRenamePlan | undefined>();
+	private readonly translations = new WeakMap<SceneSourceObject, SceneTranslationPlan | undefined>();
+	private readonly additions = new WeakMap<SceneSourceDefinition, SceneAddMemberPlan | undefined>();
+	private addChoices: readonly SceneAddMemberChoice[] | undefined;
 	private prefabs: Map<string, PrefabSpatial | false | undefined> | undefined;
 	public constructor(private readonly previousTopologies: WeakMap<SceneSourceDefinition, SceneSpatialTopology>,
 		private readonly prefabSources: ScenePrefabSources) { this.reader = prefabSources.reader; }
 
 	public getSpatialParents(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneSpatialParents { return this.graph(document, scene).parents; }
+
+	/** Appending requires the complete ordered list and every existing identity,
+	 * not resolved poses, parent edges or visuals for unrelated members. */
+	public addMemberPlan(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneAddMemberPlan | undefined {
+		if (!this.additions.has(scene)) {
+			let plan: SceneAddMemberPlan | undefined;
+			if (scene.resolution === 'complete') {
+				const graph = this.graph(document, scene);
+				if (graph.entries.every(entry => {
+					const id = graph.ids.get(entry);
+					return id !== undefined && graph.byId.get(id) === entry;
+				})) {
+					if (this.addChoices === undefined) {
+						const choices: SceneAddMemberChoice[] = [];
+						for (const [id, prefab] of this.prefabs!) if (prefab && prefab.family === '2d') choices.push({ id });
+						this.addChoices = choices;
+					}
+					if (this.addChoices.length > 0) plan = { choices: this.addChoices, occupied: new Set(graph.byId.keys()) };
+				}
+			}
+			this.additions.set(scene, plan);
+		}
+		return this.additions.get(scene);
+	}
 	/** Materialize the complete authored scene once; steady readers borrow the existing graph and pose cache. */
 	public readScene(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneSpatialReadModel {
 		const graph = this.graph(document, scene);
@@ -93,12 +122,42 @@ export class SceneSpatialProjection {
 		else if (axis === 'y') local.oy = value;
 		else if (local.family === '3d') local.oz = value;
 		else return;
-		return finishSceneSpatialEdits(createSceneTranslationEdits(buffer, document, member, local, initial));
+		return this.translationEdits(buffer, document, member, local, initial);
 	}
 
 	public sibling(document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject, direction: -1 | 1): SceneSourceEntry | undefined {
 		const graph = this.graph(document, scene);
 		return (direction < 0 ? graph.previous : graph.next).get(member);
+	}
+
+	/** Admit one exact pose and its known subtree, independently of unrelated computed entries. */
+	public translationPlan(document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject): SceneTranslationPlan | undefined {
+		if (!this.translations.has(member)) {
+			const spatial = this.readScene(document, scene), graph = this.graph(document, scene), capability = graph.capabilities.get(member);
+			const local = this.localAffine(graph, member), world = graph.worlds.get(member), parent = graph.parents.get(member);
+			let plan: SceneTranslationPlan | undefined;
+			if (capability && local?.family === capability.family && world?.family === capability.family && graph.parents.has(member)) {
+				let parentInverse: SceneSourceAffine | undefined, invertible = true;
+				if (parent !== undefined) {
+					const parentWorld = graph.worlds.get(parent)!;
+					if (parentWorld.family === '2d') {
+						parentInverse = { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 };
+						invertible = relativeAffine2(parentInverse, parentInverse, parentWorld);
+					} else {
+						parentInverse = { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
+						invertible = relativeAffine3(parentInverse, parentInverse, parentWorld);
+					}
+				}
+				if (invertible) plan = { entry: member, spatial, locals: graph.locals, local, world, parentInverse };
+			}
+			this.translations.set(member, plan);
+		}
+		return this.translations.get(member);
+	}
+
+	public translationEdits(buffer: TextBuffer, document: SceneSourceDocument, member: SceneSourceObject,
+		local: Readonly<SceneSourceAffine>, initial: Readonly<SceneSourceAffine>): readonly EditorTextEdit[] {
+		return finishSceneSpatialEdits(createSceneTranslationEdits(buffer, document, member, local, initial));
 	}
 
 	public memberRemovalEdits(buffer: TextBuffer, document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject): readonly EditorTextEdit[] | undefined {

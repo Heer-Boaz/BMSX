@@ -4,10 +4,12 @@ import { HostMeshScene, hostMeshReflected, type HostMeshInstance } from '../../.
 import { WorkspaceModelAssets, type WorkspaceModelPart } from '../../../../workspace/model_assets';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import type { SceneSourceObject } from '../model';
-import type { SceneVisualReadModel } from '../visual_projection';
+import type { SceneTransformPreview } from '../transform_proposal';
+import type { SceneModelSource, SceneVisualReadModel } from '../visual_projection';
 import type { SceneViewportCamera, SceneViewportPoint } from './camera';
 
-type Placement = { readonly part: WorkspaceModelPart; readonly affine: Affine3; readonly streams: Map<Float32Array, Float64Array> };
+type Placement = { source: SceneModelSource; readonly part: WorkspaceModelPart; readonly affine: Affine3;
+	readonly streams: Map<Float32Array, Float64Array>; readonly draws: Draw[]; initialized: boolean; placedWorld: Readonly<Affine3> | undefined };
 type Draw = HostMeshInstance & { entry: SceneSourceObject; vertices: Float64Array; reflected: boolean;
 	minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
 export type SceneViewportModelBounds = { originX: number; originY: number; originZ: number; minX: number; minY: number; minZ: number; maxX: number; maxY: number; maxZ: number };
@@ -27,58 +29,83 @@ export class SceneViewportModels {
 	private readonly hit: Hit = { entry: undefined, originX: 0, originY: 0, originZ: 0, x: 0, y: 0, z: 0 };
 	private source: SceneVisualReadModel | undefined;
 	private catalogRevision = -1;
+	private preview: SceneTransformPreview | undefined;
+	private previewRevision: number | undefined = -1;
 	private cameraRevision = -1;
 	private projectedRevision = -1;
 	public constructor(private readonly catalog: WorkspaceSourceCatalog, private readonly contextId: string) { this.assets = new WorkspaceModelAssets(catalog); }
-	public prepare(source: SceneVisualReadModel | undefined): void {
-		if (source === this.source && this.catalogRevision === this.catalog.revision) return;
-		this.source = source; this.catalogRevision = this.catalog.revision;
-		this.modelIds.clear(); this.represented.clear();
-		if (source !== undefined) for (const model of source.models) this.modelIds.add(model.model);
-		this.assets.update(this.contextId, this.modelIds);
-		let placementCount = 0, drawCount = 0, changed = false;
-		if (source !== undefined) for (const model of source.models) {
-			const asset = this.assets.get(model.model, model.sceneIndex); if (asset === undefined) continue;
-			for (const part of asset.parts) {
-				Object.assign(this.affine, model.affine); appendAffine3(this.affine, part.affine);
-				const affine = this.affine;
-				let placement = this.placements[placementCount++], moved = false, linearChanged = false;
-				if (placement === undefined || placement.part !== part) {
-					placement = { part, affine: { ...affine }, streams: new Map() }; this.placements[placementCount - 1] = placement; moved = linearChanged = true;
-				} else {
-					const previous = placement.affine;
-					linearChanged = previous.xx !== affine.xx || previous.xy !== affine.xy || previous.xz !== affine.xz
-						|| previous.yx !== affine.yx || previous.yy !== affine.yy || previous.yz !== affine.yz
-						|| previous.zx !== affine.zx || previous.zy !== affine.zy || previous.zz !== affine.zz;
-					moved = linearChanged || previous.ox !== affine.ox || previous.oy !== affine.oy || previous.oz !== affine.oz;
-					if (moved) Object.assign(previous, affine);
-				}
-				// Keep translation separate: large world origins must not erase small drawable vertex offsets.
-				// A glTF position accessor may be shared by material primitives. Transform each lane once per placement change.
-				if (linearChanged) for (const [positions, vertices] of placement.streams) this.transform(positions, vertices, affine);
-				for (const mesh of part.meshes) {
-					if (mesh.drawCount === 0) continue;
-					let vertices = placement.streams.get(mesh.positions);
-					if (vertices === undefined) {
-						vertices = new Float64Array(mesh.positions.length); placement.streams.set(mesh.positions, vertices);
-						this.transform(mesh.positions, vertices, affine);
+	public prepare(source: SceneVisualReadModel | undefined, preview?: SceneTransformPreview): void {
+		const rebound = source !== this.source || this.catalogRevision !== this.catalog.revision;
+		if (!rebound && preview === this.preview && this.previewRevision === preview?.revision) return;
+		this.preview = preview; this.previewRevision = preview?.revision;
+		if (rebound) {
+			this.source = source; this.catalogRevision = this.catalog.revision;
+			this.modelIds.clear(); this.represented.clear();
+			if (source !== undefined) for (const model of source.models) this.modelIds.add(model.model);
+			this.assets.update(this.contextId, this.modelIds);
+			let count = 0;
+			if (source !== undefined) for (const model of source.models) {
+				const asset = this.assets.get(model.model, model.sceneIndex); if (asset === undefined) continue;
+				for (const part of asset.parts) {
+					let placement = this.placements[count];
+					if (placement === undefined || placement.part !== part) {
+						placement = { source: model, part, affine: { ...this.affine }, streams: new Map(), draws: [], initialized: false, placedWorld: undefined };
+						this.placements[count] = placement;
+					} else placement.source = model;
+					let drawCount = 0;
+					for (const mesh of part.meshes) {
+						if (mesh.drawCount === 0) continue;
+						let vertices = placement.streams.get(mesh.positions);
+						if (vertices === undefined) {
+							vertices = new Float64Array(mesh.positions.length); placement.streams.set(mesh.positions, vertices);
+						}
+						let draw = placement.draws[drawCount];
+						if (draw === undefined || draw.mesh !== mesh) {
+							draw = { ...placement.affine, mesh, entry: model.entry, vertices, reflected: false,
+								minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
+							placement.draws[drawCount] = draw;
+						}
+						draw.entry = model.entry; drawCount++;
 					}
-					let draw = this.draws[drawCount];
-					const replaced = draw === undefined || draw.mesh !== mesh || draw.vertices !== vertices;
-					if (replaced) {
-						draw = { ...affine, mesh, entry: model.entry, vertices, reflected: false,
-							minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
-						this.draws[drawCount] = draw; this.scene.instances[drawCount] = draw;
-					}
-					draw.entry = model.entry;
-					if (replaced || moved) { Object.assign(draw, affine); draw.reflected = hostMeshReflected(draw); changed = true; }
-					if (replaced || linearChanged) { this.measure(draw); }
-					drawCount++; this.represented.add(model.entry);
+					placement.draws.length = drawCount; count++;
 				}
 			}
+			this.placements.length = count;
 		}
-		if (drawCount !== this.draws.length) changed = true;
-		this.placements.length = placementCount; this.draws.length = this.scene.instances.length = drawCount;
+		let count = 0, changed = false;
+		for (const placement of this.placements) {
+			const model = placement.source, overridden = preview !== undefined && preview.worlds.has(model.entry);
+			const world = overridden ? preview!.worlds.get(model.entry) as Readonly<Affine3> | undefined : model.world;
+			if (world === undefined) { this.represented.delete(model.entry); continue; }
+			const previous = placement.affine;
+			let linearChanged = false, moved = false;
+			if (rebound || overridden || placement.placedWorld !== world) {
+				const affine = this.affine;
+				affine.xx = world.xx; affine.xy = world.xy; affine.xz = world.xz;
+				affine.yx = world.yx; affine.yy = world.yy; affine.yz = world.yz;
+				affine.zx = world.zx; affine.zy = world.zy; affine.zz = world.zz;
+				affine.ox = world.ox; affine.oy = world.oy; affine.oz = world.oz;
+				appendAffine3(affine, model.attachment); appendAffine3(affine, model.presentation); appendAffine3(affine, placement.part.affine);
+				linearChanged = !placement.initialized || previous.xx !== affine.xx || previous.xy !== affine.xy || previous.xz !== affine.xz
+					|| previous.yx !== affine.yx || previous.yy !== affine.yy || previous.yz !== affine.yz
+					|| previous.zx !== affine.zx || previous.zy !== affine.zy || previous.zz !== affine.zz;
+				moved = linearChanged || previous.ox !== affine.ox || previous.oy !== affine.oy || previous.oz !== affine.oz;
+				if (moved) Object.assign(previous, affine);
+				placement.placedWorld = world;
+			}
+			// Translation stays separate, so a drag never recomputes shared linear vertex lanes.
+			if (linearChanged) for (const [positions, vertices] of placement.streams) this.transform(positions, vertices, previous);
+			for (const draw of placement.draws) {
+				if (moved) { Object.assign(draw, previous); draw.reflected = hostMeshReflected(draw); changed = true; }
+				if (linearChanged) this.measure(draw);
+				if (this.draws[count] !== draw) changed = true;
+				this.draws[count] = draw; this.scene.instances[count] = draw; count++;
+			}
+			placement.initialized = true;
+			if (placement.draws.length !== 0) this.represented.add(model.entry);
+		}
+		if (count !== this.draws.length) changed = true;
+		this.draws.length = this.scene.instances.length = count;
 		if (changed) this.scene.changed();
 	}
 	private transform(positions: Float32Array, vertices: Float64Array, a: Readonly<Affine3>): void {
@@ -165,6 +192,6 @@ export class SceneViewportModels {
 	}
 	public dispose(): void {
 		this.scene.dispose(); this.assets.dispose(); this.draws.length = this.placements.length = 0;
-		this.represented.clear(); this.modelIds.clear(); this.source = undefined;
+		this.represented.clear(); this.modelIds.clear(); this.source = undefined; this.preview = undefined;
 	}
 }

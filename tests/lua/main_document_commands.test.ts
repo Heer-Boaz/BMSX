@@ -10,7 +10,7 @@ import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/pri
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import type { WorkspaceBuilds } from '../../ide/workbench/services/builds';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
 type Origin = 'hierarchy' | 'details' | 'problems' | 'output';
@@ -18,7 +18,7 @@ const DOCUMENT_COMMANDS = ['tabs.close', 'tabs.closeOthers', 'tabs.closeAll', 't
 	'window.moveEditor', 'window.copyEditor'] as const;
 
 async function fixture(t: TestContext, origin: Origin = 'hierarchy', dirty = true) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const main = f.editor.mainWorkspace, group = f.editor.editorParts.main.activeGroup;
 	const first = new CodeEditorInput(f.firstInput.workingCopy), second = new CodeEditorInput(f.secondInput.workingCopy);
 	group.openEditor(first); group.openEditor(second);

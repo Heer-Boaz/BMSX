@@ -42,6 +42,7 @@ export class EditorTabGroupModel {
 	private readonly editorTabs: EditorInput[] = [];
 	private activeEditor: EditorInput | null = null;
 	private previewEditor: EditorInput | null = null;
+	private documentContent = false;
 	private readonly listeners = new Map<EditorInput, DisposableStore>();
 	private readonly labels = new Map<EditorInput, string>();
 	private readonly changeListeners = new Set<(change: EditorTabGroupChange) => void>();
@@ -105,6 +106,8 @@ export class EditorTabGroupModel {
 	}
 
 	public get previewTab(): EditorInput | null { return this.previewEditor; }
+	/** Membership metadata, published before observers arrange the owning part. */
+	public get hasDocumentContent(): boolean { return this.documentContent; }
 	public getLabel(tab: EditorInput): string { return this.labels.get(tab)!; }
 
 	public get tabs(): readonly EditorInput[] {
@@ -132,6 +135,7 @@ export class EditorTabGroupModel {
 		const retired = this.editorTabs.splice(0);
 		this.activeEditor = null;
 		this.previewEditor = null;
+		this.documentContent = false;
 		this.labels.clear();
 		for (const listener of this.listeners.values()) listener.dispose();
 		this.listeners.clear();
@@ -186,13 +190,16 @@ export class EditorTabGroupModel {
 		this.emitChanged('pin');
 	}
 
-	/** Label work belongs to membership/metadata changes, not the render loop. */
+	/** Group presentation metadata belongs to membership changes, not the render loop. */
 	private updateLabels(): void {
 		const labels = computeEditorLabels(this.editorTabs);
+		let documentContent = false;
 		for (let index = 0; index < this.editorTabs.length; index++) {
 			const tab = this.editorTabs[index], label = labels[index];
 			this.labels.set(tab, tab === this.previewEditor ? `PREVIEW: ${label}` : label);
+			if (!tab.isPlaceholder || tab !== this.previewEditor) documentContent = true;
 		}
+		this.documentContent = documentContent;
 	}
 
 	public activate(tab: EditorInput): void {
@@ -317,7 +324,7 @@ export class EditorTabGroupModel {
 				destination.registerInputListeners(input);
 			}
 		}
-		this.editorTabs.length = 0; this.activeEditor = null; this.previewEditor = null; this.labels.clear();
+		this.editorTabs.length = 0; this.activeEditor = null; this.previewEditor = null; this.documentContent = false; this.labels.clear();
 		destination.activeEditor = active; destination.previewEditor = preview;
 		destination.updateLabels(); this.revision++; destination.revision++;
 		return { entries: plan.entries, active, preview, publish: () => {

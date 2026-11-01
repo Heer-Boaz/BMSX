@@ -21,7 +21,7 @@ import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 type Fixture = ReturnType<typeof createActualSourcePanes>;
 
@@ -207,7 +207,7 @@ test('workspace batch makes one final decision per canonical copy represented by
 });
 
 test('workspace Close All retains Main primary, activity, file selection and layout while their dirty copy stays authored', async t => {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const parts = f.editor.editorParts, main = f.editor.mainWorkspace, resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.ide.sceneSources.get(model);
 	f.first.focus(); assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), f.first.commandTarget), true);
@@ -342,7 +342,7 @@ test('a captured Close Others target moved away and back during keeper pin belon
 
 /** Both dirty copies have only their own group input as consumer; the inactive Scene has no constructed pane. */
 function deferredSelectionFixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['closing.lua', 'return 3\n'], ['deferred.lua', SCENE_VIEWPORT_SOURCE],
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['closing.lua', 'return 3\n'], ['deferred.lua', SCENE_VIEWPORT_SOURCE],
 		['cartlib/world/scene_library.lua', 'return {}']]);
 	const parts = f.editor.editorParts, group = parts.main.activeGroup;
 	const first = resolveLuaCodeEditorInput(f.sources.catalog, f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'closing.lua' })!);
@@ -425,7 +425,7 @@ test('deferred close selection reaches its later retained candidate after the pr
 
 for (const scope of ['group', 'document part'] as const)
 	test(`Cancel of an overlapping ${scope} close restores the deferred exact pane when its parent reopens admission`, async t => {
-		const f = createActualSourcePanes(t, false, [['closing.lua', 'return 3\n'], ['deferred.lua', SCENE_VIEWPORT_SOURCE],
+		const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['closing.lua', 'return 3\n'], ['deferred.lua', SCENE_VIEWPORT_SOURCE],
 			['cartlib/world/scene_library.lua', 'return {}']]);
 		const parts = f.editor.editorParts, part = scope === 'group' ? parts.main : parts.createDocument();
 		const group = scope === 'group' ? part.splitGroup(part.activeGroup, 'right') : part.activeGroup;

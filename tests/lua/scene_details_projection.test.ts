@@ -147,6 +147,24 @@ test('provider-only retirement clears Details without a selected-file edit or hi
 	provider.undo(); f.projection.refresh(); assert.equal(f.projection.subject, undefined);
 });
 
+test('Details refreshes prefab-derived coordinates when only the provider generation changes', t => {
+	const source = SOURCE.replace("position = { x = 11, y = -2, z = 3 }, ", '');
+	const f = fixture(t, source), scene = f.document.scenes[0];
+	f.authoring.select(f.document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
+	f.projection.refresh();
+	const subject = f.projection.subject!, version = f.model.version, intent = f.authoring.selectionRevision;
+	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
+		f.sources.catalog.resolveResource({ contextId: f.model.resource.contextId, path: 'prefabs.lua' })!);
+	const offset = provider.buffer.getText().indexOf("def_id='actor.first',") + "def_id='actor.first',".length;
+	provider.pushEditOperations([{ offset, deleteLength: 0, text: 'position={x=17,y=19,z=23},' }]);
+	assert.equal(f.projection.refresh(), true);
+	assert.equal(f.authoring.document, f.document); assert.equal(f.model.version, version);
+	assert.equal(f.authoring.selectionRevision, intent);
+	assert.notEqual(f.projection.subject, subject);
+	assert.deepEqual(f.projection.subject!.properties.map(property => property.value), [17, 19, 23]);
+	assert.equal(f.projection.refresh(), false);
+});
+
 test('context disposal retires Details once even without a newer admitted source revision', t => {
 	const f = fixture(t), scene = f.document.scenes[0];
 	f.authoring.select(f.document, f.model.version, { kind: 'scene', scene }); f.projection.refresh();

@@ -21,7 +21,7 @@ import { createWorkbenchActionBar } from '../../ide/workbench/ui/action_bar';
 import { WorkbenchFloatingWindow } from '../../ide/workbench/ui/window/control';
 import { WorkbenchWindowModel } from '../../ide/workbench/ui/window/model';
 import { createActualSourcePanes } from '../helpers/source_panes';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 
 const RESIZE_COMMANDS = ['workspace.increaseViewWidth', 'workspace.decreaseViewWidth',
 	'workspace.increaseViewHeight', 'workspace.decreaseViewHeight'] as const satisfies readonly EditorCommandId[];
@@ -29,7 +29,7 @@ const DECISION: ActionPromptRequest = { title: 'Pending source action', message:
 	primary: 'Save and continue', secondary: 'Continue without saving', primaryEnabled: true, defaultChoice: 'primary' };
 
 async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const editor = f.editor, parts = editor.editorParts, main = editor.mainWorkspace;
 	t.after(() => updateEditorMessage(editorFeedbackState.message.timer));
 	editor.updateViewport({ width: 1600, height: 800 }); editor.setFontVariant(font);

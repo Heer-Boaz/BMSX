@@ -19,7 +19,7 @@ import type { WorkspaceAutosavePayload } from '../../ide/workbench/workspace/mod
 import { MemoryStorage } from '../../ide/workspace/memory_storage';
 import { joinWorkspacePaths } from '../../ide/workspace/path';
 import { WORKSPACE_METADATA_DIR, WORKSPACE_STATE_FILE } from '../../ide/workspace/records';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
@@ -28,7 +28,7 @@ async function fixture(t: TestContext, writeFailure?: Error) {
 	const release = Promise.withResolvers<void>(), writing = Promise.withResolvers<void>();
 	// Release before the actual Studio fixture's cleanup, including when an assertion fails.
 	t.after(() => release.resolve());
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE],
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE],
 		['cartlib/world/scene_library.lua', 'return {}']]);
 	const files = new MemoryWorkspaceFiles('workspace'), context = f.sources.catalog.getContext(f.sources.systemContextId).admission;
 	const session = 'shutdown-admission';

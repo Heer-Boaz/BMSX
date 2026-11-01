@@ -884,7 +884,7 @@ export class RuntimeCartEditor implements CartEditor {
 		if (this.resourcePanel.refresh()) layoutChanged = refreshWorkbenchLayout() || layoutChanged;
 		const part = this.editorParts.main, bounds = getWorkbenchEditorBounds();
 		part.prepareLayout();
-		const hasDocuments = part.hasEditors;
+		const hasDocuments = part.hasDocumentContent;
 		const minimum = part.minimumClientWidth(bounds.bottom - bounds.top);
 		layoutChanged = this.mainWorkspace.layout(bounds, minimum, part.minimumClientHeight, hasDocuments) || layoutChanged;
 		const finalMinimum = part.minimumClientWidth(this.mainWorkspace.documentBounds.bottom - this.mainWorkspace.documentBounds.top);

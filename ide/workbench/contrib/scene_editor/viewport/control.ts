@@ -4,15 +4,20 @@ import { KeyModifier, type KeyInputEvent } from '../../../../../hosts/common/inp
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../../common/models';
 import type { EditorCommandId } from '../../../../common/commands';
 import type { EditorFont } from '../../../../editor/ui/view/font';
+import { truncateTextToWidth } from '../../../../editor/common/text/layout';
+import { editorViewState } from '../../../../editor/ui/view/state';
+import type { SceneAddMemberRequest, SceneAddMemberChoice, SceneTranslationRequest } from '../authoring_context';
+import { TranslateHandle } from './translate_gizmo';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../../input/keyboard/key_input';
 import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
 import type { WorkbenchViewSizeConstraints } from '../../../common/layout';
 import type { WorkbenchMenuDefinition } from '../../../ui/menu/model';
 import { drawSceneViewport } from './render';
-import { type SceneViewportViewState } from './view_state';
+import { type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
 
 export const VIEWPORT_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneViewportViewState> = [
+	{ type: 'command', command: 'sceneEditor.addMember' }, { type: 'separator' },
 	{ type: 'command', command: 'sceneViewport.frameAll' }, { type: 'command', command: 'sceneViewport.frameSelection' },
 	{ type: 'separator' }, { type: 'command', command: 'sceneViewport.view2d' }, { type: 'command', command: 'sceneViewport.view3d' },
 ];
@@ -22,9 +27,16 @@ export function measureSceneViewport(font: EditorFont, target: WorkbenchViewSize
 
 type CameraAction = {
 	readonly command: EditorCommandId;
+	isChecked?(view: SceneViewportViewState): boolean;
 	isEnabled(view: SceneViewportViewState): boolean;
 	run(view: SceneViewportViewState): void;
 };
+type ViewportGestureBase = { readonly view: SceneViewportViewState; readonly attachment: number; readonly generation: number; readonly allocation: number };
+type CameraGesture = ViewportGestureBase & { readonly kind: 'pan' | 'orbit'; readonly source: object | undefined; x: number; y: number };
+type TranslationGesture = ViewportGestureBase & { readonly kind: 'translate'; phase: 'drag' | 'commit'; readonly request: SceneTranslationRequest; readonly assets: number; readonly camera: number };
+type ViewportGesture = CameraGesture | TranslationGesture;
+type MemberPlacement = SceneViewportPlacement & { readonly view: SceneViewportViewState; readonly attachment: number; readonly generation: number;
+	readonly request: SceneAddMemberRequest; readonly choice: SceneAddMemberChoice; readonly didPlace: () => void };
 
 /** One attached authored canvas; physical navigation never acquires guest input or edits source. */
 export class SceneViewportControl implements PointerCaptureTarget {
@@ -32,11 +44,8 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	private viewValue: SceneViewportViewState | undefined;
 	private attachment = 0;
 	private disposed = false;
-	private gesture: 'pan' | 'orbit' | undefined;
-	private gestureGeneration = 0;
-	private gestureSource: object | undefined;
-	private gestureAllocation = 0;
-	private x = 0; private y = 0;
+	private gesture: ViewportGesture | undefined;
+	private placement: MemberPlacement | undefined;
 	private subscriptions: (() => void)[] = [];
 	private readonly unbindKeyboard: () => void;
 	private readonly unbindBlur: () => void;
@@ -46,12 +55,14 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		this.focusTarget = inputFocus.createTarget(commandTarget, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.commandContext = commandTarget.commandContext; this.focusTarget.canFocus = () => this.canFocus;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(event => this.handleKeyboard(event));
-		this.unbindBlur = this.focusTarget.onDidBlur(next => { if (next === null || !scope.contains(next.scope)) pointerCapture.cancelTarget(this); });
+		this.unbindBlur = this.focusTarget.onDidBlur(next => {
+			if (next === null || !scope.contains(next.scope)) { this.revokeGesture(this.gesture); this.placement = undefined; }
+		});
 		const actions: readonly CameraAction[] = [
 			{ command: 'sceneViewport.frameAll', isEnabled: view => view.canFrameAll, run: view => { view.frame(undefined); } },
 			{ command: 'sceneViewport.frameSelection', isEnabled: view => view.canFrameSelection, run: view => { view.frame(view.selected); } },
-			{ command: 'sceneViewport.view2d', isEnabled: view => view.camera.automaticMode || view.camera.mode !== '2d', run: view => view.camera.setMode('2d') },
-			{ command: 'sceneViewport.view3d', isEnabled: view => view.camera.automaticMode || view.camera.mode !== '3d', run: view => view.camera.setMode('3d') },
+			{ command: 'sceneViewport.view2d', isEnabled: () => true, isChecked: view => view.camera.mode === '2d', run: view => view.camera.setMode('2d') },
+			{ command: 'sceneViewport.view3d', isEnabled: () => true, isChecked: view => view.camera.mode === '3d', run: view => view.camera.setMode('3d') },
 		];
 		for (const action of actions) {
 			// Capture the concrete canvas before source admission can publish a different attachment or selection.
@@ -62,13 +73,14 @@ export class SceneViewportControl implements PointerCaptureTarget {
 					&& this.focusTarget.scope.contextGeneration === generation && view.authoring.selectionRevision === selection;
 				return { isEnabled: () => current() && this.canFocus && action.isEnabled(view), run: () => {
 					if (!current()) return;
-					pointerCapture.cancelTarget(this); view.refresh();
+					this.revokeGesture(this.gesture); view.refresh();
 					if (!current() || !action.isEnabled(view)) return;
 					action.run(view);
 					if (current()) view.refresh();
 				} };
 			};
 			const implementation = { contextual: true as const, capture,
+				isChecked: action.isChecked === undefined ? undefined : () => this.viewValue !== undefined && action.isChecked!(this.view),
 				isEnabled: () => this.canFocus && action.isEnabled(this.view),
 				run: () => { const invocation = capture(); if (invocation?.isEnabled()) invocation.run(); } };
 			commandTarget.registerCommand(action.command, implementation); this.focusTarget.registerCommand(action.command, implementation);
@@ -79,38 +91,87 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		const revision = ++this.attachment;
 		this.detach(); if (revision !== this.attachment || this.disposed) return;
 		this.viewValue = view;
+		const retireGesture = () => { if (this.attachment === revision) { this.revokeGesture(this.gesture); this.placement = undefined; } };
 		this.subscriptions = [view.authoring.workingCopy.onWillDispose(() => { if (this.attachment === revision) this.clearView(); }),
-			view.authoring.onDidChangeSpatialGeneration(() => { if (this.attachment === revision) pointerCapture.cancelTarget(this); }),
-			this.focusTarget.scope.onDidRetireContext(() => { if (this.attachment === revision) pointerCapture.cancelTarget(this); })];
+			view.authoring.onDidChangeSpatialGeneration(retireGesture), view.authoring.onDidChangeSelection(retireGesture),
+			view.authoring.workingCopy.onDidChangeReadOnly(retireGesture), this.focusTarget.scope.onDidRetireContext(retireGesture),
+			view.camera.onDidChange(() => { if (this.gesture?.kind === 'translate') this.revokeGesture(this.gesture); if (view.camera.mode !== '2d') this.placement = undefined; })];
 		this.layout(bounds);
 	}
 	public clearView(): void { this.attachment++; this.detach(); }
 	private detach(): void {
-		if (this.viewValue === undefined) return;
-		const revision = this.attachment;
-		this.viewValue = undefined; const subscriptions = this.subscriptions; this.subscriptions = [];
+		const previous = this.viewValue; if (previous === undefined) return;
+		const revision = this.attachment, gesture = this.gesture;
+		this.viewValue = undefined; this.gesture = undefined; this.placement = undefined; previous.transformPreview = undefined; previous.gizmo.cancel();
+		const subscriptions = this.subscriptions; this.subscriptions = [];
 		for (const release of subscriptions) release();
-		pointerCapture.cancelTarget(this); this.focusTarget.scope.retireContext();
+		pointerCapture.cancelTarget(this);
+		if (gesture?.kind === 'translate') gesture.request.cancel();
+		if (revision !== this.attachment) return;
+		this.focusTarget.scope.retireContext();
 		if (revision === this.attachment) this.focusTarget.release();
 	}
 	public layout(bounds: Readonly<RectBounds>): void {
 		const view = this.viewValue; if (view === undefined) return;
-		const allocation = view.allocationRevision; view.layout(bounds);
-		if (allocation !== view.allocationRevision) pointerCapture.cancelTarget(this); view.refresh();
+		const allocation = view.allocationRevision, gesture = this.gesture, placement = this.placement, attachment = this.attachment;
+		view.layout(bounds, editorViewState.font.lineHeight);
+		if (allocation !== view.allocationRevision) {
+			this.revokeGesture(gesture);
+			if (this.placement === placement) this.placement = undefined;
+		}
+		if (this.viewValue === view && this.attachment === attachment) view.refresh();
 	}
-	public update(): void { this.viewValue?.refresh(); }
-	public draw(): void { if (this.viewValue !== undefined) drawSceneViewport(this.view, this.focusTarget.hasFocus); }
+	public update(): void {
+		const view = this.viewValue; if (view === undefined) return;
+		const gesture = this.gesture;
+		if (gesture?.kind === 'translate' && gesture.phase === 'drag' && !this.translationCurrent(gesture)) this.revokeGesture(gesture);
+		if (this.viewValue === view) view.refresh();
+		const placement = this.placement;
+		if (placement !== undefined && !placement.request.isCurrent() && this.placement === placement) this.placement = undefined;
+	}
+	public draw(): void { if (this.viewValue !== undefined) drawSceneViewport(this.view, this.focusTarget.hasFocus, this.placement); }
+	public beginAddMember(request: SceneAddMemberRequest, choice: SceneAddMemberChoice, didPlace: () => void): boolean {
+		const view = this.viewValue, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration, gesture = this.gesture;
+		if (view === undefined || !this.canFocus || view.camera.mode !== '2d' || !request.isCurrent()) return false;
+		this.revokeGesture(gesture);
+		if (!this.focus() || !request.isCurrent() || this.viewValue !== view || this.attachment !== attachment
+			|| this.focusTarget.scope.contextGeneration !== generation) return false;
+		this.placement = { view, attachment, generation, request, choice,
+			definitionLabel: truncateTextToWidth(choice.id, view.bounds.right - view.bounds.left - 8), didPlace, x: 0, y: 0, located: false };
+		return true;
+	}
 	public focus(): boolean { return this.focusTarget.focus(); }
 	public setFocusNeighbors(previous: InputFocusTarget, next: InputFocusTarget): void {
 		this.focusTarget.previous = previous; this.focusTarget.next = next; previous.next = this.focusTarget; next.previous = this.focusTarget;
 	}
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (!this.canFocus || !snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.view.bounds)) return false;
+		const placement = this.placement;
+		if (placement !== undefined) {
+			if (!placement.request.isCurrent() || this.placement !== placement) { if (this.placement === placement) this.placement = undefined; return true; }
+			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) { this.placement = undefined; return true; }
+			const bounds = placement.view.bounds;
+			placement.view.camera.unproject2d(snapshot.viewportX - (bounds.left + bounds.right) / 2,
+				snapshot.viewportY - (bounds.top + bounds.bottom) / 2, placement);
+			placement.x = Math.round(placement.x); placement.y = Math.round(placement.y); placement.located = true;
+			if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
+				this.placement = undefined;
+				if (placement.request.apply(placement.choice, placement.x, placement.y)
+					&& this.viewValue === placement.view && this.attachment === placement.attachment
+					&& this.focusTarget.scope.contextGeneration === placement.generation) {
+					placement.didPlace(); placement.view.refresh();
+				}
+			}
+			return true;
+		}
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) return false;
+		if (this.view.gizmo.active === TranslateHandle.None) this.view.gizmo.hover = this.view.gizmo.hit(snapshot.viewportX, snapshot.viewportY);
 		if (snapshot.justPressedButtons === 0 && !justPressed) return true;
 		const view = this.view, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;
 		const source = view.source, version = view.authoring.workingCopy.version, intent = view.authoring.selectionRevision, projection = view.projectionRevision;
-		const entry = (snapshot.justPressedButtons & PointerButton.Primary) !== 0 ? view.pick(snapshot.viewportX, snapshot.viewportY) : undefined;
+		const handle = (snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (snapshot.modifiers & KeyModifier.alt) === 0
+			? view.gizmo.hit(snapshot.viewportX, snapshot.viewportY) : TranslateHandle.None;
+		const entry = handle === TranslateHandle.None && (snapshot.justPressedButtons & PointerButton.Primary) !== 0 ? view.pick(snapshot.viewportX, snapshot.viewportY) : undefined;
 		if (!this.focus() || this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation) return true;
 		view.refresh();
 		if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation
@@ -119,9 +180,22 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			|| inputFocus.admittedTarget !== this.focusTarget) return true;
 		const orbit = view.camera.mode === '3d' && (snapshot.modifiers & KeyModifier.alt) !== 0 && (snapshot.justPressedButtons & PointerButton.Primary) !== 0;
 		if ((snapshot.justPressedButtons & PointerButton.Auxiliary) !== 0 || orbit) {
-			this.gesture = orbit ? 'orbit' : 'pan'; this.x = snapshot.viewportX; this.y = snapshot.viewportY;
-			this.gestureGeneration = generation; this.gestureSource = view.authoring.spatialGeneration; this.gestureAllocation = view.allocationRevision;
+			this.gesture = { kind: orbit ? 'orbit' : 'pan', view, attachment, generation, allocation: view.allocationRevision,
+				source: view.authoring.spatialGeneration, x: snapshot.viewportX, y: snapshot.viewportY };
 			pointerCapture.capture(this, orbit ? PointerButton.Primary : PointerButton.Auxiliary, this.focusTarget.scope.surfaceScope); return true;
+		}
+		if (handle !== TranslateHandle.None) {
+			const request = view.authoring.captureTranslation();
+			if (request === undefined) return true;
+			if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation
+				|| request.entry !== view.selected || view.projectionRevision !== projection || !request.isCurrent()
+				|| this.viewValue !== view || this.attachment !== attachment || inputFocus.admittedTarget !== this.focusTarget) { request.cancel(); return true; }
+			if (!view.gizmo.begin(handle, snapshot.viewportX, snapshot.viewportY, view.camera, view.bounds)) { request.cancel(); return true; }
+			const gesture: TranslationGesture = { kind: 'translate', phase: 'drag', view, attachment, generation, allocation: view.allocationRevision,
+				request, assets: view.assetGeneration, camera: view.camera.revision };
+			this.gesture = gesture; view.transformPreview = request.preview;
+			pointerCapture.capture(this, PointerButton.Primary, this.focusTarget.scope.surfaceScope);
+			if (this.viewValue === view && this.attachment === attachment) view.refresh(); return true;
 		}
 		if (entry !== undefined) {
 			const scene = view.authoring.subject!, document = view.authoring.document!;
@@ -133,29 +207,69 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	public handleWheel(event: WheelInputSnapshot): boolean {
 		if (!this.canFocus || !event.valid || !point_in_rect(event.viewportX, event.viewportY, this.view.bounds)) return false;
 		const view = this.view, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;
-		pointerCapture.cancelTarget(this); view.refresh();
+		this.revokeGesture(this.gesture); view.refresh();
 		if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation) return true;
 		const x = event.viewportX - (view.bounds.left + view.bounds.right) / 2, y = event.viewportY - (view.bounds.top + view.bounds.bottom) / 2;
 		const anchor = view.camera.mode === '3d' ? view.models.pick(x, y, view.camera) : undefined;
 		view.camera.zoom(-event.deltaY / 4, x, y, anchor);
 		if (this.viewValue === view && this.attachment === attachment && this.focusTarget.scope.contextGeneration === generation) view.refresh(); return true;
 	}
-	public handleCapturedPointer(snapshot: PointerInputSnapshot): void {
-		if (this.gesture === undefined || this.viewValue === undefined) return;
-		const view = this.view; view.refresh();
-		if (this.viewValue !== view || this.gesture === undefined || this.gestureGeneration !== this.focusTarget.scope.contextGeneration
-			|| this.gestureSource !== view.authoring.spatialGeneration || this.gestureAllocation !== view.allocationRevision) { pointerCapture.cancelTarget(this); return; }
-		const x = snapshot.viewportX - this.x, y = snapshot.viewportY - this.y; this.x = snapshot.viewportX; this.y = snapshot.viewportY;
-		const attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;
-		if (this.gesture === 'pan') view.camera.pan(x, y); else view.camera.orbit(x, y);
-		if (this.viewValue === view && this.attachment === attachment && this.focusTarget.scope.contextGeneration === generation) view.refresh();
+	private gestureCurrent(gesture: ViewportGesture): boolean {
+		return this.gesture === gesture && this.viewValue === gesture.view && this.attachment === gesture.attachment
+			&& this.focusTarget.scope.contextGeneration === gesture.generation && gesture.view.allocationRevision === gesture.allocation;
 	}
-	public releaseCapturedPointer(snapshot: PointerInputSnapshot): void { this.handleCapturedPointer(snapshot); this.cancelPointer(); }
-	public cancelPointer(): void { pointerCapture.release(this); this.gesture = undefined; }
+	private translationCurrent(gesture: TranslationGesture): boolean {
+		return this.gestureCurrent(gesture) && gesture.view.transformPreview === gesture.request.preview
+			&& gesture.assets === gesture.view.assetGeneration && gesture.camera === gesture.view.camera.revision && gesture.request.isCurrent()
+			&& this.gestureCurrent(gesture) && gesture.assets === gesture.view.assetGeneration && gesture.camera === gesture.view.camera.revision;
+	}
+	/** A stale callback can revoke its own gesture, never a newer capture on the same control. */
+	private revokeGesture(gesture: ViewportGesture | undefined): void {
+		if (gesture === undefined || this.gesture !== gesture) return;
+		pointerCapture.cancelTarget(this);
+		if (this.gesture === gesture) this.cancelPointer();
+	}
+	public handleCapturedPointer(snapshot: PointerInputSnapshot): void {
+		const gesture = this.gesture; if (gesture === undefined || gesture.kind === 'translate' && gesture.phase === 'commit') return;
+		const view = gesture.view;
+		if (gesture.kind === 'translate') {
+			if (!this.translationCurrent(gesture)) { this.revokeGesture(gesture); return; }
+			if (view.gizmo.move(snapshot.viewportX, snapshot.viewportY, view.camera)) {
+				const delta = view.gizmo.delta; gesture.request.translate(delta[0], delta[1], delta[2]);
+			}
+			if (this.translationCurrent(gesture)) view.refresh(); else this.revokeGesture(gesture); return;
+		}
+		view.refresh();
+		if (!this.gestureCurrent(gesture) || gesture.source !== view.authoring.spatialGeneration) { this.revokeGesture(gesture); return; }
+		const x = snapshot.viewportX - gesture.x, y = snapshot.viewportY - gesture.y; gesture.x = snapshot.viewportX; gesture.y = snapshot.viewportY;
+		if (gesture.kind === 'pan') view.camera.pan(x, y); else view.camera.orbit(x, y);
+		if (this.gestureCurrent(gesture)) view.refresh();
+	}
+	public releaseCapturedPointer(snapshot: PointerInputSnapshot): void {
+		const gesture = this.gesture; if (gesture === undefined) return;
+		this.handleCapturedPointer(snapshot);
+		if (this.gesture !== gesture) return;
+		if (gesture.kind !== 'translate') { this.cancelPointer(); return; }
+		if (!this.translationCurrent(gesture)) { this.revokeGesture(gesture); return; }
+		// Source admission keeps the same revocable request; physical capture has ended.
+		gesture.phase = 'commit'; gesture.view.transformPreview = undefined; gesture.view.gizmo.cancel(); pointerCapture.release(this);
+		gesture.request.commit();
+		if (this.gesture === gesture) this.gesture = undefined;
+		if (this.viewValue === gesture.view && this.attachment === gesture.attachment) gesture.view.refresh();
+	}
+	public cancelPointer(): void {
+		const gesture = this.gesture, view = this.viewValue, attachment = this.attachment, previewed = view?.transformPreview !== undefined;
+		this.gesture = undefined;
+		if (view !== undefined) { view.transformPreview = undefined; view.gizmo.cancel(); }
+		pointerCapture.release(this);
+		if (gesture?.kind === 'translate') gesture.request.cancel();
+		if (previewed && this.viewValue === view && this.attachment === attachment && this.gesture === undefined) view!.refresh();
+	}
 	private handleKeyboard(event: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', event)) {
 			consumeIdeKey('Escape', event);
-			if (this.gesture !== undefined) pointerCapture.cancelTarget(this);
+			if (this.placement !== undefined) this.placement = undefined;
+			else if (this.gesture !== undefined) this.revokeGesture(this.gesture);
 			else inputFocus.executeCommand('sceneEditor.outline', this.focusTarget.commandContext); return;
 		}
 		if ((event.modifiers & (KeyModifier.ctrl | KeyModifier.meta | KeyModifier.alt)) !== 0) return;

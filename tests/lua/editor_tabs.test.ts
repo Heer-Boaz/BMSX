@@ -8,7 +8,7 @@ import { SceneEditorInput } from '../../ide/workbench/contrib/scene_editor/edito
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { GameViewInput } from '../../ide/workbench/contrib/game_view/editor_input';
 import { GameViewEditorPane } from '../../ide/workbench/contrib/game_view/editor_pane';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { EditorTabGroupModel } from '../../ide/workbench/ui/tab/group_model';
 import { EditorTabStrip } from '../../ide/workbench/ui/tab/control';
 import { EditorTabDrag, type EditorTabDragHandler } from '../../ide/workbench/ui/tab/drag';
@@ -809,7 +809,7 @@ test('a physical background drop moves the current whole source group through sh
 
 
 test('a mixed Source, Scene and active Game group docks without transferring guest authority or changing canonical sources', t => {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', '']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', '']]);
 	const parts = f.editor.editorParts, source = f.firstGroup, receiver = f.secondGroup;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.sceneEditor.openResource(source, resource);

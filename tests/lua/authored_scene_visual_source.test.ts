@@ -30,7 +30,7 @@ scenes.register('other',{objects={}})`;
 	return { ...f, context, source };
 }
 
-test('sprite construction consumes concrete factory configuration, affine composition and whole source region', t => {
+test('sprite construction consumes concrete factory configuration, separate spatial/visual poses and whole source region', t => {
 	const f = fixture(t, `
 prefab.define({def_id='root',class=require('cartlib/world/object_2d')})
 prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),
@@ -45,7 +45,9 @@ prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),
 	assert.equal(sprite.image, 'scene'); assert.equal(sprite.color, 0xff123456);
 	assert.equal(sprite.flipH, false); assert.equal(sprite.flipV, true); assert.equal(sprite.order, 5);
 	assert.deepEqual(sprite.region, { x: -2, y: 7, width: -3, height: 0 });
-	assert.deepEqual(sprite.affine, { xx: -3, xy: -3, yx: 7, yy: 9, ox: 47, oy: 71 });
+	assert.ok(sprite.world === f.context.spatialScene!.worlds.get(sprite.entry));
+	assert.deepEqual(sprite.attachment, { family: '2d', xx: 1, xy: 1, yx: 0, yy: 1, ox: 2, oy: 3 });
+	assert.deepEqual(sprite.presentation, { family: '2d', xx: -1, xy: 0, yx: 2, yy: 1, ox: 4, oy: 5 });
 	assert.equal(f.context.selection, undefined); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
@@ -60,7 +62,8 @@ prefab.define({def_id='visual',class=sprite_object,
 	assert.equal(sprites.length, 2); assert.equal(sprites[0].image, 'prefab');
 	assert.equal(sprites[0].color, 0xff123456); assert.equal(sprites[1].color, sprites[0].color);
 	assert.equal(sprites[0].flipH, true); assert.equal(sprites[0].region, undefined);
-	assert.deepEqual(sprites[0].affine, { xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 });
+	assert.deepEqual(sprites[0].attachment, { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 });
+	assert.deepEqual(sprites[0].presentation, { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 });
 });
 
 test('fresh sprite order follows smallest-ready parent construction and implicit initialization before explicit components', t => {

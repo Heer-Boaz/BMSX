@@ -12,12 +12,12 @@ import { UnavailableScenePrimaryClient } from '../../ide/workbench/contrib/scene
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { clearWorkspaceSourceCaches } from '../../ide/workspace/cache';
 import { closeWorkspaceRecords, openWorkspaceRecords } from '../../ide/workspace/records';
-import { SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
+import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studio/scene_viewport';
 import { createActualSourcePanes } from '../helpers/source_panes';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
 
 async function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -63,7 +63,7 @@ for (const route of ['keyboard', 'application', 'native'] as const)
 			else inputFocus.executeCommand('save', f.primary.commandTarget);
 		});
 		assert.ok(closing !== undefined); await closing; await setImmediate();
-		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
+		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
 		assert.equal(f.field.pending, false); assert.equal(f.model.dirty, true);
 		assert.equal(save.mock.callCount(), 0); assert.equal(f.files.records.size, 0);
 		assert.equal(f.saves.latestOperation(f.model), undefined);
@@ -120,7 +120,7 @@ for (const route of ['application', 'native'] as const) for (const retirement of
 		else inputFocus.executeCommand('save', f.primary.commandTarget);
 		await setImmediate();
 		assert.equal(retired, true); assert.equal(save.mock.callCount(), 0); assert.equal(f.files.records.size, 0);
-		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
+		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
 		assert.equal(f.model.dirty, true);
 		assert.equal(f.field.pending, false);
 		if (retirement === 'readonly') assert.equal(f.model.readOnly, true);
@@ -183,7 +183,7 @@ test('failed Main persistence retains its own dirty source without saving an unr
 	inputFocus.executeCommand('save', f.primary.commandTarget);
 	const operation = f.saves.latestOperation(f.model); assert.ok(operation !== undefined);
 	assert.equal((await operation.completion).status, 'failed'); await setImmediate();
-	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('0, 0, 1, 11,', '0, 0, 1, 123,'));
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE.replace('position = { x = 11,', 'position = { x = 123,'));
 	assert.equal(f.model.dirty, true); assert.equal(f.field.pending, false);
 	assert.equal(f.files.records.size, 0); assert.equal(f.saves.latestOperation(f.secondInput.workingCopy), undefined);
 	assert.equal(f.secondInput.workingCopy.buffer.getText(), f.otherSource);

@@ -23,6 +23,7 @@ import type { CodeHoverTooltip } from '../editor/contrib/hover/state';
 import type { CodeTabContext } from '../workbench/ui/code_tab/model';
 import type { EditorInput } from '../workbench/common/editor_inputs';
 import type { EditorGroupView } from '../workbench/services/editor/editor_group';
+import type { MainWorkspace } from '../workbench/main_workspace';
 import type { WorkbenchMainAreaLayout } from '../workbench/common/main_area_layout';
 import type { ResourcePanelController } from '../workbench/contrib/resources/panel/controller';
 import type {
@@ -57,6 +58,7 @@ export type HeadlessIdeHarness = {
 	/** Observe existing UI owners; workflows still deliver gestures through host control input. */
 	getActiveEditorGroup(): Readonly<EditorGroupView>;
 	getMainAreaLayout(): Readonly<WorkbenchMainAreaLayout>;
+	getMainWorkspace(): Readonly<MainWorkspace>;
 	getResourcePanel(): Readonly<ResourcePanelController>;
 	getContextMenu(): Readonly<Pick<ContextMenuController, 'visible' | 'model' | 'invocationOrigin' | 'returnFocus'>>;
 	/** Full IDE operation: admission releases the queue; completion waits for physical init. */
@@ -109,6 +111,7 @@ export function createHeadlessIdeHarness(
 		getWorkbenchTabs: () => ide.editor.editorParts.activeGroup.model.tabs,
 		getActiveEditorGroup: () => ide.editor.editorParts.activeGroup,
 		getMainAreaLayout: () => ide.editor.editorParts.mainArea,
+		getMainWorkspace: () => ide.editor.mainWorkspace,
 		getResourcePanel: () => ide.editor.resourcePanel,
 		getContextMenu: () => ide.editor.contextMenu,
 		getHover: (row, column) => {

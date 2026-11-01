@@ -11,7 +11,7 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import type { WorkbenchMenuPresentation } from '../../ui/menu/model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
 import type { SceneLocalPositionRequest } from './authoring_context';
-import { POSITION_AXES } from './details_projection';
+import { POSITION_AXES, type SceneDetailsSubject } from './details_projection';
 import { layoutSceneDetails } from './details_layout';
 import { drawSceneDetails } from './details_render';
 import type { SceneDetailsFieldBinding, SceneDetailsViewState, SceneOptionViewProperty } from './details_view';
@@ -35,6 +35,8 @@ export class SceneDetailsControl {
 	private viewValue: SceneDetailsViewState | undefined;
 	private bounds!: Readonly<RectBounds>;
 	private boundRevision = -1;
+	private boundGeneration = -1;
+	private boundSubject: SceneDetailsSubject | undefined;
 	private attachmentRevision = 0;
 	private admitted = false;
 	private fieldsBound = false;
@@ -44,11 +46,13 @@ export class SceneDetailsControl {
 	private nextFocus: InputFocusTarget;
 	private lastFocus: InputFocusTarget;
 	private subscriptions: (() => void)[] = [];
+	private readonly parentCommandTarget: InputFocusTarget;
 
 	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
-		scope: InputFocusScope, private readonly parentCommandTarget: InputFocusTarget,
+		scope: InputFocusScope, parent: InputFocusTarget,
 		sectionCommands: SceneEditorSectionCommands, private readonly menu: WorkbenchMenuPresentation) {
-		this.scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, parentCommandTarget, event => {
+		this.parentCommandTarget = parent.commandContext;
+		this.scroll = new WorkbenchScrollControl(inputFocus, pointerCapture, parent, event => {
 			if (!isKeyJustPressed('Escape', event)) return false;
 			consumeIdeKey('Escape', event);
 			commands.execute('sceneEditor.outline', this.focusTarget);
@@ -56,7 +60,7 @@ export class SceneDetailsControl {
 		}, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget = this.scroll.focusTarget;
 		this.focusTarget.canFocus = () => this.canFocus;
-		this.focusTarget.commandContext = parentCommandTarget;
+		this.focusTarget.commandContext = this.parentCommandTarget;
 		this.previousFocus = this.nextFocus = this.scroll.focusTarget;
 		this.lastFocus = this.scroll.focusTarget;
 		this.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
@@ -79,7 +83,7 @@ export class SceneDetailsControl {
 				value.request.apply(value.axis, value.value);
 			}, () => this.update());
 			control.field.readOnly = true;
-			control.field.focusTarget.commandContext = parentCommandTarget;
+			control.field.focusTarget.commandContext = this.parentCommandTarget;
 			control.field.focusTarget.canFocus = () => this.canFocus && !control.field.readOnly;
 			control.field.focusTarget.registerCommand('sceneEditor.details', sectionCommands.details);
 			control.field.focusTarget.registerCommand('sceneEditor.outline', sectionCommands.outline);
@@ -146,11 +150,11 @@ export class SceneDetailsControl {
 			return;
 		}
 		this.admitted = true;
-		const bindRequired = changed || !this.fieldsBound;
+		const bindRequired = changed || !this.fieldsBound || this.boundGeneration !== generation;
 		if (bindRequired) {
 			this.boundRevision = view.projection.revision;
 			const subject = view.projection.subject;
-			if (subject === undefined) this.options.clear();
+			if (subject === undefined) { this.boundSubject = undefined; this.options.clear(); }
 			else {
 				const selectionRevision = view.authoring.selectionRevision;
 				const binding: SceneDetailsFieldBinding = { view, subject,
@@ -158,7 +162,7 @@ export class SceneDetailsControl {
 						&& view.projection.subject === subject && view.authoring.selectionRevision === selectionRevision
 						&& view.authoring.workingCopy.version === subject.sourceVersion };
 				if (!this.bindFields(binding)) return;
-				this.fieldsBound = true;
+				this.fieldsBound = true; this.boundGeneration = generation; this.boundSubject = subject;
 			}
 		}
 		if (this.viewValue !== view || this.inputScope.contextGeneration !== generation) return;
@@ -186,6 +190,10 @@ export class SceneDetailsControl {
 
 	private bindFields(binding: SceneDetailsFieldBinding): boolean {
 		const view = binding.view;
+		const previous = this.boundSubject;
+		// A provider refresh renews requests, not a draft's unchanged authored source.
+		const retainDrafts = this.fieldsBound && this.boundGeneration === this.inputScope.contextGeneration
+			&& previous?.selection === binding.subject.selection && previous.sourceVersion === binding.subject.sourceVersion;
 		this.fields.length = 0;
 		const request = view.properties.length === 0 ? undefined : view.authoring.captureLocalPosition();
 		if (!binding.isCurrent()) return false;
@@ -193,11 +201,13 @@ export class SceneDetailsControl {
 			const property = view.properties[index].descriptor;
 			if (request !== undefined) {
 				this.fields[index] = { binding, axis: property.axis, request };
-				this.controls[index].setValue({ value: property.value, axis: property.axis, request, binding });
+				const prior = previous?.properties[index];
+				if (!retainDrafts || prior?.value !== property.value || prior.family !== property.family)
+					this.controls[index].setValue({ value: property.value, axis: property.axis, request, binding });
 				if (!binding.isCurrent()) return false;
 			} else this.fields[index] = undefined;
 		}
-		this.options.bind(view, binding);
+		this.options.bind(view, binding, retainDrafts);
 		return binding.isCurrent();
 	}
 
@@ -326,7 +336,7 @@ export class SceneDetailsControl {
 	private detach(): void {
 		if (!this.hasView) return;
 		const revision = this.attachmentRevision;
-		this.viewValue = undefined; this.boundRevision = -1; this.admitted = false; this.fieldsBound = false;
+		this.viewValue = undefined; this.boundRevision = -1; this.boundSubject = undefined; this.admitted = false; this.fieldsBound = false;
 		const subscriptions = this.subscriptions; this.subscriptions = [];
 		for (const unsubscribe of subscriptions) unsubscribe();
 		this.inputScope.retireContext();
