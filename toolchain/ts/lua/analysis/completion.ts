@@ -1,9 +1,11 @@
 import type { LuaStatementSequence } from '../syntax/statement_sequence';
+import { walkLuaAst, type LuaAstNode } from '../syntax/ast/traversal';
 import {
 	LuaBinaryOperator,
 	LuaSyntaxKind,
 	LuaUnaryOperator,
 	type LuaExpression,
+	type LuaStatement,
 } from '../syntax/ast';
 
 export const enum LuaCompletion {
@@ -23,6 +25,16 @@ const enum Condition {
 
 /** Source continuations, not VM blocks or an evaluator. Scratch storage is reused per body. */
 export class LuaCompletionAnalysis {
+	private points: Map<LuaAstNode, number> | undefined;
+
+	public static sourceFlow(body: LuaStatementSequence): LuaSourceControlFlow {
+		const points = new Map<LuaAstNode, number>();
+		const analysis = new LuaCompletionAnalysis();
+		analysis.points = points;
+		const entry = analysis.buildBlock(body, END, undefined);
+		return new LuaSourceControlFlow(points, entry, analysis.left, analysis.right,
+			analysis.unboundLabels === 0 && analysis.completion === LuaCompletion.None);
+	}
 	private readonly left: number[] = [RETURN, END];
 	private readonly right: number[] = [RETURN, END];
 	private readonly seen: number[] = [];
@@ -66,7 +78,7 @@ export class LuaCompletionAnalysis {
 			const statement = cursor.statement!;
 			switch (statement.kind) {
 				case LuaSyntaxKind.ReturnStatement:
-					entry = RETURN;
+					entry = this.points === undefined ? RETURN : this.recordStatement(statement, RETURN);
 					break;
 				case LuaSyntaxKind.BreakStatement:
 					if (breakTarget === undefined) {
@@ -88,6 +100,7 @@ export class LuaCompletionAnalysis {
 							entry = branch;
 						} else {
 							const condition = this.createNode();
+							if (this.points !== undefined) this.recordExpression(clause.condition, condition);
 							this.bindCondition(condition, clause.condition, branch, entry);
 							entry = condition;
 						}
@@ -96,6 +109,7 @@ export class LuaCompletionAnalysis {
 				}
 				case LuaSyntaxKind.WhileStatement: {
 					const condition = this.createNode();
+					if (this.points !== undefined) this.recordExpression(statement.condition, condition);
 					const bodyEntry = this.buildBlock(statement.block.body, condition, entry);
 					this.bindCondition(condition, statement.condition, bodyEntry, entry);
 					entry = condition;
@@ -103,6 +117,7 @@ export class LuaCompletionAnalysis {
 				}
 				case LuaSyntaxKind.RepeatStatement: {
 					const condition = this.createNode();
+					if (this.points !== undefined) this.recordExpression(statement.condition, condition);
 					const bodyEntry = this.buildBlock(statement.block.body, condition, entry);
 					this.bindCondition(condition, statement.condition, entry, bodyEntry);
 					entry = bodyEntry;
@@ -111,6 +126,7 @@ export class LuaCompletionAnalysis {
 				case LuaSyntaxKind.ForNumericStatement:
 				case LuaSyntaxKind.ForGenericStatement: {
 					const condition = this.createNode();
+					if (this.points !== undefined) this.recordExpression(statement, condition);
 					this.left[condition] = this.buildBlock(statement.block.body, condition, entry);
 					this.right[condition] = entry;
 					entry = condition;
@@ -145,10 +161,28 @@ export class LuaCompletionAnalysis {
 				case LuaSyntaxKind.BssDeclarationStatement:
 				case LuaSyntaxKind.DataDeclarationStatement:
 				case LuaSyntaxKind.RodataDeclarationStatement:
+					if (this.points !== undefined) entry = this.recordStatement(statement, entry);
 					break;
 			}
 		}
 		return entry;
+	}
+
+	private recordStatement(statement: LuaStatement, next: number): number {
+		const node = this.createNode();
+		this.left[node] = next;
+		this.right[node] = next;
+		this.recordExpression(statement, node);
+		return node;
+	}
+
+	private recordExpression(root: LuaAstNode, point: number): void {
+		const points = this.points!;
+		walkLuaAst(root, node => {
+			if (node.kind === LuaSyntaxKind.Block) return false;
+			points.set(node, point);
+			if (node.kind === LuaSyntaxKind.FunctionExpression) return false;
+		});
 	}
 
 	private createNode(): number {
@@ -172,6 +206,49 @@ export class LuaCompletionAnalysis {
 		const condition = conditionValue(expression);
 		this.left[node] = condition & Condition.True ? truthy : falsy;
 		this.right[node] = condition & Condition.False ? falsy : truthy;
+	}
+}
+
+/** A source-body CFG, constructed only for queries which need execution order. */
+export class LuaSourceControlFlow {
+	private readonly reachable: Uint8Array;
+	private readonly without = new Map<number, Uint8Array>();
+
+	public constructor(
+		private readonly points: ReadonlyMap<LuaAstNode, number>,
+		private readonly entry: number,
+		private readonly left: readonly number[],
+		private readonly right: readonly number[],
+		private readonly resolved: boolean,
+	) {
+		this.reachable = this.reachableWithout(-1);
+	}
+
+	public dominates(initializer: LuaStatement, read: LuaExpression): boolean {
+		if (!this.resolved) return false;
+		const definition = this.points.get(initializer);
+		const use = this.points.get(read);
+		if (definition === undefined || use === undefined || definition === use || this.reachable[use] === 0) return false;
+		let reachable = this.without.get(definition);
+		if (reachable === undefined) {
+			reachable = this.reachableWithout(definition);
+			this.without.set(definition, reachable);
+		}
+		return reachable[use] === 0;
+	}
+
+	private reachableWithout(excluded: number): Uint8Array {
+		const reached = new Uint8Array(this.left.length);
+		const pending = [this.entry];
+		while (pending.length !== 0) {
+			const node = pending.pop()!;
+			if (node === excluded || reached[node] !== 0) continue;
+			reached[node] = 1;
+			if (node === RETURN || node === END) continue;
+			pending.push(this.left[node]);
+			if (this.right[node] !== this.left[node]) pending.push(this.right[node]);
+		}
+		return reached;
 	}
 }
 

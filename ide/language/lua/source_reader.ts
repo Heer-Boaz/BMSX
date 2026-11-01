@@ -63,10 +63,14 @@ export class LuaSourceReader {
 		this.strings.set(source, undefined);
 		const trace = this.snapshot.symbolResolver.authoredSources.trace(source);
 		let value: string | undefined;
-		if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'unknown-value') {
+		if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'typed-access') {
+			const scalar = this.snapshot.staticSourceReads.scalar(file, expression);
+			if (scalar?.kind === 'string') value = scalar.value;
+		} else if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'unknown-value') {
 			const boundary = trace.boundaries[0].source;
 			const syntax = writtenSourceExpression(boundary);
-			if (syntax?.kind === LuaSyntaxKind.BinaryExpression && syntax.operator === LuaBinaryOperator.Concat) {
+			if (syntax?.kind === LuaSyntaxKind.BinaryExpression && syntax.operator === LuaBinaryOperator.Concat
+				&& this.snapshot.staticSourceReads.scalar(file, expression)?.kind === 'string') {
 				const left = this.stringValue(boundary.file, syntax.left);
 				const right = this.stringValue(boundary.file, syntax.right);
 				if (left !== undefined && right !== undefined) value = left + right;
@@ -235,13 +239,16 @@ export class LuaSourceReader {
 		// not manufacture literal AST nodes or admit another editing owner.
 		if (trace.terminals.length === 0) {
 			let source: LuaWrittenSource | undefined;
+			let typedAccess = false;
 			for (const boundary of trace.boundaries) {
-				if (boundary.reason === 'unknown-value' && source === undefined) source = boundary.source;
+				if ((boundary.reason === 'unknown-value' || boundary.reason === 'typed-access') && source === undefined) {
+					source = boundary.source; typedAccess = boundary.reason === 'typed-access';
+				}
 				else if (!ownMember || boundary.reason !== 'prototype-write') return;
 			}
 			if (source === undefined) return;
 			const syntax = writtenSourceExpression(source);
-			if (syntax !== undefined && (readLuaNumberExpression(syntax) !== null
+			if (syntax !== undefined && (typedAccess || readLuaNumberExpression(syntax) !== null
 				|| syntax.kind === LuaSyntaxKind.BinaryExpression && syntax.operator === LuaBinaryOperator.Concat
 				&& this.stringValue(source.file, syntax) !== undefined))
 				return this.snapshot.symbolResolver.writtenSources.expression(source.file, syntax);

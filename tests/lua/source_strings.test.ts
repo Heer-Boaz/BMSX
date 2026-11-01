@@ -15,6 +15,133 @@ function fixture(source: string, providers: Readonly<Record<string, string>> = {
 	return { file, files, snapshot, reader: new LuaSourceReader(snapshot), expressions: returned.expressions };
 }
 
+test('typed immutable source fields retain their written occurrence and expose proven string content', () => {
+	const f = fixture(`local labels_module<const> = require('labels')
+local labels<const>: *text_record = labels_module.labels
+return { text = labels[0].message }, labels[0].message, labels[0].message .. '!'`, {
+		'labels.lua': `module<const>
+struct text_record
+ message: string
+end
+rodata labels: text_record = { message = 'ready' }
+return { labels = labels }`,
+	});
+	const table = f.expressions[0]; assert.ok(table.kind === LuaSyntaxKind.TableConstructorExpression);
+	const field = table.fields[0], written = f.reader.memberState(f.file, table, 'text');
+	assert.ok(written !== undefined && written !== null && written.expression === field.value);
+	assert.equal(f.reader.stringValue(written.file, written.expression), 'ready');
+	assert.equal(f.reader.stringValue(f.file, f.expressions[1]), 'ready');
+	assert.equal(f.reader.stringValue(f.file, f.expressions[2]), 'ready!');
+});
+
+test('typed string aliases require their initializer to reach the read', () => {
+	const reached = fixture("rodata title: string = 'hi'\nlocal text = *title\nreturn text");
+	assert.equal(reached.reader.stringValue(reached.file, reached.expressions[0]), 'hi');
+	const skipped = fixture("rodata title: string = 'hi'\ngoto skip\nlocal text = *title\n::skip::\nreturn text");
+	assert.equal(skipped.reader.stringValue(skipped.file, skipped.expressions[0]), undefined);
+	const skippedConcat = fixture("rodata title: string = 'hi'\ngoto skip\nlocal text = *title .. '!'\n::skip::\nreturn text");
+	assert.equal(skippedConcat.reader.stringValue(skippedConcat.file, skippedConcat.expressions[0]), undefined);
+});
+
+test('typed authored fields do not turn dynamic indices or mutable addresses into proven text', () => {
+	const f = fixture(`struct text_record
+ message: string
+end
+rodata labels: text_record = { message = 'ready' }
+local p<const>: *text_record = labels
+local runtime: *text_record = acquire()
+local changed: *text_record = labels
+changed = acquire()
+return {text = p[index].message}, {text = runtime[0].message}, {text = changed[0].message},
+ p[index].message, runtime[0].message, changed[0].message`);
+	for (const expression of f.expressions.slice(0, 3)) {
+		assert.ok(expression.kind === LuaSyntaxKind.TableConstructorExpression);
+		const value = f.reader.memberState(f.file, expression, 'text');
+		assert.ok(value !== undefined && value !== null && value.expression === expression.fields[0].value);
+		assert.equal(f.reader.stringValue(value.file, value.expression), undefined);
+	}
+	assert.equal(f.reader.stringValue(f.file, f.expressions[3]), undefined);
+	assert.equal(f.reader.stringValue(f.file, f.expressions[4]), undefined);
+	assert.equal(f.reader.stringValue(f.file, f.expressions[5]), undefined);
+});
+
+test('typed storage loads, addresses, and whole aggregates retain distinct source semantics', () => {
+	const f = fixture(`rodata title: string = 'ready'
+rodata labels: string[2] = { 'one', 'two' }
+return *title, title[0], &title, title, labels[0], labels[1], *labels, &labels[0]`);
+	assert.deepEqual(f.expressions.map(expression => f.reader.stringValue(f.file, expression)),
+		['ready', 'ready', undefined, undefined, 'one', 'two', undefined, undefined]);
+});
+
+test('a typed view of a selected storage address retains the original byte selection', () => {
+	const f = fixture(`rodata labels: string[2] = { 'one', 'two' }
+local p<const>: *string = &labels[1]
+return *p, p[0], &p[0]`);
+	assert.deepEqual(f.expressions.map(expression => f.reader.stringValue(f.file, expression)), ['two', 'two', undefined]);
+});
+
+test('a dereferenced struct view can select a string field without losing its typed root', () => {
+	const f = fixture(`struct text_record
+ message: string
+end
+rodata labels: text_record = { message = 'ready' }
+local view<const>: *text_record = labels
+return (*view).message, &(*view).message`);
+	assert.deepEqual(f.expressions.map(expression => f.reader.stringValue(f.file, expression)), ['ready', undefined]);
+});
+
+test('a shadowing ordinary Lua table is not classified as a typed selection', () => {
+	const f = fixture(`rodata labels: string[2] = { 'one', 'two' }
+local function read()
+ local labels = { { text = 'lua' } }
+ return labels[1].text
+end
+return read()`);
+	const flow = f.file.functionValueFlows[0];
+	const returned = flow.expression.body.body.get(1);
+	assert.ok(returned.kind === LuaSyntaxKind.ReturnStatement);
+	const query = f.snapshot.symbolResolver.writtenSources;
+	const trace = query.trace(query.expression(f.file, returned.expressions[0]));
+	assert.equal(trace.boundaries.some(boundary => boundary.reason === 'typed-access'), false);
+});
+
+test('a module storage address does not become a typed view merely through Lua indexing', () => {
+	const f = fixture(`local module<const> = require('labels')
+return module.labels[0]`, {
+		'labels.lua': `module<const>
+rodata labels: string[1] = { 'ready' }
+return { labels = labels }`,
+	});
+	const query = f.snapshot.symbolResolver.writtenSources;
+	const trace = query.trace(query.expression(f.file, f.expressions[0]));
+	assert.equal(trace.boundaries.some(boundary => boundary.reason === 'typed-access'), false);
+	assert.equal(f.reader.stringValue(f.file, f.expressions[0]), undefined);
+});
+
+test('address-of terminates a typed selection before an enclosing Lua index or member', () => {
+	const f = fixture(`rodata title: string = 'ready'
+return (&title)[0], (&title).text, &title[0]`);
+	const query = f.snapshot.symbolResolver.writtenSources;
+	const boundaries = f.expressions.map(expression => query.trace(query.expression(f.file, expression)).boundaries.map(boundary => boundary.reason));
+	assert.equal(boundaries[0].includes('typed-access'), false);
+	assert.equal(boundaries[1].includes('typed-access'), false);
+	assert.ok(boundaries[2].includes('typed-access'));
+	assert.deepEqual(f.expressions.map(expression => f.reader.stringValue(f.file, expression)), [undefined, undefined, undefined]);
+});
+
+test('a same-named static declaration in another module does not type a runtime global', () => {
+	const storage = { path: 'storage.lua', source: `rodata shared: string[2] = {'one','two'}\nreturn 1` };
+	const entry = { path: 'entry.lua', source: `shared = {'table'}\nreturn shared[1]` };
+	for (const files of [[storage, entry], [entry, storage]]) {
+		const snapshot = buildLuaSemanticWorkspaceSnapshot(...createPathModuleProjectFixture(files));
+		const file = snapshot.getFileData(entry.path)!, statement = file.chunk.body.get(1);
+		assert.ok(statement.kind === LuaSyntaxKind.ReturnStatement);
+		const expression = statement.expressions[0], query = snapshot.symbolResolver.writtenSources;
+		assert.equal(query.trace(query.expression(file, expression)).boundaries.some(boundary => boundary.reason === 'typed-access'), false);
+		assert.equal(new LuaSourceReader(snapshot).stringValue(file, expression), undefined);
+	}
+});
+
 test('authored string content proofs do not admit their query-only providers as represented source owners', () => {
 	const f = fixture(`local names = require('names')
 local prefix<const> = '/'

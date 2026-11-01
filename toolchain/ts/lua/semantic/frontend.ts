@@ -11,7 +11,7 @@ import {
 	type Ref,
 	type SymbolID,
 } from './model';
-import type { LuaProjectModuleBindings } from './module_resolution';
+import type { LuaModuleLinkExports, LuaProjectModuleBindings } from './module_resolution';
 import {
 	computeLuaDiagnosticsFromAnalysis,
 	getDefaultLuaBuiltinDescriptors,
@@ -51,6 +51,7 @@ export type LuaSemanticFrontendOptions = {
 	builtinDescriptors?: readonly LuaBuiltinDescriptor[];
 	extraGlobalNames?: readonly string[];
 	externalGlobalSymbols?: readonly LuaSymbolEntry[];
+	linkExports?: LuaModuleLinkExports;
 };
 
 export type LuaBoundReferenceKind = 'lexical' | 'implicit_self' | 'global' | 'map' | 'reserved_intrinsic' | 'unresolved';
@@ -158,7 +159,7 @@ export function buildLuaSemanticFrontend(
 	moduleBindings: LuaProjectModuleBindings,
 	options: LuaSemanticFrontendOptions = {},
 ): LuaSemanticFrontend {
-	const snapshot = buildLuaSemanticWorkspaceSnapshot(sources, moduleBindings);
+	const snapshot = buildLuaSemanticWorkspaceSnapshot(sources, moduleBindings, options.linkExports);
 	return buildLuaSemanticFrontendFromSnapshot(snapshot, options);
 }
 

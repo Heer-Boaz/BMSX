@@ -289,9 +289,12 @@ export class EditorLuaSemanticProject {
 	private publishModuleBindings(): void {
 		if (!this.moduleBindingsDirty) return;
 		const bindings = new Map<string, LuaModuleBindings>();
+		const linkExports = new Map<string, ReadonlySet<string>>();
 		for (const [address, resource] of this.resourcesByAddress) {
 			const scope = this.contextBindings.get(resource.contextId)!;
 			const analysis = this.workspace.getFileData(address);
+			const record = this.baseSources.get(address)?.record;
+			if (record?.linkExports !== undefined && analysis?.source === record.src) linkExports.set(address, record.linkExports);
 			let cached = this.fileModuleBindings.get(address);
 			if (cached === undefined || cached.analysis !== analysis || cached.scope !== scope) {
 				let aliases: Map<string, string> | undefined;
@@ -308,6 +311,7 @@ export class EditorLuaSemanticProject {
 			bindings.set(address, cached.bindings);
 		}
 		this.workspace.setModuleBindings(bindings);
+		this.workspace.setLinkExports(linkExports);
 		this.moduleBindingsDirty = false;
 	}
 

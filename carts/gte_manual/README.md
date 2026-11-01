@@ -122,14 +122,12 @@ the frame loop creates no tables or closures. This does not claim that BIOS
 startup or the complete machine allocates nothing.
 
 The relevant compiler owners are
-[`struct_types.ts`](../../toolchain/ts/lua/compiler/struct_types.ts#L44-L69)
+[`struct_types.ts`](../../toolchain/ts/lua/static/struct_types.ts)
 for primitive widths/array strides,
-[`compiler.ts`](../../toolchain/ts/lua/compiler.ts#L3720-L3815) for recursive
-static serialization, and
-[`compiler.ts`](../../toolchain/ts/lua/compiler.ts#L4982-L5022) and
-[`emitMemoryStore`](../../toolchain/ts/lua/compiler.ts#L5235-L5245) for typed
-addressing and direct memory-store emission. ROM records are padded to a
+[`initializers.ts`](../../toolchain/ts/lua/static/initializers.ts) for recursive
+static initializer shape, and [`compiler.ts`](../../toolchain/ts/lua/compiler.ts)
+for scalar encoding, typed addressing and direct memory-store emission. ROM records are padded to a
 four-byte section boundary by
-[`recordRodata`](../../toolchain/ts/lua/compiler.ts#L656-L665), so these operand
+[`recordRodata`](../../toolchain/ts/lua/compiler.ts), so these operand
 symbols are suitable for the word views used here. The central data types add
 no runtime functions or additional allocation layer.

@@ -61,7 +61,7 @@ export function writtenSourceExpression(source: LuaWrittenSource): LuaExpression
 }
 
 export type LuaSourceBoundary = 'unknown-value' | 'unbound-global' | 'unwritten-binding'
-	| 'access-path' | 'member-read' | 'unwritten-member' | 'module' | 'module-import' | 'module-publication' | 'call-result' | 'receiver' | 'parameter-input';
+	| 'access-path' | 'typed-access' | 'member-read' | 'unwritten-member' | 'module' | 'module-import' | 'module-publication' | 'call-result' | 'receiver' | 'parameter-input';
 
 type LuaSourceContributions = { readonly kind: 'contributions'; readonly sources: readonly LuaWrittenSource[] };
 
@@ -91,6 +91,7 @@ export type LuaWrittenSourceTrace = {
 const TERMINAL: LuaWrittenSourceInputs = { kind: 'terminal' };
 const UNKNOWN: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'unknown-value' };
 const ACCESS: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'access-path' };
+const TYPED_ACCESS: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'typed-access' };
 const MODULE: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'module' };
 const MODULE_PUBLICATION: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'module-publication' };
 const RECEIVER: LuaWrittenSourceInputs = { kind: 'boundary', reason: 'receiver' };
@@ -258,6 +259,7 @@ export class LuaWrittenSourceQuery {
 		if (source.kind === 'binding-input') return source.declaration.kind === 'parameter' ? PARAMETER : UNWRITTEN;
 		if (source.kind === 'receiver-input') return RECEIVER;
 		if (source.kind === 'module-bypass') return MODULE_PUBLICATION;
+		if (this.isTypedAccess(source)) return TYPED_ACCESS;
 		const value = source.value;
 		if (value.steps.length !== 0) {
 			const step = value.steps[value.steps.length - 1];
@@ -306,6 +308,39 @@ export class LuaWrittenSourceQuery {
 				return TERMINAL;
 			}
 		}
+	}
+
+	/** Classify typed selection from binder facts without evaluating or tracing its address. */
+	private isTypedAccess(source: LuaWrittenSource): boolean {
+		let expression = writtenSourceExpression(source);
+		if (expression === undefined) return false;
+		let root = source.value.root;
+		// The binder already retains the root of ordinary member/index paths.
+		// Unary address/dereference syntax instead has an unknown value root.
+		if ((expression.kind !== LuaSyntaxKind.MemberExpression && expression.kind !== LuaSyntaxKind.IndexExpression)
+			|| root.kind === 'unknown') {
+			let selected = false;
+			findRoot: for (;;) {
+				switch (expression.kind) {
+					case LuaSyntaxKind.MemberExpression:
+					case LuaSyntaxKind.IndexExpression:
+						selected = true; expression = expression.base; break;
+					case LuaSyntaxKind.UnaryExpression:
+						if (expression.operator === LuaUnaryOperator.StringId) {
+							if (selected) return false;
+						} else if (expression.operator !== LuaUnaryOperator.Dereference) return false;
+						selected = true; expression = expression.operand; break;
+					case LuaSyntaxKind.IdentifierExpression:
+						if (!selected) return false;
+						root = readLuaExpressionSource(source.file, expression).root; break findRoot;
+					default: return false;
+				}
+			}
+		}
+		if (root.kind !== 'declaration') return false;
+		const declaration = this.symbols.get(root.declId);
+		return declaration.kind === 'bss' || declaration.kind === 'data' || declaration.kind === 'rodata'
+			|| declaration.pointerType !== undefined;
 	}
 
 	/** Only the canonical export is a value edge; earlier returns are control evidence. */

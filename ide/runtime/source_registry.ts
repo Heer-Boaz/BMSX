@@ -23,6 +23,7 @@ import type {
 import type { RomImageDomain } from '../../machine/ts/rompack/image';
 import { utf8FatalDecoder } from '../../machine/ts/common/serializer/binencoder';
 import {
+	buildPossibleRomAssetAddressLinkExports,
 	buildRomAssetSymbolModuleSourceFromSymbols,
 	collectRomAssetSymbols,
 } from '../../toolchain/ts/rompack/asset_symbols';
@@ -48,6 +49,8 @@ export type LuaSourceRecord = RomLuaAsset & {
 	base_update_timestamp: number;
 	module_path: string;
 	generated: boolean;
+	/** Producer-known export paths whose values may change at link time. */
+	readonly linkExports?: ReadonlySet<string>;
 	/** Membership in the packed source directory, not the current executable. */
 	readonly program_module: boolean;
 };
@@ -186,9 +189,8 @@ export function buildLuaSources(
 		const generatedSourcePath = payloadId === 'system'
 			? SYSTEM_ASSET_SYMBOL_SOURCE_PATH
 			: ROM_ASSET_SYMBOL_SOURCE_PATH;
-		const source = buildRomAssetSymbolModuleSourceFromSymbols(
-			collectRomAssetSymbols(assetEntries, payloadId),
-		);
+		const symbols = collectRomAssetSymbols(assetEntries, payloadId);
+		const source = buildRomAssetSymbolModuleSourceFromSymbols(symbols);
 		const assetSymbols: LuaSourceRecord = {
 			resid: generatedModulePath,
 			type: 'lua',
@@ -200,6 +202,7 @@ export function buildLuaSources(
 			module_path: generatedModulePath,
 			update_timestamp: 0,
 			generated: true,
+			linkExports: buildPossibleRomAssetAddressLinkExports(symbols),
 			sourceKind: 'project',
 			program_module: true,
 		};

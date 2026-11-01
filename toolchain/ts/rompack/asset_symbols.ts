@@ -104,6 +104,13 @@ export function buildRomAssetAddressLinkValuesFromSymbols(
 	return values;
 }
 
+/** Before image layout, any cartridge payload address may belong to the relocatable tail. */
+export function buildPossibleRomAssetAddressLinkExports(symbols: ReadonlyArray<RomAssetSymbol>): ReadonlySet<string> {
+	const exports = new Set<string>();
+	for (const symbol of symbols) if (symbol.payloadId === 'cart') exports.add(`${symbol.name}_addr`);
+	return exports;
+}
+
 export function buildRelocatableRomAssetSymbolModule(
 	assetList: ReadonlyArray<RomAsset>,
 	payloadId: RomImageDomain,

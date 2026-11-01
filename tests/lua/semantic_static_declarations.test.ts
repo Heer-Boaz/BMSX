@@ -119,3 +119,49 @@ test('shared syntax does not merge static declarations from different files', ()
 	assert.notEqual(leftStorage.id, rightStorage.id);
 	assert.equal(query.storage(leftStorage), query.storage(rightStorage));
 });
+
+test('explicit local views retain declaration identity and do not type ordinary address aliases', () => {
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['views.lua']));
+	const file = workspace.updateFile('views.lua', `rodata words: word[2] = { 1, 2 }
+local address<const>: *word = words
+local alias<const> = address
+local read = function()
+	local address: *u8[2] = words
+	return address[0]
+end
+return address[0]`);
+	const resolver = workspace.getSnapshot().symbolResolver, metrics = resolver.getSemanticQueryMetrics();
+	const [outer, inner] = file.decls.filter(declaration => declaration.name === 'address');
+	const alias = file.decls.find(declaration => declaration.name === 'alias')!;
+	const outerSyntax = file.chunk.body.get(1); assert.ok(outerSyntax.kind === LuaSyntaxKind.LocalAssignmentStatement);
+	const body = file.functionValueFlows[0].expression.body.body.get(0); assert.ok(body.kind === LuaSyntaxKind.LocalAssignmentStatement);
+	assert.equal(outer.pointerType, outerSyntax.pointerTypeRefs[0]);
+	assert.equal(inner.pointerType, body.pointerTypeRefs[0]);
+	assert.equal(alias.pointerType, undefined);
+	assert.equal(outer.pointerType!.name, 'word'); assert.equal(inner.pointerType!.name, 'u8');
+	assert.deepEqual(resolver.getSemanticQueryMetrics(), metrics, 'view syntax does not activate value inference');
+});
+
+test('local view annotations belong to the snapshot while retained function syntax keeps its own positions', () => {
+	const workspace = new LuaSemanticWorkspace(createPathModuleBindingsFixture(['views.lua']));
+	const source = '-- retained view\n'.repeat(80) + `local read = function(address)
+	local view<const>: *word = address
+	return view[0]
+end
+return read`;
+	const prior = workspace.updateFile('views.lua', source);
+	const prefix = 'local unrelated: *u8 = 0\n';
+	const current = workspace.updateFile(prior.file, prefix + source,
+		SourceChangeMap.unchanged(source.length).append([{ offset: 0, deletedLength: 0, insertedLength: prefix.length }]));
+	assert.equal(current.functionValueFlows[0], prior.functionValueFlows[0]);
+	for (const file of [prior, current]) {
+		const declaration = file.decls.find(declaration => declaration.name === 'view')!;
+		const type = declaration.pointerType!;
+		assert.equal(type.name, 'word');
+		assert.equal(file.chunk.locations.range(type.span).path, file.file);
+	}
+	workspace.updateFile('views.lua', source.replace(': *word', ': *u8'));
+	const changed = workspace.getSnapshot(), declaration = changed.getFileData('views.lua')!.decls.find(declaration => declaration.name === 'view')!;
+	assert.equal(declaration.pointerType!.name, 'u8');
+	assert.equal(prior.decls.find(declaration => declaration.name === 'view')!.pointerType!.name, 'word');
+});

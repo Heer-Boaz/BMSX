@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
+import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { SCENE_TEXT_MODULES, SCENE_TEXT_SOURCE as SOURCE } from '../fixtures/studio/scene_text';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
-function fixture(t: TestContext, source = SOURCE) {
-	const f = createSceneSourceFixture(t, source, 'text.lua', undefined, SCENE_TEXT_MODULES), document = f.documents.get(f.model);
+function fixture(t: TestContext, source = SOURCE, imports: readonly (readonly [string, string])[] = SCENE_TEXT_MODULES) {
+	const f = createSceneSourceFixture(t, source, 'text.lua', undefined, imports), document = f.documents.get(f.model);
 	assert.equal(document.analysis.chunk.syntaxError?.message, undefined);
 	assert.equal(document.scenes.length, 1);
 	const context = new SceneAuthoringContext(f.model, f.documents, { document, scene: document.scenes[0], sourceVersion: f.model.version });
@@ -13,6 +14,59 @@ function fixture(t: TestContext, source = SOURCE) {
 	const text = () => { context.refresh(); const visual = context.visualScene!.canvas[0]; assert.ok(visual?.kind === 'text'); return visual; };
 	return { ...f, context, text };
 }
+
+test('Scene text consumes an imported typed RODATA field and refreshes its source dependency', t => {
+	const labels = `module<const>
+struct text_record
+ message: string
+end
+rodata labels: text_record = { message = 'AA' }
+return { labels = labels }`;
+	const scene = SOURCE.replace("text='A'", 'text=labels[0].message');
+	const start = scene.indexOf("scenes.register('text'");
+	const source = `local source<const> = require('labels')\nlocal labels<const>: *text_record = source.labels\n`
+		+ scene.slice(0, start) + 'local function register()\n' + scene.slice(start) + 'end\n';
+	const f = fixture(t, source, [...SCENE_TEXT_MODULES, ['labels.lua', labels]]);
+	const before = f.text();
+	assert.deepEqual([...before.rows[0].text], [65, 65]);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+	const resource = f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'labels.lua' })!;
+	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource), offset = labels.indexOf("'AA'") + 1;
+	provider.pushEditOperations([{ offset, deleteLength: 2, text: 'A' }]);
+	assert.deepEqual([...f.text().rows[0].text], [65]);
+	assert.deepEqual([...before.rows[0].text], [65, 65], 'a retained projection keeps its original source generation');
+	provider.undo(); assert.deepEqual([...f.text().rows[0].text], [65, 65]);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
+test('Scene text inside a registration function resolves its captured typed view', t => {
+	const prefix = `struct text_record\n message: string\nend\nrodata labels: text_record = { message = 'AA' }\nlocal view<const>: *text_record = labels\n`;
+	const scene = SOURCE.replace("text='A'", 'text=view[0].message');
+	const start = scene.indexOf("scenes.register('text'");
+	const source = prefix + scene.slice(0, start) + 'local function register()\n' + scene.slice(start) + 'end\n';
+	const f = fixture(t, source);
+	assert.deepEqual([...f.text().rows[0].text], [65, 65]);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
+test('Scene text resolves a const typed view declared inside its registration function', t => {
+	const prefix = `struct text_record\n message: string\nend\nrodata labels: text_record = { message = 'AA' }\n`;
+	const scene = SOURCE.replace("text='A'", 'text=view[0].message');
+	const start = scene.indexOf("scenes.register('text'");
+	const source = prefix + scene.slice(0, start) + 'local function register()\nlocal view<const>: *text_record = labels\n'
+		+ scene.slice(start) + 'end\n';
+	const f = fixture(t, source);
+	assert.deepEqual([...f.text().rows[0].text], [65, 65]);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
+test('Scene text does not invent content for an unknown typed address', t => {
+	const source = `struct text_record\n message: string\nend\nlocal labels: *text_record = acquire()\n`
+		+ SOURCE.replace("text='A'", 'text=labels[0].message');
+	const f = fixture(t, source);
+	assert.equal(f.context.visualScene!.canvas.length, 0);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
 
 test('a real text component consumes declared custom font calls and preserves the exact source occurrence', t => {
 	const f = fixture(t), text = f.text();

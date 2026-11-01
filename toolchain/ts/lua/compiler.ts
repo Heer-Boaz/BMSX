@@ -106,10 +106,7 @@ import { CLOSURE_ADDRESS_REGISTER_WIDE_C, EXT_A_BITS, EXT_B_BITS, EXT_BX_BITS, E
 import { buildLuaSemanticFrontend, type LuaBoundReference, type LuaSemanticFrontend, type LuaSemanticFrontendFile } from './semantic/frontend';
 import { findLuaLexicalBindingAt } from './semantic/scope_query';
 import { ValueKindFlowAnalyzer, type SymbolFlowState } from './compiler/compile_value_flow';
-import {
-	evaluateCompileTimeNumberBinaryOperator,
-	resolveCompileTimeNumberBinaryOperator,
-} from './compiler/compile_time_number';
+import { resolveCompileTimeNumberBinaryOperator } from './compiler/compile_time_number';
 import { PROGRAM_BOOT_GLOBAL_NAMES, SYSTEM_ROM_BOOT_PRIMITIVE_NAMES, SYSTEM_ROM_VECTOR_HANDLER_NAME_SET, type ProgramCompileDomain } from './compiler/system_boot_symbols';
 import { LuaSyntaxError } from './errors';
 import { stringLiteralValue } from './syntax/literals';
@@ -127,7 +124,10 @@ import {
 import { MemoryAccessKind } from '../../../machine/ts/spec/blua32/memory_access_kind';
 import { getMemoryAccessKindForName } from './memory_access_syntax';
 import { utf8CodepointCount } from '../../../machine/ts/common/utf8';
-import { StructTypes, indexedStructType, type StructResolvedType } from './compiler/struct_types';
+import { StructTypes, indexedStructType, type StructResolvedType } from './static/struct_types';
+import { evaluateStaticNumeric, type StaticNumericContext, type StaticNumericValue } from './static/numeric';
+import { visitStaticStorageShape } from './static/initializers';
+import { createCompilerStaticBindings } from './compiler/static_bindings';
 import { buildStaticDebugScopes } from './compiler/static_debug';
 import { isReservedIntrinsicName } from './semantic/common';
 import {
@@ -298,13 +298,8 @@ type RelocatableConstExportValue = Extract<ConstExportValue, {
 	kind: 'bss_addr' | 'data_addr' | 'rodata_addr' | 'link_value';
 }>;
 
-type CompileTimeNumericValue =
-	| { kind: 'number'; value: number }
-	| {
-		kind: 'link_value';
-		modulePath: string;
-		expression: ProgramLinkValueExpression;
-	};
+type CompileTimeLinkValue = Extract<RelocatableConstExportValue, { kind: 'link_value' }>;
+type CompileTimeNumericValue = StaticNumericValue<CompileTimeLinkValue>;
 
 type LocalBinding = {
 	symbolHandle: string;
@@ -1228,7 +1223,7 @@ const buildProtoId = (parentId: string, hint: string): string => {
 	return `${parentId}/${hint}`;
 }
 
-class FunctionBuilder {
+class FunctionBuilder implements StaticNumericContext<void, CompileTimeLinkValue> {
 	private readonly program: ProgramBuilder;
 	private readonly parent: FunctionBuilder | null;
 	private readonly semantics: LuaSemanticFrontendFile;
@@ -3344,7 +3339,7 @@ class FunctionBuilder {
 	private evaluateCompileTimeUnaryExpression(expression: LuaUnaryExpression): boolean {
 		switch (expression.operator) {
 			case LuaUnaryOperator.Negate: {
-				const value = this.evaluateCompileTimeNumericValue(expression);
+				const value = evaluateStaticNumeric(this, undefined, expression);
 				return value !== undefined && this.setCompileTimeNumericValue(value);
 			}
 			case LuaUnaryOperator.Not:
@@ -3360,7 +3355,7 @@ class FunctionBuilder {
 					&& this.setCompileTimeNumberValue(utf8CodepointCount(this.compileTimeValue));
 			}
 			case LuaUnaryOperator.BitwiseNot: {
-				const value = this.evaluateCompileTimeNumericValue(expression);
+				const value = evaluateStaticNumeric(this, undefined, expression);
 				return value !== undefined && this.setCompileTimeNumericValue(value);
 			}
 			case LuaUnaryOperator.StringId:
@@ -3371,134 +3366,52 @@ class FunctionBuilder {
 	}
 
 	private evaluateCompileTimeNumber(expression: LuaExpression): number | undefined {
-		const value = this.evaluateCompileTimeNumericValue(expression);
+		const value = evaluateStaticNumeric(this, undefined, expression);
 		return value?.kind === 'number' ? value.value : undefined;
 	}
 
-	private evaluateCompileTimeNumericValue(expression: LuaExpression): CompileTimeNumericValue | undefined {
-		switch (expression.kind) {
-			case LuaSyntaxKind.NumericLiteralExpression:
-				return { kind: 'number', value: (expression as LuaNumericLiteralExpression).value };
-			case LuaSyntaxKind.IdentifierExpression: {
-				const binding = this.resolveReferenceConstBinding(getResolvedIdentifierReference(this.semantics, expression as LuaIdentifierExpression));
-				if (binding && binding.hasConstNumberValue) {
-					return { kind: 'number', value: binding.constNumberValue };
-				}
-				if (binding?.constRelocValue?.kind === 'link_value') {
-					return binding.constRelocValue;
-				}
-				return;
-			}
-			case LuaSyntaxKind.MemberExpression:
-			case LuaSyntaxKind.IndexExpression: {
-				const exported = this.resolveModuleExportConstValue(expression);
-				if (exported?.value.kind === 'number') {
-					return { kind: 'number', value: exported.value.value };
-				}
-				return exported?.value.kind === 'link_value' ? exported.value : undefined;
-			}
-			case LuaSyntaxKind.UnaryExpression: {
-				const unary = expression as LuaUnaryExpression;
-				switch (unary.operator) {
-					case LuaUnaryOperator.Negate: {
-						const operand = this.evaluateCompileTimeNumericValue(unary.operand);
-						if (operand === undefined) return;
-						return operand.kind === 'number'
-							? { kind: 'number', value: -operand.value }
-							: {
-								kind: 'link_value',
-								modulePath: operand.modulePath,
-								expression: {
-									kind: 'unary',
-									operator: unary.operator,
-									operand: operand.expression,
-								},
-							};
-					}
-					case LuaUnaryOperator.BitwiseNot: {
-						const operand = this.evaluateCompileTimeNumericValue(unary.operand);
-						if (operand === undefined) return;
-						return operand.kind === 'number'
-							? { kind: 'number', value: ~operand.value }
-							: {
-								kind: 'link_value',
-								modulePath: operand.modulePath,
-								expression: {
-									kind: 'unary',
-									operator: unary.operator,
-									operand: operand.expression,
-								},
-							};
-					}
-					case LuaUnaryOperator.Length: {
-						const arrayLength = this.resolveStaticStorageArrayLength(unary.operand);
-						if (arrayLength !== undefined) {
-							return { kind: 'number', value: arrayLength };
-						}
-						if (this.evaluateCompileTimeExpression(unary.operand) && typeof this.compileTimeValue === 'string') {
-							return { kind: 'number', value: utf8CodepointCount(this.compileTimeValue) };
-						}
-						return;
-					}
-					default:
-						return;
-				}
-			}
-			case LuaSyntaxKind.BinaryExpression:
-				return this.evaluateCompileTimeNumericBinaryExpression(expression as LuaBinaryExpression);
-			case LuaSyntaxKind.SizeOfExpression:
-				return { kind: 'number', value: this.program.types.resolve(this.moduleId, (expression as LuaSizeOfExpression).typeRef).size };
-			case LuaSyntaxKind.OffsetOfExpression: {
-				const offsetOf = expression as LuaOffsetOfExpression;
-				return { kind: 'number', value: this.program.types.offsetOf(this.moduleId, offsetOf) };
-			}
-			default:
-				return;
+	public resolveNumeric(_scope: void, expression: LuaIdentifierExpression | LuaMemberExpression | LuaIndexExpression): CompileTimeNumericValue | undefined {
+		if (expression.kind === LuaSyntaxKind.IdentifierExpression) {
+			const binding = this.resolveReferenceConstBinding(getResolvedIdentifierReference(this.semantics, expression));
+			if (binding && binding.hasConstNumberValue) return { kind: 'number', value: binding.constNumberValue };
+			return binding?.constRelocValue?.kind === 'link_value' ? binding.constRelocValue : undefined;
 		}
+		const value = this.resolveModuleExportConstValue(expression)?.value;
+		return value?.kind === 'number' || value?.kind === 'link_value' ? value : undefined;
 	}
 
-	private evaluateCompileTimeNumericBinaryExpression(expression: LuaBinaryExpression): CompileTimeNumericValue | undefined {
-		const left = this.evaluateCompileTimeNumericValue(expression.left);
-		const right = this.evaluateCompileTimeNumericValue(expression.right);
-		if (left === undefined || right === undefined) return;
-		if (left.kind === 'number' && right.kind === 'number') {
-			const value = evaluateCompileTimeNumberBinaryOperator(expression.operator, left.value, right.value);
-			return value === undefined ? undefined : { kind: 'number', value };
-		}
-		let modulePath: string;
-		if (left.kind === 'link_value') {
-			modulePath = left.modulePath;
-		} else if (right.kind === 'link_value') {
-			modulePath = right.modulePath;
-		} else {
-			return;
-		}
-		if ((left.kind === 'link_value' && left.modulePath !== modulePath)
-			|| (right.kind === 'link_value' && right.modulePath !== modulePath)) {
-			return;
-		}
-		const operator = resolveCompileTimeNumberBinaryOperator(expression.operator);
-		if (operator === undefined) {
-			return;
-		}
-		return {
-			kind: 'link_value',
-			modulePath,
-			expression: {
-				kind: 'binary',
-				operator,
-				left: left.kind === 'number'
-					? { kind: 'number', value: left.value }
-					: left.expression,
-				right: right.kind === 'number'
-					? { kind: 'number', value: right.value }
-					: right.expression,
-			},
-		};
+	public numericLength(_scope: void, expression: LuaExpression): number | undefined {
+		const length = this.resolveStaticStorageArrayLength(expression);
+		if (length !== undefined) return length;
+		return this.evaluateCompileTimeExpression(expression) && typeof this.compileTimeValue === 'string'
+			? utf8CodepointCount(this.compileTimeValue) : undefined;
+	}
+
+	public numericSize(_scope: void, expression: LuaSizeOfExpression): number {
+		return this.program.types.resolve(this.moduleId, expression.typeRef).size;
+	}
+
+	public numericOffset(_scope: void, expression: LuaOffsetOfExpression): number {
+		return this.program.types.offsetOf(this.moduleId, expression);
+	}
+
+	public numericLinkUnary(operator: LuaUnaryOperator.Negate | LuaUnaryOperator.BitwiseNot, operand: CompileTimeLinkValue): CompileTimeLinkValue {
+		return { kind: 'link_value', modulePath: operand.modulePath,
+			expression: { kind: 'unary', operator, operand: operand.expression } };
+	}
+
+	public numericLinkBinary(operator: LuaBinaryOperator, link: CompileTimeLinkValue, other: CompileTimeNumericValue,
+		linkOnLeft: boolean): CompileTimeLinkValue | undefined {
+		if (other.kind === 'link_value' && other.modulePath !== link.modulePath) return;
+		const numericOperator = resolveCompileTimeNumberBinaryOperator(operator);
+		if (numericOperator === undefined) return;
+		const otherExpression = other.kind === 'number' ? { kind: 'number' as const, value: other.value } : other.expression;
+		return { kind: 'link_value', modulePath: link.modulePath, expression: { kind: 'binary', operator: numericOperator,
+			left: linkOnLeft ? link.expression : otherExpression, right: linkOnLeft ? otherExpression : link.expression } };
 	}
 
 	private evaluateCompileTimeNumberBinaryInto(expression: LuaBinaryExpression): boolean {
-		const value = this.evaluateCompileTimeNumericBinaryExpression(expression);
+		const value = evaluateStaticNumeric(this, undefined, expression);
 		return value !== undefined && this.setCompileTimeNumericValue(value);
 	}
 
@@ -3740,63 +3653,15 @@ class FunctionBuilder {
 	private encodeStorageInitializer(type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): StaticStorageInitializer {
 		const bytes = new Uint8Array(type.size);
 		const rodataConstRelocs: ProgramRodataConstReloc[] = [];
-		this.writeStorageInitializer(new DataView(bytes.buffer), rodataConstRelocs, 0, type, expression, sectionName);
+		const out = new DataView(bytes.buffer);
+		visitStaticStorageShape(this.frontend.snapshot.getFileData(this.moduleId)!, type, expression, sectionName,
+			(byteOffset, scalar, initializer) => this.writeStorageScalar(out, rodataConstRelocs, byteOffset, scalar, initializer, sectionName));
 		return { bytes, rodataConstRelocs };
 	}
 
-	private writeStorageInitializer(out: DataView, rodataConstRelocs: ProgramRodataConstReloc[], byteOffset: number, type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): void {
-		if (type.dimensions.length !== 0) {
-			if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
-				throw new Error(`${sectionName} array '${type.name}' requires a table initializer.`);
-			}
-			const table = expression as LuaTableConstructorExpression;
-			const elementType = indexedStructType(type);
-			let elementIndex = 0;
-			for (let index = 0; index < table.fields.length; index += 1) {
-				const field = table.fields[index];
-				if (field.kind !== LuaTableFieldKind.Array) {
-					throw new Error(`${sectionName} arrays use positional initializers.`);
-				}
-				this.writeStorageInitializer(out, rodataConstRelocs, byteOffset + elementIndex * elementType.size, elementType, field.value, sectionName);
-				elementIndex += 1;
-			}
-			if (elementIndex !== type.dimensions[0]) {
-				throw new Error(`${sectionName} array '${type.name}' expects ${type.dimensions[0]} elements.`);
-			}
-			return;
-		}
-		if (type.struct) {
-			if (expression.kind !== LuaSyntaxKind.TableConstructorExpression) {
-				throw new Error(`${sectionName} struct '${type.name}' requires a named-field initializer.`);
-			}
-			const table = expression as LuaTableConstructorExpression;
-			const initializedFields = new Set<string>();
-			for (let index = 0; index < table.fields.length; index += 1) {
-				const initializerField = table.fields[index];
-				if (initializerField.kind !== LuaTableFieldKind.IdentifierKey) {
-					throw new Error(`${sectionName} struct '${type.name}' uses named-field initializers.`);
-				}
-				const field = type.struct.fields.get(initializerField.name);
-				if (!field) {
-					throw new Error(`${sectionName} initializer has no field '${initializerField.name}' in struct '${type.name}'.`);
-				}
-				if (initializedFields.has(initializerField.name)) {
-					throw new Error(`${sectionName} initializer repeats field '${initializerField.name}' in struct '${type.name}'.`);
-				}
-				initializedFields.add(initializerField.name);
-				this.writeStorageInitializer(out, rodataConstRelocs, byteOffset + field.offset, field.type, initializerField.value, sectionName);
-			}
-			for (const field of type.struct.fields.values()) {
-				if (!initializedFields.has(field.name)) {
-					throw new Error(`${sectionName} initializer is missing field '${field.name}' in struct '${type.name}'.`);
-				}
-			}
-			return;
-		}
-		if (!type.access) {
-			throw new Error(`${sectionName} initializer reached a non-scalar '${type.name}'.`);
-		}
-		if (type.access.kind === 'const_pool') {
+	private writeStorageScalar(out: DataView, rodataConstRelocs: ProgramRodataConstReloc[], byteOffset: number, type: StructResolvedType, expression: LuaExpression, sectionName: '.data' | '.rodata'): void {
+		const access = type.access!;
+		if (access.kind === 'const_pool') {
 			if (sectionName !== '.rodata') {
 				throw new Error(`Static string fields are only valid in .rodata storage.`);
 			}
@@ -3812,7 +3677,7 @@ class FunctionBuilder {
 		if (value === undefined) {
 			throw new Error(`${sectionName} primitive initializer must be a compile-time number.`);
 		}
-		switch (type.access.memoryKind) {
+		switch (access.memoryKind) {
 			case MemoryAccessKind.F32LE:
 				out.setFloat32(byteOffset, value, true);
 				return;
@@ -3823,7 +3688,7 @@ class FunctionBuilder {
 		if (!Number.isInteger(value)) {
 			throw new Error(`${sectionName} primitive initializer must be a compile-time integer.`);
 		}
-		switch (type.access.memoryKind) {
+		switch (access.memoryKind) {
 			case MemoryAccessKind.U8:
 				out.setUint8(byteOffset, value);
 				return;
@@ -5308,7 +5173,7 @@ class FunctionBuilder {
 	}
 
 	private compileUnaryExpression(expression: LuaUnaryExpression, target: number, resultCount: number): void {
-		const compileTimeValue = this.evaluateCompileTimeNumericValue(expression);
+		const compileTimeValue = evaluateStaticNumeric(this, undefined, expression);
 		if (compileTimeValue?.kind === 'link_value') {
 			this.emitLoadConstExportValue(target, compileTimeValue);
 			if (resultCount > 1) this.emitLoadNil(target + 1, resultCount - 1);
@@ -5363,7 +5228,7 @@ class FunctionBuilder {
 	}
 
 	private compileBinaryExpression(expression: LuaBinaryExpression, target: number): void {
-		const compileTimeValue = this.evaluateCompileTimeNumericValue(expression as LuaBinaryExpression);
+		const compileTimeValue = evaluateStaticNumeric(this, undefined, expression as LuaBinaryExpression);
 		if (compileTimeValue?.kind === 'link_value') {
 			this.emitLoadConstExportValue(target, compileTimeValue);
 			return;
@@ -5946,10 +5811,12 @@ function buildCompilerSemanticFrontend(
 		analysis: buildLuaFileSemanticData(entrySource, entryChunk.locations.path, undefined, entryChunk),
 	}];
 	const moduleFiles = new Map<string, string>();
+	const linkExports = new Map<string, ReadonlySet<string>>();
 	for (let index = 0; index < modules.length; index += 1) {
 		const module = modules[index];
 		const source = requireModuleSource(module);
 		moduleFiles.set(module.path, module.path);
+		if (module.linkValues !== undefined) linkExports.set(module.path, new Set(module.linkValues.keys()));
 		sources.push({
 			path: module.path,
 			source,
@@ -5966,6 +5833,7 @@ function buildCompilerSemanticFrontend(
 	}
 	return buildLuaSemanticFrontend(sources, new Map(sources.map(source => [source.path, moduleBindings])), {
 		extraGlobalNames: PROGRAM_BOOT_GLOBAL_NAMES[programDomain],
+		linkExports,
 	});
 }
 
@@ -6249,7 +6117,7 @@ export function compileLuaChunkToProgram(
 		options.traceStatements ?? 'erase',
 		options.preloadModules ?? [],
 		compiledModulePaths,
-		new StructTypes(frontend, moduleCompileContext),
+		new StructTypes(frontend.snapshot, createCompilerStaticBindings(frontend.snapshot, moduleCompileContext)),
 		options.captureLayout,
 	);
 	if (programDomain === 'cart') {

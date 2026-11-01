@@ -1,3 +1,4 @@
+import { LuaStaticSourceReads } from '../static/source_reads';
 import { composeLuaBindingFacts, finishLuaBindingContribution, type LuaBindingContribution, type LuaBindingFacts, type LuaBindingWork, type LuaBodyInsertion } from './body_facts';
 import { composeLuaBuiltinOperations, type LuaBuiltinOperationSite } from './builtin_operations';
 import { createScopeId, type ScopeID, type ScopeKind, type SemanticScope } from './scope_facts';
@@ -35,6 +36,7 @@ import {
 	type LuaFunctionName,
 	type LuaStringLiteralExpression,
 	type LuaReturnStatement,
+	type LuaTypeReference,
 } from '../syntax/ast';
 import type { LuaSymbolEntry } from '../semantic_contracts';
 import { parseLuaChunkWithRecovery, updateLuaChunk, type ParsedLuaChunk } from '../analysis/parse';
@@ -42,7 +44,7 @@ import { LuaCompletionAnalysis, type LuaCompletion } from '../analysis/completio
 import type { LuaSyntaxError } from '../errors';
 import { createSymbolId, type SemanticSymbolKind, type SymbolID } from './symbols';
 import type { SemanticTokenFact, SemanticRole } from './tokens';
-import type { LuaProjectModuleBindings } from './module_resolution';
+import type { LuaModuleLinkExports, LuaProjectModuleBindings } from './module_resolution';
 import { LUA_BUILTIN_TABLE_ITERATOR_ARGUMENTS } from '../builtin_descriptors';
 import {
 	findLuaModuleExport,
@@ -96,6 +98,8 @@ export type Decl = {
 	scope: ScopeID;
 	visibleFrom: LuaSyntaxPoint;
 	isGlobal: boolean;
+	/** Only explicitly annotated locals carry a typed address view. */
+	pointerType?: LuaTypeReference;
 };
 
 export type Ref = {
@@ -185,15 +189,22 @@ export class LuaSemanticWorkspaceSnapshot {
 	public readonly files: readonly FileSemanticData[];
 	public readonly symbolResolver: WorkspaceSymbolResolver;
 	private globalDecls: readonly Decl[] | undefined;
+	private staticReadQuery: LuaStaticSourceReads | undefined;
 
 	constructor(
 		version: number,
 		files: readonly FileSemanticData[],
 		symbolResolver: WorkspaceSymbolResolver,
+		public readonly linkExports: LuaModuleLinkExports,
 	) {
 		this.version = version;
 		this.files = files;
 		this.symbolResolver = symbolResolver;
+	}
+
+	public get staticSourceReads(): LuaStaticSourceReads {
+		if (this.staticReadQuery === undefined) this.staticReadQuery = new LuaStaticSourceReads(this);
+		return this.staticReadQuery;
 	}
 
 	public getFileData(path: string): FileSemanticData | undefined {
@@ -222,14 +233,17 @@ function createWorkspaceSnapshotFromIndex(index: LuaProjectIndex): LuaSemanticWo
 		index.getVersion(),
 		index.orderedFiles,
 		index.symbolResolver,
+		index.linkExports,
 	);
 }
 
 export function buildLuaSemanticWorkspaceSnapshot(
 	sources: ReadonlyArray<LuaSemanticWorkspaceSnapshotInput>,
 	moduleBindings: LuaProjectModuleBindings,
+	linkExports?: LuaModuleLinkExports,
 ): LuaSemanticWorkspaceSnapshot {
 	const workspace = new LuaSemanticWorkspace(moduleBindings);
+	if (linkExports !== undefined) workspace.setLinkExports(linkExports);
 	const analyses = new Array<FileSemanticData>(sources.length);
 	for (let index = 0; index < sources.length; index += 1) {
 		const source = sources[index];
@@ -411,6 +425,7 @@ class LuaProjectIndex {
 	private resolver: WorkspaceSymbolResolver | undefined;
 	private version = 0;
 	private nextFileOrder = 1;
+	public linkExports: LuaModuleLinkExports = new Map();
 
 	constructor(private moduleBindings: LuaProjectModuleBindings) {}
 
@@ -423,6 +438,13 @@ class LuaProjectIndex {
 		if (bindings === this.moduleBindings) return false;
 		this.moduleBindings = bindings;
 		this.resolver = undefined;
+		this.version += 1;
+		return true;
+	}
+
+	public setLinkExports(exports: LuaModuleLinkExports): boolean {
+		if (exports === this.linkExports) return false;
+		this.linkExports = exports;
 		this.version += 1;
 		return true;
 	}
@@ -730,6 +752,7 @@ class SemanticBuilder {
 					pending.push(decl);
 					const pointerTypeRef = localAssignment.pointerTypeRefs[index];
 					if (pointerTypeRef !== null) {
+						decl.pointerType = pointerTypeRef;
 						for (const lengthExpression of pointerTypeRef.arrayLengths) {
 							if (lengthExpression) {
 								this.visitExpression(lengthExpression, { tableBaseDecl: null, tableBasePath: null });
@@ -2185,6 +2208,7 @@ function toDecl(internal: InternalDecl): Decl {
 		scope: internal.scope,
 		visibleFrom: internal.visibleFrom,
 		isGlobal: internal.isGlobal,
+		pointerType: internal.pointerType,
 	};
 }
 
@@ -2243,6 +2267,12 @@ export class LuaSemanticWorkspace {
 
 	public setModuleBindings(bindings: LuaProjectModuleBindings): boolean {
 		if (!this.index.setModuleBindings(bindings)) return false;
+		this.snapshot = null;
+		return true;
+	}
+
+	public setLinkExports(exports: LuaModuleLinkExports): boolean {
+		if (!this.index.setLinkExports(exports)) return false;
 		this.snapshot = null;
 		return true;
 	}

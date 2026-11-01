@@ -12,7 +12,7 @@ import {
 	type LuaTableConstructorExpression,
 	type LuaUnaryExpression,
 } from '../../syntax/ast';
-import { evaluateCompileTimeNumberBinaryOperator } from '../compile_time_number';
+import { evaluateStaticNumberBinaryOperator } from '../../static/scalar';
 import type { LuaSemanticFrontendFile } from '../../semantic/frontend';
 import {
 	getBoundDeclaration,
@@ -22,16 +22,13 @@ import { visitNamedTableFields } from './expression_paths';
 import { buildModuleExportPathKey } from '../../module_path';
 import type { ModuleExportShape } from './module_shape';
 import type { ProgramLinkValueExpression } from '../program_object';
+import type { StaticScalar } from '../../static/scalar';
 
 type ExportPathIndex = {
 	has(pathKey: string): boolean;
 };
 
-export type ConstExportValue =
-	| { kind: 'nil' }
-	| { kind: 'boolean'; value: boolean }
-	| { kind: 'number'; value: number }
-	| { kind: 'string'; value: string }
+export type ConstExportValue = StaticScalar
 	| { kind: 'bss_addr'; symbolHandle: string }
 	| { kind: 'data_addr'; symbolHandle: string }
 	| { kind: 'rodata_addr'; symbolHandle: string }
@@ -78,7 +75,7 @@ const evaluateModuleConstLiteral = (
 			if (left?.kind !== 'number' || right?.kind !== 'number') {
 				return undefined;
 			}
-			const value = evaluateCompileTimeNumberBinaryOperator(binary.operator, left.value, right.value);
+			const value = evaluateStaticNumberBinaryOperator(binary.operator, left.value, right.value);
 			return value === undefined ? undefined : { kind: 'number', value };
 		}
 		default:

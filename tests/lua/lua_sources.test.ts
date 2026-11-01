@@ -190,6 +190,16 @@ test('release BLua32 images do not synthesize editable Lua source records', () =
 	assert.equal(registry.path2lua['boot/bootrom.lua'], undefined);
 });
 
+test('generated asset source records publish producer-owned link-dependent exports', () => {
+	const entry = luaEntry('main', 'entry.lua', 'cart', 0);
+	const payload: RomAsset = { resid: 'title', type: 'data', payload_id: 'cart', start: 0x100, end: 0x110 };
+	const source = new TestRomSource([entry, payload], { main: 'return true' });
+	const registry = buildLuaSources(source, source, makeIndex([entry, payload]), 'cart', 'entry', []);
+	const generated = registry.module2lua[ROM_ASSET_SYMBOL_MODULE_PATH];
+	assert.deepEqual([...generated.linkExports!], ['data_title_addr']);
+	assert.match(generated.src, /data_title_len/);
+});
+
 test('system source registry retains the BLua32 compile-time firmware module', () => {
 	const entry = luaEntry('boot', 'boot.lua', 'system', 0);
 	const source = new TestRomSource([entry], {

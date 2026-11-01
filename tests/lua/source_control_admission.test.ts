@@ -125,7 +125,10 @@ test('withholding the Scene group retires its detail draft without publishing th
 
 for (const target of ['outline', 'actions'] as const) test(`an unpresented Scene ${target} cannot retain destructive keyboard admission`, t => {
 	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { input } = f.scene();
+	// Only a compact Scene has section actions; a split view has no empty toolbar stop.
+	if (target === 'actions') { f.editor.setFontVariant('msx'); f.editor.updateViewport({ width: 220, height: 288 }); f.editor.update(0); }
 	f.press('Escape');
+	if (target === 'actions') assert.notEqual(input.view.layout.mode, 'split');
 	if (target === 'actions') f.press('Tab', KeyModifier.shift);
 	assert.ok(inputFocus.admittedTarget !== null);
 	assert.equal(input.view.actionBar.hasFocus, target === 'actions');
