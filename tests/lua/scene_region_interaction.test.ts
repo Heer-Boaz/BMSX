@@ -58,10 +58,10 @@ for (const compact of [false, true])
 		const actions = inputFocus.admittedTarget;
 		assert.ok(actions !== null && control.inputScope.contains(actions.scope));
 		assert.equal(view.actionBar.hasFocus, true);
-		const fields = [...control.details.controls, ...control.details.options.controls]
-			.filter(control => control.field.focusTarget.canFocus!()).map(control => control.field.focusTarget);
+			const fields = [...control.details.controls.map(control => control.field.focusTarget),
+				...control.details.options.controls.map(control => control.focusTarget)].filter(target => target.canFocus!());
 		assert.ok(fields.includes(control.details.controls[0].field.focusTarget)
-			&& fields.includes(control.details.options.controls[0].field.focusTarget), 'position and expression controls both participate in the region boundary');
+				&& fields.includes(control.details.options.controls[0].focusTarget), 'position and expression controls both participate in the region boundary');
 		const cycle = compact ? [actions, control.details.commandTarget, ...fields]
 			: [actions, control.hierarchy.focusTarget, control.details.commandTarget, ...fields];
 		for (let index = 1; index <= cycle.length; index++) {
@@ -80,7 +80,8 @@ for (const compact of [false, true])
 for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (const kind of ['position', 'option'] as const)
 	test(`document Scene ${command} observes its canonical ${kind} only after the actual Details draft settles`, async t => {
 		const f = await fixture(t), { control, view, model } = f;
-		const field = kind === 'position' ? control.details.controls[0] : control.details.options.controls[0];
+		const option = control.details.options.controls[0]; assert.ok(option.kind === 'value');
+		const field = kind === 'position' ? control.details.controls[0] : option.control;
 		assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '31', true);
 		assert.ok(control.details.inputScope.contains(field.field.focusTarget.scope)
 			&& !control.details.inputScope.contains(field.field.focusTarget.commandContext.scope),
@@ -110,7 +111,8 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (co
 for (const command of ['editor.source', 'editor.sourceToSide'] as const) for (const kind of ['position', 'option'] as const)
 	test(`document Scene ${command} cannot replace a newer selection published by its ${kind} draft`, async t => {
 		const f = await fixture(t), { control, view, model } = f;
-		const field = kind === 'position' ? control.details.controls[0] : control.details.options.controls[0];
+		const option = control.details.options.controls[0]; assert.ok(option.kind === 'value');
+		const field = kind === 'position' ? control.details.controls[0] : option.control;
 		assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '31', true);
 		const release = model.onDidChangeContent(() => {
 			release(); view.authoring.refresh();

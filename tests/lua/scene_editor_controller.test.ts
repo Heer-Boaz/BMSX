@@ -285,11 +285,14 @@ test('Scene position and option bindings reread canonical values after commit an
 	pane.update();
 	assert.equal(pane.control.details.controls[0].field.text, '11');
 	const option = pane.control.details.options.controls[0];
-	setFieldText(option.field, 'false', false);
-	assert.equal(option.commit(), true);
+	assert.ok(option.kind === 'boolean');
+	assert.equal(option.focusTarget.focus(), true);
+	inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none));
+	inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none, false, false));
+	assert.equal(f.model.buffer.getText(), f.source.replace('visible = true', 'visible = false'));
 	f.model.undo();
 	pane.update();
-	assert.equal(option.field.text, 'true');
+	assert.equal(option.control.input!.checked, true);
 	assert.equal(f.model.buffer.getText(), f.source);
 });
 

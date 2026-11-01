@@ -21,10 +21,13 @@ import { linkTestSystemBlua32 } from '../helpers/blua32';
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntime, createTestSystemImageRuntimeSourceState } from '../helpers/runtime_sources';
 import { parseLuaChunk } from './cpu_test_harness';
+import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
 
 const SCENE_SOURCE = `local scenes = require('cartlib/world/scene_library')
+local prefab = require('cartlib/world/prefab')
+prefab.define({def_id='sprite',class=require('cartlib/world/object_3d')})
 scenes.register('room', { objects = {
-    { member_id = 'actor', definition_id = 'sprite', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = {
+    { member_id = 'actor', definition_id = 'sprite', position = { x = 1, y = 2, z = 3 }, options = {
         color = 0xff00aabb, visible = true,
     } },
 } })`;
@@ -44,6 +47,8 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		base_update_timestamp: 0, generated: false, sourceKind: 'project', program_module: true });
 	const apiPath = `${apiModule}.lua`;
 	registerLuaSourceRecord(registry, createScenarioTestSourceRecord(apiPath, 0, '', apiPath));
+	for (const [path, text] of SCENE_VIEWPORT_IMPORTS)
+		registerLuaSourceRecord(registry, createScenarioTestSourceRecord(path, 0, text, path));
 	const sources = createTestSystemImageRuntimeSourceState(image.romBytes, registry);
 	sources.currentBlua32Media = { system: createBlua32SystemSourceImage(image.image, image.symbols, image.biosImports,
 		captureInstalledLuaSources(registry, image.symbols!.metadata.compiledModulePaths), TEST_SYSTEM_CONTEXT_ID), cartridgeSlots: [null, null] };
@@ -58,7 +63,7 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 		const pane = editor.editorParts.main.activeGroup.panes.activePane;
 		if (pane instanceof SceneEditorPane) {
 			for (const control of pane.control.details.controls) control.cancel();
-			for (const control of pane.control.details.options.controls) control.cancel();
+			for (const entry of pane.control.details.options.controls) if (entry.kind === 'value') entry.control.cancel();
 		}
 		inputFocus.cancelInput();
 		inputFocus.setTarget(null);
@@ -90,7 +95,8 @@ function fixture(t: TestContext, source: string, apiModule: string) {
 
 for (const kind of ['position', 'option'] as const) test(`Scene ${kind} draft loses source authority immediately on readonly metadata publication`, t => {
 	const f = fixture(t, SCENE_SOURCE, 'cartlib/world/scene_library'), { pane } = f.scene();
-	const control = kind === 'position' ? pane.control.details.controls[0] : pane.control.details.options.controls[0];
+	const option = pane.control.details.options.controls[0]; assert.ok(option.kind === 'value');
+	const control = kind === 'position' ? pane.control.details.controls[0] : option.control;
 	control.field.focusTarget.focus(); assert.ok(inputFocus.admittedTarget === control.field.focusTarget);
 	assert.equal(f.editor.textTarget!.replaceText(0, control.field.text.length, '9'), true);
 	assert.equal(control.pending, true); f.unchanged();
@@ -140,17 +146,20 @@ test('Scene readonly subscriptions follow input attachment, not repeated selecti
 		return () => { subscriptions--; unbind(); };
 	});
 	const { input, pane } = f.scene();
-	// Each concurrently attached view owns one listener; reselection must not add another.
-	assert.equal(subscriptions, 1);
+	// Independently attached regions own their observers; reselection must not add another.
+	const attached = subscriptions;
+	assert.ok(attached > 0);
 	f.editor.sceneEditor.openResource(f.editor.editorParts.main.activeGroup, f.model.resource); f.editor.update(0);
-	assert.equal(subscriptions, 1);
+	assert.equal(subscriptions, attached);
 	f.editor.commands.execute('editor.source', inputFocus.target!.commandContext); await setImmediate(); f.editor.update(0);
 	assert.equal(f.editor.editorParts.main.activeGroup.model.activeTab?.kind, 'code_editor');
 	assert.ok(f.editor.editorParts.main.activeGroup.model.tabs.includes(input), 'Source retains the Scene input in its actual group');
 	assert.equal(subscriptions, 1, 'only the attached Source control retains a readonly observer');
 	f.editor.sceneEditor.openResource(f.editor.editorParts.main.activeGroup, f.model.resource); f.editor.update(0);
 	assert.ok(f.editor.editorParts.main.activeGroup.panes.activePane === pane);
-	assert.equal(subscriptions, 1, 'returning to Scene retires the Source observer and restores only its own');
+	assert.equal(subscriptions, attached, 'returning to Scene retires the Source observer and restores its attached regions');
+	f.editor.editorParts.main.activeGroup.panes.clearEditor();
+	assert.equal(subscriptions, 0, 'detaching the Scene retires every region observer');
 	f.unchanged();
 });
 

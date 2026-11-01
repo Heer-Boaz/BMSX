@@ -222,7 +222,8 @@ for (const valid of [true, false]) test(`provider renewal preserves an unchanged
 
 test('provider renewal preserves an unchanged authored option draft without preserving its expired binding', t => {
 	const f = fixture(t, `{member_id='node',definition_id='node2',options={order=7}}`);
-	const field = f.control.options.controls[0]; field.field.focusTarget.focus();
+	const option = f.control.options.controls[0]; assert.ok(option.kind === 'value');
+	const field = option.control; field.field.focusTarget.focus();
 	setFieldText(field.field, '9', true);
 	f.provider.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unrelated semantic generation\n' }]);
 	assert.equal(field.commit(), true); f.control.update();

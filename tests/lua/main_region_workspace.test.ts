@@ -224,10 +224,10 @@ for (const region of ['hierarchy', 'details'] as const)
 		const f = await fixture(t), primary = f.main.primary; assert.ok(primary instanceof ScenePrimaryClient);
 		assert.equal(selectSceneOutlineRow(primary.view.hierarchy, 1), true); f.update();
 		const panel = primary[region], selected = primary.consumer.selection, execution = f.host.execution.revision;
-		const fields = region === 'details' ? [...primary.details.control.controls, ...primary.details.control.options.controls]
-			.filter(control => control.field.focusTarget.canFocus!()).map(control => control.field.focusTarget) : [];
+		const fields = region === 'details' ? [...primary.details.control.controls.map(control => control.field.focusTarget),
+			...primary.details.control.options.controls.map(control => control.focusTarget)].filter(target => target.canFocus!()) : [];
 		if (region === 'details') assert.ok(fields.includes(primary.details.control.controls[0].field.focusTarget)
-			&& fields.includes(primary.details.control.options.controls[0].field.focusTarget));
+			&& fields.includes(primary.details.control.options.controls[0].focusTarget));
 		const cycle = [panel.actionBar.focusTarget, panel.control.focusTarget, ...fields];
 		assert.equal(cycle[0].focus(), true);
 		for (let index = 1; index <= cycle.length; index++) {

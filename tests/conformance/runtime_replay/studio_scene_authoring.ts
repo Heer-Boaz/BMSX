@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import type { SceneEditorInput } from '../../../ide/workbench/contrib/scene_editor/editor_input';
 import { openSceneEditor, selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
@@ -40,19 +41,22 @@ export async function focusOption(test: StudioFixture, scene: SceneEditorInput, 
 	if (!(pane instanceof SceneEditorPane)) throw new Error('the Scene Editor must own the option inputs');
 	const index = scene.view.details.optionProperties.findIndex(property => property.descriptor.label === label);
 	check(index >= 0, `${label}: authored option appears in the inspector`);
-	const control = pane.control.details.options.controls[index];
-	for (let step = 0; !control.field.focusTarget.hasFocus && step < pane.control.details.controls.length + pane.control.details.options.controls.length + 3; step += 1) await test.press('Tab');
-	check(control.field.focusTarget.hasFocus, `${label}: Tab reaches the authored option`);
+	const entry = pane.control.details.options.controls[index];
+	for (let step = 0; !entry.focusTarget.hasFocus && step < pane.control.details.controls.length + pane.control.details.options.controls.length + 3; step += 1) await test.press('Tab');
+	check(entry.focusTarget.hasFocus, `${label}: Tab reaches the authored option`);
 	const bounds = scene.view.details.optionProperties[index].bounds;
 	check(bounds.top >= scene.view.details.viewport.bounds.top && bounds.bottom <= scene.view.details.viewport.bounds.bottom,
 		`${label}: focus reveals the complete option input`);
-	await test.click(bounds);
-	await test.press('ControlLeft', 'KeyA');
-	return control;
+	if (entry.kind === 'value') {
+		await test.click(bounds);
+		await test.press('ControlLeft', 'KeyA');
+	}
+	return entry;
 }
 
 export async function editOption(test: StudioFixture, scene: SceneEditorInput, member: number, label: string, text: string) {
-	const control = await focusOption(test, scene, member, label);
+	const entry = await focusOption(test, scene, member, label); assert.ok(entry.kind === 'value');
+	const control = entry.control;
 	await typeSourceText(test, text);
 	check(control.pending, `${label}: keyboard produces a local draft`);
 	await test.press('ControlLeft', 'KeyS');

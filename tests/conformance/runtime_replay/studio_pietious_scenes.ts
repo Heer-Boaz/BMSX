@@ -1,5 +1,5 @@
 import { buildModuleExportSlotName } from '../../../toolchain/ts/lua/module_path';
-import { openScene, editPosition, editOption, focusOption, typeSourceText } from './studio_scene_authoring';
+import { openScene, editPosition, editOption, focusOption } from './studio_scene_authoring';
 import { selectMember } from './studio_scene_source';
 import { check, type StudioFixture } from './studio_fixture';
 import { testPietiousRoomReload } from './studio_pietious_room_reload';
@@ -58,9 +58,9 @@ export async function runStudioPietiousScenes(test: StudioFixture) {
 	await editPosition(test, effects, 3, 0, 16);
 	await editOption(test, effects, 3, 'text', "'Scene victory!'");
 	const visibility = await focusOption(test, effects, 0, 'visible');
-	await typeSourceText(test, 'true');
-	await press('Enter');
-	check(visibility.field.text === 'true', 'boolean options accept ordinary Lua values');
+	check(visibility.kind === 'boolean', 'literal visibility owns a checkbox');
+	await press('Space');
+	check(effects.view.details.optionProperties.find(property => property.descriptor.label === 'visible')!.descriptor.sourceText === 'true', 'the checkbox edits the authored boolean');
 	await press('ControlLeft', 'KeyZ');
 	check(effects.view.details.optionProperties.find(property => property.descriptor.label === 'visible')!.descriptor.sourceText === 'false', 'Undo restores the hidden effect before gameplay');
 	await press('ControlLeft', 'KeyS');

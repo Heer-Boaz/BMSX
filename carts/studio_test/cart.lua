@@ -30,6 +30,8 @@ prefab.define({ def_id = 'studio_test.marker', class = sprite_object,
 local root_scene<const> = require('scenes/root')
 root_scene.register()
 require('scenes/space')
+local boolean_scene<const> = require('scenes/boolean')
+boolean_scene.register()
 
 function new_game()
 	world:clear()

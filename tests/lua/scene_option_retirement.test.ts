@@ -25,7 +25,7 @@ for (const reattach of [false, true]) test(`Scene option retirement stops its ol
 	assert.ok(pane instanceof SceneEditorPane);
 	selectSceneOutlineRow(input.view.hierarchy, 1); pane.update();
 	f.editor.commands.execute('sceneEditor.details', pane.commandTarget);
-	const option = pane.control.details.options.controls[0].field.focusTarget;
+	const option = pane.control.details.options.controls[0].focusTarget;
 	assert.ok(option instanceof InputFocusTarget);
 	assert.equal(option.focus(), true);
 	const source = input.workingCopy.buffer.getText(), version = input.workingCopy.version;
@@ -38,7 +38,7 @@ for (const reattach of [false, true]) test(`Scene option retirement stops its ol
 		f.firstGroup.openEditor(input);
 		assert.ok(f.firstGroup.panes.activePane === pane);
 		selectSceneOutlineRow(input.view.hierarchy, 1); pane.update();
-		const target = pane.control.details.options.controls[0].field.focusTarget;
+		const target = pane.control.details.options.controls[0].focusTarget;
 		assert.ok(target instanceof InputFocusTarget && target !== option);
 		reattachedOption = target;
 		assert.equal(target.focus(), true);

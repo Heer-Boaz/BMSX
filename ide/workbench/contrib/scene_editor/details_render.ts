@@ -2,15 +2,16 @@ import * as constants from '../../../common/constants';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { ValueInput } from '../../../editor/ui/inline/value_input';
 import { drawValueInput } from '../../../editor/ui/inline/value_input_render';
+import { drawWorkbenchCheckbox } from '../../render/checkbox';
 import { api } from '../../../runtime/overlay_api';
 import type { SceneDetailsViewState } from './details_view';
 import type { ScenePositionInputValue } from './details_control';
-import type { SceneOptionInputValue } from './option_editor';
+import type { SceneOptionControl } from './option_editor';
 
 const POSITION_LABELS = { x: 'X', y: 'Y', z: 'Z' } as const;
 
 export function drawSceneDetails(view: SceneDetailsViewState, controls: readonly ValueInput<ScenePositionInputValue>[],
-	optionControls: readonly ValueInput<SceneOptionInputValue>[], focused: boolean): void {
+	optionControls: readonly SceneOptionControl[], focused: boolean): void {
 	const { viewport, layout } = view, bounds = viewport.bounds;
 	const font = editorViewState.font.renderFont(), color = constants.COLOR_RESOURCE_VIEWER_TEXT, descriptionColor = constants.COLOR_DESCRIPTION_TEXT;
 	api.pushClipRect(layout.left, layout.top, layout.right, layout.bottom);
@@ -32,7 +33,9 @@ export function drawSceneDetails(view: SceneDetailsViewState, controls: readonly
 	for (let index = 0; index < view.optionProperties.length; index++) {
 		const property = view.optionProperties[index];
 		if (property.bounds.bottom <= bounds.top || property.bounds.top >= bounds.bottom) continue;
-		if (!optionControls[index].field.readOnly) drawValueInput(optionControls[index], property.bounds);
+		const entry = optionControls[index];
+		if (entry.kind === 'boolean') drawWorkbenchCheckbox(entry.control);
+		else if (!entry.control.field.readOnly) drawValueInput(entry.control, property.bounds);
 		else api.blit_text_inline_with_font(property.text, property.bounds.left + 3, property.bounds.top + 2, 0, descriptionColor, font);
 	}
 	api.popClipRect();

@@ -12,6 +12,7 @@ import { SceneDetailsControl } from '../../ide/workbench/contrib/scene_editor/de
 import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import type { EditorCommandRunner } from '../../ide/common/commands';
+import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 scenes.register('room', { objects = {
@@ -47,7 +48,11 @@ function fixture(t: TestContext, source = SOURCE) {
 	details.setView(view, bounds);
 	t.after(() => { details.dispose(); view.dispose(); authoring.dispose(); menu.dispose(); inputFocus.setTarget(null); });
 	return { model, view, editor: details.options, refresh: () => details.update(),
-		control: (label: string) => details.options.controls[view.optionProperties.findIndex(property => property.descriptor.label === label)] };
+		control: (label: string) => {
+			const entry = details.options.controls[view.optionProperties.findIndex(property => property.descriptor.label === label)];
+			assert.ok(entry.kind === 'value');
+			return entry.control;
+		} };
 }
 
 test('scene inspector admits typed strings and expressions without exposing spatial matrix storage', t => {
@@ -82,7 +87,11 @@ test('option acceptance edits only its source expression and shares document und
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('0xff00aabb', '0xff102030'));
 	f.model.undo(); f.refresh(); assert.equal(f.model.buffer.getText(), SOURCE);
 	f.model.redo(); f.refresh(); assert.equal(f.control('color').field.text, '0xff102030');
-	edit('visible', 'false'); edit('imgid', 'enemy'); edit('region.width', '24');
+	const visible = f.editor.controls[f.view.optionProperties.findIndex(property => property.descriptor.label === 'visible')];
+	assert.ok(visible.kind === 'boolean'); assert.equal(visible.focusTarget.focus(), true);
+	inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none));
+	inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none, false, false)); f.refresh();
+	edit('imgid', 'enemy'); edit('region.width', '24');
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('0xff00aabb', '0xff102030').replace('visible = true', 'visible = false')
 		.replace("imgid = 'hero'", "imgid = 'enemy'").replace('width = 16', 'width = 24'));
 });

@@ -127,7 +127,8 @@ test('presentation-only Scene transitions retain source, field draft and both sc
 	assert.ok(scroll > 0);
 	const details = detailsControl(t, input.view);
 	const options = details.options;
-	const field = options.controls[0]; setFieldText(field.field, '0x123456', true);
+	const option = options.controls[0]; assert.ok(option.kind === 'value');
+	const field = option.control; setFieldText(field.field, '0x123456', true);
 	const draft = field.field.text;
 	input.view.section = 'outline'; arrangeScene(input.view, false, false, bounds);
 	input.view.hierarchy.outline.scroll = 1;

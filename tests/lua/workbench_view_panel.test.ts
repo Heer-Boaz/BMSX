@@ -169,7 +169,7 @@ test('hiding only the header cancels its activation but retains body focus trave
 	inputFocus.handleKeyboard(new KeyInputEvent('Space', KeyModifier.none, false, false));
 	assert.deepEqual(f.saved, []); assert.ok(inputFocus.target === f.panel.control.focusTarget);
 	assert.equal(inputFocus.moveFocus(true), true);
-	assert.ok(inputFocus.target === f.panel.control.options.controls.at(-1)!.field.focusTarget);
+	assert.ok(inputFocus.target === f.panel.control.options.controls.at(-1)!.focusTarget);
 	assert.equal(inputFocus.moveFocus(false), true); assert.ok(inputFocus.target === f.panel.control.focusTarget);
 	const pointer = { valid: true, insideViewport: true, viewportX: 10, viewportY: 40,
 		pressedButtons: PointerButton.Primary, justPressedButtons: PointerButton.Primary, justReleasedButtons: 0 };
@@ -193,11 +193,11 @@ test('a real panel owns its header/body Tab boundary without making the logical 
 	const f = fixture(t), actions = f.panel.actionBar.focusTarget;
 	actions.focus();
 	for (const target of [f.panel.control.focusTarget, ...f.panel.control.controls.map(control => control.field.focusTarget),
-		...f.panel.control.options.controls.map(control => control.field.focusTarget), actions]) {
+		...f.panel.control.options.controls.map(control => control.focusTarget), actions]) {
 		assert.equal(inputFocus.moveFocus(false), true); assert.equal(inputFocus.target, target);
 	}
 	assert.equal(inputFocus.moveFocus(true), true);
-	assert.equal(inputFocus.target, f.panel.control.options.controls.at(-1)!.field.focusTarget);
+	assert.equal(inputFocus.target, f.panel.control.options.controls.at(-1)!.focusTarget);
 });
 
 test('stable panel updates keep field draft history, placement and header geometry generations', t => {

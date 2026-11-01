@@ -84,6 +84,12 @@ export function createLuaStringValueEdit(buffer: TextBuffer, locations: LuaSourc
 	return { offset: start, deleteLength: end - start, text: quoteLuaString(value, quote) };
 }
 
+/** Replace the authored boolean token without rewriting its enclosing expression or trivia. */
+export function createLuaBooleanValueEdit(buffer: TextBuffer, locations: LuaSourceLocations, literal: LuaBooleanLiteralExpression, value: boolean): EditorTextEdit {
+	const range = luaSourceRangeToTextRange(buffer, locations.range(literal.span));
+	return { offset: range.start, deleteLength: range.end - range.start, text: value ? 'true' : 'false' };
+}
+
 /** A single-line source excerpt, not reprinted Lua. Multiline syntax is explicitly truncated. */
 export function readLuaSourceLinePreview(buffer: TextBuffer, range: LuaSourceRange): string {
 	if (range.start.line === range.end.line) return readLuaSourceRange(buffer, range);

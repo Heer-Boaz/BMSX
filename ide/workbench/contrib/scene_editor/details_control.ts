@@ -3,6 +3,7 @@ import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/re
 import type { EditorCommandRunner } from '../../../common/commands';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../common/models';
 import { ValueInput } from '../../../editor/ui/inline/value_input';
+import { editorViewState } from '../../../editor/ui/view/state';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
@@ -114,6 +115,10 @@ export class SceneDetailsControl {
 	public get tooltipItem(): WorkbenchTooltipTarget | undefined {
 		if (!this.canFocus || !this.fieldsBound) return undefined;
 		const view = this.view, identity = view.identity, bounds = view.viewport.bounds;
+		for (const entry of this.options.controls) if (entry.kind === 'boolean') {
+			const tooltip = entry.control.tooltipItem;
+			if (tooltip !== undefined && tooltip.bounds.top >= bounds.top && tooltip.bounds.bottom <= bounds.bottom) return tooltip;
+		}
 		if (!identity.clipped || identity.bounds.top < bounds.top || identity.bounds.bottom > bounds.bottom) return undefined;
 		return this.focusTarget.hasFocus || this.identityHovered && this.feedbackScroll === view.viewport.scrollTop ? identity : undefined;
 	}
@@ -189,7 +194,7 @@ export class SceneDetailsControl {
 		if (layoutChanged) {
 			this.scroll.lineStep = view.layout.rowHeight + 4;
 			for (let index = 0; index < this.controls.length; index++) if (this.controls[index].field.focusTarget.hasFocus) this.revealProperty(index);
-			for (let index = 0; index < this.options.controls.length; index++) if (this.options.controls[index].field.focusTarget.hasFocus) this.revealOption(view.optionProperties[index], index);
+			for (let index = 0; index < this.options.controls.length; index++) if (this.options.controls[index].focusTarget.hasFocus) this.revealOption(view.optionProperties[index], index);
 		}
 		for (let index = 0; index < view.properties.length; index++) {
 			const control = this.controls[index], bounds = view.properties[index].bounds;
@@ -198,8 +203,9 @@ export class SceneDetailsControl {
 		}
 		for (let index = 0; index < view.optionProperties.length; index++) {
 			const control = this.options.controls[index], bounds = view.optionProperties[index].bounds;
-			if (!control.field.readOnly && bounds.bottom > view.viewport.bounds.top && bounds.top < view.viewport.bounds.bottom)
-				control.layout(bounds, view.viewport.bounds);
+			if (control.kind === 'boolean') control.control.layout(bounds, view.viewport.bounds, editorViewState.font);
+			else if (!control.control.field.readOnly && bounds.bottom > view.viewport.bounds.top && bounds.top < view.viewport.bounds.bottom)
+				control.control.layout(bounds, view.viewport.bounds);
 		}
 	}
 
@@ -261,9 +267,9 @@ export class SceneDetailsControl {
 			previous.next = control.field.focusTarget; control.field.focusTarget.previous = previous; previous = control.field.focusTarget;
 		}
 		for (const control of this.options.controls) {
-			control.field.focusTarget.next = control.field.focusTarget.previous = null;
-			if (!control.field.focusTarget.canFocus!()) continue;
-			previous.next = control.field.focusTarget; control.field.focusTarget.previous = previous; previous = control.field.focusTarget;
+			control.focusTarget.next = control.focusTarget.previous = null;
+			if (!control.focusTarget.canFocus!()) continue;
+			previous.next = control.focusTarget; control.focusTarget.previous = previous; previous = control.focusTarget;
 		}
 		this.lastFocus = previous;
 		if (this.previousFocus !== this.scroll.focusTarget) this.previousFocus.next = this.scroll.focusTarget;
@@ -291,7 +297,9 @@ export class SceneDetailsControl {
 		this.identityHovered = false;
 		this.view.viewport.scrollbar.reveal(property.contentBounds.top, property.contentBounds.bottom, 2);
 		layoutSceneDetails(this.view, false, this.bounds);
-		this.options.controls[index].layout(property.bounds, this.view.viewport.bounds);
+		const entry = this.options.controls[index];
+		if (entry.kind === 'boolean') entry.control.layout(property.bounds, this.view.viewport.bounds, editorViewState.font);
+		else entry.control.layout(property.bounds, this.view.viewport.bounds);
 	}
 
 	public draw(): void {
@@ -317,14 +325,7 @@ export class SceneDetailsControl {
 				return true;
 			}
 		}
-		for (let index = 0; index < this.options.controls.length; index++) {
-			const control = this.options.controls[index], field = view.optionProperties[index].bounds;
-			if (!control.field.readOnly && ((snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)
-				&& point_in_rect(snapshot.viewportX, snapshot.viewportY, field)) || control.field.pointerSelecting)) {
-				control.handlePointer(field.left + 3, snapshot.viewportX, justPressed, (snapshot.pressedButtons & PointerButton.Primary) !== 0);
-				return true;
-			}
-		}
+		if (this.options.handlePointer(snapshot, justPressed)) { pointerHover.visit(this); return true; }
 		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)
 			&& (snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
 			const revision = this.attachmentRevision, selection = view.authoring.selectionRevision;
@@ -341,7 +342,10 @@ export class SceneDetailsControl {
 		layoutSceneDetails(this.view, false, this.bounds);
 		return true;
 	}
-	public onPointerLeave(): void { this.identityHovered = false; this.pointerX = -1; this.pointerY = -1; }
+	public onPointerLeave(): void {
+		this.identityHovered = false; this.pointerX = -1; this.pointerY = -1;
+		for (const entry of this.options.controls) if (entry.kind === 'boolean') entry.control.onPointerLeave();
+	}
 
 	private openContextMenu(x: number, y: number, keyboard = false): void {
 		const view = this.view, generation = this.inputScope.contextGeneration, selection = view.authoring.selectionRevision;

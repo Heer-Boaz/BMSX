@@ -70,13 +70,14 @@ test('Details fields edit and undo canonical source with no hierarchy or documen
 	f.control.focus(); assert.equal(inputFocus.moveFocus(false), true);
 	assert.equal(inputFocus.target, position.field.focusTarget);
 	assert.equal(position.field.focusTarget.commandContext, f.parent);
-	assert.equal(option.field.focusTarget.commandContext, f.parent);
+	assert.equal(option.focusTarget.commandContext, f.parent);
 	position.field.focusTarget.focus(); setFieldText(position.field, '19', true);
 	assert.equal(position.commit(), true);
 	f.control.update();
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,'));
-	setFieldText(f.control.options.controls[0].field, 'math.max(7, 9)', true);
-	assert.equal(f.control.options.controls[0].commit(), true);
+	const optionEdit = f.control.options.controls[0]; assert.ok(optionEdit.kind === 'value');
+	setFieldText(optionEdit.control.field, 'math.max(7, 9)', true);
+	assert.equal(optionEdit.control.commit(), true);
 	assert.equal(f.model.buffer.getText(), SOURCE.replace('x = 1,', 'x = 19,').replace('strength = 5', 'strength = math.max(7, 9)'));
 	inputFocus.executeCommand('undo', position.field.focusTarget.commandContext);
 	f.control.update();
@@ -108,7 +109,8 @@ test('two Details presentations share selection but own independent drafts, scro
 
 for (const kind of ['position', 'option'] as const) test(`${kind} acceptance cannot retarget a draft when value publication selects another member`, t => {
 	const f = fixture(t); f.select(0);
-	const field = kind === 'position' ? f.control.controls[0] : f.control.options.controls[0];
+	const option = f.control.options.controls[0]; assert.ok(option.kind === 'value');
+	const field = kind === 'position' ? f.control.controls[0] : option.control;
 	field.field.focusTarget.focus(); setFieldText(field.field, '73', true);
 	let armed = true;
 	const unbind = field.field.onDidChangeText(() => {
@@ -121,7 +123,8 @@ for (const kind of ['position', 'option'] as const) test(`${kind} acceptance can
 	assert.equal(f.context.selection?.kind === 'member' ? f.context.selection.index : -1, 1);
 	assert.equal(f.model.buffer.getText(), SOURCE);
 	assert.equal(f.control.controls[0].field.text, '4');
-	assert.equal(f.control.options.controls[0].field.text, '8');
+	const selectedOption = f.control.options.controls[0]; assert.ok(selectedOption.kind === 'value');
+	assert.equal(selectedOption.control.field.text, '8');
 });
 
 for (const kind of ['position', 'option'] as const) test(`${kind} acceptance observes Scene API revocation published after draft parsing`, t => {
@@ -129,7 +132,8 @@ for (const kind of ['position', 'option'] as const) test(`${kind} acceptance obs
 	const f = fixture(t, true, source, [['bridge.lua', "return require('cartlib/world/scene_library')"]]); f.select(0);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'bridge.lua' })!;
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
-	const field = kind === 'position' ? f.control.controls[0] : f.control.options.controls[0];
+	const option = f.control.options.controls[0]; assert.ok(option.kind === 'value');
+	const field = kind === 'position' ? f.control.controls[0] : option.control;
 	field.field.focusTarget.focus(); setFieldText(field.field, '73', true);
 	let armed = true;
 	const unbind = field.field.onDidChangeText(() => {
@@ -196,18 +200,18 @@ test('Details field Tab order exits through the composition-owned next region', 
 	const previous = inputFocus.createTarget(f.parent, f.scope), next = inputFocus.createTarget(f.parent, f.scope);
 	f.control.setFocusNeighbors(previous, next);
 	assert.equal(f.control.commandTarget.previous, previous);
-	assert.equal(f.control.options.controls.at(-1)!.field.focusTarget.next, next);
+	assert.equal(f.control.options.controls.at(-1)!.focusTarget.next, next);
 	previous.focus();
 	for (const target of [f.control.commandTarget, ...f.control.controls.map(control => control.field.focusTarget),
-		...f.control.options.controls.map(control => control.field.focusTarget), next]) {
+		...f.control.options.controls.map(control => control.focusTarget), next]) {
 		assert.equal(inputFocus.moveFocus(false), true);
 		assert.equal(inputFocus.target, target);
 	}
 	assert.equal(inputFocus.moveFocus(true), true);
-	assert.equal(inputFocus.target, f.control.options.controls.at(-1)!.field.focusTarget);
+	assert.equal(inputFocus.target, f.control.options.controls.at(-1)!.focusTarget);
 	f.select(1);
 	assert.equal(f.control.commandTarget.previous, previous);
-	assert.equal(f.control.options.controls.at(-1)!.field.focusTarget.next, next);
+	assert.equal(f.control.options.controls.at(-1)!.focusTarget.next, next);
 	previous.next = null; next.previous = null;
 	f.control.setFocusNeighbors(previous, next);
 	previous.focus(); assert.equal(inputFocus.moveFocus(false), true);

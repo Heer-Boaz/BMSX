@@ -77,9 +77,10 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 		top += fieldHeight + PADDING;
 	}
 	for (const property of view.optionProperties) {
-		top = appendText(view, uppercaseOutsideStrings(property.descriptor.label), textWidth, top);
+		if (property.descriptor.kind !== 'boolean') top = appendText(view, uppercaseOutsideStrings(property.descriptor.label), textWidth, top);
 		write_rect_bounds(property.contentBounds, PADDING, top, Math.max(PADDING, width - PADDING), top + fieldHeight);
-		property.text = truncateTextToWidth(property.descriptor.kind === 'string' ? property.descriptor.preview
+		property.text = property.descriptor.kind === 'boolean' ? uppercaseOutsideStrings(property.descriptor.label)
+			: truncateTextToWidth(property.descriptor.kind === 'string' ? property.descriptor.preview
 			: uppercaseOutsideStrings(property.descriptor.preview), textWidth - 6);
 		top += fieldHeight + PADDING;
 	}
