@@ -6,7 +6,7 @@ import type { SceneSpatialReadModel } from '../spatial_projection';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
 import { WorkspaceImageAssets } from '../../../../workspace/image_assets';
 import { SceneViewportCamera } from './camera';
-import { SceneViewportSprites } from './sprites';
+import { SceneViewportCanvas } from './canvas';
 import { SceneViewportModels, type SceneViewportModelBounds } from './models';
 import type { SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
@@ -29,8 +29,8 @@ export class SceneViewportViewState {
 	public readonly gizmo = new SceneTranslationGizmo();
 	public transformPreview: SceneTransformPreview | undefined;
 	public placementPreview: SceneMemberPlacementPreview | undefined;
-	public readonly sprites: SceneViewportSprites;
-	public readonly placementSprites: SceneViewportSprites<SceneAddMemberChoice>;
+	public readonly canvas: SceneViewportCanvas;
+	public readonly placementCanvas: SceneViewportCanvas<SceneAddMemberChoice>;
 	public readonly models: SceneViewportModels;
 	public readonly bounds = create_rect_bounds();
 	public readonly entries: SceneSourceObject[] = [];
@@ -68,7 +68,7 @@ export class SceneViewportViewState {
 	private imageCatalogRevision = -1;
 	public constructor(public readonly authoring: SceneAuthoringContext, private readonly catalog: WorkspaceSourceCatalog) {
 		this.images = new WorkspaceImageAssets(catalog);
-		this.sprites = new SceneViewportSprites(this.images); this.placementSprites = new SceneViewportSprites(this.images);
+		this.canvas = new SceneViewportCanvas(this.images); this.placementCanvas = new SceneViewportCanvas(this.images);
 		this.models = new SceneViewportModels(catalog, authoring.workingCopy.identity.contextId);
 		this.unbindCamera = this.camera.onDidChange(() => { for (const listener of this.listeners) listener(); });
 	}
@@ -93,12 +93,12 @@ export class SceneViewportViewState {
 		if (this.imageSource !== visuals || this.placementSource !== placementVisuals || this.imageCatalogRevision !== this.catalog.revision) {
 			this.imageSource = visuals; this.placementSource = placementVisuals; this.imageCatalogRevision = this.catalog.revision;
 			this.imageIds.clear();
-			if (visuals !== undefined) for (const sprite of visuals.sprites) this.imageIds.add(sprite.image);
-			if (placementVisuals !== undefined) for (const sprite of placementVisuals.sprites) this.imageIds.add(sprite.image);
+			if (visuals !== undefined) for (const visual of visuals.canvas) if (visual.kind === 'sprite') this.imageIds.add(visual.image);
+			if (placementVisuals !== undefined) for (const visual of placementVisuals.canvas) if (visual.kind === 'sprite') this.imageIds.add(visual.image);
 			this.images.update(this.authoring.workingCopy.identity.contextId, this.imageIds);
 		}
-		this.sprites.prepare(visuals, this.transformPreview); this.models.prepare(visuals, this.transformPreview);
-		this.placementSprites.prepare(placementVisuals, placement);
+		this.canvas.prepare(visuals, this.transformPreview); this.models.prepare(visuals, this.transformPreview);
+		this.placementCanvas.prepare(placementVisuals, placement);
 		if (this.modeSource !== this.source) {
 			this.modeSource = this.source; this.sourceMode = undefined;
 			if (this.source !== undefined) for (const entry of this.source.entries) {
@@ -114,8 +114,8 @@ export class SceneViewportViewState {
 			this.frame(undefined); if (this.disposed) return;
 		}
 		if (this.models.project(this.camera, this.bounds)) this.projectionRevision++;
-		if (this.sprites.project(this.camera, this.bounds, this.allocationRevision)) this.projectionRevision++;
-		this.placementSprites.project(this.camera, this.bounds, this.allocationRevision);
+		if (this.canvas.project(this.camera, this.bounds, this.allocationRevision)) this.projectionRevision++;
+		this.placementCanvas.project(this.camera, this.bounds, this.allocationRevision);
 		const preview = this.transformPreview, previewRevision = preview?.revision ?? -1;
 		const selectedWorld = this.selected === undefined ? undefined : preview?.worlds.has(this.selected)
 			? preview.worlds.get(this.selected) : this.source?.worlds.get(this.selected);
@@ -153,7 +153,7 @@ export class SceneViewportViewState {
 	/** UI helpers are painted over geometry and therefore participate before the mesh depth hit. */
 	public pick(x: number, y: number): SceneSourceObject | undefined {
 		let picked: SceneSourceObject | undefined, distance = 36;
-		const represented = this.camera.mode === '2d' ? this.sprites.represented : this.models.represented;
+		const represented = this.camera.mode === '2d' ? this.canvas.represented : this.models.represented;
 		for (let index = 0; index < this.entries.length; index++) {
 			const entry = this.entries[index]; if (entry !== this.selected && represented.has(entry)) continue;
 			const offset = index * SCENE_VIEWPORT_POINT_STRIDE, dx = this.points[offset] - x, dy = this.points[offset + 1] - y;
@@ -161,7 +161,7 @@ export class SceneViewportViewState {
 			if (squared <= distance) { distance = squared; picked = entry; }
 		}
 		if (picked !== undefined) return picked;
-		return this.camera.mode === '2d' ? this.sprites.pick(x, y)
+		return this.camera.mode === '2d' ? this.canvas.pick(x, y)
 			: this.models.pick(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.camera)?.entry;
 	}
 	public frame(selected: SceneSourceObject | undefined): boolean {
@@ -190,11 +190,11 @@ export class SceneViewportViewState {
 			this.camera.frame3D(target.minX, target.minY, target.minZ, target.maxX, target.maxY, target.maxZ, target.originX, target.originY, target.originZ); return true;
 		}
 		let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-		if (this.sprites.frameBounds(selectedEntries, this.visualBounds)) {
+		if (this.canvas.frameBounds(selectedEntries, this.visualBounds)) {
 			left = this.visualBounds.left; top = this.visualBounds.top; right = this.visualBounds.right; bottom = this.visualBounds.bottom; count++;
 		}
 		if (this.source !== undefined) for (const entry of this.source.entries) {
-			if ((selectedEntries !== undefined && !selectedEntries.has(entry)) || this.sprites.represented.has(entry)) continue;
+			if ((selectedEntries !== undefined && !selectedEntries.has(entry)) || this.canvas.represented.has(entry)) continue;
 			const world = this.source.worlds.get(entry); if (world === undefined || world.family !== '2d') continue;
 			left = Math.min(left, world.ox); top = Math.min(top, world.oy); right = Math.max(right, world.ox); bottom = Math.max(bottom, world.oy); count++;
 		}
@@ -203,7 +203,7 @@ export class SceneViewportViewState {
 	}
 	public dispose(): void {
 		this.disposed = true; this.unbindCamera(); this.listeners.clear(); this.entries.length = this.points.length = 0;
-		this.sprites.dispose(); this.placementSprites.dispose(); this.images.dispose(); this.models.dispose(); this.frameEntries.clear();
+		this.canvas.dispose(); this.placementCanvas.dispose(); this.images.dispose(); this.models.dispose(); this.frameEntries.clear();
 		this.imageIds.clear(); this.imageSource = undefined; this.placementSource = undefined; this.placementPreview = undefined;
 		this.source = this.projectedSource = this.modeSource = this.initialSource = undefined;
 		this.initialVisuals = undefined; this.sourceMode = undefined; this.selected = undefined;

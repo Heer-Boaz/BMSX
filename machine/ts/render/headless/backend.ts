@@ -21,6 +21,7 @@ import { captureGxGpuVramSnapshot, executeGxGpuSoftwareVramCommands } from '../b
 import { GxGpuSoftwareState } from '../backend/software/gx_gpu_state';
 import type { GxGpu } from '../../machine/devices/gx/gpu';
 import type { HeadlessHost2DContext } from './host_2d';
+import { HostAffineQuadCoverage } from './host_affine_quad';
 import { blitOpaquePixels } from '../shared/software_pixels';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM } from '../host_overlay/transform';
 import { HostOverlayClipState } from '../host_overlay/clip';
@@ -138,6 +139,7 @@ export class HeadlessGPUBackend implements GPUBackend {
 	};
 	private presentedFrameCount = 0;
 	public readonly hostOverlayContext: HeadlessHost2DContext = {
+		affineQuad: new HostAffineQuadCoverage(),
 		framePixels: new Uint8Array(0),
 		frameWidth: 0,
 		frameHeight: 0,

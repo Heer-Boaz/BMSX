@@ -9,6 +9,7 @@ import { VideoPresenter } from '../../../machine/ts/render/video_presenter';
 import { HostBitmap, type HostBitmapRenderSubmission } from '../../../machine/ts/render/host_overlay/bitmap';
 import type { HostOverlayClipRect } from '../../../machine/ts/render/host_overlay/clip';
 import type { HostOverlayTransform } from '../../../machine/ts/render/host_overlay/transform';
+import type { HostSolidQuadRenderSubmission } from '../../../machine/ts/render/host_overlay/commands';
 import { LAYER_2D_IDE } from '../../../machine/ts/render/shared/layers';
 import { PSX_MACHINE_SPEC } from '../../../machine/ts/spec/bmsx/model';
 import { createStudioRenderer, type StudioRendererKind } from './studio_renderer';
@@ -54,6 +55,23 @@ export async function createHostBitmapTest(kind: StudioRendererKind, canvas: HTM
 			if (adjacent !== undefined) overlay.drawBitmapAffine(alpha ? alphaBitmap : affineBitmap, adjacent.originX, adjacent.originY,
 				adjacent.axisXX, adjacent.axisXY, adjacent.axisYX, adjacent.axisYY,
 				adjacent.u0, adjacent.v0, adjacent.u1, adjacent.v1, adjacent.color);
+			if (clip !== undefined) overlay.popClipRect();
+			for (let index = 0; index < scopes.length; index++) overlay.popTransform();
+			overlay.endFrame();
+			presenter.configurePresentation('completed', false);
+			presenter.present(target.runtime.machine.gxGpu.readDeviceOutput(), 0, 0);
+			await renderer.finish();
+			return uploads;
+		},
+		async paintSolid(command: HostSolidQuadRenderSubmission, clip?: HostOverlayClipRect,
+			scopes: readonly HostOverlayTransform[] = [], adjacent?: HostSolidQuadRenderSubmission) {
+			overlay.beginFrame(presenter);
+			overlay.fillRect(0, 0, 16, 8, 0, 0xff204060, LAYER_2D_IDE);
+			for (const scope of scopes) overlay.pushTransform(scope);
+			if (clip !== undefined) overlay.pushClipRect(clip.left, clip.top, clip.right, clip.bottom);
+			overlay.fillQuadColor(command.originX, command.originY, command.axisXX, command.axisXY, command.axisYX, command.axisYY, command.color);
+			if (adjacent !== undefined) overlay.fillQuadColor(adjacent.originX, adjacent.originY,
+				adjacent.axisXX, adjacent.axisXY, adjacent.axisYX, adjacent.axisYY, adjacent.color);
 			if (clip !== undefined) overlay.popClipRect();
 			for (let index = 0; index < scopes.length; index++) overlay.popTransform();
 			overlay.endFrame();

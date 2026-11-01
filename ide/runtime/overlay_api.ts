@@ -50,6 +50,11 @@ export class OverlayApi {
 		this.renderer.fillRect(x0, y0, x1, y1, z, colorvalue, LAYER_2D_IDE);
 	}
 
+	public fillQuadColor(originX: number, originY: number, axisXX: number, axisXY: number,
+		axisYX: number, axisYY: number, color: color): void {
+		this.renderer.fillQuadColor(originX, originY, axisXX, axisXY, axisYX, axisYY, color);
+	}
+
 	public blit_rect(x0: number, y0: number, x1: number, y1: number, z: number, colorindex: number): void {
 		this.renderer.strokeRect(x0, y0, x1, y1, z, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
 	}

@@ -8,6 +8,7 @@ import { forEachBatchBlitGlyph } from '../shared/glyph_runs';
 import {
 	Host2DKind,
 	type Host2DRef,
+	type HostSolidQuadRenderSubmission,
 } from '../host_overlay/commands';
 import type {
 	GlyphRenderSubmission,
@@ -25,6 +26,7 @@ import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../h
 import { blitOpaquePixels } from '../shared/software_pixels';
 import type { HostMeshSceneTargets, HostMeshSceneRenderSubmission } from '../host_overlay/mesh';
 import { drawHeadlessHostMeshScene, type HeadlessHostMeshTarget } from '../host_overlay/headless/mesh';
+import type { HostAffineQuadCoverage } from './host_affine_quad';
 
 export type HeadlessHost2DContext = {
 	target: Uint8Array;
@@ -39,6 +41,7 @@ export type HeadlessHost2DContext = {
 	frameWidth: number;
 	frameHeight: number;
 	meshScenes: HostMeshSceneTargets<HeadlessHostMeshTarget>;
+	affineQuad: HostAffineQuadCoverage;
 };
 
 export function beginHeadlessHost2D(context: HeadlessHost2DContext, target: Uint8Array, width: number, height: number): void {
@@ -58,6 +61,9 @@ export function renderHeadlessHost2DEntry(context: HeadlessHost2DContext, kind: 
 			return;
 		case Host2DKind.Rect:
 			drawRect(context, item as RectRenderSubmission);
+			return;
+		case Host2DKind.SolidQuad:
+			drawSolidQuad(context, item as HostSolidQuadRenderSubmission);
 			return;
 		case Host2DKind.Glyphs:
 			drawBatchBlit(context, item as GlyphRenderSubmission);
@@ -106,6 +112,31 @@ function drawRect(context: HeadlessHost2DContext, command: RectRenderSubmission)
 	fillRect(context, left, bottom - 1, right, bottom, colorValue);
 	fillRect(context, left, top, left + 1, bottom, colorValue);
 	fillRect(context, right - 1, top, right, bottom, colorValue);
+}
+
+function drawSolidQuad(context: HeadlessHost2DContext, command: HostSolidQuadRenderSubmission): void {
+	const { scale, offsetX, offsetY } = context.transform;
+	const originX = command.originX * scale + offsetX, originY = command.originY * scale + offsetY;
+	const xx = command.axisXX * scale, xy = command.axisXY * scale;
+	const yx = command.axisYX * scale, yy = command.axisYY * scale;
+	const determinant = xx * yy - xy * yx;
+	if (determinant === 0) return;
+	const coverage = context.affineQuad;
+	coverage.set(originX, originY, xx, xy, yx, yy, determinant, context.clip);
+	const { startX, startY, right, bottom, sign, area, includeS0, includeT0, stepSX, stepTX } = coverage;
+	const target = context.target, width = context.width, color = command.color;
+	const r = (color >>> 16) & 0xff, g = (color >>> 8) & 0xff, b = color & 0xff, a = color >>> 24;
+	for (let y = startY; y < bottom; y++) {
+		const px = startX + 0.5 - originX, py = y + 0.5 - originY;
+		let s = (px * yy - py * yx) * sign, t = (xx * py - xy * px) * sign;
+		let offset = (y * width + startX) * 4;
+		for (let x = startX; x < right; x++, s += stepSX, t += stepTX, offset += 4) {
+			if (s < 0 || s > area || t < 0 || t > area
+				|| (s === 0 && !includeS0) || (s === area && includeS0)
+				|| (t === 0 && !includeT0) || (t === area && includeT0)) continue;
+			blendPixel(target, offset, r, g, b, a);
+		}
+	}
 }
 
 function drawPoly(context: HeadlessHost2DContext, command: PolyRenderSubmission): void {

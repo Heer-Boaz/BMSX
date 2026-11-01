@@ -52,18 +52,9 @@ export function drawHostBitmap(context: HeadlessHost2DContext, command: HostBitm
 		}
 		return;
 	}
-	const endXX = originX + xx, endXY = originY + xy;
-	const endYX = originX + yx, endYY = originY + yy;
-	const endX = endXX + yx, endY = endXY + yy;
-	const startX = Math.max(clip.left, Math.trunc(Math.min(originX, endXX, endYX, endX)));
-	const startY = Math.max(clip.top, Math.trunc(Math.min(originY, endXY, endYY, endY)));
-	const right = Math.min(clip.right, Math.trunc(Math.max(originX, endXX, endYX, endX)) + 1);
-	const bottom = Math.min(clip.bottom, Math.trunc(Math.max(originY, endXY, endYY, endY)) + 1);
-	const sign = determinant < 0 ? -1 : 1, area = determinant * sign;
-	// Normalize winding. At exact edges, include screen-space top/left, not local s/t zero.
-	const includeS0 = yy * sign > 0 || (yy === 0 && yx * sign < 0);
-	const includeT0 = xy * sign < 0 || (xy === 0 && xx * sign > 0);
-	const stepSX = yy * sign, stepTX = -xy * sign;
+	const coverage = context.affineQuad;
+	coverage.set(originX, originY, xx, xy, yx, yy, determinant, clip);
+	const { startX, startY, right, bottom, sign, area, includeS0, includeT0, stepSX, stepTX } = coverage;
 	const stepU = (command.u1 - command.u0) * width / area;
 	const stepV = (command.v1 - command.v0) * height / area;
 	const originU = command.u0 * width, originV = command.v0 * height;

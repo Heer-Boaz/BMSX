@@ -1,7 +1,7 @@
 import type { HostBitmap, HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
 import type { HostMeshScene, HostMeshSceneRenderSubmission } from '../../machine/ts/render/host_overlay/mesh';
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
-import { Host2DKind, type Host2DRef } from '../../machine/ts/render/host_overlay/commands';
+import { Host2DKind, type Host2DRef, type HostSolidQuadRenderSubmission } from '../../machine/ts/render/host_overlay/commands';
 import type { HostOverlayClipRect } from '../../machine/ts/render/host_overlay/clip';
 import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 import {
@@ -24,6 +24,8 @@ type OverlayCommandBuffer = {
 	commandCount: number;
 	frame: HostOverlayFrame;
 	rectPool: RectRenderSubmission[];
+	solidQuadPool: HostSolidQuadRenderSubmission[];
+	solidQuadCount: number;
 	imagePool: HostImageRenderSubmission[];
 	framePool: HostFrameRenderSubmission[];
 	bitmapPool: HostBitmapRenderSubmission[];
@@ -104,6 +106,8 @@ function createOverlayCommandBuffer(): OverlayCommandBuffer {
 			commandCount: 0,
 		},
 		rectPool: [],
+		solidQuadPool: [],
+		solidQuadCount: 0,
 		imagePool: [],
 		framePool: [],
 		bitmapPool: [],
@@ -172,6 +176,7 @@ export class OverlayRenderer {
 		const buffer = this.activeBuffer;
 		buffer.commandCount = 0;
 		buffer.rectCount = 0;
+		buffer.solidQuadCount = 0;
 		buffer.imageCount = 0;
 		buffer.frameCount = 0;
 		for (let index = 0; index < buffer.bitmapCount; index++) buffer.bitmapPool[index].bitmap = undefined;
@@ -352,6 +357,21 @@ export class OverlayRenderer {
 		this.queueCommand(Host2DKind.Rect, submission);
 	}
 
+	public fillQuadColor(originX: number, originY: number, axisXX: number, axisXY: number,
+		axisYX: number, axisYY: number, color: color): void {
+		const buffer = this.activeBuffer, index = buffer.solidQuadCount++;
+		let submission = buffer.solidQuadPool[index];
+		if (submission === undefined) {
+			submission = { originX, originY, axisXX, axisXY, axisYX, axisYY, color };
+			buffer.solidQuadPool.push(submission);
+		} else {
+			submission.originX = originX; submission.originY = originY;
+			submission.axisXX = axisXX; submission.axisXY = axisXY;
+			submission.axisYX = axisYX; submission.axisYY = axisYY; submission.color = color;
+		}
+		this.queueCommand(Host2DKind.SolidQuad, submission);
+	}
+
 	public strokeRect(left: number, top: number, right: number, bottom: number, z: number, color: color, layer: Layer2D): void {
 		const submission = this.nextRectSubmission();
 		submission.kind = RectRenderKind.Rect;
@@ -471,6 +491,7 @@ export class OverlayRenderer {
 		const buffer = this.activeBuffer;
 		buffer.commandCount = 0;
 		buffer.rectCount = 0;
+		buffer.solidQuadCount = 0;
 		buffer.imageCount = 0;
 		buffer.itemCount = 0;
 		this.queue.clearOverlayFrame();

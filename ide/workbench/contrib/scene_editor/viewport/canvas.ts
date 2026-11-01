@@ -4,26 +4,27 @@ import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { HostBitmap } from '../../../../../machine/ts/render/host_overlay/bitmap';
 import type { WorkspaceImageAssets } from '../../../../workspace/image_assets';
 import type { SceneSourceObject } from '../model';
-import type { SceneSpriteSource, SceneVisualReadModel } from '../visual_projection';
+import type { SceneSpriteSource, SceneRectangleSource, SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
 import type { SceneViewportCamera } from './camera';
 
-export type SceneViewportSprite<Owner = SceneSourceObject> = {
-	source: SceneSpriteSource<Owner>;
+type QuadGeometry = {
 	affine: Affine2;
-	bitmap: HostBitmap;
 	width: number; height: number;
 	x: number; y: number; xx: number; xy: number; yx: number; yy: number;
-	u0: number; v0: number; u1: number; v1: number;
 };
+export type SceneViewportQuad<Owner = SceneSourceObject> = QuadGeometry & (
+	{ readonly kind: 'sprite'; source: SceneSpriteSource<Owner>; bitmap: HostBitmap; u0: number; v0: number; u1: number; v1: number }
+	| { readonly kind: 'rectangle'; source: SceneRectangleSource<Owner> }
+);
 
-type PreparedSprite<Owner> = SceneViewportSprite<Owner> & { placedWorld: Readonly<Affine2> | undefined };
+type PreparedQuad<Owner> = SceneViewportQuad<Owner> & { placedWorld: Readonly<Affine2> | undefined };
 
 /** Prepared source visuals and camera-projected quads; pixels never depend on camera motion. */
-export class SceneViewportSprites<Owner = SceneSourceObject> {
-	public readonly items: SceneViewportSprite<Owner>[] = [];
+export class SceneViewportCanvas<Owner = SceneSourceObject> {
+	public readonly items: SceneViewportQuad<Owner>[] = [];
 	public readonly represented = new Set<Owner>();
-	private readonly prepared: PreparedSprite<Owner>[] = [];
+	private readonly prepared: PreparedQuad<Owner>[] = [];
 	private source: SceneVisualReadModel<Owner> | undefined;
 	private preview: SceneTransformPreview<Owner> | undefined;
 	private previewRevision: number | undefined = -1;
@@ -41,36 +42,45 @@ export class SceneViewportSprites<Owner = SceneSourceObject> {
 			this.source = source; this.assetsRevision = this.assets.revision;
 			this.represented.clear();
 			let count = 0;
-			if (source !== undefined) for (const sprite of source.sprites) {
-				const image = this.assets.get(sprite.image); if (image === undefined) continue;
-				const bitmap = image.bitmap;
+			if (source !== undefined) for (const visual of source.canvas) {
 				let item = this.prepared[count];
-				if (item === undefined) {
-					item = { source: sprite, placedWorld: undefined, affine: { xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 }, bitmap,
-						width: 0, height: 0, x: 0, y: 0, xx: 0, xy: 0, yx: 0, yy: 0, u0: 0, v0: 0, u1: 0, v1: 0 };
-					this.prepared[count] = item;
+				if (visual.kind === 'rectangle') {
+					if (item?.kind !== 'rectangle') {
+						item = { kind: 'rectangle', source: visual, placedWorld: undefined, affine: { xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 },
+							width: visual.width, height: visual.height, x: 0, y: 0, xx: 0, xy: 0, yx: 0, yy: 0 };
+						this.prepared[count] = item;
+					}
+					item.source = visual; item.width = visual.width; item.height = visual.height;
+				} else {
+					const image = this.assets.get(visual.image); if (image === undefined) continue;
+					const bitmap = image.bitmap;
+					if (item?.kind !== 'sprite') {
+						item = { kind: 'sprite', source: visual, placedWorld: undefined, affine: { xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 }, bitmap,
+							width: 0, height: 0, x: 0, y: 0, xx: 0, xy: 0, yx: 0, yy: 0, u0: 0, v0: 0, u1: 0, v1: 0 };
+						this.prepared[count] = item;
+					}
+					item.source = visual; item.bitmap = bitmap;
+					const region = visual.region;
+					item.width = region === undefined ? image.width : region.width;
+					item.height = region === undefined ? image.height : region.height;
+					const left = region === undefined ? image.u0 : image.u0 + region.x / bitmap.image.width;
+					const top = region === undefined ? image.v0 : image.v0 + region.y / bitmap.image.height;
+					const right = region === undefined ? image.u1 : image.u0 + (region.x + region.width) / bitmap.image.width;
+					const bottom = region === undefined ? image.v1 : image.v0 + (region.y + region.height) / bitmap.image.height;
+					item.u0 = visual.flipH ? right : left; item.u1 = visual.flipH ? left : right;
+					item.v0 = visual.flipV ? bottom : top; item.v1 = visual.flipV ? top : bottom;
 				}
-				item.source = sprite; item.bitmap = bitmap;
-				const region = sprite.region;
-				item.width = region === undefined ? image.width : region.width;
-				item.height = region === undefined ? image.height : region.height;
-				const left = region === undefined ? image.u0 : image.u0 + region.x / bitmap.image.width;
-				const top = region === undefined ? image.v0 : image.v0 + region.y / bitmap.image.height;
-				const right = region === undefined ? image.u1 : image.u0 + (region.x + region.width) / bitmap.image.width;
-				const bottom = region === undefined ? image.v1 : image.v0 + (region.y + region.height) / bitmap.image.height;
-				item.u0 = sprite.flipH ? right : left; item.u1 = sprite.flipH ? left : right;
-				item.v0 = sprite.flipV ? bottom : top; item.v1 = sprite.flipV ? top : bottom;
 				count++;
 			}
 			this.prepared.length = count;
 		}
 		let count = 0, changed = rebound;
 		for (const item of this.prepared) {
-			const sprite = item.source, overridden = preview !== undefined && preview.worlds.has(sprite.entry);
-			const world = overridden ? preview!.worlds.get(sprite.entry) as Readonly<Affine2> | undefined : sprite.world;
-			if (world === undefined) { this.represented.delete(sprite.entry); continue; }
+			const visual = item.source, overridden = preview !== undefined && preview.worlds.has(visual.entry);
+			const world = overridden ? preview!.worlds.get(visual.entry) as Readonly<Affine2> | undefined : visual.world;
+			if (world === undefined) { this.represented.delete(visual.entry); continue; }
 			if (rebound || overridden || item.placedWorld !== world) {
-				const affine = item.affine, attachment = sprite.attachment, presentation = sprite.presentation;
+				const affine = item.affine, attachment = visual.attachment, presentation = visual.presentation;
 				const xx = affine.xx, xy = affine.xy, yx = affine.yx, yy = affine.yy, ox = affine.ox, oy = affine.oy;
 				affine.xx = world.xx; affine.xy = world.xy; affine.yx = world.yx; affine.yy = world.yy; affine.ox = world.ox; affine.oy = world.oy;
 				appendAffine2(affine, attachment.xx, attachment.xy, attachment.yx, attachment.yy, attachment.ox, attachment.oy);
@@ -79,7 +89,7 @@ export class SceneViewportSprites<Owner = SceneSourceObject> {
 				item.placedWorld = world;
 			}
 			if (this.items[count] !== item) changed = true;
-			this.items[count++] = item; this.represented.add(sprite.entry);
+			this.items[count++] = item; this.represented.add(visual.entry);
 		}
 		if (count !== this.items.length) changed = true;
 		this.items.length = count; if (changed) this.contentRevision++;
@@ -97,7 +107,7 @@ export class SceneViewportSprites<Owner = SceneSourceObject> {
 		}
 		return true;
 	}
-	/** Hit the actual displayed, nontransparent texture, from front to back. */
+	/** Hit actual solid coverage or nontransparent texels, from front to back. */
 	public pick(x: number, y: number): Owner | undefined {
 		for (let index = this.items.length - 1; index >= 0; index--) {
 			const item = this.items[index];
@@ -105,6 +115,7 @@ export class SceneViewportSprites<Owner = SceneSourceObject> {
 			const dx = x - item.x, dy = y - item.y;
 			const u = (dx * item.yy - dy * item.yx) / determinant, v = (dy * item.xx - dx * item.xy) / determinant;
 			if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) continue;
+			if (item.kind === 'rectangle') return item.source.entry;
 			const image = item.bitmap.image;
 			const sourceX = clamp(Math.trunc((item.u0 + (item.u1 - item.u0) * u) * image.width), 0, image.width - 1);
 			const sourceY = clamp(Math.trunc((item.v0 + (item.v1 - item.v0) * v) * image.height), 0, image.height - 1);

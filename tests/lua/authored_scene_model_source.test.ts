@@ -34,7 +34,7 @@ prefab.define({def_id='model',class=require('cartlib/world/object_3d'),defaults=
   options={visible=0,active=false,model_id='not-component-config'}},
  {member_id='parent',definition_id='parent',transform = { xx = 2, xy = 0, xz = 0, yx = 1, yy = 3, yz = 0, zx = 0, zy = 0, zz = -2, ox = 10, oy = 20, oz = 30 }}`);
 	const read = f.context.visualScene!, model = read.models[0];
-	assert.equal(read.models.length, 1); assert.equal(read.sprites.length, 0);
+	assert.equal(read.models.length, 1); assert.equal(read.canvas.length, 0);
 	assert.ok(model.entry === f.context.subject!.objects[0]);
 	assert.equal(model.model, 'scene'); assert.equal(model.sceneIndex, 0);
 	assert.ok(model.world === f.context.spatialScene!.worlds.get(model.entry));

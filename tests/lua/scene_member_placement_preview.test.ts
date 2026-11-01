@@ -72,46 +72,51 @@ for (const unavailable of ['pose', 'visibility'] as const) test(`unavailable ${u
 	const request = f.context.captureAddMember()!, choice = request.choices.find(choice => choice.id === 'shape')!;
 	assert.ok(choice); const preview = request.getPreview(choice);
 	if (unavailable === 'pose') assert.equal(preview, undefined);
-	else assert.equal(preview!.visuals.sprites.length, 0);
+	else assert.equal(preview!.visuals.canvas.length, 0);
 	assert.equal(f.control.beginAddMember(request, choice, () => {}), true);
 	f.control.handlePointer(pointer(244, 186), false);
-	assert.equal(f.view.placementSprites.items.length, 0); assert.equal(f.model.buffer.getText(), f.source);
+	assert.equal(f.view.placementCanvas.items.length, 0); assert.equal(f.model.buffer.getText(), f.source);
 	f.control.handlePointer(pointer(244, 186, PointerButton.Primary, PointerButton.Primary), true);
 	assert.equal(f.context.subject!.objects.length, 2);
 });
 
 test('placement borrows the existing atlas and retains its geometry without source edits or asset work on pointer motion', t => {
-	const f = fixture(t), original = f.view.sprites.items[0], bitmap = original.bitmap, version = f.model.version;
-	f.arm(); const preview = f.view.placementPreview!, sprite = f.view.placementSprites.items[0];
-	assert.equal(sprite.bitmap, bitmap); assert.equal(f.view.sprites.items[0], original);
+	const f = fixture(t), original = f.view.canvas.items[0]; assert.ok(original.kind === 'sprite');
+	const bitmap = original.bitmap, version = f.model.version;
+	f.arm(); const preview = f.view.placementPreview!, sprite = f.view.placementCanvas.items[0];
+	assert.ok(sprite.kind === 'sprite');
+	assert.equal(sprite.bitmap, bitmap); assert.equal(f.view.canvas.items[0], original);
 	const updates = t.mock.method(WorkspaceImageAssets.prototype, 'update');
-	const scenePreparation = t.mock.method(f.view.sprites, 'prepare');
+	const scenePreparation = t.mock.method(f.view.canvas, 'prepare');
 	for (let step = 0; step < 100; step++) {
 		f.control.handlePointer(pointer(244 + step, 186), false);
-		assert.equal(f.view.placementPreview, preview); assert.equal(f.view.placementSprites.items[0], sprite);
-		assert.equal(sprite.bitmap, bitmap); assert.equal(f.view.sprites.items[0], original);
+		assert.equal(f.view.placementPreview, preview); assert.equal(f.view.placementCanvas.items[0], sprite);
+		assert.equal(sprite.bitmap, bitmap); assert.equal(f.view.canvas.items[0], original);
 	}
 	assert.equal(updates.mock.callCount(), 0); assert.equal(scenePreparation.mock.callCount(), 0);
 	assert.equal(preview.world.ox, 67); assert.equal(preview.world.oy, 23);
 	assert.equal(f.model.version, version); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 	let disposed = 0; bitmap.onDispose(() => disposed++);
 	inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none)); f.control.update();
-	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementSprites.items.length, 0);
-	assert.equal(f.view.sprites.items[0].bitmap, bitmap); assert.equal(disposed, 0);
+	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementCanvas.items.length, 0);
+	const restored = f.view.canvas.items[0]; assert.ok(restored.kind === 'sprite');
+	assert.equal(restored.bitmap, bitmap); assert.equal(disposed, 0);
 	f.view.dispose(); assert.equal(disposed, 1);
 });
 
 test('the ghost and committed sprite have the same footprint, inherited linear pose and visual inputs', t => {
 	const f = fixture(t); f.arm(); f.control.handlePointer(pointer(244, 186), false);
-	const ghost = f.view.placementSprites.items[0];
+	const ghost = f.view.placementCanvas.items[0];
+	assert.ok(ghost.kind === 'sprite');
 	// Preview-to-source correspondence is a geometric data contract, not a fixed UI rectangle.
 	const footprint = [ghost.x, ghost.y, ghost.xx, ghost.xy, ghost.yx, ghost.yy, ghost.u0, ghost.v0, ghost.u1, ghost.v1];
 	const affine = { ...ghost.affine }, bitmap = ghost.bitmap;
 	f.control.handlePointer(pointer(244, 186, PointerButton.Primary, PointerButton.Primary), true); f.control.update();
-	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementSprites.items.length, 0);
+	assert.equal(f.view.placementPreview, undefined); assert.equal(f.view.placementCanvas.items.length, 0);
 	const selected = f.context.selection!; assert.equal(selected.kind, 'member');
 	if (selected.kind !== 'member') throw new Error('expected inserted member');
-	const sprite = f.view.sprites.items.find(sprite => sprite.source.entry === selected.entry)!;
+	const sprite = f.view.canvas.items.find(sprite => sprite.source.entry === selected.entry)!;
+	assert.ok(sprite.kind === 'sprite');
 	assert.equal(sprite.bitmap, bitmap); assert.deepEqual(sprite.affine, affine);
 	assert.deepEqual([sprite.x, sprite.y, sprite.xx, sprite.xy, sprite.yx, sprite.yy, sprite.u0, sprite.v0, sprite.u1, sprite.v1], footprint);
 	assert.equal(f.context.selectedLocalTransform!.ox, 17); assert.equal(f.context.selectedLocalTransform!.oy, 23);
@@ -145,7 +150,7 @@ const RETIREMENTS: readonly [string, (f: ReturnType<typeof fixture>) => void][] 
 ];
 for (const [name, retire] of RETIREMENTS) test(`${name} revokes the ghost and its placement instead of committing it`, t => {
 	const f = fixture(t); f.arm(); f.control.handlePointer(pointer(244, 186), false);
-	assert.equal(f.view.placementSprites.items.length, 1);
+	assert.equal(f.view.placementCanvas.items.length, 1);
 	retire(f); f.control.update();
 	assert.equal(f.view.placementPreview, undefined);
 	f.control.handlePointer(pointer(260, 195, PointerButton.Primary, PointerButton.Primary), true);
@@ -154,10 +159,10 @@ for (const [name, retire] of RETIREMENTS) test(`${name} revokes the ghost and it
 
 test('a custom-only prefab remains placeable without inventing a sprite or reusing the previous ghost', t => {
 	const f = fixture(t); f.arm(); f.control.handlePointer(pointer(244, 186), false);
-	assert.equal(f.view.placementSprites.items.length, 1);
+	assert.equal(f.view.placementCanvas.items.length, 1);
 	f.arm('custom'); f.control.handlePointer(pointer(250, 190), false);
-	assert.equal(f.view.placementSprites.items.length, 0); assert.equal(f.model.buffer.getText(), f.source);
+	assert.equal(f.view.placementCanvas.items.length, 0); assert.equal(f.model.buffer.getText(), f.source);
 	f.control.handlePointer(pointer(250, 190, PointerButton.Primary, PointerButton.Primary), true);
-	assert.equal(f.context.subject!.objects.length, 2); assert.equal(f.view.sprites.items.length, 1);
+	assert.equal(f.context.subject!.objects.length, 2); assert.equal(f.view.canvas.items.length, 1);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
 });

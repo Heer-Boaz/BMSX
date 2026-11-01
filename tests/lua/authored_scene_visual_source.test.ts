@@ -40,8 +40,9 @@ prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),
  {member_id='child',definition_id='visual',parent='parent',position = { x = 4, y = 5 },
  options={visible=0,active=false,imgid='not-component-config',order=99}},
  {member_id='parent',definition_id='root',transform = { xx = 2, xy = 0, yx = 1, yy = 3, ox = 10, oy = 20 }},`);
-	const read = f.context.visualScene!, sprite = read.sprites[0];
-	assert.equal(read.sprites.length, 1); assert.ok(sprite.entry === f.context.subject!.objects[0]);
+	const read = f.context.visualScene!, sprite = read.canvas[0];
+	assert.ok(sprite.kind === 'sprite');
+	assert.equal(read.canvas.length, 1); assert.ok(sprite.entry === f.context.subject!.objects[0]);
 	assert.equal(sprite.image, 'scene'); assert.equal(sprite.color, 0xff123456);
 	assert.equal(sprite.flipH, false); assert.equal(sprite.flipV, true); assert.equal(sprite.order, 5);
 	assert.deepEqual(sprite.region, { x: -2, y: 7, width: -3, height: 0 });
@@ -58,7 +59,7 @@ prefab.define({def_id='visual',class=sprite_object,
  {member_id='nil',definition_id='visual',options={imgid=nil,color=nil,flip_h=nil,region=false,attachment_affine=false,presentation_affine=false,enabled=false}},
  {member_id='false',definition_id='visual',options={color=false,flip_h=false,order=false,visible=false}},
  {member_id='top',definition_id='visual',options={color=0xfe123456}},`);
-	const sprites = f.context.visualScene!.sprites;
+	const sprites = f.context.visualScene!.canvas.filter(visual => visual.kind === 'sprite');
 	assert.equal(sprites.length, 2); assert.equal(sprites[0].image, 'prefab');
 	assert.equal(sprites[0].color, 0xff123456); assert.equal(sprites[1].color, sprites[0].color);
 	assert.equal(sprites[0].flipH, true); assert.equal(sprites[0].region, undefined);
@@ -74,7 +75,7 @@ prefab.define({def_id='visual',class=sprite_object,defaults={imgid='primary'},
  {member_id='free',definition_id='visual'},
  {member_id='parent',definition_id='visual'},
  {member_id='last',definition_id='visual',options={order=-1}},`);
-	const scene = f.context.subject!, sprites = f.context.visualScene!.sprites;
+	const scene = f.context.subject!, sprites = f.context.visualScene!.canvas.filter(visual => visual.kind === 'sprite');
 	assert.deepEqual(sprites.map(sprite => [scene.objects.indexOf(sprite.entry), sprite.image]),
 		[[3, 'primary'], [1, 'primary'], [1, 'explicit'], [2, 'primary'], [2, 'explicit'], [0, 'primary'], [0, 'explicit'], [3, 'explicit']]);
 });
@@ -88,7 +89,7 @@ prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),
  components={defined,bridge.factory({imgid='direct'}),factory()}})`, `{member_id='source',definition_id='visual'}`, [
 		['sprite_bridge.lua', "return require('cartlib/component/sprite_component')"],
 	]);
-	assert.deepEqual(f.context.visualScene!.sprites.map(sprite => sprite.image), ['alias', 'direct']);
+	assert.deepEqual(f.context.visualScene!.canvas.filter(visual => visual.kind === 'sprite').map(sprite => sprite.image), ['alias', 'direct']);
 });
 
 test('unresolved values, competing writes, whole-region replacement and duplicate definitions never fall back to other source', t => {
@@ -105,8 +106,8 @@ prefab.define({def_id='duplicate',class=sprite_object})`, `
  {member_id='dynamic_owner',definition_id='visual',options=choose()},
  {member_id='duplicate',definition_id='duplicate',options={imgid='duplicate'}},
  {member_id='proved',definition_id='visual'},`);
-	assert.equal(f.context.visualScene!.sprites.length, 1);
-	assert.ok(f.context.visualScene!.sprites[0].entry === f.context.subject!.objects[7]);
+	assert.equal(f.context.visualScene!.canvas.length, 1);
+	assert.ok(f.context.visualScene!.canvas[0].entry === f.context.subject!.objects[7]);
 });
 
 test('primary overrides never remove an explicit base_sprite producer or mistake object initialize fields for the retained initializer', t => {
@@ -115,7 +116,7 @@ prefab.define({def_id='visual',class=sprite_object,
  defaults={imgid='input'},components={sprites.factory({id_local='base_sprite',imgid='factory'})}})`, `
  {member_id='override',definition_id='visual',options={primary_sprite_factory=custom}},
  {member_id='initializer_field',definition_id='visual',options={initialize=custom}},`);
-	const sprites = f.context.visualScene!.sprites;
+	const sprites = f.context.visualScene!.canvas.filter(visual => visual.kind === 'sprite');
 	assert.deepEqual(sprites.map(sprite => f.context.subject!.objects.indexOf(sprite.entry)), [0, 1, 1]);
 });
 
@@ -134,7 +135,7 @@ test('missing, nil, non-callable and competing builtin initializer/factory sourc
 		const resource = f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'cartlib/sprite.lua' })!;
 		const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
 		provider.pushEditOperations([{ offset: 0, deleteLength: provider.buffer.getText().length, text: source }]);
-		f.context.refresh(); assert.deepEqual(f.context.visualScene!.sprites.map(sprite => sprite.image), ['explicit']);
+		f.context.refresh(); assert.deepEqual(f.context.visualScene!.canvas.filter(visual => visual.kind === 'sprite').map(sprite => sprite.image), ['explicit']);
 	}
 });
 
@@ -148,8 +149,9 @@ test('dependency generations replace constructor preview once, retain older read
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
 	provider.pushEditOperations([{ offset: provider.buffer.getText().indexOf('before'), deleteLength: 6, text: 'after' }]);
 	f.context.refresh(); const after = f.context.visualScene!;
-	assert.notEqual(after, before); assert.equal(after.sprites[0].image, 'after'); assert.equal(before.sprites[0].image, 'before');
-	assert.ok(after.sprites[0].entry === before.sprites[0].entry);
+	assert.notEqual(after, before); assert.ok(after.canvas[0].kind === 'sprite' && before.canvas[0].kind === 'sprite');
+	assert.equal(after.canvas[0].image, 'after'); assert.equal(before.canvas[0].image, 'before');
+	assert.ok(after.canvas[0].entry === before.canvas[0].entry);
 	const unbound = new SceneAuthoringContext(f.model, f.documents); t.after(() => unbound.dispose());
 	const document = f.documents.get(f.model), scene = document.scenes[0];
 	unbound.select(document, f.model.version, { kind: 'scene', scene });
@@ -181,7 +183,7 @@ prefab.define({def_id='unknown',class=unknown_class,components={sprites.factory(
  {member_id='computed',definition_id='computed'},
  {member_id='known_override',definition_id='computed',options={visible=true}},
  {member_id='unknown_dimension',definition_id='unknown',options={visible=true}},`);
-	assert.deepEqual(f.context.visualScene!.sprites.map(sprite => f.context.subject!.objects.indexOf(sprite.entry)), [2,3,4,7]);
+	assert.deepEqual(f.context.visualScene!.canvas.filter(visual => visual.kind === 'sprite').map(sprite => f.context.subject!.objects.indexOf(sprite.entry)), [2,3,4,7]);
 });
 
 test('actual constructor member replacement revokes builtin semantics even when replacement is a known function', t => {
@@ -193,7 +195,7 @@ test('actual constructor member replacement revokes builtin semantics even when 
 		const f = fixture(t, `${replacement}
 prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),
  components={sprites.new,sprites.factory({imgid='factory'})}})`, `{member_id='source',definition_id='visual'}`);
-		const images = f.context.visualScene!.sprites.map(sprite => sprite.image);
+		const images = f.context.visualScene!.canvas.filter(visual => visual.kind === 'sprite').map(sprite => sprite.image);
 		assert.deepEqual(images, []);
 	}
 });
@@ -202,7 +204,7 @@ test('a replaced prefab define callable never grants spatial or visual construct
 	const f = fixture(t, `prefab.define=function(definition) return definition end
 prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),components={sprites.factory({imgid='unproved'})}})`,
 		`{member_id='source',definition_id='visual'}`);
-	assert.equal(f.context.visualScene!.sprites.length, 0);
+	assert.equal(f.context.visualScene!.canvas.length, 0);
 	const entry = f.context.subject!.objects[0]; assert.ok(entry.kind === 'object');
 	assert.equal(f.context.spatialScene!.worlds.get(entry), undefined);
 });
@@ -217,9 +219,9 @@ prefab.define({def_id='visual',class=sprite_object,
 	const request = f.context.captureAddMember()!, choice = request.choices[0], version = f.model.version;
 	const preview = request.getPreview(choice)!;
 	assert.ok(preview); assert.deepEqual(preview.world, { family: '2d', xx: 2, xy: 1, yx: -1, yy: 3, ox: 0, oy: 0 });
-	assert.deepEqual(preview.visuals.sprites.map(sprite => sprite.image), ['explicit', 'primary']);
+	assert.deepEqual(preview.visuals.canvas.filter(visual => visual.kind === 'sprite').map(sprite => sprite.image), ['explicit', 'primary']);
 	assert.equal(preview.visuals.models.length, 0);
-	for (const sprite of preview.visuals.sprites) { assert.equal(sprite.entry, choice); assert.equal(sprite.world, preview.world); }
+	for (const sprite of preview.visuals.canvas) { assert.equal(sprite.entry, choice); assert.equal(sprite.world, preview.world); }
 	const reads = t.mock.method(LuaSourceReader.prototype, 'memberState');
 	for (let frame = 0; frame < 100; frame++) assert.equal(request.getPreview(choice), preview);
 	assert.equal(f.context.captureAddMember()!.getPreview(choice), preview, 'the immutable projection, not a request, retains selected producer output');
@@ -228,9 +230,9 @@ prefab.define({def_id='visual',class=sprite_object,
 	assert.equal(f.context.selection, undefined);
 	assert.equal(request.apply(choice, -17, 43), true); assert.equal(request.getPreview(choice), undefined);
 	const appended = f.context.visualScene!;
-	assert.deepEqual(appended.sprites.map(({ entry, world, ...inputs }) => inputs),
-		preview.visuals.sprites.map(({ entry, world, ...inputs }) => inputs));
-	for (const sprite of appended.sprites) assert.deepEqual(sprite.world, { ...preview.world, ox: -17, oy: 43 });
+	assert.deepEqual(appended.canvas.filter(visual => visual.kind === 'sprite').map(({ entry, world, ...inputs }) => inputs),
+		preview.visuals.canvas.filter(visual => visual.kind === 'sprite').map(({ entry, world, ...inputs }) => inputs));
+	for (const sprite of appended.canvas) assert.deepEqual(sprite.world, { ...preview.world, ox: -17, oy: 43 });
 	assert.equal(preview.world.ox, 0); assert.equal(preview.world.oy, 0);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
@@ -252,7 +254,7 @@ prefab.define({def_id='mixed',class=object,components={function() end,sprites.fa
 		if (choice.id === 'dynamic_pose') assert.equal(preview, undefined);
 		else {
 			assert.ok(preview); assert.equal(preview.visuals.models.length, 0);
-			assert.deepEqual(preview.visuals.sprites.map(sprite => sprite.image), choice.id === 'mixed' ? ['proved'] : []);
+			assert.deepEqual(preview.visuals.canvas.filter(visual => visual.kind === 'sprite').map(sprite => sprite.image), choice.id === 'mixed' ? ['proved'] : []);
 		}
 	}
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
@@ -269,7 +271,8 @@ test('prefab preview generations preserve old reads and retire captured authorit
 	assert.equal(request.getPreview(choice), undefined); assert.equal(request.isCurrent(), false);
 	const next = f.context.captureAddMember()!, after = next.getPreview(next.choices[0])!;
 	assert.notEqual(next.choices[0], choice); assert.notEqual(after, before);
-	assert.equal(after.visuals.sprites[0].image, 'after'); assert.equal(before.visuals.sprites[0].image, 'before');
+	assert.ok(after.visuals.canvas[0].kind === 'sprite' && before.visuals.canvas[0].kind === 'sprite');
+	assert.equal(after.visuals.canvas[0].image, 'after'); assert.equal(before.visuals.canvas[0].image, 'before');
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 	f.context.dispose(); assert.equal(next.getPreview(next.choices[0]), undefined);
 });

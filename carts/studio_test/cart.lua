@@ -6,7 +6,7 @@ local prefab<const> = require('cartlib/world/prefab')
 local object_2d<const> = require('cartlib/world/object_2d')
 local sprite_object<const> = require('cartlib/sprite')
 local input_system<const> = require('cartlib/input/input_system')
-local custom_visual<const> = require('cartlib/component/custom_visual_component')
+local rectangle_component<const> = require('cartlib/component/rectangle_component')
 local scene_library<const> = require('cartlib/world/scene_library')
 
 -- This cartridge owns the live transport and authored sources used by generic
@@ -21,13 +21,10 @@ display.reset_256x192()
 world:configure({ framebuffer_count = 1, gameplay_interval_vblanks = 1,
 	frame_interval_vblanks = 1, spaces = { 'main' }, systems = { input_system } })
 
-local draw<const> = function(component, commands)
-	local pose_x<const>, pose_y<const> = component.owner:get_global_position()
-	commands:rect(pose_x, pose_y, pose_x + 64, pose_y + 48, component.owner.color)
-end
 prefab.define({ def_id = 'studio_test.actor', class = object_2d,
 	position = { x = 16, y = 24 },
-	components = { custom_visual.factory({ draw = draw }) } })
+	defaults = { width = 64, height = 48, color = 0xff26a3bb },
+	components = { function(owner) return rectangle_component.new(owner, owner) end } })
 prefab.define({ def_id = 'studio_test.marker', class = sprite_object,
 	defaults = { imgid = 'studio_test_marker' } })
 local root_scene<const> = require('scenes/root')

@@ -59,7 +59,8 @@ test('sibling slots preserve exact selected source, comments and one Undo withou
 	assert.equal(request.isCurrent(), false); assert.equal(request.apply(undefined, scene.objects[1]), false);
 	assert.deepEqual(f.ids(), ['b', 'a', 'c']); assert.equal(changes, 1);
 	assert.ok(f.model.buffer.getText().includes("-- selected documentation\n {member_id='a',definition_id='node2',options={note='keep bytes'}};"));
-	assert.ok(f.context.selection?.kind === 'member'); assert.equal(stringLiteralValue(f.context.selection.entry.memberId), 'a');
+	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry.kind === 'object');
+	assert.equal(stringLiteralValue(f.context.selection.entry.memberId), 'a');
 	assert.equal(f.context.selection.index, 1);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.dirty, false);
 	assert.ok(f.context.selection?.kind === 'member'); assert.equal(f.context.selection.index, 0);
@@ -83,7 +84,8 @@ test('combined reparent and sibling order keep world poses and descendants in on
 	assert.deepEqual(f.world('child'), initialWorld); assert.deepEqual(f.world('descendant'), descendantWorld);
 	assert.ok(f.model.buffer.getText().includes("parent='target'"));
 	assert.ok(f.model.buffer.getText().includes("options={note='unchanged'}"));
-	assert.ok(f.context.selection?.kind === 'member'); assert.equal(stringLiteralValue(f.context.selection.entry.memberId), 'child');
+	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry.kind === 'object');
+	assert.equal(stringLiteralValue(f.context.selection.entry.memberId), 'child');
 	assert.equal(f.context.selection.index, 3);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
 	assert.ok(f.context.selection?.kind === 'member'); assert.equal(f.context.selection.index, 0);
@@ -203,5 +205,6 @@ test('a canonical move publication preserves a newer explicit selection instead 
 	const release = f.model.onDidChangeContent(() => { release(); f.select('b'); }); t.after(release);
 	assert.equal(request.apply(undefined, undefined), true);
 	assert.deepEqual(f.ids(), ['b', 'c', 'a']);
-	assert.ok(f.context.selection?.kind === 'member'); assert.equal(stringLiteralValue(f.context.selection.entry.memberId), 'b');
+	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry.kind === 'object');
+	assert.equal(stringLiteralValue(f.context.selection.entry.memberId), 'b');
 });

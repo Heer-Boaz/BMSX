@@ -11,6 +11,7 @@ import { IDENTITY_HOST_OVERLAY_TRANSFORM, type HostOverlayTransform } from './tr
 import {
 	Host2DKind,
 	type Host2DRef,
+	type HostSolidQuadRenderSubmission,
 } from './commands';
 import {
 	RectRenderKind,
@@ -82,6 +83,9 @@ export class HostOverlayQuadStream {
 			case Host2DKind.Rect:
 				this.appendRect(command as RectRenderSubmission);
 				return;
+			case Host2DKind.SolidQuad:
+				this.appendSolidQuad(command as HostSolidQuadRenderSubmission);
+				return;
 			case Host2DKind.Img:
 				this.appendImage(command as HostImageRenderSubmission);
 				return;
@@ -141,6 +145,13 @@ export class HostOverlayQuadStream {
 		this.appendQuad(command.originX * scale + offsetX, command.originY * scale + offsetY,
 			command.axisXX * scale, command.axisXY * scale, command.axisYX * scale, command.axisYY * scale,
 			command.u0, command.v0, command.u1, command.v1, HOST_OVERLAY_TEXTURE_BITMAP, command.color);
+	}
+
+	private appendSolidQuad(command: HostSolidQuadRenderSubmission): void {
+		const { scale, offsetX, offsetY } = this.transform;
+		this.appendQuad(command.originX * scale + offsetX, command.originY * scale + offsetY,
+			command.axisXX * scale, command.axisXY * scale, command.axisYX * scale, command.axisYY * scale,
+			0, 0, 1, 1, HOST_OVERLAY_TEXTURE_SOLID, command.color);
 	}
 
 	private appendMeshScene(command: HostMeshSceneRenderSubmission): void {

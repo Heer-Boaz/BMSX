@@ -6,7 +6,7 @@ import type { SceneSourceAffine, SceneSourceObject } from '../../ide/workbench/c
 import type { SceneTransformPreview } from '../../ide/workbench/contrib/scene_editor/transform_proposal';
 import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
 import { SceneViewportModels } from '../../ide/workbench/contrib/scene_editor/viewport/models';
-import { SceneViewportSprites } from '../../ide/workbench/contrib/scene_editor/viewport/sprites';
+import { SceneViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas';
 import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
@@ -41,11 +41,11 @@ scenes.register('main',{objects={{member_id='shape',definition_id='shape',transf
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
 	const read = context.visualScene!, entry = context.subject!.objects[0]; assert.equal(entry.kind, 'object');
 	const images = new WorkspaceImageAssets(f.sources.catalog);
-	images.update(f.model.identity.contextId, new Set(read.sprites.map(sprite => sprite.image)));
-	const sprites = new SceneViewportSprites(images), models = new SceneViewportModels(f.sources.catalog, f.model.identity.contextId);
-	sprites.prepare(read); models.prepare(read);
-	t.after(() => { sprites.dispose(); images.dispose(); models.dispose(); context.dispose(); });
-	return { ...f, source, context, read, entry, sprites, models };
+	images.update(f.model.identity.contextId, new Set(read.canvas.flatMap(visual => visual.kind === 'sprite' ? [visual.image] : [])));
+	const canvas = new SceneViewportCanvas(images), models = new SceneViewportModels(f.sources.catalog, f.model.identity.contextId);
+	canvas.prepare(read); models.prepare(read);
+	t.after(() => { canvas.dispose(); images.dispose(); models.dispose(); context.dispose(); });
+	return { ...f, source, context, read, entry, canvas, models };
 }
 
 function preview(entry: SceneSourceObject, world: SceneSourceAffine | undefined): SceneTransformPreview & { revision: number } {
@@ -56,33 +56,34 @@ const IDENTITY_2 = '1,0,0,1,0,0', IDENTITY_3 = '1,0,0,0,1,0,0,0,1,0,0,0';
 
 test('sprite placement keeps authored append order and rebases without the original world inverse', t => {
 	const origin = 2 ** 60, f = fixture(t, '2d', `xx=1, xy=0, yx=0, yy=1, ox=${origin}, oy=0`, `1,0,0,1,${-origin},0`, '1,0,0,1,1,2');
-	const item = f.sprites.items[0]; assert.equal(item.affine.ox, 1); assert.equal(item.affine.oy, 2);
-	assert.ok(f.read.sprites[0].world === f.context.spatialScene!.worlds.get(f.entry));
+	const item = f.canvas.items[0]; assert.equal(item.affine.ox, 1); assert.equal(item.affine.oy, 2);
+	assert.ok(f.read.canvas[0].world === f.context.spatialScene!.worlds.get(f.entry));
 	const base = f.context.spatialScene!.worlds.get(f.entry)!, world: SceneSourceAffine = { family: '2d', xx: 0, xy: 0, yx: 2, yy: 3, ox: 7, oy: 9 };
-	const proposal = preview(f.entry, world); f.sprites.prepare(f.read, proposal);
-	assert.ok(f.sprites.items[0] === item); assert.deepEqual(item.affine, { xx: 0, xy: 0, yx: 2, yy: 3, ox: 11, oy: 15 });
+	const proposal = preview(f.entry, world); f.canvas.prepare(f.read, proposal);
+	assert.ok(f.canvas.items[0] === item); assert.deepEqual(item.affine, { xx: 0, xy: 0, yx: 2, yy: 3, ox: 11, oy: 15 });
 	assert.equal(base.ox, origin); assert.equal(base.xx, 1);
-	f.sprites.prepare(f.read); assert.ok(f.sprites.items[0] === item); assert.equal(item.affine.ox, 1); assert.equal(item.affine.oy, 2);
+	f.canvas.prepare(f.read); assert.ok(f.canvas.items[0] === item); assert.equal(item.affine.ox, 1); assert.equal(item.affine.oy, 2);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
 test('sprite preview retains bindings and unavailable candidates; unrelated or idle proposals do no projection work', t => {
-	const f = fixture(t, '2d', 'xx=1, xy=0.5, yx=0.25, yy=1, ox=5, oy=6', IDENTITY_2, IDENTITY_2), item = f.sprites.items[0], bitmap = item.bitmap;
+	const f = fixture(t, '2d', 'xx=1, xy=0.5, yx=0.25, yy=1, ox=5, oy=6', IDENTITY_2, IDENTITY_2), item = f.canvas.items[0];
+	assert.ok(item.kind === 'sprite'); const bitmap = item.bitmap;
 	const base = f.context.spatialScene!.worlds.get(f.entry)!; assert.equal(base.family, '2d');
 	const world = { ...base }, proposal = preview(f.entry, world), camera = new SceneViewportCamera(), bounds = { left: 0, top: 0, right: 100, bottom: 100 };
-	camera.setViewport(100, 100); f.sprites.project(camera, bounds, 1);
+	camera.setViewport(100, 100); f.canvas.project(camera, bounds, 1);
 	for (let step = 0; step < 100; step++) {
-		world.ox = base.ox + step; world.oy = base.oy - step; proposal.revision++; f.sprites.prepare(f.read, proposal);
-		assert.ok(f.sprites.items[0] === item && item.bitmap === bitmap);
+		world.ox = base.ox + step; world.oy = base.oy - step; proposal.revision++; f.canvas.prepare(f.read, proposal);
+		assert.ok(f.canvas.items[0] === item && item.bitmap === bitmap);
 	}
 	let retired = 0; bitmap.onDispose(() => retired++);
 	assert.equal(bitmap.revision, 0); assert.equal(item.affine.ox, base.ox + 99);
-	f.sprites.project(camera, bounds, 1); f.sprites.prepare(f.read, proposal); assert.equal(f.sprites.project(camera, bounds, 1), false);
-	const unavailable = preview(f.entry, undefined); f.sprites.prepare(f.read, unavailable);
-	assert.equal(f.sprites.items.length, 0); assert.equal(f.sprites.represented.has(f.entry), false); assert.equal(retired, 0);
-	f.sprites.prepare(f.read); assert.ok(f.sprites.items[0] === item && item.bitmap === bitmap); assert.equal(item.affine.ox, base.ox);
-	f.sprites.project(camera, bounds, 1);
-	f.sprites.prepare(f.read, { worlds: new Map(), revision: 1 }); assert.equal(f.sprites.project(camera, bounds, 1), false);
+	f.canvas.project(camera, bounds, 1); f.canvas.prepare(f.read, proposal); assert.equal(f.canvas.project(camera, bounds, 1), false);
+	const unavailable = preview(f.entry, undefined); f.canvas.prepare(f.read, unavailable);
+	assert.equal(f.canvas.items.length, 0); assert.equal(f.canvas.represented.has(f.entry), false); assert.equal(retired, 0);
+	f.canvas.prepare(f.read); assert.ok(f.canvas.items[0] === item && item.bitmap === bitmap); assert.equal(item.affine.ox, base.ox);
+	f.canvas.project(camera, bounds, 1);
+	f.canvas.prepare(f.read, { worlds: new Map(), revision: 1 }); assert.equal(f.canvas.project(camera, bounds, 1), false);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 

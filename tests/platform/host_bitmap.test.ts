@@ -151,6 +151,29 @@ test('actual software/WebGL2/WebGPU bitmap pixels, first upload, revision update
 				assert.deepEqual([...image.data.subarray(offset, offset + 4)], colors.a, `${kind} ${item.name} seam ${x},${y}: no gap or double alpha blend`);
 			}
 		});
+		const solidUploads = await page.evaluate(() => bitmapTest.paint());
+		for (const item of affineCases) await t.test(`${kind} native solid ${item.name}`, async () => {
+			const uploads = await page.evaluate(item => bitmapTest.paintSolid({ ...item.command,
+				color: item.alpha ? 0x80804020 : 0xff91bb33 }, item.clip, item.scopes), item);
+			const image = PNG.sync.read(await page.locator('canvas').screenshot());
+			for (let y = 0; y < 8; y++) for (let x = 0; x < 16; x++) {
+				if (kind === 'webgl2' && item.exactEdgeTies && onOuterBoundary(item.command, x, y)) continue;
+				const offset = (y * 16 + x) * 4;
+				const expected = item.rows[y][x] === '.' ? colors['.'] : item.alpha ? [80, 64, 64, 255] : [145, 187, 51, 255];
+				assert.deepEqual([...image.data.subarray(offset, offset + 4)], expected, `${kind} solid ${item.name} pixel ${x},${y}`);
+			}
+			assert.equal(uploads.creates, solidUploads.creates, 'native solid geometry does not create a bitmap texture');
+			assert.equal(uploads.updates, solidUploads.updates, 'native solid geometry does not publish bitmap pixels');
+		});
+		for (const item of joinedCases) await t.test(`${kind} native solid ${item.name} shared edge blends once`, async () => {
+			await page.evaluate(item => bitmapTest.paintSolid({ ...item.first, color: 0x80804020 }, undefined, [],
+				{ ...item.second, color: 0x80804020 }), item);
+			const image = PNG.sync.read(await page.locator('canvas').screenshot());
+			for (const [x, y] of item.samples) {
+				const offset = (y * 16 + x) * 4;
+				assert.deepEqual([...image.data.subarray(offset, offset + 4)], [80, 64, 64, 255], `${kind} solid ${item.name} seam ${x},${y}`);
+			}
+		});
 		await page.evaluate(() => bitmapTest.dispose());
 		assert.deepEqual(errors, []); await page.close();
 	}

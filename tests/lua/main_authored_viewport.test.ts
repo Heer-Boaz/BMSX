@@ -11,20 +11,21 @@ import { captureScenePrimary } from '../../ide/workbench/contrib/scene_editor/pr
 import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/outline';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
 
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
 require('prefabs')
 scenes.register('room',{objects={
- {member_id='root',definition_id='node2',spatial={local_transform={1,0,0,1,20,30}}},
- {member_id='child',definition_id='node2',spatial={parent_id='root',local_transform={1,0,0,1,40,10}}},
- {member_id='mesh_origin',definition_id='node3',spatial={local_transform={1,0,0,0,1,0,0,0,1,4,8,12}}},
+ {member_id='root',definition_id='node2',position={x=20,y=30}},
+ {member_id='child',definition_id='node2',parent='root',position={x=40,y=10}},
+ {member_id='mesh_origin',definition_id='node3',position={x=4,y=8,z=12}},
 }})`;
 const PREFABS = `local prefab=require('cartlib/world/prefab')
-prefab.define({def_id='node2',class={},spatial={family='2d',authority='affine'}})
-prefab.define({def_id='node3',class={},spatial={family='3d',authority='affine'}})`;
+prefab.define({def_id='node2',class=require('cartlib/world/object_2d')})
+prefab.define({def_id='node3',class=require('cartlib/world/object_3d')})`;
 
 async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['prefabs.lua', PREFABS],
+	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES, ['scene.lua', SOURCE], ['prefabs.lua', PREFABS],
 		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/prefab.lua', 'return { define=function() end }']]);
 	f.editor.setFontVariant(font); f.first.focus();
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
@@ -32,6 +33,7 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	const document = f.ide.sceneSources.get(model), main = f.editor.mainWorkspace;
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, sourceVersion: model.version, scene: document.scenes[0] } }), inputFocus.target!), true);
 	f.update(); const client = main.primary; assert.ok(client instanceof ScenePrimaryClient);
+	assert.equal(client.consumer.availability, 'available'); assert.equal(client.view.viewport.source!.entries.length, 3);
 	return { ...f, main, client, model };
 }
 
@@ -195,7 +197,9 @@ test(`the viewport ${route} context menu retains its native camera commands and 
 	assert.ok(menu.model.rows.some(row => row.command === 'sceneViewport.frameAll' && row.enabled),
 		'the popup addresses the actual canvas camera capability, not just its semantic source owner');
 	assert.ok(menu.model.rows.some(row => row.command === 'editor.source' && row.enabled));
-	f.key('Home'); f.key('Enter');
+	f.key('Home');
+	for (let step = 0; menu.model.rows[menu.model.selectedIndex]?.command !== 'sceneViewport.frameAll' && step < menu.model.rows.length; step++) f.key('ArrowDown');
+	assert.equal(menu.model.rows[menu.model.selectedIndex].command, 'sceneViewport.frameAll'); f.key('Enter');
 	assert.equal(menu.visible, false); assert.ok(inputFocus.admittedTarget === origin);
 	assert.ok(f.client.consumer.selection === selected);
 	f.key('Escape');

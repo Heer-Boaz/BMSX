@@ -194,8 +194,8 @@ export class SceneViewportControl implements PointerCaptureTarget {
 				}
 			} else if (preview !== undefined) {
 				const view = placement.view;
-				view.placementSprites.prepare(preview.visuals, preview);
-				view.placementSprites.project(view.camera, view.bounds, view.allocationRevision);
+				view.placementCanvas.prepare(preview.visuals, preview);
+				view.placementCanvas.project(view.camera, view.bounds, view.allocationRevision);
 			}
 			return true;
 		}

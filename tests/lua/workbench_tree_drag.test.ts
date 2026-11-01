@@ -12,7 +12,7 @@ import { layoutWorkbenchList } from '../../ide/workbench/ui/list_view';
 import { WorkbenchTreeDrag, type WorkbenchTreeDropPlacement } from '../../ide/workbench/ui/tree_drag';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode, type WorkbenchTreeState } from '../../ide/workbench/ui/tree_view';
 
-function pointer(x: number, y: number, pressedButtons = PointerButton.Primary, justReleasedButtons = 0): PointerInputSnapshot {
+function pointer(x: number, y: number, pressedButtons: number = PointerButton.Primary, justReleasedButtons = 0): PointerInputSnapshot {
 	return { valid: true, insideViewport: true, viewportX: x, viewportY: y, pressedButtons,
 		justPressedButtons: 0, justReleasedButtons, modifiers: KeyModifier.none, spaceDown: false };
 }
@@ -33,7 +33,7 @@ function fixture(t: TestContext, count = 3) {
 	let current = true, accepted = true, starts = 0, queries = 0, readings = 0;
 	let dropped: { node: WorkbenchTreeNode<number>; placement: WorkbenchTreeDropPlacement } | undefined;
 	let onCurrent: (() => void) | undefined, onQuery: (() => void) | undefined;
-	const drag = new WorkbenchTreeDrag(capture, scope, surfaces, owner, area, () => {
+	const drag = new WorkbenchTreeDrag<number>(capture, scope, surfaces, owner, area, () => {
 		starts++;
 		return { label: 'source', labelWidth: editorViewState.font.measure('source'), font: editorViewState.font.renderFont(),
 			isCurrent: () => { onCurrent?.(); return current; },

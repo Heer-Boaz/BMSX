@@ -13,9 +13,10 @@ import { writeHostMeshClipMatrix, type HostMeshSceneRenderSubmission } from '../
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset, loadModelFromBuffer } from '../../toolchain/ts/rompack/model_asset';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
 
 const MEMBERS = `{member_id='back',definition_id='paint'},
- {member_id='front',definition_id='paint',spatial={local_transform={1,0,0,0,1,0,0,0,1,0,0,2}}}`;
+ {member_id='front',definition_id='paint',position={z=2}}`;
 
 function geometry(): GLTFModel {
 	const positions = new Float32Array([-1, -1, 0, 1, -1, 0, 0, 1, 0, 1e6, 1e6, 1e6]);
@@ -29,11 +30,11 @@ async function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', members = 
 	const source = `local scenes=require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')
 local models=require('cartlib/component/static_model_component')
-prefab.define({def_id='paint',class={},spatial={family='3d',authority='affine'},
+prefab.define({def_id='paint',class=require('cartlib/world/object_3d'),
  components={models.factory({id_local='body',model_id='shape'})}})
 scenes.register('sculpture',{objects={${members}}})`;
-	const f = createActualSourcePanes(t, false, [['scene.lua', source], ['cartlib/world/prefab.lua', 'return {define=function() end}'],
-		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/world_object.lua', 'return {}'],
+	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES, ['scene.lua', source], ['cartlib/world/prefab.lua', 'return {define=function() end}'],
+		['cartlib/world/scene_library.lua', 'return {}'],
 		['cartlib/component/static_model_component.lua', 'return {new=function() end,factory=function() end}']]);
 	const context = f.sources.catalog.getContext(f.sources.systemContextId), packed = packModelAsset(asset).buffer;
 	context.previewRom!.bytes = packed; context.previewPackage.model.shape = loadModelFromBuffer('shape', packed); f.sources.catalog.rebuildResources();
@@ -43,6 +44,8 @@ scenes.register('sculpture',{objects={${members}}})`;
 	const document = f.ide.sceneSources.get(model);
 	assert.equal(await f.editor.openSceneInMain(() => ({ model, subject: { document, scene: document.scenes[0], sourceVersion: model.version } }), inputFocus.target!), true);
 	f.update(); const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+	assert.equal(client.consumer.availability, 'available'); assert.ok(client.consumer.subject !== undefined);
+	assert.ok(client.consumer.visualScene!.models.length > 0, 'the fixture admits actual model producers before asset availability is tested');
 	const view = client.view.viewport, camera = view.camera.capture();
 	view.camera.restore({ ...camera, space: { ...camera.space, yaw: 0, pitch: 0 } }); f.update();
 	return { ...f, source, model, client, view, context };
@@ -102,15 +105,18 @@ test('incomplete triangle assembly does not claim visible model geometry or hide
 	assert.ok(f.view.pick(f.view.points[0], f.view.points[1]) === f.client.consumer.subject!.objects[0]);
 });
 
-for (const [name, matrix] of [['reflected', '-1,0,0,0.5,1,0,0,0,1,0,0,0'], ['flattened', '1,0,0,0,1,0,0,0,0,0,0,0']] as const)
+for (const [name, transform] of [
+	['reflected', 'xx=-1,xy=0,xz=0,yx=0.5,yy=1,yz=0,zx=0,zy=0,zz=1,ox=0,oy=0,oz=0'],
+	['flattened', 'xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=0,ox=0,oy=0,oz=0'],
+] as const)
 test(`${name} actual indexed vertices determine fit and a full affine remains pickable`, async t => {
-	const f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',spatial={local_transform={${matrix}}}}`);
+	const f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',transform={${transform}}}`);
 	assert.ok(f.view.camera.capture().space.distance < 10, 'unused accessor vertices never inflate fit');
 	const hit = f.view.models.pick(0, 0, f.view.camera); assert.ok(hit?.entry === f.client.consumer.subject!.objects[0]);
 });
 
 test('large-origin camera, fit and picking preserve small geometry before translation is narrowed or added', async t => {
-	const origin = 2 ** 60, f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',spatial={local_transform={1,0,0,0,1,0,0,0,1,${origin},${origin},${origin}}}}`);
+	const origin = 2 ** 60, f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',position={x=${origin},y=${origin},z=${origin}}}`);
 	const scene = f.view.models.scene, camera = f.view.camera, matrix = new Float64Array(16);
 	assert.equal(scene.originX, origin); assert.ok(camera.capture().space.distance > 1 && camera.capture().space.distance < 10);
 	writeHostMeshClipMatrix(matrix, scene, scene.instances[0]);
@@ -122,7 +128,7 @@ test('large-origin camera, fit and picking preserve small geometry before transl
 test('framing preserves an off-origin mesh pivot beside a large world origin', async t => {
 	const asset = geometry(), positions = asset.meshes[0].primitives[0].positions;
 	for (let index = 0; index < 9; index += 3) { positions[index] += 100; positions[index + 1] += 200; positions[index + 2] += 300; }
-	const origin = 2 ** 60, f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',spatial={local_transform={1,0,0,0,1,0,0,0,1,${origin},${origin},${origin}}}}`, asset);
+	const origin = 2 ** 60, f = await fixture(t, 'tiny', `{member_id='face',definition_id='paint',position={x=${origin},y=${origin},z=${origin}}}`, asset);
 	const camera = f.view.camera, reading = camera.capture().space;
 	assert.equal(reading.originX, origin); assert.equal(reading.centerX, 100); assert.equal(reading.centerY, 200); assert.equal(reading.centerZ, 300);
 	assert.ok(reading.distance > 1 && reading.distance < 10);

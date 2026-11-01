@@ -66,7 +66,7 @@ const openAdd = async () => {
 	await click((action.bounds.left + action.bounds.right) / 2, (action.bounds.top + action.bounds.bottom) / 2);
 	await type('studio_test.marker');
 };
-const represented = () => view.sprites.items.filter(item => item.source.image === 'studio_test_marker');
+const represented = () => view.canvas.items.filter(item => item.kind === 'sprite' && item.source.image === 'studio_test_marker');
 const fonts = new Set();
 for (let font = 0; font < 2; font++) {
 	for (let theme = 0; theme < 2; theme++) {
@@ -81,7 +81,7 @@ for (let font = 0; font < 2; font++) {
 		const x = Math.round(bounds.left + (bounds.right - bounds.left) * 0.58);
 		const y = Math.round(bounds.top + (bounds.bottom - bounds.top) * 0.46);
 		await point(x, y); idle(version); paused();
-		t.assert(view.placementSprites.items.length === 1 && represented().length === 0,
+		t.assert(view.placementCanvas.items.length === 1 && represented().length === 0,
 			'the selected prefab had no visible pre-insertion sprite preview');
 		await capture(`${label}-armed-no-source-edit`);
 		const hierarchyBounds = primary.hierarchy.layoutState.client;
@@ -89,10 +89,10 @@ for (let font = 0; font < 2; font++) {
 		idle(version); paused(); await capture(`${label}-armed-pointer-outside`);
 		await point(x, y); idle(version); paused(); await capture(`${label}-armed-pointer-returned`);
 		await press('Escape'); idle(version); paused();
-		t.assert(view.placementSprites.items.length === 0 && view.placementPreview === undefined,
+		t.assert(view.placementCanvas.items.length === 0 && view.placementPreview === undefined,
 			'cancelling Add retained its visual preview');
 		await openAdd(); await press('Enter'); await point(x, y);
-		const ghost = view.placementSprites.items[0], previewBitmap = ghost.bitmap;
+		const ghost = view.placementCanvas.items[0], previewBitmap = ghost.bitmap;
 		const footprint = [ghost.x, ghost.y, ghost.xx, ghost.xy, ghost.yx, ghost.yy, ghost.u0, ghost.v0, ghost.u1, ghost.v1];
 		// The requested placement pixel is a data-integrity contract, not a UI layout oracle.
 		const pixel = { x: 0, y: 0 };
