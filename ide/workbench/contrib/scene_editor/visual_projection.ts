@@ -288,9 +288,9 @@ export class SceneVisualProjection {
 			const sprite = this.reader.module(definition.file, SPRITE_OBJECT.module);
 			if (sprite !== undefined && this.prefabs.classes(definition)?.includes(sprite)) {
 				const componentModule = this.reader.module(definition.file, SPRITE_NEW.module), constructor = fields.member(componentModule, 'new');
-				const primary = this.prefabs.classMember(definition, 'primary_sprite_factory');
-				if (initialize?.expression.kind === LuaSyntaxKind.FunctionExpression && primary?.expression.kind === LuaSyntaxKind.FunctionExpression
-					&& primary === constructor) producers.push({ kind: 'sprite', defaults: null, input: 'primary' });
+				const spriteInitialize = fields.member(sprite, 'initialize'), primary = this.prefabs.classMember(definition, 'primary_sprite_factory');
+				if (spriteInitialize?.expression.kind === LuaSyntaxKind.FunctionExpression && initialize === spriteInitialize
+					&& primary?.expression.kind === LuaSyntaxKind.FunctionExpression && primary === constructor) producers.push({ kind: 'sprite', defaults: null, input: 'primary' });
 			}
 			const components = fields.member(definition, 'components');
 			if (components?.expression.kind === LuaSyntaxKind.TableConstructorExpression

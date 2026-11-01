@@ -120,6 +120,28 @@ prefab.define({def_id='visual',class=sprite_object,
 	assert.deepEqual(sprites.map(sprite => f.context.subject!.objects.indexOf(sprite.entry)), [0, 1, 1]);
 });
 
+for (const [name, declaration, images] of [
+	['inherited original', 'local child=setmetatable({}, {__index=sprite_object})', ['primary', 'explicit']],
+	['aliased original', 'local original=sprite_object.initialize; local child=setmetatable({initialize=original}, {__index=sprite_object})', ['primary', 'explicit']],
+	['known empty override', 'local child=setmetatable({}, {__index=sprite_object}); function child.initialize(self) end', ['explicit']],
+	['unknown override', 'local child=setmetatable({initialize=unknown_initializer}, {__index=sprite_object})', ['explicit']],
+] as const) test(`${name} initializer retains only proved implicit Sprite construction in Scene and Add`, t => {
+	const f = fixture(t, `${declaration}
+prefab.define({def_id='visual',class=child,defaults={imgid='primary'},
+ components={sprites.factory({imgid='explicit',order=1})}})`, `{member_id='source',definition_id='visual'}`);
+	const sourceVisuals = f.context.visualScene!.canvas;
+	assert.deepEqual(sourceVisuals.filter(visual => visual.kind === 'sprite').map(sprite => sprite.image), images);
+	const request = f.context.captureAddMember('2d')!, choice = request.choices[0], preview = request.getPreview(choice)!;
+	assert.deepEqual(preview.visuals.canvas.map(({ entry, world, ...inputs }) => inputs),
+		sourceVisuals.map(({ entry, world, ...inputs }) => inputs));
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+	assert.equal(request.apply(choice, 17, -9, 0), true);
+	const selected = f.context.selection!; assert.ok(selected.kind === 'member');
+	assert.deepEqual(f.context.visualScene!.canvas.filter(visual => visual.entry === selected.entry)
+		.map(({ entry, world, ...inputs }) => inputs), preview.visuals.canvas.map(({ entry, world, ...inputs }) => inputs));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
 test('missing, nil, non-callable and competing builtin initializer/factory sources never grant implicit sprite correspondence', t => {
 	for (const source of [
 		"return setmetatable({}, {__index=require('cartlib/world/object_2d')})",
