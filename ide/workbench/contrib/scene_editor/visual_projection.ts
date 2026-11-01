@@ -53,7 +53,7 @@ export type SceneVisualReadModel<Owner = SceneSourceObject> = {
 };
 /** The same constructor inputs as an appended root member, before any source occurrence exists. */
 export type ScenePrefabPreview = {
-	readonly world: Readonly<Affine2>;
+	readonly world: Readonly<SceneSourceAffine>;
 	readonly visuals: SceneVisualReadModel<SceneAddMemberChoice>;
 };
 type SourceState = LuaWrittenExpression | null | undefined;
@@ -144,8 +144,8 @@ export class SceneVisualProjection {
 		if (!this.previews.has(choice)) {
 			const definition = this.prefabs.all.get(choice.id), pose = this.spatial.prefabTransform(choice.id);
 			let preview: ScenePrefabPreview | undefined;
-			if (definition !== undefined && pose?.family === '2d') {
-				const world = { ...pose, ox: 0, oy: 0 };
+			if (definition !== undefined && pose !== undefined) {
+				const world = pose.family === '2d' ? { ...pose, ox: 0, oy: 0 } : { ...pose, ox: 0, oy: 0, oz: 0 };
 				const canvas: SceneCanvasSource<SceneAddMemberChoice>[] = [], models: SceneModelSource<SceneAddMemberChoice>[] = [];
 				this.appendVisuals(canvas, models, choice, definition, null, world);
 				canvas.sort((a, b) => a.order - b.order);

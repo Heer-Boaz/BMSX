@@ -16,6 +16,7 @@ import type { WorkbenchViewSizeConstraints } from '../../../common/layout';
 import type { WorkbenchMenuDefinition } from '../../../ui/menu/model';
 import { drawSceneViewport } from './render';
 import { type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
+import type { SceneViewportPoint } from './camera';
 
 export const VIEWPORT_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneViewportViewState> = [
 	{ type: 'command', command: 'sceneEditor.addMember' }, { type: 'separator' },
@@ -37,7 +38,9 @@ type CameraGesture = ViewportGestureBase & { readonly kind: 'pan' | 'orbit'; rea
 type TranslationGesture = ViewportGestureBase & { readonly kind: 'translate'; phase: 'drag' | 'commit'; readonly request: SceneTranslationRequest; readonly assets: number; readonly camera: number };
 type ViewportGesture = CameraGesture | TranslationGesture;
 type MemberPlacement = SceneViewportPlacement & { readonly view: SceneViewportViewState; readonly attachment: number; readonly generation: number;
-	readonly request: SceneAddMemberRequest; readonly choice: SceneAddMemberChoice; readonly didPlace: () => void };
+	readonly request: SceneAddMemberRequest; readonly choice: SceneAddMemberChoice; readonly didPlace: () => void;
+	readonly originX: 0; readonly originY: 0; readonly originZ: 0;
+	pointerX: number; pointerY: number; pointed: boolean };
 
 /** One attached authored canvas; physical navigation never acquires guest input or edits source. */
 export class SceneViewportControl implements PointerCaptureTarget {
@@ -104,7 +107,10 @@ export class SceneViewportControl implements PointerCaptureTarget {
 				if (this.attachment !== revision) return;
 				const placement = this.placement;
 				if (this.gesture?.kind === 'translate') this.revokeGesture(this.gesture);
-				if (view.camera.mode !== '2d') this.retirePlacement(placement);
+				if (placement !== undefined) {
+					if (view.camera.mode !== placement.choice.family) this.retirePlacement(placement);
+					else if (placement.pointed) this.locatePlacement(placement);
+				}
 			})];
 		this.layout(bounds);
 	}
@@ -143,7 +149,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	public draw(): void { if (this.viewValue !== undefined) drawSceneViewport(this.view, this.focusTarget.hasFocus, this.placement); }
 	public beginAddMember(request: SceneAddMemberRequest, choice: SceneAddMemberChoice, didPlace: () => void): boolean {
 		const view = this.viewValue, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration, gesture = this.gesture;
-		if (view === undefined || !this.canFocus || view.camera.mode !== '2d' || !request.isCurrent()) return false;
+		if (view === undefined || !this.canFocus || view.camera.mode !== choice.family || !request.isCurrent()) return false;
 		this.revokeGesture(gesture);
 		if (!this.focus() || !request.isCurrent() || this.viewValue !== view || this.attachment !== attachment
 			|| this.focusTarget.scope.contextGeneration !== generation) return false;
@@ -151,15 +157,36 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		if (!request.isCurrent() || this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation) return false;
 		this.retirePlacement(this.placement);
 		if (content !== undefined) {
-			const world = { ...content.world, family: '2d' as const };
+			const world = { ...content.world };
 			view.placementPreview = { visuals: content.visuals, world, worlds: new Map([[choice, world]]), revision: 0 };
 		}
 		const placement: MemberPlacement = { view, attachment, generation, request, choice,
 			definitionLabel: truncateTextToWidth(choice.id, view.bounds.right - view.bounds.left - 8),
-			preview: view.placementPreview, didPlace, x: 0, y: 0, located: false };
+			preview: view.placementPreview, didPlace, originX: 0, originY: 0, originZ: 0, x: 0, y: 0, z: 0,
+			located: false, pointerX: 0, pointerY: 0, pointed: false };
 		this.placement = placement;
+		view.camera.retainReading();
 		view.refresh();
 		return this.placement === placement;
+	}
+	/** Pointer input and camera movement project the same retained cursor. Only
+	 * canvas coordinates snap to pixels; 3D construction coordinates are world units. */
+	private locatePlacement(placement: MemberPlacement): void {
+		const camera = placement.view.camera, bounds = placement.view.bounds;
+		const x = placement.pointerX - (bounds.left + bounds.right) / 2, y = placement.pointerY - (bounds.top + bounds.bottom) / 2;
+		if (placement.choice.family === '2d') {
+			camera.unproject2d(x, y, placement);
+			placement.x = Math.round(placement.x); placement.y = Math.round(placement.y); placement.located = true;
+		} else placement.located = camera.unprojectGround3d(x, y, placement);
+		const preview = placement.preview;
+		if (placement.located && preview !== undefined) {
+			const world = preview.world;
+			if (world.ox !== placement.x || world.oy !== placement.y || world.family === '3d' && world.oz !== placement.z) {
+				world.ox = placement.x; world.oy = placement.y;
+				if (world.family === '3d') world.oz = placement.z;
+				preview.revision++;
+			}
+		}
 	}
 	private retirePlacement(placement: MemberPlacement | undefined): void {
 		if (placement === undefined || this.placement !== placement) return;
@@ -177,26 +204,17 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		if (placement !== undefined) {
 			if (!placement.request.isCurrent() || this.placement !== placement) { this.retirePlacement(placement); return true; }
 			if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) { this.retirePlacement(placement); return true; }
-			const bounds = placement.view.bounds;
-			placement.view.camera.unproject2d(snapshot.viewportX - (bounds.left + bounds.right) / 2,
-				snapshot.viewportY - (bounds.top + bounds.bottom) / 2, placement);
-			placement.x = Math.round(placement.x); placement.y = Math.round(placement.y); placement.located = true;
-			const preview = placement.preview;
-			if (preview !== undefined && (preview.world.ox !== placement.x || preview.world.oy !== placement.y)) {
-				preview.world.ox = placement.x; preview.world.oy = placement.y; preview.revision++;
-			}
+			placement.pointerX = snapshot.viewportX; placement.pointerY = snapshot.viewportY; placement.pointed = true;
+			this.locatePlacement(placement);
+			if (!placement.located) return true;
 			if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
 				this.retirePlacement(placement);
-				if (placement.request.apply(placement.choice, placement.x, placement.y)
+				if (placement.request.apply(placement.choice, placement.x, placement.y, placement.z)
 					&& this.viewValue === placement.view && this.attachment === placement.attachment
 					&& this.focusTarget.scope.contextGeneration === placement.generation) {
 					placement.didPlace(); placement.view.refresh();
 				}
-			} else if (preview !== undefined) {
-				const view = placement.view;
-				view.placementCanvas.prepare(preview.visuals, preview);
-				view.placementCanvas.project(view.camera, view.bounds, view.allocationRevision);
-			}
+			} else placement.view.projectPlacement();
 			return true;
 		}
 		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) return false;
@@ -240,7 +258,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		return true;
 	}
 	public onPointerLeave(): void {
-		if (this.placement !== undefined) this.placement.located = false;
+		if (this.placement !== undefined) { this.placement.located = false; this.placement.pointed = false; }
 		if (this.viewValue !== undefined) this.viewValue.gizmo.hover = TranslateHandle.None;
 	}
 	public handleWheel(event: WheelInputSnapshot): boolean {
@@ -249,7 +267,13 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		this.revokeGesture(this.gesture); view.refresh();
 		if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation) return true;
 		const x = event.viewportX - (view.bounds.left + view.bounds.right) / 2, y = event.viewportY - (view.bounds.top + view.bounds.bottom) / 2;
-		const anchor = view.camera.mode === '3d' ? view.models.pick(x, y, view.camera) : undefined;
+		const placement = this.placement;
+		if (placement !== undefined) {
+			placement.pointerX = event.viewportX; placement.pointerY = event.viewportY; placement.pointed = true;
+			this.locatePlacement(placement);
+		}
+		let anchor: Readonly<SceneViewportPoint> | undefined;
+		if (view.camera.mode === '3d') anchor = placement?.located ? placement : view.models.pick(x, y, view.camera);
 		view.camera.zoom(-event.deltaY / 4, x, y, anchor);
 		if (this.viewValue === view && this.attachment === attachment && this.focusTarget.scope.contextGeneration === generation) view.refresh(); return true;
 	}

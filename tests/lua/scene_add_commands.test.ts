@@ -5,6 +5,7 @@ import { KeyModifier } from '../../hosts/common/input/text';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
@@ -44,6 +45,18 @@ async function fixture(t: TestContext) {
 	return { ...f, main, model, provider, primary, picker, open };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+test('Add acceptance does not arm or reclaim the canvas after focus return selects a newer foreground', async t => {
+	const f = await fixture(t), foreign = f.editor.editorParts.createDocument();
+	foreign.activeGroup.openEditor(new HomeInput(null)); f.main.focusPrimary('hierarchy'); f.update();
+	const arm = t.mock.method(f.primary.viewport.control, 'beginAddMember');
+	openAdd(f);
+	t.after(f.picker.field.focusTarget.onDidBlur(() => foreign.activeGroup.focus()));
+	f.key('Enter');
+	assert.equal(f.picker.visible, false); assert.equal(arm.mock.callCount(), 0);
+	assert.ok(inputFocus.admittedTarget !== null && foreign.scope.contains(inputFocus.admittedTarget.scope));
+	assert.equal(f.main.primary, f.primary); assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+});
 
 function openAdd(f: Fixture): void {
 	assert.equal(f.editor.commands.isEnabled('sceneEditor.addMember', f.primary.hierarchy.control.focusTarget), true);

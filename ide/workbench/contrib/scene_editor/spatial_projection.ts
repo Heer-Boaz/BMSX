@@ -65,7 +65,7 @@ export class SceneSpatialProjection {
 	private readonly renames = new WeakMap<SceneSourceObject, SceneRenamePlan | undefined>();
 	private readonly translations = new WeakMap<SceneSourceObject, SceneTranslationPlan | undefined>();
 	private readonly additions = new WeakMap<SceneSourceDefinition, SceneAddMemberPlan | undefined>();
-	private addChoices: readonly SceneAddMemberChoice[] | undefined;
+	private addChoices: SceneAddMemberPlan['choices'] | undefined;
 	private prefabs: Map<string, PrefabSpatial | false | undefined> | undefined;
 	public constructor(private readonly previousTopologies: WeakMap<SceneSourceDefinition, SceneSpatialTopology>,
 		private readonly prefabSources: ScenePrefabSources) { this.reader = prefabSources.reader; }
@@ -92,11 +92,11 @@ export class SceneSpatialProjection {
 					return id !== undefined && graph.byId.get(id) === entry;
 				})) {
 					if (this.addChoices === undefined) {
-						const choices: SceneAddMemberChoice[] = [];
-						for (const [id, prefab] of this.prefabs!) if (prefab && prefab.family === '2d') choices.push({ id });
+						const choices: Record<SceneAddMemberChoice['family'], SceneAddMemberChoice[]> = { '2d': [], '3d': [] };
+						for (const [id, prefab] of this.prefabs!) if (prefab) choices[prefab.family].push({ id, family: prefab.family });
 						this.addChoices = choices;
 					}
-					if (this.addChoices.length > 0) plan = { choices: this.addChoices, occupied: new Set(graph.byId.keys()) };
+					plan = { choices: this.addChoices, occupied: new Set(graph.byId.keys()) };
 				}
 			}
 			this.additions.set(scene, plan);

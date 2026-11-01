@@ -7,7 +7,13 @@ import type { SceneTransformPreview } from '../../ide/workbench/contrib/scene_ed
 import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
 import { SceneViewportModels } from '../../ide/workbench/contrib/scene_editor/viewport/models';
 import { SceneViewportCanvas } from '../../ide/workbench/contrib/scene_editor/viewport/canvas';
+import { SceneViewportViewState, type SceneViewportPlacement } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
+import { drawSceneViewport } from '../../ide/workbench/contrib/scene_editor/viewport/render';
+import { api } from '../../ide/runtime/overlay_api';
+import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
+import { WorkspaceModelAssets } from '../../ide/workspace/model_assets';
+import type { SceneAddMemberChoice } from '../../ide/workbench/contrib/scene_editor/member_insertion';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import { createPackedImageFixture } from '../helpers/packed_images';
@@ -42,10 +48,12 @@ scenes.register('main',{objects={{member_id='shape',definition_id='shape',transf
 	const read = context.visualScene!, entry = context.subject!.objects[0]; assert.equal(entry.kind, 'object');
 	const images = new WorkspaceImageAssets(f.sources.catalog);
 	images.update(f.model.identity.contextId, new Set(read.canvas.flatMap(visual => visual.kind === 'sprite' ? [visual.image] : [])));
-	const canvas = new SceneViewportCanvas(images), models = new SceneViewportModels(f.sources.catalog, f.model.identity.contextId);
+	const assets = new WorkspaceModelAssets(f.sources.catalog);
+	assets.update(f.model.identity.contextId, new Set(read.models.map(model => model.model)));
+	const canvas = new SceneViewportCanvas(images), models = new SceneViewportModels(assets);
 	canvas.prepare(read); models.prepare(read);
-	t.after(() => { canvas.dispose(); images.dispose(); models.dispose(); context.dispose(); });
-	return { ...f, source, context, read, entry, canvas, models };
+	t.after(() => { canvas.dispose(); images.dispose(); models.dispose(); assets.dispose(); context.dispose(); });
+	return { ...f, source, context, read, entry, canvas, models, assets };
 }
 
 function preview(entry: SceneSourceObject, world: SceneSourceAffine | undefined): SceneTransformPreview & { revision: number } {
@@ -121,4 +129,62 @@ test('model translation retains shared linear lanes, meshes and candidate draws 
 	f.models.prepare(f.read, preview(f.entry, undefined)); assert.equal(scene.instances.length, 0); assert.equal(f.models.represented.size, 0); assert.equal(retired, 0);
 	f.models.prepare(f.read); assert.ok(scene.instances[0] === draw && scene.instances[1] === second && draw.mesh === mesh); assert.equal(retired, 0);
 	assert.deepEqual(vertices, values); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('generic model preview borrows main meshes and never owns their cache lifetime', t => {
+	const f = fixture(t, '3d', 'xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=5,oy=6,oz=7', IDENTITY_3, IDENTITY_3);
+	const choice: SceneAddMemberChoice = { id: 'shape', family: '3d' };
+	const source = { canvas: [], models: f.read.models.map(model => ({ ...model, entry: choice })) };
+	const ghost = new SceneViewportModels<SceneAddMemberChoice>(f.assets); t.after(() => ghost.dispose());
+	ghost.prepare(source); const draw = ghost.scene.instances[0], mesh = draw.mesh;
+	assert.equal(mesh, f.models.scene.instances[0].mesh);
+	const world: SceneSourceAffine = { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 8, oy: 9, oz: 10 };
+	const proposal: SceneTransformPreview<SceneAddMemberChoice> & { revision: number } = { worlds: new Map([[choice, world]]), revision: 0 };
+	const updates = t.mock.method(f.assets, 'update', () => assert.fail('pointer movement must not rediscover model assets'));
+	for (let step = 0; step < 100; step++) {
+		world.ox = 8 + step; proposal.revision++; ghost.prepare(source, proposal);
+		assert.equal(ghost.scene.instances[0], draw); assert.equal(draw.mesh, mesh);
+	}
+	updates.mock.restore();
+	assert.equal(draw.ox, 8 + 99 + 2); assert.equal(f.models.scene.instances[0].ox, 7);
+	let retired = 0; mesh.onDispose(() => retired++);
+	ghost.dispose(); assert.equal(retired, 0); assert.equal(f.models.scene.instances[0].mesh, mesh);
+	f.assets.update(f.model.identity.contextId, new Set()); assert.equal(retired, 1);
+	f.models.prepare(undefined); assert.equal(f.models.scene.instances.length, 0);
+});
+
+test('the Scene viewport shares main and Add model assets while the located ghost remains presentation-only', t => {
+	configureFontVariant('tiny');
+	const f = fixture(t, '3d', 'xx=1,xy=0,xz=0,yx=0,yy=1,yz=0,zx=0,zy=0,zz=1,ox=5,oy=6,oz=7', IDENTITY_3, IDENTITY_3);
+	const view = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => view.dispose());
+	view.layout({ left: 0, top: 0, right: 400, bottom: 300 }, 8); view.refresh();
+	const main = view.models.scene.instances[0], mesh = main.mesh;
+	const request = f.context.captureAddMember('3d')!, choice = request.choices[0], source = request.getPreview(choice)!;
+	assert.ok(source.world.family === '3d'); const world = { ...source.world };
+	const preview = { world, visuals: source.visuals, worlds: new Map([[choice, world]]), revision: 0 };
+	view.placementPreview = preview; view.refresh(); const ghost = view.placementModels.scene.instances[0];
+	assert.equal(ghost.mesh, mesh); assert.equal(view.models.scene.instances[0], main);
+	let retired = 0; mesh.onDispose(() => retired++);
+	const update = t.mock.method(WorkspaceModelAssets.prototype, 'update', () => assert.fail('pointer motion must only update retained placements'));
+	const sourceRead = t.mock.method(f.context, 'refresh', () => assert.fail('pointer motion must not re-enter source projection'));
+	const mainPreparation = t.mock.method(view.models, 'prepare', () => assert.fail('pointer motion must not prepare committed models'));
+	for (let step = 0; step < 100; step++) {
+		world.ox = step; world.oz = step * 2; preview.revision++; view.projectPlacement();
+		assert.equal(view.placementModels.scene.instances[0], ghost); assert.equal(ghost.mesh, mesh);
+		assert.equal(view.models.scene.instances[0], main);
+	}
+	update.mock.restore(); sourceRead.mock.restore(); mainPreparation.mock.restore();
+	assert.equal(main.ox, 7); assert.equal(ghost.ox, 101); assert.equal(retired, 0);
+	for (const method of ['pushClipRect', 'popClipRect', 'fill_rect', 'blit_rect', 'polyline', 'blit_text_inline_with_font'] as const)
+		t.mock.method(api, method, () => {});
+	const submit = t.mock.method(api, 'drawMeshScene', () => {});
+	const placement: SceneViewportPlacement = { definitionLabel: choice.id, preview, x: world.ox, y: world.oy, z: world.oz, located: true };
+	drawSceneViewport(view, false, placement);
+	assert.deepEqual(submit.mock.calls.map(call => call.arguments[0]), [view.models.scene, view.placementModels.scene]);
+	submit.mock.resetCalls(); placement.located = false; drawSceneViewport(view, false, placement);
+	assert.deepEqual(submit.mock.calls.map(call => call.arguments[0]), [view.models.scene]);
+	view.placementPreview = undefined; view.refresh();
+	assert.equal(view.placementModels.scene.instances.length, 0); assert.equal(main.mesh, mesh); assert.equal(retired, 0);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+	view.dispose(); assert.equal(retired, 1);
 });

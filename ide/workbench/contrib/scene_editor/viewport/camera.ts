@@ -41,6 +41,13 @@ export class SceneViewportCamera {
 	public get near(): number { return this.space.distance / 10000; }
 	private get focalLength(): number { return this.height / (2 * TAN_HALF_FOV); }
 	public onDidChange(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+	/** An authored gesture adopts the displayed reading even when an empty scene
+	 * has not supplied initial framing. Later source publication must not reframe it. */
+	public retainReading(): void {
+		const reading = this.mode === '2d' ? this.canvas : this.space;
+		if (reading.reading === 'manual') return;
+		reading.reading = 'manual'; this.changed();
+	}
 	public capture(): SceneViewportCameraState {
 		return { mode: this.mode, modeIntent: this.modeIntent, canvas: { ...this.canvas }, space: { ...this.space } };
 	}
@@ -85,6 +92,18 @@ export class SceneViewportCamera {
 	public unproject2d(x: number, y: number, target: { x: number; y: number }): void {
 		target.x = this.canvas.centerX + x / this.canvas.scale;
 		target.y = this.canvas.centerY + y / this.canvas.scale;
+	}
+	/** Intersect the displayed ray with the world XZ construction plane. A parallel
+	 * ray or a crossing behind the near plane supplies no placement. */
+	public unprojectGround3d(x: number, y: number, target: { x: number; y: number; z: number }): boolean {
+		const s = this.space, focal = this.focalLength, rayY = this.dy * y / focal - this.by;
+		if (rayY === 0) return false;
+		const distance = -(s.originY + (s.centerY + this.by * s.distance)) / rayY;
+		if (distance < this.near) return false;
+		target.x = s.originX + (s.centerX + this.bx * s.distance + (this.rx * x / focal + this.dx * y / focal - this.bx) * distance);
+		target.y = 0;
+		target.z = s.originZ + (s.centerZ + this.bz * s.distance + (this.rz * x / focal + this.dz * y / focal - this.bz) * distance);
+		return true;
 	}
 	/** Local projection scale for world-sized handles with a stable screen footprint. */
 	public unitsPerPixel(x: number, y: number, z: number): number {

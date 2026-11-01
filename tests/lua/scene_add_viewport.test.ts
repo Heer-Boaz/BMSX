@@ -24,11 +24,11 @@ function pointer(x: number, y: number, buttons = 0, justPressed = 0, justRelease
 		valid: true, insideViewport: true, modifiers: KeyModifier.none, spaceDown: false };
 }
 
-function fixture(t: TestContext) {
+function fixture(t: TestContext, objects = "{{member_id='old',definition_id='actor'}}") {
 	configureFontVariant('tiny');
 	const source = `local scenes=require('cartlib/world/scene_library')
 require('prefabs')
-scenes.register('main',{objects={{member_id='old',definition_id='actor'}}})`;
+scenes.register('main',{objects=${objects}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
 		[['cartlib/world/prefab.lua', 'return {define=function() end}'], ['prefabs.lua', PREFABS]]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
@@ -51,7 +51,7 @@ scenes.register('main',{objects={{member_id='old',definition_id='actor'}}})`;
 }
 
 test('Add waits for a primary press, maps the current 2D canvas to integer scene pixels and commits exactly once', t => {
-	const f = fixture(t), request = f.context.captureAddMember()!;
+	const f = fixture(t), request = f.context.captureAddMember('2d')!;
 	assert.ok(request); let placed = 0, changes = 0;
 	t.after(f.model.onDidChangeContent(() => changes++));
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => {
@@ -85,7 +85,7 @@ test('Add waits for a primary press, maps the current 2D canvas to integer scene
 });
 
 for (const cancel of ['Escape', 'secondary press'] as const) test(`${cancel} abandons armed Add without source, history or completion`, t => {
-	const f = fixture(t), request = f.context.captureAddMember()!; let placed = 0;
+	const f = fixture(t), request = f.context.captureAddMember('2d')!; let placed = 0;
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
 	f.control.handlePointer(pointer(260, 350), false);
 	if (cancel === 'Escape') inputFocus.handleKeyboard(new KeyInputEvent('Escape', KeyModifier.none));
@@ -111,7 +111,7 @@ const RETIREMENTS: readonly [string, (f: ReturnType<typeof fixture>) => void][] 
 	['attachment removal', f => f.control.clearView()],
 ];
 for (const [name, retire] of RETIREMENTS) test(`${name} retires armed Add instead of committing against a different owner generation`, t => {
-	const f = fixture(t), request = f.context.captureAddMember()!; let placed = 0;
+	const f = fixture(t), request = f.context.captureAddMember('2d')!; let placed = 0;
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
 	retire(f);
 	const source = f.model.buffer.getText(), version = f.model.version, canUndo = f.model.canUndo;
@@ -121,10 +121,10 @@ for (const [name, retire] of RETIREMENTS) test(`${name} retires armed Add instea
 });
 
 test('Add cannot arm a stale request or a perspective canvas', t => {
-	const f = fixture(t), stale = f.context.captureAddMember()!; let placed = 0;
+	const f = fixture(t), stale = f.context.captureAddMember('2d')!; let placed = 0;
 	f.select(); assert.equal(stale.isCurrent(), false);
 	assert.equal(f.control.beginAddMember(stale, stale.choices[0], () => placed++), false);
-	const request = f.context.captureAddMember()!;
+	const request = f.context.captureAddMember('2d')!;
 	f.view.camera.setMode('3d'); f.control.update();
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), false);
 	f.control.handlePointer(pointer(260, 350, PointerButton.Primary, PointerButton.Primary), true);
@@ -132,10 +132,10 @@ test('Add cannot arm a stale request or a perspective canvas', t => {
 });
 
 test('a completion callback can arm the next Add without the first placement retiring its successor', t => {
-	const f = fixture(t), request = f.context.captureAddMember()!; let placed = 0;
+	const f = fixture(t), request = f.context.captureAddMember('2d')!; let placed = 0;
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => {
 		placed++;
-		const next = f.context.captureAddMember()!;
+		const next = f.context.captureAddMember('2d')!;
 		assert.equal(f.control.beginAddMember(next, next.choices[1], () => placed++), true);
 	}), true);
 	f.control.handlePointer(pointer(260, 350, PointerButton.Primary, PointerButton.Primary), true);
@@ -147,7 +147,7 @@ test('a completion callback can arm the next Add without the first placement ret
 });
 
 test('canonical publication replacing the viewport does not run the detached placement completion', t => {
-	const f = fixture(t), request = f.context.captureAddMember()!; let placed = 0;
+	const f = fixture(t), request = f.context.captureAddMember('2d')!; let placed = 0;
 	const incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
 	assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
 	const release = f.model.onDidChangeContent(() => { release(); f.control.setView(incoming, BOUNDS); }); t.after(release);
@@ -163,7 +163,7 @@ test('an older layout continuation cannot retire a replacement attachment placem
 	let placed = 0;
 	const unbind = f.view.camera.onDidChange(() => {
 		unbind(); f.control.setView(incoming, BOUNDS);
-		const request = f.context.captureAddMember()!;
+		const request = f.context.captureAddMember('2d')!;
 		assert.equal(f.control.beginAddMember(request, request.choices[0], () => placed++), true);
 	});
 	t.after(unbind);
@@ -172,4 +172,21 @@ test('an older layout continuation cannot retire a replacement attachment placem
 	f.control.handlePointer(pointer(260, 350, PointerButton.Primary, PointerButton.Primary), true);
 	assert.equal(placed, 1); assert.equal(f.context.subject!.objects.length, 2);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+for (const family of ['2d', '3d'] as const)
+test(`the first ${family} placement in an empty scene adopts the displayed reading instead of reframing on commit`, t => {
+	const f = fixture(t, '{}'), state = f.view.camera.capture();
+	f.view.camera.restore({ ...state, mode: family, modeIntent: 'manual',
+		canvas: { ...state.canvas, reading: 'initial' }, space: { ...state.space, reading: 'initial' } });
+	f.control.update(); assert.equal(f.view.camera.initial, true);
+	const reading = f.view.camera.capture(), request = f.context.captureAddMember(family)!;
+	assert.equal(f.control.beginAddMember(request, request.choices[0], () => {}), true);
+	assert.equal(f.view.camera.initial, false);
+	f.control.handlePointer(pointer(350, 350, PointerButton.Primary, PointerButton.Primary), true);
+	assert.equal(f.context.subject!.objects.length, 1);
+	const expected = family === '2d' ? { ...reading.canvas, reading: 'manual' } : { ...reading.space, reading: 'manual' };
+	const after = f.view.camera.capture(); assert.deepEqual(family === '2d' ? after.canvas : after.space, expected);
+	f.model.undo(); f.control.update(); assert.equal(f.model.buffer.getText(), f.source);
+	const undone = f.view.camera.capture(); assert.deepEqual(family === '2d' ? undone.canvas : undone.space, expected);
 });

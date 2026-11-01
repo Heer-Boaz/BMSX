@@ -126,10 +126,15 @@ test('editing a compact pixel reading accepts the entered value rather than rest
 	f.model.undo(); f.control.update(); assert.equal(f.model.buffer.getText(), f.source);
 });
 
-test('3D coordinates retain their full precision independently of compact pixel readings', t => {
+test('compact 3D readings retain significant small values and expose exact drafts without rounding canonical source', t => {
 	const f = fixture(t, `{member_id='node',definition_id='node3',position={x=0.7761194029850,y=8.6567164179104,z=0.0000123456789}}`);
-	assert.deepEqual(f.view.properties.map(property => property.text), ['0.776119402985', '8.6567164179104', '0.0000123456789']);
+	// Displayed scalar formatting is the component's explicit presentation contract.
+	assert.deepEqual(f.view.properties.map(property => property.text), ['0.776119', '8.65672', '1.23457e-05']);
 	assert.equal(f.control.controls[0].field.text, '0.776119402985'); assert.equal(f.model.buffer.getText(), f.source);
+	const field = f.control.controls[2]; field.field.focusTarget.focus();
+	assert.equal(field.field.text, '0.0000123456789');
+	inputFocus.handleKeyboard(new KeyInputEvent('Enter', KeyModifier.none)); f.control.update();
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
 test('two-decimal pixel readings preserve whole-pixel digits and omit insignificant trailing zeros', t => {

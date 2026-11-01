@@ -55,7 +55,7 @@ scenes.register('main',{objects={{member_id='old',definition_id='shape',position
 	const prefab = resolveLuaTextFileModel(f.models, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.model.identity.contextId, path: 'prefabs.lua' })!);
 	const arm = (id = 'shape') => {
-		const request = context.captureAddMember()!, choice = request.choices.find(choice => choice.id === id)!;
+		const request = context.captureAddMember('2d')!, choice = request.choices.find(choice => choice.id === id)!;
 		assert.equal(control.beginAddMember(request, choice, () => {}), true);
 		return { request, choice };
 	};
@@ -69,7 +69,7 @@ for (const unavailable of ['pose', 'visibility'] as const) test(`unavailable ${u
 	f.prefab.pushEditOperations(unavailable === 'pose'
 		? [{ offset: offset + 3, deleteLength: 2, text: 'compute_scale()' }]
 		: [{ offset: offset + "def_id='shape',".length, deleteLength: 0, text: 'defaults={visible=false},' }]);
-	const request = f.context.captureAddMember()!, choice = request.choices.find(choice => choice.id === 'shape')!;
+	const request = f.context.captureAddMember('2d')!, choice = request.choices.find(choice => choice.id === 'shape')!;
 	assert.ok(choice); const preview = request.getPreview(choice);
 	if (unavailable === 'pose') assert.equal(preview, undefined);
 	else assert.equal(preview!.visuals.canvas.length, 0);

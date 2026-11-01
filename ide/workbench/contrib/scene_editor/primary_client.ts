@@ -152,14 +152,15 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		});
 	}
 	private get canAddMember(): boolean {
-		return !this.disposed && this.viewport.attached && this.view.viewport.camera.mode === '2d' && this.consumer.canAddMember();
+		return !this.disposed && this.viewport.attached && this.consumer.canAddMember(this.view.viewport.camera.mode);
 	}
 	private addMember(): void {
-		const request = this.consumer.captureAddMember(); if (request === undefined) return;
+		const camera = this.view.viewport.camera, family = camera.mode;
+		const request = this.consumer.captureAddMember(family); if (request === undefined) return;
 		const generation = this.scope.contextGeneration;
 		const items = request.choices.map(choice => ({ choice, label: choice.id, description: '', detail: '' }));
-		this.options.quickInput.pick('Add', 'Choose a prefab, then click the scene', () => new TextQuickPickProvider(items), item => {
-			if (this.disposed || this.scope.contextGeneration !== generation || !request.isCurrent()) return;
+		this.options.quickInput.pick('Add', 'Choose a prefab, then click the scene', () => new TextQuickPickProvider(items), (item, _modifiers, preserveFocus) => {
+			if (preserveFocus || this.disposed || this.scope.contextGeneration !== generation || !request.isCurrent()) return;
 			this.viewport.control.beginAddMember(request, item.choice, () => {
 				if (this.hierarchy.attached) { this.hierarchy.control.update(); this.hierarchy.control.revealSelection(); }
 			});
@@ -168,6 +169,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 			lifetime.add({ dispose: this.consumer.onDidChangeSelection(() => this.options.quickInput.hide()) });
 			lifetime.add({ dispose: this.consumer.onDidChangeSpatialGeneration(() => this.options.quickInput.hide()) });
 			lifetime.add({ dispose: this.consumer.workingCopy.onDidChangeReadOnly(() => this.options.quickInput.hide()) });
+			lifetime.add({ dispose: camera.onDidChange(() => this.options.quickInput.hide()) });
 		}, { commandTarget: this.commandTarget });
 	}
 	public get preferredPart(): MainWorkspacePrimaryPartId { return this.view.preferredPart; }

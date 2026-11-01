@@ -1,4 +1,5 @@
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
+import { formatNumber } from '../../../../machine/ts/common/number_format';
 import * as constants from '../../../common/constants';
 import { firstLineTextPreview, uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
 import { measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
@@ -69,9 +70,9 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 	for (const property of view.properties) {
 		write_rect_bounds(property.contentBounds, fieldLeft, top, Math.max(fieldLeft, width - PADDING), top + fieldHeight);
 		const { family, value } = property.descriptor;
-		// Compact pixel readings are presentation only; focusing still exposes the
+		// Compact coordinate readings are presentation only; focusing still exposes the
 		// exact editable value and an unchanged acceptance publishes no source edit.
-		const text = family === '2d' ? String(Number(value.toFixed(2))) : String(value);
+		const text = family === '2d' ? String(Number(value.toFixed(2))) : formatNumber(value);
 		property.text = truncateTextToWidth(text, width - PADDING - fieldLeft - 6);
 		top += fieldHeight + PADDING;
 	}

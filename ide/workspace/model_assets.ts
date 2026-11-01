@@ -21,6 +21,7 @@ export class WorkspaceModelAssets {
 	private readonly bindings = new Map<string, Binding>();
 	private epoch = 0;
 	public constructor(private readonly catalog: WorkspaceSourceCatalog) {}
+	public get revision(): number { return this.epoch; }
 	public update(contextId: string, modelIds: ReadonlySet<string>): void {
 		const epoch = ++this.epoch;
 		for (const id of modelIds) {

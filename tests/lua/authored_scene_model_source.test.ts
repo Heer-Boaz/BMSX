@@ -169,3 +169,27 @@ test('model visual source generations remain retained and preserve canonical sou
 	assert.equal(unbound.visualScene, undefined);
 	f.context.dispose(); assert.equal(f.context.visualScene, undefined);
 });
+
+test('3D prefab preview borrows exact model inputs and linear pose, while insertion supplies all three coordinates', t => {
+	const f = fixture(t, `
+prefab.define({def_id='model',class=require('cartlib/world/object_3d'),
+ transform={xx=-2,xy=1,xz=0,yx=0.5,yy=3,yz=0,zx=0,zy=0,zz=0,ox=44,oy=55,oz=66},
+ components={models.factory({model_id='shape',scene_index=0,
+ attachment_affine={1,0,0,0,1,0,0,0,1,2,3,4},presentation_affine={1,0,0,0,1,0,0,0,1,5,6,7}})}})`, '');
+	const request = f.context.captureAddMember('3d')!, choice = request.choices[0], preview = request.getPreview(choice)!;
+	assert.equal(choice.family, '3d'); assert.ok(preview.world.family === '3d');
+	assert.deepEqual(preview.world, { family: '3d', xx: -2, xy: 1, xz: 0, yx: 0.5, yy: 3, yz: 0, zx: 0, zy: 0, zz: 0, ox: 0, oy: 0, oz: 0 });
+	assert.equal(preview.visuals.canvas.length, 0); assert.equal(preview.visuals.models.length, 1);
+	assert.equal(preview.visuals.models[0].entry, choice); assert.equal(preview.visuals.models[0].world, preview.world);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+	const reads = t.mock.method(LuaSourceReader.prototype, 'memberState');
+	for (let frame = 0; frame < 100; frame++) assert.equal(request.getPreview(choice), preview);
+	assert.equal(reads.mock.callCount(), 0); reads.mock.restore();
+	assert.equal(request.apply(choice, 7, 0, 9), true);
+	const admitted = f.context.visualScene!.models[0];
+	assert.deepEqual(admitted.world, { ...preview.world, ox: 7, oy: 0, oz: 9 });
+	const { entry, world, ...inputs } = admitted;
+	const { entry: previewEntry, world: previewWorld, ...previewInputs } = preview.visuals.models[0];
+	assert.deepEqual(inputs, previewInputs);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});

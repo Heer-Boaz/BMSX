@@ -174,7 +174,7 @@ function actor:initialize() self.width=64 end
 prefab.define({def_id='rectangle',class=actor,
  components={function(owner) return rectangles.new(owner,owner) end}})`, `{member_id='source',definition_id='rectangle'}`);
 	assert.deepEqual(f.context.visualScene!.canvas, []);
-	const request = f.context.captureAddMember()!, choice = request.choices[0];
+	const request = f.context.captureAddMember('2d')!, choice = request.choices[0];
 	assert.deepEqual(request.getPreview(choice)!.visuals.canvas, []);
 });
 
@@ -188,7 +188,7 @@ prefab.define({def_id='rectangle',class=object,defaults={width=8,height=4,color=
 	const canvas = f.context.visualScene!.canvas;
 	assert.deepEqual(canvas.map(visual => visual.kind), ['sprite', 'rectangle']);
 	assert.ok(canvas[1].kind === 'rectangle'); assert.equal(canvas[1].width, 8);
-	const request = f.context.captureAddMember()!, choice = request.choices[0];
+	const request = f.context.captureAddMember('2d')!, choice = request.choices[0];
 	assert.deepEqual(request.getPreview(choice)!.visuals.canvas.map(({ entry, world, ...inputs }) => inputs),
 		canvas.map(({ entry, world, ...inputs }) => inputs));
 });
@@ -202,7 +202,7 @@ prefab.define({def_id='rectangle',class=actor,defaults={width=8,height=4,color=0
 	const canvas = f.context.visualScene!.canvas;
 	assert.equal(canvas.length, 1); assert.ok(canvas[0].kind === 'rectangle');
 	assert.equal(canvas[0].width, 12); assert.equal(canvas[0].height, 6); assert.equal(canvas[0].color, 0xff654321);
-	const request = f.context.captureAddMember()!, choice = request.choices[0];
+	const request = f.context.captureAddMember('2d')!, choice = request.choices[0];
 	assert.deepEqual(request.getPreview(choice)!.visuals.canvas.map(({ entry, world, ...inputs }) => inputs),
 		canvas.map(({ entry, world, ...inputs }) => inputs));
 });
@@ -212,12 +212,12 @@ test('rectangle Add preview and appended member share constructor inputs without
 prefab.define({def_id='mixed',class=object,position={x=44,y=55},scale={x=-2,y=3},
  defaults={width=4,height=5,color=0x123456},components={
  sprites.factory({imgid='sprite',order=2}),function(owner) return rectangles.new(owner,owner) end}})`, '');
-	const request = f.context.captureAddMember()!, choice = request.choices[0], preview = request.getPreview(choice)!;
+	const request = f.context.captureAddMember('2d')!, choice = request.choices[0], preview = request.getPreview(choice)!;
 	assert.deepEqual(preview.visuals.canvas.map(visual => visual.kind), ['rectangle', 'sprite']);
 	assert.deepEqual(preview.world, { family: '2d', xx: -2, xy: -0, yx: -0, yy: 3, ox: 0, oy: 0 });
 	for (const visual of preview.visuals.canvas) { assert.equal(visual.entry, choice); assert.equal(visual.world, preview.world); }
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
-	assert.equal(request.apply(choice, 7, 8), true);
+	assert.equal(request.apply(choice, 7, 8, 0), true);
 	assert.deepEqual(f.context.visualScene!.canvas.map(({ entry, world, ...inputs }) => inputs),
 		preview.visuals.canvas.map(({ entry, world, ...inputs }) => inputs));
 	for (const visual of f.context.visualScene!.canvas) assert.deepEqual(visual.world, { ...preview.world, ox: 7, oy: 8 });
@@ -228,7 +228,7 @@ test('rectangle source generations retain admitted records and invalidate depend
 	const f = fixture(t, `
 prefab.define({def_id='rectangle',class=object,defaults={width=4,height=5,color=0x123456},
  components={function(owner) return rectangles.new(owner,owner) end}})`, `{member_id='source',definition_id='rectangle'}`);
-	const before = f.context.visualScene!, request = f.context.captureAddMember()!, preview = request.getPreview(request.choices[0]);
+	const before = f.context.visualScene!, request = f.context.captureAddMember('2d')!, preview = request.getPreview(request.choices[0]);
 	const reads = t.mock.method(LuaSourceReader.prototype, 'callable');
 	for (let frame = 0; frame < 100; frame++) {
 		assert.equal(f.context.visualScene, before); assert.equal(request.getPreview(request.choices[0]), preview);

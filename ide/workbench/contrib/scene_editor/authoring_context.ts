@@ -49,7 +49,7 @@ export type SceneAddMemberRequest = {
 	readonly choices: readonly SceneAddMemberChoice[];
 	getPreview(choice: SceneAddMemberChoice): ScenePrefabPreview | undefined;
 	isCurrent(): boolean;
-	apply(choice: SceneAddMemberChoice, x: number, y: number): boolean;
+	apply(choice: SceneAddMemberChoice, x: number, y: number, z: number): boolean;
 };
 
 export type SceneTranslationRequest = {
@@ -347,17 +347,18 @@ export class SceneAuthoringContext {
 			? this.subject : undefined;
 	}
 
-	public canAddMember(): boolean {
+	public canAddMember(family: SceneAddMemberChoice['family']): boolean {
 		const scene = this.editableSubject();
-		return scene !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)?.addMemberPlan(this.document!, scene) !== undefined;
+		const plan = scene === undefined ? undefined : this.documents.getSpatialProjection(this.workingCopy, this.document!)?.addMemberPlan(this.document!, scene);
+		return plan !== undefined && plan.choices[family].length > 0;
 	}
 
 	/** One retained placement is admitted against the exact primary declaration,
 	 * not the selected row, a scene name or a runtime instance. */
-	public captureAddMember(): SceneAddMemberRequest | undefined {
+	public captureAddMember(family: SceneAddMemberChoice['family']): SceneAddMemberRequest | undefined {
 		const scene = this.editableSubject(); if (scene === undefined) return;
 		const document = this.document!, projection = this.documents.getSpatialProjection(this.workingCopy, document);
-		const plan = projection?.addMemberPlan(document, scene); if (plan === undefined) return;
+		const plan = projection?.addMemberPlan(document, scene); if (plan === undefined || plan.choices[family].length === 0) return;
 		const visuals = this.documents.getVisualProjection(this.workingCopy, document)!;
 		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
 		let consumed = false;
@@ -368,15 +369,15 @@ export class SceneAuthoringContext {
 			&& !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly
 			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
 		if (!isCurrent()) return;
-		return { choices: plan.choices, isCurrent, getPreview: choice => {
+		return { choices: plan.choices[family], isCurrent, getPreview: choice => {
 			if (!isCurrent()) return;
 			const preview = visuals.readPrefabPreview(choice);
 			return isCurrent() ? preview : undefined;
-		}, apply: (choice, x, y) => {
+		}, apply: (choice, x, y, z) => {
 			if (!isCurrent()) return false;
 			let memberId = choice.id, suffix = 2;
 			while (plan.occupied.has(memberId)) memberId = choice.id + '_' + suffix++;
-			const edits = createSceneMemberInsertionEdits(this.workingCopy.buffer, document, scene, memberId, choice.id, x, y);
+			const edits = createSceneMemberInsertionEdits(this.workingCopy.buffer, document, scene, memberId, choice, x, y, z);
 			if (!isCurrent()) return false;
 			const selectionRequest = this.captureSelectionRequest();
 			consumed = true;

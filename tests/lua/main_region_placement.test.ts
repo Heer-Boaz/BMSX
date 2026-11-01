@@ -8,13 +8,16 @@ import { selectSceneOutlineRow } from '../../ide/workbench/contrib/scene_editor/
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { findWorkbenchWindowSurface } from '../../ide/workbench/ui/window/control';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { SCENE_VIEWPORT_IMPORTS } from '../fixtures/studio/scene_viewport';
 
 const SOURCE = `local scenes=require('cartlib/world/scene_library')
-scenes.register('room',{objects={{member_id='unit',definition_id='actor',spatial={local_transform={1,0,0,0,1,0,0,0,1,1,2,3}}}}})
+local prefab=require('cartlib/world/prefab')
+prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})
+scenes.register('room',{objects={{member_id='unit',definition_id='actor',position={x=1,y=2,z=3}}}})
 return {}`;
 
 async function fixture(t: TestContext) {
-	const f = createActualSourcePanes(t, false, [['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant('tiny');
 	const main = f.editor.mainWorkspace;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -65,7 +68,7 @@ for (const draft of ['31', '('])
 			assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 		}
 		if (draft === '31') {
-			f.key('Enter'); assert.equal(f.model.buffer.getText(), SOURCE.replace('0,0,1,1,', '0,0,1,31,'));
+			f.key('Enter'); assert.equal(f.model.buffer.getText(), SOURCE.replace('position={x=1,', 'position={x=31,'));
 			assert.equal(control.pending, false); f.model.undo(); assert.equal(f.model.buffer.getText(), SOURCE);
 		} else {
 			assert.equal(control.commit(), false); assert.equal(f.model.buffer.getText(), SOURCE);

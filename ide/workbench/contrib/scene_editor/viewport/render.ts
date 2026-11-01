@@ -54,9 +54,11 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 			handle === TranslateHandle.View ? colors.COLOR_CONTENT_WARNING_TEXT : colors.COLOR_RESOURCE_VIEWER_TEXT);
 	}
 	if (placement?.located) {
-		drawCanvas(view.placementCanvas.items, 0xa0000000);
-		const x = (bounds.left + bounds.right) / 2 + view.camera.projectX(placement.x, placement.y, 0);
-		const y = (bounds.top + bounds.bottom) / 2 + view.camera.projectY(placement.x, placement.y, 0);
+		if (view.camera.mode === '2d') drawCanvas(view.placementCanvas.items, 0xa0000000);
+		else if (view.placementModels.scene.instances.length > 0)
+			api.drawMeshScene(view.placementModels.scene, bounds.left, bounds.top, bounds.right, bounds.bottom);
+		const x = (bounds.left + bounds.right) / 2 + view.camera.projectX(placement.x, placement.y, placement.z);
+		const y = (bounds.top + bounds.bottom) / 2 + view.camera.projectY(placement.x, placement.y, placement.z);
 		segment[0] = x - 5; segment[1] = y; segment[2] = x + 5; segment[3] = y;
 		api.polyline(segment, 0, 0, 0, 1, colors.COLOR_FOCUS_BORDER);
 		segment[0] = x; segment[1] = y - 5; segment[2] = x; segment[3] = y + 5;
@@ -65,9 +67,10 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 	const font = editorViewState.font;
 	if (placement !== undefined) {
 		api.blit_text_inline_with_font(placement.definitionLabel, bounds.left + 4, bounds.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font.renderFont());
-		api.blit_text_inline_with_font('Click: place', bounds.left + 4, bounds.top + 4 + font.lineHeight, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font.renderFont());
+		api.blit_text_inline_with_font(view.camera.mode === '3d' ? placement.located ? 'Click: place on XZ' : 'Point at XZ plane' : 'Click: place',
+			bounds.left + 4, bounds.top + 4 + font.lineHeight, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font.renderFont());
 		api.blit_text_inline_with_font('Esc: cancel', bounds.left + 4, bounds.top + 4 + font.lineHeight * 2, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font.renderFont());
-		if (view.placementCanvas.items.length === 0) api.blit_text_inline_with_font('No preview',
+		if ((view.camera.mode === '2d' ? view.placementCanvas.items.length : view.placementModels.scene.instances.length) === 0) api.blit_text_inline_with_font('No preview',
 			bounds.left + 4, bounds.top + 4 + font.lineHeight * 3, 0, colors.COLOR_CONTENT_WARNING_TEXT, font.renderFont());
 	} else api.blit_text_inline_with_font(view.source === undefined ? 'SCENE UNAVAILABLE' : view.camera.mode === '2d' ? '2D' : '3D',
 		bounds.left + 4, bounds.top + 4, 0, colors.COLOR_RESOURCE_VIEWER_TEXT, font.renderFont());
