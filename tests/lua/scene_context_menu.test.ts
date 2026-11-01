@@ -149,7 +149,10 @@ test('Scene menu moves and removes authored members through canonical Undo and S
 	const files = new MemoryWorkspaceFiles(); await openWorkspaceRecords(files);
 	const f = fixture(t), before = f.model.buffer.getText();
 	t.after(async () => { await closeWorkspaceRecords(); clearWorkspaceSourceCaches(); });
-	secondary(f, 1); accept(f, 'sceneEditor.moveMemberDown');
+	secondary(f, 1);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'sceneEditor.moveMemberUp' || row.command === 'sceneEditor.moveMemberDown'), false,
+		'reordering is a direct hierarchy gesture, not duplicate routine menu entries');
+	f.key('Escape'); f.editor.commands.execute('sceneEditor.moveMemberDown', f.pane.commandTarget);
 	const moved = f.model.buffer.getText(); assert.ok(moved !== before); assert.equal(f.model.canUndo, true);
 	assert.ok(moved.indexOf("member_id = 'source only'") < moved.indexOf("member_id = 'subject'"));
 	f.editor.commands.execute('undo', f.pane.commandTarget); assert.equal(f.model.buffer.getText(), before); f.update();

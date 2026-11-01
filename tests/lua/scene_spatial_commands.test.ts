@@ -288,7 +288,7 @@ test('Scene sibling moves skip interleaved descendants and other roots while ret
 	const f = await fixture(t);
 	const before = SOURCE.replace("member_id = 'spare'", "member_id = 'spare', parent = 'carrier'");
 	f.model.pushEditOperations([{ offset: 0, deleteLength: SOURCE.length, text: before }]); f.update();
-	selectMember(f, 'subject'); contextCommand(f, 'sceneEditor.moveMemberDown');
+	selectMember(f, 'subject'); paletteCommand(f, 'sceneEditor.moveMemberDown');
 	const scene = f.context.document!.scenes[0], subject = member(f, 'subject');
 	assert.deepEqual(scene.objects.map(entry => entry.kind === 'object' ? stringLiteralValue(entry.memberId) : undefined),
 		['carrier', 'leaf', 'dock', 'spare', 'subject']);

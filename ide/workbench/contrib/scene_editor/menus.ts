@@ -5,8 +5,6 @@ const MEMBER_ACTIONS = [
 	{ type: 'command', command: 'sceneEditor.renameMember' },
 	{ type: 'command', command: 'sceneEditor.reparentMember' },
 	{ type: 'command', command: 'sceneEditor.reparentMemberKeepLocal' },
-	{ type: 'command', command: 'sceneEditor.moveMemberUp' },
-	{ type: 'command', command: 'sceneEditor.moveMemberDown' },
 	{ type: 'command', command: 'sceneEditor.removeMember' },
 	{ type: 'command', command: 'sceneEditor.removeSubtree' },
 ] as const;

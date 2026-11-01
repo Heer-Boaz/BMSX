@@ -1,4 +1,4 @@
-import { point_in_rect } from '../../../../machine/ts/common/rect';
+import { point_in_rect, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { IDisposable } from '../../../common/lifecycle';
 import type { WorkbenchSurface, WorkbenchSurfaceOptions, WorkbenchSurfacePainter } from './model';
 
@@ -228,6 +228,15 @@ export class WorkbenchSurfaceService implements IDisposable {
 			right = Math.min(right, clip.right); bottom = Math.min(bottom, clip.bottom);
 		}
 		return left < right && top < bottom;
+	}
+
+	/** Intersect retained control geometry with its actual native paint ancestry. */
+	public clipBounds(surface: WorkbenchSurface, bounds: RectBounds): void {
+		for (let current: WorkbenchSurface | null | undefined = surface; current != null; current = current.presentationParent) {
+			const clip = current.getClip();
+			bounds.left = Math.max(bounds.left, clip.left); bounds.top = Math.max(bounds.top, clip.top);
+			bounds.right = Math.min(bounds.right, clip.right); bounds.bottom = Math.min(bounds.bottom, clip.bottom);
+		}
 	}
 
 	/** Detach first, then notify the owner before descendant membership is retired. */

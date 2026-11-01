@@ -7,7 +7,7 @@ import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import type { LuaSourceReader } from '../../../language/lua/source_reader';
-import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceEntry, SceneSourceObject } from './model';
+import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceObject } from './model';
 import { createSceneNameEdit, createScenePlacementEdits, createSceneTranslationEdits, finishSceneSpatialEdits } from './spatial_edits';
 import { readSceneSourcePose, type SceneAuthoredPose } from './authored_pose';
 import type { ScenePrefabSources } from './prefab_sources';
@@ -39,8 +39,8 @@ type SceneSpatialGraph = SceneSpatialTopology & {
 	readonly locals: Map<SceneSourceObject, SceneSourceAffine | undefined>;
 	readonly worlds: Map<SceneSourceObject, SceneSourceAffine | undefined>;
 	worldsProjected: boolean;
-	readonly previous: ReadonlyMap<SceneSourceEntry, SceneSourceEntry>;
-	readonly next: ReadonlyMap<SceneSourceEntry, SceneSourceEntry>;
+	readonly previous: ReadonlyMap<SceneSourceObject, SceneSourceObject>;
+	readonly next: ReadonlyMap<SceneSourceObject, SceneSourceObject>;
 };
 export type SceneReparentMode = 'keep_world' | 'keep_local';
 export type SceneReparentChoice = {
@@ -133,7 +133,7 @@ export class SceneSpatialProjection {
 		return this.translationEdits(buffer, document, member, local, initial);
 	}
 
-	public sibling(document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject, direction: -1 | 1): SceneSourceEntry | undefined {
+	public sibling(document: SceneSourceDocument, scene: SceneSourceDefinition, member: SceneSourceObject, direction: -1 | 1): SceneSourceObject | undefined {
 		const graph = this.graph(document, scene);
 		return (direction < 0 ? graph.previous : graph.next).get(member);
 	}
@@ -341,9 +341,13 @@ export class SceneSpatialProjection {
 		for (const [child, parent] of parents) if (parent !== undefined) {
 			let list = children.get(parent); if (list === undefined) { list = []; children.set(parent, list); } list.push(child);
 		}
-		const previous = new Map<SceneSourceEntry, SceneSourceEntry>(), next = new Map<SceneSourceEntry, SceneSourceEntry>();
-		const last = new Map<SceneSourceObject | undefined, SceneSourceEntry>();
-		for (const entry of scene.objects) {
+		const previous = new Map<SceneSourceObject, SceneSourceObject>(), next = new Map<SceneSourceObject, SceneSourceObject>();
+		const last = new Map<SceneSourceObject | undefined, SceneSourceObject>();
+		let objectIndex = 0;
+		for (const field of scene.objectsTable.fields) {
+			const entry = scene.objects[objectIndex];
+			if (entry?.field !== field) { last.clear(); continue; }
+			objectIndex++;
 			if (entry.kind !== 'object' || !parents.has(entry)) { last.clear(); continue; }
 			const parent = parents.get(entry), sibling = last.get(parent);
 			if (sibling !== undefined) { previous.set(entry, sibling); next.set(sibling, entry); } last.set(parent, entry);

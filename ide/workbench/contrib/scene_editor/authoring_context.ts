@@ -11,6 +11,8 @@ import type { SceneReparentChoice, SceneReparentMode, SceneSpatialParents, Scene
 import type { ScenePrefabPreview, SceneVisualProjection, SceneVisualReadModel } from './visual_projection';
 import { SceneTranslationProposal, type SceneTransformPreview } from './transform_proposal';
 import { createSceneMemberInsertionEdits, type SceneAddMemberChoice } from './member_insertion';
+import { createSceneMemberMovePlan } from './member_move';
+import { finishSceneSpatialEdits } from './spatial_edits';
 
 export type { SceneAddMemberChoice } from './member_insertion';
 
@@ -27,6 +29,13 @@ const EMPTY_SPATIAL_PARENTS: SceneSpatialParents = new Map();
 export type SceneReparentRequest = {
 	readonly choices: readonly SceneReparentChoice[];
 	apply(choice: SceneReparentChoice): boolean;
+};
+export type SceneMemberMoveRequest = {
+	readonly scene: SceneSourceDefinition;
+	readonly entry: SceneSourceObject;
+	isCurrent(): boolean;
+	canPlace(parent: SceneSourceObject | undefined, before: SceneSourceEntry | undefined): boolean;
+	apply(parent: SceneSourceObject | undefined, before: SceneSourceEntry | undefined): boolean;
 };
 export type SceneRenameRequest = {
 	readonly initialName: string;
@@ -549,6 +558,37 @@ export class SceneAuthoringContext {
 		const selected = this.editableMember();
 		return selected !== undefined && this.documents.getSpatialProjection(this.workingCopy, this.document!)
 			?.sibling(this.document!, selected.scene, selected.entry, direction) !== undefined;
+	}
+
+	/** Parent and sibling order are one captured source operation. Moving the
+	 * intervening text keeps the selected occurrence tracked through that edit. */
+	public captureMemberMove(): SceneMemberMoveRequest | undefined {
+		const selected = this.editableMember(); if (selected === undefined) return;
+		const document = this.document!, projection = this.documents.getSpatialProjection(this.workingCopy, document);
+		if (projection === undefined) return;
+		const plan = createSceneMemberMovePlan(document, selected.scene, selected.entry, projection); if (plan === undefined) return;
+		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
+		let consumed = false;
+		const isCurrent = () => !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly && this.workingCopy.version === version
+			&& this.selectionRevisionValue === selection && this.isCurrent && this.documentValue === document && this.selectionValue === selected
+			&& this.documents.getSpatialProjection(this.workingCopy, document) === projection
+			&& !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly
+			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
+		if (!isCurrent()) return;
+		return { scene: selected.scene, entry: selected.entry, isCurrent,
+			canPlace: (parent, before) => isCurrent() && plan.placements.get(parent)?.has(before) === true,
+			apply: (parent, before) => {
+				if (!isCurrent()) return false;
+				const placement = plan.placements.get(parent)?.get(before); if (placement === undefined) return false;
+				const edits = placement.destination === plan.index ? [] : createLuaTableFieldMoveEdits(this.workingCopy.buffer, document.analysis.chunk,
+					selected.scene.objectsTable, plan.index, placement.destination);
+				if (placement.reparent !== undefined) edits.push(...projection.reparentEdits(this.workingCopy.buffer, document,
+					selected.scene, selected.entry, placement.reparent));
+				if (!isCurrent()) return false;
+				consumed = true;
+				this.workingCopy.pushEditOperations(finishSceneSpatialEdits(edits)); return true;
+			},
+		};
 	}
 
 	public moveSelectedMember(direction: -1 | 1): boolean {
