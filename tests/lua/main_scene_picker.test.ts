@@ -25,11 +25,12 @@ import { closeWorkspaceRecords, openWorkspaceRecords, workspaceRecords } from '.
 import { createHostFrameFixture } from '../helpers/host_frame';
 import { createTestRuntimeSourceState, createTestSourceOnlyLuaRecord, TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import { MemoryWorkspaceFiles } from '../helpers/workspace_files';
+import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
 
 const FIRST = `local scenes = require('cartlib/world/scene_library')
 local prefab = require('cartlib/world/prefab')
-prefab.define({def_id='actor',class={},spatial={family='3d',authority='affine'}})
-scenes.register('same', { objects = { { member_id = 'first', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } } } } })
+prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})
+scenes.register('same', { objects = { { member_id = 'first', definition_id = 'actor', position = { x = 1, y = 2, z = 3 } } } })
 scenes.register('same', { objects = { { member_id = 'second', definition_id = 'actor' } } })
 `;
 const SECOND = `local scenes = require('cartlib/world/scene_library')
@@ -40,6 +41,7 @@ scenes.register('same', { objects = { { member_id = 'other file', definition_id 
 async function fixture(t: TestContext) {
 	configureFontVariant('tiny'); editorViewState.viewportWidth = 800; editorViewState.viewportHeight = 320;
 	const system = createLuaSourceRegistry('fixture/system', ''), project = createLuaSourceRegistry('fixture/project', '');
+	for (const [path, text] of CARTLIB_OBJECT_SOURCE_MODULES) registerLuaSourceRecord(system, createTestSourceOnlyLuaRecord(path, text, path));
 	registerLuaSourceRecord(system, createTestSourceOnlyLuaRecord('cartlib/world/scene_library.lua', 'return {}', 'cartlib/world/scene_library.lua'));
 	registerLuaSourceRecord(system, createTestSourceOnlyLuaRecord('cartlib/world/prefab.lua', 'return {define=function() end}', 'cartlib/world/prefab.lua'));
 	for (const [path, text] of [['first.lua', FIRST], ['second.lua', SECOND], ['notes.lua', 'local value = 1\nreturn missing_from_notes\n']]) {
@@ -191,7 +193,7 @@ test('a chooser invoked from a real pending Main Details field starts its source
 	assert.equal(field.pending, true);
 	const picker = openPicker(f);
 	assert.equal(field.pending, false); assert.equal(model.version, version + 1); assert.equal(model.dirty, true);
-	assert.ok(model.buffer.getText().includes('0, 0, 1, 123,'));
+	assert.ok(model.buffer.getText().includes('position = { x = 123,'));
 	for (const item of picker.model.items as readonly ScenePick[]) assert.equal(f.editor.projectContent.isCurrent(item.entry), true);
 	f.press('Escape');
 	assert.ok(f.editor.mainWorkspace.primary === client && client.consumer.isCurrent);

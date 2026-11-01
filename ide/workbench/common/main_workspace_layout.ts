@@ -226,20 +226,23 @@ export class WorkbenchMainWorkspaceLayout {
 		write_rect_bounds(this.viewport, bounds.left, bounds.top, viewportRight, trackTop);
 		write_rect_bounds(this.scrollTrack, bounds.left, trackTop, viewportRight, visibleRowBottom);
 		this.scrollX = clamp(requestedScrollX, 0, this.contentWidth - availableWidth);
-		let hierarchyWidth = hierarchy === undefined ? 0 : Math.max(hierarchyMinimum, Math.trunc(this.hierarchyWidth ?? hierarchy.preferredWidth));
-		let detailsWidth = details === undefined ? 0 : Math.max(detailsMinimum, Math.trunc(this.detailsWidth ?? details.preferredWidth));
-		const extra = hierarchyWidth - hierarchyMinimum + detailsWidth - detailsMinimum;
-		const remaining = this.contentWidth - centralMinimumWidth - hierarchyGap - detailsGap - hierarchyMinimum - detailsMinimum;
-		if (extra > remaining) {
-			// Capped equal shares preserve a smaller explicit request, including a constrained sash drag.
-			const hierarchyRequestedExtra = hierarchyWidth - hierarchyMinimum, detailsRequestedExtra = detailsWidth - detailsMinimum;
-			let hierarchyExtra: number;
-			if (hierarchyRequestedExtra <= remaining / 2) hierarchyExtra = hierarchyRequestedExtra;
-			else if (detailsRequestedExtra <= remaining / 2) hierarchyExtra = remaining - detailsRequestedExtra;
-			else hierarchyExtra = Math.trunc(remaining / 2);
-			hierarchyWidth = hierarchyMinimum + hierarchyExtra;
-			detailsWidth = detailsMinimum + remaining - hierarchyExtra;
-		}
+		const hierarchyRequest = this.hierarchyWidth, detailsRequest = this.detailsWidth;
+		const hierarchyExplicit = hierarchy === undefined || hierarchyRequest === undefined ? 0 : Math.max(0, hierarchyRequest - hierarchyMinimum);
+		const detailsExplicit = details === undefined || detailsRequest === undefined ? 0 : Math.max(0, detailsRequest - detailsMinimum);
+		const requestedExtra = Math.min(this.contentWidth - rowMinimumWidth, hierarchyExplicit + detailsExplicit);
+		// Honor explicit side requests first. Conflicting requests share only the
+		// space above hard minima, with a smaller request capped at its own size.
+		const hierarchyShare = clamp(Math.trunc(requestedExtra / 2), Math.max(0, requestedExtra - detailsExplicit), hierarchyExplicit);
+		let hierarchyWidth = hierarchyMinimum + hierarchyShare;
+		let detailsWidth = detailsMinimum + requestedExtra - hierarchyShare;
+		const centralPreferredWidth = Math.max(centralMinimumWidth, viewport?.preferredWidth ?? 0);
+		const automaticSpace = Math.max(0, this.contentWidth - hierarchyWidth - detailsWidth - hierarchyGap - detailsGap - centralPreferredWidth);
+		const hierarchyAutomatic = hierarchy === undefined || hierarchyRequest !== undefined ? 0 : Math.max(0, hierarchy.preferredWidth - hierarchyMinimum);
+		const detailsAutomatic = details === undefined || detailsRequest !== undefined ? 0 : Math.max(0, details.preferredWidth - detailsMinimum);
+		const automaticExtra = Math.min(automaticSpace, hierarchyAutomatic + detailsAutomatic);
+		const hierarchyAutomaticShare = clamp(Math.trunc(automaticExtra / 2), Math.max(0, automaticExtra - detailsAutomatic), hierarchyAutomatic);
+		hierarchyWidth += hierarchyAutomaticShare;
+		detailsWidth += automaticExtra - hierarchyAutomaticShare;
 		const left = bounds.left - this.scrollX, right = left + this.contentWidth;
 		const documentLeft = left + hierarchyWidth + hierarchyGap, documentRight = right - detailsWidth - detailsGap;
 		const clipLeft = Math.max(documentLeft, this.viewport.left, this.verticalViewport.left);
@@ -277,7 +280,8 @@ export class WorkbenchMainWorkspaceLayout {
 		if (hierarchy !== undefined) {
 			write_rect_bounds(this.hierarchyBounds, left, top, left + hierarchyWidth, bottom);
 			const split = this.hierarchySash;
-			split.preferredSize = hierarchy.preferredWidth;
+			// Automatic sash geometry consumes the joint allocation, not the raw preference.
+			split.preferredSize = hierarchyWidth;
 			split.minimumFirstSize = hierarchyMinimum + WORKBENCH_SPLIT_SIZE / 2;
 			split.minimumSecondSize = centralMinimumWidth + WORKBENCH_SPLIT_SIZE / 2;
 			split.layout(left, top, documentRight, bottom);
@@ -290,7 +294,7 @@ export class WorkbenchMainWorkspaceLayout {
 		if (details !== undefined) {
 			write_rect_bounds(this.detailsBounds, right - detailsWidth, top, right, bottom);
 			const split = this.detailsSash;
-			split.preferredSize = details.preferredWidth;
+			split.preferredSize = detailsWidth;
 			split.minimumFirstSize = centralMinimumWidth + WORKBENCH_SPLIT_SIZE / 2;
 			split.minimumSecondSize = detailsMinimum + WORKBENCH_SPLIT_SIZE / 2;
 			split.layout(documentLeft, top, right, bottom);

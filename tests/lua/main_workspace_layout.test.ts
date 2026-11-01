@@ -5,6 +5,7 @@ import { WorkbenchMainWorkspaceLayout, type WorkbenchMainWorkspaceState } from '
 import type { WorkbenchViewSizeConstraints } from '../../ide/workbench/common/layout';
 import { measureSceneHierarchy } from '../../ide/workbench/contrib/scene_editor/hierarchy_layout';
 import { measureSceneDetails } from '../../ide/workbench/contrib/scene_editor/details_layout';
+import { measureSceneViewport } from '../../ide/workbench/contrib/scene_editor/viewport/control';
 import { WORKBENCH_SPLIT_SIZE } from '../../ide/workbench/ui/split_view';
 
 // These rectangles and equality thresholds are the allocation algorithm's contract,
@@ -31,6 +32,79 @@ test('Main allocates three real siblings and gives spare width to its permanent 
 	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, 120);
 	assert.equal(view.detailsBounds.right - view.detailsBounds.left, 140);
 	assert.equal(view.documentBounds.right - view.documentBounds.left, 824);
+});
+
+for (const documents of [false, true]) test(`Main reserves a feasible stage preference before automatic sides with documents ${documents ? 'present' : 'absent'}`, () => {
+	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 37, top: 19, right: 637, bottom: 419 };
+	const viewport = { minimumWidth: 160, preferredWidth: 400, minimumHeight: 60 };
+	const vertical = { rowMinimumHeight: 0, viewport, documents, documentMinimumHeight: 40, activity: undefined, scrollY: 0 };
+	view.layout(bounds, documents ? 200 : 1000, HIERARCHY, DETAILS, 6, 0, vertical);
+	assert.equal(view.viewportBounds.right - view.viewportBounds.left, 400);
+	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, 87);
+	assert.equal(view.detailsBounds.right - view.detailsBounds.left, 97);
+	assert.equal(view.hierarchySash.position, view.hierarchySashBounds.left + WORKBENCH_SPLIT_SIZE / 2);
+	assert.equal(view.detailsSash.position, view.detailsSashBounds.left + WORKBENCH_SPLIT_SIZE / 2);
+	assert.equal(view.hierarchyWidth, undefined); assert.equal(view.detailsWidth, undefined);
+	assert.equal(view.contentWidth, 600); assert.equal(view.scrollTrack.top, view.scrollTrack.bottom);
+	viewport.preferredWidth = 360;
+	assert.equal(view.layout(bounds, documents ? 200 : 1000, HIERARCHY, DETAILS, 6, 0, vertical), true);
+	assert.equal(view.viewportBounds.right - view.viewportBounds.left, 360);
+	assert.equal(view.hierarchyWidth, undefined); assert.equal(view.detailsWidth, undefined);
+	assert.equal(view.layout(bounds, documents ? 200 : 1000, HIERARCHY, DETAILS, 6, 0, vertical), false);
+});
+
+for (const role of ['hierarchy', 'details'] as const) test(`a constrained automatic ${role} sash becomes explicit without a second contraction and resets through owner reflow`, () => {
+	const view = new WorkbenchMainWorkspaceLayout(), bounds = { left: 0, top: 0, right: 600, bottom: 400 };
+	const vertical = { rowMinimumHeight: 0, viewport: { minimumWidth: 160, preferredWidth: 400, minimumHeight: 60 },
+		documents: false, documentMinimumHeight: 0, activity: undefined, scrollY: 0 };
+	view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	const split = role === 'hierarchy' ? view.hierarchySash : view.detailsSash;
+	const position = split.position + (role === 'hierarchy' ? 40 : -40);
+	split.moveTo(position);
+	view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	const region = role === 'hierarchy' ? view.hierarchyBounds : view.detailsBounds;
+	assert.equal(split.position, position);
+	assert.equal(split.requestedSize, region.right - region.left);
+	assert.equal(role === 'hierarchy' ? view.detailsWidth : view.hierarchyWidth, undefined);
+	assert.equal(view.viewportBounds.right - view.viewportBounds.left, 367);
+	const request = split.requestedSize;
+	bounds.right = 1000; view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	assert.equal(region.right - region.left, request); assert.equal(split.requestedSize, request);
+	bounds.right = 600; view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	assert.equal(region.right - region.left, request); assert.equal(split.position, position);
+	split.reset(); view.layout(bounds, 0, HIERARCHY, DETAILS, 6, 0, vertical);
+	assert.equal(view.hierarchyWidth, undefined); assert.equal(view.detailsWidth, undefined);
+	assert.equal(view.viewportBounds.right - view.viewportBounds.left, 400);
+	assert.equal(view.hierarchyBounds.right - view.hierarchyBounds.left, 87);
+	assert.equal(view.detailsBounds.right - view.detailsBounds.left, 97);
+});
+
+for (const variant of ['tiny', 'msx'] as const) test(`${variant} automatic stage layout honors preference priorities, all hard minima and actual sash geometry across widths`, () => {
+	const view = new WorkbenchMainWorkspaceLayout(), font = new EditorFont(variant);
+	const hierarchy = { minimumWidth: 0, preferredWidth: 0, minimumHeight: 0 };
+	const details = { ...hierarchy }, viewport = { ...hierarchy };
+	measureSceneHierarchy(font, hierarchy); measureSceneDetails(font, details); measureSceneViewport(font, viewport);
+	const vertical = { rowMinimumHeight: Math.max(hierarchy.minimumHeight, details.minimumHeight), viewport,
+		documents: false, documentMinimumHeight: 0, activity: undefined, scrollY: 0 };
+	const minimum = hierarchy.minimumWidth + details.minimumWidth + viewport.minimumWidth + WORKBENCH_SPLIT_SIZE * 2;
+	for (let width = 140; width <= 1400; width += 13) {
+		view.layout({ left: 0, top: 0, right: width, bottom: 400 }, 0, hierarchy, details, 6, 0, vertical);
+		const central = view.viewportBounds.right - view.viewportBounds.left;
+		const left = view.hierarchyBounds.right - view.hierarchyBounds.left, right = view.detailsBounds.right - view.detailsBounds.left;
+		assert.equal(view.contentWidth, Math.max(width, minimum));
+		assert.ok(central >= viewport.minimumWidth);
+		assert.ok(left >= hierarchy.minimumWidth && left <= hierarchy.preferredWidth);
+		assert.ok(right >= details.minimumWidth && right <= details.preferredWidth);
+		if (central < viewport.preferredWidth) {
+			assert.equal(left, hierarchy.minimumWidth); assert.equal(right, details.minimumWidth);
+		}
+		if (central > viewport.preferredWidth) {
+			assert.equal(left, hierarchy.preferredWidth); assert.equal(right, details.preferredWidth);
+		}
+		assert.equal(view.hierarchySash.position, view.hierarchySashBounds.left + WORKBENCH_SPLIT_SIZE / 2);
+		assert.equal(view.detailsSash.position, view.detailsSashBounds.left + WORKBENCH_SPLIT_SIZE / 2);
+		assert.equal(view.hierarchyWidth, undefined); assert.equal(view.detailsWidth, undefined);
+	}
 });
 
 test('absent documents contribute no allocation, minima or sash beside the full central authored viewport', () => {
