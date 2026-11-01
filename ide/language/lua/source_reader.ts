@@ -84,15 +84,17 @@ export class LuaSourceReader {
 		return value === null ? undefined : value;
 	}
 
-	/** A complete authored numeric sequence, not an inferred runtime table length. */
-	public numberSequence(file: FileSemanticData, expression: LuaExpression): readonly number[] | undefined {
+	public sequence(file: FileSemanticData, expression: LuaExpression, kind: 'number'): readonly number[] | undefined;
+	public sequence(file: FileSemanticData, expression: LuaExpression, kind: 'string'): readonly string[] | undefined;
+	/** A complete authored sequence, not an inferred runtime table length. */
+	public sequence(file: FileSemanticData, expression: LuaExpression, kind: 'number' | 'string'): readonly (number | string)[] | undefined {
 		const source = this.expression(file, expression);
 		if (source?.expression.kind !== LuaSyntaxKind.TableConstructorExpression
 			|| this.snapshot.symbolResolver.authoredSources.tableMutations().has(source.expression)) return;
-		const values: number[] = [];
+		const values: (number | string)[] = [];
 		for (const field of source.expression.fields) {
 			if (field.kind !== LuaTableFieldKind.Array) return;
-			const value = this.numberValue(source.file, field.value);
+			const value = kind === 'number' ? this.numberValue(source.file, field.value) : this.stringValue(source.file, field.value);
 			if (value === undefined) return;
 			values.push(value);
 		}

@@ -34,6 +34,8 @@ local boolean_scene<const> = require('scenes/boolean')
 boolean_scene.register()
 local text_scene<const> = require('scenes/text')
 text_scene.register()
+local animated_scene<const> = require('scenes/animated')
+animated_scene.register()
 
 function new_game()
 	world:clear()

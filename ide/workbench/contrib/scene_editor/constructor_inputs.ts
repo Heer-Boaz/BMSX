@@ -5,6 +5,13 @@ import { readLuaSourceTruth, type LuaSourceReader } from '../../../language/lua/
 
 export type SceneConstructorSource = LuaWrittenExpression | null | undefined;
 
+/** The constructor's Lua `or` numeric rule, including false and zero. */
+export function readSceneConstructorNumber(value: SceneConstructorSource, fallback: number): number | null | undefined {
+	const truth = readLuaSourceTruth(value);
+	if (truth === undefined) return;
+	return truth === false ? fallback : readLuaNumberExpression(value!.expression);
+}
+
 /** Resolves concrete constructor configuration using the producer's nil-only
  * and `or` default rules. Unknown writes never grant defaults. */
 export class SceneConstructorInputs {
@@ -26,7 +33,9 @@ export class SceneConstructorInputs {
 	}
 	public configuredValue(name: string): SceneConstructorSource {
 		const input = this.member(this.input, name);
-		return input === null ? this.member(this.defaults, name) : input;
+		// Prefab and component factories capture defaults with pairs/shallow_copy;
+		// their original table's __index is not part of that captured storage.
+		return input === null ? this.member(this.defaults, name, 'raw') : input;
 	}
 	public value(name: string): SceneConstructorSource {
 		const value = this.configuredValue(name);
@@ -40,11 +49,6 @@ export class SceneConstructorInputs {
 		}
 		return null;
 	}
-	public number(name: string, fallback: number): number | null | undefined {
-		const value = this.value(name), truth = readLuaSourceTruth(value);
-		if (truth === undefined) return;
-		return truth === false ? fallback : readLuaNumberExpression(value!.expression);
-	}
 	/** Nil is an optional field; an unproved/non-number value is not a default. */
 	public optionalNumber(name: string): number | null | undefined {
 		const value = this.value(name);
@@ -54,7 +58,7 @@ export class SceneConstructorInputs {
 		const value = this.value(name);
 		if (value === null) return undefined;
 		if (value === undefined) return null;
-		const sequence = this.reader.numberSequence(value.file, value.expression);
+		const sequence = this.reader.sequence(value.file, value.expression, 'number');
 		return sequence === undefined ? null : sequence;
 	}
 	public flag(name: string, fallback: boolean): boolean | undefined {
