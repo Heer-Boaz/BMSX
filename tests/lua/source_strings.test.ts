@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LuaSourceReader } from '../../ide/language/lua/source_reader';
+import { LuaSourceReader, readLuaSourceTruth } from '../../ide/language/lua/source_reader';
 import { buildLuaFileSemanticData, buildLuaSemanticWorkspaceSnapshot, LuaSemanticWorkspace } from '../../toolchain/ts/lua/semantic/model';
 import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
 import { createPathModuleBindingsFixture, createPathModuleProjectFixture } from '../helpers/lua_semantic_project';
@@ -90,5 +90,56 @@ test('authored string caches belong to their immutable semantic generation', () 
 		const returned = file.chunk.body.get(file.chunk.body.length - 1);
 		assert.ok(returned.kind === LuaSyntaxKind.ReturnStatement);
 		assert.equal(new LuaSourceReader(snapshot).stringValue(file, returned.expressions[0]), expected);
+	}
+});
+
+test('closed string content retains its actual concat source when explicitly admitted', () => {
+	const f = fixture(`local names = require('names')
+local joined = 'STU' .. names.tail
+return { direct = 'STU' .. 'DIO', alias = joined, empty = '' .. '' }`, {
+		'names.lua': "return { tail = 'DIO' }",
+	});
+	const root = f.expressions[0]; assert.ok(root.kind === LuaSyntaxKind.TableConstructorExpression);
+	const joined = f.file.chunk.body.get(1); assert.ok(joined.kind === LuaSyntaxKind.LocalAssignmentStatement);
+	for (const [name, expected, syntax] of [
+		['direct', 'STUDIO', root.fields[0].value], ['alias', 'STUDIO', joined.values[0]], ['empty', '', root.fields[2].value],
+	] as const) {
+		const field = f.reader.memberState(f.file, root, name);
+		assert.ok(field !== undefined && field !== null);
+		assert.equal(field.file, f.file); assert.equal(field.expression, syntax);
+		assert.equal(f.reader.stringValue(field.file, field.expression), expected);
+		assert.equal(readLuaSourceTruth(field), true, 'a concat produces a String, including an empty one');
+		assert.equal(f.reader.memberState(f.file, root, name), field, 'source admission reuses the actual immutable occurrence');
+	}
+	assert.deepEqual([...f.reader.files].map(file => file.file), ['strings.lua'],
+		'content-only providers do not become represented editing owners of the concat');
+});
+
+test('proved own concat values remain non-nil under prototype uncertainty without borrowing inherited fields', () => {
+	const f = fixture("return setmetatable({ value = 'A' .. 'B' }, { __index = external })");
+	const call = f.expressions[0]; assert.ok(call.kind === LuaSyntaxKind.CallExpression);
+	const table = call.arguments[0]; assert.ok(table.kind === LuaSyntaxKind.TableConstructorExpression);
+	for (const field of [f.reader.memberState(f.file, table, 'value'), f.reader.ownMemberState(f.file, table, 'value')]) {
+		assert.ok(field !== undefined && field !== null);
+		assert.equal(field.expression, table.fields[0].value); assert.equal(f.reader.stringValue(field.file, field.expression), 'AB');
+	}
+	assert.equal(f.reader.memberState(f.file, table, 'missing'), undefined);
+	assert.equal(f.reader.ownMemberState(f.file, table, 'missing'), null);
+});
+
+for (const source of [
+	"local value='A'..'B'; value='A'..'B'; return value",
+	"return 'A' .. make_string()", "return 'A' .. external", "local cycle; cycle=cycle; return 'A'..cycle",
+]) test(`concat source admission preserves unresolved writer evidence: ${source}`, () => {
+	const f = fixture(source);
+	assert.equal(f.reader.stringValue(f.file, f.expressions[0]), undefined);
+	assert.equal(f.reader.expression(f.file, f.expressions[0]), undefined);
+});
+
+test('closed concat proof cannot erase unknown or competing own member writes', () => {
+	for (const mutation of ["value[key]='AB'", "value.field='A'..'B'"]) {
+		const f = fixture(`local value={field='A'..'B'}; ${mutation}; return value`);
+		assert.equal(f.reader.memberState(f.file, f.expressions[0], 'field'), undefined);
+		assert.equal(f.reader.ownMemberState(f.file, f.expressions[0], 'field'), undefined);
 	}
 });

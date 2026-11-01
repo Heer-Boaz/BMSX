@@ -92,6 +92,23 @@ prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),
 	assert.deepEqual(f.context.visualScene!.canvas.filter(visual => visual.kind === 'sprite').map(sprite => sprite.image), ['alias', 'direct']);
 });
 
+test('closed image strings retain their constructor inputs and follow imported source generations', t => {
+	const names = "return { prefix = 'scene_', suffix = 'first' }";
+	const f = fixture(t, `local names=require('names')
+prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),
+ components={sprites.factory({imgid=names.prefix..names.suffix,visible=''..'',enabled='yes'..''})}})`,
+		`{member_id='image',definition_id='visual'}`, [['names.lua', names]]);
+	const image = () => { const visual = f.context.visualScene!.canvas[0]; assert.ok(visual?.kind === 'sprite'); return visual.image; };
+	assert.equal(image(), 'scene_first');
+	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
+		f.sources.catalog.resolveResource({ contextId: f.model.identity.contextId, path: 'names.lua' })!);
+	provider.pushEditOperations([{ offset: names.indexOf('first'), deleteLength: 5, text: 'second' }]);
+	f.context.refresh(); assert.equal(image(), 'scene_second');
+	provider.undo(); f.context.refresh(); assert.equal(image(), 'scene_first');
+	assert.equal(provider.buffer.getText(), names); assert.equal(provider.canUndo, false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
 test('unresolved values, competing writes, whole-region replacement and duplicate definitions never fall back to other source', t => {
 	const f = fixture(t, `
 prefab.define({def_id='visual',class=sprite_object,

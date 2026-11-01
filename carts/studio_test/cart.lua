@@ -38,6 +38,8 @@ local animated_scene<const> = require('scenes/animated')
 animated_scene.register()
 local artwork_scene<const> = require('scenes/artwork')
 artwork_scene.register()
+local string_scene<const> = require('scenes/strings')
+string_scene.register()
 
 function new_game()
 	world:clear()

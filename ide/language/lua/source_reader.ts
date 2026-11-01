@@ -1,6 +1,6 @@
 import { LuaBinaryOperator, LuaSyntaxKind, LuaTableFieldKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
-import { writtenSourceExpression, type LuaWrittenExpression } from '../../../toolchain/ts/lua/semantic/written_sources';
+import { writtenSourceExpression, type LuaWrittenExpression, type LuaWrittenSource } from '../../../toolchain/ts/lua/semantic/written_sources';
 import type { LuaAuthoredSourceTrace } from '../../../toolchain/ts/lua/semantic/authored_sources';
 import type { CallValueEntry } from '../../../toolchain/ts/lua/semantic/value_graph';
 import { readLuaNumberExpression } from '../../../toolchain/ts/lua/syntax/number_expression';
@@ -15,6 +15,7 @@ export function readLuaSourceTruth(source: LuaWrittenExpression | null | undefin
 	if (source === null || source.expression.kind === LuaSyntaxKind.NilLiteralExpression) return false;
 	const expression = source.expression;
 	if (expression.kind === LuaSyntaxKind.BooleanLiteralExpression) return expression.value;
+	if (expression.kind === LuaSyntaxKind.BinaryExpression && expression.operator === LuaBinaryOperator.Concat) return true;
 	if (expression.kind === LuaSyntaxKind.NumericLiteralExpression || expression.kind === LuaSyntaxKind.StringLiteralExpression
 		|| expression.kind === LuaSyntaxKind.TableConstructorExpression || expression.kind === LuaSyntaxKind.FunctionExpression
 		|| readLuaNumberExpression(expression) !== null) return true;
@@ -61,10 +62,8 @@ export class LuaSourceReader {
 		// Recursive authored aliases remain unknown; repeated queries share this source-generation cache.
 		this.strings.set(source, undefined);
 		const trace = this.snapshot.symbolResolver.authoredSources.trace(source);
-		const resolved = this.selectExpression(trace)?.expression;
 		let value: string | undefined;
-		if (resolved?.kind === LuaSyntaxKind.StringLiteralExpression) value = resolved.value;
-		else if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'unknown-value') {
+		if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'unknown-value') {
 			const boundary = trace.boundaries[0].source;
 			const syntax = writtenSourceExpression(boundary);
 			if (syntax?.kind === LuaSyntaxKind.BinaryExpression && syntax.operator === LuaBinaryOperator.Concat) {
@@ -72,6 +71,9 @@ export class LuaSourceReader {
 				const right = this.stringValue(boundary.file, syntax.right);
 				if (left !== undefined && right !== undefined) value = left + right;
 			}
+		} else {
+			const resolved = this.selectExpression(trace)?.expression;
+			if (resolved?.kind === LuaSyntaxKind.StringLiteralExpression) value = resolved.value;
 		}
 		this.strings.set(source, value);
 		return value;
@@ -229,12 +231,21 @@ export class LuaSourceReader {
 
 	/** Unique authored syntax is independent of whether the consumer represents that source. */
 	private selectExpression(trace: LuaAuthoredSourceTrace, ownMember?: OwnMemberRead): LuaWrittenExpression | undefined {
-		// Generated Number source has a deliberately closed arithmetic spelling
-		// for infinities/NaN. It is written data, not an executable Lua query.
-		if (trace.terminals.length === 0 && trace.boundaries.length === 1 && trace.boundaries[0].reason === 'unknown-value') {
-			const source = trace.boundaries[0].source, syntax = writtenSourceExpression(source);
-			if (syntax !== undefined && readLuaNumberExpression(syntax) !== null)
+		// Closed scalar proofs retain their actual written expression; they do
+		// not manufacture literal AST nodes or admit another editing owner.
+		if (trace.terminals.length === 0) {
+			let source: LuaWrittenSource | undefined;
+			for (const boundary of trace.boundaries) {
+				if (boundary.reason === 'unknown-value' && source === undefined) source = boundary.source;
+				else if (!ownMember || boundary.reason !== 'prototype-write') return;
+			}
+			if (source === undefined) return;
+			const syntax = writtenSourceExpression(source);
+			if (syntax !== undefined && (readLuaNumberExpression(syntax) !== null
+				|| syntax.kind === LuaSyntaxKind.BinaryExpression && syntax.operator === LuaBinaryOperator.Concat
+				&& this.stringValue(source.file, syntax) !== undefined))
 				return this.snapshot.symbolResolver.writtenSources.expression(source.file, syntax);
+			return;
 		}
 		if (trace.terminals.length !== 1 || trace.boundaries.length !== 0
 			&& (!ownMember || trace.boundaries.some(boundary => boundary.reason !== 'prototype-write'))) return undefined;

@@ -32,6 +32,12 @@ test('text factory defaults and aliased getter results have the same source proj
 	assert.equal(text.font.glyphs.get(65), 'glyph_a');
 });
 
+test('a closed concatenated text input reaches the constructor without rewriting its authored expression', t => {
+	const source = SOURCE.replace("text='A'", "text='A' .. 'A'"), f = fixture(t, source);
+	assert.deepEqual(f.text().rows.map(row => [...row.text]), [[65, 65]]);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
 test('an inherited declared font application retains its actual raw member source', t => {
 	const source = SOURCE.replace("prefab.define({def_id='caption',class=require('cartlib/world/object_2d'),defaults={font=font.get('custom')},",
 		"local caption={font=font.get('custom')}; setmetatable(caption,{__index=require('cartlib/world/object_2d')})\nprefab.define({def_id='caption',class=caption,");
