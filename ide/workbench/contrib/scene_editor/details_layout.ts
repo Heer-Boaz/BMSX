@@ -1,6 +1,6 @@
 import { write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
-import { uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
+import { firstLineTextPreview, uppercaseOutsideStrings, writeWrappedMeasuredText } from '../../../common/text';
 import { measureTextRange, truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorFont } from '../../../editor/ui/view/font';
@@ -31,6 +31,7 @@ export function layoutSceneDetails(view: SceneDetailsViewState, contentChanged: 
 		view.position = undefined;
 	}
 	if (measured || view.layout.projectedOffsetTop !== view.viewport.offsetTop) {
+		view.viewport.project(view.identity.contentBounds, view.identity.bounds);
 		for (const property of view.properties) view.viewport.project(property.contentBounds, property.bounds);
 		for (const property of view.optionProperties) view.viewport.project(property.contentBounds, property.bounds);
 		view.layout.projectedOffsetTop = view.viewport.offsetTop;
@@ -43,8 +44,24 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 	const subject = view.projection.subject;
 	if (subject === undefined) return 0;
 	const textWidth = width - PADDING * 2;
-	let top = appendText(view, subject.preserveLabelCase ? subject.label : uppercaseOutsideStrings(subject.label), textWidth, PADDING);
-	top = appendText(view, subject.preserveDetailCase ? subject.detail : uppercaseOutsideStrings(subject.detail), textWidth, top);
+	const label = subject.preserveLabelCase ? subject.label : uppercaseOutsideStrings(subject.label);
+	const detail = subject.preserveDetailCase ? subject.detail : uppercaseOutsideStrings(subject.detail);
+	// Only decoded equal identifiers prove a redundant description; equal dynamic
+	// expressions can still produce different identities at their two callsites.
+	const showDetail = !(subject.preserveLabelCase && subject.preserveDetailCase && subject.label === subject.detail);
+	const displayLabel = truncateTextToWidth(firstLineTextPreview(label), textWidth, 'middle');
+	const displayDetail = showDetail ? truncateTextToWidth(firstLineTextPreview(detail), textWidth, 'middle') : '';
+	view.identity.tooltip = label + (showDetail ? '\n' + detail : '');
+	view.identity.clipped = displayLabel !== label || showDetail && displayDetail !== detail;
+	let top = PADDING;
+	view.detailsText.push({ text: displayLabel, top, tone: 'normal' });
+	top += view.layout.rowHeight;
+	if (showDetail) {
+		view.detailsText.push({ text: displayDetail, top, tone: 'description' });
+		top += view.layout.rowHeight;
+	}
+	write_rect_bounds(view.identity.contentBounds, PADDING, PADDING, width - PADDING, top);
+	top += PADDING;
 	if (subject.selection.kind === 'scene') return top;
 	if (view.properties.length > 0) top = appendText(view, 'LOCAL POSITION', textWidth, top);
 	const fieldHeight = view.layout.rowHeight + PADDING;
@@ -65,13 +82,13 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 			: uppercaseOutsideStrings(property.descriptor.preview), textWidth - 6);
 		top += fieldHeight + PADDING;
 	}
-	return subject.resolution === 'partial' ? appendText(view, 'PARTIAL DEFINITION', textWidth, top, true) : top;
+	return subject.resolution === 'partial' ? appendText(view, 'PARTIAL DEFINITION', textWidth, top, 'warning') : top;
 }
 
-function appendText(view: SceneDetailsViewState, text: string, width: number, top: number, warning = false): number {
+function appendText(view: SceneDetailsViewState, text: string, width: number, top: number, tone: 'normal' | 'warning' = 'normal'): number {
 	writeWrappedMeasuredText(view.wrappedLines, text, width, width, text.length, measureTextRange);
 	for (const line of view.wrappedLines) {
-		view.detailsText.push({ text: line, top, warning });
+		view.detailsText.push({ text: line, top, tone });
 		top += view.layout.rowHeight;
 	}
 	return top + PADDING;

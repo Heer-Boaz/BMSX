@@ -1,5 +1,5 @@
 import type { RectBounds } from '../../../../machine/ts/common/rect';
-import { uppercaseOutsideStrings } from '../../../common/text';
+import { firstLineTextPreview, uppercaseOutsideStrings } from '../../../common/text';
 import { truncateTextToWidth } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { EditorFont } from '../../../editor/ui/view/font';
@@ -46,8 +46,8 @@ function layoutNodes(nodes: readonly WorkbenchTreeNode<SceneOutlineElement>[], l
 		const node = pending.pop()!;
 		const badge = node.element.kind === 'scene' && node.element.scene.resolution === 'partial' ? '* ' : '';
 		const label = badge + (node.element.preserveLabelCase ? node.element.label : uppercaseOutsideStrings(node.element.label));
-		node.element.displayLabel = truncateTextToWidth(label,
-			layout.contentRight - layout.contentLeft - node.depth * layout.indentWidth - layout.twistieWidth);
+		node.element.displayLabel = truncateTextToWidth(firstLineTextPreview(label),
+			layout.contentRight - layout.contentLeft - node.depth * layout.indentWidth - layout.twistieWidth, 'middle');
 		node.element.labelClipped = node.element.displayLabel !== label;
 		for (let index = node.children.length - 1; index >= 0; index--) pending.push(node.children[index]);
 	}

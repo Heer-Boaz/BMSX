@@ -60,7 +60,7 @@ test('scene inspector admits typed strings and expressions without exposing spat
 	assert.equal(f.control('callback').field.readOnly, true, 'multiline implementation remains source-owned');
 	assert.equal(f.view.optionProperties.find(property => property.descriptor.label === 'callback')!.descriptor.preview, 'function()');
 	assert.equal(f.view.projection.subject!.resolution, 'complete');
-	assert.equal(f.view.detailsText.some(line => line.warning), false, 'complete authored content does not claim an unavailable or partial state');
+	assert.equal(f.view.detailsText.some(line => line.tone === 'warning'), false, 'complete authored content does not claim an unavailable or partial state');
 	assert.equal(f.model.dirty, false);
 });
 

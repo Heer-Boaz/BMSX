@@ -96,7 +96,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} identifie
 		arrangeScene(input.view, true, false, { left: 0, top: 24, right: 800, bottom: 400 });
 		assert.equal(root.displayLabel, literal.value); assert.equal(member.displayLabel, literal.value);
 		assert.equal(input.view.details.detailsText[0].text, literal.value, 'literal identifier casing and internal spaces survive Details layout');
-		assert.equal(input.view.details.detailsText[1].text, literal.value);
+		assert.equal(input.view.details.identity.tooltip, literal.value, 'equal decoded identifiers retain the complete identity without a duplicate description');
 		assert.deepEqual(member.span, span); assert.deepEqual(input.view.authoring.selectionRange, span);
 		assert.equal(input.workingCopy.version, version); assert.equal(input.workingCopy.buffer.getText(), source);
 	}

@@ -310,7 +310,7 @@ scenes.register('partial', {objects={
 		for (let index = 0; index < frame.commandCount; index += 1) {
 			if (frame.commandKinds[index] !== Host2DKind.Glyphs) continue;
 			const glyphs = frame.commandRefs[index] as GlyphRenderSubmission;
-			if (input.view.details.detailsText.some(line => line.warning && glyphs.items === line.text)) {
+			if (input.view.details.detailsText.some(line => line.tone === 'warning' && glyphs.items === line.text)) {
 				warning = true;
 				assert.equal(glyphs.color, resolveThemeTokenColor(colors.COLOR_CONTENT_WARNING_TEXT));
 			}

@@ -41,10 +41,37 @@ const retained = () => {
 		'layout or sizing executed/replaced the paused guest');
 };
 const fonts = new Set();
+let clippedIdentityVisited = false;
 for (let font = 0; font < 2; font++) {
 	for (let theme = 0; theme < 2; theme++) {
 		const variant = primary.view.hierarchy.layout.font.variant, label = `stage-${variant}-theme-${theme}`;
 		fonts.add(variant); retained(); await capture(`${label}-automatic`);
+		const details = primary.details.control, identity = primary.view.details.identity;
+		t.command('sceneEditor.outline'); await t.frames(3);
+		t.controlInput([{ type: 'pointer', x: identity.bounds.left + 1, y: identity.bounds.top + 1 }]); await t.frames(3);
+		t.assert(details.tooltipItem === (identity.clipped ? identity : undefined), 'routed identity hover did not expose exactly its clipped subject');
+		clippedIdentityVisited ||= identity.clipped;
+		retained(); await capture(`${label}-identity-hover`);
+		t.command('sceneEditor.details'); await press('Tab');
+		t.assert(details.controls[0].field.focusTarget.hasFocus && details.tooltipItem === undefined,
+			'entering a field retained the preceding physical identity hover');
+		retained(); await capture(`${label}-identity-hover-to-field`);
+		t.command('sceneEditor.outline'); await t.frames(3);
+		t.controlInput([{ type: 'pointer', x: canvas.left + 2, y: canvas.top + 2 }]); await t.frames(3);
+		t.assert(details.tooltipItem === undefined, 'leaving the identity retained a stale body tooltip');
+		t.command('sceneEditor.details'); await t.frames(3);
+		t.assert(details.focusTarget.hasFocus && details.tooltipItem === (identity.clipped ? identity : undefined),
+			'Details section focus did not expose the same clipped identity for keyboard users');
+		retained(); await capture(`${label}-identity-keyboard`);
+		const title = primary.details.layoutState.titleBounds;
+		t.controlInput([{ type: 'pointer', x: title.left + 1, y: title.top + 1 }]); await t.frames(3);
+		t.assert(details.focusTarget.hasFocus, 'chrome identity hover took the current body keyboard focus');
+		retained(); await capture(`${label}-identity-chrome-hover`);
+		t.controlInput([{ type: 'pointer', x: canvas.left + 2, y: canvas.top + 2 }]); await t.frames(3);
+		await press('Tab');
+		t.assert(details.controls[0].field.focusTarget.hasFocus && details.tooltipItem === undefined,
+			'identity feedback interfered with the first native position field');
+		retained(); await capture(`${label}-identity-field-focus`);
 		for (const role of ['hierarchy', 'details']) {
 			t.command(role === 'hierarchy' ? 'sceneEditor.outline' : 'sceneEditor.details'); await t.frames(3);
 			t.assert(layout[`${role}Width`] === undefined, 'automatic layout manufactured an explicit side-size preference');
@@ -74,8 +101,9 @@ for (let font = 0; font < 2; font++) {
 	await press('ControlLeft', 'ShiftLeft', 'KeyT'); await t.frames(3);
 }
 t.assert(fonts.size === 2, 'the visible layout workflow did not exercise both fonts');
+t.assert(clippedIdentityVisited, 'the visible workflow never exercised a clipped identity');
 t.command('sceneEditor.outline'); t.command('undo'); await t.frames(4);
 t.assert(model.buffer.getText() === source && !model.dirty, 'ordinary Undo did not restore the isolated fixture source');
 for (let index = 0; index < t.logMessageCount(); index++)
 	t.assert(t.logMessage(index).level !== 3, `stage sizing logged an error: ${t.logMessage(index).message}`);
-t.log('Completed real Workbench pointer/keyboard side resizing, font reflow and reset in both fonts/themes.');
+t.log('Completed real Workbench identity hover/keyboard feedback, field focus, side resizing, font reflow and reset in both fonts/themes.');

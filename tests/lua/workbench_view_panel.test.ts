@@ -20,14 +20,19 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { api } from '../../ide/runtime/overlay_api';
 import { createWorkbenchViewPanelLayout, layoutWorkbenchViewPanel } from '../../ide/workbench/ui/view_panel/layout';
+import { WorkbenchTooltip } from '../../ide/workbench/ui/tooltip';
+import { pointerHover } from '../../ide/input/pointer/hover';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
+local prefab = require('cartlib/world/prefab')
+prefab.define({def_id='actor',class=require('cartlib/world/object_3d')})
 scenes.register('room', { objects = {
- { member_id = 'first', definition_id = 'actor', spatial = { local_transform = { 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 2, 3 } }, options = { strength = 5 } },
+ { member_id = 'first', definition_id = 'actor', position = { x = 1, y = 2, z = 3 }, options = { strength = 5 } },
 } })`;
-function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
+function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SOURCE) {
 	configureFontVariant(font);
-	const f = createSceneSourceFixture(t, SOURCE), context = new SceneAuthoringContext(f.model, f.documents), view = new SceneDetailsViewState(context);
+	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return {define=function() end}']]);
+	const context = new SceneAuthoringContext(f.model, f.documents), view = new SceneDetailsViewState(context);
 	const document = context.document!, scene = document.scenes[0];
 	context.select(document, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 });
 	const bounds = { left: 0, top: 0, right: 240, bottom: 240 }, surfaces = new WorkbenchSurfaceService();
@@ -51,6 +56,36 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	t.after(() => { panel.dispose(); view.dispose(); context.dispose(); menu.dispose(); surfaces.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, context, view, panel, bounds, focusReturn, menu, saved, actions };
 }
+
+test('body identity feedback uses the containing panel tooltip without borrowing header text or stealing field focus', t => {
+	const id = 'authored.namespace.with.a.long.shared.prefix.SelectedMember01';
+	const source = SOURCE.replace("member_id = 'first'", `member_id = '${id}'`), f = fixture(t, 'msx', source);
+	f.focusReturn.focus();
+	const identity = f.view.identity, selection = f.context.selection, version = f.model.version;
+	const show = t.mock.method(WorkbenchTooltip.prototype, 'show');
+	pointerHover.beginDispatch(f.panel.scope.surfaceScope);
+	f.panel.handlePointer({ valid: true, insideViewport: true, viewportX: identity.bounds.left + 1, viewportY: identity.bounds.top + 1,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false });
+	pointerHover.endDispatch(); f.panel.update();
+	assert.equal(f.panel.control.tooltipItem, identity); assert.equal(show.mock.callCount(), 1);
+	// The tooltip producer preserves actual identifier data, not a frozen UI label.
+	assert.equal(show.mock.calls[0].arguments[0], id + '\nactor'); assert.equal(show.mock.calls[0].arguments[1], identity.bounds);
+	assert.ok(inputFocus.target === f.focusReturn && f.context.selection === selection);
+	pointerHover.clear(); f.panel.update(); assert.equal(show.mock.callCount(), 1);
+	f.panel.control.focus(); f.panel.update(); assert.equal(show.mock.callCount(), 2);
+	const title = f.panel.layoutState.titleBounds;
+	pointerHover.beginDispatch(f.panel.scope.surfaceScope);
+	f.panel.handlePointer({ valid: true, insideViewport: true, viewportX: title.left + 1, viewportY: title.top + 1,
+		pressedButtons: 0, justPressedButtons: 0, justReleasedButtons: 0, modifiers: KeyModifier.none, spaceDown: false });
+	pointerHover.endDispatch(); f.panel.update();
+	assert.equal(show.mock.callCount(), 3); assert.equal(show.mock.calls[2].arguments[0], f.resource.path);
+	assert.equal(f.panel.control.focusTarget.hasFocus, true, 'explicit chrome hover does not borrow body keyboard focus');
+	pointerHover.clear();
+	const field = f.panel.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true); setFieldText(field.field, '31', true);
+	f.panel.update(); assert.equal(show.mock.callCount(), 3); assert.equal(field.pending, true);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
+	f.panel.detach(); assert.equal(f.panel.control.tooltipItem, undefined); assert.equal(pointerHover.has(f.panel.control), false);
+});
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} a container-owned header consumes exactly its allocation without rebinding the body`, t => {
 	const f = fixture(t, font), field = f.panel.control.controls[0], selected = f.context.selection;

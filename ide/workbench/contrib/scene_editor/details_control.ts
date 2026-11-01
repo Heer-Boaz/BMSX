@@ -6,10 +6,12 @@ import { ValueInput } from '../../../editor/ui/inline/value_input';
 import { inputFocus, InputFocusScope, type InputFocusTarget } from '../../../input/focus';
 import { consumeIdeKey, isKeyJustPressed } from '../../../input/keyboard/key_input';
 import { pointerCapture } from '../../../input/pointer/capture';
+import { pointerHover } from '../../../input/pointer/hover';
 import { parseLuaNumberInput } from '../../../language/lua/source_edits';
 import type { ContextMenuController } from '../../services/context_menu/controller';
 import type { WorkbenchMenuPresentation } from '../../ui/menu/model';
 import { WorkbenchScrollControl } from '../../ui/scroll_control';
+import type { WorkbenchTooltipTarget } from '../../ui/tooltip';
 import type { SceneLocalPositionRequest } from './authoring_context';
 import { POSITION_AXES, type SceneDetailsSubject } from './details_projection';
 import { layoutSceneDetails } from './details_layout';
@@ -47,6 +49,10 @@ export class SceneDetailsControl {
 	private lastFocus: InputFocusTarget;
 	private subscriptions: (() => void)[] = [];
 	private readonly parentCommandTarget: InputFocusTarget;
+	private identityHovered = false;
+	private pointerX = -1;
+	private pointerY = -1;
+	private feedbackScroll = 0;
 
 	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
 		scope: InputFocusScope, parent: InputFocusTarget,
@@ -104,6 +110,13 @@ export class SceneDetailsControl {
 		return bounds.left < bounds.right && bounds.top < bounds.bottom;
 	}
 	public get canOpenSource(): boolean { return this.hasView; }
+	/** The presentation paints feedback; this control owns its exact subject and routed hit. */
+	public get tooltipItem(): WorkbenchTooltipTarget | undefined {
+		if (!this.canFocus || !this.fieldsBound) return undefined;
+		const view = this.view, identity = view.identity, bounds = view.viewport.bounds;
+		if (!identity.clipped || identity.bounds.top < bounds.top || identity.bounds.bottom > bounds.bottom) return undefined;
+		return this.focusTarget.hasFocus || this.identityHovered && this.feedbackScroll === view.viewport.scrollTop ? identity : undefined;
+	}
 	public getSourceLocation() { return this.viewValue?.authoring.getSourceLocation(); }
 	public captureSourceLocation() { return this.viewValue?.authoring.captureSourceLocation(); }
 
@@ -133,6 +146,8 @@ export class SceneDetailsControl {
 		if (this.viewValue !== view || this.inputScope.contextGeneration !== generation) return;
 		const changed = this.boundRevision !== view.projection.revision;
 		const layoutChanged = layoutSceneDetails(view, changed, this.bounds);
+		if (changed || layoutChanged || this.feedbackScroll !== view.viewport.scrollTop) this.identityHovered = false;
+		this.feedbackScroll = view.viewport.scrollTop;
 		if (!this.canFocus) {
 			if (this.admitted) {
 				this.admitted = false;
@@ -266,12 +281,14 @@ export class SceneDetailsControl {
 	}
 
 	private revealProperty(index: number): void {
+		this.identityHovered = false;
 		const view = this.view, bounds = view.properties[index].contentBounds;
 		view.viewport.scrollbar.reveal(bounds.top, bounds.bottom, 2);
 		layoutSceneDetails(view, false, this.bounds);
 		this.controls[index].layout(view.properties[index].bounds, view.viewport.bounds);
 	}
 	private revealOption(property: SceneOptionViewProperty, index: number): void {
+		this.identityHovered = false;
 		this.view.viewport.scrollbar.reveal(property.contentBounds.top, property.contentBounds.bottom, 2);
 		layoutSceneDetails(this.view, false, this.bounds);
 		this.options.controls[index].layout(property.bounds, this.view.viewport.bounds);
@@ -285,6 +302,13 @@ export class SceneDetailsControl {
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (!this.hasView || !this.canFocus || !this.fieldsBound) return false;
 		const view = this.view, bounds = view.viewport.bounds;
+		if (snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)
+			&& point_in_rect(snapshot.viewportX, snapshot.viewportY, view.identity.bounds)) {
+			pointerHover.visit(this);
+			if (snapshot.pressedButtons !== 0 || snapshot.justPressedButtons !== 0) this.identityHovered = false;
+			else if (this.pointerX !== snapshot.viewportX || this.pointerY !== snapshot.viewportY) this.identityHovered = true;
+			this.pointerX = snapshot.viewportX; this.pointerY = snapshot.viewportY;
+		} else pointerHover.release(this);
 		for (let index = 0; index < view.properties.length; index++) {
 			const control = this.controls[index], field = view.properties[index].bounds;
 			if (!control.field.readOnly && ((snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, bounds)
@@ -313,9 +337,11 @@ export class SceneDetailsControl {
 	public handleWheel(event: WheelInputSnapshot): boolean {
 		if (!this.hasView || !this.canFocus || !this.fieldsBound
 			|| !this.scroll.handleWheel(event, event.deltaY * this.scroll.lineStep * 3)) return false;
+		this.identityHovered = false;
 		layoutSceneDetails(this.view, false, this.bounds);
 		return true;
 	}
+	public onPointerLeave(): void { this.identityHovered = false; this.pointerX = -1; this.pointerY = -1; }
 
 	private openContextMenu(x: number, y: number, keyboard = false): void {
 		const view = this.view, generation = this.inputScope.contextGeneration, selection = view.authoring.selectionRevision;
@@ -337,6 +363,7 @@ export class SceneDetailsControl {
 		if (!this.hasView) return;
 		const revision = this.attachmentRevision;
 		this.viewValue = undefined; this.boundRevision = -1; this.boundSubject = undefined; this.admitted = false; this.fieldsBound = false;
+		this.onPointerLeave(); pointerHover.release(this);
 		const subscriptions = this.subscriptions; this.subscriptions = [];
 		for (const unsubscribe of subscriptions) unsubscribe();
 		this.inputScope.retireContext();

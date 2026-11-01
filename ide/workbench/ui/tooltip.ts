@@ -6,6 +6,9 @@ import type { WorkbenchSurface } from '../services/windows/model';
 import type { WorkbenchSurfaceService } from '../services/windows/service';
 import { drawWorkbenchTooltip } from '../render/tooltip';
 
+/** A retained content or chrome hit; its containing presentation owns the feedback surface. */
+export type WorkbenchTooltipTarget = { readonly tooltip: string; readonly bounds: Readonly<RectBounds> };
+
 /** Retained passive feedback: its owner controls content; the surface owns paint order and admission. */
 export class WorkbenchTooltip {
 	public readonly bounds = create_rect_bounds();

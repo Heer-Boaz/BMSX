@@ -18,13 +18,14 @@ import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { WORKBENCH_ACTION_BAR_ICON_MIN_WIDTH, type WorkbenchActionBarState } from '../action_bar';
 import { WorkbenchActionBarControl } from '../action_bar_control';
 import type { WorkbenchMenuPresentation } from '../menu/model';
-import { WorkbenchTooltip } from '../tooltip';
+import { WorkbenchTooltip, type WorkbenchTooltipTarget } from '../tooltip';
 import { createWorkbenchViewPanelLayout, layoutWorkbenchViewPanel } from './layout';
 import { drawWorkbenchViewPanel } from './render';
 
 export interface WorkbenchViewPanelContent<View> {
 	readonly focusTarget: InputFocusTarget;
 	readonly canFocus: boolean;
+	readonly tooltipItem?: WorkbenchTooltipTarget;
 	setView(view: View, bounds: Readonly<RectBounds>): void;
 	clearView(): void;
 	layout(bounds: Readonly<RectBounds>): void;
@@ -169,11 +170,13 @@ export class WorkbenchViewPanel<View, Content extends WorkbenchViewPanelContent<
 		else this.control.update?.();
 		if (revision !== this.revision) return;
 		this.bindFocusOrder();
-		const hint = this.actionBar.tooltipItem;
-		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.options.workArea);
-		else if (this.titleHovered) this.tooltip.show(this.options.description, this.layoutState.titleBounds,
+		if (this.titleHovered) this.tooltip.show(this.options.description, this.layoutState.titleBounds,
 			editorViewState.font.renderFont(), measureTextRange, measureText, this.options.workArea);
-		else this.tooltip.hide();
+		else {
+			const hint = this.actionBar.tooltipItem ?? this.control.tooltipItem;
+			if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.options.workArea);
+			else this.tooltip.hide();
+		}
 	}
 	private bindFocusOrder(): void {
 		const actions = this.actionBar.focusTarget;

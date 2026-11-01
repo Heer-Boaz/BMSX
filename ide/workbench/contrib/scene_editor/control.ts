@@ -135,11 +135,13 @@ export class SceneEditorControl {
 		this.details.layout(view.layout.detailsBounds);
 		if (revision !== this.attachmentRevision) return;
 		this.bindFocusOrder(); this.actionBar.update();
-		const hint = this.actionBar.tooltipItem;
-		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
-		else if (this.sourceHovered) this.tooltip.show(view.authoring.workingCopy.resource.path, view.layout.sourceBounds,
+		if (this.sourceHovered) this.tooltip.show(view.authoring.workingCopy.resource.path, view.layout.sourceBounds,
 			editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
-		else this.tooltip.hide();
+		else {
+			const hint = this.actionBar.tooltipItem ?? this.details.tooltipItem;
+			if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.workArea);
+			else this.tooltip.hide();
+		}
 	}
 	private bindFocusOrder(): void {
 		const actions = this.actionBar.focusTarget;
@@ -190,7 +192,7 @@ export class SceneEditorControl {
 		if (justPressed && snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.view.layout)) this.focus();
 	}
 	public handleWheel(event: WheelInputSnapshot): void { if (this.hasView && !this.details.handleWheel(event)) this.hierarchy.handleWheel(event); }
-	public onPointerLeave(): void { this.sourceHovered = false; this.hierarchy.onPointerLeave(); }
+	public onPointerLeave(): void { this.sourceHovered = false; this.hierarchy.onPointerLeave(); this.details.onPointerLeave(); }
 	public draw(): void {
 		if (!this.hasView) return;
 		drawSceneEditor(this.view); this.hierarchy.draw(); this.details.draw();
