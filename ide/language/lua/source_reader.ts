@@ -1,4 +1,4 @@
-import { LuaBinaryOperator, LuaSyntaxKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
+import { LuaBinaryOperator, LuaSyntaxKind, LuaTableFieldKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../toolchain/ts/lua/syntax/ast';
 import type { FileSemanticData, LuaSemanticWorkspaceSnapshot } from '../../../toolchain/ts/lua/semantic/model';
 import { writtenSourceExpression, type LuaWrittenExpression } from '../../../toolchain/ts/lua/semantic/written_sources';
 import type { LuaAuthoredSourceTrace } from '../../../toolchain/ts/lua/semantic/authored_sources';
@@ -82,6 +82,21 @@ export class LuaSourceReader {
 		const source = this.expression(file, expression);
 		const value = source === undefined ? null : readLuaNumberExpression(source.expression);
 		return value === null ? undefined : value;
+	}
+
+	/** A complete authored numeric sequence, not an inferred runtime table length. */
+	public numberSequence(file: FileSemanticData, expression: LuaExpression): readonly number[] | undefined {
+		const source = this.expression(file, expression);
+		if (source?.expression.kind !== LuaSyntaxKind.TableConstructorExpression
+			|| this.snapshot.symbolResolver.authoredSources.tableMutations().has(source.expression)) return;
+		const values: number[] = [];
+		for (const field of source.expression.fields) {
+			if (field.kind !== LuaTableFieldKind.Array) return;
+			const value = this.numberValue(source.file, field.value);
+			if (value === undefined) return;
+			values.push(value);
+		}
+		return values;
 	}
 
 	/** Select a field's authored source independently of mutation in the field's descendants. */
@@ -169,10 +184,30 @@ export class LuaSourceReader {
 	public call(file: FileSemanticData, expression: LuaExpression): CallValueEntry | undefined {
 		const query = this.snapshot.symbolResolver.writtenSources;
 		const trace = this.snapshot.symbolResolver.authoredSources.trace(query.expression(file, expression));
+		return this.selectCall(trace);
+	}
+
+	/** One authored member application, not the value returned by executing it. */
+	public memberCall(file: FileSemanticData, expression: LuaExpression, name: string): CallValueEntry | undefined {
+		const query = this.snapshot.symbolResolver.writtenSources;
+		return this.selectCall(this.snapshot.symbolResolver.authoredSources.member(query.expression(file, expression), name));
+	}
+
+	/** Raw own storage may contain an application even when __index is unknown. */
+	public ownMemberCall(file: FileSemanticData, expression: LuaExpression, name: string): CallValueEntry | undefined {
+		const query = this.snapshot.symbolResolver.writtenSources;
+		return this.selectCall(this.snapshot.symbolResolver.authoredSources.member(query.expression(file, expression), name), 'raw');
+	}
+
+	private selectCall(trace: LuaAuthoredSourceTrace, member?: OwnMemberRead): CallValueEntry | undefined {
 		this.observe(trace);
-		if (trace.terminals.length !== 0 || trace.boundaries.length !== 1) return;
-		const boundary = trace.boundaries[0];
-		return boundary.reason === 'call-result' ? boundary.call : undefined;
+		if (trace.terminals.length !== 0) return;
+		let call: CallValueEntry | undefined;
+		for (const boundary of trace.boundaries) {
+			if (boundary.reason === 'call-result' && call === undefined) call = boundary.call;
+			else if (member !== 'raw' || boundary.reason !== 'prototype-write') return;
+		}
+		return call;
 	}
 
 	private resolve(trace: LuaAuthoredSourceTrace, ownMember?: OwnMemberRead): LuaWrittenExpression | undefined {

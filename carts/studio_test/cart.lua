@@ -32,6 +32,8 @@ root_scene.register()
 require('scenes/space')
 local boolean_scene<const> = require('scenes/boolean')
 boolean_scene.register()
+local text_scene<const> = require('scenes/text')
+text_scene.register()
 
 function new_game()
 	world:clear()

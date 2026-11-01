@@ -116,7 +116,7 @@ test('the ghost and committed sprite have the same footprint, inherited linear p
 	const selected = f.context.selection!; assert.equal(selected.kind, 'member');
 	if (selected.kind !== 'member') throw new Error('expected inserted member');
 	const sprite = f.view.canvas.items.find(sprite => sprite.source.entry === selected.entry)!;
-	assert.ok(sprite.kind === 'sprite');
+	assert.ok(sprite.kind === 'sprite' && sprite.source.kind === 'sprite');
 	assert.equal(sprite.bitmap, bitmap); assert.deepEqual(sprite.affine, affine);
 	assert.deepEqual([sprite.x, sprite.y, sprite.xx, sprite.xy, sprite.yx, sprite.yy, sprite.u0, sprite.v0, sprite.u1, sprite.v1], footprint);
 	assert.equal(f.context.selectedLocalTransform!.ox, 17); assert.equal(f.context.selectedLocalTransform!.oy, 23);

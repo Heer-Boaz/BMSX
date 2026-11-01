@@ -11,6 +11,7 @@ import { SceneViewportModels, type SceneViewportModelBounds } from './models';
 import type { SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
 import { SceneTranslationGizmo } from './translate_gizmo';
+import { collectSceneTextImages } from './text_layout';
 
 export type SceneMemberPlacementPreview = SceneTransformPreview<SceneAddMemberChoice> & {
 	readonly visuals: SceneVisualReadModel<SceneAddMemberChoice>;
@@ -38,7 +39,6 @@ export class SceneViewportViewState {
 	/** Per occurrence: origin XY, X endpoint XY, Y endpoint XY, Z endpoint XY. */
 	public readonly points: number[] = [];
 	public readonly segment = [0, 0, 0, 0];
-	public readonly outline = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 	public source: SceneSpatialReadModel | undefined;
 	public selected: SceneSourceObject | undefined;
 	public allocationRevision = 0;
@@ -98,8 +98,14 @@ export class SceneViewportViewState {
 			this.visualSource = visuals; this.placementSource = placementVisuals; this.visualCatalogRevision = this.catalog.revision;
 			this.imageIds.clear();
 			this.modelIds.clear();
-			if (visuals !== undefined) for (const visual of visuals.canvas) if (visual.kind === 'sprite') this.imageIds.add(visual.image);
-			if (placementVisuals !== undefined) for (const visual of placementVisuals.canvas) if (visual.kind === 'sprite') this.imageIds.add(visual.image);
+			if (visuals !== undefined) for (const visual of visuals.canvas) {
+				if (visual.kind === 'sprite') this.imageIds.add(visual.image);
+				else if (visual.kind === 'text') collectSceneTextImages(visual, this.imageIds);
+			}
+			if (placementVisuals !== undefined) for (const visual of placementVisuals.canvas) {
+				if (visual.kind === 'sprite') this.imageIds.add(visual.image);
+				else if (visual.kind === 'text') collectSceneTextImages(visual, this.imageIds);
+			}
 			if (visuals !== undefined) for (const visual of visuals.models) this.modelIds.add(visual.model);
 			if (placementVisuals !== undefined) for (const visual of placementVisuals.models) this.modelIds.add(visual.model);
 			this.images.update(this.authoring.workingCopy.identity.contextId, this.imageIds);
@@ -121,7 +127,7 @@ export class SceneViewportViewState {
 			this.frame(undefined); if (this.disposed) return;
 		}
 		if (this.models.project(this.camera, this.bounds)) this.projectionRevision++;
-		if (this.canvas.project(this.camera, this.bounds, this.allocationRevision)) this.projectionRevision++;
+		if (this.canvas.project(this.camera, this.bounds, this.allocationRevision, this.selected)) this.projectionRevision++;
 		this.projectPlacement();
 		const preview = this.transformPreview, previewRevision = preview?.revision ?? -1;
 		const selectedWorld = this.selected === undefined ? undefined : preview?.worlds.has(this.selected)

@@ -1,3 +1,4 @@
+import { SceneConstructorInputs, type SceneConstructorSource } from './constructor_inputs';
 import { LuaSyntaxKind, LuaTableFieldKind, type LuaFunctionExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { readLuaNumberExpression } from '../../../../toolchain/ts/lua/syntax/number_expression';
 import { getLuaModuleAliasTarget, type LuaModuleImportTarget } from '../../../../toolchain/ts/lua/semantic/module_bindings';
@@ -12,6 +13,8 @@ import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, Sce
 import type { ScenePrefabSources } from './prefab_sources';
 import type { SceneSpatialProjection } from './spatial_projection';
 import type { SceneAddMemberChoice } from './member_insertion';
+import { SceneFontSources } from './font_sources';
+import { readSceneTextInputs, type SceneTextInputs } from './text_source';
 
 type SceneCanvasPlacement<Owner> = {
 	readonly entry: Owner;
@@ -35,7 +38,8 @@ export type SceneRectangleSource<Owner = SceneSourceObject> = SceneCanvasPlaceme
 	readonly width: number;
 	readonly height: number;
 };
-export type SceneCanvasSource<Owner = SceneSourceObject> = SceneSpriteSource<Owner> | SceneRectangleSource<Owner>;
+export type SceneTextSource<Owner = SceneSourceObject> = SceneCanvasPlacement<Owner> & SceneTextInputs & { readonly kind: 'text' };
+export type SceneCanvasSource<Owner = SceneSourceObject> = SceneSpriteSource<Owner> | SceneRectangleSource<Owner> | SceneTextSource<Owner>;
 export type SceneModelSource<Owner = SceneSourceObject> = {
 	readonly entry: Owner;
 	readonly model: string;
@@ -56,58 +60,22 @@ export type ScenePrefabPreview = {
 	readonly world: Readonly<SceneSourceAffine>;
 	readonly visuals: SceneVisualReadModel<SceneAddMemberChoice>;
 };
-type SourceState = LuaWrittenExpression | null | undefined;
-type ComponentProducer = { readonly kind: 'sprite' | 'rectangle' | 'model'; readonly defaults: SourceState;
+type ComponentProducer = { readonly kind: 'sprite' | 'rectangle' | 'model' | 'text'; readonly defaults: SceneConstructorSource;
 	readonly input: 'primary' | 'owner' | 'configuration' };
 const SPRITE_NEW: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['new'] };
 const SPRITE_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['factory'] };
 const MODEL_NEW: LuaModuleImportTarget = { module: 'cartlib/component/static_model_component', memberPath: ['new'] };
 const MODEL_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/static_model_component', memberPath: ['factory'] };
 const RECTANGLE_NEW: LuaModuleImportTarget = { module: 'cartlib/component/rectangle_component', memberPath: ['new'] };
+const TEXT_NEW: LuaModuleImportTarget = { module: 'cartlib/text/text_component', memberPath: ['new'] };
+const TEXT_FACTORY: LuaModuleImportTarget = { module: 'cartlib/text/text_component', memberPath: ['factory'] };
 const SPRITE_OBJECT: LuaModuleImportTarget = { module: 'cartlib/sprite', memberPath: [] };
 const SPRITE_COMPONENT = { kind: 'sprite' as const, constructor: SPRITE_NEW };
 const MODEL_COMPONENT = { kind: 'model' as const, constructor: MODEL_NEW };
 const RECTANGLE_COMPONENT = { kind: 'rectangle' as const, constructor: RECTANGLE_NEW };
+const TEXT_COMPONENT = { kind: 'text' as const, constructor: TEXT_NEW };
 const IDENTITY_2D: SceneSourceAffine = { family: '2d', xx: 1, xy: 0, yx: 0, yy: 1, ox: 0, oy: 0 };
 const IDENTITY_3D: SceneSourceAffine = { family: '3d', xx: 1, xy: 0, xz: 0, yx: 0, yy: 1, yz: 0, zx: 0, zy: 0, zz: 1, ox: 0, oy: 0, oz: 0 };
-
-/** Resolves concrete constructor configuration using the producer's nil-only
- * and `or` default rules. Unknown writes never grant defaults. */
-class ComponentConstructorInputs {
-	public constructor(private readonly reader: LuaSourceReader, private readonly input: SourceState,
-		private readonly defaults: SourceState, private readonly classes: readonly LuaWrittenExpression[] | null | undefined) {}
-	public member(source: SourceState, name: string): SourceState {
-		if (source === undefined || source === null) return source;
-		if (source.expression.kind === LuaSyntaxKind.NilLiteralExpression) return null;
-		const value = this.reader.memberState(source.file, source.expression, name);
-		return value?.expression.kind === LuaSyntaxKind.NilLiteralExpression ? null : value;
-	}
-	public configuredValue(name: string): SourceState {
-		const input = this.member(this.input, name);
-		return input === null ? this.member(this.defaults, name) : input;
-	}
-	public value(name: string): SourceState {
-		const value = this.configuredValue(name);
-		if (value !== null) return value;
-		if (this.classes === undefined) return;
-		if (this.classes === null) return null;
-		for (const source of this.classes) {
-			const inherited = this.reader.ownMemberState(source.file, source.expression, name);
-			if (inherited === undefined) return;
-			if (inherited !== null && inherited.expression.kind !== LuaSyntaxKind.NilLiteralExpression) return inherited;
-		}
-		return null;
-	}
-	public number(name: string, fallback: number): number | null | undefined {
-		const value = this.value(name), truth = readLuaSourceTruth(value);
-		if (truth === undefined) return;
-		return truth === false ? fallback : readLuaNumberExpression(value!.expression);
-	}
-	public flag(name: string, fallback: boolean): boolean | undefined {
-		const value = this.value(name);
-		return value === null ? fallback : readLuaSourceTruth(value);
-	}
-}
 
 /** Retained source generation and exact source occurrences. It borrows the
  * spatial owner's poses/order and does no asset lookup, Lua execution or paint. */
@@ -118,9 +86,11 @@ export class SceneVisualProjection {
 	private readonly forwarding = new WeakMap<LuaWrittenExpression, ComponentProducer | undefined>();
 	private readonly functionFlows = new WeakMap<FileSemanticData, ReadonlyMap<LuaFunctionExpression, FunctionValueFlowEntry>>();
 	private readonly reader: LuaSourceReader;
-	private readonly fields: ComponentConstructorInputs;
+	private readonly fields: SceneConstructorInputs;
+	private readonly fonts: SceneFontSources;
 	public constructor(private readonly prefabs: ScenePrefabSources, private readonly spatial: SceneSpatialProjection) {
-		this.reader = prefabs.reader; this.fields = new ComponentConstructorInputs(this.reader, null, null, null);
+		this.reader = prefabs.reader; this.fields = new SceneConstructorInputs(this.reader, null, null, null);
+		this.fonts = new SceneFontSources(this.reader);
 	}
 	public readScene(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneVisualReadModel {
 		const retained = this.scenes.get(scene); if (retained !== undefined) return retained;
@@ -157,9 +127,9 @@ export class SceneVisualProjection {
 	}
 
 	private appendVisuals<Owner>(canvas: SceneCanvasSource<Owner>[], models: SceneModelSource<Owner>[],
-		entry: Owner, definition: LuaWrittenExpression, options: SourceState, world: Readonly<SceneSourceAffine>): void {
+		entry: Owner, definition: LuaWrittenExpression, options: SceneConstructorSource, world: Readonly<SceneSourceAffine>): void {
 		const reader = this.reader, fields = this.fields, defaults = fields.member(definition, 'defaults');
-		const ownerInputs = new ComponentConstructorInputs(reader, readLuaSourceTruth(options) === false ? null : options,
+		const ownerInputs = new SceneConstructorInputs(reader, readLuaSourceTruth(options) === false ? null : options,
 			readLuaSourceTruth(defaults) === false ? null : defaults, this.prefabs.classes(definition));
 		const ownerVisible = ownerInputs.value('visible');
 		if (ownerVisible !== null && readLuaSourceTruth(ownerVisible) !== true) return;
@@ -167,7 +137,7 @@ export class SceneVisualProjection {
 			if ((producer.kind !== 'model') !== (world.family === '2d')) continue;
 			const primary = producer.input === 'primary';
 			if (primary && ownerInputs.configuredValue('primary_sprite_factory') !== null) continue;
-			const inputs = producer.input === 'configuration' ? new ComponentConstructorInputs(reader, null, producer.defaults, null) : ownerInputs;
+			const inputs = producer.input === 'configuration' ? new SceneConstructorInputs(reader, null, producer.defaults, null) : ownerInputs;
 			if (!primary && (inputs.flag('enabled', true) !== true || inputs.flag('visible', true) !== true)) continue;
 			const attachment = this.affine(inputs.value('attachment_affine'), world.family);
 			const presentation = this.affine(inputs.value('presentation_affine'), world.family);
@@ -185,6 +155,14 @@ export class SceneVisualProjection {
 			if (attachment?.family !== '2d' || presentation?.family !== '2d') continue;
 			const order = inputs.number('order', 0), presentationOrder = inputs.number('presentation_order', 0);
 			if (order == null || presentationOrder == null) continue;
+			const combinedOrder = order + presentationOrder;
+			if (producer.kind === 'text') {
+				const text = readSceneTextInputs(reader, this.fonts, inputs, definition.file), color = inputs.optionalNumber('color');
+				if (text === undefined || color === null) continue;
+				canvas.push({ kind: 'text', entry, world, attachment, presentation, ...text,
+					color: ((color === undefined ? 0xffffffff : color) | 0xff000000) >>> 0, order: combinedOrder });
+				continue;
+			}
 			if (producer.kind === 'rectangle') {
 				const widthSource = inputs.value('width'), heightSource = inputs.value('height'), colorSource = inputs.value('color');
 				if (widthSource == null || heightSource == null || colorSource == null) continue;
@@ -192,7 +170,7 @@ export class SceneVisualProjection {
 				const color = readLuaNumberExpression(colorSource.expression);
 				if (width === null || height === null || color === null) continue;
 				canvas.push({ kind: 'rectangle', entry, width, height, world, attachment, presentation,
-					color: (color | 0xff000000) >>> 0, order: order + presentationOrder });
+					color: (color | 0xff000000) >>> 0, order: combinedOrder });
 				continue;
 			}
 			const imageSource = inputs.value('imgid');
@@ -213,11 +191,11 @@ export class SceneVisualProjection {
 				if (nx === null || ny === null || nw === null || nh === null) continue;
 				region = { x: nx, y: ny, width: nw, height: nh };
 			}
-			canvas.push({ kind: 'sprite', entry, image, world, attachment, presentation, region, color: (color | 0xff000000) >>> 0, flipH, flipV, order: order + presentationOrder });
+			canvas.push({ kind: 'sprite', entry, image, world, attachment, presentation, region, color: (color | 0xff000000) >>> 0, flipH, flipV, order: combinedOrder });
 		}
 	}
 
-	private affine(source: SourceState, family: '2d' | '3d'): Readonly<SceneSourceAffine> | undefined {
+	private affine(source: SceneConstructorSource, family: '2d' | '3d'): Readonly<SceneSourceAffine> | undefined {
 		if (readLuaSourceTruth(source) === false) return family === '2d' ? IDENTITY_2D : IDENTITY_3D;
 		if (source === undefined || source === null) return;
 		const affine = readSceneSourceAffine(this.reader, source.file, source.expression);
@@ -229,7 +207,8 @@ export class SceneVisualProjection {
 		const imports = this.reader.snapshot.symbolResolver.moduleImports;
 		const component = imports.matchesImport(target, SPRITE_NEW) ? SPRITE_COMPONENT
 			: imports.matchesImport(target, MODEL_NEW) ? MODEL_COMPONENT
-				: imports.matchesImport(target, RECTANGLE_NEW) ? RECTANGLE_COMPONENT : undefined;
+				: imports.matchesImport(target, RECTANGLE_NEW) ? RECTANGLE_COMPONENT
+					: imports.matchesImport(target, TEXT_NEW) ? TEXT_COMPONENT : undefined;
 		if (component === undefined) return;
 		const module = this.reader.module(source.file, component.constructor.module), constructor = this.fields.member(module, 'new');
 		if (constructor?.expression.kind === LuaSyntaxKind.FunctionExpression
@@ -267,7 +246,7 @@ export class SceneVisualProjection {
 			if (source?.expression.kind !== LuaSyntaxKind.NilLiteralExpression
 				&& this.reader.stringValue(file, id) === undefined) return;
 		}
-		let defaults: SourceState = null, input: ComponentProducer['input'] = 'configuration';
+		let defaults: SceneConstructorSource = null, input: ComponentProducer['input'] = 'configuration';
 		if (configuration?.root.kind === 'declaration' && configuration.root.declId === owner && configuration.steps.length === 0) input = 'owner';
 		else {
 			const argument = call.expression.arguments[1];
@@ -316,7 +295,8 @@ export class SceneVisualProjection {
 					const file = this.reader.snapshot.getFileData(call.file)!, target = getLuaModuleAliasTarget(file, call.callee);
 					const builtinFactory = target === null ? undefined
 						: this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, SPRITE_FACTORY) ? SPRITE_COMPONENT
-							: this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, MODEL_FACTORY) ? MODEL_COMPONENT : undefined;
+							: this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, MODEL_FACTORY) ? MODEL_COMPONENT
+								: this.reader.snapshot.symbolResolver.moduleImports.matchesImport(target, TEXT_FACTORY) ? TEXT_COMPONENT : undefined;
 					if (builtinFactory === undefined) { ownerUnchanged = false; continue; }
 					const module = this.reader.module(file, builtinFactory.constructor.module);
 					const constructor = fields.member(module, 'new'), factory = fields.member(module, 'factory');

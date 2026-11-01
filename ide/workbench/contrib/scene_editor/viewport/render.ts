@@ -13,14 +13,8 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 	if (view.camera.mode === '3d' && view.models.scene.instances.length > 0)
 		api.drawMeshScene(view.models.scene, bounds.left, bounds.top, bounds.right, bounds.bottom);
 	if (view.camera.mode === '2d') drawCanvas(view.canvas.items, 0xff000000);
-	if (view.camera.mode === '2d') for (const sprite of view.canvas.items) if (sprite.source.entry === view.selected) {
-		const outline = view.outline;
-		outline[0] = outline[8] = sprite.x; outline[1] = outline[9] = sprite.y;
-		outline[2] = sprite.x + sprite.xx; outline[3] = sprite.y + sprite.xy;
-		outline[4] = sprite.x + sprite.xx + sprite.yx; outline[5] = sprite.y + sprite.xy + sprite.yy;
-		outline[6] = sprite.x + sprite.yx; outline[7] = sprite.y + sprite.yy;
-		api.polyline(outline, 0, 0, 0, 1, colors.COLOR_FOCUS_BORDER);
-	}
+	if (view.camera.mode === '2d') for (const outline of view.canvas.outlines)
+		api.polyline(outline.points, 0, 0, 0, 1, colors.COLOR_FOCUS_BORDER);
 	for (let index = 0; index < view.entries.length; index++) {
 		if (view.entries[index] === view.selected && view.gizmo.world !== undefined) continue;
 		if (view.entries[index] !== view.selected && (view.camera.mode === '2d' ? view.canvas.represented : view.models.represented).has(view.entries[index])) continue;
@@ -80,7 +74,7 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 
 function drawCanvas<Owner>(items: readonly SceneViewportQuad<Owner>[], alpha: number): void {
 	for (const item of items) {
-		const color = ((item.source.color & 0x00ffffff) | alpha) >>> 0;
+		const color = ((item.color & 0x00ffffff) | alpha) >>> 0;
 		if (item.kind === 'sprite') api.drawBitmapAffine(item.bitmap, item.x, item.y, item.xx, item.xy, item.yx, item.yy,
 			item.u0, item.v0, item.u1, item.v1, color);
 		else api.fillQuadColor(item.x, item.y, item.xx, item.xy, item.yx, item.yy, color);
