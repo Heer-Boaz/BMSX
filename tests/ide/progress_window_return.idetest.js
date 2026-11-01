@@ -70,7 +70,8 @@ for (const mode of ['editor', 'group', 'drag']) {
 	}
 	// This is user-entered picker text, not an assertion freezing presentation wording.
 	if (mode !== 'drag') {
-		await type(mode === 'editor' ? 'main workspace' : 'merge main workspace'); await press('Enter'); await t.frames(4);
+		await type('main workspace'); await press('Enter'); await t.frames(2);
+		await type(mode === 'editor' ? 'into' : 'merge'); await press('Enter'); await t.frames(4);
 	}
 	const tabs = t.workbenchTabs();
 	t.assert(t.activeEditorGroup() === main && t.activeWorkbenchTab() === original && tabs.length === count
@@ -94,7 +95,8 @@ for (const font of ['tiny', 'msx']) {
 	for (const theme of ['light', 'dark']) {
 		const direction = font === 'tiny' ? 'right' : 'down', count = t.workbenchTabs().length;
 		await tabContext(original); await accept('window.moveEditor');
-		await type(`${direction} main workspace`);
+		await type('main workspace'); await press('Enter'); await t.frames(2);
+		await type(direction === 'down' ? 'below' : direction);
 		t.log(`VISUAL progress-move-split-${font}-${theme}-destination`); t.capture(`progress-move-split-${font}-${theme}-destination`);
 		await press('Enter'); await t.frames(4);
 		const receiver = t.activeEditorGroup();
@@ -105,7 +107,8 @@ for (const font of ['tiny', 'msx']) {
 			'splitting must preserve the other producer and transfer rather than duplicate the moved editor');
 		t.log(`VISUAL progress-move-split-${font}-${theme}-result`); t.capture(`progress-move-split-${font}-${theme}-result`);
 		await tabContext(original); await accept('window.moveEditor');
-		await type('main workspace group '); await press('Digit1'); await press('Enter'); await t.frames(4);
+		await type('main workspace group '); await press('Digit1'); await press('Enter'); await t.frames(2);
+		await type('into'); await press('Enter'); await t.frames(4);
 		t.assert(t.activeEditorGroup() === main && t.activeWorkbenchTab() === original && t.workbenchTabs().length === count,
 			'returning from a split must restore the same input to its original group without a duplicate');
 		for (const document of documents) t.assert(document.model.buffer.getText() === document.source

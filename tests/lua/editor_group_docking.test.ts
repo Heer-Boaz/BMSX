@@ -66,9 +66,21 @@ function openThird(f: Fixture, group: EditorGroupView): CodeEditorInput {
 	return input;
 }
 
-function chooseDestination(f: Fixture, choose: (destination: EditorMoveDestination) => boolean): void {
+function chooseDestination(f: Fixture, destination: 'new' | Extract<EditorMoveDestination, { kind: 'split' }>): void {
 	const picker = f.editor.quickInput;
-	const index = picker.model.list.rows.findIndex(row => choose((row.item as MoveItem).destination));
+	const targetIndex = picker.model.list.rows.findIndex(row => {
+		const target = (row.item as QuickPickItem & { target: Extract<EditorMoveDestination, { kind: 'group' | 'window' }> }).target;
+		return destination === 'new' ? target.kind === 'window' : target.kind === 'group' && target.group === destination.group;
+	});
+	assert.ok(targetIndex >= 0);
+	f.key('Home', KeyModifier.ctrl); for (let row = 0; row < targetIndex; row++) f.key('ArrowDown');
+	if (destination === 'new') return;
+	const groups = f.editor.editorParts.groups.length;
+	f.key('Enter'); assert.equal(picker.step?.index, 2); assert.equal(f.editor.editorParts.groups.length, groups);
+	const index = picker.model.list.rows.findIndex(row => {
+		const candidate = (row.item as MoveItem).destination;
+		return candidate.kind === 'split' && candidate.group === destination.group && candidate.direction === destination.direction;
+	});
 	assert.ok(index >= 0, 'the chooser retains the requested actual destination');
 	f.key('Home', KeyModifier.ctrl);
 	for (let row = 0; row < index; row++) f.key('ArrowDown');
@@ -157,11 +169,13 @@ test('Move Group chooser retains its invoking group and cancellation changes no 
 	source.focus(); const windows = [...parts.documents], groups = [...parts.groups], generation = source.panes.openGeneration;
 	f.editor.commands.execute('group.move', origin);
 	const picker = f.editor.quickInput; assert.equal(picker.visible, true); assert.ok(picker.invocationOrigin === origin);
+	chooseDestination(f, { kind: 'split', group: f.secondGroup, direction: 'left' });
 	for (const direction of ['left', 'right', 'up', 'down'] as const) assert.ok(picker.model.list.rows.some(row => {
 		const destination = (row.item as MoveItem).destination;
 		return destination.kind === 'split' && destination.group === f.secondGroup && destination.direction === direction;
 	}));
-	chooseDestination(f, destination => destination.kind === 'window'); f.key('Escape');
+	f.key('ArrowLeft', KeyModifier.alt); assert.equal(picker.step?.index, 1);
+	chooseDestination(f, 'new'); f.key('Escape');
 	assert.equal(picker.visible, false); assert.ok(inputFocus.target === origin);
 	assert.equal(parts.documents.length, windows.length); assert.ok(parts.documents.every((part, index) => part === windows[index]));
 	assert.ok(parts.groups.every((group, index) => group === groups[index])); assert.equal(source.panes.openGeneration, generation);
@@ -173,7 +187,7 @@ test('Move Group to a new window retains the complete Main group selection and p
 	const first = new CodeEditorInput(f.firstInput.workingCopy); source.openEditor(first);
 	const third = openThird(f, source); source.focus();
 	const windows = parts.documents.length, origin = source.panes.activePane!.commandTarget;
-	f.editor.commands.execute('group.move', origin); chooseDestination(f, destination => destination.kind === 'window'); f.key('Enter');
+	f.editor.commands.execute('group.move', origin); chooseDestination(f, 'new'); f.key('Enter');
 	const receiver = parts.findGroup(third);
 	assert.ok(receiver !== undefined && receiver !== source && parts.partForGroup(receiver).kind === 'document');
 	assert.ok(receiver.model.tabs[0] === first && receiver.model.tabs[1] === third && receiver.model.activeTab === third && receiver.model.previewTab === third);
@@ -188,7 +202,7 @@ test('Move Group chooser performs a same-part directional relocation rather than
 	const reference = parts.splitGroup(source, 'right'); assert.ok(reference); reference.openEditor(new CodeEditorInput(f.secondInput.workingCopy));
 	source.focus(); const scope = source.focusScope, generation = source.panes.openGeneration;
 	f.editor.commands.execute('group.move', source.panes.activePane!.commandTarget);
-	chooseDestination(f, destination => destination.kind === 'split' && destination.group === reference && destination.direction === 'down'); f.key('Enter');
+	chooseDestination(f, { kind: 'split', group: reference, direction: 'down' }); f.key('Enter');
 	assert.equal(parts.main.groups.length, 2); assert.ok(parts.partForGroup(source) === parts.main && source.focusScope === scope);
 	assert.ok(source.model.tabs[0] === first && source.model.tabs[1] === third && source.model.previewTab === third);
 	assert.equal(source.panes.openGeneration, generation); assert.equal(source.surface.retired, false); assert.equal(parts.documents.length, 2);

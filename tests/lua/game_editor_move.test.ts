@@ -26,13 +26,21 @@ function chooseDestination(f: ReturnType<typeof fixture>, destination: EditorGro
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true);
 	const index = picker.model.list.rows.findIndex(row => {
-		const candidate = (row.item as typeof row.item & { destination: EditorMoveDestination }).destination;
+		const candidate = (row.item as typeof row.item & { target: Extract<EditorMoveDestination, { kind: 'group' | 'window' }> }).target;
 		return destination === 'new' ? candidate.kind === 'window' : candidate.kind === 'group' && candidate.group === destination;
 	});
 	assert.ok(index >= 0, 'the chooser admits the actual destination owner');
 	f.key('Home', KeyModifier.ctrl);
 	for (let row = 0; row < index; row++) f.key('ArrowDown');
 	f.key('Enter');
+	if (destination === 'new') return;
+	assert.equal(picker.step?.index, 2);
+	const placement = picker.model.list.rows.findIndex(row => {
+		const candidate = (row.item as typeof row.item & { destination: EditorMoveDestination }).destination;
+		return candidate.kind === 'group' && candidate.group === destination;
+	});
+	assert.ok(placement >= 0);
+	f.key('Home', KeyModifier.ctrl); for (let row = 0; row < placement; row++) f.key('ArrowDown'); f.key('Enter');
 }
 
 test('Move Game opens the same input in a new Part with fresh chrome focus, not guest authority', t => {

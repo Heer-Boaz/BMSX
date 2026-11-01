@@ -131,10 +131,16 @@ test('Palette view-copy and move commands retain the strip focused editor rather
 	assert.ok(f.group.model.activeTab === f.firstInput && f.group.panes.activePane === pane);
 	f.editor.commands.execute('group.focusTabs', f.group.tabFocusTarget); f.key('ArrowRight');
 	palette(f, 'window.moveEditor'); const picker = f.editor.quickInput; assert.equal(picker.visible, true);
-	type Item = QuickPickItem & { readonly destination: EditorMoveDestination };
-	const index = picker.model.list.rows.findIndex(row => { const destination = (row.item as Item).destination;
+	type Item = QuickPickItem & { readonly target: Extract<EditorMoveDestination, { kind: 'group' | 'window' }> };
+	const index = picker.model.list.rows.findIndex(row => { const destination = (row.item as Item).target;
 		return destination.kind === 'group' && destination.group === parts.main.activeGroup; });
 	assert.ok(index >= 0); f.key('Home', KeyModifier.ctrl); for (let row = 0; row < index; row++) f.key('ArrowDown'); f.key('Enter');
+	assert.equal(picker.step?.index, 2); assert.ok(f.group.model.contains(f.secondSource));
+	const placement = picker.model.list.rows.findIndex(row => {
+		const destination = (row.item as QuickPickItem & { destination: EditorMoveDestination }).destination;
+		return destination.kind === 'group' && destination.group === parts.main.activeGroup;
+	});
+	assert.ok(placement >= 0); f.key('Home', KeyModifier.ctrl); for (let row = 0; row < placement; row++) f.key('ArrowDown'); f.key('Enter');
 	assert.ok(parts.findGroup(f.secondSource) === parts.main.activeGroup);
 	assert.ok(f.group.model.activeTab === f.firstInput && f.group.panes.activePane === pane);
 });

@@ -16,15 +16,35 @@ type Fixture = ReturnType<typeof createActualSourcePanes>;
 
 function selectDestination(f: Fixture, destination: EditorGroupView | 'new' | Extract<EditorMoveDestination, { kind: 'split' }>): number {
 	const picker = f.editor.quickInput;
+	if (picker.step?.index === 1) {
+		const target = selectTarget(f, destination === 'new' ? 'new' : 'kind' in destination ? destination.group : destination);
+		if (destination === 'new') return target;
+		const groups = f.editor.editorParts.groups.length, windows = f.editor.editorParts.documents.length;
+		f.key('Enter');
+		assert.equal(picker.step?.index, 2);
+		assert.equal(f.editor.editorParts.groups.length, groups); assert.equal(f.editor.editorParts.documents.length, windows);
+	}
 	const index = picker.model.list.rows.findIndex(row => {
 		const candidate = (row.item as typeof row.item & { destination: EditorMoveDestination }).destination;
-		return destination === 'new' ? candidate.kind === 'window'
-			: 'kind' in destination ? candidate.kind === 'split' && candidate.group === destination.group && candidate.direction === destination.direction
-				: candidate.kind === 'group' && candidate.group === destination;
+		return destination !== 'new' && ('kind' in destination ? candidate.kind === 'split' && candidate.group === destination.group && candidate.direction === destination.direction
+				: candidate.kind === 'group' && candidate.group === destination);
 	});
 	assert.ok(index >= 0, 'the actual destination owner is admitted by the move chooser');
 	f.key('Home', KeyModifier.ctrl);
 	for (let row = 0; row < index; row++) f.key('ArrowDown');
+	assert.equal(picker.model.list.selectionIndex, index);
+	return index;
+}
+
+function selectTarget(f: Fixture, target: EditorGroupView | 'new'): number {
+	const picker = f.editor.quickInput;
+	assert.equal(picker.step?.index, 1);
+	const index = picker.model.list.rows.findIndex(row => {
+		const candidate = (row.item as typeof row.item & { target: Extract<EditorMoveDestination, { kind: 'group' | 'window' }> }).target;
+		return target === 'new' ? candidate.kind === 'window' : candidate.kind === 'group' && candidate.group === target;
+	});
+	assert.ok(index >= 0, 'the target stage contains the actual receiving owner');
+	f.key('Home', KeyModifier.ctrl); for (let row = 0; row < index; row++) f.key('ArrowDown');
 	assert.equal(picker.model.list.selectionIndex, index);
 	return index;
 }
@@ -90,10 +110,12 @@ for (const sameGroup of [true, false]) for (const direction of ['left', 'right',
 		const count = parts.documents.length, groupCount = destinationPart.groups.length, cycles = f.host.runtime.machine.scheduler.nowCycles;
 		const copy = t.mock.method(input, 'createView'); let disposed = 0; input.onWillDispose(() => { disposed++; });
 		f.editor.commands.execute('window.moveEditor', f.first.commandTarget);
+		selectDestination(f, { kind: 'split', group: reference, direction });
 		for (const available of ['left', 'right', 'up', 'down'] as const) assert.ok(f.editor.quickInput.model.list.rows.some(row => {
 			const destination = (row.item as typeof row.item & { destination: EditorMoveDestination }).destination;
 			return destination.kind === 'split' && destination.group === reference && destination.direction === available;
 		}));
+		f.key('ArrowLeft', KeyModifier.alt); assert.equal(f.editor.quickInput.step?.index, 1);
 		selectDestination(f, { kind: 'split', group: reference, direction }); f.key('Enter');
 		const receiver = parts.findGroup(input); assert.ok(receiver !== undefined && receiver !== reference && receiver !== source);
 		assert.ok(parts.partForGroup(receiver) === destinationPart && destinationPart.arrangement.isNeighbor(reference, receiver, direction));
@@ -143,14 +165,20 @@ test('a split destination entering close admission after the chooser snapshot ca
 	f.secondPart.actionPrompt.close('cancel', false); assert.equal(await close, false);
 });
 
-test('a chooser row commits on matching pointer release and can move Source into the permanent Main part', t => {
+test('target pointer release opens placement, whose own matching release moves Source into permanent Main', t => {
 	const f = createActualSourcePanes(t), parts = f.editor.editorParts, input = f.firstInput;
 	f.first.focus(); f.editor.commands.execute('window.moveEditor', f.first.commandTarget);
-	const row = selectDestination(f, parts.main.activeGroup), count = parts.documents.length;
+	const row = selectTarget(f, parts.main.activeGroup), count = parts.documents.length;
 	pointerRow(f, row, true);
 	assert.equal(f.editor.quickInput.visible, true); assert.ok(f.firstGroup.model.activeTab === input);
 	assert.ok(parts.main.activeGroup.model.activeTab !== input);
 	pointerRow(f, row, false);
+	assert.equal(f.editor.quickInput.visible, true); assert.equal(f.editor.quickInput.step?.index, 2);
+	assert.ok(f.firstGroup.model.activeTab === input && parts.main.activeGroup.model.activeTab !== input);
+	const placement = selectDestination(f, parts.main.activeGroup);
+	pointerRow(f, placement, true);
+	assert.ok(f.firstGroup.model.activeTab === input);
+	pointerRow(f, placement, false);
 	assert.equal(f.editor.quickInput.visible, false); assert.ok(parts.activePart === parts.main);
 	assert.ok(parts.main.activeGroup.model.activeTab === input && parts.main.activeGroup.panes.activePane!.input === input);
 	assert.ok(f.firstGroup.model.findById(input.id) === undefined); assert.equal(parts.documents.length, count);

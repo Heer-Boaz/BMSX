@@ -28,6 +28,7 @@ export type QuickInputOptions = {
 	readonly invocationOrigin?: InputFocusTarget | null;
 	/** Workspace-command addressing, independent of local query editing and focus return. */
 	readonly commandTarget?: InputFocusTarget;
+	readonly step?: { readonly index: number; readonly total: number; readonly back?: () => void };
 };
 
 type QuickInputSession = {
@@ -38,6 +39,7 @@ type QuickInputSession = {
 	contextAdmitted: boolean;
 	unbindOrigin: (() => void) | undefined;
 	readonly accept: (modifiers: KeyModifier) => void | Promise<void>;
+	readonly step: QuickInputOptions['step'];
 	prepare: (() => void) | undefined;
 } & ({ readonly kind: 'pick'; state: 'preparing' | 'loading' | 'ready' | 'error' } | { readonly kind: 'input' });
 
@@ -52,7 +54,8 @@ export class QuickInputController implements PointerCaptureTarget {
 	public readonly model = new QuickPickModel();
 	public readonly textViewport = new SingleLineFieldViewport();
 	public readonly layout = {
-		bounds: create_rect_bounds(), field: create_rect_bounds(),
+		bounds: create_rect_bounds(), field: create_rect_bounds(), back: create_rect_bounds(),
+		revision: 0, titleLeft: 0, stepLeft: 0, stepWidth: 0, stepText: '',
 		left: 0, top: 0, width: -1, height: -1, font: null as object | null,
 		projectionRevision: -1, textRevision: 0, preparedStart: -1, preparedEnd: -1,
 		renderRows: [] as QuickPickRenderRow[],
@@ -64,13 +67,17 @@ export class QuickInputController implements PointerCaptureTarget {
 	public placeholderText = '';
 	public message = '';
 	public labelsDirty = true;
+	public backHovered = false;
 	private session: QuickInputSession | null = null;
 	private retiringSession: QuickInputSession | null = null;
 	private disposed = false;
 	private readonly scrollbarPointer = new ScrollbarPointerControl(pointerCapture, this.pointerScope);
 	private pressedRow: QuickPickMatch | undefined;
+	private pressedBack: QuickInputSession | undefined;
+	private backRevision = 0;
 	private pointerRevision = 0;
 	private readonly unbindKeyboard: () => void;
+	private readonly backCommand = { isEnabled: () => this.step?.back !== undefined, run: () => this.back() };
 	private readonly presentForFocus = (): void => {
 		const session = this.session!;
 		if (this.presentation.kind === 'part') this.presentation.reveal();
@@ -111,6 +118,8 @@ export class QuickInputController implements PointerCaptureTarget {
 	public get invocationOrigin(): InputFocusTarget | null { return this.session!.origin; }
 	public get inputBox(): boolean { return this.session?.kind === 'input'; }
 	public get failed(): boolean { return this.session?.kind === 'pick' && this.session.state === 'error'; }
+	public get step(): QuickInputOptions['step'] { return this.session?.step; }
+	public get backPressed(): boolean { return this.pressedBack !== undefined; }
 	public get busy(): boolean {
 		return this.session?.kind === 'pick' ? this.session.state === 'preparing' || this.session.state === 'loading'
 			: this.session?.kind === 'input' && this.field.readOnly;
@@ -127,7 +136,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		const { invocationOrigin } = options;
 		let provider: QuickPickProvider<T>;
 		const session: QuickInputSession & { readonly kind: 'pick' } = {
-			kind: 'pick', state: 'preparing', origin: null, returnFocus: null, interactionOrigin: undefined, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
+			kind: 'pick', state: 'preparing', step: options.step, origin: null, returnFocus: null, interactionOrigin: undefined, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
 			prepare: () => {
 				// Catalogs observe the invoking control after ordinary blur has published
 				// its draft, before native focus sees the new field presentation.
@@ -153,18 +162,7 @@ export class QuickInputController implements PointerCaptureTarget {
 				const list = this.model.list;
 				if (list.selectionIndex === -1) return; // A real user choice is required.
 				const item = provider.items[list.rows[list.selectionIndex].itemIndex];
-				const returnFocus = inputFocus.resolveTarget(session.returnFocus);
-				try {
-					this.retireSession(true, true);
-					session.disposables.dispose();
-					// A return-focus observer may have chosen a newer foreground before
-					// an editor-opening callback starts its own lifetime.
-					const preserveFocus = inputFocus.admittedTarget !== returnFocus;
-					if (session.contextAdmitted) accept(item, modifiers, preserveFocus);
-				} finally {
-					session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
-					if (this.retiringSession === session) this.retiringSession = null;
-				}
+				this.finishHandoff(session, preserveFocus => accept(item, modifiers, preserveFocus));
 			},
 		};
 		const admitProvider = (supplied: QuickPickProvider<T>): void => {
@@ -219,7 +217,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		options: QuickInputOptions = {},
 	): void {
 		const session: QuickInputSession = {
-			kind: 'input', origin: null, returnFocus: null, interactionOrigin: undefined, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
+			kind: 'input', step: options.step, origin: null, returnFocus: null, interactionOrigin: undefined, disposables: new DisposableStore(), contextAdmitted: true, unbindOrigin: undefined,
 			prepare: () => {
 				this.title = title;
 				this.placeholder = placeholder;
@@ -290,6 +288,8 @@ export class QuickInputController implements PointerCaptureTarget {
 		session.returnFocus = returnFocus;
 		session.interactionOrigin = interactionOrigin;
 		this.session = session;
+		if (session.step?.back === undefined) this.field.focusTarget.unregisterCommand('navigateBack');
+		else this.field.focusTarget.registerCommand('navigateBack', this.backCommand);
 		this.field.focusTarget.commandContext = options.commandTarget === undefined ? this.field.focusTarget : options.commandTarget;
 		this.field.focusTarget.scope.interactionOrigin = interactionOrigin;
 		const originScope = origin === null ? this.presentation.scope : origin.commandContext.scope;
@@ -351,6 +351,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		const session = this.session;
 		if (session === null) return;
 		this.session = null;
+		this.field.focusTarget.unregisterCommand('navigateBack');
 		this.field.focusTarget.commandContext = this.field.focusTarget;
 		this.field.focusTarget.scope.interactionOrigin = undefined;
 		if (!handoff) { session.contextAdmitted = false; session.unbindOrigin?.(); }
@@ -370,9 +371,29 @@ export class QuickInputController implements PointerCaptureTarget {
 		return this.session!.accept(modifiers);
 	}
 
+	/** Acceptance and Back share the origin lease through disposal and focus return. */
+	private finishHandoff(session: QuickInputSession, action: (preserveFocus: boolean) => void): void {
+		const returnFocus = inputFocus.resolveTarget(session.returnFocus);
+		try {
+			this.retireSession(true, true);
+			session.disposables.dispose();
+			if (session.contextAdmitted) action(inputFocus.admittedTarget !== returnFocus);
+		} finally {
+			session.contextAdmitted = false; session.unbindOrigin?.(); session.disposables.dispose();
+			if (this.retiringSession === session) this.retiringSession = null;
+		}
+	}
+
+	public back(): void {
+		const session = this.session, back = session?.step?.back;
+		if (back === undefined) return;
+		this.finishHandoff(session!, preserveFocus => { if (!preserveFocus) back(); });
+	}
+
 	public update(): void {
 		if (!this.visible) return;
 		layoutQuickInput(this);
+		if (this.pressedBack !== undefined && (this.pressedBack !== this.session || this.backRevision !== this.layout.revision)) this.cancelPointer();
 		if (this.pressedRow !== undefined && this.pointerRevision !== this.model.viewport.revision) this.cancelPointer();
 		this.textViewport.layout(this.field, this.layout.field, editorViewState.inlineFieldMetricsRef, editorViewState.font, this.layout.bounds);
 	}
@@ -387,6 +408,11 @@ export class QuickInputController implements PointerCaptureTarget {
 	}
 
 	private handleKeyboard(input: KeyInputEvent): void {
+		if (this.field.focusTarget.getCommand('navigateBack') !== undefined && input.modifiers === KeyModifier.alt && isKeyJustPressed('ArrowLeft', input)) {
+			consumeIdeKey('ArrowLeft', input);
+			inputFocus.executeCommand('navigateBack', this.field.focusTarget);
+			return;
+		}
 		if (isKeyJustPressed('Escape', input)) {
 			consumeIdeKey('Escape', input);
 			this.hide();
@@ -421,7 +447,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		applyInlineFieldEditing(input, this.field);
 	}
 
-	public onPointerLeave(): void { this.model.list.hoverIndex = -1; }
+	public onPointerLeave(): void { this.model.list.hoverIndex = -1; this.backHovered = false; }
 
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): void {
 		this.update();
@@ -432,6 +458,18 @@ export class QuickInputController implements PointerCaptureTarget {
 			if (this.session !== session) return;
 		}
 		this.model.list.hoverIndex = -1;
+		this.backHovered = this.step?.back !== undefined && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.back);
+		if (this.backHovered) {
+			pointerHover.visit(this);
+			if (justPressed && (snapshot.justPressedButtons & PointerButton.Primary) !== 0) {
+				const session = this.session!;
+				pointerCapture.capture(this, PointerButton.Primary, this.pointerScope);
+				if (this.session !== session) { pointerCapture.release(this); return; }
+				this.pressedBack = session; this.backRevision = this.layout.revision;
+				if ((snapshot.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(snapshot);
+			}
+			return;
+		}
 		if (!this.inputBox && this.scrollbarPointer.handlePointer(snapshot, this.model.viewport.scrollbar)) { pointerHover.release(this); return; }
 		if (this.field.pointerSelecting || point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.field)) {
 			this.pointer.textLeft = this.layout.field.left + 3 - this.textViewport.offset;
@@ -469,10 +507,16 @@ export class QuickInputController implements PointerCaptureTarget {
 	public cancelPointer(): void {
 		pointerCapture.release(this);
 		this.pressedRow = undefined;
+		this.pressedBack = undefined;
 	}
 
 	public handleCapturedPointer(snapshot: PointerInputSnapshot): void {
 		this.update();
+		if (this.pressedBack !== undefined) {
+			this.backHovered = snapshot.valid && snapshot.insideViewport && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.back);
+			if (this.backHovered) pointerHover.visit(this); else pointerHover.release(this);
+			return;
+		}
 		const index = this.model.rowIndexAtPosition(snapshot.viewportX, snapshot.viewportY);
 		this.model.list.hoverIndex = index;
 		if (index >= 0) pointerHover.visit(this);
@@ -481,9 +525,12 @@ export class QuickInputController implements PointerCaptureTarget {
 
 	public releaseCapturedPointer(snapshot: PointerInputSnapshot): void {
 		this.handleCapturedPointer(snapshot);
+		const back = this.pressedBack;
+		const commitBack = back === this.session && this.backHovered && (snapshot.justReleasedButtons & PointerButton.Primary) !== 0;
 		const row = this.pressedRow;
 		const index = this.model.rowIndexAtPosition(snapshot.viewportX, snapshot.viewportY);
 		this.cancelPointer();
+		if (back !== undefined) { if (commitBack) this.back(); return; }
 		if (row !== undefined && index >= 0 && this.model.list.rows[index] === row) {
 			this.model.list.selectionIndex = index;
 			this.accept(snapshot.modifiers);

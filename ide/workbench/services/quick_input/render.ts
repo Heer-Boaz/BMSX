@@ -2,10 +2,12 @@ import { drawQuickPickRows, layoutQuickPickRows } from './list_render';
 import { write_rect_bounds } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
-import { truncateTextToWidth, writeWrappedOverlayLine } from '../../../editor/common/text/layout';
+import { measureText, truncateTextToWidth, writeWrappedOverlayLine } from '../../../editor/common/text/layout';
 import { drawSingleLineField } from '../../../editor/ui/inline/single_line_render';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { QuickInputController } from './controller';
+import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
+import { drawWorkbenchIcon } from '../../render/icon';
 
 /** Pickers and input boxes share a workbench surface, not a code-editor bar. */
 export function layoutQuickInput(input: QuickInputController): void {
@@ -19,6 +21,7 @@ export function layoutQuickInput(input: QuickInputController): void {
 	const layoutChanged = labelsChanged || layout.projectionRevision !== model.revision
 		|| layout.height !== height || layout.left !== area.left || layout.top !== area.top;
 	if (layoutChanged) {
+		layout.revision++;
 		layout.left = area.left; layout.top = area.top;
 		layout.width = width;
 		layout.height = height;
@@ -27,12 +30,19 @@ export function layoutQuickInput(input: QuickInputController): void {
 		const left = area.left + 8;
 		const right = area.right - 8;
 		const top = area.top + 4;
-		const fieldTop = top + view.lineHeight + 6;
+		const back = input.step?.back !== undefined, titleHeight = back ? Math.max(view.lineHeight, WORKBENCH_ICON_SIZE) : view.lineHeight;
+		const backSize = titleHeight + 4;
+		write_rect_bounds(layout.back, left + 2, top + 1, left + 2 + (back ? backSize : 0), top + 1 + (back ? backSize : 0));
+		layout.titleLeft = back ? layout.back.right + 4 : left + 4;
+		const fieldTop = top + titleHeight + 6;
 		const fieldBottom = fieldTop + view.lineHeight + 4;
 		const rowsTop = fieldBottom + 4;
 		write_rect_bounds(layout.field, left + 4, fieldTop, right - 4, fieldBottom);
 		if (labelsChanged) {
-			input.titleText = truncateTextToWidth(input.title, right - left - 8);
+			const step = input.step;
+			layout.stepText = step === undefined ? '' : truncateTextToWidth(`${step.index}/${step.total}`, right - layout.titleLeft - 4);
+			layout.stepWidth = measureText(layout.stepText);
+			input.titleText = truncateTextToWidth(input.title, right - 4 - layout.titleLeft - (step === undefined ? 0 : layout.stepWidth + 4));
 			input.placeholderText = truncateTextToWidth(input.placeholder, right - left - 14);
 			layout.messageLines.length = 0;
 			if (input.failed) layout.messageLines.push('FAILED');
@@ -43,6 +53,7 @@ export function layoutQuickInput(input: QuickInputController): void {
 			layout.textRevision += 1;
 			input.labelsDirty = false;
 		}
+		layout.stepLeft = right - 4 - layout.stepWidth;
 		if (input.inputBox || input.busy || input.failed) {
 			model.viewport.layout(left + 4, rowsTop, right - 4, rowsTop, 0);
 			write_rect_bounds(layout.bounds, left, top, right,
@@ -62,12 +73,25 @@ export function layoutQuickInput(input: QuickInputController): void {
 }
 
 export function drawQuickInput(input: QuickInputController): void {
-	const { bounds, field } = input.layout;
+	const { bounds, field, back } = input.layout;
 	const font = editorViewState.font.renderFont();
 	const color = constants.COLOR_QUICK_OPEN_TEXT;
+	const step = input.step;
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_QUICK_OPEN_BACKGROUND);
 	api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, constants.COLOR_QUICK_OPEN_OUTLINE);
-	api.blit_text_inline_with_font(input.titleText, bounds.left + 4, bounds.top + 3, 0, color, font);
+	if (step !== undefined) api.pushClipRect(bounds.left + 2, bounds.top + 1, bounds.right - 2, field.top - 1);
+	if (step?.back !== undefined) {
+		const pressed = input.backPressed && input.backHovered;
+		if (input.backHovered) api.fill_rect(back.left, back.top, back.right, back.bottom, 0,
+			pressed ? constants.COLOR_HEADER_BUTTON_PRESSED_BACKGROUND : constants.COLOR_QUICK_OPEN_HOVER_BACKGROUND);
+		drawWorkbenchIcon('back', back.left + Math.trunc((back.right - back.left - WORKBENCH_ICON_SIZE) / 2),
+			back.top + Math.trunc((back.bottom - back.top - WORKBENCH_ICON_SIZE) / 2), pressed ? constants.COLOR_HEADER_BUTTON_PRESSED_TEXT : color);
+	}
+	api.blit_text_inline_with_font(input.titleText, input.layout.titleLeft, bounds.top + 3, 0, color, font);
+	if (step !== undefined) {
+		api.blit_text_inline_with_font(input.layout.stepText, input.layout.stepLeft, bounds.top + 3, 0, color, font);
+		api.popClipRect();
+	}
 	api.fill_rect(field.left, field.top, field.right, field.bottom, 0, constants.COLOR_INPUT_BACKGROUND);
 	api.blit_rect(field.left, field.top, field.right, field.bottom, 0, constants.COLOR_QUICK_OPEN_OUTLINE);
 	if (input.field.text.length === 0) {

@@ -12,7 +12,8 @@ import type { EditorMoveDestination } from '../../ide/workbench/services/editor/
 import type { QuickPickItem } from '../../ide/workbench/services/quick_input/provider';
 import { createActualSourcePanes } from '../helpers/source_panes';
 
-type NavigationItem = QuickPickItem & { input?: EditorInput; window?: WorkbenchFloatingWindow; destination?: EditorMoveDestination };
+type NavigationItem = QuickPickItem & { input?: EditorInput; window?: WorkbenchFloatingWindow;
+	target?: Extract<EditorMoveDestination, { kind: 'group' | 'window' }>; destination?: EditorMoveDestination };
 
 /** Selection is delivered through the real picker; predicates identify retained data, not labels. */
 function choose(f: ReturnType<typeof createActualSourcePanes>, wanted: (item: NavigationItem) => boolean): void {
@@ -48,11 +49,17 @@ for (const route of ['editors', 'group', 'windows', 'minimized', 'moveEditor', '
 				showMoveDestination(parts, picker, route === 'moveEditor'
 					? { kind: 'editor', model: f.firstGroup.model, input: f.firstInput }
 					: { kind: 'group', model: f.firstGroup.model }, f.firstGroup.panes.activePane!.commandTarget);
-				wanted = item => item.destination?.kind === 'group' && item.destination.group === f.secondGroup; break;
+				wanted = item => item.target?.kind === 'group' && item.target.group === f.secondGroup; break;
 		}
 		assert.equal(picker.visible, true);
 		if (newerForeground) t.after(picker.field.focusTarget.onDidBlur(() => foreign.activeGroup.focus()));
 		choose(f, wanted);
+		if (!newerForeground && (route === 'moveEditor' || route === 'moveGroup')) {
+			assert.equal(picker.step?.index, 2);
+			assert.ok(f.firstGroup.model.contains(f.firstInput) && f.secondGroup.model.activeTab === f.secondInput);
+			assert.equal(parts.documents.length, count);
+			choose(f, item => item.destination?.kind === 'group' && item.destination.group === f.secondGroup);
+		}
 		assert.equal(picker.visible, false);
 		if (newerForeground) {
 			assert.ok(parts.activePart === foreign && inputFocus.target !== null && foreign.scope.contains(inputFocus.target.scope),

@@ -103,14 +103,21 @@ test('Move Editor retains the inactive clicked Source throughout the chooser and
 	secondary(f, group, input); accept(f, 'window.moveEditor');
 	const picker = f.editor.quickInput;
 	assert.equal(picker.visible, true); assert.ok(group.model.activeTab === active && group.panes.activePane === pane);
-	type Item = QuickPickItem & { readonly destination: EditorMoveDestination };
+	type Item = QuickPickItem & { readonly target: Extract<EditorMoveDestination, { kind: 'group' | 'window' }> };
 	const index = picker.model.list.rows.findIndex(row => {
-		const destination = (row.item as Item).destination;
+		const destination = (row.item as Item).target;
 		return destination.kind === 'group' && destination.group === f.secondGroup;
 	});
 	assert.ok(index >= 0); f.key('Home', KeyModifier.ctrl);
 	for (let row = 0; row < index; row++) f.key('ArrowDown');
 	f.key('Enter');
+	assert.equal(picker.step?.index, 2); assert.ok(group.model.contains(input) && group.model.activeTab === active && group.panes.activePane === pane);
+	const placement = picker.model.list.rows.findIndex(row => {
+		const destination = (row.item as QuickPickItem & { destination: EditorMoveDestination }).destination;
+		return destination.kind === 'group' && destination.group === f.secondGroup;
+	});
+	assert.ok(placement >= 0); f.key('Home', KeyModifier.ctrl);
+	for (let row = 0; row < placement; row++) f.key('ArrowDown'); f.key('Enter');
 	assert.equal(picker.visible, false); assert.ok(parts.findGroup(input) === f.secondGroup);
 	assert.ok(f.secondGroup.model.activeTab === input && f.secondGroup.panes.activePane?.input === input);
 	assert.ok(group.model.activeTab === active && group.panes.activePane === pane);

@@ -52,8 +52,10 @@ t.assert(t.activeWorkbenchTab() === view && !t.activeEditorDocument().focusTarge
 
 // Select the explicit empty receiving group through the ordinary move chooser.
 // The text is user input, not a wording assertion or a private picker/model write.
-t.command('group.move'); await t.frames(2); await type('merge group 2');
+t.command('group.move'); await t.frames(2); await type('group 2');
 await capture('workspace-group-move-chooser');
+await press('Enter'); await type('merge');
+await capture('workspace-group-move-placement');
 await press('Enter'); await t.frames(3);
 t.assert(t.activeWorkbenchTab() === view && t.workbenchTabs().length === 1 && view.workingCopy === director.model,
 	'whole-group docking lost the receiving view or canonical document');

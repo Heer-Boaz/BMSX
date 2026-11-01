@@ -63,7 +63,8 @@ t.command('window.copyEditor'); await t.frames(3);
 const copy = t.activeWorkbenchTab();
 t.assert(copy !== input && copy.resource === input.resource && copy.preview.bitmap !== bitmap && copy.preview.view !== input.preview.view,
 	'a new resource window must retain an independent view over the same admitted source');
-t.command('window.moveEditor'); await t.frames(2); await type('main workspace'); await press('Enter'); await t.frames(4);
+t.command('window.moveEditor'); await t.frames(2); await type('main workspace'); await press('Enter'); await t.frames(2);
+await type('into'); await press('Enter'); await t.frames(4);
 t.assert(t.activeEditorGroup() === group && t.activeWorkbenchTab() === input, 'returning the resource window must reveal its retained matching editor');
 unchanged();
 for (let index = 0; index < t.logMessageCount(); index++)

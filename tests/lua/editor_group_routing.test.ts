@@ -8,6 +8,7 @@ import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 import { ValueInput } from '../../ide/editor/ui/inline/value_input';
 import { inputFocus } from '../../ide/input/focus';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
+import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
 import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { NodeGraphLayoutEngine } from '../../ide/node/graph_layout';
 import type { FileElement } from '../../ide/workbench/contrib/resources/panel/files_model';
@@ -53,37 +54,42 @@ function fixture(t: TestContext) {
 	return { ...f, parts, resource, definitions, activate };
 }
 
-test('all authored kinds open in the chosen Main group without creating a floating host', t => {
+test('authored documents use the chosen Main group while Scene retains its independent primary', t => {
 	const f = fixture(t), main = f.parts.main, group = main.activeGroup;
 	const cycles = f.host.runtime.machine.scheduler.nowCycles;
 	assert.deepEqual(new Set(f.definitions.map(node => node.element.content.kind)),
 		new Set(['scene', 'behavior_tree', 'state_machine', 'action_effect', 'progression', 'input', 'animation']));
 	for (const node of f.definitions) {
+		const prior = [...group.model.tabs];
 		assert.ok(f.activate(node) === group, 'normal authored opening stays in its chosen group');
-		const input = group.model.activeTab!;
-		assert.equal(input.resource, node.element.content.ownerResource);
+		if (node.element.content.kind === 'scene') {
+			const client = f.editor.mainWorkspace.primary; assert.ok(client instanceof ScenePrimaryClient);
+			assert.equal(client.consumer.workingCopy.resource, node.element.content.ownerResource);
+			assert.deepEqual(group.model.tabs, prior);
+		} else assert.equal(group.model.activeTab!.resource, node.element.content.ownerResource);
 		assert.equal(f.parts.documents.length, 0);
 		assert.ok(f.parts.activePart === main);
 	}
-	assert.equal(group.model.tabs.length, 7);
+	assert.equal(group.model.tabs.length, f.definitions.filter(node => node.element.content.kind !== 'scene').length);
 	assert.equal(f.host.runtime.machine.scheduler.nowCycles, cycles);
 });
 
-test('Source, Scene and tool commands use their invoking split rather than a kind-specific container', async t => {
+test('opening Scene preserves its invoking Source split and later tool navigation uses that retained document anchor', async t => {
 	const f = fixture(t), main = f.parts.main, first = main.activeGroup;
 	const side = f.parts.splitGroup(first, 'right'); assert.ok(side);
 	side.openEditor(resolveLuaCodeEditorInput(f.sources.catalog, f.resource)); f.update();
 	const source = side.model.activeTab!, sourceControl = side.panes.activePane!;
 	f.editor.commands.execute('sceneEditor', sourceControl.commandTarget); f.update();
+	assert.equal(f.editor.quickInput.visible, true); f.key('Enter');
 	assert.ok(f.parts.activeGroup === side);
-	assert.equal(side.model.activeTab?.kind, 'scene_editor');
-	assert.ok(side.model.tabs.includes(source));
+	const scene = f.editor.mainWorkspace.primary; assert.ok(scene instanceof ScenePrimaryClient);
+	assert.ok(side.model.activeTab === source && side.panes.activePane === sourceControl);
 	assert.equal(first.model.tabs.length, 0); assert.equal(f.parts.documents.length, 0);
-	const scene = side.model.activeTab!, sceneControl = side.panes.activePane!;
-	f.editor.commands.execute('animation', sceneControl.commandTarget);
+	f.editor.commands.execute('animation', scene.commandTarget);
 	assert.equal(main.quickInput.visible, true); assert.ok(f.parts.activeGroup === side);
 	f.key('Escape');
-	assert.ok(side.model.activeTab === scene); assert.ok(side.panes.activePane === sceneControl);
+	assert.ok(side.model.activeTab === source && side.panes.activePane === sourceControl);
+	assert.equal(f.editor.mainWorkspace.primary, scene);
 	assert.equal(f.parts.documents.length, 0);
 });
 
