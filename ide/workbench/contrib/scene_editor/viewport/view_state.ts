@@ -1,8 +1,10 @@
 import { create_rect_bounds, copy_rect_bounds, type RectBounds } from '../../../../../machine/ts/common/rect';
-import type { SceneAuthoringContext } from '../authoring_context';
+import type { Affine2 } from '../../../../common/affine2';
+import type { SceneAddMemberChoice, SceneAuthoringContext } from '../authoring_context';
 import type { SceneSourceObject } from '../model';
 import type { SceneSpatialReadModel } from '../spatial_projection';
 import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
+import { WorkspaceImageAssets } from '../../../../workspace/image_assets';
 import { SceneViewportCamera } from './camera';
 import { SceneViewportSprites } from './sprites';
 import { SceneViewportModels, type SceneViewportModelBounds } from './models';
@@ -10,7 +12,13 @@ import type { SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
 import { SceneTranslationGizmo } from './translate_gizmo';
 
-export type SceneViewportPlacement = { readonly definitionLabel: string; x: number; y: number; located: boolean };
+export type SceneMemberPlacementPreview = SceneTransformPreview<SceneAddMemberChoice> & {
+	readonly visuals: SceneVisualReadModel<SceneAddMemberChoice>;
+	readonly world: Affine2 & { readonly family: '2d' };
+	revision: number;
+};
+export type SceneViewportPlacement = { readonly definitionLabel: string; readonly preview: SceneMemberPlacementPreview | undefined;
+	x: number; y: number; located: boolean };
 
 export const SCENE_VIEWPORT_POINT_STRIDE = 8;
 const AXIS_UNIT_PIXELS = 16;
@@ -20,7 +28,9 @@ export class SceneViewportViewState {
 	public readonly camera = new SceneViewportCamera();
 	public readonly gizmo = new SceneTranslationGizmo();
 	public transformPreview: SceneTransformPreview | undefined;
+	public placementPreview: SceneMemberPlacementPreview | undefined;
 	public readonly sprites: SceneViewportSprites;
+	public readonly placementSprites: SceneViewportSprites<SceneAddMemberChoice>;
 	public readonly models: SceneViewportModels;
 	public readonly bounds = create_rect_bounds();
 	public readonly entries: SceneSourceObject[] = [];
@@ -51,8 +61,14 @@ export class SceneViewportViewState {
 	private sourceMode: '2d' | '3d' | undefined;
 	private readonly listeners = new Set<() => void>();
 	private readonly unbindCamera: () => void;
+	private readonly images: WorkspaceImageAssets;
+	private readonly imageIds = new Set<string>();
+	private imageSource: SceneVisualReadModel | undefined;
+	private placementSource: SceneVisualReadModel<SceneAddMemberChoice> | undefined;
+	private imageCatalogRevision = -1;
 	public constructor(public readonly authoring: SceneAuthoringContext, private readonly catalog: WorkspaceSourceCatalog) {
-		this.sprites = new SceneViewportSprites(catalog, authoring.workingCopy.identity.contextId);
+		this.images = new WorkspaceImageAssets(catalog);
+		this.sprites = new SceneViewportSprites(this.images); this.placementSprites = new SceneViewportSprites(this.images);
 		this.models = new SceneViewportModels(catalog, authoring.workingCopy.identity.contextId);
 		this.unbindCamera = this.camera.onDidChange(() => { for (const listener of this.listeners) listener(); });
 	}
@@ -73,7 +89,16 @@ export class SceneViewportViewState {
 		this.selected = selection?.kind === 'member' && selection.entry.kind === 'object' ? selection.entry : undefined;
 		const visuals = this.authoring.visualScene;
 		if (this.disposed) return;
+		const placement = this.placementPreview, placementVisuals = placement?.visuals;
+		if (this.imageSource !== visuals || this.placementSource !== placementVisuals || this.imageCatalogRevision !== this.catalog.revision) {
+			this.imageSource = visuals; this.placementSource = placementVisuals; this.imageCatalogRevision = this.catalog.revision;
+			this.imageIds.clear();
+			if (visuals !== undefined) for (const sprite of visuals.sprites) this.imageIds.add(sprite.image);
+			if (placementVisuals !== undefined) for (const sprite of placementVisuals.sprites) this.imageIds.add(sprite.image);
+			this.images.update(this.authoring.workingCopy.identity.contextId, this.imageIds);
+		}
 		this.sprites.prepare(visuals, this.transformPreview); this.models.prepare(visuals, this.transformPreview);
+		this.placementSprites.prepare(placementVisuals, placement);
 		if (this.modeSource !== this.source) {
 			this.modeSource = this.source; this.sourceMode = undefined;
 			if (this.source !== undefined) for (const entry of this.source.entries) {
@@ -90,6 +115,7 @@ export class SceneViewportViewState {
 		}
 		if (this.models.project(this.camera, this.bounds)) this.projectionRevision++;
 		if (this.sprites.project(this.camera, this.bounds, this.allocationRevision)) this.projectionRevision++;
+		this.placementSprites.project(this.camera, this.bounds, this.allocationRevision);
 		const preview = this.transformPreview, previewRevision = preview?.revision ?? -1;
 		const selectedWorld = this.selected === undefined ? undefined : preview?.worlds.has(this.selected)
 			? preview.worlds.get(this.selected) : this.source?.worlds.get(this.selected);
@@ -177,7 +203,8 @@ export class SceneViewportViewState {
 	}
 	public dispose(): void {
 		this.disposed = true; this.unbindCamera(); this.listeners.clear(); this.entries.length = this.points.length = 0;
-		this.sprites.dispose(); this.models.dispose(); this.frameEntries.clear();
+		this.sprites.dispose(); this.placementSprites.dispose(); this.images.dispose(); this.models.dispose(); this.frameEntries.clear();
+		this.imageIds.clear(); this.imageSource = undefined; this.placementSource = undefined; this.placementPreview = undefined;
 		this.source = this.projectedSource = this.modeSource = this.initialSource = undefined;
 		this.initialVisuals = undefined; this.sourceMode = undefined; this.selected = undefined;
 		this.transformPreview = this.projectedPreview = undefined; this.gizmo.dispose();

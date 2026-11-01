@@ -4,8 +4,8 @@ import type { SceneSourceAffine, SceneSourceObject } from './model';
 import type { SceneSpatialReadModel } from './spatial_projection';
 
 /** An occurrence-keyed overlay. Entries outside this subset borrow the source snapshot. */
-export type SceneTransformPreview = {
-	readonly worlds: ReadonlyMap<SceneSourceObject, Readonly<SceneSourceAffine> | undefined>;
+export type SceneTransformPreview<Owner = SceneSourceObject> = {
+	readonly worlds: ReadonlyMap<Owner, Readonly<SceneSourceAffine> | undefined>;
 	readonly revision: number;
 };
 

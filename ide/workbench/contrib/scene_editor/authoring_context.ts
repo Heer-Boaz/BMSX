@@ -8,7 +8,7 @@ import type { SceneSourceDocuments } from './source_documents';
 import type { EditorSourceLocation, EditorSourceLocationRequest } from '../../../editor/navigation/source_location';
 import { captureTextFileModel, type TextFileModelSnapshot } from '../../services/working_copy/text_file_model';
 import type { SceneReparentChoice, SceneReparentMode, SceneSpatialParents, SceneSpatialProjection, SceneSpatialReadModel } from './spatial_projection';
-import type { SceneVisualProjection, SceneVisualReadModel } from './visual_projection';
+import type { ScenePrefabPreview, SceneVisualProjection, SceneVisualReadModel } from './visual_projection';
 import { SceneTranslationProposal, type SceneTransformPreview } from './transform_proposal';
 import { createSceneMemberInsertionEdits, type SceneAddMemberChoice } from './member_insertion';
 
@@ -38,6 +38,7 @@ export type SceneLocalPositionRequest = { apply(axis: 'x' | 'y' | 'z', value: nu
 
 export type SceneAddMemberRequest = {
 	readonly choices: readonly SceneAddMemberChoice[];
+	getPreview(choice: SceneAddMemberChoice): ScenePrefabPreview | undefined;
 	isCurrent(): boolean;
 	apply(choice: SceneAddMemberChoice, x: number, y: number): boolean;
 };
@@ -348,15 +349,21 @@ export class SceneAuthoringContext {
 		const scene = this.editableSubject(); if (scene === undefined) return;
 		const document = this.document!, projection = this.documents.getSpatialProjection(this.workingCopy, document);
 		const plan = projection?.addMemberPlan(document, scene); if (plan === undefined) return;
+		const visuals = this.documents.getVisualProjection(this.workingCopy, document)!;
 		const version = this.workingCopy.version, selection = this.selectionRevisionValue;
 		let consumed = false;
 		const isCurrent = () => !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly && this.workingCopy.version === version
 			&& this.selectionRevisionValue === selection && this.isCurrent && this.documentValue === document && this.subject === scene
 			&& this.documents.getSpatialProjection(this.workingCopy, document) === projection
+			&& this.documents.getVisualProjection(this.workingCopy, document) === visuals
 			&& !consumed && !this.lifetime.isDisposed && !this.workingCopy.readOnly
 			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
 		if (!isCurrent()) return;
-		return { choices: plan.choices, isCurrent, apply: (choice, x, y) => {
+		return { choices: plan.choices, isCurrent, getPreview: choice => {
+			if (!isCurrent()) return;
+			const preview = visuals.readPrefabPreview(choice);
+			return isCurrent() ? preview : undefined;
+		}, apply: (choice, x, y) => {
 			if (!isCurrent()) return false;
 			let memberId = choice.id, suffix = 2;
 			while (plan.occupied.has(memberId)) memberId = choice.id + '_' + suffix++;

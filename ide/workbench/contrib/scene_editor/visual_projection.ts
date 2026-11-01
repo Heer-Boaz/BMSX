@@ -9,9 +9,10 @@ import { readSceneSourceAffine } from './authored_affine';
 import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceObject } from './model';
 import type { ScenePrefabSources } from './prefab_sources';
 import type { SceneSpatialProjection } from './spatial_projection';
+import type { SceneAddMemberChoice } from './member_insertion';
 
-export type SceneSpriteSource = {
-	readonly entry: SceneSourceObject;
+export type SceneSpriteSource<Owner = SceneSourceObject> = {
+	readonly entry: Owner;
 	readonly image: string;
 	/** Borrowed admitted spatial pose; visual placement never rewrites it. */
 	readonly world: Readonly<Affine2>;
@@ -24,8 +25,8 @@ export type SceneSpriteSource = {
 	readonly flipV: boolean;
 	readonly order: number;
 };
-export type SceneModelSource = {
-	readonly entry: SceneSourceObject;
+export type SceneModelSource<Owner = SceneSourceObject> = {
+	readonly entry: Owner;
 	readonly model: string;
 	/** Proved absent selects the model asset's declared default scene. */
 	readonly sceneIndex?: number;
@@ -35,7 +36,15 @@ export type SceneModelSource = {
 	readonly presentation: Readonly<Affine3>;
 };
 /** Declared constructor inputs, not a guest instance or a gameplay-time frame. */
-export type SceneVisualReadModel = { readonly sprites: readonly SceneSpriteSource[]; readonly models: readonly SceneModelSource[] };
+export type SceneVisualReadModel<Owner = SceneSourceObject> = {
+	readonly sprites: readonly SceneSpriteSource<Owner>[];
+	readonly models: readonly SceneModelSource<Owner>[];
+};
+/** The same constructor inputs as an appended root member, before any source occurrence exists. */
+export type ScenePrefabPreview = {
+	readonly world: Readonly<Affine2>;
+	readonly visuals: SceneVisualReadModel<SceneAddMemberChoice>;
+};
 type SourceState = LuaWrittenExpression | null | undefined;
 type ComponentProducer = { readonly kind: 'sprite' | 'model'; readonly defaults: SourceState; readonly primary?: true };
 const SPRITE_NEW: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['new'] };
@@ -78,6 +87,7 @@ class ComponentConstructorInputs {
  * spatial owner's poses/order and does no asset lookup, Lua execution or paint. */
 export class SceneVisualProjection {
 	private readonly scenes = new WeakMap<SceneSourceDefinition, SceneVisualReadModel>();
+	private readonly previews = new WeakMap<SceneAddMemberChoice, ScenePrefabPreview | undefined>();
 	private readonly producers = new WeakMap<LuaWrittenExpression, ComponentProducer[]>();
 	private readonly inheritedVisibility = new WeakMap<LuaWrittenExpression, SourceState>();
 	private readonly reader: LuaSourceReader;
@@ -95,57 +105,80 @@ export class SceneVisualProjection {
 			const definitionSource = reader.member(member.file, member.expression, 'definition_id');
 			const id = definitionSource === undefined ? undefined : reader.stringValue(definitionSource.file, definitionSource.expression);
 			const definition = id === undefined ? undefined : this.prefabs.all.get(id); if (definition === undefined) continue;
-			const options = fields.member(member, 'options'), defaults = fields.member(definition, 'defaults');
-			const ownerInputs = new ComponentConstructorInputs(reader, readLuaSourceTruth(options) === false ? null : options,
-				readLuaSourceTruth(defaults) === false ? null : defaults);
-			let ownerVisible = ownerInputs.value('visible');
-			if (ownerVisible === null) ownerVisible = this.classVisibility(definition);
-			if (ownerVisible !== null && readLuaSourceTruth(ownerVisible) !== true) continue;
-			for (const producer of this.readProducers(definition)) {
-				if ((producer.kind === 'sprite') !== (world.family === '2d')) continue;
-				if (producer.primary && ownerInputs.value('primary_sprite_factory') !== null) continue;
-				const inputs = producer.primary ? ownerInputs : new ComponentConstructorInputs(reader, null, producer.defaults);
-				if (!producer.primary && (inputs.flag('enabled', true) !== true || inputs.flag('visible', true) !== true)) continue;
-				const attachment = this.affine(inputs.value('attachment_affine'), world.family);
-				const presentation = this.affine(inputs.value('presentation_affine'), world.family);
-				if (world.family === '3d') {
-					if (attachment?.family !== '3d' || presentation?.family !== '3d') continue;
-					const modelSource = inputs.value('model_id'), sceneSource = inputs.value('scene_index');
-					if (modelSource == null || sceneSource === undefined) continue;
-					const model = reader.stringValue(modelSource.file, modelSource.expression);
-					if (model === undefined) continue;
-					const sceneIndex = sceneSource === null ? undefined : readLuaNumberExpression(sceneSource.expression);
-					if (sceneIndex === null) continue;
-					models.push({ entry, model, sceneIndex, world, attachment, presentation });
-					continue;
-				}
-				if (attachment?.family !== '2d' || presentation?.family !== '2d') continue;
-				const imageSource = inputs.value('imgid');
-				const image = imageSource === undefined || imageSource === null ? undefined : reader.stringValue(imageSource.file, imageSource.expression);
-				if (image === undefined) continue;
-				const color = inputs.number('color', 0xffffffff), flipH = inputs.flag('flip_h', false), flipV = inputs.flag('flip_v', false);
-				const order = inputs.number('order', 0), presentationOrder = inputs.number('presentation_order', 0);
-				if (color == null || flipH === undefined || flipV === undefined || order == null || presentationOrder == null) continue;
-				let regionSource = inputs.value('region');
-				if (producer.primary && readLuaSourceTruth(regionSource) === false) regionSource = null;
-				let region: SceneSpriteSource['region'];
-				if (regionSource === undefined) continue;
-				if (regionSource !== null) {
-					const x = fields.member(regionSource, 'x'), y = fields.member(regionSource, 'y');
-					const width = fields.member(regionSource, 'width'), height = fields.member(regionSource, 'height');
-					if (x == null || y == null || width == null || height == null) continue;
-					const nx = readLuaNumberExpression(x.expression), ny = readLuaNumberExpression(y.expression);
-					const nw = readLuaNumberExpression(width.expression), nh = readLuaNumberExpression(height.expression);
-					if (nx === null || ny === null || nw === null || nh === null) continue;
-					region = { x: nx, y: ny, width: nw, height: nh };
-				}
-				sprites.push({ entry, image, world, attachment, presentation, region, color: (color | 0xff000000) >>> 0, flipH, flipV, order: order + presentationOrder });
-			}
+			this.appendVisuals(sprites, models, entry, definition, fields.member(member, 'options'), world);
 		}
 		// Stable host sort preserves the already admitted fresh-instance sequence.
 		sprites.sort((a, b) => a.order - b.order);
 		const result = { sprites, models }; this.scenes.set(scene, result); return result;
 	}
+	/** Resolve once per selected prefab in this immutable source generation. Its
+	 * position is supplied by insertion, while the inherited linear basis remains. */
+	public readPrefabPreview(choice: SceneAddMemberChoice): ScenePrefabPreview | undefined {
+		if (!this.previews.has(choice)) {
+			const definition = this.prefabs.all.get(choice.id), pose = this.spatial.prefabTransform(choice.id);
+			let preview: ScenePrefabPreview | undefined;
+			if (definition !== undefined && pose?.family === '2d') {
+				const world = { ...pose, ox: 0, oy: 0 };
+				const sprites: SceneSpriteSource<SceneAddMemberChoice>[] = [], models: SceneModelSource<SceneAddMemberChoice>[] = [];
+				this.appendVisuals(sprites, models, choice, definition, null, world);
+				sprites.sort((a, b) => a.order - b.order);
+				preview = { world, visuals: { sprites, models } };
+			}
+			this.previews.set(choice, preview);
+		}
+		return this.previews.get(choice);
+	}
+
+	private appendVisuals<Owner>(sprites: SceneSpriteSource<Owner>[], models: SceneModelSource<Owner>[],
+		entry: Owner, definition: LuaWrittenExpression, options: SourceState, world: Readonly<SceneSourceAffine>): void {
+		const reader = this.reader, fields = this.fields, defaults = fields.member(definition, 'defaults');
+		const ownerInputs = new ComponentConstructorInputs(reader, readLuaSourceTruth(options) === false ? null : options,
+			readLuaSourceTruth(defaults) === false ? null : defaults);
+		let ownerVisible = ownerInputs.value('visible');
+		if (ownerVisible === null) ownerVisible = this.classVisibility(definition);
+		if (ownerVisible !== null && readLuaSourceTruth(ownerVisible) !== true) return;
+		for (const producer of this.readProducers(definition)) {
+			if ((producer.kind === 'sprite') !== (world.family === '2d')) continue;
+			if (producer.primary && ownerInputs.value('primary_sprite_factory') !== null) continue;
+			const inputs = producer.primary ? ownerInputs : new ComponentConstructorInputs(reader, null, producer.defaults);
+			if (!producer.primary && (inputs.flag('enabled', true) !== true || inputs.flag('visible', true) !== true)) continue;
+			const attachment = this.affine(inputs.value('attachment_affine'), world.family);
+			const presentation = this.affine(inputs.value('presentation_affine'), world.family);
+			if (world.family === '3d') {
+				if (attachment?.family !== '3d' || presentation?.family !== '3d') continue;
+				const modelSource = inputs.value('model_id'), sceneSource = inputs.value('scene_index');
+				if (modelSource == null || sceneSource === undefined) continue;
+				const model = reader.stringValue(modelSource.file, modelSource.expression);
+				if (model === undefined) continue;
+				const sceneIndex = sceneSource === null ? undefined : readLuaNumberExpression(sceneSource.expression);
+				if (sceneIndex === null) continue;
+				models.push({ entry, model, sceneIndex, world, attachment, presentation });
+				continue;
+			}
+			if (attachment?.family !== '2d' || presentation?.family !== '2d') continue;
+			const imageSource = inputs.value('imgid');
+			const image = imageSource === undefined || imageSource === null ? undefined : reader.stringValue(imageSource.file, imageSource.expression);
+			if (image === undefined) continue;
+			const color = inputs.number('color', 0xffffffff), flipH = inputs.flag('flip_h', false), flipV = inputs.flag('flip_v', false);
+			const order = inputs.number('order', 0), presentationOrder = inputs.number('presentation_order', 0);
+			if (color == null || flipH === undefined || flipV === undefined || order == null || presentationOrder == null) continue;
+			let regionSource = inputs.value('region');
+			if (producer.primary && readLuaSourceTruth(regionSource) === false) regionSource = null;
+			let region: SceneSpriteSource['region'];
+			if (regionSource === undefined) continue;
+			if (regionSource !== null) {
+				const x = fields.member(regionSource, 'x'), y = fields.member(regionSource, 'y');
+				const width = fields.member(regionSource, 'width'), height = fields.member(regionSource, 'height');
+				if (x == null || y == null || width == null || height == null) continue;
+				const nx = readLuaNumberExpression(x.expression), ny = readLuaNumberExpression(y.expression);
+				const nw = readLuaNumberExpression(width.expression), nh = readLuaNumberExpression(height.expression);
+				if (nx === null || ny === null || nw === null || nh === null) continue;
+				region = { x: nx, y: ny, width: nw, height: nh };
+			}
+			sprites.push({ entry, image, world, attachment, presentation, region, color: (color | 0xff000000) >>> 0, flipH, flipV, order: order + presentationOrder });
+		}
+	}
+
 	private affine(source: SourceState, family: '2d' | '3d'): Readonly<SceneSourceAffine> | undefined {
 		if (readLuaSourceTruth(source) === false) return family === '2d' ? IDENTITY_2D : IDENTITY_3D;
 		if (source === undefined || source === null) return;

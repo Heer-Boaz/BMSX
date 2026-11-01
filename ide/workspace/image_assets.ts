@@ -26,6 +26,7 @@ export class WorkspaceImageAssets {
 	private readonly textures = new Map<WorkspaceSourceContext, TextureBinding>();
 	private epoch = 0;
 	public constructor(private readonly catalog: WorkspaceSourceCatalog) {}
+	public get revision(): number { return this.epoch; }
 
 	/** Source/catalog changes replace the used set; steady drawing only borrows prepared bitmaps. */
 	public update(contextId: string, imageIds: ReadonlySet<string>): void {

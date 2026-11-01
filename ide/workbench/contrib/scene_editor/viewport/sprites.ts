@@ -2,15 +2,14 @@ import { appendAffine2, type Affine2 } from '../../../../common/affine2';
 import { clamp } from '../../../../../machine/ts/common/clamp';
 import type { RectBounds } from '../../../../../machine/ts/common/rect';
 import type { HostBitmap } from '../../../../../machine/ts/render/host_overlay/bitmap';
-import { WorkspaceImageAssets } from '../../../../workspace/image_assets';
-import type { WorkspaceSourceCatalog } from '../../../../workspace/source_catalog';
+import type { WorkspaceImageAssets } from '../../../../workspace/image_assets';
 import type { SceneSourceObject } from '../model';
 import type { SceneSpriteSource, SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
 import type { SceneViewportCamera } from './camera';
 
-export type SceneViewportSprite = {
-	source: SceneSpriteSource;
+export type SceneViewportSprite<Owner = SceneSourceObject> = {
+	source: SceneSpriteSource<Owner>;
 	affine: Affine2;
 	bitmap: HostBitmap;
 	width: number; height: number;
@@ -18,35 +17,29 @@ export type SceneViewportSprite = {
 	u0: number; v0: number; u1: number; v1: number;
 };
 
-type PreparedSprite = SceneViewportSprite & { placedWorld: Readonly<Affine2> | undefined };
+type PreparedSprite<Owner> = SceneViewportSprite<Owner> & { placedWorld: Readonly<Affine2> | undefined };
 
 /** Prepared source visuals and camera-projected quads; pixels never depend on camera motion. */
-export class SceneViewportSprites {
-	public readonly items: SceneViewportSprite[] = [];
-	public readonly represented = new Set<SceneSourceObject>();
-	private readonly assets: WorkspaceImageAssets;
-	private readonly imageIds = new Set<string>();
-	private readonly prepared: PreparedSprite[] = [];
-	private source: SceneVisualReadModel | undefined;
-	private preview: SceneTransformPreview | undefined;
+export class SceneViewportSprites<Owner = SceneSourceObject> {
+	public readonly items: SceneViewportSprite<Owner>[] = [];
+	public readonly represented = new Set<Owner>();
+	private readonly prepared: PreparedSprite<Owner>[] = [];
+	private source: SceneVisualReadModel<Owner> | undefined;
+	private preview: SceneTransformPreview<Owner> | undefined;
 	private previewRevision: number | undefined = -1;
-	private catalogRevision = -1;
+	private assetsRevision = -1;
 	private contentRevision = 0;
 	private projectedContent = -1;
 	private projectedCamera = -1;
 	private projectedAllocation = -1;
-	public constructor(private readonly catalog: WorkspaceSourceCatalog, private readonly contextId: string) {
-		this.assets = new WorkspaceImageAssets(catalog);
-	}
-	public prepare(source: SceneVisualReadModel | undefined, preview?: SceneTransformPreview): void {
-		const rebound = source !== this.source || this.catalogRevision !== this.catalog.revision;
+	public constructor(private readonly assets: WorkspaceImageAssets) {}
+	public prepare(source: SceneVisualReadModel<Owner> | undefined, preview?: SceneTransformPreview<Owner>): void {
+		const rebound = source !== this.source || this.assetsRevision !== this.assets.revision;
 		if (!rebound && preview === this.preview && this.previewRevision === preview?.revision) return;
 		this.preview = preview; this.previewRevision = preview?.revision;
 		if (rebound) {
-			this.source = source; this.catalogRevision = this.catalog.revision;
-			this.imageIds.clear(); this.represented.clear();
-			if (source !== undefined) for (const sprite of source.sprites) this.imageIds.add(sprite.image);
-			this.assets.update(this.contextId, this.imageIds);
+			this.source = source; this.assetsRevision = this.assets.revision;
+			this.represented.clear();
 			let count = 0;
 			if (source !== undefined) for (const sprite of source.sprites) {
 				const image = this.assets.get(sprite.image); if (image === undefined) continue;
@@ -105,7 +98,7 @@ export class SceneViewportSprites {
 		return true;
 	}
 	/** Hit the actual displayed, nontransparent texture, from front to back. */
-	public pick(x: number, y: number): SceneSourceObject | undefined {
+	public pick(x: number, y: number): Owner | undefined {
 		for (let index = this.items.length - 1; index >= 0; index--) {
 			const item = this.items[index];
 			const determinant = item.xx * item.yy - item.yx * item.xy; if (determinant === 0) continue;
@@ -119,7 +112,7 @@ export class SceneViewportSprites {
 		}
 	}
 	/** Actual world-space quad corners, before the editor camera; no inferred object boxes. */
-	public frameBounds(selected: ReadonlySet<SceneSourceObject> | undefined, target: RectBounds): boolean {
+	public frameBounds(selected: ReadonlySet<Owner> | undefined, target: RectBounds): boolean {
 		let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity, count = 0;
 		for (const item of this.items) {
 			if (selected !== undefined && !selected.has(item.source.entry)) continue;
@@ -131,5 +124,5 @@ export class SceneViewportSprites {
 		if (count === 0) return false;
 		target.left = left; target.top = top; target.right = right; target.bottom = bottom; return true;
 	}
-	public dispose(): void { this.assets.dispose(); this.items.length = this.prepared.length = 0; this.imageIds.clear(); this.represented.clear(); this.source = undefined; this.preview = undefined; }
+	public dispose(): void { this.items.length = this.prepared.length = 0; this.represented.clear(); this.source = undefined; this.preview = undefined; }
 }

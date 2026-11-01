@@ -206,3 +206,70 @@ prefab.define({def_id='visual',class=require('cartlib/world/object_2d'),componen
 	const entry = f.context.subject!.objects[0]; assert.ok(entry.kind === 'object');
 	assert.equal(f.context.spatialScene!.worlds.get(entry), undefined);
 });
+
+test('prefab placement borrows the same constructor inputs and linear pose as the member it will append', t => {
+	const f = fixture(t, `
+prefab.define({def_id='visual',class=sprite_object,
+ transform={xx=2,xy=1,yx=-1,yy=3,ox=44,oy=55},position={x=90},
+ defaults={imgid='primary',color=0x00123456,flip_h=true,order=2,region={x=1,y=2,width=3,height=4},
+  attachment_affine={1,1,0,1,2,3},presentation_affine={-1,0,2,1,4,5}},
+ components={sprites.factory({imgid='explicit',order=-1,presentation_order=1,flip_v=true})}})`, '');
+	const request = f.context.captureAddMember()!, choice = request.choices[0], version = f.model.version;
+	const preview = request.getPreview(choice)!;
+	assert.ok(preview); assert.deepEqual(preview.world, { family: '2d', xx: 2, xy: 1, yx: -1, yy: 3, ox: 0, oy: 0 });
+	assert.deepEqual(preview.visuals.sprites.map(sprite => sprite.image), ['explicit', 'primary']);
+	assert.equal(preview.visuals.models.length, 0);
+	for (const sprite of preview.visuals.sprites) { assert.equal(sprite.entry, choice); assert.equal(sprite.world, preview.world); }
+	const reads = t.mock.method(LuaSourceReader.prototype, 'memberState');
+	for (let frame = 0; frame < 100; frame++) assert.equal(request.getPreview(choice), preview);
+	assert.equal(f.context.captureAddMember()!.getPreview(choice), preview, 'the immutable projection, not a request, retains selected producer output');
+	assert.equal(reads.mock.callCount(), 0, 'steady preview queries do not reparse visual or spatial inputs'); reads.mock.restore();
+	assert.equal(f.model.version, version); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+	assert.equal(f.context.selection, undefined);
+	assert.equal(request.apply(choice, -17, 43), true); assert.equal(request.getPreview(choice), undefined);
+	const appended = f.context.visualScene!;
+	assert.deepEqual(appended.sprites.map(({ entry, world, ...inputs }) => inputs),
+		preview.visuals.sprites.map(({ entry, world, ...inputs }) => inputs));
+	for (const sprite of appended.sprites) assert.deepEqual(sprite.world, { ...preview.world, ox: -17, oy: 43 });
+	assert.equal(preview.world.ox, 0); assert.equal(preview.world.oy, 0);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('prefab preview never invents custom draws, hidden visuals, dynamic input or an unresolved spatial basis', t => {
+	const f = fixture(t, `
+local object=require('cartlib/world/object_2d')
+prefab.define({def_id='custom',class=object,components={function() end}})
+prefab.define({def_id='hidden',class=sprite_object,defaults={imgid='hidden',visible=false}})
+prefab.define({def_id='dynamic_image',class=sprite_object,defaults={imgid=choose()}})
+prefab.define({def_id='dynamic_visible',class=sprite_object,defaults={imgid='hidden',visible=choose()}})
+prefab.define({def_id='dynamic_affine',class=sprite_object,defaults={imgid='hidden',attachment_affine=choose()}})
+prefab.define({def_id='dynamic_pose',class=sprite_object,transform=choose(),defaults={imgid='not-proved'}})
+prefab.define({def_id='mixed',class=object,components={function() end,sprites.factory({imgid='proved'}),sprites.factory({imgid=choose()})}})`, '');
+	const request = f.context.captureAddMember()!;
+	assert.deepEqual(request.choices.map(choice => choice.id), ['custom', 'hidden', 'dynamic_image', 'dynamic_visible', 'dynamic_affine', 'dynamic_pose', 'mixed']);
+	for (const choice of request.choices) {
+		const preview = request.getPreview(choice);
+		if (choice.id === 'dynamic_pose') assert.equal(preview, undefined);
+		else {
+			assert.ok(preview); assert.equal(preview.visuals.models.length, 0);
+			assert.deepEqual(preview.visuals.sprites.map(sprite => sprite.image), choice.id === 'mixed' ? ['proved'] : []);
+		}
+	}
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+	const dynamic = request.choices.find(choice => choice.id === 'dynamic_pose')!;
+	assert.equal(request.apply(dynamic, 7, 8), true, 'missing preview never narrows independent Add admission');
+});
+
+test('prefab preview generations preserve old reads and retire captured authority when a dependency changes', t => {
+	const f = fixture(t, `prefab.define({def_id='visual',class=sprite_object,defaults={imgid='before'}})`, '');
+	const request = f.context.captureAddMember()!, choice = request.choices[0], before = request.getPreview(choice)!;
+	const resource = f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'prefabs.lua' })!;
+	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog, resource);
+	provider.pushEditOperations([{ offset: provider.buffer.getText().indexOf('before'), deleteLength: 6, text: 'after' }]);
+	assert.equal(request.getPreview(choice), undefined); assert.equal(request.isCurrent(), false);
+	const next = f.context.captureAddMember()!, after = next.getPreview(next.choices[0])!;
+	assert.notEqual(next.choices[0], choice); assert.notEqual(after, before);
+	assert.equal(after.visuals.sprites[0].image, 'after'); assert.equal(before.visuals.sprites[0].image, 'before');
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+	f.context.dispose(); assert.equal(next.getPreview(next.choices[0]), undefined);
+});

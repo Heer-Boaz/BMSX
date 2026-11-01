@@ -7,6 +7,7 @@ import type { SceneTransformPreview } from '../../ide/workbench/contrib/scene_ed
 import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
 import { SceneViewportModels } from '../../ide/workbench/contrib/scene_editor/viewport/models';
 import { SceneViewportSprites } from '../../ide/workbench/contrib/scene_editor/viewport/sprites';
+import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
 import type { GLTFModel } from '../../toolchain/ts/rompack/gltf';
 import { packModelAsset } from '../../toolchain/ts/rompack/model_asset';
 import { createPackedImageFixture } from '../helpers/packed_images';
@@ -38,10 +39,12 @@ scenes.register('main',{objects={{member_id='shape',definition_id='shape',transf
 	f.sources.catalog.rebuildResources();
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
-	const sprites = new SceneViewportSprites(f.sources.catalog, f.model.identity.contextId), models = new SceneViewportModels(f.sources.catalog, f.model.identity.contextId);
 	const read = context.visualScene!, entry = context.subject!.objects[0]; assert.equal(entry.kind, 'object');
+	const images = new WorkspaceImageAssets(f.sources.catalog);
+	images.update(f.model.identity.contextId, new Set(read.sprites.map(sprite => sprite.image)));
+	const sprites = new SceneViewportSprites(images), models = new SceneViewportModels(f.sources.catalog, f.model.identity.contextId);
 	sprites.prepare(read); models.prepare(read);
-	t.after(() => { sprites.dispose(); models.dispose(); context.dispose(); });
+	t.after(() => { sprites.dispose(); images.dispose(); models.dispose(); context.dispose(); });
 	return { ...f, source, context, read, entry, sprites, models };
 }
 

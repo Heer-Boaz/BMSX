@@ -72,6 +72,14 @@ export class SceneSpatialProjection {
 
 	public getSpatialParents(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneSpatialParents { return this.graph(document, scene).parents; }
 
+	/** Shared admitted prefab pose, independent of any concrete scene member. */
+	public prefabTransform(definitionId: string): Readonly<SceneSourceAffine> | undefined {
+		if (this.prefabs === undefined) this.prefabs = this.readPrefabs();
+		const capability = this.prefabs.get(definitionId);
+		if (!capability) return;
+		return capability.pose?.affine;
+	}
+
 	/** Appending requires the complete ordered list and every existing identity,
 	 * not resolved poses, parent edges or visuals for unrelated members. */
 	public addMemberPlan(document: SceneSourceDocument, scene: SceneSourceDefinition): SceneAddMemberPlan | undefined {
