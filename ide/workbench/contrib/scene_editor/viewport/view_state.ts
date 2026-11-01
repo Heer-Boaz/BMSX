@@ -197,7 +197,7 @@ export class SceneViewportViewState {
 	}
 	public get canFrameSelection(): boolean {
 		const world = this.selected === undefined ? undefined : this.source?.worlds.get(this.selected);
-		return world !== undefined && world.family === this.camera.mode;
+		return world !== undefined;
 	}
 	/** UI helpers are painted over geometry and therefore participate before the mesh depth hit. */
 	public pick(x: number, y: number): SceneSourceObject | undefined {
@@ -214,6 +214,8 @@ export class SceneViewportViewState {
 			: this.models.pick(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.camera)?.entry;
 	}
 	public frame(selected: SceneSourceObject | undefined): boolean {
+		const family = selected === undefined ? this.camera.mode : this.source?.worlds.get(selected)?.family;
+		if (family === undefined) return false;
 		this.frameEntries.clear();
 		if (selected !== undefined) {
 			this.frameEntries.add(selected);
@@ -224,7 +226,7 @@ export class SceneViewportViewState {
 		}
 		const selectedEntries = selected === undefined ? undefined : this.frameEntries;
 		let count = 0;
-		if (this.camera.mode === '3d') {
+		if (family === '3d') {
 			const target = this.modelBounds;
 			if (this.models.frameBounds(selectedEntries, target)) count++;
 			if (this.source !== undefined) for (const entry of this.source.entries) {
@@ -236,7 +238,7 @@ export class SceneViewportViewState {
 				target.maxX = Math.max(target.maxX, x); target.maxY = Math.max(target.maxY, y); target.maxZ = Math.max(target.maxZ, z); count++;
 			}
 			if (count === 0) return false;
-			this.camera.frame3D(target.minX, target.minY, target.minZ, target.maxX, target.maxY, target.maxZ, target.originX, target.originY, target.originZ); return true;
+			this.camera.frame3D(target.minX, target.minY, target.minZ, target.maxX, target.maxY, target.maxZ, target.originX, target.originY, target.originZ, selected !== undefined); return true;
 		}
 		let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
 		if (this.canvas.frameBounds(selectedEntries, this.visualBounds)) {
@@ -248,7 +250,7 @@ export class SceneViewportViewState {
 			left = Math.min(left, world.ox); top = Math.min(top, world.oy); right = Math.max(right, world.ox); bottom = Math.max(bottom, world.oy); count++;
 		}
 		if (count === 0) return false;
-		this.camera.frame2D(left, top, right, bottom, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top); return true;
+		this.camera.frame2D(left, top, right, bottom, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top, selected !== undefined); return true;
 	}
 	public dispose(): void {
 		this.disposed = true; this.unbindCamera(); this.listeners.clear(); this.entries.length = this.points.length = 0;

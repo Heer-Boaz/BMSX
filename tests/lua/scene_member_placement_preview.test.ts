@@ -7,6 +7,8 @@ import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { pointerHover } from '../../ide/input/pointer/hover';
 import { api } from '../../ide/runtime/overlay_api';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
@@ -50,8 +52,9 @@ scenes.register('main',{objects={{member_id='old',definition_id='shape',position
 	provider.previewPackage.img.shape = packed.image; f.sources.catalog.rebuildResources();
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, sourceVersion: f.model.version, scene: document.scenes[0] });
+	const menu = new ContextMenuController(inputFocus, pointerCapture, BOUNDS);
 	const view = new SceneViewportViewState(context, f.sources.catalog), scope = new InputFocusScope(Symbol('placement preview'), inputFocus.workbenchScope);
-	const parent = inputFocus.createTarget(null, scope), control = new SceneViewportControl(scope, parent);
+	const parent = inputFocus.createTarget(null, scope), control = new SceneViewportControl({ isEnabled: () => false, execute() {} }, menu, scope, parent, new WorkbenchMenu([], undefined));
 	control.setView(view, BOUNDS);
 	const camera = view.camera.capture();
 	view.camera.restore({ ...camera, mode: '2d', modeIntent: 'manual', canvas: { centerX: 0, centerY: 0, scale: 2, reading: 'manual' } });
@@ -63,7 +66,7 @@ scenes.register('main',{objects={{member_id='old',definition_id='shape',position
 		assert.equal(control.beginAddMember(request, choice, () => {}), true);
 		return { request, choice };
 	};
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, control, prefab, arm };
 }
 

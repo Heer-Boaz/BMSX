@@ -6,6 +6,8 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/viewport/control';
 import { SceneViewportViewState } from '../../ide/workbench/contrib/scene_editor/viewport/view_state';
@@ -32,8 +34,9 @@ function fixture(t: TestContext, members = MEMBERS) {
 		[['cartlib/world/prefab.lua', 'return {define=function() end}'], ['prefabs.lua', PREFABS]]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
+	const menu = new ContextMenuController(inputFocus, pointerCapture, BOUNDS);
 	const view = new SceneViewportViewState(context, f.sources.catalog), scope = new InputFocusScope(Symbol('translation'), inputFocus.workbenchScope);
-	const panel = inputFocus.createTarget(null, scope), control = new SceneViewportControl(scope, panel); panel.commandContext = panel;
+	const panel = inputFocus.createTarget(null, scope), control = new SceneViewportControl({ isEnabled: () => false, execute() {} }, menu, scope, panel, new WorkbenchMenu([], undefined)); panel.commandContext = panel;
 	control.setView(view, BOUNDS);
 	const select = (index: number) => {
 		context.refresh(); const scene = context.subject!;
@@ -48,7 +51,7 @@ function fixture(t: TestContext, members = MEMBERS) {
 	};
 	const move = (x: number, y: number) => pointerCapture.dispatch(pointer(x, y), false, 0, scope.surfaceScope);
 	const release = (x: number, y: number) => pointerCapture.dispatch(pointer(x, y, 0, 0, PointerButton.Primary), false, 0, scope.surfaceScope);
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, panel, control, select, start, move, release };
 }
 

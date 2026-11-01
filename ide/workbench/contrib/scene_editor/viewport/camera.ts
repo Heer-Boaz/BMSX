@@ -143,7 +143,8 @@ export class SceneViewportCamera {
 		const s = this.space; s.reading = 'manual'; s.yaw += x * 0.01; s.pitch = clamp(s.pitch + y * 0.01, -1.5, 1.5);
 		this.updateSpace(); this.changed();
 	}
-	public frame2D(left: number, top: number, right: number, bottom: number, width: number, height: number): void {
+	public frame2D(left: number, top: number, right: number, bottom: number, width: number, height: number, adoptView = false): void {
+		if (this.modeValue !== '2d' || adoptView) { this.modeValue = '2d'; this.modeIntent = 'manual'; }
 		const c = this.canvas; c.reading = 'manual'; c.centerX = (left + right) / 2; c.centerY = (top + bottom) / 2;
 		const extentX = right - left, extentY = bottom - top, point = extentX === 0 && extentY === 0;
 		c.scale = clamp(Math.min(extentX === 0 && !point ? Infinity : Math.max(1, width - 32) / (point ? 64 : extentX),
@@ -151,7 +152,8 @@ export class SceneViewportCamera {
 		this.changed();
 	}
 	/** Bounds come from transformed vertices or an explicitly selected origin. */
-	public frame3D(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, originX = 0, originY = 0, originZ = 0): void {
+	public frame3D(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, originX = 0, originY = 0, originZ = 0, adoptView = false): void {
+		if (this.modeValue !== '3d' || adoptView) { this.modeValue = '3d'; this.modeIntent = 'manual'; }
 		const s = this.space; s.reading = 'manual';
 		s.originX = originX; s.originY = originY; s.originZ = originZ;
 		s.centerX = (minX + maxX) / 2; s.centerY = (minY + maxY) / 2; s.centerZ = (minZ + maxZ) / 2;

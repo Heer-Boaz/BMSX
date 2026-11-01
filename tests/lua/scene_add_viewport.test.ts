@@ -6,6 +6,8 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/viewport/control';
@@ -33,8 +35,9 @@ scenes.register('main',{objects=${objects}})`;
 		[['cartlib/world/prefab.lua', 'return {define=function() end}'], ['prefabs.lua', PREFABS]]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
+	const menu = new ContextMenuController(inputFocus, pointerCapture, BOUNDS);
 	const view = new SceneViewportViewState(context, f.sources.catalog), scope = new InputFocusScope(Symbol('add'), inputFocus.workbenchScope);
-	const panel = inputFocus.createTarget(null, scope), control = new SceneViewportControl(scope, panel); panel.commandContext = panel;
+	const panel = inputFocus.createTarget(null, scope), control = new SceneViewportControl({ isEnabled: () => false, execute() {} }, menu, scope, panel, new WorkbenchMenu([], undefined)); panel.commandContext = panel;
 	control.setView(view, BOUNDS);
 	const state = view.camera.capture();
 	view.camera.restore({ ...state, mode: '2d', modeIntent: 'manual', canvas: { centerX: 15.25, centerY: -7.75, scale: 2, reading: 'manual' } });
@@ -46,7 +49,7 @@ scenes.register('main',{objects=${objects}})`;
 		assert.equal(context.select(context.document!, f.model.version, { kind: 'member', scene, entry: scene.objects[0], index: 0 }), true);
 		control.update();
 	};
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, panel, control, provider, select };
 }
 

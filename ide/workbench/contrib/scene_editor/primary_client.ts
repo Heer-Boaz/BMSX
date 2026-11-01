@@ -50,7 +50,6 @@ export type ScenePrimaryClientOptions = {
 	createProjectRunCommand(model: EditorTextModel, target: InputFocusTarget, isRetained: () => boolean): FocusCommand;
 	save(model: EditorTextModel): void;
 };
-const PRIMARY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'editor.source' }];
 const HIERARCHY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'sceneEditor.addMember', icon: 'add' }];
 const HIERARCHY_PANEL_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
 	{ type: 'command', command: 'sceneEditor.details', when: main => !main.regions.details.displayed },
@@ -125,11 +124,11 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 			surface: options.presentations.details, actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined), true, detailsMenu),
 			contextActions: detailsMenu, measureContent: measureSceneDetails,
 			createControl: (scope, target) => new SceneDetailsControl(options.commands, options.contextMenu, scope, target, sections, detailsContext) });
-		const viewportMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(VIEWPORT_CONTEXT_ACTIONS, this.view.viewport), new WorkbenchMenu(PRIMARY_ACTIONS, undefined)]);
+		const viewportMenu = new WorkbenchMenu(VIEWPORT_CONTEXT_ACTIONS, this.view.viewport);
 		this.viewport = new WorkbenchViewPanel({ ...common, title: 'Scene', view: this.view.viewport, surface: options.presentations.viewport,
-			bodyContextMenu: 'container',
+			bodyContextMenu: 'content',
 			actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined)), contextActions: viewportMenu, measureContent: measureSceneViewport,
-			createControl: (scope, target) => new SceneViewportControl(scope, target) });
+			createControl: (scope, target) => new SceneViewportControl(options.commands, options.contextMenu, scope, target, viewportMenu) });
 		this.viewport.setHeaderVisible(false);
 		this.commandTarget.registerCommand('sceneEditor.addMember', {
 			contextual: true,

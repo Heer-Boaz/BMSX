@@ -5,6 +5,8 @@ import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { SceneViewportCamera } from '../../ide/workbench/contrib/scene_editor/viewport/camera';
@@ -32,18 +34,19 @@ function fixture(t: TestContext, objects = OBJECTS, attach = true) {
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined, [['cartlib/world/prefab.lua', 'return { define=function() end }'], ['prefabs.lua', PREFABS]]);
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
+	const menu = new ContextMenuController(inputFocus, pointerCapture, BOUNDS);
 	const view = new SceneViewportViewState(context, f.sources.catalog), scope = new InputFocusScope(Symbol('authored viewport'), inputFocus.workbenchScope);
 	const semantic = inputFocus.createTarget(null, scope), panel = inputFocus.createTarget(semantic, new InputFocusScope(scope.surfaceScope, scope));
 	panel.commandContext = semantic;
 	semantic.registerCommand('sceneEditor.outline', { contextual: true, isEnabled: () => true, run: () => { semantic.focus(); } });
-	const control = new SceneViewportControl(panel.scope, panel);
+	const control = new SceneViewportControl({ isEnabled: () => false, execute() {} }, menu, panel.scope, panel, new WorkbenchMenu([], undefined));
 	if (attach) control.setView(view, BOUNDS);
 	const select = (index: number) => {
 		context.refresh(); const scene = context.subject!;
 		assert.equal(context.select(context.document!, f.model.version, { kind: 'member', scene, entry: scene.objects[index], index }), true);
 		control.update();
 	};
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, source, context, view, scope, semantic, panel, control, select };
 }
 
@@ -134,7 +137,7 @@ test('picking a drawn origin admits its exact authored occurrence and only local
 		assert.equal(modified.consumed, false); assert.deepEqual(f.view.camera.capture(), camera);
 	}
 	inputFocus.handleKeyboard(new KeyInputEvent('Digit3', KeyModifier.none));
-	assert.equal(f.view.camera.mode, '3d'); assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
+	assert.equal(f.view.camera.mode, '3d'); assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), true);
 	f.semantic.focus(); const event = new KeyInputEvent('Digit2', KeyModifier.none);
 	// A foreign keyboard recipient never runs the viewport handler or claims gameplay keys.
 	f.semantic.bindKeyboard(() => {}); inputFocus.handleKeyboard(event);
@@ -147,10 +150,85 @@ test('frame commands are disabled for absent or unresolved geometry instead of b
 	const f = fixture(t); f.select(3);
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
 	const empty = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => empty.dispose());
-	f.view.camera.setMode('3d'); f.select(0);
-	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
 	const g = fixture(t, `{member_id='dynamic',definition_id='node2',transform=runtime_pose()}`);
 	assert.equal(g.panel.getCommand('sceneViewport.frameAll')!.isEnabled(), false);
+});
+
+test('framing a selection uses its own spatial view without changing the other camera reading', t => {
+	const f = fixture(t), camera = f.view.camera;
+	camera.pan(12, 8); const canvas = camera.capture().canvas;
+	f.select(2);
+	assert.equal(camera.mode, '2d', 'selection alone does not override the chosen view');
+	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), true);
+	const changes: ReturnType<SceneViewportCamera['capture']>[] = [];
+	const unsubscribe = camera.onDidChange(() => { changes.push(camera.capture()); }); t.after(unsubscribe);
+	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
+	assert.equal(camera.mode, '3d');
+	assert.equal(changes.length, 1, 'mode and framed reading are published together');
+	assert.equal(changes[0].mode, '3d'); assert.equal(changes[0].space.originX, 7);
+	assert.deepEqual(camera.capture().canvas, canvas);
+	assert.ok(f.view.entries.includes(f.context.subject!.objects[2]));
+	const space = camera.capture().space;
+	f.select(0);
+	assert.equal(camera.mode, '3d', 'selection alone preserves the manually chosen view');
+	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), true);
+	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
+	assert.equal(camera.mode, '2d'); assert.deepEqual(camera.capture().space, space);
+	assert.ok(f.view.entries.includes(f.context.subject!.objects[0]));
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('explicitly framing a selection adopts its view, but initial framing remains automatic', t => {
+	const objects = `{member_id='object',definition_id='node2',position={x=7,y=11}}`;
+	const initial = fixture(t, objects);
+	assert.equal(initial.view.camera.automaticMode, true);
+	let offset = initial.model.buffer.getText().indexOf("definition_id='node2'");
+	initial.model.pushEditOperations([{ offset, deleteLength: "definition_id='node2'".length, text: "definition_id='node3'" }]);
+	initial.control.update();
+	assert.equal(initial.view.camera.mode, '3d', 'initial framing does not claim a manual mode');
+	assert.equal(initial.view.camera.automaticMode, true);
+
+	const framed = fixture(t, objects);
+	framed.select(0);
+	assert.equal(framed.view.camera.automaticMode, true);
+	let publications = 0;
+	const unsubscribe = framed.view.camera.onDidChange(() => { publications++; }); t.after(unsubscribe);
+	inputFocus.executeCommand('sceneViewport.frameSelection', framed.panel);
+	assert.equal(framed.view.camera.automaticMode, false, 'an explicit frame adopts the current view');
+	assert.equal(publications, 1, 'adopting and framing publish one camera change');
+	offset = framed.model.buffer.getText().indexOf("definition_id='node2'");
+	framed.model.pushEditOperations([{ offset, deleteLength: "definition_id='node2'".length, text: "definition_id='node3'" }]);
+	framed.control.update();
+	assert.equal(framed.view.camera.mode, '2d', 'later source changes cannot override the adopted view');
+});
+
+test('a reentrant selection and camera gesture supersede the frame request', t => {
+	const f = fixture(t), camera = f.view.camera;
+	f.select(2);
+	let newer: ReturnType<SceneViewportCamera['capture']> | undefined;
+	const unsubscribe = camera.onDidChange(() => {
+		unsubscribe();
+		f.select(0); camera.setMode('2d'); camera.pan(19, -13);
+		newer = camera.capture();
+	}); t.after(unsubscribe);
+	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
+	assert.deepEqual(camera.capture(), newer);
+	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === f.context.subject!.objects[0]);
+	assert.equal(camera.mode, '2d'); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('a reentrant frame notification cannot change a newly attached viewport', t => {
+	const f = fixture(t), incoming = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => incoming.dispose());
+	f.select(2);
+	let newer: ReturnType<SceneViewportCamera['capture']> | undefined;
+	const unsubscribe = f.view.camera.onDidChange(() => {
+		unsubscribe();
+		f.control.setView(incoming, BOUNDS); incoming.camera.setMode('2d'); incoming.camera.pan(17, -11);
+		newer = incoming.camera.capture();
+	}); t.after(unsubscribe);
+	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
+	assert.ok(f.control.view === incoming); assert.deepEqual(incoming.camera.capture(), newer);
+	assert.equal(f.model.buffer.getText(), f.source);
 });
 
 test('pan and orbit use native capture, preserve same-panel focus, and cancel across allocation/source retirement', t => {

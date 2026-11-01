@@ -2,7 +2,7 @@ import { point_in_rect, type RectBounds } from '../../../../../machine/ts/common
 import { PointerButton } from '../../../../../hosts/common/input/pointer_event';
 import { KeyModifier, type KeyInputEvent } from '../../../../../hosts/common/input/text';
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../../common/models';
-import type { EditorCommandId } from '../../../../common/commands';
+import type { EditorCommandId, EditorCommandRunner } from '../../../../common/commands';
 import type { EditorFont } from '../../../../editor/ui/view/font';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { SceneAddMemberRequest, SceneAddMemberChoice, SceneTranslationRequest } from '../authoring_context';
@@ -12,7 +12,8 @@ import { consumeIdeKey, isKeyJustPressed } from '../../../../input/keyboard/key_
 import { pointerCapture, type PointerCaptureTarget } from '../../../../input/pointer/capture';
 import { pointerHover } from '../../../../input/pointer/hover';
 import type { WorkbenchViewSizeConstraints } from '../../../common/layout';
-import type { WorkbenchMenuDefinition } from '../../../ui/menu/model';
+import type { WorkbenchMenuDefinition, WorkbenchMenuPresentation } from '../../../ui/menu/model';
+import type { ContextMenuController } from '../../../services/context_menu/controller';
 import { drawSceneViewport } from './render';
 import { type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
 import type { SceneViewportPoint } from './camera';
@@ -54,7 +55,8 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	private readonly unbindBlur: () => void;
 	public get view(): SceneViewportViewState { return this.viewValue!; }
 	public get canFocus(): boolean { const bounds = this.viewValue?.bounds; return bounds !== undefined && bounds.left < bounds.right && bounds.top < bounds.bottom; }
-	public constructor(scope: InputFocusScope, private readonly commandTarget: InputFocusTarget) {
+	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
+		scope: InputFocusScope, private readonly commandTarget: InputFocusTarget, private readonly contextActions: WorkbenchMenuPresentation) {
 		this.focusTarget = inputFocus.createTarget(commandTarget, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.commandContext = commandTarget.commandContext; this.focusTarget.canFocus = () => this.canFocus;
 		this.unbindKeyboard = this.focusTarget.bindKeyboard(event => this.handleKeyboard(event));
@@ -62,6 +64,14 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			if (next === null || !scope.contains(next.scope)) {
 				const placement = this.placement; this.revokeGesture(this.gesture); this.retirePlacement(placement);
 			}
+		});
+		this.focusTarget.registerCommand('contextMenu', {
+			isEnabled: () => this.canFocus,
+			run: () => {
+				if (this.placement !== undefined) { this.retirePlacement(this.placement); return; }
+				const bounds = this.view.bounds;
+				this.openContextMenu(bounds.left + 4, bounds.top + 4, true);
+			},
 		});
 		const actions: readonly CameraAction[] = [
 			{ command: 'sceneViewport.frameAll', isEnabled: view => view.canFrameAll, run: view => { view.frame(undefined); } },
@@ -198,6 +208,20 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	public setFocusNeighbors(previous: InputFocusTarget, next: InputFocusTarget): void {
 		this.focusTarget.previous = previous; this.focusTarget.next = next; previous.next = this.focusTarget; next.previous = this.focusTarget;
 	}
+	private openContextMenu(x: number, y: number, keyboard = false): void {
+		const view = this.view, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;
+		const version = view.authoring.workingCopy.version, selection = view.authoring.selectionRevision;
+		this.contextMenu.show(x, y, this.contextActions, this.commands, {
+			selectFirst: keyboard, invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.focusTarget,
+			onWillShow: lifetime => {
+				lifetime.add({ dispose: view.authoring.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });
+				lifetime.add({ dispose: view.authoring.onDidChangeSelection(() => this.contextMenu.hide()) });
+				lifetime.add({ dispose: this.focusTarget.scope.onDidRetireContext(() => this.contextMenu.hide(false)) });
+				if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation
+					|| view.authoring.workingCopy.version !== version || view.authoring.selectionRevision !== selection) this.contextMenu.hide(false);
+			},
+		});
+	}
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): boolean {
 		if (!this.canFocus || !snapshot.valid || !snapshot.insideViewport || !point_in_rect(snapshot.viewportX, snapshot.viewportY, this.view.bounds)) return false;
 		pointerHover.visit(this);
@@ -218,7 +242,10 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			} else placement.view.projectPlacement();
 			return true;
 		}
-		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) return false;
+		if ((snapshot.justPressedButtons & PointerButton.Secondary) !== 0) {
+			this.openContextMenu(snapshot.viewportX, snapshot.viewportY);
+			return true;
+		}
 		if (this.view.gizmo.active === TranslateHandle.None) this.view.gizmo.hover = this.view.gizmo.hit(snapshot.viewportX, snapshot.viewportY);
 		if (snapshot.justPressedButtons === 0 && !justPressed) return true;
 		const view = this.view, attachment = this.attachment, generation = this.focusTarget.scope.contextGeneration;
@@ -346,6 +373,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 	}
 	public dispose(): void {
 		this.disposed = true; this.clearView(); this.unbindKeyboard(); this.unbindBlur();
+		this.focusTarget.unregisterCommand('contextMenu');
 		for (const command of ['sceneViewport.frameAll', 'sceneViewport.frameSelection', 'sceneViewport.view2d', 'sceneViewport.view3d'] as const) {
 			this.commandTarget.unregisterCommand(command); this.focusTarget.unregisterCommand(command);
 		}

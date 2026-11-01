@@ -6,6 +6,8 @@ import type { PointerInputSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
+import { ContextMenuController } from '../../ide/workbench/services/context_menu/controller';
+import { WorkbenchMenu } from '../../ide/workbench/ui/menu/model';
 import { readLuaSourceRange } from '../../ide/language/lua/source_edits';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { SceneViewportControl } from '../../ide/workbench/contrib/scene_editor/viewport/control';
@@ -47,8 +49,9 @@ function fixture(t: TestContext) {
 	f.sources.catalog.rebuildResources();
 	const document = f.documents.get(f.model), context = new SceneAuthoringContext(f.model, f.documents,
 		{ document, scene: document.scenes[0], sourceVersion: f.model.version });
+	const menu = new ContextMenuController(inputFocus, pointerCapture, BOUNDS);
 	const view = new SceneViewportViewState(context, f.sources.catalog), scope = new InputFocusScope(Symbol('3D Add'), inputFocus.workbenchScope);
-	const panel = inputFocus.createTarget(null, scope), control = new SceneViewportControl(scope, panel);
+	const panel = inputFocus.createTarget(null, scope), control = new SceneViewportControl({ isEnabled: () => false, execute() {} }, menu, scope, panel, new WorkbenchMenu([], undefined));
 	control.setView(view, BOUNDS); view.camera.setMode('3d'); control.update();
 	const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
 		f.sources.catalog.resolveResource({ contextId: f.model.identity.contextId, path: 'prefabs.lua' })!);
@@ -59,7 +62,7 @@ function fixture(t: TestContext) {
 		return point;
 	};
 	const click = (pointerX = x, pointerY = y) => control.handlePointer(pointer(pointerX, pointerY, PointerButton.Primary, PointerButton.Primary), true);
-	t.after(() => { control.dispose(); view.dispose(); context.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
+	t.after(() => { control.dispose(); view.dispose(); context.dispose(); menu.dispose(); inputFocus.setTarget(null); pointerCapture.interrupt(false); });
 	return { ...f, assets, asset, provider, context, view, control, x, y, ground, click };
 }
 

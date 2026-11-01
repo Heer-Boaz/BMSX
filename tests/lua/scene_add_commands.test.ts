@@ -110,6 +110,108 @@ test('cancelling the actual Add picker returns to its origin and never arms plac
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false); assert.equal(f.model.dirty, false);
 });
 
+test('secondary click cancels placement before opening the canvas menu, without publishing source', async t => {
+	const f = await fixture(t); openAdd(f); chooseOther(f);
+	const bounds = f.primary.viewport.layoutState.client, x = (bounds.left + bounds.right) / 2 + 27, y = (bounds.top + bounds.bottom) / 2 - 12;
+	f.editor.dispatchPointer({ x, y, buttons: 0, pressedButtons: 0, releasedButtons: 0,
+		cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() }); f.update();
+	assert.ok(f.primary.view.viewport.placementPreview !== undefined);
+	const secondary = () => {
+		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+			buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+			releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
+			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+		f.update();
+	};
+	secondary();
+	assert.equal(f.primary.view.viewport.placementPreview, undefined);
+	assert.equal(f.editor.contextMenu.visible, false);
+	assert.equal(inputFocus.admittedTarget, f.primary.viewport.control.focusTarget);
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+	secondary(); assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'), false);
+	f.key('Escape'); f.key('ContextMenu'); assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'), false);
+});
+
+test('canvas context remains about the canvas when opened over a member', async t => {
+	const f = await fixture(t), view = f.primary.view.viewport;
+	const bounds = f.primary.viewport.layoutState.client, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+	assert.equal(view.pick(x, y), f.primary.consumer.subject!.objects[0]);
+	const selection = f.primary.consumer.selection;
+	for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
+		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	f.update();
+	assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'), false);
+	assert.equal(f.primary.consumer.selection, selection);
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+});
+
+for (const [key, modifiers] of [['ContextMenu', KeyModifier.none], ['F10', KeyModifier.shift]] as const)
+	test(`${key} cancels an armed placement before opening a canvas context menu`, async t => {
+		const f = await fixture(t); openAdd(f); chooseOther(f);
+		assert.equal(inputFocus.admittedTarget, f.primary.viewport.control.focusTarget);
+		f.key(key, modifiers);
+		assert.equal(f.editor.contextMenu.visible, false);
+		assert.equal(f.primary.view.viewport.placementPreview, undefined);
+		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+		f.key(key, modifiers); assert.equal(f.editor.contextMenu.visible, true);
+	});
+
+test('canvas context closes when departing field focus publishes a newer source generation', async t => {
+	const f = await fixture(t); f.key('Home'); f.key('ArrowDown'); f.main.focusPrimary('details');
+	const field = f.primary.details.control.controls[0]; assert.equal(field.field.focusTarget.focus(), true);
+	const target = f.editor.textTarget!; assert.equal(target.replaceText(0, target.readText().text.length, '41.5'), true);
+	const bounds = f.primary.viewport.layoutState.client, x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+	for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
+		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	f.update();
+	assert.equal(f.editor.contextMenu.visible, false);
+	assert.equal(f.primary.consumer.selectedLocalTransform!.ox, 41.5);
+	assert.equal(f.model.canUndo, true); f.model.undo(); assert.equal(f.model.buffer.getText(), SOURCE);
+});
+
+test('canvas context retires with its Scene attachment before a replacement is presented', async t => {
+	const f = await fixture(t); f.main.focusPrimary('viewport'); f.key('ContextMenu');
+	assert.equal(f.editor.contextMenu.visible, true);
+	const replacement = await f.open(1);
+	assert.notEqual(replacement, f.primary); assert.equal(f.editor.contextMenu.visible, false);
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+	f.main.focusPrimary('viewport'); f.key('ContextMenu');
+	assert.equal(f.editor.contextMenu.visible, true); assert.equal(f.main.primary, replacement);
+});
+
+test('a viewport presented in another window keeps placement and popup ownership with that window', async t => {
+	const f = await fixture(t), panel = f.primary.viewport, surfaces = f.editor.surfaces, bounds = panel.layoutState.client;
+	const floating = surfaces.attach({ role: 'window', captureScope: Symbol('floating viewport'), lifetimeOwner: f.main.surface,
+		presentationParent: f.main.surface, isVisible: () => true, getBounds: () => bounds, getClip: () => bounds, draw() {} });
+	t.after(() => floating.dispose());
+	surfaces.reparent(panel.surface, floating);
+	assert.equal(surfaces.windowContext(panel.surface), floating);
+	openAdd(f); chooseOther(f);
+	const x = (bounds.left + bounds.right) / 2 + 27, y = (bounds.top + bounds.bottom) / 2 - 12;
+	const secondary = () => {
+		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+			buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+			releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
+			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+		f.update();
+	};
+	secondary(); assert.equal(f.editor.contextMenu.visible, false);
+	assert.equal(f.primary.view.viewport.placementPreview, undefined);
+	secondary(); assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.editor.contextMenu.invocationOrigin, panel.control.focusTarget);
+	assert.equal(surfaces.isInWindowFamily(f.editor.contextMenu.pointerScope, floating.captureScope), true);
+	floating.dispose();
+	assert.equal(f.editor.contextMenu.visible, false); assert.equal(panel.attached, false);
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+});
+
 for (const region of ['hierarchy', 'details'] as const) for (const route of ['overflow', 'secondary'] as const)
 	test(`Main Scene ${region} header ${route} contains only panel commands, never selected-member actions`, async t => {
 		const f = await fixture(t), panel = f.primary[region];
