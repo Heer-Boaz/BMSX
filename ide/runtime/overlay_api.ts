@@ -3,7 +3,7 @@ import type { HostMeshScene } from '../../machine/ts/render/host_overlay/mesh';
 import type { BFont } from '../../machine/ts/render/shared/bitmap_font';
 import { type color } from '../../machine/ts/render/shared/submissions';
 import { LAYER_2D_IDE } from '../../machine/ts/render/shared/layers';
-import { resolveThemeTokenColor } from '../theme/tokens';
+import { resolveThemeTokenColor, THEME_TOKEN_WHITE } from '../theme/tokens';
 import { OverlayRenderer } from './overlay_renderer';
 import type { HostOverlayTransform } from '../../machine/ts/render/host_overlay/transform';
 
@@ -34,8 +34,8 @@ export class OverlayApi {
 		this.renderer.polyline(points, x, y, z, thickness, resolveThemeTokenColor(colorindex), LAYER_2D_IDE);
 	}
 
-	public outlinedPolyline(points: readonly number[], x: number, y: number, z: number): void {
-		this.renderer.outlinedPolyline(points, x, y, z, LAYER_2D_IDE);
+	public outlinedPolyline(points: readonly number[], x: number, y: number, z: number, thickness = 1, colorindex = THEME_TOKEN_WHITE): void {
+		this.renderer.outlinedPolyline(points, x, y, z, LAYER_2D_IDE, thickness, resolveThemeTokenColor(colorindex));
 	}
 
 	public outlinedRect(left: number, top: number, right: number, bottom: number, z: number): void {

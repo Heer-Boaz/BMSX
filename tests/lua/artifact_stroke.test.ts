@@ -2,6 +2,8 @@ import { TEST_CARTRIDGE_CONTEXT_IDS } from '../helpers/runtime_sources';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { api } from '../../ide/runtime/overlay_api';
+import { ARTWORK_COLORS } from '../../ide/theme/artwork_colors';
+import { resolveThemeTokenColor } from '../../ide/theme/tokens';
 import { HostBitmap } from '../../machine/ts/render/host_overlay/bitmap';
 import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
 import { HostOverlayQuadStream, HOST_OVERLAY_INSTANCE_FLOATS } from '../../machine/ts/render/host_overlay/quad_stream';
@@ -44,6 +46,35 @@ test('an artifact path publishes one immutable geometry snapshot with black casi
 	assert.deepEqual(outer.points, [4.25, 8, 16, 8]); assert.equal(outer.z, 3); assert.equal(core.z, 3);
 	assert.deepEqual([outer.thickness, outer.color, core.thickness, core.color], [3, 0xff000000, 1, 0xffffffff]);
 	source[0] = 100; assert.equal(outer.points[0], 4.25, 'the published route does not borrow mutable feature storage');
+});
+
+test('a colored thicker artifact core and its black casing share one translated snapshot without mutating source', () => {
+	const source = Object.freeze([0.25, 2, 12, 2]), before = [...source];
+	const output = frame(() => api.outlinedPolyline(source, 4, 6, 3, 3, ARTWORK_COLORS.axes[0]));
+	assert.equal(output.commandCount, 2);
+	const outer = output.commandRefs[0] as PolyRenderSubmission, core = output.commandRefs[1] as PolyRenderSubmission;
+	assert.equal(outer.points, core.points); assert.notEqual(outer.points, source);
+	assert.deepEqual(outer.points, [4.25, 8, 16, 8]); assert.deepEqual(source, before);
+	assert.deepEqual([outer.thickness, outer.color, core.thickness, core.color], [5, 0xff000000, 3, resolveThemeTokenColor(ARTWORK_COLORS.axes[0])]);
+});
+
+test('warm colored artifact strokes reuse both submission pools and a single geometry slot per buffer', () => {
+	const f = createHostOverlayFixture(64, 48), source = Object.freeze([1, 2, 13, 5]), before = [...source];
+	const first = frame(() => api.outlinedPolyline(source, 0, 0, 0, 2, ARTWORK_COLORS.axes[0]), f);
+	const firstOuter = first.commandRefs[0] as PolyRenderSubmission, firstCore = first.commandRefs[1] as PolyRenderSubmission, firstPoints = firstOuter.points;
+	const second = frame(() => api.outlinedPolyline(source, 1, 1, 0, 3, ARTWORK_COLORS.axes[1]), f);
+	const secondOuter = second.commandRefs[0] as PolyRenderSubmission, secondCore = second.commandRefs[1] as PolyRenderSubmission, secondPoints = secondOuter.points;
+	assert.notEqual(firstPoints, secondPoints);
+	for (let index = 0; index < 8; index++) {
+		const thickness = index % 3 + 1, ink = ARTWORK_COLORS.axes[index % 3];
+		const output = frame(() => api.outlinedPolyline(source, index, index * 2, 0, thickness, ink), f);
+		const outer = output.commandRefs[0] as PolyRenderSubmission, core = output.commandRefs[1] as PolyRenderSubmission;
+		assert.equal(output.commandCount, 2); assert.equal(outer, index % 2 === 0 ? firstOuter : secondOuter);
+		assert.equal(core, index % 2 === 0 ? firstCore : secondCore); assert.equal(outer.points, index % 2 === 0 ? firstPoints : secondPoints);
+		assert.equal(outer.points, core.points); assert.deepEqual(outer.points, [1 + index, 2 + index * 2, 13 + index, 5 + index * 2]);
+		assert.deepEqual([outer.thickness, outer.color, core.thickness, core.color], [thickness + 2, 0xff000000, thickness, resolveThemeTokenColor(ink)]);
+	}
+	assert.deepEqual(source, before);
 });
 
 test('geometry pools cannot alias earlier strokes when outlined and ordinary polyline submission orders change', () => {

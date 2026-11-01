@@ -4,7 +4,6 @@ import { KeyModifier, type KeyInputEvent } from '../../../../../hosts/common/inp
 import type { PointerInputSnapshot, WheelInputSnapshot } from '../../../../common/models';
 import type { EditorCommandId } from '../../../../common/commands';
 import type { EditorFont } from '../../../../editor/ui/view/font';
-import { truncateTextToWidth } from '../../../../editor/common/text/layout';
 import { editorViewState } from '../../../../editor/ui/view/state';
 import type { SceneAddMemberRequest, SceneAddMemberChoice, SceneTranslationRequest } from '../authoring_context';
 import { TranslateHandle } from './translate_gizmo';
@@ -137,6 +136,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			this.retirePlacement(placement);
 		}
 		if (this.viewValue === view && this.attachment === attachment) view.refresh();
+		this.viewValue?.prepareCaption(this.placement);
 	}
 	public update(): void {
 		const view = this.viewValue; if (view === undefined) return;
@@ -145,6 +145,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 		const placement = this.placement;
 		if (placement !== undefined && !placement.request.isCurrent()) this.retirePlacement(placement);
 		if (this.viewValue === view) view.refresh();
+		this.viewValue?.prepareCaption(this.placement);
 	}
 	public draw(): void { if (this.viewValue !== undefined) drawSceneViewport(this.view, this.focusTarget.hasFocus, this.placement); }
 	public beginAddMember(request: SceneAddMemberRequest, choice: SceneAddMemberChoice, didPlace: () => void): boolean {
@@ -161,7 +162,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			view.placementPreview = { visuals: content.visuals, world, worlds: new Map([[choice, world]]), revision: 0 };
 		}
 		const placement: MemberPlacement = { view, attachment, generation, request, choice,
-			definitionLabel: truncateTextToWidth(choice.id, view.bounds.right - view.bounds.left - 8),
+			definitionLabel: choice.id,
 			preview: view.placementPreview, didPlace, originX: 0, originY: 0, originZ: 0, x: 0, y: 0, z: 0,
 			located: false, pointerX: 0, pointerY: 0, pointed: false };
 		this.placement = placement;

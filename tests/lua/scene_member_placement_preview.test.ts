@@ -4,6 +4,7 @@ import { PointerButton } from '../../hosts/common/input/pointer_event';
 import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import type { PointerInputSnapshot } from '../../ide/common/models';
 import { configureFontVariant } from '../../ide/editor/ui/view/configuration';
+import { editorViewState } from '../../ide/editor/ui/view/state';
 import { inputFocus, InputFocusScope } from '../../ide/input/focus';
 import { pointerCapture } from '../../ide/input/pointer/capture';
 import { pointerHover } from '../../ide/input/pointer/hover';
@@ -15,6 +16,9 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { WorkspaceImageAssets } from '../../ide/workspace/image_assets';
 import { createPackedImageFixture } from '../helpers/packed_images';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
+import type { HostBitmapRenderSubmission } from '../../machine/ts/render/host_overlay/bitmap';
 
 const BOUNDS = { left: 10, top: 20, right: 410, bottom: 260 };
 const PREFABS = `local prefab=require('cartlib/world/prefab')
@@ -127,16 +131,26 @@ test('the ghost and committed sprite have the same footprint, inherited linear p
 test('painting a located ghost uses translucent real texture; leaving the canvas hides it without cancelling Add', t => {
 	const f = fixture(t); f.arm();
 	pointerHover.beginDispatch(f.scope.surfaceScope); f.control.handlePointer(pointer(244, 186), false); pointerHover.endDispatch();
-	for (const method of ['pushClipRect', 'popClipRect', 'fill_rect', 'blit_rect', 'polyline', 'blit_text_inline_with_font'] as const)
-		t.mock.method(api, method, () => {});
-	const draws = t.mock.method(api, 'drawBitmapAffine', () => {});
-	f.control.draw();
-	assert.equal(draws.mock.callCount(), 2);
-	const alpha = draws.mock.calls[1].arguments[11] >>> 24;
+	f.control.update();
+	const overlay = createHostOverlayFixture(450, 300);
+	const paint = () => {
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); f.control.draw(); overlay.renderer.endFrame();
+		const frame = overlay.queue.consumeOverlayFrame(), bitmaps: HostBitmapRenderSubmission[] = [];
+		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.Bitmap)
+			bitmaps.push(frame.commandRefs[index] as HostBitmapRenderSubmission);
+		return bitmaps;
+	};
+	const draws = paint(); assert.equal(draws.length, 2);
+	const alpha = draws[1].color >>> 24;
 	assert.ok(alpha > 0 && alpha < 255, 'the insertion preview is visually distinct from committed content');
+	const natural = t.mock.method(editorViewState.font.renderFont(), 'measure'), ranges = t.mock.method(editorViewState.font, 'measureTextRange');
+	for (let step = 0; step < 20; step++) {
+		f.control.handlePointer(pointer(244 + step, 186), false); f.control.update(); paint();
+	}
+	assert.equal(natural.mock.callCount(), 0, 'steady ghost motion and paint retain prepared annotation widths');
+	assert.equal(ranges.mock.callCount(), 0, 'steady ghost motion and paint do not re-truncate annotation text');
 	pointerHover.beginDispatch(f.scope.surfaceScope); pointerHover.endDispatch();
-	draws.mock.resetCalls(); f.control.draw();
-	assert.equal(draws.mock.callCount(), 1); assert.ok(f.view.placementPreview !== undefined);
+	assert.equal(paint().length, 1); assert.ok(f.view.placementPreview !== undefined);
 	f.control.handlePointer(pointer(250, 190, PointerButton.Primary, PointerButton.Primary), true);
 	assert.equal(f.context.subject!.objects.length, 2);
 });

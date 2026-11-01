@@ -303,10 +303,10 @@ export class OverlayRenderer {
 	}
 
 	/** Screen-space casing stays legible over arbitrary artifact pixels, independently of zoom and theme. */
-	public outlinedPolyline(points: readonly number[], x: number, y: number, z: number, layer: Layer2D): void {
+	public outlinedPolyline(points: readonly number[], x: number, y: number, z: number, layer: Layer2D, thickness = 1, color: color = 0xffffffff): void {
 		const published = this.snapshotPolyline(points, x, y);
-		this.submitPolyline(published, z, 3, 0xff000000, layer);
-		this.submitPolyline(published, z, 1, 0xffffffff, layer);
+		this.submitPolyline(published, z, thickness + 2, 0xff000000, layer);
+		this.submitPolyline(published, z, thickness, color, layer);
 	}
 
 	public outlinedRect(left: number, top: number, right: number, bottom: number, z: number, layer: Layer2D): void {

@@ -105,6 +105,7 @@ export const THEME_TOKEN_TEXT_SUCCESS = 101;
 export const THEME_TOKEN_TEXT_WARNING = 102;
 export const THEME_TOKEN_TEXT_ERROR = 103;
 export const THEME_TOKEN_FOCUS_BLUE = 104;
+export const THEME_TOKEN_ARTWORK_BACKGROUND = 105;
 
 export const THEME_TOKEN_COLORS: readonly number[] = [
 	0x00000000,
@@ -212,6 +213,7 @@ export const THEME_TOKEN_COLORS: readonly number[] = [
 	0xff714b00,
 	0xff9f2721,
 	0xff3564b6,
+	0xff757575,
 ];
 
 export function resolveThemeTokenColor(token: number): number {

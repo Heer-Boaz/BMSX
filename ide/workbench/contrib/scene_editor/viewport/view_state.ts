@@ -1,4 +1,7 @@
 import { create_rect_bounds, copy_rect_bounds, type RectBounds } from '../../../../../machine/ts/common/rect';
+import type { BFont } from '../../../../../machine/ts/render/shared/bitmap_font';
+import { editorViewState } from '../../../../editor/ui/view/state';
+import { WorkbenchCanvasCaption } from '../../../ui/canvas_caption';
 import type { SceneAddMemberChoice, SceneAuthoringContext } from '../authoring_context';
 import type { SceneSourceAffine, SceneSourceObject } from '../model';
 import type { SceneSpatialReadModel } from '../spatial_projection';
@@ -10,7 +13,7 @@ import { SceneViewportCanvas } from './canvas';
 import { SceneViewportModels, type SceneViewportModelBounds } from './models';
 import type { SceneVisualReadModel } from '../visual_projection';
 import type { SceneTransformPreview } from '../transform_proposal';
-import { SceneTranslationGizmo } from './translate_gizmo';
+import { SceneTranslationGizmo, TRANSLATE_AXIS_LABELS } from './translate_gizmo';
 import { collectSceneTextImages } from './text_layout';
 
 export type SceneMemberPlacementPreview = SceneTransformPreview<SceneAddMemberChoice> & {
@@ -28,6 +31,9 @@ const AXIS_UNIT_PIXELS = 16;
 export class SceneViewportViewState {
 	public readonly camera = new SceneViewportCamera();
 	public readonly gizmo = new SceneTranslationGizmo();
+	public readonly caption = new WorkbenchCanvasCaption();
+	public readonly axisLabelWidths = [0, 0, 0];
+	private labelFont: BFont | undefined;
 	public transformPreview: SceneTransformPreview | undefined;
 	public placementPreview: SceneMemberPlacementPreview | undefined;
 	public readonly canvas: SceneViewportCanvas;
@@ -82,6 +88,29 @@ export class SceneViewportViewState {
 		if (this.bounds.left === bounds.left && this.bounds.top === bounds.top && this.bounds.right === bounds.right && this.bounds.bottom === bounds.bottom && this.lineHeight === lineHeight) return;
 		copy_rect_bounds(this.bounds, bounds); this.lineHeight = lineHeight; this.allocationRevision++;
 		if (bounds.left < bounds.right && bounds.top < bounds.bottom) this.camera.setViewport(bounds.right - bounds.left, bounds.bottom - bounds.top);
+	}
+	/** Attached controls publish annotation content before paint. Source and
+	 * pointer motion only change the rows they actually represent. */
+	public prepareCaption(placement: Readonly<SceneViewportPlacement> | undefined): void {
+		const caption = this.caption, lines = caption.lines;
+		caption.warningLine = -1;
+		if (placement === undefined) {
+			lines[0] = this.source === undefined ? 'SCENE UNAVAILABLE' : this.camera.mode === '2d' ? '2D' : '3D';
+			lines.length = 1;
+		} else {
+			lines[0] = placement.definitionLabel;
+			lines[1] = this.camera.mode === '3d' ? placement.located ? 'Click: place on XZ' : 'Point at XZ plane' : 'Click: place';
+			lines[2] = 'Esc: cancel';
+			const empty = (this.camera.mode === '2d' ? this.placementCanvas.items.length : this.placementModels.scene.instances.length) === 0;
+			if (empty) { lines[3] = 'No preview'; caption.warningLine = 3; }
+			lines.length = empty ? 4 : 3;
+		}
+		caption.layout(Math.max(0, this.bounds.right - this.bounds.left - 8));
+		const font = editorViewState.font.renderFont();
+		if (this.labelFont !== font) {
+			this.labelFont = font;
+			for (let axis = 0; axis < TRANSLATE_AXIS_LABELS.length; axis++) this.axisLabelWidths[axis] = font.measure(TRANSLATE_AXIS_LABELS[axis]);
+		}
 	}
 	public refresh(): void {
 		if (this.disposed) return;

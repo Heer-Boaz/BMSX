@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
+import { createHostOverlayFixture } from '../helpers/host_overlay';
+import { Host2DKind } from '../../machine/ts/render/host_overlay/commands';
+import type { HostMeshScene, HostMeshSceneRenderSubmission } from '../../machine/ts/render/host_overlay/mesh';
 import { appendAffine3, type Affine3 } from '../../machine/ts/common/affine3';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import type { SceneSourceAffine, SceneSourceObject } from '../../ide/workbench/contrib/scene_editor/model';
@@ -175,14 +178,19 @@ test('the Scene viewport shares main and Add model assets while the located ghos
 	}
 	update.mock.restore(); sourceRead.mock.restore(); mainPreparation.mock.restore();
 	assert.equal(main.ox, 7); assert.equal(ghost.ox, 101); assert.equal(retired, 0);
-	for (const method of ['pushClipRect', 'popClipRect', 'fill_rect', 'blit_rect', 'polyline', 'blit_text_inline_with_font'] as const)
-		t.mock.method(api, method, () => {});
-	const submit = t.mock.method(api, 'drawMeshScene', () => {});
+	const overlay = createHostOverlayFixture(400, 300);
 	const placement: SceneViewportPlacement = { definitionLabel: choice.id, preview, x: world.ox, y: world.oy, z: world.oz, located: true };
-	drawSceneViewport(view, false, placement);
-	assert.deepEqual(submit.mock.calls.map(call => call.arguments[0]), [view.models.scene, view.placementModels.scene]);
-	submit.mock.resetCalls(); placement.located = false; drawSceneViewport(view, false, placement);
-	assert.deepEqual(submit.mock.calls.map(call => call.arguments[0]), [view.models.scene]);
+	const paint = () => {
+		overlay.renderer.beginFrame(overlay.presenter); api.beginFrame(overlay.renderer); drawSceneViewport(view, false, placement); overlay.renderer.endFrame();
+		const frame = overlay.queue.consumeOverlayFrame(), scenes: HostMeshScene[] = [];
+		for (let index = 0; index < frame.commandCount; index++) if (frame.commandKinds[index] === Host2DKind.MeshScene)
+			scenes.push((frame.commandRefs[index] as HostMeshSceneRenderSubmission).scene);
+		return scenes;
+	};
+	const located = paint(); assert.equal(located.length, 2);
+	assert.ok(located[0] === view.models.scene && located[1] === view.placementModels.scene);
+	placement.located = false; const outside = paint();
+	assert.equal(outside.length, 1); assert.ok(outside[0] === view.models.scene);
 	view.placementPreview = undefined; view.refresh();
 	assert.equal(view.placementModels.scene.instances.length, 0); assert.equal(main.mesh, mesh); assert.equal(retired, 0);
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);

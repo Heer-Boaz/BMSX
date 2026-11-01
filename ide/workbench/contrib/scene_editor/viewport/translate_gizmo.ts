@@ -5,6 +5,7 @@ import type { SceneViewportCamera } from './camera';
 
 export enum TranslateHandle { None = 0, X = 1, Y = 2, XY = 3, Z = 4, XZ = 5, YZ = 6, View = 7 }
 export const TRANSLATE_PLANE_HANDLES = [TranslateHandle.XY, TranslateHandle.XZ, TranslateHandle.YZ] as const;
+export const TRANSLATE_AXIS_LABELS = ['X', 'Y', 'Z'] as const;
 
 /** World-axis move handles and their frozen drag plane. All geometry is retained; source admission lives elsewhere. */
 export class SceneTranslationGizmo {
