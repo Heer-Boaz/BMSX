@@ -5,7 +5,7 @@ import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import type { EditorSourceLocation } from '../../ide/editor/navigation/source_location';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { inputFocus } from '../../ide/input/focus';
+import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
 import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';
@@ -41,7 +41,7 @@ async function fixture(t: TestContext, source = SOURCE) {
 }
 
 for (const compact of [false, true])
-	test(`document Scene Tab traverses its actual ${compact ? 'Details-only' : 'hierarchy and Details'} regions and returns through the action bar`, async t => {
+	test(`document Scene Tab traverses its actual ${compact ? 'Details and section actions' : 'hierarchy and Details without an empty header stop'}`, async t => {
 		const f = await fixture(t), { control, view } = f;
 		if (compact) {
 			assert.equal(control.details.focus(), true);
@@ -54,16 +54,18 @@ for (const compact of [false, true])
 		const selection = view.authoring.selection, execution = f.host.execution.revision;
 		const start = compact ? control.details.commandTarget : control.hierarchy.focusTarget;
 		assert.equal(start.focus(), true);
-		f.key('Tab', KeyModifier.shift);
-		const actions = inputFocus.admittedTarget;
-		assert.ok(actions !== null && control.inputScope.contains(actions.scope));
-		assert.equal(view.actionBar.hasFocus, true);
-			const fields = [...control.details.controls.map(control => control.field.focusTarget),
-				...control.details.options.controls.map(control => control.focusTarget)].filter(target => target.canFocus!());
+		const fields = [...control.details.controls.map(control => control.field.focusTarget),
+			...control.details.options.controls.map(control => control.focusTarget)].filter(target => target.canFocus!());
 		assert.ok(fields.includes(control.details.controls[0].field.focusTarget)
 				&& fields.includes(control.details.options.controls[0].focusTarget), 'position and expression controls both participate in the region boundary');
-		const cycle = compact ? [actions, control.details.commandTarget, ...fields]
-			: [actions, control.hierarchy.focusTarget, control.details.commandTarget, ...fields];
+		let cycle: InputFocusTarget[];
+		if (compact) {
+			f.key('Tab', KeyModifier.shift);
+			const actions = inputFocus.admittedTarget;
+			assert.ok(actions !== null && control.inputScope.contains(actions.scope));
+			assert.equal(view.actionBar.hasFocus, true);
+			cycle = [actions, control.details.commandTarget, ...fields];
+		} else cycle = [control.hierarchy.focusTarget, control.details.commandTarget, ...fields];
 		for (let index = 1; index <= cycle.length; index++) {
 			f.key('Tab');
 			assert.ok(inputFocus.admittedTarget === cycle[index % cycle.length]);

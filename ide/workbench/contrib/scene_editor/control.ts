@@ -69,13 +69,9 @@ export class SceneEditorControl {
 		};
 		this.focusTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.focusTarget.registerCommand('sceneEditor.details', sections.details);
-		const contextActions = new WorkbenchMenu<SceneEditorControl>([
-			{ type: 'command', command: 'sceneEditor.details', when: control => control.hasView && control.view.layout.mode === 'outline' },
-			{ type: 'command', command: 'sceneEditor.outline', when: control => control.hasView && control.view.layout.mode === 'details' },
-			...SCENE_AUTHORING_CONTEXT_ACTIONS,
-		], this);
+		const contextActions = new WorkbenchMenu(SCENE_AUTHORING_CONTEXT_ACTIONS, undefined);
 		this.hierarchy = new SceneHierarchyControl(commands, contextMenu, surfaces, owner, workArea, this.inputScope, this.focusTarget, sections, contextActions);
-		this.details = new SceneDetailsControl(commands, contextMenu, this.inputScope, this.focusTarget, sections, contextActions);
+		this.details = new SceneDetailsControl(commands, contextMenu, this.inputScope, this.focusTarget, sections, new WorkbenchMenu([], undefined));
 		this.focusTarget.registerCommand('contextMenu', {
 			isEnabled: () => this.hasView && (this.view.section === 'details' ? this.details.canFocus : this.hierarchy.canFocus)
 				&& this.commandTarget.getCommand('contextMenu')!.isEnabled(),
@@ -148,13 +144,16 @@ export class SceneEditorControl {
 		const regions = (this.hierarchy.canFocus ? 1 : 0) | (this.details.canFocus ? 2 : 0) | (actions.canFocus!() ? 4 : 0);
 		if (regions === this.focusRegions) return;
 		this.focusRegions = regions;
-		let previous = actions;
-		this.hierarchy.focusTarget.next = this.hierarchy.focusTarget.previous = null;
+		const hierarchy = this.hierarchy.focusTarget;
+		actions.next = actions.previous = hierarchy.next = hierarchy.previous = null;
+		if (regions === 0) return;
+		const first = (regions & 4) !== 0 ? actions : (regions & 1) !== 0 ? hierarchy : this.details.commandTarget;
+		let previous = first;
 		if (this.hierarchy.canFocus) {
-			previous.next = this.hierarchy.focusTarget; this.hierarchy.focusTarget.previous = previous; previous = this.hierarchy.focusTarget;
+			previous.next = hierarchy; hierarchy.previous = previous; previous = hierarchy;
 		}
-		if (this.details.canFocus) this.details.setFocusNeighbors(previous, actions);
-		else { previous.next = actions; actions.previous = previous; }
+		if (this.details.canFocus) this.details.setFocusNeighbors(previous, first);
+		else { previous.next = first; first.previous = previous; }
 	}
 	public get commandTarget(): InputFocusTarget {
 		if (this.view.section === 'details' && this.details.canFocus) return this.details.commandTarget;

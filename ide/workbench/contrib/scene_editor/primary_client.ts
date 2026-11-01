@@ -52,17 +52,14 @@ export type ScenePrimaryClientOptions = {
 };
 const PRIMARY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'editor.source' }];
 const HIERARCHY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'sceneEditor.addMember', icon: 'add' }];
-const HIERARCHY_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
-	{ type: 'command', command: 'sceneEditor.addMember' },
+const HIERARCHY_PANEL_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
 	{ type: 'command', command: 'sceneEditor.details', when: main => !main.regions.details.displayed },
-	...SCENE_AUTHORING_CONTEXT_ACTIONS,
+	{ type: 'command', command: 'workspace.hierarchy.toggle' },
 ];
-const DETAILS_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
+const DETAILS_PANEL_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
 	{ type: 'command', command: 'sceneEditor.outline', when: main => !main.regions.hierarchy.displayed },
-	...SCENE_AUTHORING_CONTEXT_ACTIONS,
+	{ type: 'command', command: 'workspace.details.toggle' },
 ];
-const HIERARCHY_PANEL_CONTEXT: WorkbenchMenuDefinition<undefined> = [{ type: 'command', command: 'workspace.hierarchy.toggle' }];
-const DETAILS_PANEL_CONTEXT: WorkbenchMenuDefinition<undefined> = [{ type: 'command', command: 'workspace.details.toggle' }];
 
 /** One exact Scene context, with an authored viewport and independent hierarchy/Details presentations. */
 export class ScenePrimaryClient implements MainWorkspaceClient {
@@ -113,16 +110,16 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		const common = { commands: options.commands, contextMenu: options.contextMenu, surfaces: options.surfaces,
 			workArea: options.workArea, scope: this.scope, commandTarget: this.commandTarget, focusReturn: options.focusReturn,
 			description: consumer.workingCopy.resource.path, onDidOpenActions: observeActions, isPresented: () => options.main.primary === this };
-		const hierarchyContext = new WorkbenchMenu(HIERARCHY_CONTEXT, options.main);
-		const hierarchyMenu = new WorkbenchCompositeMenu([hierarchyContext, new WorkbenchMenu(HIERARCHY_PANEL_CONTEXT, undefined), options.main.regions.hierarchy.actions]);
+		const hierarchyContext = new WorkbenchMenu(SCENE_AUTHORING_CONTEXT_ACTIONS, undefined);
+		const hierarchyMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(HIERARCHY_PANEL_CONTEXT, options.main), options.main.regions.hierarchy.actions]);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', view: this.view.hierarchy,
 			bodyContextMenu: 'content',
 			surface: options.presentations.hierarchy, actions: createWorkbenchActionBar(new WorkbenchMenu(HIERARCHY_ACTIONS, undefined), true, hierarchyMenu),
 			contextActions: hierarchyMenu, measureContent: measureSceneHierarchy,
 			createControl: (scope, _target, surface) => new SceneHierarchyControl(options.commands, options.contextMenu, options.surfaces,
 				surface, options.workArea, scope, this.commandTarget, sections, hierarchyContext) });
-		const detailsContext = new WorkbenchMenu(DETAILS_CONTEXT, options.main);
-		const detailsMenu = new WorkbenchCompositeMenu([detailsContext, new WorkbenchMenu(DETAILS_PANEL_CONTEXT, undefined), options.main.regions.details.actions]);
+		const detailsContext = new WorkbenchMenu([], undefined);
+		const detailsMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(DETAILS_PANEL_CONTEXT, options.main), options.main.regions.details.actions]);
 		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', view: this.view.details,
 			bodyContextMenu: 'content',
 			surface: options.presentations.details, actions: createWorkbenchActionBar(new WorkbenchMenu([], undefined), true, detailsMenu),

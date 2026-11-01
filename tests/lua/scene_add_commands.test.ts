@@ -10,6 +10,7 @@ import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_co
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
 import { CARTLIB_OBJECT_SOURCE_MODULES } from '../fixtures/studio/cartlib_objects';
 import { createActualSourcePanes } from '../helpers/source_panes';
+import { WORKBENCH_ACTION_BAR_OVERFLOW } from '../../ide/workbench/ui/action_bar';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
 prefab.define({def_id='actor',class=require('cartlib/world/object_2d')})
@@ -60,12 +61,9 @@ test('Add acceptance does not arm or reclaim the canvas after focus return selec
 
 function openAdd(f: Fixture): void {
 	assert.equal(f.editor.commands.isEnabled('sceneEditor.addMember', f.primary.hierarchy.control.focusTarget), true);
-	f.key('ContextMenu'); const menu = f.editor.contextMenu;
-	assert.equal(menu.visible, true);
-	assert.ok(menu.model.rows.some(row => row.command === 'sceneEditor.addMember' && row.enabled),
-		'the real hierarchy menu contributes an admitted Add command');
-	for (let step = 0; menu.model.rows[menu.model.selectedIndex]?.command !== 'sceneEditor.addMember' && step < menu.model.rows.length; step++) f.key('ArrowDown');
-	assert.equal(menu.model.rows[menu.model.selectedIndex].command, 'sceneEditor.addMember'); f.key('Enter');
+	const bar = f.primary.hierarchy.actionBar;
+	assert.equal(bar.focusTarget.focus(), true); f.key('Home');
+	assert.equal(bar.tooltipItem?.command, 'sceneEditor.addMember'); f.key('Enter');
 	assert.equal(f.picker.visible, true); assert.equal(f.picker.busy, false);
 	assert.equal(inputFocus.admittedTarget, f.picker.field.focusTarget);
 }
@@ -105,12 +103,68 @@ test('Main Add chooses an existing 2D prefab without writing, then the physical 
 });
 
 test('cancelling the actual Add picker returns to its origin and never arms placement', async t => {
-	const f = await fixture(t), origin = f.primary.hierarchy.control.focusTarget;
+	const f = await fixture(t), origin = f.primary.hierarchy.actionBar.focusTarget;
 	openAdd(f); assert.equal(f.picker.invocationOrigin, origin); f.key('Escape');
 	assert.equal(f.picker.visible, false); assert.equal(inputFocus.admittedTarget, origin);
 	clickViewport(f);
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false); assert.equal(f.model.dirty, false);
 });
+
+for (const region of ['hierarchy', 'details'] as const) for (const route of ['overflow', 'secondary'] as const)
+	test(`Main Scene ${region} header ${route} contains only panel commands, never selected-member actions`, async t => {
+		const f = await fixture(t), panel = f.primary[region];
+		f.main.focusPrimary('hierarchy'); f.key('Home'); f.key('ArrowDown');
+		const selection = f.primary.consumer.selection;
+		assert.ok(selection?.kind === 'member');
+		assert.equal(panel.actionBar.focusTarget.focus(), true); f.key('End');
+		assert.equal(panel.actionBar.tooltipItem?.command, WORKBENCH_ACTION_BAR_OVERFLOW);
+		if (route === 'overflow') f.key('Enter');
+		else {
+			const bounds = panel.actionBar.tooltipItem.bounds;
+			const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+			for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+				buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+				releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
+				modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+		}
+		const rows = f.editor.contextMenu.model.rows;
+		assert.equal(f.editor.contextMenu.visible, true);
+		assert.ok(rows.some(row => row.command === `workspace.${region}.toggle`));
+		assert.equal(rows.some(row => row.command === 'editor.source' || row.command === 'sceneEditor.renameMember'
+			|| row.command === 'sceneEditor.reparentMember' || row.command === 'sceneEditor.reparentMemberKeepLocal'
+			|| row.command === 'sceneEditor.removeMember' || row.command === 'sceneEditor.removeSubtree'), false);
+		assert.equal(f.primary.consumer.selection?.kind, 'member');
+		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+	});
+
+test('Main hierarchy row menu owns member commands but not Add or panel chrome', async t => {
+	const f = await fixture(t);
+	f.key('Home'); f.key('ArrowDown'); f.key('ContextMenu');
+	assert.equal(f.editor.contextMenu.visible, true);
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), [
+		'editor.source', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
+	], 'the clicked-member menu has one reparent operation and no commands for another subject');
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+});
+
+for (const route of ['pointer', 'ContextMenu', 'F10'] as const)
+	test(`Main Details ${route} never opens an empty inspector menu or borrows the selected member menu`, async t => {
+		const f = await fixture(t);
+		f.key('Home'); f.key('ArrowDown'); f.main.focusPrimary('details');
+		assert.equal(f.primary.details.control.focus(), true);
+		const selection = f.primary.consumer.selection, source = f.model.buffer.getText();
+		const show = t.mock.method(f.editor.contextMenu, 'show');
+		if (route === 'pointer') {
+			const bounds = f.primary.view.details.viewport.bounds, x = bounds.left + 1, y = bounds.top + 1;
+			for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+				buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+				releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
+				modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+		} else f.key(route, route === 'F10' ? KeyModifier.shift : KeyModifier.none);
+		assert.equal(show.mock.callCount(), 0, 'an empty inspector menu is rejected before popup construction');
+		assert.equal(f.editor.contextMenu.visible, false); assert.equal(f.primary.consumer.selection, selection);
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+	});
 
 test('undoing a placed member from Details retains its source owner for keyboard Redo', async t => {
 	const f = await fixture(t); openAdd(f); chooseOther(f); clickViewport(f);

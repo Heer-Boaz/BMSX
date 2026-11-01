@@ -353,6 +353,8 @@ export class SceneDetailsControl {
 	}
 
 	private openContextMenu(x: number, y: number, keyboard = false): void {
+		this.menu.refresh();
+		if (this.menu.visibleItems.length === 0) return;
 		const view = this.view, generation = this.inputScope.contextGeneration, selection = view.authoring.selectionRevision;
 		const version = view.authoring.workingCopy.version;
 		this.contextMenu.show(x, y, this.menu, this.commands, {

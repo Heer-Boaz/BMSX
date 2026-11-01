@@ -46,8 +46,8 @@ scenes.register('elsewhere', { objects = {
 return {}
 `;
 
-async function fixture(t: TestContext, placement: 'document' | 'Main' = 'document') {
-	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES, ['scene.lua', SOURCE], ['poses.lua', POSES], ['prefabs.lua', PREFABS],
+async function fixture(t: TestContext, placement: 'document' | 'Main' = 'document', source = SOURCE) {
+	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES, ['scene.lua', source], ['poses.lua', POSES], ['prefabs.lua', PREFABS],
 		['cartlib/world/scene_library.lua', 'return {}'], ['cartlib/world/prefab.lua', 'return { define=function() end }']]);
 	f.editor.setFontVariant('tiny'); f.first.focus();
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
@@ -149,6 +149,61 @@ for (const [command, placement, expected] of [
 	f.editor.commands.execute('undo', f.commandTarget); f.update();
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
+
+for (const placement of ['document', 'Main'] as const) {
+	for (const modifiers of [KeyModifier.none, KeyModifier.alt]) test(`${placement} Scene row Reparent applies the accept modifier to its captured placement policy (${modifiers})`, async t => {
+		const f = await fixture(t, placement); selectMember(f, 'subject');
+		contextCommand(f, 'sceneEditor.reparentMember');
+		assert.equal(f.picker.visible, true);
+		enterText(f, 'dock'); assert.equal(f.picker.model.list.rows.length, 1); f.key('Enter', modifiers);
+		assert.equal(f.picker.visible, false);
+		const subject = member(f, 'subject');
+		assert.equal(stringLiteralValue(subject.parent!.value), 'dock');
+		assert.deepEqual(coefficients(f, subject), modifiers === KeyModifier.alt ? [1, 0, -0, 1, 2, 3] : [1, 0, 0, 1, 92, 183]);
+		assertProvidersUnchanged(f);
+		f.editor.commands.execute('undo', f.commandTarget); f.update();
+		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+	});
+
+	test(`${placement} Scene row Reparent remains enabled when only local placement is possible`, async t => {
+		const source = SOURCE.replace('transform = carrier_pose', 'transform = unavailable_pose');
+		const f = await fixture(t, placement, source); selectMember(f, 'subject');
+		assert.equal(f.context.canReparentSelectedMember('keep_world'), false);
+		assert.equal(f.context.canReparentSelectedMember('keep_local'), true);
+		assert.equal(f.editor.commands.isEnabled('sceneEditor.reparentMember', f.commandTarget), true);
+		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
+		assert.equal(f.picker.model.list.rows.length, 1);
+		f.key('Enter');
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+		selectMember(f, 'subject'); contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock'); f.key('Enter', KeyModifier.alt);
+		const subject = member(f, 'subject');
+		assert.equal(stringLiteralValue(subject.parent!.value), 'dock');
+		assert.deepEqual(coefficients(f, subject), [1, 0, -0, 1, 2, 3]);
+		f.editor.commands.execute('undo', f.commandTarget); f.update();
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+	});
+
+	test(`${placement} Scene parent picker retains a local-only target beside world-preserving targets`, async t => {
+		const f = await fixture(t, placement);
+		const poses = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog,
+			f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'poses.lua' })!);
+		poses.pushEditOperations([{ offset: 0, deleteLength: POSES.length, text: POSES.replace('xx=1', 'xx=0') }]);
+		selectMember(f, 'subject');
+		const dock = member(f, 'dock');
+		const world = f.context.captureReparent('keep_world')!, local = f.context.captureReparent('keep_local')!;
+		assert.ok(world.choices.length > 0 && world.choices.every(choice => choice.parent !== dock));
+		assert.ok(local.choices.some(choice => choice.parent === dock));
+		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
+		assert.equal(f.picker.model.list.rows.length, 1); f.key('Enter');
+		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+		selectMember(f, 'subject'); contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock'); f.key('Enter', KeyModifier.alt);
+		const subject = member(f, 'subject');
+		assert.equal(stringLiteralValue(subject.parent!.value), 'dock');
+		assert.deepEqual(coefficients(f, subject), [1, 0, -0, 1, 2, 3]);
+		f.editor.commands.execute('undo', f.commandTarget); f.update();
+		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+	});
+}
 
 test('Escape cancels both Scene parent choice and rename without source or history changes', async t => {
 	const f = await fixture(t); selectMember(f, 'subject');

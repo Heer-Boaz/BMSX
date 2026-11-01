@@ -193,14 +193,15 @@ test('replacing selected Scene source with the same member name retires the Deta
 	assert.equal(input.view.details.optionProperties.length, 0);
 });
 
-for (const variant of ['tiny', 'msx'] as const) test(`a long authored Scene basename retains compact navigation and More in a narrow ${variant} pane`, t => {
+for (const variant of ['tiny', 'msx'] as const) test(`a long authored Scene basename retains compact navigation without member overflow in a narrow ${variant} pane`, t => {
 	configureFontVariant(variant);
 	const input = scene(t, `scenes/${'long_authored_scene_'.repeat(12)}.lua`);
 	const width = variant === 'tiny' ? 78 : 118;
 	arrangeScene(input.view, true, false, { left: 0, top: 24, right: width, bottom: 276 });
 	const bar = input.view.actionBar, layout = input.view.layout, more = bar.overflow!.button;
-	assert.equal(more.visible, true); assert.ok(more.bounds.right - more.bounds.left >= 13);
-	assert.ok(more.bounds.left >= layout.left + 4 && more.bounds.right <= layout.right - 4);
+	assert.equal(bar.overflow!.items.some(item => item.type === 'command' && (item.command === 'sceneEditor.renameMember'
+		|| item.command === 'sceneEditor.reparentMember' || item.command === 'sceneEditor.removeMember' || item.command === 'sceneEditor.removeSubtree')), false);
+	assert.equal(more.visible, bar.overflow!.items.length > 0, 'More exists only for actual chrome actions, not a duplicated member menu');
 	assert.ok(editorViewState.font.measure(input.view.sourceText) <= layout.sourceBounds.right - layout.sourceBounds.left);
 	assert.equal(layout.mode, 'outline');
 	assert.ok(editorViewState.font.measure(layout.outlineTitle) <= layout.right - layout.left - 8);

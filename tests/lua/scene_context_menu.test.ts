@@ -46,6 +46,47 @@ function accept(f: Fixture, command: EditorCommandId): void {
 	f.key('Home'); for (let row = 0; row < index; row++) if (menu.model.rows[row].enabled) f.key('ArrowDown'); f.key('Enter');
 }
 
+test('document hierarchy row menu contains only member actions with one reparent operation', t => {
+	const f = fixture(t); secondary(f, 1);
+	assert.equal(f.editor.contextMenu.visible, true);
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), [
+		'editor.source', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
+	], 'the row does not own Add, panel chrome, section switches or a second reparent variant');
+	assert.equal(f.input.view.hierarchy.outline.selectionIndex, 1);
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE); assert.equal(f.model.canUndo, false);
+});
+
+for (const section of ['outline', 'details'] as const) for (const route of ['overflow', 'secondary'] as const)
+	test(`document Scene ${section} header ${route} cannot borrow the selected member menu`, t => {
+		const f = fixture(t); f.firstBounds.right = 160; f.update();
+		selectSceneOutlineRow(f.input.view.hierarchy, 1); f.pane.update();
+		f.editor.commands.execute(section === 'details' ? 'sceneEditor.details' : 'sceneEditor.outline', f.pane.commandTarget);
+		const selection = f.input.view.authoring.selection;
+		const bar = f.input.view.actionBar;
+		if (route === 'overflow') {
+			assert.equal(bar.overflow!.button.visible, false, 'the section icon fits; no duplicated member menu creates More');
+			assert.equal(bar.overflow!.items.length, 0);
+			f.input.view.contextActions.refresh();
+			assert.deepEqual(f.input.view.contextActions.visibleItems.filter(item => item.type === 'command').map(item => item.command),
+				[section === 'details' ? 'sceneEditor.outline' : 'sceneEditor.details']);
+		} else {
+			const bounds = f.input.view.layout.sourceBounds;
+			const x = (bounds.left + bounds.right) / 2, y = (bounds.top + bounds.bottom) / 2;
+			const show = t.mock.method(f.editor.contextMenu, 'show');
+			for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+				buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+				releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
+				modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+			assert.equal(show.mock.callCount(), 0, 'this document header has no right-click commands of its own');
+		}
+		assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'
+			|| row.command === 'sceneEditor.renameMember' || row.command === 'sceneEditor.reparentMember'
+			|| row.command === 'sceneEditor.reparentMemberKeepLocal' || row.command === 'sceneEditor.removeMember'
+			|| row.command === 'sceneEditor.removeSubtree'), false);
+		assert.equal(f.input.view.authoring.selection, selection);
+		assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE); assert.equal(f.model.canUndo, false);
+	});
+
 for (const target of ['definition', 'member'] as const) test(`Scene pointer ${target} resolves its authored occurrence after accepting the departing draft`, t => {
 	const f = fixture(t), input = f.input;
 	selectSceneOutlineRow(input.view.hierarchy, 1); f.pane.update();
@@ -135,13 +176,16 @@ for (const command of ['editor.source', 'editor.sourceToSide'] as const) test(`S
 	if (command === 'editor.sourceToSide') assert.ok(f.firstGroup.model.activeTab === f.input && f.firstGroup.panes.activePane === f.pane);
 });
 
-test('Scene menu Details keeps the selected occurrence and its container owns keyboard menus, not property fields', t => {
-	const f = fixture(t); f.firstBounds.right = 160; f.update(); secondary(f, 1); accept(f, 'sceneEditor.details');
+test('Scene Details section command keeps the selected occurrence without opening inspector or field menus', t => {
+	const f = fixture(t); f.firstBounds.right = 160; f.update(); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.pane.update();
+	f.editor.commands.execute('sceneEditor.details', f.pane.commandTarget);
 	assert.equal(f.input.view.section, 'details'); const origin = inputFocus.admittedTarget;
 	assert.ok(origin === f.pane.commandTarget && origin !== null);
-	f.key('ContextMenu'); assert.equal(f.editor.contextMenu.visible, true); f.key('Escape'); assert.ok(inputFocus.admittedTarget === origin);
+	const show = t.mock.method(f.editor.contextMenu, 'show');
+	f.key('ContextMenu'); assert.equal(f.editor.contextMenu.visible, false); assert.ok(inputFocus.admittedTarget === origin);
 	const field = f.pane.control.details.controls[0].field; field.focusTarget.focus(); const text = field.readText().text;
 	f.key('ContextMenu'); assert.equal(f.editor.contextMenu.visible, false); assert.ok(inputFocus.admittedTarget === field.focusTarget);
+	assert.equal(show.mock.callCount(), 0, 'neither an empty inspector menu nor a text field inherits member commands');
 	assert.equal(field.readText().text, text); assert.equal(f.model.canUndo, false);
 });
 
@@ -256,14 +300,18 @@ for (const rebind of [false, true]) test(`Scene retained member command ${rebind
 	if (rebind) assert.ok(f.firstGroup.model.activeTab instanceof HostErrorInput);
 });
 
-test('Scene Details background secondary uses its selected member without treating its value field as an outline action', t => {
-	const f = fixture(t); f.firstBounds.right = 160; f.update(); secondary(f, 1); accept(f, 'sceneEditor.details');
+for (const route of ['pointer', 'ContextMenu', 'F10'] as const) test(`document Scene Details ${route} does not construct an empty inspector popup`, t => {
+	const f = fixture(t); f.firstBounds.right = 160; f.update(); selectSceneOutlineRow(f.input.view.hierarchy, 1); f.pane.update();
+	f.editor.commands.execute('sceneEditor.details', f.pane.commandTarget);
 	const origin = f.pane.commandTarget, before = f.model.buffer.getText(), bounds = f.input.view.details.viewport.bounds;
-	for (const down of [true, false]) f.editor.dispatchPointer({ x: bounds.left + 1, y: bounds.top + 1,
+	const show = t.mock.method(f.editor.contextMenu, 'show');
+	if (route === 'pointer') for (const down of [true, false]) f.editor.dispatchPointer({ x: bounds.left + 1, y: bounds.top + 1,
 		buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
 		releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
-	assert.equal(f.editor.contextMenu.visible, true); assert.ok(f.editor.contextMenu.invocationOrigin === origin);
-	assert.equal(f.input.view.hierarchy.outline.selectionIndex, 1); f.key('Escape'); assert.ok(inputFocus.admittedTarget === origin); assert.equal(f.model.buffer.getText(), before);
+	else f.key(route, route === 'F10' ? KeyModifier.shift : KeyModifier.none);
+	assert.equal(show.mock.callCount(), 0, 'the inspector rejects its empty menu before calling the popup owner');
+	assert.equal(f.editor.contextMenu.visible, false); assert.ok(inputFocus.admittedTarget === origin);
+	assert.equal(f.input.view.hierarchy.outline.selectionIndex, 1); assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.canUndo, false);
 });
 
 for (const operation of ['update', 'setOptions'] as const) test(`Scene ${operation} source rebuild stops its retired pane when selection publication opens another editor`, t => {
