@@ -31,6 +31,11 @@ export type QuickInputOptions = {
 	readonly step?: { readonly index: number; readonly total: number; readonly back?: () => void };
 };
 
+export type QuickPickOptions<T extends QuickPickItem> = QuickInputOptions & {
+	/** An explanation vetoes this acceptance without retiring the picker or its owner. */
+	readonly validateSelection?: (item: T, modifiers: KeyModifier) => string | undefined;
+};
+
 type QuickInputSession = {
 	origin: InputFocusTarget | null;
 	returnFocus: InputFocusTarget | null;
@@ -73,6 +78,8 @@ export class QuickInputController implements PointerCaptureTarget {
 	private disposed = false;
 	private readonly scrollbarPointer = new ScrollbarPointerControl(pointerCapture, this.pointerScope);
 	private pressedRow: QuickPickMatch | undefined;
+	private validationRevision = 0;
+	private clearValidationOnPointerEnd: number | undefined;
 	private pressedBack: QuickInputSession | undefined;
 	private backRevision = 0;
 	private pointerRevision = 0;
@@ -104,6 +111,7 @@ export class QuickInputController implements PointerCaptureTarget {
 			this.cancelPointer();
 			this.scrollbarPointer.cancelPointer();
 			if (this.session?.kind === 'pick') {
+				this.clearPickValidation();
 				if (this.session.state === 'ready') this.model.filter(this.field.text);
 			} else { this.message = ''; this.labelsDirty = true; }
 			resetInlineBlink();
@@ -131,7 +139,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		provide: QuickPickSource<T>,
 		accept: (item: T, modifiers: KeyModifier, preserveFocus: boolean) => void,
 		onWillShow?: (lifetime: DisposableStore) => void,
-		options: QuickInputOptions = {},
+		options: QuickPickOptions<T> = {},
 	): void {
 		const { invocationOrigin } = options;
 		let provider: QuickPickProvider<T>;
@@ -161,7 +169,17 @@ export class QuickInputController implements PointerCaptureTarget {
 				if (session.state !== 'ready') return;
 				const list = this.model.list;
 				if (list.selectionIndex === -1) return; // A real user choice is required.
-				const item = provider.items[list.rows[list.selectionIndex].itemIndex];
+				const match = list.rows[list.selectionIndex], item = provider.items[match.itemIndex];
+				if (options.validateSelection !== undefined) {
+					const revision = this.model.revision, focusRevision = inputFocus.revision;
+					const message = options.validateSelection(item, modifiers);
+					if (this.session !== session || this.model.revision !== revision || list.rows[list.selectionIndex] !== match
+						|| inputFocus.revision !== focusRevision) return;
+					if (message !== undefined) {
+						this.validationRevision++; this.message = message; this.labelsDirty = true; this.update();
+						return;
+					}
+				}
 				this.finishHandoff(session, preserveFocus => accept(item, modifiers, preserveFocus));
 			},
 		};
@@ -177,6 +195,7 @@ export class QuickInputController implements PointerCaptureTarget {
 					if (this.session !== session) return;
 					this.cancelPointer(); this.scrollbarPointer.cancelPointer(); pointerHover.release(this);
 					if (this.session !== session) return;
+					this.clearPickValidation();
 					this.model.refresh(this.field.text);
 					if (this.session !== session) return;
 					this.update();
@@ -402,9 +421,16 @@ export class QuickInputController implements PointerCaptureTarget {
 
 	private moveSelection(delta: number): void {
 		const list = this.model.list;
-		list.selectionIndex = advanceQuickInputSelection(list.selectionIndex, list.rows.length, delta);
+		const next = advanceQuickInputSelection(list.selectionIndex, list.rows.length, delta);
+		if (next !== list.selectionIndex) this.clearPickValidation();
+		list.selectionIndex = next;
 		this.model.revealSelection();
 		resetInlineBlink();
+	}
+
+	private clearPickValidation(): void {
+		if (this.session?.kind !== 'pick' || this.session.state !== 'ready' || this.message.length === 0) return;
+		this.message = ''; this.labelsDirty = true;
 	}
 
 	private handleKeyboard(input: KeyInputEvent): void {
@@ -432,7 +458,9 @@ export class QuickInputController implements PointerCaptureTarget {
 			const last = isKeyJustPressed('End', input);
 			consumeIdeKey(last ? 'End' : 'Home', input);
 			const list = this.model.list;
-			list.selectionIndex = list.rows.length === 0 ? -1 : last ? list.rows.length - 1 : 0;
+			const next = list.rows.length === 0 ? -1 : last ? list.rows.length - 1 : 0;
+			if (next !== list.selectionIndex) this.clearPickValidation();
+			list.selectionIndex = next;
 			this.model.revealSelection();
 			resetInlineBlink();
 			return;
@@ -485,6 +513,9 @@ export class QuickInputController implements PointerCaptureTarget {
 		this.model.list.hoverIndex = index;
 		if (!justPressed) return;
 		if (index !== -1) {
+			// Keep row geometry stable until the captured press finishes.
+			this.clearValidationOnPointerEnd = index !== this.model.list.selectionIndex && this.message.length !== 0
+				? this.validationRevision : undefined;
 			this.model.list.selectionIndex = index;
 			pointerCapture.capture(this, PointerButton.Primary, this.pointerScope);
 			this.pressedRow = this.model.list.rows[index];
@@ -508,6 +539,11 @@ export class QuickInputController implements PointerCaptureTarget {
 		pointerCapture.release(this);
 		this.pressedRow = undefined;
 		this.pressedBack = undefined;
+		const validation = this.clearValidationOnPointerEnd;
+		this.clearValidationOnPointerEnd = undefined;
+		if (validation !== undefined && validation === this.validationRevision) {
+			this.clearPickValidation();
+		}
 	}
 
 	public handleCapturedPointer(snapshot: PointerInputSnapshot): void {

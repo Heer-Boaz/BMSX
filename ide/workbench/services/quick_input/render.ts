@@ -2,7 +2,8 @@ import { drawQuickPickRows, layoutQuickPickRows } from './list_render';
 import { write_rect_bounds } from '../../../../machine/ts/common/rect';
 import * as constants from '../../../common/constants';
 import { api } from '../../../runtime/overlay_api';
-import { measureText, truncateTextToWidth, writeWrappedOverlayLine } from '../../../editor/common/text/layout';
+import { appendMeasuredTruncationMarker } from '../../../common/text';
+import { measureText, measureTextRange, truncateTextToWidth, writeWrappedOverlayLine } from '../../../editor/common/text/layout';
 import { drawSingleLineField } from '../../../editor/ui/inline/single_line_render';
 import { editorViewState } from '../../../editor/ui/view/state';
 import type { QuickInputController } from './controller';
@@ -17,7 +18,8 @@ export function layoutQuickInput(input: QuickInputController): void {
 	const model = input.model;
 	const geometryChanged = layout.width !== width || layout.height !== height || layout.left !== area.left
 		|| layout.top !== area.top || layout.font !== view.font;
-	const labelsChanged = input.labelsDirty || layout.width !== width || layout.font !== view.font;
+	const labelsChanged = input.labelsDirty || layout.width !== width || layout.font !== view.font
+		|| layout.height !== height && input.message.length !== 0 && !input.inputBox && !input.busy && !input.failed;
 	const layoutChanged = labelsChanged || layout.projectionRevision !== model.revision
 		|| layout.height !== height || layout.left !== area.left || layout.top !== area.top;
 	if (layoutChanged) {
@@ -50,6 +52,15 @@ export function layoutQuickInput(input: QuickInputController): void {
 			if (message.length !== 0) for (const line of message.split(/\r?\n/)) {
 				writeWrappedOverlayLine(layout.messageLines, line, right - left - 14);
 			}
+			if (!input.inputBox && !input.busy && !input.failed && layout.messageLines.length !== 0) {
+				const available = Math.max(0, area.bottom - rowsTop - 8);
+				const rowHeight = view.lineHeight * 2 + 2;
+				const maxLines = Math.max(1, Math.trunc((available - rowHeight - 4) / view.lineHeight));
+				if (layout.messageLines.length > maxLines) {
+					layout.messageLines.length = maxLines;
+					layout.messageLines[maxLines - 1] = appendMeasuredTruncationMarker(layout.messageLines[maxLines - 1], right - left - 14, measureTextRange);
+				}
+			}
 			layout.textRevision += 1;
 			input.labelsDirty = false;
 		}
@@ -60,12 +71,16 @@ export function layoutQuickInput(input: QuickInputController): void {
 				Math.min(area.bottom - 4, rowsTop + layout.messageLines.length * view.lineHeight + 4));
 		} else {
 			const rowHeight = view.lineHeight * 2 + 2;
-			const capacity = Math.min(10, ((area.bottom - rowsTop - 8) / rowHeight) | 0);
+			const pickerTop = layout.messageLines.length === 0 ? rowsTop
+				: Math.max(rowsTop, Math.min(area.bottom - 8, rowsTop + layout.messageLines.length * view.lineHeight + 4));
+			const available = Math.max(0, area.bottom - pickerTop - 8);
+			const capacity = Math.min(10, Math.trunc(available / rowHeight));
 			const visible = Math.min(model.list.rows.length, capacity);
+			const listHeight = capacity === 0 ? available : Math.max(1, visible) * rowHeight;
 			model.rowHeight = rowHeight;
-			model.viewport.layout(left + 4, rowsTop, right - 4, rowsTop + Math.max(1, visible) * rowHeight, model.list.rows.length * rowHeight);
-			write_rect_bounds(layout.bounds, left, top, right, rowsTop + Math.max(1, visible) * rowHeight + 4);
-			if (geometryChanged || model.selectionRevealPending) model.revealSelection();
+			model.viewport.layout(left + 4, pickerTop, right - 4, pickerTop + listHeight, model.list.rows.length * rowHeight);
+			write_rect_bounds(layout.bounds, left, top, right, pickerTop + listHeight + 4);
+			if (geometryChanged || labelsChanged || model.selectionRevealPending) model.revealSelection();
 		}
 	}
 	if (input.inputBox || input.busy || input.failed) return;
@@ -98,15 +113,17 @@ export function drawQuickInput(input: QuickInputController): void {
 		api.blit_text_inline_with_font(input.placeholderText, field.left + 3, field.top + 2, 0, constants.COLOR_INPUT_PLACEHOLDER, font);
 	}
 	drawSingleLineField(input.field, input.textViewport, constants.COLOR_INPUT_TEXT);
-	if (input.inputBox || input.busy || input.failed) {
-		api.pushClipRect(bounds.left + 4, field.bottom + 4, bounds.right - 4, bounds.bottom - 4);
+	if (input.layout.messageLines.length !== 0) {
+		const messageBottom = Math.max(field.bottom + 4,
+			input.inputBox || input.busy || input.failed ? bounds.bottom - 4 : input.model.viewport.bounds.top - 4);
+		api.pushClipRect(bounds.left + 4, field.bottom + 4, bounds.right - 4, messageBottom);
 		for (let index = 0; index < input.layout.messageLines.length; index += 1) {
 			api.blit_text_inline_with_font(input.layout.messageLines[index], field.left + 3,
 				field.bottom + 4 + index * editorViewState.lineHeight, 0,
 				input.busy ? constants.COLOR_QUICK_OPEN_TEXT : constants.COLOR_CONTENT_ERROR_TEXT, font);
 		}
 		api.popClipRect();
-		return;
 	}
+	if (input.inputBox || input.busy || input.failed) return;
 	drawQuickPickRows(input.model, input.layout);
 }
