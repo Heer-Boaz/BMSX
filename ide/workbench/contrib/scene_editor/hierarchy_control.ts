@@ -16,12 +16,13 @@ import type { ContextMenuController } from '../../services/context_menu/controll
 import type { WorkbenchSurface } from '../../services/windows/model';
 import type { WorkbenchSurfaceService } from '../../services/windows/service';
 import { revealWorkbenchListSelection, scrollWorkbenchList, workbenchListContainsPosition, workbenchListRowIndexAtPosition } from '../../ui/list_view';
-import type { WorkbenchMenuPresentation } from '../../ui/menu/model';
+import { WorkbenchMenu } from '../../ui/menu/model';
 import { navigateWorkbenchTree, rebuildWorkbenchTreeRows, setWorkbenchTreeCollapsed, workbenchTreeRoot, workbenchTreeTwistieContainsPosition, WorkbenchTreeNavigationResult } from '../../ui/tree_view';
 import type { WorkbenchTreeNode } from '../../ui/tree_view';
 import { WorkbenchTreeDrag } from '../../ui/tree_drag';
 import { SceneOutlineFeedback } from './feedback';
 import { beginSceneHierarchyDrag } from './hierarchy_drag';
+import { SCENE_AUTHORING_CONTEXT_ACTIONS } from './menus';
 import { layoutSceneHierarchy } from './hierarchy_layout';
 import { drawSceneHierarchy } from './hierarchy_render';
 import type { SceneHierarchyViewState } from './hierarchy_view';
@@ -49,8 +50,7 @@ export class SceneHierarchyControl {
 
 	public constructor(private readonly commands: EditorCommandRunner, private readonly contextMenu: ContextMenuController,
 		surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface, workArea: Readonly<RectBounds>, scope: InputFocusScope,
-		private readonly commandTarget: InputFocusTarget, private readonly sections: SceneEditorSectionCommands,
-		private readonly contextActions: WorkbenchMenuPresentation) {
+		private readonly commandTarget: InputFocusTarget, private readonly sections: SceneEditorSectionCommands) {
 		this.focusTarget = inputFocus.createTarget(commandTarget, new InputFocusScope(scope.surfaceScope, scope));
 		this.focusTarget.commandContext = commandTarget;
 		this.focusTarget.canFocus = () => this.canFocus;
@@ -220,8 +220,10 @@ export class SceneHierarchyControl {
 	}
 	private openContextMenu(x: number, y: number, keyboard = false): void {
 		const view = this.view, version = view.authoring.workingCopy.version, intent = view.authoring.selectionRevision;
+		const selection = view.authoring.selection;
+		if (selection === undefined) return;
 		this.feedback.clear();
-		this.contextMenu.show(x, y, this.contextActions, this.commands, {
+		this.contextMenu.show(x, y, new WorkbenchMenu(SCENE_AUTHORING_CONTEXT_ACTIONS, selection), this.commands, {
 			selectFirst: keyboard, invocationOrigin: this.focusTarget, returnFocus: this.focusTarget, commandTarget: this.commandTarget,
 			onWillShow: lifetime => {
 				lifetime.add({ dispose: view.authoring.workingCopy.onDidChangeContent(() => this.contextMenu.hide()) });

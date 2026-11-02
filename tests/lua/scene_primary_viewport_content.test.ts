@@ -146,6 +146,60 @@ test('picking a drawn origin admits its exact authored occurrence and only local
 	assert.ok(inputFocus.admittedTarget === f.semantic); assert.equal(f.model.canUndo, false);
 });
 
+for (const [family, index] of [['2d', 0], ['3d', 2]] as const) test(`an unmodified click on empty ${family} canvas clears the authored selection`, t => {
+	const f = fixture(t); f.select(index);
+	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
+	assert.equal(f.view.camera.mode, family);
+	const x = BOUNDS.left + 2, y = BOUNDS.top + 2;
+	assert.equal(f.view.pick(x, y), undefined);
+	assert.equal(f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary), true), true);
+	assert.equal(f.context.selection, undefined);
+	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);
+	f.select(index);
+	// A complete click may be delivered in one host poll, with no button still held.
+	f.control.handlePointer(pointer(x, y, 0, PointerButton.Primary, PointerButton.Primary), true);
+	assert.equal(f.context.selection, undefined);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('empty canvas modified clicks and camera gestures retain the selection', t => {
+	const f = fixture(t); f.select(0);
+	const selected = f.context.selection, x = BOUNDS.left + 2, y = BOUNDS.top + 2;
+	assert.equal(f.view.pick(x, y), undefined);
+	for (const modifiers of [KeyModifier.shift, KeyModifier.ctrl, KeyModifier.alt, KeyModifier.meta]) {
+		f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary, 0, modifiers), true);
+		assert.equal(f.context.selection, selected);
+	}
+	f.control.handlePointer({ ...pointer(x, y, PointerButton.Primary, PointerButton.Primary), spaceDown: true }, true);
+	assert.equal(f.context.selection, selected);
+	f.control.handlePointer(pointer(x, y, PointerButton.Auxiliary, PointerButton.Auxiliary), true);
+	assert.equal(f.context.selection, selected); pointerCapture.interrupt(false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('empty canvas click cannot override a newer selection admitted by its focus handoff', t => {
+	const f = fixture(t); f.select(0); f.semantic.focus();
+	const x = BOUNDS.left + 2, y = BOUNDS.top + 2;
+	assert.equal(f.view.pick(x, y), undefined);
+	const unbind = f.control.focusTarget.onDidFocus(() => f.select(1)); t.after(unbind);
+	f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary), true);
+	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === f.context.subject!.objects[1]);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('empty canvas click does not erase a newer selection admitted while clearing', t => {
+	const f = fixture(t); f.select(0); f.control.focus();
+	const x = BOUNDS.left + 2, y = BOUNDS.top + 2;
+	assert.equal(f.view.pick(x, y), undefined);
+	const unbind = f.context.onDidChangeSelection(() => {
+		if (!f.context.hasSelection) { unbind(); f.select(1); }
+	});
+	t.after(unbind);
+	f.control.handlePointer(pointer(x, y, PointerButton.Primary, PointerButton.Primary), true);
+	assert.ok(f.context.selection?.kind === 'member' && f.context.selection.entry === f.context.subject!.objects[1]);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
 test('frame commands are disabled for absent or unresolved geometry instead of becoming no-op menu actions', t => {
 	const f = fixture(t); f.select(3);
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), false);

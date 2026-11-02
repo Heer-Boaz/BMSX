@@ -282,6 +282,10 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			const scene = view.authoring.subject!, document = view.authoring.document!;
 			view.authoring.select(document, version, { kind: 'member', scene, entry, index: scene.objects.indexOf(entry) });
 			if (this.viewValue === view && this.attachment === attachment && this.focusTarget.scope.contextGeneration === generation) view.refresh();
+		} else if ((snapshot.justPressedButtons & PointerButton.Primary) !== 0 && (snapshot.pressedButtons & ~PointerButton.Primary) === 0
+			&& snapshot.modifiers === KeyModifier.none && !snapshot.spaceDown && view.authoring.hasSelection) {
+			view.authoring.select(view.authoring.document!, version, undefined);
+			if (this.viewValue === view && this.attachment === attachment && this.focusTarget.scope.contextGeneration === generation) view.refresh();
 		}
 		return true;
 	}

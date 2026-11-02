@@ -22,7 +22,6 @@ import { SceneHierarchyControl } from './hierarchy_control';
 import { SceneDetailsControl } from './details_control';
 import { measureSceneHierarchy } from './hierarchy_layout';
 import { measureSceneDetails } from './details_layout';
-import { SCENE_AUTHORING_CONTEXT_ACTIONS } from './menus';
 import { ScenePrimaryBookmark } from './primary_bookmark';
 import { ScenePrimaryNavigationLocation, type RestoreScenePrimaryBookmark } from './primary_location';
 import { captureScenePrimary, restoreScenePrimaryView, type ScenePrimaryViewSnapshot } from './primary_snapshot';
@@ -109,14 +108,13 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		const common = { commands: options.commands, contextMenu: options.contextMenu, surfaces: options.surfaces,
 			workArea: options.workArea, scope: this.scope, commandTarget: this.commandTarget, focusReturn: options.focusReturn,
 			description: consumer.workingCopy.resource.path, onDidOpenActions: observeActions, isPresented: () => options.main.primary === this };
-		const hierarchyContext = new WorkbenchMenu(SCENE_AUTHORING_CONTEXT_ACTIONS, undefined);
 		const hierarchyMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(HIERARCHY_PANEL_CONTEXT, options.main), options.main.regions.hierarchy.actions]);
 		this.hierarchy = new WorkbenchViewPanel({ ...common, title: 'Hierarchy', view: this.view.hierarchy,
 			bodyContextMenu: 'content',
 			surface: options.presentations.hierarchy, actions: createWorkbenchActionBar(new WorkbenchMenu(HIERARCHY_ACTIONS, undefined), true, hierarchyMenu),
 			contextActions: hierarchyMenu, measureContent: measureSceneHierarchy,
 			createControl: (scope, _target, surface) => new SceneHierarchyControl(options.commands, options.contextMenu, options.surfaces,
-				surface, options.workArea, scope, this.commandTarget, sections, hierarchyContext) });
+				surface, options.workArea, scope, this.commandTarget, sections) });
 		const detailsContext = new WorkbenchMenu([], undefined);
 		const detailsMenu = new WorkbenchCompositeMenu([new WorkbenchMenu(DETAILS_PANEL_CONTEXT, options.main), options.main.regions.details.actions]);
 		this.details = new WorkbenchViewPanel({ ...common, title: 'Details', view: this.view.details,

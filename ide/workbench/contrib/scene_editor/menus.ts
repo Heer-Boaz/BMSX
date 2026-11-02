@@ -1,17 +1,16 @@
 import type { WorkbenchMenuCommandDefinition, WorkbenchMenuDefinition } from '../../ui/menu/model';
+import type { SceneAuthoredSelection } from './authoring_context';
 import type { SceneEditorViewState } from './view_state';
 
-const MEMBER_ACTIONS = [
-	{ type: 'command', command: 'sceneEditor.renameMember' },
-	{ type: 'command', command: 'sceneEditor.reparentMember' },
-	{ type: 'command', command: 'sceneEditor.removeMember' },
-	{ type: 'command', command: 'sceneEditor.removeSubtree' },
-] as const;
-export const SCENE_AUTHORING_CONTEXT_ACTIONS = [
+const selectedObject = (selection: SceneAuthoredSelection): boolean => selection.kind === 'member' && selection.entry.kind === 'object';
+export const SCENE_AUTHORING_CONTEXT_ACTIONS: WorkbenchMenuDefinition<SceneAuthoredSelection> = [
 	{ type: 'command', command: 'editor.source' },
 	{ type: 'separator' },
-	...MEMBER_ACTIONS,
-] as const;
+	{ type: 'command', command: 'sceneEditor.renameMember', when: selectedObject },
+	{ type: 'command', command: 'sceneEditor.reparentMember', when: selectedObject },
+	{ type: 'command', command: 'sceneEditor.removeMember', when: selectedObject },
+	{ type: 'command', command: 'sceneEditor.removeSubtree', when: selectedObject },
+];
 
 export const SCENE_TITLE_ACTIONS: readonly WorkbenchMenuCommandDefinition<SceneEditorViewState>[] = [
 	{ type: 'command', command: 'sceneEditor.details', icon: 'info', when: input => input.layout.mode === 'outline' },

@@ -5,6 +5,7 @@ import { KeyModifier } from '../../hosts/common/input/text';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus } from '../../ide/input/focus';
 import { ScenePrimaryClient } from '../../ide/workbench/contrib/scene_editor/primary_client';
+import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { HomeInput } from '../../ide/workbench/contrib/home/editor_input';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
@@ -21,9 +22,9 @@ require('prefabs')
 scenes.register('main',{objects={{member_id='old',definition_id='actor',position={x=0,y=0}}}})
 scenes.register('replacement',{objects={{member_id='untouched',definition_id='actor'}}})`;
 
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, source = SOURCE) {
 	const f = createActualSourcePanes(t, false, [...CARTLIB_OBJECT_SOURCE_MODULES,
-		['scene.lua', SOURCE], ['prefabs.lua', PREFABS], ['cartlib/world/scene_library.lua', 'return {}'],
+		['scene.lua', source], ['prefabs.lua', PREFABS], ['cartlib/world/scene_library.lua', 'return {}'],
 		['cartlib/world/prefab.lua', 'return {define=function() end}']]);
 	f.editor.setFontVariant('tiny'); f.editor.editorParts.clear();
 	const main = f.editor.mainWorkspace;
@@ -45,7 +46,58 @@ async function fixture(t: TestContext) {
 	const primary = await open(0), picker = f.editor.quickInput;
 	return { ...f, main, model, provider, primary, picker, open };
 }
+
+test('Main dynamic composition row retains Source without object commands', async t => {
+	const source = SOURCE.replace('objects={{', 'objects={make_object(),{');
+	const f = await fixture(t, source);
+	f.key('Home'); f.key('ArrowDown'); f.key('ContextMenu');
+	assert.equal(f.editor.contextMenu.visible, true);
+	const selection = f.primary.consumer.selection;
+	assert.ok(selection?.kind === 'member' && selection.entry.kind === 'dynamic');
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), ['editor.source']);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
+for (const subject of ['scene', 'dynamic'] as const) test(`Main row Source opens the ${subject} occurrence`, async t => {
+	const source = SOURCE.replace('objects={{', 'objects={make_object(),{');
+	const f = await fixture(t, source);
+	const document = f.primary.consumer.document!, scene = document.scenes[0], entry = scene.objects[0];
+	assert.equal(entry.kind, 'dynamic');
+	const range = subject === 'scene' ? scene.range : document.analysis.chunk.locations.range(entry.field.span);
+	const opening = t.mock.method(f.editor.navigation, 'openSource');
+	f.key('Home'); if (subject === 'dynamic') f.key('ArrowDown'); f.key('ContextMenu'); f.key('Enter');
+	assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result;
+	const input = f.editor.editorParts.activeGroup.model.activeTab;
+	assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);
+	assert.equal(input.context.view.cursorRow, range.start.line - 1);
+	assert.equal(input.context.view.cursorColumn, range.start.column - 1);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+
+test('empty canvas click clears the shared Scene selection across hierarchy, Details and gizmo', async t => {
+	const f = await fixture(t);
+	f.key('Home'); f.key('ArrowDown'); f.update();
+	const selection = f.primary.consumer.selection, view = f.primary.view;
+	assert.ok(selection?.kind === 'member');
+	assert.equal(view.hierarchy.outline.selectionIndex, 1);
+	assert.equal(view.details.projection.subject?.selection, selection);
+	assert.equal(view.viewport.selected, selection.entry);
+	assert.notEqual(view.viewport.gizmo.world, undefined);
+	const bounds = f.primary.viewport.layoutState.client, x = bounds.left + 2, y = bounds.top + 2;
+	assert.equal(view.viewport.pick(x, y), undefined);
+	for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+		buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
+		releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
+		modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	f.update();
+	assert.equal(f.primary.consumer.selection, undefined);
+	assert.equal(view.hierarchy.outline.selectionIndex, -1);
+	assert.equal(view.details.projection.subject, undefined);
+	assert.equal(view.viewport.selected, undefined);
+	assert.equal(view.viewport.gizmo.world, undefined);
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+});
 
 test('Add acceptance does not arm or reclaim the canvas after focus return selects a newer foreground', async t => {
 	const f = await fixture(t), foreign = f.editor.editorParts.createDocument();
@@ -246,6 +298,33 @@ test('Main hierarchy row menu owns member commands but not Add or panel chrome',
 	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), [
 		'editor.source', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
 	], 'the clicked-member menu has one reparent operation and no commands for another subject');
+	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+});
+
+for (const route of ['pointer', 'keyboard'] as const) test(`Main hierarchy ${route} menu follows the selected scene or member`, async t => {
+	const f = await fixture(t);
+	const showRow = (index: number): void => {
+		if (route === 'keyboard') { f.key(index === 0 ? 'Home' : 'ArrowDown'); f.key('ContextMenu'); return; }
+		const tree = f.primary.view.hierarchy.outline, row = tree.rows[index], layout = tree.layout;
+		const x = layout.contentLeft + (row.depth + 1.5) * layout.indentWidth;
+		const y = layout.contentTop + (index - tree.scroll + 0.5) * layout.rowHeight;
+		for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+			buttons: down ? PointerButton.Secondary : 0, pressedButtons: down ? PointerButton.Secondary : 0,
+			releasedButtons: down ? 0 : PointerButton.Secondary, cancelledButtons: 0,
+			modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+	};
+	showRow(0);
+	assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.primary.consumer.selection?.kind, 'scene');
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), ['editor.source']);
+	f.key('Escape'); showRow(1);
+	assert.equal(f.primary.consumer.selection?.kind, 'member');
+	const rows = f.editor.contextMenu.model.rows;
+	assert.ok(rows.some(row => row.command === 'editor.source'));
+	assert.ok(rows.some(row => row.command === 'sceneEditor.renameMember'));
+	assert.ok(rows.some(row => row.command === 'sceneEditor.reparentMember'));
+	assert.ok(rows.some(row => row.command === 'sceneEditor.removeMember'));
+	assert.ok(rows.some(row => row.command === 'sceneEditor.removeSubtree'));
 	assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 });
 

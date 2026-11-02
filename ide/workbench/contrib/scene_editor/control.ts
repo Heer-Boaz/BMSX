@@ -21,7 +21,6 @@ import { SceneDetailsControl } from './details_control';
 import { SceneAuthoringCommands } from './authoring_commands';
 import { SceneHierarchyControl } from './hierarchy_control';
 import { layoutSceneEditor } from './layout';
-import { SCENE_AUTHORING_CONTEXT_ACTIONS } from './menus';
 import { SceneEditorNavigationSelection } from './navigation_selection';
 import { drawSceneEditor } from './render';
 import type { SceneEditorSectionCommands } from './option_editor';
@@ -69,8 +68,7 @@ export class SceneEditorControl {
 		};
 		this.focusTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.focusTarget.registerCommand('sceneEditor.details', sections.details);
-		const contextActions = new WorkbenchMenu(SCENE_AUTHORING_CONTEXT_ACTIONS, undefined);
-		this.hierarchy = new SceneHierarchyControl(commands, contextMenu, surfaces, owner, workArea, this.inputScope, this.focusTarget, sections, contextActions);
+		this.hierarchy = new SceneHierarchyControl(commands, contextMenu, surfaces, owner, workArea, this.inputScope, this.focusTarget, sections);
 		this.details = new SceneDetailsControl(commands, contextMenu, this.inputScope, this.focusTarget, sections, new WorkbenchMenu([], undefined));
 		this.focusTarget.registerCommand('contextMenu', {
 			isEnabled: () => this.hasView && (this.view.section === 'details' ? this.details.canFocus : this.hierarchy.canFocus)

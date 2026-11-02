@@ -19,8 +19,8 @@ import { SCENE_VIEWPORT_IMPORTS, SCENE_VIEWPORT_SOURCE } from '../fixtures/studi
 import { createLuaTableFieldRemovalEdits, luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
 
-function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
-	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SCENE_VIEWPORT_SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny', source = SCENE_VIEWPORT_SOURCE) {
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', source], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant(font);
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	f.editor.sceneEditor.openResource(f.firstGroup, resource); const input = f.firstGroup.model.activeTab; assert.ok(input instanceof SceneEditorInput);
@@ -28,6 +28,17 @@ function fixture(t: TestContext, font: 'tiny' | 'msx' = 'tiny') {
 	assert.equal(editorViewState.font.variant, font);
 	return { ...f, pane, input, model: input.workingCopy };
 }
+
+test('document dynamic composition row retains Source without object commands', t => {
+	const source = SCENE_VIEWPORT_SOURCE.replace('objects = {', 'objects = { make_object(),');
+	const f = fixture(t, 'tiny', source);
+	secondary(f, 1);
+	assert.equal(f.editor.contextMenu.visible, true);
+	const selection = f.input.view.authoring.selection;
+	assert.ok(selection?.kind === 'member' && selection.entry.kind === 'dynamic');
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), ['editor.source']);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
 type Fixture = ReturnType<typeof fixture>;
 /** Coordinates only locate the actual outline row; workflow assertions concern source and owned selection. */
 function secondary(f: Fixture, index: number, gutter = false): void {
@@ -46,6 +57,21 @@ function accept(f: Fixture, command: EditorCommandId): void {
 	f.key('Home'); for (let row = 0; row < index; row++) if (menu.model.rows[row].enabled) f.key('ArrowDown'); f.key('Enter');
 }
 
+for (const subject of ['scene', 'dynamic'] as const) test(`document row Source opens the ${subject} occurrence`, async t => {
+	const source = SCENE_VIEWPORT_SOURCE.replace('objects = {', 'objects = { make_object(),');
+	const f = fixture(t, 'tiny', source); f.firstGroup.model.pin(f.input);
+	const document = f.input.view.authoring.document!, scene = document.scenes[0], entry = scene.objects[0];
+	assert.equal(entry.kind, 'dynamic');
+	const range = subject === 'scene' ? scene.range : document.analysis.chunk.locations.range(entry.field.span);
+	const opening = t.mock.method(f.editor.navigation, 'openSource');
+	secondary(f, subject === 'scene' ? 0 : 1); accept(f, 'editor.source');
+	assert.equal(opening.mock.callCount(), 1); await opening.mock.calls[0].result;
+	const input = f.firstGroup.model.activeTab; assert.ok(input instanceof CodeEditorInput && input.workingCopy === f.model);
+	assert.equal(input.context.view.cursorRow, range.start.line - 1);
+	assert.equal(input.context.view.cursorColumn, range.start.column - 1);
+	assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});
+
 test('document hierarchy row menu contains only member actions with one reparent operation', t => {
 	const f = fixture(t); secondary(f, 1);
 	assert.equal(f.editor.contextMenu.visible, true);
@@ -53,6 +79,28 @@ test('document hierarchy row menu contains only member actions with one reparent
 		'editor.source', 'sceneEditor.renameMember', 'sceneEditor.reparentMember', 'sceneEditor.removeMember', 'sceneEditor.removeSubtree',
 	], 'the row does not own Add, panel chrome, section switches or a second reparent variant');
 	assert.equal(f.input.view.hierarchy.outline.selectionIndex, 1);
+	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE); assert.equal(f.model.canUndo, false);
+});
+
+for (const route of ['pointer', 'keyboard'] as const) test(`document hierarchy ${route} menu follows the selected scene or member`, t => {
+	const f = fixture(t);
+	if (route === 'pointer') secondary(f, 0);
+	else { f.key('Home'); f.key('ContextMenu'); }
+	assert.equal(f.editor.contextMenu.visible, true);
+	assert.equal(f.input.view.authoring.selection?.kind, 'scene');
+	assert.deepEqual(f.editor.contextMenu.model.rows.filter(row => row.command !== undefined).map(row => row.command), ['editor.source']);
+	// A new subject retires the menu instead of reusing an earlier row's authority.
+	assert.equal(selectSceneOutlineRow(f.input.view.hierarchy, 1), true);
+	assert.equal(f.editor.contextMenu.visible, false);
+	if (route === 'pointer') secondary(f, 1);
+	else { f.pane.control.hierarchy.focus(); f.key('ContextMenu'); }
+	assert.equal(f.input.view.authoring.selection?.kind, 'member');
+	const rows = f.editor.contextMenu.model.rows;
+	assert.ok(rows.some(row => row.command === 'editor.source'));
+	assert.ok(rows.some(row => row.command === 'sceneEditor.renameMember'));
+	assert.ok(rows.some(row => row.command === 'sceneEditor.reparentMember'));
+	assert.ok(rows.some(row => row.command === 'sceneEditor.removeMember'));
+	assert.ok(rows.some(row => row.command === 'sceneEditor.removeSubtree'));
 	assert.equal(f.model.buffer.getText(), SCENE_VIEWPORT_SOURCE); assert.equal(f.model.canUndo, false);
 });
 
