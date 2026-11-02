@@ -39,7 +39,8 @@ export class WorkbenchCheckboxControl<Input extends WorkbenchCheckboxInput = Wor
 		return this.inputValue !== undefined && this.clippedLabel && (this.hovered || this.focusTarget.hasFocus) ? this.disclosure : undefined;
 	}
 	public constructor(private readonly focus: InputFocusService, private readonly capture: PointerCaptureService,
-		parent: InputFocusTarget, private readonly onChange: (input: Input, checked: boolean) => void) {
+		parent: InputFocusTarget, private readonly onChange: (input: Input, checked: boolean) => void,
+		private readonly onCancel?: () => void) {
 		this.focusTarget = focus.createTarget(parent, new InputFocusScope(parent.scope.surfaceScope, parent.scope));
 		this.focusTarget.commandContext = parent.commandContext;
 		this.focusTarget.canFocus = () => this.inputValue !== undefined && this.inputValue.enabled;
@@ -117,7 +118,9 @@ export class WorkbenchCheckboxControl<Input extends WorkbenchCheckboxInput = Wor
 	public onPointerLeave(): void { this.hovered = false; }
 	private handleKeyboard(event: KeyInputEvent): void {
 		if (isKeyJustPressed('Escape', event)) {
-			consumeIdeKey('Escape', event); this.cancelInput(); this.focusTarget.release(); return;
+			consumeIdeKey('Escape', event); this.cancelInput();
+			if (this.onCancel !== undefined) this.onCancel(); else this.focusTarget.release();
+			return;
 		}
 		if (event.consumed || event.code !== 'Space' && event.code !== 'Enter' && event.code !== 'NumpadEnter') return;
 		if (event.down) {

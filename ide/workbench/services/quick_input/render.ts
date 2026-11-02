@@ -9,6 +9,7 @@ import { editorViewState } from '../../../editor/ui/view/state';
 import type { QuickInputController } from './controller';
 import { WORKBENCH_ICON_SIZE } from '../../ui/icon';
 import { drawWorkbenchIcon } from '../../render/icon';
+import { drawWorkbenchCheckbox } from '../../render/checkbox';
 
 /** Pickers and input boxes share a workbench surface, not a code-editor bar. */
 export function layoutQuickInput(input: QuickInputController): void {
@@ -38,8 +39,12 @@ export function layoutQuickInput(input: QuickInputController): void {
 		layout.titleLeft = back ? layout.back.right + 4 : left + 4;
 		const fieldTop = top + titleHeight + 6;
 		const fieldBottom = fieldTop + view.lineHeight + 4;
-		const rowsTop = fieldBottom + 4;
+		const toggleTop = fieldBottom + 4;
+		const toggleBottom = toggleTop + (input.toggle === undefined ? 0 : Math.max(view.lineHeight, WORKBENCH_ICON_SIZE) + 4);
+		const rowsTop = toggleBottom + (input.toggle === undefined ? 0 : 4);
 		write_rect_bounds(layout.field, left + 4, fieldTop, right - 4, fieldBottom);
+		write_rect_bounds(layout.toggle, left + 4, toggleTop, right - 4, toggleBottom);
+		layout.messageTop = rowsTop;
 		if (labelsChanged) {
 			const step = input.step;
 			layout.stepText = step === undefined ? '' : truncateTextToWidth(`${step.index}/${step.total}`, right - layout.titleLeft - 4);
@@ -113,13 +118,14 @@ export function drawQuickInput(input: QuickInputController): void {
 		api.blit_text_inline_with_font(input.placeholderText, field.left + 3, field.top + 2, 0, constants.COLOR_INPUT_PLACEHOLDER, font);
 	}
 	drawSingleLineField(input.field, input.textViewport, constants.COLOR_INPUT_TEXT);
+	if (input.toggle !== undefined) drawWorkbenchCheckbox(input.toggle);
 	if (input.layout.messageLines.length !== 0) {
-		const messageBottom = Math.max(field.bottom + 4,
+		const messageBottom = Math.max(input.layout.messageTop,
 			input.inputBox || input.busy || input.failed ? bounds.bottom - 4 : input.model.viewport.bounds.top - 4);
-		api.pushClipRect(bounds.left + 4, field.bottom + 4, bounds.right - 4, messageBottom);
+		api.pushClipRect(bounds.left + 4, input.layout.messageTop, bounds.right - 4, messageBottom);
 		for (let index = 0; index < input.layout.messageLines.length; index += 1) {
 			api.blit_text_inline_with_font(input.layout.messageLines[index], field.left + 3,
-				field.bottom + 4 + index * editorViewState.lineHeight, 0,
+				input.layout.messageTop + index * editorViewState.lineHeight, 0,
 				input.busy ? constants.COLOR_QUICK_OPEN_TEXT : constants.COLOR_CONTENT_ERROR_TEXT, font);
 		}
 		api.popClipRect();

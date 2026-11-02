@@ -186,6 +186,7 @@ export class EditorPart {
 			draw: () => this.quickInput.draw(), handlePointer: snapshot => this.quickInput.handlePointer(snapshot, (snapshot.justPressedButtons & PointerButton.Primary) !== 0),
 			handleWheel: event => { this.quickInput.handleWheel(event.deltaY); return true; }, onRetire: () => this.quickInput.hide(false),
 		});
+		this.quickInput.attach(options.surfaces, this.quickInputSurface);
 		this.promptSurface = options.surfaces.attach({ role: 'modal', blockedScope: this.surface,
 			presentationParent: modalParent, captureScope: this.actionPrompt.pointerScope, lifetimeOwner: this.surface,
 			isVisible: () => this.actionPrompt.visible, getBounds: () => this.actionPrompt.view.bounds, getClip: () => presentation.bounds,

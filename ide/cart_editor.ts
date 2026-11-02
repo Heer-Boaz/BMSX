@@ -582,7 +582,7 @@ export class RuntimeCartEditor implements CartEditor {
 			onRetire: () => pointerCapture.cancelScope(this.resourceHorizontalScope),
 		});
 		this.menubar.attach(this.surfaces, chromeSurface, workArea);
-		this.surfaces.attach({
+		const quickInputSurface = this.surfaces.attach({
 			role: 'modal', blockedScope: null, presentationParent: null, captureScope: this.quickInput.pointerScope,
 			isVisible: () => this.quickInput.visible, getBounds: () => this.quickInput.layout.bounds,
 			getClip: () => this.rootSurfaceBounds, draw: () => this.quickInput.draw(),
@@ -590,6 +590,7 @@ export class RuntimeCartEditor implements CartEditor {
 			handleWheel: event => { this.quickInput.handleWheel(event.deltaY); return true; },
 			onRetire: () => pointerCapture.cancelScope(this.quickInput.pointerScope),
 		});
+		this.quickInput.attach(this.surfaces, quickInputSurface);
 		this.surfaces.attach({
 			role: 'modal', blockedScope: null, presentationParent: null, captureScope: this.actionPrompt.pointerScope,
 			isVisible: () => this.actionPrompt.visible, getBounds: () => this.actionPrompt.view.bounds,

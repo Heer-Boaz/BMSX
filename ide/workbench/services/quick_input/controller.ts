@@ -15,11 +15,15 @@ import { applyInlineFieldEditing, applyInlineFieldPointer, setFieldText } from '
 import { TextField } from '../../../editor/ui/inline/text_field_model';
 import { SingleLineFieldViewport } from '../../../editor/ui/inline/single_line_viewport';
 import { editorViewState } from '../../../editor/ui/view/state';
+import { measureText, measureTextRange } from '../../../editor/common/text/layout';
 import { ScrollbarPointerControl } from '../../ui/scrollbar_pointer';
+import { WorkbenchCheckboxControl } from '../../ui/checkbox_control';
+import { WorkbenchTooltip } from '../../ui/tooltip';
 import { QuickPickModel, type QuickPickRenderRow } from './model';
 import type { QuickPickItem, QuickPickMatch, QuickPickProvider } from './provider';
 import { drawQuickInput, layoutQuickInput } from './render';
-import type { WorkbenchModalPresentation } from '../windows/model';
+import type { WorkbenchModalPresentation, WorkbenchSurface } from '../windows/model';
+import type { WorkbenchSurfaceService } from '../windows/service';
 
 export type QuickInputOptions = {
 	/** The actual bound resource retains command authority through accepted focus handoff. */
@@ -32,6 +36,8 @@ export type QuickInputOptions = {
 };
 
 export type QuickPickOptions<T extends QuickPickItem> = QuickInputOptions & {
+	/** The contributor owns the policy observed by validation and acceptance. */
+	readonly toggle?: { readonly label: string; readonly checked: boolean; readonly onDidChange: (checked: boolean) => void };
 	/** An explanation vetoes this acceptance without retiring the picker or its owner. */
 	readonly validateSelection?: (item: T, modifiers: KeyModifier) => string | undefined;
 };
@@ -46,7 +52,7 @@ type QuickInputSession = {
 	readonly accept: (modifiers: KeyModifier) => void | Promise<void>;
 	readonly step: QuickInputOptions['step'];
 	prepare: (() => void) | undefined;
-} & ({ readonly kind: 'pick'; state: 'preparing' | 'loading' | 'ready' | 'error' } | { readonly kind: 'input' });
+} & ({ readonly kind: 'pick'; state: 'preparing' | 'loading' | 'ready' | 'error'; toggle?: WorkbenchCheckboxControl } | { readonly kind: 'input' });
 
 type QuickPickSource<T extends QuickPickItem> =
 	| ((origin: InputFocusTarget | null, disposables: DisposableStore) => QuickPickProvider<T> | Promise<QuickPickProvider<T>>)
@@ -59,7 +65,8 @@ export class QuickInputController implements PointerCaptureTarget {
 	public readonly model = new QuickPickModel();
 	public readonly textViewport = new SingleLineFieldViewport();
 	public readonly layout = {
-		bounds: create_rect_bounds(), field: create_rect_bounds(), back: create_rect_bounds(),
+		bounds: create_rect_bounds(), field: create_rect_bounds(), back: create_rect_bounds(), toggle: create_rect_bounds(),
+		messageTop: 0,
 		revision: 0, titleLeft: 0, stepLeft: 0, stepWidth: 0, stepText: '',
 		left: 0, top: 0, width: -1, height: -1, font: null as object | null,
 		projectionRevision: -1, textRevision: 0, preparedStart: -1, preparedEnd: -1,
@@ -77,6 +84,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	private retiringSession: QuickInputSession | null = null;
 	private disposed = false;
 	private readonly scrollbarPointer = new ScrollbarPointerControl(pointerCapture, this.pointerScope);
+	private readonly tooltip = new WorkbenchTooltip();
 	private pressedRow: QuickPickMatch | undefined;
 	private validationRevision = 0;
 	private clearValidationOnPointerEnd: number | undefined;
@@ -118,7 +126,7 @@ export class QuickInputController implements PointerCaptureTarget {
 		});
 		this.field.focusTarget.onDidBlur(next => {
 			this.cancelPointer(); this.scrollbarPointer.cancelPointer(); this.field.pointerSelecting = false;
-			if (presentation.kind === 'workspace' && this.session !== null && !this.acceptsFocusTransfer(next)) this.hide(false);
+			if (presentation.kind === 'workspace' && this.session !== null && next !== this.toggle?.focusTarget && !this.acceptsFocusTransfer(next)) this.hide(false);
 		});
 	}
 
@@ -127,10 +135,15 @@ export class QuickInputController implements PointerCaptureTarget {
 	public get inputBox(): boolean { return this.session?.kind === 'input'; }
 	public get failed(): boolean { return this.session?.kind === 'pick' && this.session.state === 'error'; }
 	public get step(): QuickInputOptions['step'] { return this.session?.step; }
+	public get toggle(): WorkbenchCheckboxControl | undefined { return this.session?.kind === 'pick' ? this.session.toggle : undefined; }
 	public get backPressed(): boolean { return this.pressedBack !== undefined; }
 	public get busy(): boolean {
 		return this.session?.kind === 'pick' ? this.session.state === 'preparing' || this.session.state === 'loading'
 			: this.session?.kind === 'input' && this.field.readOnly;
+	}
+
+	public attach(surfaces: WorkbenchSurfaceService, owner: WorkbenchSurface): void {
+		this.tooltip.attach(surfaces, owner, this.presentation.bounds);
 	}
 
 	public pick<T extends QuickPickItem>(
@@ -150,6 +163,25 @@ export class QuickInputController implements PointerCaptureTarget {
 				// its draft, before native focus sees the new field presentation.
 				session.origin = invocationOrigin === undefined ? inputFocus.resolveTarget(session.origin) : invocationOrigin;
 				session.state = 'loading';
+				if (options.toggle !== undefined) {
+					const choice = options.toggle;
+					const toggle = new WorkbenchCheckboxControl(inputFocus, pointerCapture, this.field.focusTarget, (input, checked) => {
+						const revision = this.validationRevision;
+						choice.onDidChange(checked);
+						if (this.session !== session || toggle.input !== input) return;
+						toggle.setInput({ ...input, checked });
+						if (revision === this.validationRevision) this.clearPickValidation();
+						this.update();
+					}, () => { if (this.session === session) this.hide(); });
+					session.toggle = toggle;
+					if (session.step?.back !== undefined) toggle.focusTarget.registerCommand('navigateBack', this.backCommand);
+					toggle.focusTarget.onDidBlur(next => {
+						if (this.session === session && this.presentation.kind === 'workspace' && next !== this.field.focusTarget && !this.acceptsFocusTransfer(next)) this.hide(false);
+					});
+					toggle.setInput({ label: choice.label, checked: choice.checked, enabled: true });
+					toggle.focusTarget.next = this.field.focusTarget; toggle.focusTarget.previous = this.field.focusTarget;
+					this.field.focusTarget.next = toggle.focusTarget; this.field.focusTarget.previous = toggle.focusTarget;
+				}
 				this.title = title;
 				this.placeholder = placeholder;
 				this.labelsDirty = true;
@@ -288,16 +320,18 @@ export class QuickInputController implements PointerCaptureTarget {
 		}
 		const previous = this.session;
 		const target = inputFocus.target === null ? inputFocus.pendingTarget : inputFocus.target;
+		const retiring = this.retiringSession;
+		const retiringFocus = retiring !== null && (target === this.field.focusTarget || retiring.kind === 'pick' && target === retiring.toggle?.focusTarget);
 		const takeFocus = !preserveFocus;
 		let returnFocus = previous !== null ? previous.returnFocus
 			: target === this.contextMenu.focusTarget ? this.contextMenu.returnFocus
-			: this.retiringSession !== null && target === this.field.focusTarget ? this.retiringSession.returnFocus : target;
+			: retiringFocus ? retiring!.returnFocus : target;
 		let origin = invocationOrigin !== undefined ? invocationOrigin : previous !== null ? previous.origin
 			: target === this.contextMenu.focusTarget ? this.contextMenu.returnFocus
-			: this.retiringSession !== null && target === this.field.focusTarget ? this.retiringSession.origin : target;
+			: retiringFocus ? retiring!.origin : target;
 		let interactionOrigin = invocationOrigin !== undefined ? invocationOrigin?.scope : previous !== null ? previous.interactionOrigin
 			: target === this.contextMenu.focusTarget ? this.contextMenu.invocationOrigin?.scope
-			: this.retiringSession !== null && target === this.field.focusTarget ? this.retiringSession.interactionOrigin : target?.scope;
+			: retiringFocus ? retiring!.interactionOrigin : target?.scope;
 		if (preserveFocus && this.presentation.kind === 'part') {
 			if (invocationOrigin === undefined && origin !== null && !this.presentation.scope.contains(origin.scope)) origin = null;
 			if (returnFocus !== null && !this.presentation.scope.contains(returnFocus.scope)) returnFocus = null;
@@ -325,11 +359,11 @@ export class QuickInputController implements PointerCaptureTarget {
 		if (!this.presentation.scope.contains(originScope)) session.disposables.add({ dispose: this.presentation.scope.onDidRetireContext(() => this.hide(false)) });
 		this.clearPresentation();
 		onWillShow?.(session.disposables);
-		if (previous !== null) { previous.contextAdmitted = false; previous.unbindOrigin?.(); previous.disposables.dispose(); }
-		const retiring = this.retiringSession;
-		if (retiring !== null) {
-			retiring.contextAdmitted = false; retiring.unbindOrigin?.(); retiring.disposables.dispose();
-			if (this.retiringSession === retiring) this.retiringSession = null;
+		if (previous !== null) { previous.contextAdmitted = false; previous.unbindOrigin?.(); previous.disposables.dispose(); if (previous.kind === 'pick') previous.toggle?.dispose(); }
+		const currentRetiring = this.retiringSession;
+		if (currentRetiring !== null) {
+			currentRetiring.contextAdmitted = false; currentRetiring.unbindOrigin?.(); currentRetiring.disposables.dispose();
+			if (this.retiringSession === currentRetiring) this.retiringSession = null;
 		}
 		if (this.session !== session) return false;
 		if (takeFocus || this.contextMenu.visible && this.contextMenu.invocationOrigin !== null
@@ -350,6 +384,8 @@ export class QuickInputController implements PointerCaptureTarget {
 	}
 
 	private clearPresentation(): void {
+		this.tooltip.hide();
+		this.field.focusTarget.next = null; this.field.focusTarget.previous = null;
 		pointerHover.release(this);
 		this.cancelPointer();
 		this.scrollbarPointer.cancelPointer();
@@ -369,21 +405,24 @@ export class QuickInputController implements PointerCaptureTarget {
 	private retireSession(restoreFocus: boolean, handoff = false): void {
 		const session = this.session;
 		if (session === null) return;
-		this.session = null;
-		this.field.focusTarget.unregisterCommand('navigateBack');
-		this.field.focusTarget.commandContext = this.field.focusTarget;
-		this.field.focusTarget.scope.interactionOrigin = undefined;
-		if (!handoff) { session.contextAdmitted = false; session.unbindOrigin?.(); }
-		this.retiringSession = session;
-		this.clearPresentation();
-		if (!handoff) session.disposables.dispose();
-		if (this.session !== null) return;
-		this.onDidChangeVisibility();
-		if (this.session !== null) return;
-		if (this.field.focusTarget.hasFocus || inputFocus.pendingTarget === this.field.focusTarget || this.acceptsFocusTransfer(inputFocus.target)) {
-			inputFocus.setTarget(restoreFocus ? session.returnFocus : null);
-		}
-		if (!handoff && this.retiringSession === session) this.retiringSession = null;
+		const toggle = session.kind === 'pick' ? session.toggle : undefined;
+		try {
+			this.session = null;
+			this.field.focusTarget.unregisterCommand('navigateBack');
+			this.field.focusTarget.commandContext = this.field.focusTarget;
+			this.field.focusTarget.scope.interactionOrigin = undefined;
+			if (!handoff) { session.contextAdmitted = false; session.unbindOrigin?.(); }
+			this.retiringSession = session;
+			this.clearPresentation();
+			if (!handoff) session.disposables.dispose();
+			if (this.session !== null) return;
+			this.onDidChangeVisibility();
+			if (this.session !== null) return;
+			if (this.field.focusTarget.hasFocus || toggle?.focusTarget.hasFocus || inputFocus.pendingTarget === this.field.focusTarget || inputFocus.pendingTarget === toggle?.focusTarget || this.acceptsFocusTransfer(inputFocus.target)) {
+				inputFocus.setTarget(restoreFocus ? session.returnFocus : null);
+			}
+			if (!handoff && this.retiringSession === session) this.retiringSession = null;
+		} finally { toggle?.dispose(); }
 	}
 
 	public accept(modifiers: KeyModifier = KeyModifier.none): void | Promise<void> {
@@ -415,6 +454,10 @@ export class QuickInputController implements PointerCaptureTarget {
 		if (this.pressedBack !== undefined && (this.pressedBack !== this.session || this.backRevision !== this.layout.revision)) this.cancelPointer();
 		if (this.pressedRow !== undefined && this.pointerRevision !== this.model.viewport.revision) this.cancelPointer();
 		this.textViewport.layout(this.field, this.layout.field, editorViewState.inlineFieldMetricsRef, editorViewState.font, this.layout.bounds);
+		this.toggle?.layout(this.layout.toggle, this.layout.bounds, editorViewState.font);
+		const hint = this.toggle?.tooltipItem;
+		if (hint !== undefined) this.tooltip.show(hint.tooltip, hint.bounds, editorViewState.font.renderFont(), measureTextRange, measureText, this.presentation.bounds);
+		else this.tooltip.hide();
 	}
 
 	public draw(): void { if (this.visible) drawQuickInput(this); }
@@ -475,11 +518,12 @@ export class QuickInputController implements PointerCaptureTarget {
 		applyInlineFieldEditing(input, this.field);
 	}
 
-	public onPointerLeave(): void { this.model.list.hoverIndex = -1; this.backHovered = false; }
+	public onPointerLeave(): void { this.model.list.hoverIndex = -1; this.backHovered = false; this.toggle?.onPointerLeave(); }
 
 	public handlePointer(snapshot: PointerInputSnapshot, justPressed: boolean): void {
 		this.update();
 		if (!snapshot.valid || !snapshot.insideViewport) { pointerHover.release(this); return; }
+		if (this.toggle?.handlePointer(snapshot)) { pointerHover.visit(this); return; }
 		if (justPressed && point_in_rect(snapshot.viewportX, snapshot.viewportY, this.layout.bounds)) {
 			const session = this.session;
 			inputFocus.setTarget(this.field.focusTarget, this.presentForFocus);
@@ -576,6 +620,7 @@ export class QuickInputController implements PointerCaptureTarget {
 	public dispose(): void {
 		this.disposed = true;
 		this.hide(false);
+		this.tooltip.detach();
 		this.unbindKeyboard();
 	}
 }
