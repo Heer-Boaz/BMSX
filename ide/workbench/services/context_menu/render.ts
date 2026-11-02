@@ -36,7 +36,7 @@ export function drawContextMenu(menu: ContextMenuController): void {
 		const selected = index === model.selectedIndex && row.enabled;
 		if (selected) api.fill_rect(view.bounds.left, top, view.bounds.right, bottom, 0, constants.COLOR_MENU_SELECTION_BACKGROUND);
 		const markerSize = WORKBENCH_ICON_SIZE;
-		if (row.active) drawWorkbenchIcon('accept', view.bounds.left + CONTEXT_MENU_PADDING, top + ((model.rowHeight - markerSize) >> 1),
+		if (row.active && row.showCheckmark) drawWorkbenchIcon('accept', view.bounds.left + CONTEXT_MENU_PADDING, top + ((model.rowHeight - markerSize) >> 1),
 			!row.enabled ? constants.COLOR_DISABLED_TEXT : selected ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT);
 		api.blit_text_inline_with_font(row.label, view.bounds.left + CONTEXT_MENU_PADDING * 2 + markerSize, top + 2, 0,
 			!row.enabled ? constants.COLOR_DISABLED_TEXT : selected ? constants.COLOR_MENU_SELECTION_TEXT : constants.COLOR_MENU_TEXT, font);

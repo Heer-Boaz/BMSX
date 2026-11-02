@@ -19,6 +19,8 @@ export type WorkbenchMenuCommandItem = {
 	readonly icon?: WorkbenchIcon;
 	readonly checkedIcon?: WorkbenchIcon;
 	readonly showLabel?: boolean;
+	/** A stateful command can be presented as an action rather than a checked mode. */
+	readonly showCheckmark?: false;
 };
 
 export type WorkbenchMenuSeparator = {

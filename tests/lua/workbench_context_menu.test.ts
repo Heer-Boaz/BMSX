@@ -92,6 +92,38 @@ test('menu enablement, checked state and execution retain the same explicit edit
 	assert.equal(executed, 1);
 });
 
+test('an action presentation retains command state without presenting it as a checked mode', t => {
+	const f = fixture(t); let active = true, executions = 0;
+	const commands = {
+		isEnabled: () => true,
+		isActive: () => active,
+		execute: () => { executions++; active = false; },
+	};
+	f.menu.show(0, 0, [
+		{ type: 'command', command: 'workspace.details.toggle', showCheckmark: false },
+		{ type: 'command', command: 'sceneViewport.view2d' },
+	], commands);
+	assert.equal(f.menu.model.rows[0].active, true);
+	assert.equal(f.menu.model.rows[0].showCheckmark, false);
+	assert.equal(f.menu.model.rows[1].active, true);
+	assert.equal(f.menu.model.rows[1].showCheckmark, true);
+	active = false; f.menu.update();
+	assert.equal(f.menu.model.rows[0].active, false);
+	assert.equal(f.menu.model.rows[0].showCheckmark, false);
+	assert.equal(f.menu.model.rows[1].active, false);
+	assert.equal(f.menu.model.rows[1].showCheckmark, true);
+	active = true; f.menu.update();
+	assert.equal(f.menu.model.rows[0].active, true);
+	assert.equal(f.menu.model.rows[0].showCheckmark, false);
+	assert.equal(f.menu.model.rows[1].active, true);
+	assert.equal(f.menu.model.rows[1].showCheckmark, true);
+	f.menu.model.selectedIndex = 0; f.menu.accept();
+	assert.equal(executions, 1);
+	f.menu.show(0, 0, [{ type: 'command', command: 'workspace.details.toggle', showCheckmark: false }], commands);
+	assert.equal(f.menu.model.rows[0].active, false);
+	assert.equal(f.menu.model.rows[0].showCheckmark, false);
+});
+
 test('a context menu returns to its explicit clicked client without pre-focusing away from the invoking control', t => {
 	const f = fixture(t), clicked = f.focus.createTarget(f.origin);
 	clicked.bindKeyboard(() => {});

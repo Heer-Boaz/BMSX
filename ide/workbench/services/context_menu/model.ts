@@ -16,6 +16,7 @@ export type ContextMenuRow = {
 	readonly keybinding: string | undefined;
 	keybindingWidth: number;
 	active: boolean;
+	readonly showCheckmark: boolean;
 	labelWidth: number;
 	font: object | undefined;
 	enabled: boolean;
@@ -47,7 +48,7 @@ export class ContextMenuModel {
 			command: item.type === 'command' ? item.command : undefined,
 			label: item.type === 'command' ? editorCommandTitle(item.command, false, shortTitles).toUpperCase() : '',
 			keybinding: item.type === 'command' ? EDITOR_COMMAND_KEYBINDING_LABELS.get(item.command) : undefined,
-			keybindingWidth: 0, labelWidth: 0, active: false, font: undefined,
+			keybindingWidth: 0, labelWidth: 0, active: false, showCheckmark: item.type === 'command' && item.showCheckmark !== false, font: undefined,
 			enabled: false, top: 0, bottom: 0,
 		});
 		this.anchorX = x;

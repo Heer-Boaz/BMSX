@@ -60,7 +60,7 @@ for (const region of ['hierarchy', 'details'] as const) for (const unavailable o
 		assert.equal(commands.isEnabled(floating, target), true); assert.equal(commands.isEnabled(docking, target), false);
 		view.contextActions.refresh();
 		assert.ok(view.contextActions.visibleItems.some(item => item.type === 'command' && item.command === floating));
-		assert.ok(view.contextActions.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'));
+		assert.equal(view.contextActions.visibleItems.some(item => item.type === 'command' && item.command === 'editor.source'), unavailable);
 		commands.execute(floating, target); f.update();
 		assert.equal(part.placement, 'floatingWindow'); assert.equal(part.displayed, true);
 		assert.ok(inputFocus.admittedTarget === target && f.main.primary === f.primary);
@@ -68,7 +68,7 @@ for (const region of ['hierarchy', 'details'] as const) for (const unavailable o
 		commands.execute('window.systemMenu', target); f.update();
 		const menu = f.editor.contextMenu;
 		assert.equal(menu.visible, true);
-		assert.ok(menu.model.rows.some(row => row.command === 'editor.source' && row.enabled));
+		assert.equal(menu.model.rows.some(row => row.command === 'editor.source' && row.enabled), unavailable);
 		assert.ok(menu.model.rows.some(row => row.command === 'window.hide' && row.enabled));
 		menu.model.selectedIndex = menu.model.rows.findIndex(row => row.command === docking && row.enabled);
 		assert.ok(menu.model.selectedIndex >= 0); f.key('Enter');
@@ -77,6 +77,20 @@ for (const region of ['hierarchy', 'details'] as const) for (const unavailable o
 		assert.ok(f.editor.editorParts.documents.length === documents.length
 			&& documents.every((part, index) => f.editor.editorParts.documents[index] === part));
 		assert.equal(f.model.buffer.getText(), source);
+	});
+
+for (const region of ['hierarchy', 'details'] as const)
+	test(`the authored ${region} panel menu presents its hide operation without a checked marker`, async t => {
+		const f = await fixture(t), part = f.main.regions[region], panel = f.primary[region];
+		const toggle = region === 'hierarchy' ? 'workspace.hierarchy.toggle' : 'workspace.details.toggle';
+		f.main.focusPrimary(region); const target = inputFocus.admittedTarget!;
+		f.editor.contextMenu.show(0, 0, panel.contextActions, f.editor.commands, { commandTarget: target });
+		const menu = f.editor.contextMenu, index = menu.model.rows.findIndex(row => row.command === toggle);
+		assert.ok(index >= 0); assert.equal(menu.model.rows[index].active, true);
+		assert.equal(menu.model.rows[index].showCheckmark, false);
+		menu.model.selectedIndex = index; menu.accept(); f.update();
+		assert.equal(part.displayed, false); assert.equal(menu.visible, false);
+		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
 	});
 
 for (const region of ['hierarchy', 'details'] as const)
@@ -154,7 +168,7 @@ for (const hide of [false, true])
 		const origin = part.window.actionFocusTarget;
 		assert.equal(origin.focus(), true); assert.ok(origin.commandContext !== primary.commandTarget);
 		f.editor.commands.execute('window.systemMenu', origin);
-		assert.ok(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source' && row.enabled));
+		assert.equal(f.editor.contextMenu.model.rows.some(row => row.command === 'editor.source'), false);
 		f.key('Escape'); assert.equal(origin.focus(), true);
 		const capture = primary.consumer.captureSourceLocation.bind(primary.consumer);
 		let focusedAtRead: InputFocusTarget | null = null;

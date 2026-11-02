@@ -52,11 +52,11 @@ export type ScenePrimaryClientOptions = {
 const HIERARCHY_ACTIONS: readonly WorkbenchMenuCommandDefinition<undefined>[] = [{ type: 'command', command: 'sceneEditor.addMember', icon: 'add' }];
 const HIERARCHY_PANEL_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
 	{ type: 'command', command: 'sceneEditor.details', when: main => !main.regions.details.displayed },
-	{ type: 'command', command: 'workspace.hierarchy.toggle' },
+	{ type: 'command', command: 'workspace.hierarchy.toggle', showCheckmark: false },
 ];
 const DETAILS_PANEL_CONTEXT: WorkbenchMenuDefinition<MainWorkspace> = [
 	{ type: 'command', command: 'sceneEditor.outline', when: main => !main.regions.hierarchy.displayed },
-	{ type: 'command', command: 'workspace.details.toggle' },
+	{ type: 'command', command: 'workspace.details.toggle', showCheckmark: false },
 ];
 
 /** One exact Scene context, with an authored viewport and independent hierarchy/Details presentations. */
