@@ -25,7 +25,7 @@ type SceneCanvasPlacement<Owner> = {
 	readonly world: Readonly<Affine2>;
 	readonly attachment: Readonly<Affine2>;
 	readonly presentation: Readonly<Affine2>;
-	/** Opaque host color: ordinary canvas packets consume the authored RGB only. */
+	/** Color word; the viewport chooses preview opacity at the render boundary. */
 	readonly color: number;
 	readonly order: number;
 };
@@ -63,10 +63,11 @@ export type ScenePrefabPreview = {
 	readonly world: Readonly<SceneSourceAffine>;
 	readonly visuals: SceneVisualReadModel<SceneAddMemberChoice>;
 };
-type ComponentProducer = { readonly kind: 'sprite' | 'rectangle' | 'model' | 'text'; readonly defaults: SceneConstructorSource;
+type ComponentProducer = { readonly kind: 'sprite' | 'surface' | 'rectangle' | 'model' | 'text'; readonly defaults: SceneConstructorSource;
 	readonly input: 'primary' | 'owner' | 'configuration' | 'factory'; readonly animation?: SceneSpriteAnimationSource };
 const SPRITE_NEW: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['new'] };
 const SPRITE_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/sprite_component', memberPath: ['factory'] };
+const SURFACE_NEW: LuaModuleImportTarget = { module: 'cartlib/component/surface_component', memberPath: ['new'] };
 const MODEL_NEW: LuaModuleImportTarget = { module: 'cartlib/component/static_model_component', memberPath: ['new'] };
 const MODEL_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/static_model_component', memberPath: ['factory'] };
 const RECTANGLE_NEW: LuaModuleImportTarget = { module: 'cartlib/component/rectangle_component', memberPath: ['new'] };
@@ -75,6 +76,7 @@ const TEXT_FACTORY: LuaModuleImportTarget = { module: 'cartlib/text/text_compone
 const SPRITE_ANIMATION_FACTORY: LuaModuleImportTarget = { module: 'cartlib/component/sprite_animation_component', memberPath: ['factory'] };
 const SPRITE_OBJECT: LuaModuleImportTarget = { module: 'cartlib/sprite', memberPath: [] };
 const SPRITE_COMPONENT = { kind: 'sprite' as const, constructor: SPRITE_NEW };
+const SURFACE_COMPONENT = { kind: 'surface' as const, constructor: SURFACE_NEW };
 const MODEL_COMPONENT = { kind: 'model' as const, constructor: MODEL_NEW };
 const RECTANGLE_COMPONENT = { kind: 'rectangle' as const, constructor: RECTANGLE_NEW };
 const TEXT_COMPONENT = { kind: 'text' as const, constructor: TEXT_NEW };
@@ -183,6 +185,15 @@ export class SceneVisualProjection {
 			const presentationOrder = readSceneConstructorNumber(inputs.value('presentation_order'), 0);
 			if (order == null || presentationOrder == null) continue;
 			const combinedOrder = order + presentationOrder;
+			if (producer.kind === 'surface') {
+				const imageSource = inputs.value('imgid');
+				const image = imageSource == null ? undefined : reader.stringValue(imageSource.file, imageSource.expression);
+				const color = readSceneConstructorNumber(inputs.value('color'), 0xffffffff);
+				if (image === undefined || color == null) continue;
+				canvas.push({ kind: 'sprite', entry, image, world, attachment, presentation, flipH: false, flipV: false,
+					color, order: combinedOrder });
+				continue;
+			}
 			if (producer.kind === 'text') {
 				const text = readSceneTextInputs(reader, this.fonts, inputs, definition.file), color = inputs.optionalNumber('color');
 				if (text === undefined || color === null) continue;
@@ -214,6 +225,7 @@ export class SceneVisualProjection {
 		if (target === null) return;
 		const imports = this.reader.snapshot.symbolResolver.moduleImports;
 		const component = imports.matchesImport(target, SPRITE_NEW) ? SPRITE_COMPONENT
+			: imports.matchesImport(target, SURFACE_NEW) ? SURFACE_COMPONENT
 			: imports.matchesImport(target, MODEL_NEW) ? MODEL_COMPONENT
 				: imports.matchesImport(target, RECTANGLE_NEW) ? RECTANGLE_COMPONENT
 					: imports.matchesImport(target, TEXT_NEW) ? TEXT_COMPONENT : undefined;
