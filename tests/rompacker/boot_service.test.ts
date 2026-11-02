@@ -121,7 +121,12 @@ test('Reboot links a newly imported workspace library without compiling or packi
 	files.records.set('cartlib/unrelated.lua', { contents: 'end end', updatedAt: 1 });
 	await discoverWorkspaceSources(f.sources.catalog);
 	const cart = f.sources.cartridgeSlots[0]!;
+	const system = f.sources.catalog.getContext(TEST_SYSTEM_CONTEXT_ID).luaSources;
+	assert.equal(system.module2lua['cartlib/new_module'], undefined);
+	assert.equal(system.module2lua['cartlib/unrelated'], undefined);
 	assert.equal(f.sources.catalog.getContext(cart.contextId).luaSources.module2lua['cartlib/new_module'].src, 'return { value = 37 }');
+	assert.equal(f.sources.catalog.getContext(cart.contextId).luaSources.module2lua['cartlib/new_module'].sourceKind, 'library');
+	assert.equal(f.sources.catalog.getContext(cart.contextId).luaSources.module2lua['cartlib/unrelated'].sourceKind, 'library');
 	assert.equal(f.sources.cartridgeBlua32MediaDirty[0], false, 'catalog discovery does not change the installed program');
 	f.model.pushEditOperations([{ offset: f.source.indexOf('while'), deleteLength: 0,
 		text: "local dependency<const> = require('cartlib/new_module')\nresult = dependency.value\n" }]);

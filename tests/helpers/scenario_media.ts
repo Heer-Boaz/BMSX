@@ -13,6 +13,7 @@ import {
 } from '../../scripts/rompacker/rombuilder';
 
 const MANIFEST: CartManifest = { hardware: [{ type: 'rom' }] };
+const SYSTEM_PROJECT_ROOT = 'test-fixtures/scenario/system';
 
 export const SCENARIO_FIXTURE_TEST_SOURCE_PATH = 'tests/carts/example/example_assert.lua';
 export const SCENARIO_FIXTURE_SOURCE_ONLY_MODULE_SOURCE = 'return "source only"';
@@ -34,14 +35,14 @@ export type ScenarioMediaTestSource = {
 	readonly source: string;
 };
 
-function luaEntry(source: string): RomAsset {
+function luaEntry(source: string, normalizedSourcePath: string): RomAsset {
 	return {
 		resid: 'entry',
 		type: 'lua',
 		buffer: Buffer.from(source),
 		program_module: true,
 		source_path: 'entry.lua',
-		normalized_source_path: 'carts/example/entry.lua',
+		normalized_source_path: normalizedSourcePath,
 	};
 }
 
@@ -60,7 +61,8 @@ export async function buildScenarioMediaFixture(
 		cartAssets?: readonly RomAsset[];
 	},
 ): Promise<ScenarioMediaFixture> {
-	const systemAssets = [luaEntry(options === undefined ? 'module<entry>\nreturn true' : options.systemSource)];
+	const systemAssets = [luaEntry(options === undefined ? 'module<entry>\nreturn true' : options.systemSource,
+		`${SYSTEM_PROJECT_ROOT}/entry.lua`)];
 	// These isolated firmware doubles still provide the public fixed-slot ABI.
 	const systemModules = new Map(BIOS_FUNCTION_EXPORTS.map(exported => [exported.path, {
 		path: exported.path,
@@ -68,7 +70,8 @@ export async function buildScenarioMediaFixture(
 	}]));
 	for (const module of options?.systemModules ?? []) systemModules.set(module.path, module);
 	for (const module of systemModules.values()) {
-		systemAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), program_module: true, source_path: `${module.path}.lua`, normalized_source_path: `${module.path}.lua` });
+		systemAssets.push({ resid: module.path, type: 'lua', buffer: Buffer.from(module.source), program_module: true,
+			source_path: `${module.path}.lua`, normalized_source_path: `${SYSTEM_PROJECT_ROOT}/${module.path}.lua` });
 	}
 	if (options?.systemAssets !== undefined) systemAssets.push(...options.systemAssets);
 	const systemLayout = layoutRomPrefix(
@@ -88,6 +91,7 @@ export async function buildScenarioMediaFixture(
 		biosExports: BIOS_FUNCTION_EXPORTS,
 	});
 	await finalizeRompack('system', {
+		projectRootPath: SYSTEM_PROJECT_ROOT,
 		debug: true,
 		layout: systemLayout,
 		outputDirectory,
@@ -115,7 +119,7 @@ export async function buildScenarioMediaFixture(
 	}
 	const cartAssets = [
 		...frameworkAssets,
-		luaEntry(options === undefined ? SCENARIO_FIXTURE_CART_ENTRY_SOURCE : options.cartSource),
+		luaEntry(options === undefined ? SCENARIO_FIXTURE_CART_ENTRY_SOURCE : options.cartSource, 'carts/example/entry.lua'),
 		sourceOnlyModule,
 		unselectedSourceOnlyModule,
 	];
