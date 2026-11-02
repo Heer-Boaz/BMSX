@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import test, { type TestContext } from 'node:test';
 import { KeyModifier } from '../../hosts/common/input/text';
+import { PointerButton } from '../../hosts/common/input/pointer_event';
 import type { EditorCommandId } from '../../ide/common/commands';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
@@ -151,7 +152,7 @@ for (const [command, placement, expected] of [
 });
 
 for (const placement of ['document', 'Main'] as const) {
-	for (const modifiers of [KeyModifier.none, KeyModifier.alt]) test(`${placement} Scene row Reparent applies the accept modifier to its captured placement policy (${modifiers})`, async t => {
+	for (const modifiers of [KeyModifier.none, KeyModifier.alt, KeyModifier.alt | KeyModifier.shift, KeyModifier.alt | KeyModifier.ctrl]) test(`${placement} Scene row Reparent applies the accept modifier to its captured placement policy (${modifiers})`, async t => {
 		const f = await fixture(t, placement); selectMember(f, 'subject');
 		contextCommand(f, 'sceneEditor.reparentMember');
 		assert.equal(f.picker.visible, true);
@@ -159,7 +160,7 @@ for (const placement of ['document', 'Main'] as const) {
 		assert.equal(f.picker.visible, false);
 		const subject = member(f, 'subject');
 		assert.equal(stringLiteralValue(subject.parent!.value), 'dock');
-		assert.deepEqual(coefficients(f, subject), modifiers === KeyModifier.alt ? [1, 0, -0, 1, 2, 3] : [1, 0, 0, 1, 92, 183]);
+		assert.deepEqual(coefficients(f, subject), (modifiers & KeyModifier.alt) !== 0 ? [1, 0, -0, 1, 2, 3] : [1, 0, 0, 1, 92, 183]);
 		assertProvidersUnchanged(f);
 		f.editor.commands.execute('undo', f.commandTarget); f.update();
 		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
@@ -173,9 +174,14 @@ for (const placement of ['document', 'Main'] as const) {
 		assert.equal(f.editor.commands.isEnabled('sceneEditor.reparentMember', f.commandTarget), true);
 		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
 		assert.equal(f.picker.model.list.rows.length, 1);
+		const selected = f.picker.model.list.rows[0];
 		f.key('Enter');
 		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
-		selectMember(f, 'subject'); contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock'); f.key('Enter', KeyModifier.alt);
+		assert.equal(f.picker.visible, true); assert.equal(f.picker.field.text, 'dock');
+		assert.equal(f.picker.model.list.rows[f.picker.model.list.selectionIndex], selected);
+		assert.ok(f.picker.message.length > 0); assert.equal(inputFocus.admittedTarget, f.picker.field.focusTarget);
+		f.key('Enter', KeyModifier.alt);
+		assert.equal(f.picker.visible, false);
 		const subject = member(f, 'subject');
 		assert.equal(stringLiteralValue(subject.parent!.value), 'dock');
 		assert.deepEqual(coefficients(f, subject), [1, 0, -0, 1, 2, 3]);
@@ -196,12 +202,60 @@ for (const placement of ['document', 'Main'] as const) {
 		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
 		assert.equal(f.picker.model.list.rows.length, 1); f.key('Enter');
 		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
-		selectMember(f, 'subject'); contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock'); f.key('Enter', KeyModifier.alt);
+		assert.equal(f.picker.visible, true); assert.ok(f.picker.message.length > 0);
+		f.key('Enter', KeyModifier.alt); assert.equal(f.picker.visible, false);
 		const subject = member(f, 'subject');
 		assert.equal(stringLiteralValue(subject.parent!.value), 'dock');
 		assert.deepEqual(coefficients(f, subject), [1, 0, -0, 1, 2, 3]);
 		f.editor.commands.execute('undo', f.commandTarget); f.update();
 		assert.equal(f.model.buffer.getText(), SOURCE); assert.equal(f.model.canUndo, false);
+	});
+
+	test(`${placement} parent picker validates the actual pointer-release modifiers`, async t => {
+		const source = SOURCE.replace('transform = carrier_pose', 'transform = unavailable_pose');
+		const f = await fixture(t, placement, source); selectMember(f, 'subject');
+		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
+		const click = (pressed: KeyModifier, released: KeyModifier) => {
+			const bounds = f.picker.model.viewport.bounds, x = bounds.left + 2, y = f.picker.model.rowTop(0) + 2;
+			for (const down of [true, false]) f.editor.dispatchPointer({ x, y,
+				buttons: down ? PointerButton.Primary : 0, pressedButtons: down ? PointerButton.Primary : 0,
+				releasedButtons: down ? 0 : PointerButton.Primary, cancelledButtons: 0,
+				modifiers: down ? pressed : released, spaceDown: false, timestamp: f.host.clock.now() });
+			f.update();
+		};
+		click(KeyModifier.alt, KeyModifier.none);
+		assert.equal(f.picker.visible, true); assert.ok(f.picker.message.length > 0);
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+		click(KeyModifier.none, KeyModifier.alt);
+		assert.equal(f.picker.visible, false);
+		assert.equal(stringLiteralValue(member(f, 'subject').parent!.value), 'dock');
+		assert.deepEqual(coefficients(f, member(f, 'subject')), [1, 0, -0, 1, 2, 3]);
+		f.editor.commands.execute('undo', f.commandTarget); f.update();
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+	});
+
+	test(`${placement} parent picker retires a rejected choice when its selection changes`, async t => {
+		const source = SOURCE.replace('transform = carrier_pose', 'transform = unavailable_pose');
+		const f = await fixture(t, placement, source); selectMember(f, 'subject');
+		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock'); f.key('Enter');
+		assert.equal(f.picker.visible, true); assert.ok(f.picker.message.length > 0);
+		const document = f.context.document!, scene = document.scenes[0], entry = member(f, 'spare');
+		assert.equal(f.context.select(document, f.model.version, { kind: 'member', scene, entry, index: scene.objects.indexOf(entry) }), true);
+		assert.equal(f.picker.visible, false); f.key('Enter', KeyModifier.alt);
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+	});
+
+	for (const rejected of [false, true]) test(`${placement} read-only transition retires parent selection${rejected ? ' after veto' : ''}`, async t => {
+		const source = rejected ? SOURCE.replace('transform = carrier_pose', 'transform = unavailable_pose') : SOURCE;
+		const f = await fixture(t, placement, source); selectMember(f, 'subject');
+		contextCommand(f, 'sceneEditor.reparentMember'); enterText(f, 'dock');
+		if (rejected) { f.key('Enter'); assert.equal(f.picker.visible, true); assert.ok(f.picker.message.length > 0); }
+		const resource = f.model.resource;
+		f.model.refreshResource({ ...resource, source: { ...resource.source, generated: true } });
+		assert.equal(f.model.readOnly, true); assert.equal(f.picker.visible, false);
+		f.key('Enter', KeyModifier.alt);
+		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+		f.model.refreshResource(resource);
 	});
 }
 
