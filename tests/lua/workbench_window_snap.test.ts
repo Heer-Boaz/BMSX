@@ -76,6 +76,34 @@ function hasOutline(outlines: readonly RectBounds[], bounds: Readonly<RectBounds
 		&& outline.right === bounds.right && outline.bottom === bounds.bottom);
 }
 
+for (const side of ['left', 'right'] as const) test(`a window moved partly beyond the ${side} edge retains a draggable exposed title`, t => {
+	const f = fixture(t), start = f.title();
+	f.dispatch(start.x, start.y, 1, 1);
+	const outside = side === 'left' ? f.area.left - 500 : f.area.right + 500;
+	f.dispatch(outside, start.y, 1); f.dispatch(outside, start.y, 0, 0, 1);
+	assert.equal(f.capture.active, false);
+	assert.ok(side === 'left' ? f.model.bounds.left < f.area.left : f.model.bounds.right > f.area.right);
+	const before = { ...f.model.bounds };
+	const x = side === 'left' ? f.area.left + 4 : f.area.right - 4;
+	const y = (f.model.header.top + f.model.header.bottom) / 2;
+	assert.equal(f.surfaces.hitTest(x, y), f.control.surface);
+	f.dispatch(x, y, 1, 1);
+	assert.equal(f.capture.active, true);
+	f.dispatch(x + (side === 'left' ? 40 : -40), y, 0, 0, 1);
+	assert.equal(f.capture.active, false);
+	assert.ok(side === 'left' ? f.model.bounds.left > before.left : f.model.bounds.left < before.left);
+});
+
+test('releasing above the work area keeps a partially outside window instead of maximizing it', t => {
+	const f = fixture(t), start = f.title(), x = start.x + 40, y = f.area.top - 1;
+	f.dispatch(start.x, start.y, PointerButton.Primary, PointerButton.Primary);
+	f.dispatch(x, y, PointerButton.Primary);
+	f.dispatch(x, y, 0, 0, PointerButton.Primary);
+	assert.equal(f.model.placement, 'normal');
+	assert.ok(f.model.bounds.top < f.area.top);
+	assert.equal(f.capture.active, false);
+});
+
 for (const placement of ['left', 'right', 'maximized'] as const) test(`${placement} edge preview is passive and commits only its mode on the physical release`, t => {
 	const f = fixture(t), requested = { ...f.model.requestedBounds }, client = f.control.clientSurface!, down = f.title();
 	const changes = t.mock.method(f.model, 'setRequestedBounds');

@@ -3,6 +3,65 @@ import test from 'node:test';
 import { create_rect_bounds } from '../../machine/ts/common/rect';
 import { WorkbenchWindowModel, WindowResizeEdge, type WindowPlacement } from '../../ide/workbench/ui/window/model';
 
+// These rectangles are the placement and resize algorithm's contract.
+test('normal placement permits each outside edge while retaining the title and requested geometry', () => {
+	const area = { left: 10, top: 20, right: 510, bottom: 380 };
+	const requested = { left: 100, top: 100, right: 300, bottom: 250 };
+	const model = new WorkbenchWindowModel(requested, 80, 60), draft = create_rect_bounds();
+	model.arrange(area, 16, undefined, 80);
+	for (const [left, top, expectedLeft, expectedTop] of [
+		[-300, 100, -94, 100], [600, 100, 494, 100],
+		[100, -100, 100, 16], [100, 500, 100, 368],
+	] as const) {
+		Object.assign(draft, { left, top, right: left + 200, bottom: top + 150 });
+		model.writePlacementBounds('normal', area, draft, draft);
+		assert.deepEqual(draft, { left: expectedLeft, top: expectedTop, right: expectedLeft + 200, bottom: expectedTop + 150 });
+		model.arrange(area, 16, draft, 80); assert.deepEqual(model.bounds, draft);
+		assert.deepEqual(model.requestedBounds, requested);
+	}
+	const oversized = { left: -100, top: 100, right: 700, bottom: 700 };
+	model.setRequestedBounds(oversized); model.arrange(area, 16, undefined, 80);
+	assert.equal(model.bounds.right - model.bounds.left, 500); assert.equal(model.bounds.bottom - model.bounds.top, 360);
+	assert.deepEqual(model.requestedBounds, oversized);
+	const larger = { left: -200, top: 20, right: 700, bottom: 720 };
+	model.arrange(larger, 16, undefined, 80); assert.deepEqual(model.bounds, oversized);
+	model.setPlacement('maximized'); model.arrange(larger, 16, undefined, 80); assert.deepEqual(model.bounds, larger);
+	model.setPlacement('normal'); model.arrange(larger, 16, undefined, 80); assert.deepEqual(model.bounds, oversized);
+});
+
+test('resize grows beyond work-area edges without moving the opposite anchor', () => {
+	const area = { left: 10, top: 20, right: 510, bottom: 380 };
+	const start = { left: 100, top: 100, right: 400, bottom: 300 };
+	const model = new WorkbenchWindowModel(start, 80, 60), result = create_rect_bounds();
+	model.arrange(area, 16, undefined, 80);
+	model.writeResizeBounds(start, start, area, WindowResizeEdge.Left, -150, 0, result);
+	assert.deepEqual(result, { ...start, left: -50 });
+	model.writeResizeBounds(start, start, area, WindowResizeEdge.Right, 150, 0, result);
+	assert.deepEqual(result, { ...start, right: 550 });
+	model.writeResizeBounds(start, start, area, WindowResizeEdge.Top, 0, -100, result);
+	assert.deepEqual(result, { ...start, top: 16 });
+	model.writeResizeBounds(start, start, area, WindowResizeEdge.Bottom, 0, 150, result);
+	assert.deepEqual(result, { ...start, bottom: 450 });
+	const outside = { left: -50, top: 100, right: 400, bottom: 450 };
+	model.writeResizeBounds(outside, outside, area, WindowResizeEdge.Right | WindowResizeEdge.Bottom, 10, 0, result);
+	assert.deepEqual(result, { ...outside, right: 410 });
+});
+
+test('resizing a clipped window stops the moved edge before its title becomes unreachable', () => {
+	const area = { left: 0, top: 20, right: 500, bottom: 380 };
+	const model = new WorkbenchWindowModel({ left: 0, top: 100, right: 240, bottom: 280 }, 80, 60);
+	const requested = create_rect_bounds(), resized = create_rect_bounds();
+	for (const [left, edge, delta] of [[-1000, WindowResizeEdge.Right, -20], [1000, WindowResizeEdge.Left, 20]] as const) {
+		Object.assign(requested, { left, top: 100, right: left + 240, bottom: 280 });
+		model.setRequestedBounds(requested); model.arrange(area, 16, undefined, 80);
+		const start = { ...model.bounds };
+		model.writeResizeBounds(start, start, area, edge, delta, 0, resized);
+		model.arrange(area, 16, resized, 80);
+		assert.deepEqual(model.bounds, start);
+		assert.deepEqual(resized, start);
+	}
+});
+
 for (const publication of ['default', 'bounds', 'state'] as const) test(`${publication} placement publication returns its own generation rather than a newer callback request`, () => {
 	const model = new WorkbenchWindowModel({ left: 10, top: 20, right: 200, bottom: 180 }, 0, 0);
 	const chosen = { left: 30, top: 40, right: 240, bottom: 210 };

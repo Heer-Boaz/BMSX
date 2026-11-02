@@ -37,6 +37,7 @@ export class WorkbenchWindowModel {
 	private arrangedRevision = -1;
 	private headerHeight = 0;
 	private chromeMinimumWidth = 0;
+	private actionWidth = 0;
 	private readonly workArea = create_rect_bounds();
 	private readonly arrangedRequest = create_rect_bounds();
 
@@ -133,8 +134,13 @@ export class WorkbenchWindowModel {
 		if (placement === 'normal') {
 			const width = clamp(normalRequest.right - normalRequest.left, Math.min(this.minimumWidth, areaWidth), areaWidth);
 			const height = clamp(normalRequest.bottom - normalRequest.top, Math.min(this.minimumHeight, areaHeight), areaHeight);
-			const left = clamp(normalRequest.left, workArea.left, workArea.right - width);
-			const top = clamp(normalRequest.top, workArea.top, workArea.bottom - height);
+			// Keep the non-action title strip and resize margins reachable, even
+			// when the rest of the chrome extends past the work area.
+			const visibleLeft = Math.min(width, areaWidth, Math.max(this.chromeMinimumWidth, this.actionWidth + WINDOW_RESIZE_MARGIN) + this.headerHeight);
+			const visibleRight = Math.min(width, areaWidth, this.headerHeight);
+			const visibleHeight = Math.min(height, areaHeight, this.headerHeight - Math.min(this.headerHeight, WINDOW_HEADER_VERTICAL_PADDING / 2));
+			const left = clamp(normalRequest.left, workArea.left - width + visibleLeft, workArea.right - visibleRight);
+			const top = clamp(normalRequest.top, workArea.top - this.headerHeight + visibleHeight, workArea.bottom - visibleHeight);
 			write_rect_bounds(target, left, top, left + width, top + height);
 		} else {
 			const midpoint = workArea.left + (areaWidth >> 1);
@@ -154,14 +160,20 @@ export class WorkbenchWindowModel {
 		const minWidth = Math.min(this.minimumWidth, workArea.right - workArea.left);
 		const minHeight = Math.min(this.minimumHeight, workArea.bottom - workArea.top);
 		if ((edge & WindowResizeEdge.Left) !== 0) {
-			target.left = clamp(start.left + dx, workArea.left, start.right - minWidth); target.right = start.right;
+			const visibleRight = Math.min(workArea.right - workArea.left, this.headerHeight);
+			const rightmost = start.right > workArea.right ? Math.min(start.right - minWidth, workArea.right - visibleRight) : start.right - minWidth;
+			target.left = clamp(start.left + dx, start.right - (workArea.right - workArea.left), rightmost); target.right = start.right;
 		} else if ((edge & WindowResizeEdge.Right) !== 0) {
-			target.left = start.left; target.right = clamp(start.right + dx, start.left + minWidth, workArea.right);
+			const visibleLeft = Math.min(workArea.right - workArea.left, Math.max(this.chromeMinimumWidth, this.actionWidth + WINDOW_RESIZE_MARGIN) + this.headerHeight);
+			const leftmost = start.left < workArea.left ? Math.max(start.left + minWidth, workArea.left + visibleLeft) : start.left + minWidth;
+			target.left = start.left; target.right = clamp(start.right + dx, leftmost, start.left + workArea.right - workArea.left);
 		}
 		if ((edge & WindowResizeEdge.Top) !== 0) {
-			target.top = clamp(start.top + dy, workArea.top, start.bottom - minHeight); target.bottom = start.bottom;
+			const visibleHeight = Math.min(workArea.bottom - workArea.top, this.headerHeight - Math.min(this.headerHeight, WINDOW_HEADER_VERTICAL_PADDING / 2));
+			target.top = clamp(start.top + dy, Math.max(start.bottom - (workArea.bottom - workArea.top), workArea.top - this.headerHeight + visibleHeight),
+				Math.min(start.bottom - minHeight, workArea.bottom - visibleHeight)); target.bottom = start.bottom;
 		} else if ((edge & WindowResizeEdge.Bottom) !== 0) {
-			target.top = start.top; target.bottom = clamp(start.bottom + dy, start.top + minHeight, workArea.bottom);
+			target.top = start.top; target.bottom = clamp(start.bottom + dy, start.top + minHeight, start.top + workArea.bottom - workArea.top);
 		}
 	}
 
@@ -176,11 +188,11 @@ export class WorkbenchWindowModel {
 	public invalidate(): void { this.revision += 1; }
 
 	public arrange(workArea: Readonly<RectBounds>, headerHeight: number, normalPreview?: Readonly<RectBounds>,
-		chromeMinimumWidth = this.chromeMinimumWidth): boolean {
+		chromeMinimumWidth = this.chromeMinimumWidth, actionWidth = this.actionWidth): boolean {
 		const placement = normalPreview === undefined ? this.placement : 'normal';
 		const requested = normalPreview === undefined ? this.requestedBounds : normalPreview;
 		if (this.arrangedRevision === this.placementRevision && this.arrangedPlacement === placement && this.headerHeight === headerHeight
-			&& this.chromeMinimumWidth === chromeMinimumWidth
+			&& this.chromeMinimumWidth === chromeMinimumWidth && this.actionWidth === actionWidth
 			&& this.arrangedRequest.left === requested.left && this.arrangedRequest.top === requested.top
 			&& this.arrangedRequest.right === requested.right && this.arrangedRequest.bottom === requested.bottom
 			&& this.workArea.left === workArea.left && this.workArea.top === workArea.top
@@ -191,6 +203,7 @@ export class WorkbenchWindowModel {
 		this.arrangedRevision = this.placementRevision;
 		this.headerHeight = headerHeight;
 		this.chromeMinimumWidth = chromeMinimumWidth;
+		this.actionWidth = actionWidth;
 		this.writePlacementBounds(placement, workArea, this.bounds, requested);
 		const { left, top, right, bottom } = this.bounds;
 		write_rect_bounds(this.header, left, top, right, Math.min(top + headerHeight, bottom));

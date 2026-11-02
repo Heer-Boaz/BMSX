@@ -93,6 +93,68 @@ function titlePoint(model: WorkbenchWindowModel) {
 	return { x: model.header.left + 16, y: (model.header.top + model.header.bottom) / 2 };
 }
 
+for (const side of ['left', 'right'] as const) test(`resizing the exposed edge of a window clipped on the ${side} preserves its anchor`, t => {
+	const f = fixture(), a = f.window('CLIPPED'); a.show(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	const left = side === 'left' ? -1000 : 1000;
+	a.model.setRequestedBounds({ left, top: 100, right: left + 240, bottom: 280 }); a.layout();
+	const start = { ...a.model.bounds }, y = (start.top + start.bottom) / 2;
+	const x = side === 'left' ? start.right - 1 : start.left + 1, delta = side === 'left' ? -15 : 15;
+	f.dispatch(pointer(x, y, PointerButton.Primary, PointerButton.Primary), 0);
+	assert.equal(f.capture.active, true);
+	f.dispatch(pointer(x + delta, y, PointerButton.Primary), 1);
+	f.dispatch(pointer(x + delta, y, 0, 0, PointerButton.Primary), 2);
+	assert.deepEqual(a.model.bounds, start);
+	assert.deepEqual(a.model.requestedBounds, start);
+	assert.equal(f.capture.active, false);
+});
+
+test('a small work area still permits dragging a window partly beyond its right edge', t => {
+	const f = fixture(); f.workArea.right = 50; f.workArea.bottom = 120;
+	const a = f.window('SMALL'); a.show(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.model.setRequestedBounds({ left: 0, top: 40, right: 240, bottom: 220 }); a.layout();
+	const start = { ...a.model.bounds }, point = titlePoint(a.model);
+	f.dispatch(pointer(point.x, point.y, PointerButton.Primary, PointerButton.Primary), 0);
+	assert.equal(f.capture.active, true);
+	f.dispatch(pointer(point.x + 20, point.y, PointerButton.Primary), 1);
+	f.dispatch(pointer(point.x + 20, point.y, 0, 0, PointerButton.Primary), 2);
+	assert.equal(a.model.placement, 'normal'); assert.ok(a.model.bounds.left > start.left);
+	assert.ok(a.model.bounds.right > f.workArea.right); assert.equal(f.capture.active, false);
+});
+
+test('a responsive title keeps a draggable region exposed beyond its actual visible actions', t => {
+	const f = fixture(), actions = createWorkbenchActionBar('window.minimizable.title', true);
+	const a = f.window('RESPONSIVE', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, actions); a.show(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.model.setRequestedBounds({ left: -1000, top: 100, right: -760, bottom: 280 }); a.layout();
+	const before = { ...a.model.bounds }, y = (a.model.header.top + a.model.header.bottom) / 2;
+	const x = (f.workArea.left + actions.bounds.left) / 2;
+	assert.equal(f.surfaces.hitTest(x, y), a.control.surface);
+	f.dispatch(pointer(x, y, PointerButton.Primary, PointerButton.Primary), 0);
+	assert.equal(f.capture.active, true);
+	f.dispatch(pointer(x + 12, y, PointerButton.Primary), 1);
+	f.dispatch(pointer(x + 12, y, 0, 0, PointerButton.Primary), 2);
+	assert.ok(a.model.bounds.left > before.left); assert.equal(a.model.open, true);
+	assert.equal(f.capture.active, false);
+});
+
+test('changing responsive title actions updates the exposed drag region without repeating stable layout', t => {
+	const f = fixture(), actions = createWorkbenchActionBar('window.minimizable.title', true);
+	const a = f.window('RESPONSIVE', 40, 40, undefined, undefined, { focusScope: f.parent.scope }, actions); a.show(true);
+	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
+	a.model.setRequestedBounds({ left: -1000, top: 100, right: -760, bottom: 280 }); a.layout();
+	const wide = a.model.bounds.left;
+	actions.items[0].visible = false; actions.items[1].visible = false;
+	a.model.invalidate(); a.layout();
+	assert.ok(a.model.bounds.left < wide);
+	const narrow = a.model.bounds.left, measured = f.measurements();
+	a.layout(); assert.equal(a.model.bounds.left, narrow); assert.equal(f.measurements(), measured);
+	actions.items[0].visible = true; actions.items[1].visible = true;
+	a.model.invalidate(); a.layout();
+	assert.equal(a.model.bounds.left, wide);
+});
+
 test('reset requests owner defaults without retiring body input or a sibling capture', t => {
 	const f = fixture(), a = f.window('RESET'); a.show(true);
 	t.after(() => { a.control.dispose(); f.surfaces.dispose(); });
@@ -568,8 +630,11 @@ test('requested placement survives narrow work areas', () => {
 	const area = { left: 0, top: 20, right: 500, bottom: 380 };
 	model.arrange(area, 16);
 	const requested = { ...model.requestedBounds };
-	model.arrange({ left: 0, top: 20, right: 100, bottom: 90 }, 16);
-	assert.deepEqual(model.bounds, { left: 0, top: 20, right: 100, bottom: 90 });
+	const narrow = { left: 0, top: 20, right: 100, bottom: 90 };
+	model.arrange(narrow, 16);
+	assert.equal(model.bounds.right - model.bounds.left, 100); assert.equal(model.bounds.bottom - model.bounds.top, 70);
+	assert.ok(model.header.left < narrow.right && model.header.right > narrow.left);
+	assert.ok(model.header.top < narrow.bottom && model.header.bottom > narrow.top);
 	assert.deepEqual(model.requestedBounds, requested);
 	model.arrange(area, 16); assert.deepEqual(model.bounds, requested);
 	assert.equal(model.arrange(area, 16), false);
@@ -592,12 +657,11 @@ test('attached window and client borrow the retained root work area through in-p
 	a.layout();
 	assert.equal(a.control.surface, surface); assert.equal(a.control.clientSurface, client);
 	assert.equal(surface.retired, false); assert.equal(client.retired, false);
-	assert.deepEqual(a.model.bounds, { left: 10, top: 30, right: 110, bottom: 110 });
+	assert.equal(a.model.bounds.right - a.model.bounds.left, 100); assert.equal(a.model.bounds.bottom - a.model.bounds.top, 80);
 	assert.equal(a.model.requestedBounds, requestedBounds); assert.deepEqual(requestedBounds, requested);
 	assert.equal(client.getBounds(), clientBounds); assert.equal(client.getClip(), clientBounds);
-	assert.ok(clientBounds.left >= area.left && clientBounds.top >= area.top
-		&& clientBounds.right <= area.right && clientBounds.bottom <= area.bottom);
-	assert.equal(f.surfaces.hitTest(50, 70), client);
+	assert.ok(a.model.header.left < area.right && a.model.header.bottom > area.top);
+	assert.equal(f.surfaces.hitTest(area.right + 1, a.model.header.top + 5), null, 'window hit testing remains clipped');
 	area.left = 0; area.top = 20; area.right = 500; area.bottom = 380;
 	a.layout();
 	assert.equal(a.control.surface, surface); assert.equal(a.control.clientSurface, client);
@@ -727,10 +791,15 @@ test('window drag and all-edge resize use central capture, root work area and cu
 	f.parent.focus();
 	assert.equal(f.capture.active, true, 'keyboard focus and the established pointer gesture have independent owners');
 	f.capture.dispatch({ ...pointer(-100, -100, 1), insideViewport: false }, false, 1, a.control.scope.surfaceScope);
-	assert.equal(a.model.bounds.left, 0); assert.equal(a.model.bounds.top, f.workArea.top);
+	assert.ok(a.model.bounds.left < f.workArea.left); assert.ok(a.model.bounds.top < f.workArea.top);
 	f.capture.dispatch(pointer(900, 900, 0, 0, 1), false, 2, a.control.scope.surfaceScope);
-	assert.equal(a.model.bounds.right, f.workArea.right); assert.equal(a.model.bounds.bottom, f.workArea.bottom);
+	assert.ok(a.model.bounds.right > f.workArea.right); assert.ok(a.model.bounds.bottom > f.workArea.bottom);
 	assert.equal(f.capture.active, false);
+	// The exposed title strip is an actual hit target and can recover the window.
+	const title = pointer(a.model.header.left + 5, a.model.header.top + 5, 1, 1);
+	assert.equal(f.surfaces.hitTest(title.viewportX, title.viewportY), a.control.surface);
+	f.capture.beginRoute(a.control.scope.surfaceScope, title); a.control.surface!.handlePointer!(title, 2);
+	f.capture.dispatch(pointer(200, 100, 0, 0, 1), false, 3, a.control.scope.surfaceScope);
 	const start = { ...a.model.bounds };
 	const resize = pointer(start.left + 1, start.top + 1, 1, 1);
 	f.capture.beginRoute(a.control.scope.surfaceScope, resize); f.surfaces.hitTest(resize.viewportX, resize.viewportY)!.handlePointer!(resize, 3);

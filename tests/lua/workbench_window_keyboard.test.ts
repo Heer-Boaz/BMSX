@@ -127,21 +127,34 @@ for (const placement of ['left', 'right'] as const)
 		assert.deepEqual(f.model.requestedBounds, expected); assert.equal(f.model.placement, 'normal'); assert.equal(f.publications(), 1);
 	});
 
-test('keyboard Move and bottom-right Resize obey the live work area and chrome-inclusive minimum', t => {
+test('keyboard Move and bottom-right Resize preserve reachable chrome and minimum size', t => {
 	const f = fixture(t);
 	f.start('move');
 	for (let index = 0; index < 100; index++) { f.key('ArrowRight', KeyModifier.none, true); f.key('ArrowUp', KeyModifier.none, true); }
-	assert.deepEqual(f.model.bounds, { left: 380, top: 30, right: 620, bottom: 210 });
+	assert.ok(f.model.bounds.right > f.area.right && f.model.bounds.top < f.area.top);
+	const moved = { ...f.model.bounds };
 	f.key('Enter');
 	f.start('resize');
 	for (let index = 0; index < 100; index++) { f.key('ArrowLeft', KeyModifier.none, true); f.key('ArrowUp', KeyModifier.none, true); }
-	assert.equal(f.model.bounds.left, 380); assert.equal(f.model.bounds.top, 30);
+	assert.equal(f.model.bounds.left, moved.left); assert.equal(f.model.bounds.top, moved.top);
 	assert.equal(f.model.bounds.right - f.model.bounds.left, f.model.minimumWidth);
 	assert.equal(f.model.bounds.bottom - f.model.bounds.top, f.model.minimumHeight);
 	f.area.right = 490; f.area.bottom = 100; f.layout();
-	assert.ok(f.model.bounds.right <= f.area.right && f.model.bounds.bottom <= f.area.bottom);
+	assert.ok(f.model.header.left < f.area.right && f.model.header.right > f.area.left);
+	assert.ok(f.model.header.top < f.area.bottom && f.model.header.bottom > f.area.top);
 	f.key('Enter');
 	assert.equal(f.publications(), 2);
+});
+
+test('keyboard Move preserves oversized requested dimensions across work-area changes', t => {
+	const f = fixture(t), requested = { left: 100, top: 80, right: 900, bottom: 680 };
+	f.model.setRequestedBounds(requested); f.layout();
+	f.start('move'); f.key('ArrowRight'); f.key('ArrowDown'); f.key('Enter');
+	assert.equal(f.model.requestedBounds.right - f.model.requestedBounds.left, 800);
+	assert.equal(f.model.requestedBounds.bottom - f.model.requestedBounds.top, 600);
+	const moved = { ...f.model.requestedBounds };
+	f.area.right = 1200; f.area.bottom = 1000; f.layout();
+	assert.deepEqual(f.model.bounds, moved); assert.deepEqual(f.model.requestedBounds, moved);
 });
 
 for (const operation of ['move', 'resize'] as const)

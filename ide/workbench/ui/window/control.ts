@@ -1,4 +1,3 @@
-import { clamp } from '../../../../machine/ts/common/clamp';
 import { copy_rect_bounds, create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../../machine/ts/common/rect';
 import type { BFont } from '../../../../machine/ts/render/shared/bitmap_font';
 import { KeyModifier, type KeyInputEvent } from '../../../../hosts/common/input/text';
@@ -349,7 +348,7 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			const actionWidth = measureWorkbenchActionBarMinimumWidth(this.options.actionBar, headerHeight - 4, measureText, font);
 			chromeMinimumWidth = this.ellipsisWidth + 8 + (actionWidth === 0 ? 0 : actionWidth + 3);
 		}
-		const arranged = model.arrange(this.options.workArea, headerHeight, this.geometryPending ? this.nextRequested : undefined, chromeMinimumWidth);
+		let arranged = model.arrange(this.options.workArea, headerHeight, this.geometryPending ? this.nextRequested : undefined, chromeMinimumWidth);
 		const previewChanged = this.updatePlacementPreview();
 		const dirty = arranged || this.measuredRevision !== model.revision || fontChanged
 			|| this.measure !== measure || this.measureText !== measureText;
@@ -360,6 +359,12 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		this.measuredRevision = model.revision;
 		const { header } = model;
 		layoutWorkbenchActionBar(this.options.actionBar, header.right - 3, header.top + 2, header.bottom - 2, measureText, font, header.left + 4);
+		const actions = this.options.actionBar.bounds;
+		if (model.arrange(this.options.workArea, headerHeight, this.geometryPending ? this.nextRequested : undefined,
+			chromeMinimumWidth, actions.right - actions.left)) {
+			arranged = true;
+			layoutWorkbenchActionBar(this.options.actionBar, header.right - 3, header.top + 2, header.bottom - 2, measureText, font, header.left + 4);
+		}
 		const firstAction = this.options.actionBar.items.find(item => item.visible);
 		model.displayTitle = truncateMeasuredText(model.title, (firstAction === undefined ? header.right : firstAction.bounds.left) - header.left - 8, measure, ELLIPSIS, 'middle');
 		const contentChanged = arranged || fontChanged;
@@ -425,10 +430,11 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 			const area = this.options.workArea, next = this.nextRequested, start = this.startBounds;
 			this.model.writePlacementBounds('normal', area, start, next);
 			if (this.keyboardGeometry.kind === 'move') {
-				const width = next.right - next.left, height = next.bottom - next.top;
-				const left = clamp(start.left + dx, area.left, area.right - (start.right - start.left));
-				const top = clamp(start.top + dy, area.top, area.bottom - (start.bottom - start.top));
-				write_rect_bounds(next, left, top, left + width, top + height);
+				const requestedWidth = next.right - next.left, requestedHeight = next.bottom - next.top;
+				const width = start.right - start.left, height = start.bottom - start.top;
+				write_rect_bounds(next, start.left + dx, start.top + dy, start.left + dx + width, start.top + dy + height);
+				this.model.writePlacementBounds('normal', area, next, next);
+				next.right = next.left + requestedWidth; next.bottom = next.top + requestedHeight;
 			} else this.model.writeResizeBounds(start, next, area, WindowResizeEdge.Right | WindowResizeEdge.Bottom, dx, dy, next);
 			this.geometryPending = true;
 			this.layout(this.measuredFont!, this.measure!, this.measureText!);
@@ -568,9 +574,11 @@ export class WorkbenchFloatingWindow implements PointerCaptureTarget, PointerHov
 		if (this.moving) {
 			this.model.writePlacementBounds('normal', workArea, next, requested);
 			const width = next.right - next.left, height = next.bottom - next.top;
-			const left = clamp(snapshot.viewportX - Math.round(width * this.titleAnchorX), workArea.left, workArea.right - width);
-			const top = clamp(snapshot.viewportY - this.titleAnchorY, workArea.top, workArea.bottom - height);
-			write_rect_bounds(next, left, top, left + requested.right - requested.left, top + requested.bottom - requested.top);
+			const left = snapshot.viewportX - Math.round(width * this.titleAnchorX), top = snapshot.viewportY - this.titleAnchorY;
+			write_rect_bounds(next, left, top, left + width, top + height);
+			this.model.writePlacementBounds('normal', workArea, next, next);
+			next.right = next.left + requested.right - requested.left;
+			next.bottom = next.top + requested.bottom - requested.top;
 		} else {
 			this.model.writeResizeBounds(start, this.model.placement === 'normal' ? requested : start, workArea, this.resizing, dx, dy, next);
 		}
