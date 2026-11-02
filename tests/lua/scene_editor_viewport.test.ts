@@ -32,7 +32,7 @@ function scene(t: TestContext, path = 'viewport.lua', source = SCENE_VIEWPORT_SO
 }
 
 // A focused layout fixture arranges the real sibling owners after the composition allocates them.
-function arrangeScene(view: SceneViewState, contentChanged: boolean, selectionChanged: boolean, bounds: RectBounds): boolean {
+function arrangeScene(view: SceneViewState, contentChanged: boolean, bounds: RectBounds): boolean {
 	const hierarchyRevision = view.hierarchy.outlineRevision;
 	view.hierarchy.refresh();
 	const hierarchyChanged = hierarchyRevision !== view.hierarchy.outlineRevision, detailsChanged = view.details.refresh();
@@ -58,7 +58,7 @@ test('replacing selected Scene source with the same member name retires the Deta
 	assert.equal(selected.span.start, selected.span.end, 'a complete replacement retires the tracked source occurrence');
 	assert.ok(input.view.hierarchy.outline.rows.some(row => row.element.label === originalLabel), 'a same-named source occurrence still exists');
 	assert.equal(input.view.hierarchy.outline.selectionIndex, -1);
-	arrangeScene(input.view, true, false, { left: 0, top: 24, right: 180, bottom: 180 });
+	arrangeScene(input.view, true, { left: 0, top: 24, right: 180, bottom: 180 });
 	assert.equal(input.view.details.projection.subject, undefined);
 	assert.equal(input.view.details.viewport.contentHeight, 0);
 	assert.equal(input.view.details.properties.length, 0);
@@ -72,46 +72,46 @@ for (const font of ['tiny', 'msx'] as const) for (const width of [256, 384]) {
 		editorViewState.editorAreaTop = 31; editorViewState.editorAreaBottom = 275;
 		const input = scene(t);
 		t.after(() => { input.dispose(); });
-		arrangeScene(input.view, true, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		arrangeScene(input.view, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.deepEqual(input.view.details.properties.map(property => property.descriptor.value), [11, -22, 33]);
 		const height = input.view.details.viewport.contentHeight;
 		assert.ok(height > 0);
 		for (const line of input.view.details.detailsText) assert.ok(editorViewState.font.measure(line.text) <= input.view.details.viewport.bounds.right - input.view.details.viewport.bounds.left - 8);
 		editorViewState.editorAreaBottom = 120;
-		assert.equal(arrangeScene(input.view, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom }), true);
+		assert.equal(arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom }), true);
 		assert.equal(input.view.details.viewport.contentHeight, height, 'content extent is independent of viewport height');
 		assert.equal(input.view.details.viewport.scrollbar.isVisible(), true);
 		const row = input.view.details.properties[2];
 		input.view.details.viewport.scrollbar.reveal(row.contentBounds.top, row.contentBounds.bottom, 2);
-		arrangeScene(input.view, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(row.bounds.top >= input.view.details.viewport.bounds.top && row.bounds.bottom <= input.view.details.viewport.bounds.bottom);
 		const option = input.view.details.optionProperties.at(-1)!;
 		input.view.details.viewport.scrollbar.reveal(option.contentBounds.top, option.contentBounds.bottom, 2);
-		arrangeScene(input.view, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(option.bounds.top >= input.view.details.viewport.bounds.top && option.bounds.bottom <= input.view.details.viewport.bounds.bottom);
 		const runs = input.view.details.detailsText.slice();
 		const contentBounds = row.contentBounds;
 		const screenBounds = row.bounds;
 		const revision = input.view.details.viewport.revision;
 		const advance = t.mock.method(editorViewState.font, 'advance', () => assert.fail('scroll/stable layout remeasured text'));
-		input.view.details.viewport.scrollbar.setScroll(height); arrangeScene(input.view, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		input.view.details.viewport.scrollbar.setScroll(height); arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		const note = input.view.details.detailsText.at(-1)!;
 		assert.ok(input.view.details.viewport.offsetTop + note.top + editorViewState.lineHeight <= input.view.details.viewport.bounds.bottom);
-		for (let index = 0; index < 100; index += 1) assert.equal(arrangeScene(input.view, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom }), false);
+		for (let index = 0; index < 100; index += 1) assert.equal(arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom }), false);
 		advance.mock.restore();
 		assert.deepEqual(input.view.details.detailsText, runs); assert.equal(input.view.details.detailsText[0], runs[0]);
 		assert.equal(input.view.details.viewport.revision, revision); assert.equal(row.contentBounds, contentBounds); assert.equal(row.bounds, screenBounds);
 		const tree = input.view.hierarchy.outline.layout;
 		assert.equal(workbenchListRowIndexAtPosition(input.view.hierarchy.outline, tree.contentLeft, tree.contentBottom), -1);
-		editorViewState.editorAreaBottom = editorViewState.editorAreaTop; arrangeScene(input.view, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		editorViewState.editorAreaBottom = editorViewState.editorAreaTop; arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.equal(input.view.details.viewport.height, 0); assert.equal(input.view.details.viewport.scrollbar.isVisible(), false);
 		assert.equal(input.view.hierarchy.outline.layout.visibleRowCount, 0);
-		editorViewState.editorAreaBottom = 275; arrangeScene(input.view, false, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
-		selectSceneOutlineRow(input.view.hierarchy, 2); arrangeScene(input.view, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		editorViewState.editorAreaBottom = 275; arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		selectSceneOutlineRow(input.view.hierarchy, 2); arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.equal(input.view.details.properties.length, 0, 'computed placement does not grant editable coordinates from a fabricated partial pose');
-		selectSceneOutlineRow(input.view.hierarchy, 0); arrangeScene(input.view, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		selectSceneOutlineRow(input.view.hierarchy, 0); arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.ok(input.view.details.viewport.contentHeight < height);
-		selectSceneOutlineRow(input.view.hierarchy, -1); arrangeScene(input.view, false, true, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
+		selectSceneOutlineRow(input.view.hierarchy, -1); arrangeScene(input.view, false, { left: 0, top: editorViewState.editorAreaTop, right: editorViewState.viewportWidth, bottom: editorViewState.editorAreaBottom });
 		assert.equal(input.view.details.projection.subject, undefined);
 		assert.equal(input.view.details.viewport.contentHeight, 0); assert.equal(input.view.details.viewport.scrollTop, 0);
 		assert.equal(input.view.details.detailsText.length, 0); assert.equal(input.view.details.properties.length, 0);

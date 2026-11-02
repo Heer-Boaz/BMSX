@@ -11,7 +11,8 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} hidden Details cannot
 	f.editor.setFontVariant(font); f.update();
 	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
 	const details = f.primary.details.control;
-	assert.ok(f.context.selection?.kind === 'member');
+	const initialSelection = f.context.selection;
+	assert.ok(initialSelection?.kind === 'member');
 	assert.ok(details.options.controls.length > 0);
 	assert.equal(f.editor.mainWorkspace.setRegionVisible('details', false), true); f.update();
 	assert.equal(details.hasView, false);
@@ -25,11 +26,13 @@ for (const font of ['tiny', 'msx'] as const) test(`${font} hidden Details cannot
 			pressedButtons: down ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
 			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
 	}
-	assert.equal(f.context.selection?.kind, 'scene');
+	const rootSelection = f.context.selection;
+	assert.equal(rootSelection?.kind, 'scene');
 	assert.equal(f.model.buffer.getText(), before); assert.equal(f.model.dirty, false);
 	assert.equal(f.editor.mainWorkspace.setRegionVisible('details', true), true); f.update();
 	assert.equal(details.hasView, true); assert.equal(details.options.controls.length, 0);
 	selectSceneOutlineRow(f.view.hierarchy, 1); f.update();
-	assert.ok(f.context.selection?.kind === 'member');
+	const finalSelection = f.context.selection;
+	assert.ok(finalSelection?.kind === 'member');
 	assert.equal(details.options.controls.length, f.view.details.optionProperties.length);
 });

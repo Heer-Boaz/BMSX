@@ -5,7 +5,7 @@ import { KeyInputEvent, KeyModifier } from '../../hosts/common/input/text';
 import { editorTextModelService } from '../../ide/editor/model/model_service';
 import type { EditorSourceLocation } from '../../ide/editor/navigation/source_location';
 import { setFieldText } from '../../ide/editor/ui/inline/text_field';
-import { inputFocus, type InputFocusTarget } from '../../ide/input/focus';
+import { inputFocus } from '../../ide/input/focus';
 import { luaSourceRangeToTextRange } from '../../ide/language/lua/source_edits';
 import { CodeEditorInput } from '../../ide/workbench/contrib/code_editor/editor_input';
 import { SceneEditorPane } from '../../ide/workbench/contrib/scene_editor/editor_pane';

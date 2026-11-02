@@ -3,7 +3,6 @@ import test, { type TestContext } from 'node:test';
 import { SceneAuthoringContext } from '../../ide/workbench/contrib/scene_editor/authoring_context';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
-import { createLuaTableFieldRemovalEdits } from '../../ide/language/lua/source_edits';
 
 const SOURCE = `local scenes = require('cartlib/world/scene_library')
 local prefab=require('cartlib/world/prefab')

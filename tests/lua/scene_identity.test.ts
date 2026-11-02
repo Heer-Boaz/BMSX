@@ -40,7 +40,7 @@ function scene(t: TestContext, contextId: string = TEST_CARTRIDGE_CONTEXT_IDS[0]
 	return input;
 }
 
-function arrangeScene(view: SceneViewState, contentChanged: boolean, selectionChanged: boolean, bounds: RectBounds): void {
+function arrangeScene(view: SceneViewState, contentChanged: boolean, bounds: RectBounds): void {
 	const hierarchyRevision = view.hierarchy.outlineRevision;
 	view.hierarchy.refresh();
 	const hierarchyChanged = hierarchyRevision !== view.hierarchy.outlineRevision, detailsChanged = view.details.refresh();
@@ -92,7 +92,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} identifie
 		assert.ok(member.identity.includes(literal.value), 'qualification preserves the decoded identifier contents');
 		assert.equal(member.identity.includes(literal.source), false, 'qualification does not expose the identifier literal token');
 		const span = { ...member.span }, version = input.workingCopy.version;
-		arrangeScene(input.view, true, false, { left: 0, top: 24, right: 800, bottom: 400 });
+		arrangeScene(input.view, true, { left: 0, top: 24, right: 800, bottom: 400 });
 		assert.equal(root.displayLabel, literal.value); assert.equal(member.displayLabel, literal.value);
 		assert.equal(input.view.details.detailsText[0].text, literal.value, 'literal identifier casing and internal spaces survive Details layout');
 		assert.equal(input.view.details.projection.subject!.label, literal.value, 'the selected identity retains its decoded value');
@@ -119,7 +119,7 @@ scenes.register(scene_names.main, { objects = {
 	assert.equal(dynamic.preserveLabelCase, false); assert.equal(dynamic.preserveDetailCase, false);
 	assert.equal(composition.label, "'composition'", 'a string used as unresolved composition is still a Lua expression, not a fabricated identifier');
 	selectSceneOutlineRow(input.view.hierarchy, 3);
-	arrangeScene(input.view, true, false, { left: 0, top: 24, right: 800, bottom: 400 });
+	arrangeScene(input.view, true, { left: 0, top: 24, right: 800, bottom: 400 });
 	assert.equal(root.element.displayLabel, `* ${root.element.label}`); assert.equal(dynamic.displayLabel, 'MEMBER_IDS.SHIP');
 	assert.equal(input.view.details.detailsText[0].text, 'MEMBER_IDS.SHIP'); assert.equal(input.view.details.detailsText[1].text, 'ACTORS.SHIP');
 	assert.equal(input.workingCopy.buffer.getText(), source);
@@ -128,14 +128,14 @@ scenes.register(scene_names.main, { objects = {
 for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} Details names the selected member, not only its parent scene`, t => {
 	configureFontVariant(variant);
 	const input = scene(t), member = input.view.hierarchy.outline.rows[1].element;
-	arrangeScene(input.view, true, false, { left: 0, top: 24, right: 384, bottom: 276 });
+	arrangeScene(input.view, true, { left: 0, top: 24, right: 384, bottom: 276 });
 	assert.equal(input.view.details.detailsText[0].text, member.label);
 	assert.equal(member.labelClipped, false);
-	arrangeScene(input.view, false, false, { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 276 });
+	arrangeScene(input.view, false, { left: 0, top: 24, right: variant === 'tiny' ? 78 : 118, bottom: 276 });
 	const tree = input.view.hierarchy.outline.layout;
 	assert.equal(member.labelClipped, editorViewState.font.measure(member.label) > tree.contentRight - tree.contentLeft - tree.indentWidth - tree.twistieWidth);
 	selectSceneOutlineRow(input.view.hierarchy, 0);
-	arrangeScene(input.view, false, true, { left: 0, top: 24, right: 384, bottom: 276 });
+	arrangeScene(input.view, false, { left: 0, top: 24, right: 384, bottom: 276 });
 	assert.equal(input.view.details.detailsText[0].text, 'room');
 	assert.equal(input.workingCopy.buffer.getText(), SOURCE);
 });
@@ -145,7 +145,7 @@ function feedbackFixture(t: TestContext, variant: 'tiny' | 'msx') {
 	const source = SOURCE.replaceAll('same  member', 'same  member identity');
 	const input = scene(t, TEST_CARTRIDGE_CONTEXT_IDS[0], source), font = editorViewState.font.renderFont();
 	const area = { left: 0, top: 24, right: 384, bottom: 276 };
-	arrangeScene(input.view, true, false, { ...area, right: variant === 'tiny' ? 78 : 94 });
+	arrangeScene(input.view, true, { ...area, right: variant === 'tiny' ? 78 : 94 });
 	const focus = new InputFocusService(), parent = focus.createTarget(), treeFocus = focus.createTarget(parent);
 	parent.bindKeyboard(() => {}); treeFocus.bindKeyboard(() => {});
 	const surfaces = new WorkbenchSurfaceService();
@@ -191,7 +191,7 @@ for (const variant of ['tiny', 'msx'] as const) test(`Scene ${variant} full iden
 	installSceneOutline(f.input.view.hierarchy); selectSceneOutlineRow(f.input.view.hierarchy, 1);
 	assert.notEqual(f.input.view.hierarchy.outline.rows[1], member);
 	f.update(); f.paint(); assert.deepEqual(f.labels, [], 'equal labels at the same index cannot inherit another projection identity');
-	arrangeScene(f.input.view, true, false, f.area);
+	arrangeScene(f.input.view, true, f.area);
 	f.treeFocus.focus(); f.feedback.keyboardSelection(f.input.view.hierarchy); f.update(); f.paint();
 	assert.deepEqual(f.labels, [], 'fitting keyboard labels do not produce an unsolicited explanation layer');
 	f.input.view.hierarchy.outline.hoverIndex = 1; f.point.viewportX++; f.feedback.pointer(f.input.view.hierarchy, 1, f.point); f.update(); f.paint();

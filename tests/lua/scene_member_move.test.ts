@@ -262,6 +262,8 @@ test('3D local reparent retains the authored local position while changing world
 	assert.ok(f.model.buffer.getText().includes('position={x=2,y=3,z=4}'));
 	const document = f.documents.get(f.model), scene = document.scenes[0], child = f.member('child', document);
 	const spatial = f.documents.getSpatialProjection(f.model, document)!.readScene(document, scene);
-	const pose = spatial.worlds.get(child)!; assert.deepEqual([pose.ox, pose.oy, pose.oz], [52, 63, 74]);
+	const pose = spatial.worlds.get(child);
+	assert.ok(pose?.family === '3d');
+	assert.deepEqual([pose.ox, pose.oy, pose.oz], [52, 63, 74]);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
 });

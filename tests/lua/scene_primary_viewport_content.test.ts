@@ -221,14 +221,18 @@ test('framing a selection uses its own spatial view without changing the other c
 	assert.equal(changes.length, 1, 'mode and framed reading are published together');
 	assert.equal(changes[0].mode, '3d'); assert.equal(changes[0].space.originX, 7);
 	assert.deepEqual(camera.capture().canvas, canvas);
-	assert.ok(f.view.entries.includes(f.context.subject!.objects[2]));
+	const spatial3 = f.context.subject!.objects[2];
+	assert.equal(spatial3.kind, 'object');
+	assert.ok(f.view.entries.includes(spatial3));
 	const space = camera.capture().space;
 	f.select(0);
 	assert.equal(camera.mode, '3d', 'selection alone preserves the manually chosen view');
 	assert.equal(f.panel.getCommand('sceneViewport.frameSelection')!.isEnabled(), true);
 	inputFocus.executeCommand('sceneViewport.frameSelection', f.panel);
 	assert.equal(camera.mode, '2d'); assert.deepEqual(camera.capture().space, space);
-	assert.ok(f.view.entries.includes(f.context.subject!.objects[0]));
+	const spatial2 = f.context.subject!.objects[0];
+	assert.equal(spatial2.kind, 'object');
+	assert.ok(f.view.entries.includes(spatial2));
 	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });
 
