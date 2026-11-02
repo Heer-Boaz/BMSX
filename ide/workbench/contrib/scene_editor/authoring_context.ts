@@ -34,8 +34,8 @@ export type SceneMemberMoveRequest = {
 	readonly scene: SceneSourceDefinition;
 	readonly entry: SceneSourceObject;
 	isCurrent(): boolean;
-	canPlace(parent: SceneSourceObject | undefined, before: SceneSourceEntry | undefined): boolean;
-	apply(parent: SceneSourceObject | undefined, before: SceneSourceEntry | undefined): boolean;
+	canPlace(parent: SceneSourceObject | undefined, before: SceneSourceEntry | undefined, mode: SceneReparentMode): boolean;
+	apply(parent: SceneSourceObject | undefined, before: SceneSourceEntry | undefined, mode: SceneReparentMode): boolean;
 };
 export type SceneRenameRequest = {
 	readonly initialName: string;
@@ -577,10 +577,10 @@ export class SceneAuthoringContext {
 			&& this.workingCopy.version === version && this.selectionRevisionValue === selection;
 		if (!isCurrent()) return;
 		return { scene: selected.scene, entry: selected.entry, isCurrent,
-			canPlace: (parent, before) => isCurrent() && plan.placements.get(parent)?.has(before) === true,
-			apply: (parent, before) => {
+			canPlace: (parent, before, mode) => isCurrent() && plan.placements.get(mode)?.get(parent)?.has(before) === true,
+			apply: (parent, before, mode) => {
 				if (!isCurrent()) return false;
-				const placement = plan.placements.get(parent)?.get(before); if (placement === undefined) return false;
+				const placement = plan.placements.get(mode)?.get(parent)?.get(before); if (placement === undefined) return false;
 				const edits = placement.destination === plan.index ? [] : createLuaTableFieldMoveEdits(this.workingCopy.buffer, document.analysis.chunk,
 					selected.scene.objectsTable, plan.index, placement.destination);
 				if (placement.reparent !== undefined) edits.push(...projection.reparentEdits(this.workingCopy.buffer, document,

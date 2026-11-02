@@ -1,4 +1,5 @@
 import { PointerButton } from '../../../hosts/common/input/pointer_event';
+import type { KeyModifier } from '../../../hosts/common/input/text';
 import { create_rect_bounds, point_in_rect, write_rect_bounds, type RectBounds } from '../../../machine/ts/common/rect';
 import type { BFont } from '../../../machine/ts/render/shared/bitmap_font';
 import { POINTER_DRAG_ACTIVATION_THRESHOLD } from '../../common/constants';
@@ -19,8 +20,8 @@ export interface WorkbenchTreeDragSession<Element> {
 	readonly labelWidth: number;
 	readonly font: BFont;
 	isCurrent(): boolean;
-	canDrop(target: WorkbenchTreeNode<Element>, placement: WorkbenchTreeDropPlacement): boolean;
-	drop(target: WorkbenchTreeNode<Element>, placement: WorkbenchTreeDropPlacement): void;
+	canDrop(target: WorkbenchTreeNode<Element>, placement: WorkbenchTreeDropPlacement, modifiers: KeyModifier): boolean;
+	drop(target: WorkbenchTreeNode<Element>, placement: WorkbenchTreeDropPlacement, modifiers: KeyModifier): void;
 }
 
 export type WorkbenchTreeDragFeedback<Element> = {
@@ -45,6 +46,8 @@ type TreePress<Element> = {
 	pointerY: number;
 	pointerInside: boolean;
 	pointerExposed: boolean;
+	modifiers: KeyModifier;
+	admittedModifiers: KeyModifier;
 	time: number;
 	hoverTime: number;
 	afterRowCount: number;
@@ -77,7 +80,7 @@ export class WorkbenchTreeDrag<Element> implements PointerCaptureTarget {
 		this.capture.capture(this, PointerButton.Primary, this.scope);
 		this.press = { tree, node, startX: pointer.viewportX, startY: pointer.viewportY,
 			pointerX: pointer.viewportX, pointerY: pointer.viewportY, pointerInside: pointer.insideViewport,
-			pointerExposed: false,
+			pointerExposed: false, modifiers: pointer.modifiers, admittedModifiers: pointer.modifiers,
 			time: now, hoverTime: now, afterRowCount: 0, session: undefined };
 		if ((pointer.justReleasedButtons & PointerButton.Primary) !== 0) this.releaseCapturedPointer(pointer, now);
 	}
@@ -86,7 +89,7 @@ export class WorkbenchTreeDrag<Element> implements PointerCaptureTarget {
 		this.advance(now);
 		const press = this.press;
 		if (press === undefined) return;
-		press.pointerX = pointer.viewportX; press.pointerY = pointer.viewportY; press.pointerInside = pointer.insideViewport;
+		press.pointerX = pointer.viewportX; press.pointerY = pointer.viewportY; press.pointerInside = pointer.insideViewport; press.modifiers = pointer.modifiers;
 		if (press.session === undefined) {
 			if (Math.max(Math.abs(pointer.viewportX - press.startX), Math.abs(pointer.viewportY - press.startY)) < POINTER_DRAG_ACTIVATION_THRESHOLD) return;
 			const session = this.beginSession(press.node);
@@ -106,7 +109,7 @@ export class WorkbenchTreeDrag<Element> implements PointerCaptureTarget {
 	public releaseCapturedPointer(pointer: PointerInputSnapshot, now: number): void {
 		const press = this.press;
 		if (press === undefined) return;
-		press.pointerX = pointer.viewportX; press.pointerY = pointer.viewportY; press.pointerInside = pointer.insideViewport;
+		press.pointerX = pointer.viewportX; press.pointerY = pointer.viewportY; press.pointerInside = pointer.insideViewport; press.modifiers = pointer.modifiers;
 		if (press.session === undefined) {
 			// Hosts can coalesce press, threshold crossing and release into one interval.
 			this.handleCapturedPointer(pointer, press.time);
@@ -121,7 +124,16 @@ export class WorkbenchTreeDrag<Element> implements PointerCaptureTarget {
 		if (this.press !== press) return;
 		const feedback = this.feedback!;
 		this.cancelPointer();
-		if (feedback.accepted) session.drop(feedback.target!, feedback.placement);
+		if (feedback.accepted) session.drop(feedback.target!, feedback.placement, pointer.modifiers);
+	}
+
+	public onModifiersChange(modifiers: KeyModifier, now: number): void {
+		const press = this.press;
+		if (press === undefined || press.modifiers === modifiers) return;
+		this.advance(now);
+		if (this.press !== press) return;
+		press.modifiers = modifiers;
+		if (press.session !== undefined) this.updateTarget(press, now);
 	}
 
 	/** Unchanged targets repeat neither source admission nor allocation; only edge time advances. */
@@ -168,11 +180,14 @@ export class WorkbenchTreeDrag<Element> implements PointerCaptureTarget {
 		const top = layout.contentTop + (index - (tree.scroll | 0)) * layout.rowHeight;
 		const fraction = (press.pointerY - top) / layout.rowHeight;
 		const placement = fraction < 0.25 ? 'before' : fraction >= 0.75 ? 'after' : 'inside';
-		if (target !== feedback.target || placement !== feedback.placement) {
-			feedback.target = target; feedback.placement = placement; press.hoverTime = now;
-			feedback.accepted = target !== undefined && press.session!.canDrop(target, placement);
+		const targetChanged = target !== feedback.target || placement !== feedback.placement;
+		if (targetChanged || press.admittedModifiers !== press.modifiers) {
+			feedback.target = target; feedback.placement = placement;
+			if (targetChanged) press.hoverTime = now;
+			press.admittedModifiers = press.modifiers;
+			feedback.accepted = target !== undefined && press.session!.canDrop(target, placement, press.modifiers);
 			if (this.press !== press) return;
-			if (target !== undefined && placement === 'after') {
+			if (targetChanged && target !== undefined && placement === 'after') {
 				let boundary = index + 1;
 				while (boundary < tree.rows.length && tree.rows[boundary].depth > target.depth) boundary++;
 				press.afterRowCount = boundary - index;

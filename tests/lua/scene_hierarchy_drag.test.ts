@@ -30,8 +30,8 @@ scenes.register('room',{objects={
 }})
 scenes.register('other',{objects={{member_id='other',definition_id='actor2'}}})`;
 
-async function fixture(t: TestContext, main = true, font: 'tiny' | 'msx' = 'tiny') {
-	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', SOURCE], ['cartlib/world/scene_library.lua', 'return {}']]);
+async function fixture(t: TestContext, main = true, font: 'tiny' | 'msx' = 'tiny', source = SOURCE) {
+	const f = createActualSourcePanes(t, false, [...SCENE_VIEWPORT_IMPORTS, ['scene.lua', source], ['cartlib/world/scene_library.lua', 'return {}']]);
 	f.editor.setFontVariant(font); f.firstBounds.right = 700;
 	const resource = f.sources.catalog.resolveResource({ contextId: f.sources.systemContextId, path: 'scene.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource);
@@ -58,11 +58,11 @@ async function fixture(t: TestContext, main = true, font: 'tiny' | 'msx' = 'tiny
 			y: layout.contentTop + (index - (tree.scroll | 0)) * layout.rowHeight
 				+ (placement === 'before' ? 1 : placement === 'after' ? layout.rowHeight - 1 : layout.rowHeight / 2) };
 	};
-	const send = (point: { x: number; y: number }, down: boolean, pressed = false) => {
+	const send = (point: { x: number; y: number }, down: boolean, pressed = false, modifiers = KeyModifier.none) => {
 		f.host.clock.advance(10);
 		f.editor.dispatchPointer({ ...point, buttons: down ? PointerButton.Primary : 0,
 			pressedButtons: pressed ? PointerButton.Primary : 0, releasedButtons: down ? 0 : PointerButton.Primary,
-			cancelledButtons: 0, modifiers: KeyModifier.none, spaceDown: false, timestamp: f.host.clock.now() });
+			cancelledButtons: 0, modifiers, spaceDown: false, timestamp: f.host.clock.now() });
 		f.update();
 	};
 	const drag = (source: string, target: string, placement: 'before' | 'inside' | 'after') => {
@@ -193,3 +193,18 @@ for (const retirement of ['source', 'provider', 'readOnly', 'context'] as const)
 		assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.version, version);
 		assert.equal(pointerCapture.draining, false);
 	});
+
+
+for (const main of [true, false]) test(`${main ? 'Main' : 'document'} hierarchy uses the release modifier for a local-only parent`, async t => {
+	const source = SOURCE.replace("position={x=50,y=60}", "position={x=50,y=60},scale={x=0,y=0}");
+	const f = await fixture(t, main, 'tiny', source), version = f.model.version;
+	const start = f.point('child'), target = f.point('b');
+	f.send(start, true, true); f.send(target, true); f.send(target, false);
+	assert.equal(f.model.version, version); assert.equal(f.model.buffer.getText(), source);
+	f.send(start, true, true); f.send(target, true); f.send(target, false, false, KeyModifier.alt);
+	assert.equal(f.model.version, version + 1);
+	assert.ok(f.model.buffer.getText().includes('position={x=2,y=3}'));
+	const selected = f.context.selection; assert.ok(selected?.kind === 'member' && selected.entry.kind === 'object');
+	assert.equal(stringLiteralValue(f.context.getSpatialParents(selected.scene).get(selected.entry)!.memberId), 'b');
+	f.model.undo(); f.update(); assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.canUndo, false);
+});

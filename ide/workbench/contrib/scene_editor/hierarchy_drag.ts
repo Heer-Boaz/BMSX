@@ -1,3 +1,4 @@
+import { KeyModifier } from '../../../../hosts/common/input/text';
 import type { WorkbenchTreeDragSession } from '../../ui/tree_drag';
 import { measureText } from '../../../editor/common/text/layout';
 import { editorViewState } from '../../../editor/ui/view/state';
@@ -18,7 +19,7 @@ export function beginSceneHierarchyDrag(view: SceneHierarchyViewState, source: W
 	return {
 		label: source.element.displayLabel, labelWidth: measureText(source.element.displayLabel), font: editorViewState.font.renderFont(),
 		isCurrent: request.isCurrent,
-		canDrop: (target, placement) => {
+		canDrop: (target, placement, modifiers) => {
 			const element = target.element;
 			if (element.scene !== request.scene) return false;
 			parent = undefined; before = undefined;
@@ -41,8 +42,8 @@ export function beginSceneHierarchyDrag(view: SceneHierarchyViewState, source: W
 					before = next?.entry;
 				}
 			}
-			return request.canPlace(parent, before);
+			return request.canPlace(parent, before, (modifiers & KeyModifier.alt) !== 0 ? 'keep_local' : 'keep_world');
 		},
-		drop: () => { if (request.apply(parent, before)) didMove(); },
+		drop: (_target, _placement, modifiers) => { if (request.apply(parent, before, (modifiers & KeyModifier.alt) !== 0 ? 'keep_local' : 'keep_world')) didMove(); },
 	};
 }

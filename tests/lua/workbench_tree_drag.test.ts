@@ -12,9 +12,9 @@ import { layoutWorkbenchList } from '../../ide/workbench/ui/list_view';
 import { WorkbenchTreeDrag, type WorkbenchTreeDropPlacement } from '../../ide/workbench/ui/tree_drag';
 import { appendWorkbenchTreeNode, rebuildWorkbenchTreeRows, type WorkbenchTreeNode, type WorkbenchTreeState } from '../../ide/workbench/ui/tree_view';
 
-function pointer(x: number, y: number, pressedButtons: number = PointerButton.Primary, justReleasedButtons = 0): PointerInputSnapshot {
+function pointer(x: number, y: number, pressedButtons: number = PointerButton.Primary, justReleasedButtons = 0, modifiers = KeyModifier.none): PointerInputSnapshot {
 	return { valid: true, insideViewport: true, viewportX: x, viewportY: y, pressedButtons,
-		justPressedButtons: 0, justReleasedButtons, modifiers: KeyModifier.none, spaceDown: false };
+		justPressedButtons: 0, justReleasedButtons, modifiers, spaceDown: false };
 }
 
 function fixture(t: TestContext, count = 3) {
@@ -33,28 +33,31 @@ function fixture(t: TestContext, count = 3) {
 	let current = true, accepted = true, starts = 0, queries = 0, readings = 0;
 	let dropped: { node: WorkbenchTreeNode<number>; placement: WorkbenchTreeDropPlacement } | undefined;
 	let onCurrent: (() => void) | undefined, onQuery: (() => void) | undefined;
+	let admission: (modifiers: KeyModifier) => boolean = () => accepted;
+	let droppedModifiers: KeyModifier | undefined;
 	const drag = new WorkbenchTreeDrag<number>(capture, scope, surfaces, owner, area, () => {
 		starts++;
 		return { label: 'source', labelWidth: editorViewState.font.measure('source'), font: editorViewState.font.renderFont(),
 			isCurrent: () => { onCurrent?.(); return current; },
-			canDrop: () => { queries++; onQuery?.(); return accepted; },
-			drop: (node, placement) => { dropped = { node, placement }; } };
+			canDrop: (_node, _placement, modifiers) => { queries++; onQuery?.(); return admission(modifiers); },
+			drop: (node, placement, modifiers) => { dropped = { node, placement }; droppedModifiers = modifiers; } };
 	}, () => { readings++; });
 	const press = (node = nodes[0]) => {
 		const index = tree.rows.indexOf(node), snapshot = pointer(45, tree.layout.contentTop + (index + 0.5) * tree.layout.rowHeight);
 		snapshot.justPressedButtons = PointerButton.Primary;
 		capture.beginRoute(scope, snapshot); drag.begin(tree, node, snapshot, 0);
 	};
-	const move = (x: number, y: number, now = 100) => capture.dispatch(pointer(x, y), false, now, scope);
-	const release = (x: number, y: number, now = 100) => {
-		const snapshot = pointer(x, y, 0, PointerButton.Primary);
+	const move = (x: number, y: number, now = 100, modifiers = KeyModifier.none) => capture.dispatch(pointer(x, y, PointerButton.Primary, 0, modifiers), false, now, scope);
+	const release = (x: number, y: number, now = 100, modifiers = KeyModifier.none) => {
+		const snapshot = pointer(x, y, 0, PointerButton.Primary, modifiers);
 		capture.dispatch(snapshot, false, now, scope); capture.endRoute(snapshot);
 	};
 	t.after(() => { drag.dispose(); surfaces.dispose(); });
 	return { capture, surfaces, owner, area, clip, scope, tree, root, nodes, drag, press, move, release,
 		setCurrent: (value: boolean) => { current = value; }, setAccepted: (value: boolean) => { accepted = value; },
 		onCurrent: (callback: () => void) => { onCurrent = callback; }, onQuery: (callback: () => void) => { onQuery = callback; },
-		counts: () => ({ starts, queries, readings }), dropped: () => dropped };
+		counts: () => ({ starts, queries, readings }), dropped: () => dropped, droppedModifiers: () => droppedModifiers,
+		setAdmission: (fn: (modifiers: KeyModifier) => boolean) => { admission = fn; } };
 }
 
 test('tree press/click does not create a source drag or publish a drop', t => {
@@ -202,4 +205,33 @@ test('a native window covering the captured tree blocks drops, scrolling and hov
 	f.move(70, 99, 700); f.drag.advance(900);
 	assert.equal(f.tree.scroll, 0); f.release(70, 50); assert.equal(f.dropped(), undefined);
 	cover.dispose();
+});
+
+
+test('stationary captured modifier changes update tree admission without re-traversing after-targets', t => {
+	const f = fixture(t), target = f.nodes[1], child = appendWorkbenchTreeNode(f.tree, target, 20);
+	rebuildWorkbenchTreeRows(f.tree, f.nodes[0]);
+	let visits = 0; const depth = child.depth;
+	Object.defineProperty(child, 'depth', { get: () => { visits++; return depth; } });
+	f.setAdmission(modifiers => (modifiers & KeyModifier.alt) !== 0);
+	f.press(); f.move(5, 58); assert.equal(f.drag.feedback?.accepted, false);
+	visits = 0; f.capture.dispatchModifiers(KeyModifier.alt, 110);
+	assert.equal(f.drag.feedback?.accepted, true); assert.equal(visits, 0);
+	f.capture.dispatchModifiers(KeyModifier.none, 120);
+	assert.equal(f.drag.feedback?.accepted, false); assert.equal(visits, 0);
+	f.release(5, 58, 130, KeyModifier.alt);
+	assert.ok(f.dropped()?.node === target); assert.equal(f.droppedModifiers(), KeyModifier.alt); assert.equal(visits, 0);
+});
+
+test('release modifiers can reject a previously accepted stationary tree target', t => {
+	const f = fixture(t); f.setAdmission(modifiers => (modifiers & KeyModifier.alt) !== 0);
+	f.press(); f.move(70, 50, 100, KeyModifier.alt); assert.equal(f.drag.feedback?.accepted, true);
+	f.release(70, 50, 110, KeyModifier.none); assert.equal(f.dropped(), undefined);
+});
+
+test('modifier admission may synchronously retire the captured tree gesture', t => {
+	const f = fixture(t); f.press(); f.move(70, 50);
+	f.onQuery(() => f.drag.cancel()); f.capture.dispatchModifiers(KeyModifier.alt, 110);
+	assert.equal(f.capture.active, false); assert.equal(f.drag.feedback, undefined);
+	f.release(70, 50, 120, KeyModifier.alt); assert.equal(f.dropped(), undefined);
 });
