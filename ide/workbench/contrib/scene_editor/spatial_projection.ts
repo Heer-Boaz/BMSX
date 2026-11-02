@@ -8,7 +8,7 @@ import type { TextBuffer } from '../../../editor/text/text_buffer';
 import { createLuaTableFieldRemovalEdits } from '../../../language/lua/source_edits';
 import type { LuaSourceReader } from '../../../language/lua/source_reader';
 import type { SceneSourceAffine, SceneSourceDefinition, SceneSourceDocument, SceneSourceObject } from './model';
-import { createSceneNameEdit, createScenePlacementEdits, createSceneTranslationEdits, finishSceneSpatialEdits } from './spatial_edits';
+import { createSceneNameEdit, createScenePlacementEdits, createSceneTranslationEdits, finishSceneSpatialEdits, scenePlacementEditable, scenePositionAxisEditable } from './spatial_edits';
 import { readSceneSourcePose, type SceneAuthoredPose } from './authored_pose';
 import type { ScenePrefabSources } from './prefab_sources';
 import type { SceneTranslationPlan } from './transform_proposal';
@@ -125,6 +125,7 @@ export class SceneSpatialProjection {
 
 	public localPositionEdits(buffer: TextBuffer, document: SceneSourceDocument, member: SceneSourceObject,
 		initial: Readonly<SceneSourceAffine>, axis: 'x' | 'y' | 'z', value: number): readonly EditorTextEdit[] | undefined {
+		if (!scenePositionAxisEditable(member, axis)) return;
 		const local = { ...initial };
 		if (axis === 'x') local.ox = value;
 		else if (axis === 'y') local.oy = value;
@@ -144,7 +145,9 @@ export class SceneSpatialProjection {
 			const spatial = this.readScene(document, scene), graph = this.graph(document, scene), capability = graph.capabilities.get(member);
 			const local = this.localAffine(graph, member), world = graph.worlds.get(member), parent = graph.parents.get(member);
 			let plan: SceneTranslationPlan | undefined;
-			if (capability && local?.family === capability.family && world?.family === capability.family && graph.parents.has(member)) {
+			if (capability && local?.family === capability.family && world?.family === capability.family && graph.parents.has(member)
+				&& scenePositionAxisEditable(member, 'x') && scenePositionAxisEditable(member, 'y')
+				&& (capability.family === '2d' || scenePositionAxisEditable(member, 'z'))) {
 				let parentInverse: SceneSourceAffine | undefined, invertible = true;
 				if (parent !== undefined) {
 					const parentWorld = graph.worlds.get(parent)!;
@@ -177,10 +180,9 @@ export class SceneSpatialProjection {
 				edits = createLuaTableFieldRemovalEdits(buffer, chunk.locations, chunk.tokens, member.field);
 				const children = id === undefined ? undefined : graph.references.get(id);
 				if (children !== undefined) for (const child of children) {
-					const world = this.worldAffine(graph, child);
-					if (world === undefined) { edits = undefined; break; }
-					edits.push(...createScenePlacementEdits(buffer, document, child, undefined, world,
-						this.localAffine(graph, child)));
+					const world = this.worldAffine(graph, child), local = this.localAffine(graph, child);
+					if (world === undefined || !scenePlacementEditable(child, world, local)) { edits = undefined; break; }
+					edits.push(...createScenePlacementEdits(buffer, document, child, undefined, world, local));
 				}
 			}
 			this.removals.set(member, edits === undefined ? undefined : finishSceneSpatialEdits(edits));
@@ -226,6 +228,7 @@ export class SceneSpatialProjection {
 				if (children !== undefined) for (const child of children) { descendants.add(child); pending.push(child); }
 			}
 			const world = mode === 'keep_world' ? this.worldAffine(graph, member) : undefined;
+			const currentLocal = mode === 'keep_world' ? this.localAffine(graph, member) : undefined;
 			if (mode === 'keep_local' || world !== undefined) {
 				for (const parent of [undefined, ...graph.entries]) {
 					if (graph.parents.has(member) && graph.parents.get(member) === parent) continue;
@@ -243,6 +246,7 @@ export class SceneSpatialProjection {
 						else if (local?.family === '3d' && parentWorld?.family === '3d') { if (!relativeAffine3(local, local, parentWorld)) continue; }
 						else continue;
 					}
+					if (!scenePlacementEditable(member, local, currentLocal)) continue;
 					choices.push({ parent, label: parent === undefined ? 'Scene Root' : parentId!,
 						description: parent === undefined ? 'No parent' : '', local });
 				}

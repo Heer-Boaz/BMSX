@@ -1,6 +1,6 @@
 import { LuaSyntaxKind, type LuaExpression, type LuaTableConstructorExpression } from '../../../../toolchain/ts/lua/syntax/ast';
 import { findNamedLuaTableField, staticLuaTableFieldName } from '../../../../toolchain/ts/lua/syntax/table_fields';
-import { formatLuaNumberExpression } from '../../../../toolchain/ts/lua/syntax/number_expression';
+import { formatLuaNumberExpression, readLuaEncodedNumber } from '../../../../toolchain/ts/lua/syntax/number_expression';
 import { quoteLuaString } from '../../../../toolchain/ts/lua/syntax/string_literal';
 import type { EditorTextEdit } from '../../../editor/model/text_model';
 import type { TextBuffer } from '../../../editor/text/text_buffer';
@@ -8,6 +8,54 @@ import { createLuaStringValueEdit, createLuaTableFieldNumberEdits, createLuaTabl
 	luaSourceRangeToTextRange } from '../../../language/lua/source_edits';
 import { createLuaTableFieldsInsertionEdits } from '../../../language/lua/table_field_insertion';
 import type { SceneSourceAffine, SceneSourceDocument, SceneSourceObject } from './model';
+
+/** A known value is not permission to replace the expression that produced it. */
+export function scenePositionAxisEditable(member: SceneSourceObject, axis: 'x' | 'y' | 'z'): boolean {
+	const position = member.position;
+	if (position === null || position.value.kind === LuaSyntaxKind.NilLiteralExpression) return true;
+	if (position.value.kind !== LuaSyntaxKind.TableConstructorExpression) return false;
+	const field = findNamedLuaTableField(position.value, axis);
+	return field === null || field.value.kind === LuaSyntaxKind.NilLiteralExpression || readLuaEncodedNumber(field.value) !== null;
+}
+
+const PLACEMENT_TABLE_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
+	position: new Set(['x', 'y', 'z']), scale: new Set(['x', 'y', 'z']), rotation: new Set(['x', 'y', 'z', 'w']),
+	transform: new Set(['xx', 'xy', 'xz', 'yx', 'yy', 'yz', 'zx', 'zy', 'zz', 'ox', 'oy', 'oz']),
+};
+
+function sameSceneBasis(pose: Readonly<SceneSourceAffine>, local: Readonly<SceneSourceAffine> | undefined): boolean {
+	return local !== undefined && pose.family === local.family && Object.is(pose.xx, local.xx) && Object.is(pose.xy, local.xy)
+		&& Object.is(pose.yx, local.yx) && Object.is(pose.yy, local.yy) && (pose.family === '2d' || local.family === '3d'
+			&& Object.is(pose.xz, local.xz) && Object.is(pose.yz, local.yz) && Object.is(pose.zx, local.zx)
+			&& Object.is(pose.zy, local.zy) && Object.is(pose.zz, local.zz));
+}
+
+/** Admit exactly the source fields that a world-preserving placement would rewrite. */
+export function scenePlacementEditable(member: SceneSourceObject, pose: Readonly<SceneSourceAffine> | undefined,
+	local: Readonly<SceneSourceAffine> | undefined): boolean {
+	if (pose === undefined) return true;
+	if (sameSceneBasis(pose, local)) {
+		return (Object.is(pose.ox, local!.ox) || scenePositionAxisEditable(member, 'x'))
+			&& (Object.is(pose.oy, local!.oy) || scenePositionAxisEditable(member, 'y'))
+			&& (pose.family === '2d' || local!.family === '3d' && (Object.is(pose.oz, local!.oz) || scenePositionAxisEditable(member, 'z')));
+	}
+	const table = member.field.value as LuaTableConstructorExpression;
+	for (const field of table.fields) {
+		const name = staticLuaTableFieldName(field);
+		if (name !== 'position' && name !== 'rotation' && name !== 'scale' && name !== 'skew' && name !== 'transform') continue;
+		if (name === 'transform' && field !== member.transform) continue;
+		const value = field.value;
+		if (value.kind === LuaSyntaxKind.NilLiteralExpression || readLuaEncodedNumber(value) !== null) continue;
+		if (value.kind !== LuaSyntaxKind.TableConstructorExpression || name === 'skew') return false;
+		const names = PLACEMENT_TABLE_FIELDS[name];
+		for (const component of value.fields) {
+			const key = staticLuaTableFieldName(component);
+			if (key === null || !names.has(key)
+				|| component.value.kind !== LuaSyntaxKind.NilLiteralExpression && readLuaEncodedNumber(component.value) === null) return false;
+		}
+	}
+	return true;
+}
 
 /** Rename the consuming expression, never its shared written provider. */
 export function createSceneNameEdit(buffer: TextBuffer, document: SceneSourceDocument, expression: LuaExpression, name: string): EditorTextEdit {
@@ -45,7 +93,10 @@ export function createSceneTranslationEdits(buffer: TextBuffer, document: SceneS
 		if (inserted.length > 0) edits.push(...createLuaTableFieldsInsertionEdits(buffer, chunk, position.value, 0, inserted));
 		return edits;
 	}
-	const source = '{ ' + axes.map((axis, index) => axis + ' = ' + formatLuaNumberExpression(values[index])).join(', ') + ' }';
+	const fields: string[] = [];
+	for (let index = 0; index < axes.length; index++) if (changed.includes(axes[index]))
+		fields.push(axes[index] + ' = ' + formatLuaNumberExpression(values[index]));
+	const source = '{ ' + fields.join(', ') + ' }';
 	if (position === null) return createLuaTableFieldsInsertionEdits(buffer, chunk, member.field.value as LuaTableConstructorExpression, 0, ['position = ' + source]);
 	const range = luaSourceRangeToTextRange(buffer, chunk.locations.range(position.value.span));
 	return [{ offset: range.start, deleteLength: range.end - range.start, text: source }];
@@ -65,11 +116,7 @@ export function createScenePlacementEdits(buffer: TextBuffer, document: SceneSou
 	} else if (parentFields.length > 0) edits.push(createSceneNameEdit(buffer, document, parentFields[parentFields.length - 1].value, parentId));
 	else inserted.push('parent = ' + quoteLuaString(parentId));
 	if (pose !== undefined) {
-		const sameBasis = local !== undefined && pose.family === local.family && Object.is(pose.xx, local.xx) && Object.is(pose.xy, local.xy)
-			&& Object.is(pose.yx, local.yx) && Object.is(pose.yy, local.yy) && (pose.family === '2d' || local.family === '3d'
-				&& Object.is(pose.xz, local.xz) && Object.is(pose.yz, local.yz) && Object.is(pose.zx, local.zx)
-				&& Object.is(pose.zy, local.zy) && Object.is(pose.zz, local.zz));
-		if (sameBasis) edits.push(...createSceneTranslationEdits(buffer, document, member, pose, local!));
+		if (sameSceneBasis(pose, local)) edits.push(...createSceneTranslationEdits(buffer, document, member, pose, local!));
 		else {
 			const coefficients = pose.family === '2d' ? [pose.xx, pose.xy, pose.yx, pose.yy, pose.ox, pose.oy]
 				: [pose.xx, pose.xy, pose.xz, pose.yx, pose.yy, pose.yz, pose.zx, pose.zy, pose.zz, pose.ox, pose.oy, pose.oz];

@@ -5,6 +5,8 @@ import { SceneDetailsProjection } from '../../ide/workbench/contrib/scene_editor
 import { SceneSpatialProjection } from '../../ide/workbench/contrib/scene_editor/spatial_projection';
 import { resolveLuaTextFileModel } from '../../ide/workbench/services/working_copy/text_file_model';
 import { stringLiteralValue } from '../../toolchain/ts/lua/syntax/literals';
+import { LuaSyntaxKind } from '../../toolchain/ts/lua/syntax/ast';
+import { findNamedLuaTableField } from '../../toolchain/ts/lua/syntax/table_fields';
 import { createSceneSourceFixture } from '../helpers/scene_sources';
 
 const PREFABS = `local prefab=require('cartlib/world/prefab')
@@ -32,6 +34,117 @@ scenes.register('fixture',{objects={${members}}})`;
 	};
 	return { ...f, source, context, select };
 }
+
+test('reparent and parent removal never replace an aliased coordinate to preserve its world pose', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node2',position={x=10,y=0}},
+ {member_id='sibling',definition_id='node2',parent='parent',position={x=1,y=2}},
+ {member_id='child',definition_id='node2',parent='parent',position={x=offset,y=2}}`, 'local offset<const> = 8');
+	f.select('child');
+	const world = f.context.captureReparent('keep_world');
+	assert.ok(world === undefined || world.choices.every(choice => choice.parent !== undefined));
+	const local = f.context.captureReparent('keep_local')!;
+	const root = local.choices.find(choice => choice.parent === undefined)!;
+	assert.ok(root); assert.equal(local.apply(root), true);
+	assert.ok(f.model.buffer.getText().includes('x=offset'));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
+	f.select('parent');
+	assert.equal(f.context.canRemoveSelectedMember(), false);
+	assert.equal(f.context.removeSelectedMember(), false);
+	assert.equal(f.context.canRemoveSelectedSubtree(), true);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('reparent keeps an aliased complete position when no coordinate needs rewriting', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node2'},
+ {member_id='child',definition_id='node2',parent='parent',position=shared}`, 'local shared<const> = {x=4,y=5}');
+	f.select('child'); const request = f.context.captureReparent('keep_world')!;
+	assert.equal(request.apply(request.choices.find(choice => choice.parent === undefined)!), true);
+	assert.ok(f.model.buffer.getText().includes('position=shared'));
+	assert.ok(f.model.buffer.getText().includes('local shared<const> = {x=4,y=5}'));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('a basis rewrite cannot remove an earlier duplicate position containing an expression', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=2,xy=0,yx=0,yy=2,ox=0,oy=0}},
+ {member_id='child',definition_id='node2',parent='parent',position={x=offset,y=5},position={x=4,y=5}}`, 'local offset<const> = 4');
+	f.select('child'); const request = f.context.captureReparent('keep_world');
+	assert.ok(request === undefined || request.choices.every(choice => choice.parent !== undefined));
+	assert.ok(f.context.captureReparent('keep_local')!.choices.some(choice => choice.parent === undefined));
+	f.select('parent'); assert.equal(f.context.canRemoveSelectedMember(), false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('world-preserving reparent can change an independent literal axis without replacing an aliased axis', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node2',position={x=0,y=10}},
+ {member_id='child',definition_id='node2',parent='parent',position={x=offset,y=2}}`, 'local offset<const> = 8');
+	f.select('child'); const request = f.context.captureReparent('keep_world')!;
+	const root = request.choices.find(choice => choice.parent === undefined)!;
+	assert.ok(root); assert.equal(request.apply(root), true);
+	assert.ok(f.model.buffer.getText().includes('x=offset'));
+	assert.ok(f.model.buffer.getText().includes('y=12'));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('world-preserving placement does not replace a shared transform expression when the basis changes', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=2,xy=0,yx=0,yy=2,ox=0,oy=0}},
+ {member_id='child',definition_id='node2',parent='parent',transform=shared}`,
+	'local shared<const> = {xx=1,xy=0,yx=0,yy=1,ox=4,oy=5}');
+	f.select('child'); const world = f.context.captureReparent('keep_world');
+	assert.ok(world === undefined || world.choices.every(choice => choice.parent !== undefined));
+	assert.ok(f.context.captureReparent('keep_local')!.choices.some(choice => choice.parent === undefined));
+	f.select('parent'); assert.equal(f.context.canRemoveSelectedMember(), false);
+	assert.equal(f.context.canRemoveSelectedSubtree(), true);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('3D world-preserving placement protects aliased coordinates and retains literal-only cases', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node3',position={x=0,y=0,z=10}},
+ {member_id='protected',definition_id='node3',parent='parent',position={x=1,y=2,z=offset}},
+ {member_id='editable',definition_id='node3',parent='parent',position={x=1,y=2,z=3}}`, 'local offset<const> = 8');
+	f.select('protected'); const protectedRequest = f.context.captureReparent('keep_world');
+	assert.ok(protectedRequest === undefined || protectedRequest.choices.every(choice => choice.parent !== undefined));
+	assert.ok(f.context.captureReparent('keep_local')!.choices.some(choice => choice.parent === undefined));
+	f.select('editable'); const request = f.context.captureReparent('keep_world')!;
+	assert.equal(request.apply(request.choices.find(choice => choice.parent === undefined)!), true);
+	assert.equal(f.context.selectedLocalTransform!.family, '3d');
+	assert.ok(f.model.buffer.getText().includes('z=offset'));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
+	f.select('parent'); assert.equal(f.context.canRemoveSelectedMember(), false);
+	assert.equal(f.context.canRemoveSelectedSubtree(), true);
+});
+
+test('a basis rewrite cannot erase unknown authored members of a literal position table', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=2,xy=0,yx=0,yy=2,ox=0,oy=0}},
+ {member_id='child',definition_id='node2',parent='parent',position={x=4,y=5,note='authored'}}`);
+	f.select('child'); const world = f.context.captureReparent('keep_world');
+	assert.ok(world === undefined || world.choices.every(choice => choice.parent !== undefined));
+	assert.ok(f.context.captureReparent('keep_local')!.choices.some(choice => choice.parent === undefined));
+	f.select('parent'); assert.equal(f.context.canRemoveSelectedMember(), false);
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+for (const [definition, field] of [['inherited', ''], ['inherited', ',position=nil'], ['inherited3', ''], ['inherited3', ',position=nil']] as const)
+	test(`${definition} ${field || 'implicit position'} changes only the selected inherited axis`, t => {
+		const prefabs = PREFABS + "\nprefab.define({def_id='inherited3',class=object_3d,position={x=7,y=9,z=11}})";
+		const f = fixture(t, `{member_id='child',definition_id='${definition}'${field}}`, '', prefabs);
+		f.select('child'); const request = f.context.captureLocalPosition()!;
+		assert.equal(request.apply('x', 5), true);
+		const selected = f.select('child'); assert.equal(selected.kind, 'object');
+		assert.ok(selected.position?.value.kind === LuaSyntaxKind.TableConstructorExpression);
+		assert.ok(findNamedLuaTableField(selected.position.value, 'x'));
+		assert.equal(findNamedLuaTableField(selected.position.value, 'y'), null);
+		assert.equal(findNamedLuaTableField(selected.position.value, 'z'), null);
+		const provider = resolveLuaTextFileModel(f.models, f.sources.catalog,
+			f.sources.catalog.resolveResource({ contextId: f.resource.contextId, path: 'prefabs.lua' })!);
+		const target = definition === 'inherited3' ? 'x=7,y=9,z=11' : 'x=7,y=9';
+		const replacement = definition === 'inherited3' ? 'x=7,y=19,z=21' : 'x=7,y=19';
+		const offset = provider.buffer.getText().indexOf(target);
+		provider.pushEditOperations([{ offset, deleteLength: target.length, text: replacement }]);
+		f.select('child'); const pose = f.context.selectedLocalTransform!;
+		assert.equal(pose.ox, 5); assert.equal(pose.oy, 19);
+		if (definition === 'inherited3') { assert.equal(pose.family, '3d'); if (pose.family === '3d') assert.equal(pose.oz, 21); }
+		f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
+	});
 
 test('semantic placement derives dimension from actual class lineage and keeps ordinary fields separate', t => {
 	const f = fixture(t, `
@@ -148,4 +261,25 @@ test('successive member deletions round-trip overflowed affine Numbers through c
 		assert.deepEqual([local.xx,local.xy,local.yx,local.yy,local.ox,local.oy],expected);
 	}
 	f.model.undo(); f.model.undo(); assert.equal(f.model.buffer.getText(),f.source);
+});
+
+test('world-preserving reparent can rewrite a transform produced with closed Number encodings', t => {
+	const f = fixture(t, `{member_id='parent',definition_id='node2',transform={xx=1e308,xy=0,yx=0,yy=1,ox=0,oy=0}},
+ {member_id='child',definition_id='node2',parent='parent',transform={xx=2,xy=0,yx=0,yy=1,ox=0,oy=0}},
+ {member_id='target',definition_id='node2',transform={xx=2,xy=0,yx=0,yy=2,ox=0,oy=0}}`);
+	f.select('child');
+	const initialDetach = f.context.captureReparent('keep_world')!;
+	assert.equal(initialDetach.apply(initialDetach.choices.find(choice => choice.parent === undefined)!), true);
+	f.select('child'); const before = f.context.selectedLocalTransform!;
+	assert.equal(before.xx, Infinity); assert.ok(f.model.buffer.getText().includes('(1 / 0)'));
+	const request = f.context.captureReparent('keep_world')!;
+	const target = f.select('target'); f.select('child');
+	const fresh = f.context.captureReparent('keep_world')!;
+	assert.equal(request.apply(request.choices.find(choice => choice.parent === target)!), false, 'selection retirement invalidates the previous request');
+	assert.equal(fresh.apply(fresh.choices.find(choice => choice.parent === target)!), true);
+	f.select('child'); assert.equal(f.context.selectedLocalTransform!.xx, Infinity);
+	const detach = f.context.captureReparent('keep_world')!;
+	assert.equal(detach.apply(detach.choices.find(choice => choice.parent === undefined)!), true);
+	f.model.undo(); f.model.undo(); f.model.undo();
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
 });

@@ -234,7 +234,7 @@ export class SceneDetailsControl {
 		for (let index = 0; index < this.controls.length; index++) {
 			const control = this.controls[index];
 			const property = view.properties[index];
-			const readOnly = view.authoring.workingCopy.readOnly || property === undefined || this.fields[index] === undefined;
+			const readOnly = view.authoring.workingCopy.readOnly || property === undefined || !property.descriptor.editable || this.fields[index] === undefined;
 			if (control.field.readOnly !== readOnly) this.focusOrderDirty = true;
 			control.field.readOnly = readOnly;
 			if (!available || control.field.readOnly) {

@@ -1,8 +1,11 @@
 import { stringLiteralValue } from '../../../../toolchain/ts/lua/syntax/literals';
-import { readLuaExpressionPreview } from '../../../language/lua/source_edits';
+import { LuaSyntaxKind } from '../../../../toolchain/ts/lua/syntax/ast';
+import { findNamedLuaTableField } from '../../../../toolchain/ts/lua/syntax/table_fields';
+import { readLuaExpressionPreview, readLuaSourceRange } from '../../../language/lua/source_edits';
 import type { SceneAuthoredSelection, SceneAuthoringContext } from './authoring_context';
 import type { SceneSourceDocument, SceneSourceDefinition } from './model';
 import { collectSceneOptionProperties, type SceneOptionProperty } from './option_properties';
+import { scenePositionAxisEditable } from './spatial_edits';
 
 export const POSITION_AXES = ['x', 'y', 'z'] as const;
 
@@ -11,6 +14,8 @@ export type ScenePositionProperty = {
 	readonly axis: typeof POSITION_AXES[number];
 	readonly family: '2d' | '3d';
 	readonly value: number;
+	readonly editable: boolean;
+	readonly preview?: string;
 };
 
 export type SceneDetailsSubject = {
@@ -22,6 +27,7 @@ export type SceneDetailsSubject = {
 	readonly detail: string;
 	readonly preserveDetailCase: boolean;
 	readonly resolution: SceneSourceDefinition['resolution'];
+	readonly positionExpression?: string;
 	readonly properties: readonly ScenePositionProperty[];
 	readonly optionProperties: readonly SceneOptionProperty[];
 };
@@ -50,6 +56,7 @@ export class SceneDetailsProjection {
 		const { buffer, version } = this.authoring.workingCopy, scene = selection.scene;
 		let label: string, detail: string, preserveLabelCase: boolean, preserveDetailCase: boolean;
 		let properties: readonly ScenePositionProperty[] = NO_PROPERTIES, optionProperties: readonly SceneOptionProperty[] = NO_PROPERTIES;
+		let positionExpression: string | undefined;
 		if (selection.kind === 'scene') {
 			const id = stringLiteralValue(scene.id);
 			label = id === undefined ? readLuaExpressionPreview(buffer, locations, scene.id) : id;
@@ -67,13 +74,23 @@ export class SceneDetailsProjection {
 				optionProperties = collectSceneOptionProperties(buffer, locations, entry);
 			} else { detail = 'Dynamic Lua composition'; preserveDetailCase = false; }
 			const local = this.authoring.selectedLocalTransform;
-			if (local !== undefined) {
-				properties = local.family === '2d' ? [{ axis: 'x', family: '2d', value: local.ox }, { axis: 'y', family: '2d', value: local.oy }]
-					: [{ axis: 'x', family: '3d', value: local.ox }, { axis: 'y', family: '3d', value: local.oy }, { axis: 'z', family: '3d', value: local.oz }];
+			if (entry.kind === 'object' && entry.position !== null && entry.position.value.kind !== LuaSyntaxKind.NilLiteralExpression
+				&& (entry.position.value.kind !== LuaSyntaxKind.TableConstructorExpression || local === undefined)) {
+				positionExpression = readLuaSourceRange(buffer, locations.range(entry.position.value.span));
+			} else if (entry.kind === 'object' && local !== undefined) {
+				const position = entry.position?.value;
+				const property = (axis: ScenePositionProperty['axis'], value: number): ScenePositionProperty => {
+					const editable = scenePositionAxisEditable(entry, axis);
+					const field = position?.kind === LuaSyntaxKind.TableConstructorExpression ? findNamedLuaTableField(position, axis) : null;
+					return { axis, family: local.family, value, editable,
+						preview: !editable && field !== null ? readLuaExpressionPreview(buffer, locations, field.value) : undefined };
+				};
+				properties = local.family === '2d' ? [property('x', local.ox), property('y', local.oy)]
+					: [property('x', local.ox), property('y', local.oy), property('z', local.oz)];
 			}
 		}
 		this.subject = { selection, document, sourceVersion: version, label, preserveLabelCase, detail, preserveDetailCase,
-			resolution: scene.resolution, properties, optionProperties };
+			resolution: scene.resolution, positionExpression, properties, optionProperties };
 		return true;
 	}
 }

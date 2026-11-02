@@ -29,12 +29,24 @@ export function readLuaNumberExpression(expression: LuaExpression): number | nul
 	return null;
 }
 
+/** A literal or the closed division encoding emitted for non-finite Numbers.
+ * Outer negation can remain when a previously negative literal is rewritten. */
+export function readLuaEncodedNumber(expression: LuaExpression): number | null {
+	const literal = readLuaNumberLiteral(expression);
+	if (literal !== null) return literal;
+	let source = expression;
+	while (source.kind === LuaSyntaxKind.UnaryExpression && source.operator === LuaUnaryOperator.Negate) source = source.operand;
+	return source.kind === LuaSyntaxKind.BinaryExpression && source.operator === LuaBinaryOperator.Divide
+		? readLuaNumberExpression(expression) : null;
+}
+
 /** A self-contained Lua expression for every Number, without ambient globals.
  * Non-finite values have no numeric token spelling; arithmetic preserves their
- * runtime representation. Ordinary finite values retain round-trip precision. */
-export function formatLuaNumberExpression(value: number): string {
-	if (value !== value) return '(0 / 0)';
-	if (value === Infinity) return '(1 / 0)';
-	if (value === -Infinity) return '(-1 / 0)';
+ * runtime representation. Ordinary finite values retain round-trip precision.
+ * Ungrouped output is for standalone expressions such as table-field values. */
+export function formatLuaNumberExpression(value: number, grouped = true): string {
+	if (value !== value) return grouped ? '(0 / 0)' : '0/0';
+	if (value === Infinity) return grouped ? '(1 / 0)' : '1/0';
+	if (value === -Infinity) return grouped ? '(-1 / 0)' : '-1/0';
 	return Object.is(value, -0) ? '-0' : String(value);
 }

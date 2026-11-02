@@ -20,9 +20,10 @@ prefab.define({def_id='root2',class=require('cartlib/world/object_2d')})
 prefab.define({def_id='node3',class=require('cartlib/world/object_3d'),transform = { xx = -2, xy = 1, xz = 0, yx = 0.5, yy = 3, yz = 0, zx = 0, zy = 0, zz = 0, ox = 17, oy = 19, oz = 23 }})
 prefab.define({def_id='logic',class={}})`;
 
-function fixture(t: TestContext, members: string) {
+function fixture(t: TestContext, members: string, prefix = '') {
 	configureFontVariant('tiny');
 	const source = `local scenes=require('cartlib/world/scene_library')
+${prefix}
 scenes.register('main',{objects={${members}}})
 scenes.register('other',{objects={{member_id='other',definition_id='node2'}}})`;
 	const f = createSceneSourceFixture(t, source, 'scene.lua', undefined,
@@ -47,6 +48,86 @@ scenes.register('other',{objects={{member_id='other',definition_id='node2'}}})`;
 	select(0);
 	return { ...f, source, authoring, view, control, select, provider };
 }
+
+for (const [definition, members] of [
+	['node2', "position={x=offset,y=2}"],
+	['node3', "position={x=offset,y=2,z=3}"],
+] as const) test(`${definition} retains a proven aliased coordinate as source instead of allowing its replacement`, t => {
+	const f = fixture(t, `{member_id='node',definition_id='${definition}',${members}}`, 'local offset<const> = 8');
+	const x = f.control.controls[0], y = f.control.controls[1];
+	assert.equal(f.authoring.selectedLocalTransform!.ox, 8, 'the pose remains readable');
+	assert.equal(x.field.readOnly, true); assert.equal(x.field.focusTarget.focus(), false);
+	assert.equal(f.view.properties[0].text, 'offset', 'the source expression is not replaced by its value');
+	assert.equal(y.field.readOnly, false);
+	assert.equal(f.authoring.captureLocalPosition()!.apply('x', 10), false);
+	assert.equal(f.authoring.canTranslateSelectedMember(), false);
+	assert.equal(f.authoring.captureTranslation(), undefined);
+	setFieldText(y.field, '6', true); assert.equal(y.commit(), true); f.control.update();
+	assert.equal(f.model.buffer.getText(), f.source.replace('y=2', 'y=6'));
+	assert.ok(f.model.buffer.getText().includes('x=offset'));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('an aliased complete position remains a source expression and never becomes a replacement table', t => {
+	const f = fixture(t, "{member_id='node',definition_id='node2',position=shared}", 'local shared<const> = {x=8,y=2}');
+	assert.equal(f.authoring.selectedLocalTransform!.ox, 8);
+	assert.equal(f.authoring.captureTranslation(), undefined);
+	assert.equal(f.control.controls[0].field.readOnly, true); assert.equal(f.control.controls[1].field.readOnly, true);
+	assert.equal(f.authoring.captureLocalPosition()?.apply('x', 10), false);
+	assert.ok(f.view.detailsText.some(line => line.text === 'shared'), 'the actual position expression remains visible');
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('an unproved position remains visible as authored source without inventing an editable pose', t => {
+	const f = fixture(t, "{member_id='node',definition_id='node2',position={x=compute(),y=0}}");
+	assert.equal(f.authoring.selectedLocalTransform, undefined);
+	assert.equal(f.authoring.captureLocalPosition(), undefined); assert.equal(f.authoring.captureTranslation(), undefined);
+	assert.equal(f.control.controls[0].field.readOnly, true); assert.equal(f.control.controls[1].field.readOnly, true);
+	const content = f.view.detailsText.map(line => line.text).join('');
+	assert.ok(content.includes('{x=compute(),y=0}'), 'authored source, not a fabricated position, remains visible');
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('an omitted coordinate stays editable beside a source expression and preserves inherited values', t => {
+	const f = fixture(t, "{member_id='node',definition_id='node2',position={x=offset}}", 'local offset<const> = 8');
+	assert.equal(f.control.controls[0].field.readOnly, true); assert.equal(f.control.controls[1].field.readOnly, false);
+	setFieldText(f.control.controls[1].field, '6', true); assert.equal(f.control.controls[1].commit(), true); f.control.update();
+	assert.ok(f.model.buffer.getText().includes('x=offset'));
+	assert.equal(f.authoring.selectedLocalTransform!.ox, 8); assert.equal(f.authoring.selectedLocalTransform!.oy, 6);
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
+
+test('an explicit nil coordinate can become a numeric instance override without editing its provider', t => {
+	const f = fixture(t, "{member_id='node',definition_id='node2',position={x=nil,y=2}}");
+	const x = f.control.controls[0]; assert.equal(x.field.readOnly, false);
+	setFieldText(x.field, '5', true); assert.equal(x.commit(), true); f.control.update();
+	assert.equal(f.model.buffer.getText(), f.source.replace('x=nil', 'x=5'));
+	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
+});
+
+test('a position draft is retired rather than overwriting a newer source expression', t => {
+	const f = fixture(t, "{member_id='node',definition_id='node2',position={x=8,y=2}}", 'local offset<const> = 8');
+	const x = f.control.controls[0]; assert.equal(x.field.focusTarget.focus(), true); setFieldText(x.field, '9', true);
+	const offset = f.model.buffer.getText().indexOf('x=8') + 2;
+	f.model.pushEditOperations([{ offset, deleteLength: 1, text: 'offset' }]); f.control.update();
+	const after = f.model.buffer.getText();
+	assert.equal(x.field.readOnly, true); assert.equal(x.pending, false);
+	assert.equal(x.commit(), true); assert.equal(f.model.buffer.getText(), after);
+	assert.ok(after.includes('x=offset'));
+});
+
+for (const value of [Infinity, -Infinity, NaN] as const) test(`generated Number source remains editable when the value is ${String(value)}`, t => {
+	const f = fixture(t, "{member_id='node',definition_id='node2',position={x=8,y=2}}");
+	assert.equal(f.authoring.captureLocalPosition()!.apply('x', value), true); f.control.update();
+	assert.ok(Object.is(f.authoring.selectedLocalTransform!.ox, value));
+	const x = f.control.controls[0]; assert.equal(x.field.readOnly, false);
+	setFieldText(x.field, '5', true); assert.equal(x.commit(), true); f.control.update();
+	assert.equal(f.authoring.selectedLocalTransform!.ox, 5);
+	setFieldText(x.field, '6', true); assert.equal(x.commit(), true); f.control.update();
+	assert.equal(f.authoring.selectedLocalTransform!.ox, 6);
+	f.model.undo(); f.model.undo(); f.model.undo();
+	assert.equal(f.model.buffer.getText(), f.source); assert.equal(f.model.canUndo, false);
+});
 
 for (const font of ['tiny', 'msx'] as const) test(`${font} vector layout groups independently editable axes and wraps when narrow`, t => {
 	const f = fixture(t, `{member_id='node',definition_id='node3',position={x=1.25,y=2.5,z=3.75}}`);

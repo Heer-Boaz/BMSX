@@ -54,7 +54,10 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 	top += PADDING;
 	if (subject.selection.kind === 'scene') return top;
 	const fieldHeight = view.layout.rowHeight + PADDING;
-	if (view.properties.length > 0) {
+	if (subject.positionExpression !== undefined) {
+		top = appendText(view, 'LOCAL POSITION', textWidth, top);
+		top = appendIdentity(view, subject.positionExpression, textWidth, top, 'description') + PADDING;
+	} else if (view.properties.length > 0) {
 		top = appendText(view, 'LOCAL POSITION', textWidth, top);
 		const labelWidth = Math.max(editorViewState.font.advance('X'), editorViewState.font.advance('Y'), editorViewState.font.advance('Z'));
 		const available = width - PADDING * 2;
@@ -70,7 +73,7 @@ function measureDetails(view: SceneDetailsViewState, width: number): number {
 			const { family, value } = property.descriptor;
 			// Compact coordinate readings are presentation only; focusing still exposes the
 			// exact editable value and an unchanged acceptance publishes no source edit.
-			const text = family === '2d' ? String(Number(value.toFixed(2))) : formatNumber(value);
+			const text = property.descriptor.preview ?? (family === '2d' ? String(Number(value.toFixed(2))) : formatNumber(value));
 			property.text = truncateTextToWidth(text, cellRight - fieldLeft - 6);
 			if (column === columns - 1 || index === view.properties.length - 1) top += fieldHeight + PADDING;
 		}

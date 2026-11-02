@@ -14,7 +14,7 @@ import {
 	type LuaTableConstructorExpression,
 } from '../../toolchain/ts/lua/syntax/ast';
 import { parseLuaChunk } from '../../toolchain/ts/lua/analysis/parse';
-import { formatLuaNumberExpression, readLuaNumberLiteral, readLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
+import { formatLuaNumberExpression, readLuaEncodedNumber, readLuaNumberLiteral, readLuaNumberExpression } from '../../toolchain/ts/lua/syntax/number_expression';
 import { runCompiledLua } from './cpu_test_harness';
 
 const resource: RuntimeResource = { contextLabel: 'Fixture project', sourceFilePath: 'scene.lua', location: { kind: 'workspace' as const, path: 'scene.lua' },
@@ -184,17 +184,66 @@ return large * 2, -large * 2, one / zero, -one / zero, zero / zero, -zero`, 'num
 		assert.deepEqual(runCompiledLua(`${model.buffer.getText()}\nreturn values.positive, values.negative`, 'field-zero-signs.lua', optLevel), [-0, 0]);
 		model.undo(); assert.equal(model.buffer.getText(), source);
 	});
+
+	test(`closed Number source can be edited repeatedly without losing grouping or trivia (O${optLevel})`, () => {
+		for (const original of [
+			'((1 --[[left]] / --[[right]] (0)))',
+			'((-1 --[[left]] / --[[right]] (-(0))))',
+			'-(-((0 --[[left]] / --[[right]] (0))))',
+			'-( ((-1) --[[left]] / --[[right]] (-(0))) )',
+			'(1 --[[left]]\r\n / --[[right]]\r\n ((-0)))',
+		]) {
+			const source = `local values = { value = ${original}, neighbor = 7 }`;
+			const model = new EditorTextModel(resource, 'lua', source);
+			for (const value of [0, -0, Infinity, -Infinity, NaN, 12.5]) {
+				let parsed = parseFields(model.buffer.getText());
+				const edits = createLuaTableFieldNumberEdits(model.buffer, parsed.locations, parsed.fields.get('value')!, value);
+				assert.ok(edits !== null);
+				for (let i = 1; i < edits.length; i++) assert.ok(edits[i - 1].offset + edits[i - 1].deleteLength <= edits[i].offset);
+				model.pushEditOperations(edits);
+				const output = model.buffer.getText();
+				assert.ok(output.includes('--[[left]]') && output.includes('--[[right]]'));
+				parsed = parseFields(output);
+				assert.ok(Object.is(readLuaNumberExpression(parsed.fields.get('value')!.value), value));
+				assert.deepEqual(runCompiledLua(`${output}\nreturn values.value, values.neighbor`, 'field-number-repeat.lua', optLevel), [value, 7]);
+				assert.deepEqual(createLuaTableFieldNumberEdits(model.buffer, parsed.locations, parsed.fields.get('value')!, value), []);
+			}
+			for (let index = 0; index < 6; index++) model.undo();
+			assert.equal(model.buffer.getText(), source);
+		}
+	});
+
+	test(`repeated Number edits do not accumulate generated grouping or separators (O${optLevel})`, () => {
+		const source = 'local values = { value = ((1)), neighbor = 7 }';
+		const model = new EditorTextModel(resource, 'lua', source);
+		let completedCycle: string | undefined;
+		for (let cycle = 0; cycle < 4; cycle++) {
+			for (const value of [Infinity, -Infinity, NaN, -0, 0, 3]) {
+				const parsed = parseFields(model.buffer.getText());
+				model.pushEditOperations(createLuaTableFieldNumberEdits(model.buffer, parsed.locations, parsed.fields.get('value')!, value)!);
+				assert.deepEqual(runCompiledLua(`${model.buffer.getText()}\nreturn values.value, values.neighbor`, 'field-number-stability.lua', optLevel), [value, 7]);
+			}
+			const current = model.buffer.getText();
+			if (completedCycle === undefined) completedCycle = current;
+			else assert.equal(current, completedCycle, 'generated notation remains stable across cycles');
+		}
+		assert.ok(completedCycle!.includes('((3))'), 'authored outer groups remain');
+	});
 }
 
 test('Number source recognition stays closed; scalar entry remains literal-only', () => {
 	for (const source of ['1 / 2', '1 + 2', 'unknown_value', 'compute()', '2 / 0', '(1 / 0) + 1']) {
 		const { fields } = parseFields(`local values = { value = ${source} }`);
 		assert.equal(readLuaNumberExpression(fields.get('value')!.value), null);
+		assert.equal(readLuaEncodedNumber(fields.get('value')!.value), null);
 	}
-	for (const source of ['(1 / 0)', '(-1 / 0)', '(0 / 0)']) {
+	for (const [source, value] of [['(1 / 0)', Infinity], ['(-1 / 0)', -Infinity], ['(0 / 0)', NaN], ['-(-1 / 0)', Infinity]] as const) {
 		const { fields } = parseFields(`local values = { value = ${source} }`);
 		assert.equal(readLuaNumberLiteral(fields.get('value')!.value), null);
+		assert.equal(readLuaEncodedNumber(fields.get('value')!.value), value);
 	}
+	const { fields } = parseFields('local values = { value = - -2 }');
+	assert.equal(readLuaEncodedNumber(fields.get('value')!.value), null, 'computed finite expressions stay read-only');
 });
 
 test('source numeric projection reads Number literals without evaluating expressions or coercing signed words', () => {
