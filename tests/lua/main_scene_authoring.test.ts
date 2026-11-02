@@ -68,6 +68,37 @@ test('a retired Scene occurrence cannot publish a split while opening', async t 
 	assert.equal(f.editor.mainWorkspace.primary, undefined);
 });
 
+test('an occurrence that stops being a Scene cannot publish a split while opening', async t => {
+	const f = fixture(t), main = f.editor.editorParts.main;
+	const first = main.activeGroup, firstInput = new CodeEditorInput(f.firstInput.workingCopy);
+	assert.ok(first.openEditor(firstInput));
+	first.focus(); f.update();
+	const groups = [...main.groups];
+	const offset = f.model.buffer.getText().indexOf('.register(') + 1;
+	assert.ok(offset > 0);
+	queueMicrotask(() => f.model.pushEditOperations([{ offset, deleteLength: 'register'.length, text: 'not_scene' }]));
+	const opening = f.open(0);
+	assert.equal(await opening, false); f.update();
+	assert.deepEqual([...main.groups], groups);
+	assert.equal(first.model.activeTab, firstInput);
+	assert.equal(f.editor.mainWorkspace.primary, undefined);
+});
+
+test('a newer focus cannot leave a background Scene split after opening is cancelled', async t => {
+	const f = fixture(t), main = f.editor.editorParts.main;
+	const first = main.activeGroup, firstInput = new CodeEditorInput(f.firstInput.workingCopy);
+	assert.ok(first.openEditor(firstInput));
+	first.focus(); f.update();
+	const groups = [...main.groups];
+	queueMicrotask(() => f.second.focus());
+	const opening = f.open(0);
+	assert.equal(await opening, false); f.update();
+	assert.deepEqual([...main.groups], groups);
+	assert.equal(first.model.activeTab, firstInput);
+	assert.equal(f.editor.mainWorkspace.primary, undefined);
+	assert.ok(inputFocus.admittedTarget !== null && f.secondGroup.focusScope.contains(inputFocus.admittedTarget.scope));
+});
+
 test('Main retains an exact authored Scene beside independent document groups without a hidden Scene input', async t => {
 	const f = fixture(t), main = f.editor.mainWorkspace;
 	assert.equal(main.primary, undefined);

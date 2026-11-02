@@ -782,9 +782,17 @@ export class RuntimeCartEditor implements CartEditor {
 			if (group === undefined) {
 				group = this.editorParts.main.activeGroup;
 				if (group.model.tabs.some(input => !input.isPlaceholder)) {
-					const input = await this.editorParts.openAt({ kind: 'opening', isCurrent: current,
+					let preparedVersion: number | undefined, preparedFocusRevision: number | undefined;
+					const input = await this.editorParts.openAt({ kind: 'opening',
+						isCurrent: () => current() && (preparedVersion === undefined || model.version === preparedVersion)
+							&& (preparedFocusRevision === undefined || inputFocus.revision === preparedFocusRevision),
 						findExisting: receiver => this.sceneEditor.findDefinition(receiver, model, range),
-						resolve: receiver => this.sceneEditor.prepareDefinition(receiver, model, range, current),
+						resolve: receiver => {
+							const prepared = this.sceneEditor.prepareDefinition(receiver, model, range, current);
+							preparedVersion = model.version;
+							preparedFocusRevision = inputFocus.revision;
+							return prepared;
+						},
 					}, { kind: 'split', group, direction: 'down' });
 					return input !== undefined && this.mainWorkspace.primary?.input === input;
 				}
