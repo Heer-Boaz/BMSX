@@ -38,8 +38,8 @@ function fixture(t: TestContext, objects = OBJECTS, attach = true) {
 	const view = new SceneViewportViewState(context, f.sources.catalog), scope = new InputFocusScope(Symbol('authored viewport'), inputFocus.workbenchScope);
 	const semantic = inputFocus.createTarget(null, scope), panel = inputFocus.createTarget(semantic, new InputFocusScope(scope.surfaceScope, scope));
 	panel.commandContext = semantic;
-	semantic.registerCommand('sceneEditor.outline', { contextual: true, isEnabled: () => true, run: () => { semantic.focus(); } });
 	const control = new SceneViewportControl({ isEnabled: () => false, execute() {} }, menu, panel.scope, panel, new WorkbenchMenu([], undefined));
+	control.focusTarget.registerCommand('sceneEditor.outline', { contextual: true, isEnabled: () => true, run: () => { semantic.focus(); } });
 	if (attach) control.setView(view, BOUNDS);
 	const select = (index: number) => {
 		context.refresh(); const scene = context.subject!;
@@ -119,10 +119,10 @@ test('camera persisted before first layout retains pending source-derived 3D adm
 	const f = fixture(t, objects, false), restored = new SceneViewportViewState(f.context, f.sources.catalog); t.after(() => restored.dispose());
 	const snapshot = f.view.camera.capture(); assert.equal(snapshot.canvas.reading, 'initial');
 	restored.camera.restore(snapshot); f.control.setView(restored, BOUNDS);
-	assert.equal(restored.camera.mode, '3d'); assert.equal(restored.camera.initial, false); assert.equal(restored.entries.length, 1);
+	assert.equal(restored.camera.mode, '3d'); assert.equal(restored.camera.initial, true); assert.equal(restored.entries.length, 1);
 	const reading = restored.camera.capture();
 	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- source edit\n' }]); f.control.update();
-	assert.deepEqual(restored.camera.capture(), reading, 'source generations do not reset an admitted editor camera');
+	assert.deepEqual(restored.camera.capture(), reading, 'unchanged source geometry preserves the automatic reading');
 	f.control.layout({ ...BOUNDS, right: 510 }); assert.deepEqual(restored.camera.capture(), reading);
 });
 

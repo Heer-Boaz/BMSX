@@ -76,6 +76,41 @@ test('pixel-snapped 2D translation previews a singular child/subtree, then commi
 	f.model.redo(); assert.equal(f.model.buffer.getText(), committed);
 });
 
+
+test('a real translation adopts its automatic reading before the source position changes', t => {
+	const f = fixture(t, `{member_id='first',definition_id='node2',position={x=0,y=0}},
+ {member_id='second',definition_id='node2',position={x=0,y=8}}`);
+	f.select(0); assert.equal(f.view.camera.initial, true);
+	const initial = f.view.camera.capture(), { x, y } = f.start();
+	const reading = f.view.camera.capture();
+	assert.deepEqual(reading, { ...initial, canvas: { ...initial.canvas, reading: 'manual' } });
+	f.move(x + 16, y); f.release(x + 16, y);
+	assert.notEqual(f.model.buffer.getText(), f.source);
+	assert.deepEqual(f.view.camera.capture(), reading, 'the committed source does not reframe the drag camera');
+	f.model.undo(); f.control.update(); assert.deepEqual(f.view.camera.capture(), reading);
+});
+
+for (const family of ['2d', '3d'] as const) test(`horizontal wheel preserves automatic ${family} framing; a real zoom at its limit adopts it`, t => {
+	const f = fixture(t, `{member_id='first',definition_id='node${family[0]}',position={x=0,y=0}},
+ {member_id='second',definition_id='node${family[0]}',position={x=8,y=0}}`);
+	assert.equal(f.view.camera.mode, family);
+	const before = f.view.camera.capture();
+	assert.equal(f.control.handleWheel({ valid: true, insideViewport: true, viewportX: 100, viewportY: 100,
+		modifiers: KeyModifier.none, deltaX: 4, deltaY: 0 }), true);
+	assert.deepEqual(f.view.camera.capture(), before);
+	const offset = f.model.buffer.getText().indexOf('x=8,y=0');
+	f.model.pushEditOperations([{ offset, deleteLength: 'x=8,y=0'.length, text: 'x=80,y=0' }]); f.control.update();
+	const reframed = f.view.camera.capture();
+	assert.equal(f.view.camera.initial, true); assert.notDeepEqual(reframed, before);
+	const limit = family === '2d' ? { ...reframed, canvas: { ...reframed.canvas, scale: 64 } }
+		: { ...reframed, space: { ...reframed.space, distance: 1e-6 } };
+	f.view.camera.restore(limit); f.view.camera.zoom(1, 0, 0);
+	const adopted = f.view.camera.capture();
+	assert.equal(f.view.camera.initial, false);
+	if (family === '2d') assert.equal(adopted.canvas.scale, limit.canvas.scale);
+	else assert.equal(adopted.space.distance, limit.space.distance);
+});
+
 test('an accepted press with no displacement does not materialize an inherited transform or create history', t => {
 	const f = fixture(t, `{member_id='root',definition_id='node2'}`); f.select(0);
 	const { x, y } = f.start(); f.release(x, y);
@@ -119,7 +154,8 @@ test('perspective world-axis move edits the declared 3D origin, never the editor
 	f.move(x + 13, y + 7); const preview = { ...f.view.transformPreview!.worlds.get(f.view.selected!)! };
 	f.release(x + 13, y + 7); const entry = f.context.subject!.objects[0]; assert.ok(entry.kind === 'object');
 	const world = f.context.spatialScene!.worlds.get(entry)!;
-	assert.deepEqual(world, preview); assert.deepEqual(f.view.camera.capture(), camera);
+	assert.deepEqual(world, preview);
+	assert.deepEqual(f.view.camera.capture(), { ...camera, space: { ...camera.space, reading: 'manual' } });
 	assert.equal(world.family, '3d'); assert.notEqual(world.ox, 0); assert.equal(world.oy, 0); assert.equal(world.oz, 0);
 	f.model.undo(); assert.equal(f.model.buffer.getText(), f.source);
 });

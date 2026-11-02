@@ -265,6 +265,7 @@ export class SceneViewportControl implements PointerCaptureTarget {
 			if (this.viewValue !== view || this.attachment !== attachment || this.focusTarget.scope.contextGeneration !== generation
 				|| request.entry !== view.selected || view.projectionRevision !== projection || !request.isCurrent()
 				|| this.viewValue !== view || this.attachment !== attachment || inputFocus.admittedTarget !== this.focusTarget) { request.cancel(); return true; }
+			view.camera.retainReading();
 			if (!view.gizmo.begin(handle, snapshot.viewportX, snapshot.viewportY, view.camera, view.bounds)) { request.cancel(); return true; }
 			const gesture: TranslationGesture = { kind: 'translate', phase: 'drag', view, attachment, generation, allocation: view.allocationRevision,
 				request, assets: view.assetGeneration, camera: view.camera.revision };

@@ -122,14 +122,15 @@ export class SceneViewportCamera {
 	}
 	/** Dolly around the picked world point, or the pointer on the pivot plane. */
 	public zoom(steps: number, anchorX: number, anchorY: number, anchor?: Readonly<SceneViewportPoint>): void {
+		if (steps === 0) return;
 		if (this.mode === '2d') {
 			const c = this.canvas, scale = clamp(c.scale * 2 ** steps, 1 / 64, 64);
-			if (scale === c.scale) return;
+			if (scale === c.scale) { this.retainReading(); return; }
 			const delta = 1 / c.scale - 1 / scale;
 			c.centerX += anchorX * delta; c.centerY += anchorY * delta; c.scale = scale; c.reading = 'manual';
 		} else {
 			const s = this.space, distance = clamp(s.distance / 2 ** steps, 1e-6, 1e15);
-			if (distance === s.distance) return;
+			if (distance === s.distance) { this.retainReading(); return; }
 			const scale = this.scale, ratio = 1 - distance / s.distance;
 			const x = anchor === undefined ? (this.rx * anchorX + this.dx * anchorY) / scale : ((anchor.originX - s.originX) + anchor.x) - s.centerX;
 			const y = anchor === undefined ? this.dy * anchorY / scale : ((anchor.originY - s.originY) + anchor.y) - s.centerY;
@@ -143,25 +144,30 @@ export class SceneViewportCamera {
 		const s = this.space; s.reading = 'manual'; s.yaw += x * 0.01; s.pitch = clamp(s.pitch + y * 0.01, -1.5, 1.5);
 		this.updateSpace(); this.changed();
 	}
-	public frame2D(left: number, top: number, right: number, bottom: number, width: number, height: number, adoptView = false): void {
-		if (this.modeValue !== '2d' || adoptView) { this.modeValue = '2d'; this.modeIntent = 'manual'; }
-		const c = this.canvas; c.reading = 'manual'; c.centerX = (left + right) / 2; c.centerY = (top + bottom) / 2;
+	public frame2D(left: number, top: number, right: number, bottom: number, width: number, height: number,
+		adoptView = false, reading: Reading = 'manual', bounds: 'visual' | 'origin' = 'visual'): void {
+		const changeMode = this.modeValue !== '2d' || adoptView && this.modeIntent !== 'manual';
+		const c = this.canvas, centerX = (left + right) / 2, centerY = (top + bottom) / 2;
 		const extentX = right - left, extentY = bottom - top, point = extentX === 0 && extentY === 0;
-		c.scale = clamp(Math.min(extentX === 0 && !point ? Infinity : Math.max(1, width - 32) / (point ? 64 : extentX),
-			extentY === 0 && !point ? Infinity : Math.max(1, height - 32) / (point ? 64 : extentY)), 1 / 64, 64);
+		const scale = clamp(Math.min(extentX === 0 && !point ? Infinity : Math.max(1, width - 32) / (point ? 64 : extentX),
+			extentY === 0 && !point ? Infinity : Math.max(1, height - 32) / (point ? 64 : extentY)), 1 / 64, reading === 'initial' && bounds === 'origin' ? 1 : 64);
+		if (!changeMode && c.reading === reading && c.centerX === centerX && c.centerY === centerY && c.scale === scale) return;
+		if (changeMode) { this.modeValue = '2d'; this.modeIntent = 'manual'; }
+		c.reading = reading; c.centerX = centerX; c.centerY = centerY; c.scale = scale;
 		this.changed();
 	}
 	/** Bounds come from transformed vertices or an explicitly selected origin. */
-	public frame3D(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number, originX = 0, originY = 0, originZ = 0, adoptView = false): void {
-		if (this.modeValue !== '3d' || adoptView) { this.modeValue = '3d'; this.modeIntent = 'manual'; }
-		const s = this.space; s.reading = 'manual';
-		s.originX = originX; s.originY = originY; s.originZ = originZ;
-		s.centerX = (minX + maxX) / 2; s.centerY = (minY + maxY) / 2; s.centerZ = (minZ + maxZ) / 2;
+	public frame3D(minX: number, minY: number, minZ: number, maxX: number, maxY: number, maxZ: number,
+		originX = 0, originY = 0, originZ = 0, adoptView = false, reading: Reading = 'manual'): void {
+		const changeMode = this.modeValue !== '3d' || adoptView && this.modeIntent !== 'manual';
+		const s = this.space, centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
 		const radius = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2;
-		if (radius !== 0) {
-			const halfFov = Math.atan(TAN_HALF_FOV * Math.min(1, this.width / this.height));
-			s.distance = radius * 1.1 / Math.sin(halfFov);
-		}
+		const distance = radius === 0 ? s.distance : radius * 1.1 / Math.sin(Math.atan(TAN_HALF_FOV * Math.min(1, this.width / this.height)));
+		if (!changeMode && s.reading === reading && s.originX === originX && s.originY === originY && s.originZ === originZ
+			&& s.centerX === centerX && s.centerY === centerY && s.centerZ === centerZ && s.distance === distance) return;
+		if (changeMode) { this.modeValue = '3d'; this.modeIntent = 'manual'; }
+		s.reading = reading; s.originX = originX; s.originY = originY; s.originZ = originZ;
+		s.centerX = centerX; s.centerY = centerY; s.centerZ = centerZ; s.distance = distance;
 		this.updateSpace(); this.changed();
 	}
 	/** Subtract the geometry origin before adding the small eye offset, matching combined model→clip arithmetic. */

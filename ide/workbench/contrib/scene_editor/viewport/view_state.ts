@@ -62,7 +62,10 @@ export class SceneViewportViewState {
 	private readonly frameEntries = new Set<SceneSourceObject>();
 	private initialSource: SceneSpatialReadModel | undefined;
 	private initialVisuals: SceneVisualReadModel | undefined;
-	private initialAllocation = -1;
+	private initialWidth = -1;
+	private initialHeight = -1;
+	private initialCatalogRevision = -1;
+	private initialCameraRevision = -1;
 	private initialMode: string | undefined;
 	private modeSource: SceneSpatialReadModel | undefined;
 	private sourceMode: '2d' | '3d' | undefined;
@@ -150,10 +153,14 @@ export class SceneViewportViewState {
 		}
 		if (this.camera.automaticMode && this.sourceMode !== undefined) this.camera.initializeMode(this.sourceMode);
 		if (this.disposed) return;
-		if (this.camera.initial && this.bounds.right > this.bounds.left && this.bounds.bottom > this.bounds.top
-			&& (this.initialSource !== this.source || this.initialVisuals !== visuals || this.initialAllocation !== this.allocationRevision || this.initialMode !== this.camera.mode)) {
-			this.initialSource = this.source; this.initialVisuals = visuals; this.initialAllocation = this.allocationRevision; this.initialMode = this.camera.mode;
-			this.frame(undefined); if (this.disposed) return;
+		const width = this.bounds.right - this.bounds.left, height = this.bounds.bottom - this.bounds.top;
+		if (this.camera.initial && width > 0 && height > 0
+			&& (this.initialSource !== this.source || this.initialVisuals !== visuals || this.initialWidth !== width || this.initialHeight !== height
+				|| this.initialCatalogRevision !== this.catalog.revision || this.initialMode !== this.camera.mode
+				|| this.initialCameraRevision !== this.camera.revision)) {
+			this.initialSource = this.source; this.initialVisuals = visuals; this.initialWidth = width; this.initialHeight = height;
+			this.initialCatalogRevision = this.catalog.revision; this.initialMode = this.camera.mode;
+			this.frame(undefined, 'initial'); this.initialCameraRevision = this.camera.revision; if (this.disposed) return;
 		}
 		if (this.models.project(this.camera, this.bounds)) this.projectionRevision++;
 		if (this.canvas.project(this.camera, this.bounds, this.allocationRevision, this.selected)) this.projectionRevision++;
@@ -213,7 +220,7 @@ export class SceneViewportViewState {
 		return this.camera.mode === '2d' ? this.canvas.pick(x, y)
 			: this.models.pick(x - (this.bounds.left + this.bounds.right) / 2, y - (this.bounds.top + this.bounds.bottom) / 2, this.camera)?.entry;
 	}
-	public frame(selected: SceneSourceObject | undefined): boolean {
+	public frame(selected: SceneSourceObject | undefined, reading: 'initial' | 'manual' = 'manual'): boolean {
 		const family = selected === undefined ? this.camera.mode : this.source?.worlds.get(selected)?.family;
 		if (family === undefined) return false;
 		this.frameEntries.clear();
@@ -238,10 +245,11 @@ export class SceneViewportViewState {
 				target.maxX = Math.max(target.maxX, x); target.maxY = Math.max(target.maxY, y); target.maxZ = Math.max(target.maxZ, z); count++;
 			}
 			if (count === 0) return false;
-			this.camera.frame3D(target.minX, target.minY, target.minZ, target.maxX, target.maxY, target.maxZ, target.originX, target.originY, target.originZ, selected !== undefined); return true;
+			this.camera.frame3D(target.minX, target.minY, target.minZ, target.maxX, target.maxY, target.maxZ, target.originX, target.originY, target.originZ, selected !== undefined, reading); return true;
 		}
 		let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
-		if (this.canvas.frameBounds(selectedEntries, this.visualBounds)) {
+		const hasVisualBounds = this.canvas.frameBounds(selectedEntries, this.visualBounds);
+		if (hasVisualBounds) {
 			left = this.visualBounds.left; top = this.visualBounds.top; right = this.visualBounds.right; bottom = this.visualBounds.bottom; count++;
 		}
 		if (this.source !== undefined) for (const entry of this.source.entries) {
@@ -250,7 +258,7 @@ export class SceneViewportViewState {
 			left = Math.min(left, world.ox); top = Math.min(top, world.oy); right = Math.max(right, world.ox); bottom = Math.max(bottom, world.oy); count++;
 		}
 		if (count === 0) return false;
-		this.camera.frame2D(left, top, right, bottom, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top, selected !== undefined); return true;
+		this.camera.frame2D(left, top, right, bottom, this.bounds.right - this.bounds.left, this.bounds.bottom - this.bounds.top, selected !== undefined, reading, hasVisualBounds ? 'visual' : 'origin'); return true;
 	}
 	public dispose(): void {
 		this.disposed = true; this.unbindCamera(); this.listeners.clear(); this.entries.length = this.points.length = 0;

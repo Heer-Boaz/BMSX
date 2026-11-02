@@ -90,7 +90,7 @@ test('idle Main and camera navigation retain geometry; provider generation retir
 
 test('Frame All remains available when navigation puts every source origin behind the camera', async t => {
 	const f = await fixture(t), camera = f.view.camera.capture();
-	f.view.camera.restore({ ...camera, space: { ...camera.space, centerZ: -100 } }); f.update();
+	f.view.camera.restore({ ...camera, space: { ...camera.space, centerZ: -100, reading: 'manual' } }); f.update();
 	assert.equal(f.view.entries.length, 0);
 	const command = f.client.viewportTarget.getCommand('sceneViewport.frameAll')!;
 	assert.equal(command.isEnabled(), true); command.run(); f.update();
