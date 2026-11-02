@@ -767,7 +767,7 @@ export class RuntimeCartEditor implements CartEditor {
 		const generation = origin?.scope.contextGeneration;
 		const range = luaSourceRangeToTextRange(model.buffer, subject.scene.range);
 		const untrack = model.trackRanges(new Map([['scene', range]]));
-		const current = () => !this.isClosing && origin?.scope.contextGeneration === generation
+		const current = () => !this.isClosing && range.start !== range.end && origin?.scope.contextGeneration === generation
 			&& this.sources.catalog.contexts.get(context.id) === context && this.workbench.models.get(model.identity) === model;
 		try {
 			const primary = this.mainWorkspace.primary;
@@ -781,7 +781,13 @@ export class RuntimeCartEditor implements CartEditor {
 			}
 			if (group === undefined) {
 				group = this.editorParts.main.activeGroup;
-				if (group.model.tabs.some(input => !input.isPlaceholder)) group = this.editorParts.sideGroup(group, 'down');
+				if (group.model.tabs.some(input => !input.isPlaceholder)) {
+					const input = await this.editorParts.openAt({ kind: 'opening', isCurrent: current,
+						findExisting: receiver => this.sceneEditor.findDefinition(receiver, model, range),
+						resolve: receiver => this.sceneEditor.prepareDefinition(receiver, model, range, current),
+					}, { kind: 'split', group, direction: 'down' });
+					return input !== undefined && this.mainWorkspace.primary?.input === input;
+				}
 			}
 			if (group === undefined || !current()) return false;
 			const receiver = group;

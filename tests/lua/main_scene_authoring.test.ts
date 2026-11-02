@@ -33,6 +33,41 @@ function fixture(t: TestContext) {
 	return { ...f, model, open };
 }
 
+test('opening a Scene preserves visible documents when the neighbouring group is occupied', async t => {
+	const f = fixture(t), main = f.editor.editorParts.main;
+	const first = main.activeGroup, firstInput = new CodeEditorInput(f.firstInput.workingCopy);
+	assert.ok(first.openEditor(firstInput));
+	const neighbour = f.editor.editorParts.splitGroup(first, 'down'); assert.ok(neighbour);
+	const neighbourInput = new CodeEditorInput(f.secondInput.workingCopy);
+	assert.ok(neighbour.openEditor(neighbourInput));
+	first.focus(); f.update();
+	assert.equal(await f.open(0), true); f.update();
+	const scene = f.editor.mainWorkspace.primary; assert.ok(scene instanceof ScenePrimaryClient);
+	const sceneGroup = f.editor.editorParts.findGroup(scene.input);
+	assert.ok(sceneGroup !== undefined && sceneGroup !== first && sceneGroup !== neighbour);
+	assert.equal(first.model.activeTab, firstInput);
+	assert.equal(neighbour.model.activeTab, neighbourInput);
+	assert.equal(sceneGroup.model.activeTab, scene.input);
+});
+
+test('a retired Scene occurrence cannot publish a split while opening', async t => {
+	const f = fixture(t), main = f.editor.editorParts.main;
+	const first = main.activeGroup, firstInput = new CodeEditorInput(f.firstInput.workingCopy);
+	assert.ok(first.openEditor(firstInput));
+	const neighbour = f.editor.editorParts.splitGroup(first, 'down'); assert.ok(neighbour);
+	const neighbourInput = new CodeEditorInput(f.secondInput.workingCopy);
+	assert.ok(neighbour.openEditor(neighbourInput));
+	first.focus(); f.update();
+	const groups = [...main.groups];
+	queueMicrotask(() => f.model.pushEditOperations([{ offset: 0, deleteLength: f.model.buffer.getText().length, text: '' }]));
+	const opening = f.open(0);
+	assert.equal(await opening, false); f.update();
+	assert.deepEqual([...main.groups], groups);
+	assert.equal(first.model.activeTab, firstInput);
+	assert.equal(neighbour.model.activeTab, neighbourInput);
+	assert.equal(f.editor.mainWorkspace.primary, undefined);
+});
+
 test('Main retains an exact authored Scene beside independent document groups without a hidden Scene input', async t => {
 	const f = fixture(t), main = f.editor.mainWorkspace;
 	assert.equal(main.primary, undefined);
