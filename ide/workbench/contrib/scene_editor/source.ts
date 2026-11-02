@@ -56,6 +56,7 @@ export function buildSceneSourceDocument(
 			const objects = collectSceneObjects(objectsField.value);
 			scenes.push({
 				range: analysis.chunk.locations.range(definition.span),
+				registrationRange: analysis.chunk.locations.range(callSite.expression.span),
 				id,
 				objectsTable: objectsField.value,
 				objects: objects.entries,

@@ -34,6 +34,7 @@ export type SceneSourceEntry = SceneSourceObject | SceneSourceDynamicObject;
 
 export type SceneSourceDefinition = {
 	readonly range: LuaSourceRange;
+	readonly registrationRange: LuaSourceRange;
 	readonly id: LuaExpression;
 	readonly objectsTable: LuaTableConstructorExpression;
 	readonly objects: readonly SceneSourceEntry[];

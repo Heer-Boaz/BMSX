@@ -29,8 +29,11 @@ import type { SceneDetailsViewState } from './details_view';
 import type { SceneEditorSectionCommands } from './option_editor';
 import type { SceneViewportControl } from './viewport/control';
 import { SCENE_SOURCE_STATUS } from './source_status';
+import type { ScenePreviewService } from './preview';
+import { ScenePreviewCommands } from './preview_commands';
 
 export type ScenePrimaryClientOptions = {
+	readonly previews: ScenePreviewService;
 	readonly commands: EditorCommandRunner;
 	readonly sources: RuntimeSourceState;
 	readonly saves: TextFileSaveService;
@@ -66,6 +69,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 	public readonly scope: InputFocusScope;
 	public readonly commandTarget: InputFocusTarget;
 	private readonly authoringCommands: SceneAuthoringCommands;
+	private readonly previewCommands: ScenePreviewCommands;
 	private readonly unbindInteraction: () => void;
 	private readonly addMemberCommand: FocusCommand;
 	private readonly sections: SceneEditorSectionCommands;
@@ -96,6 +100,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		};
 		this.commandTarget.registerCommand('sceneEditor.outline', sections.outline);
 		this.commandTarget.registerCommand('sceneEditor.details', sections.details);
+		this.previewCommands = new ScenePreviewCommands(this.commandTarget, this.view.viewport, options.quickInput, () => this.isCurrent());
 		this.authoringCommands = new SceneAuthoringCommands(this.commandTarget, options.quickInput, context => {
 			if (context !== consumer || !this.hierarchy.attached) return;
 			this.hierarchy.control.update(); this.hierarchy.control.revealSelection();
@@ -156,6 +161,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		return !this.disposed && this.options.isCurrent() && this.viewport.canFocus && this.authoring.canAddMember(this.view.viewport.camera.mode);
 	}
 	public attach(): void {
+		this.previewCommands.attach(this.viewportTarget);
 		this.viewportTarget.registerCommand('sceneEditor.addMember', this.addMemberCommand);
 		this.viewportTarget.registerCommand('sceneEditor.outline', this.sections.outline);
 		this.viewportTarget.registerCommand('sceneEditor.details', this.sections.details);
@@ -197,7 +203,7 @@ export class ScenePrimaryClient implements MainWorkspaceClient {
 		this.statusItem.priority = status === 'failed' ? STATUS_PRIORITY_ERROR : STATUS_PRIORITY_CONTENT;
 	}
 	public dispose(): void {
-		this.disposed = true; this.authoringCommands.dispose(); this.unbindInteraction();
+		this.disposed = true; this.authoringCommands.dispose(); this.previewCommands.dispose(); this.unbindInteraction();
 		if (this.viewportTarget.getCommand('sceneEditor.addMember') === this.addMemberCommand)
 			this.viewportTarget.unregisterCommand('sceneEditor.addMember');
 		if (this.viewportTarget.getCommand('sceneEditor.outline') === this.sections.outline) this.viewportTarget.unregisterCommand('sceneEditor.outline');

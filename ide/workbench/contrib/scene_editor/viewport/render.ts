@@ -5,18 +5,26 @@ import { ARTWORK_COLORS } from '../../../../theme/artwork_colors';
 import { SCENE_VIEWPORT_POINT_STRIDE, type SceneViewportViewState, type SceneViewportPlacement } from './view_state';
 import { TRANSLATE_AXIS_LABELS, TRANSLATE_PLANE_HANDLES, TranslateHandle } from './translate_gizmo';
 import type { SceneViewportQuad } from './canvas';
+import { drawWorkbenchSlider } from '../../../render/slider';
 
 /** Helpers depict actual authored origins and affine axes, never inferred visual bounds. */
-export function drawSceneViewport(view: SceneViewportViewState, focused: boolean, placement?: Readonly<SceneViewportPlacement>): void {
+export function drawSceneViewport(view: SceneViewportViewState, focused: boolean, placement?: Readonly<SceneViewportPlacement>, timelineFocused = false): void {
 	const bounds = view.bounds, points = view.points, segment = view.segment;
 	api.pushClipRect(bounds.left, bounds.top, bounds.right, bounds.bottom);
 	api.fill_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, ARTWORK_COLORS.background);
-	if (view.camera.mode === '3d' && view.models.scene.instances.length > 0)
+	const runtime = view.runtime?.enabled ? view.runtime : undefined, bitmap = runtime?.session?.frame.bitmap;
+	if (runtime !== undefined && bitmap !== undefined) {
+		const canvas = view.runtimeCanvas;
+		api.drawBitmapAffine(bitmap, canvas.x, canvas.y, canvas.width, 0, 0, canvas.height, 0, 0, 1, 1, 0xffffffff);
+		for (const outline of canvas.outlines) api.outlinedPolyline(outline, 0, 0, 0);
+	}
+	if (runtime === undefined && view.camera.mode === '3d' && view.models.scene.instances.length > 0)
 		api.drawMeshScene(view.models.scene, bounds.left, bounds.top, bounds.right, bounds.bottom);
-	if (view.camera.mode === '2d') drawCanvas(view.canvas.items, 0xff000000);
-	if (view.camera.mode === '2d') for (const outline of view.canvas.outlines)
-		api.outlinedPolyline(outline.points, 0, 0, 0);
-	for (let index = 0; index < view.entries.length; index++) {
+	if (runtime === undefined && view.camera.mode === '2d') {
+		drawCanvas(view.canvas.items, 0xff000000);
+		for (const outline of view.canvas.outlines) api.outlinedPolyline(outline.points, 0, 0, 0);
+	}
+	if (runtime === undefined) for (let index = 0; index < view.entries.length; index++) {
 		if (view.entries[index] === view.selected && view.gizmo.world !== undefined) continue;
 		if (view.entries[index] !== view.selected && (view.camera.mode === '2d' ? view.canvas.represented : view.models.represented).has(view.entries[index])) continue;
 		const offset = index * SCENE_VIEWPORT_POINT_STRIDE, x = points[offset], y = points[offset + 1];
@@ -61,6 +69,11 @@ export function drawSceneViewport(view: SceneViewportViewState, focused: boolean
 		api.outlinedPolyline(segment, 0, 0, 0);
 	}
 	view.caption.draw(bounds.left + 4, bounds.top + 4);
+	if (runtime?.selectedTimeline !== undefined) {
+		const slider = view.timelineSlider;
+		api.fill_rect(bounds.left, slider.bounds.top, bounds.right, bounds.bottom, 0, ARTWORK_COLORS.annotation.background);
+		drawWorkbenchSlider(slider, timelineFocused);
+	}
 	if (focused) api.blit_rect(bounds.left, bounds.top, bounds.right, bounds.bottom, 0, colors.COLOR_FOCUS_BORDER);
 	api.popClipRect();
 }

@@ -24,7 +24,7 @@ export type DisassemblyOptions = {
 	pcFormatter?: (pc: number, width: number) => string;
 };
 
-type DecodedInstruction = {
+export type DecodedInstruction = {
 	pc: number;
 	op: OpCode;
 	a: number;
@@ -242,7 +242,7 @@ const decodeInstruction = (code: Uint8Array, codeAddress: number, pc: number): D
 	};
 };
 
-const decodeInstructionAtPc = (
+export const decodeBlua32InstructionAtPc = (
 	code: Uint8Array,
 	codeAddress: number,
 	pc: number,
@@ -464,7 +464,7 @@ const describeInstructionAtPc = (
 	});
 	const lastPc = source.codeAddress + source.code.length - INSTRUCTION_BYTES;
 	const pcWidth = Math.max(1, lastPc.toString(opts.pcRadix).length);
-	const decoded = decodeInstructionAtPc(source.code, source.codeAddress, pc);
+	const decoded = decodeBlua32InstructionAtPc(source.code, source.codeAddress, pc);
 	return {
 		pc: decoded.pc,
 		pcText: formatPc(decoded.pc, pcWidth, opts),

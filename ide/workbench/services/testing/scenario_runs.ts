@@ -11,7 +11,7 @@ import { ScenarioResultService, type ScenarioRun, type ScenarioRunMode, type Sce
 import { ScenarioTestCollection, type ScenarioTestModule, type ScenarioTestNodeId } from '../../../testing/scenario/test_collection';
 import { isScenarioTestAsset } from '../../../../toolchain/ts/rompack/scenario_test';
 import { scenarioFailureFromError } from '../../../testing/scenario/failure';
-import { buildFixtureMedia } from '../execution/fixture_media';
+import { buildFixtureMedia } from '../execution/source_media';
 
 export type ScenarioRunEvent = { readonly type: 'started' | 'complete'; readonly run: ScenarioRun }
 	| { readonly type: 'debugger'; readonly run: ScenarioRun; readonly debugger: TestDebugger }

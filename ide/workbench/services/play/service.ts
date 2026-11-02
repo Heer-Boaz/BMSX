@@ -7,7 +7,7 @@ import type { EditorTextModelService } from '../../../editor/model/model_service
 import type { RuntimeSourceState } from '../../../runtime/sources';
 import type { ScenarioTestModule } from '../../../testing/scenario/test_collection';
 import type { WorkspaceRecord } from '../../../workspace/records';
-import { buildFixtureMedia } from '../execution/fixture_media';
+import { buildFixtureMedia } from '../execution/source_media';
 import type { RunTargetSelection } from '../execution/run_target';
 import { captureLuaTextModelSources } from '../working_copy/lua_sources';
 import { PlayInput } from './input';

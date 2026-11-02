@@ -30,6 +30,7 @@ import type { WorkspaceRecord } from '../workspace/records';
 import { ActorExecutionService } from './contrib/actor_lab/execution';
 import { BehaviorSourceDocuments } from './contrib/behavior_lens/source_documents';
 import { SceneSourceDocuments } from './contrib/scene_editor/source_documents';
+import { ScenePreviewService } from './contrib/scene_editor/preview';
 import { WorkspaceToolService } from './services/assistant/tool_service';
 import { ResourceDiagnosticsService } from './services/diagnostics/resource_diagnostics';
 import { BootService } from './services/execution/boot';
@@ -95,6 +96,7 @@ export class StudioWorkbench {
 	public readonly debuggerExecution: RuntimeDebuggerExecution;
 	public readonly behaviorSources: BehaviorSourceDocuments;
 	public readonly sceneSources: SceneSourceDocuments;
+	public readonly scenePreviews: ScenePreviewService;
 	public readonly projectContent: ProjectContentIndex;
 	public readonly tools: WorkspaceToolService;
 	public readonly fault = createRuntimeFaultState();
@@ -149,6 +151,7 @@ export class StudioWorkbench {
 			rewind, this.fault, this.frameNavigation, this.debuggerExecution);
 		this.behaviorSources = new BehaviorSourceDocuments(models, sources.catalog);
 		this.sceneSources = new SceneSourceDocuments(models, sources.catalog);
+		this.scenePreviews = new ScenePreviewService(models, sources, workspaceDirtyRecords, runtime.model);
 		this.projectContent = new ProjectContentIndex(models, sources.catalog, this.behaviorSources.registrations, this.sceneSources);
 		this.tools = new WorkspaceToolService(models, sources, this.diagnostics, this.scenarioRuns, this.inspection,
 			this.frameNavigation, gameCapture, this.luaEvaluation, this.debuggerExecution, this.actorExecution,
@@ -234,13 +237,14 @@ export class StudioWorkbench {
 		this.frameNavigation.dispose(); this.debuggerExecution.dispose();
 		const evaluationDrained = this.luaEvaluation.shutdown(), actorsDrained = this.actorExecution.shutdown();
 		this.scenarioRuns.dispose();
+		const previewsDrained = this.scenePreviews.dispose();
 		const playDrained = this.play.dispose();
 		this.diagnostics.dispose();
 		const executionDrained = this.hotResumes.shutdown(), bootsDrained = this.boots.shutdown();
 		discardRuntimeDebuggerPlans(this.debugger);
 		await this.textFileSaves.shutdown();
 		await directoriesDrained;
-		await executionDrained; await bootsDrained; await evaluationDrained; await actorsDrained; await playDrained;
+		await executionDrained; await bootsDrained; await evaluationDrained; await actorsDrained; await playDrained; await previewsDrained;
 		this.projectContent.dispose();
 		this.runtime.onStateRestored = undefined;
 		this.runtime.onStateReset = undefined;
