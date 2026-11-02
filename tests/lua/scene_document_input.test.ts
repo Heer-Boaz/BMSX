@@ -60,6 +60,58 @@ test('distinct same-named scene occurrences own separate tabs while admission re
 	assert.equal(f.model.dirty, true); assert.ok(f.model.buffer.getText().startsWith('-- unsaved\n'));
 });
 
+test('Scene occurrence lookup borrows the exact retained input without admitting a model or changing its editor', t => {
+	const f = fixture(t), document = f.documents.get(f.model);
+	const ranges = document.scenes.map(scene => luaSourceRangeToTextRange(f.model.buffer, scene.range));
+	t.after(f.model.trackRanges(new Map(ranges.map((range, index) => [index, range]))));
+	const other = f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'other.lua' })!;
+	const otherModel = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, other);
+	const models = [...editorTextModelService.models].length;
+	assert.equal(f.controller.findDefinition(f.group, otherModel, ranges[0]), undefined);
+	assert.equal([...editorTextModelService.models].length, models);
+	assert.equal(f.controller.findDefinition(f.group, f.model, ranges[0]), undefined);
+	assert.equal(f.controller.openDefinition(f.group, f.model.resource, ranges[0]), true);
+	const first = f.group.model.activeTab;
+	assert.equal(f.controller.openDefinition(f.group, f.model.resource, ranges[1]), true);
+	const second = f.group.model.activeTab;
+	assert.ok(first instanceof SceneEditorInput && second instanceof SceneEditorInput && first !== second);
+	f.model.pushEditOperations([{ offset: 0, deleteLength: 0, text: '-- unsaved\n' }]);
+	const source = f.model.buffer.getText(), version = f.model.version, selection = second.view.authoring.selection;
+	const generation = f.group.panes.openGeneration, count = f.group.model.tabs.length;
+	const query = t.mock.method(f.documents, 'get', () => assert.fail('retained lookup must not request semantic analysis'));
+	assert.equal(f.controller.findDefinition(f.group, f.model, ranges[0]), first);
+	assert.equal(f.controller.findDefinition(f.group, f.model, ranges[1]), second);
+	assert.equal(f.controller.findDefinition(f.group, otherModel, ranges[0]), undefined);
+	assert.equal(f.controller.findDefinition(f.group, f.model, { start: 0, end: 0 }), undefined);
+	assert.equal(query.mock.callCount(), 0);
+	query.mock.restore();
+	assert.equal([...editorTextModelService.models].length, models);
+	assert.equal(f.group.model.tabs.length, count); assert.equal(f.group.model.activeTab, second);
+	assert.equal(f.group.panes.openGeneration, generation); assert.equal(second.view.authoring.selection, selection);
+	assert.equal(f.model.version, version); assert.equal(f.model.buffer.getText(), source); assert.equal(f.model.dirty, true);
+});
+
+test('Scene occurrence lookup follows an intact unavailable marker but never admits a removed occurrence', t => {
+	const f = fixture(t), scene = f.documents.get(f.model).scenes[0];
+	const range = luaSourceRangeToTextRange(f.model.buffer, scene.range);
+	t.after(f.model.trackRanges(new Map([['scene', range]])));
+	assert.equal(f.controller.openDefinition(f.group, f.model.resource, range), true);
+	const input = f.group.model.activeTab; assert.ok(input instanceof SceneEditorInput);
+	const offset = f.model.buffer.getText().indexOf('scenes.register');
+	f.model.pushEditOperations([{ offset, deleteLength: 'scenes.register'.length, text: 'scenes.not_here' }]);
+	assert.equal(input.view.authoring.suspended, true);
+	assert.equal(f.controller.findDefinition(f.group, f.model, range), input);
+	assert.equal(f.controller.prepareDefinition(f.group, f.model, range), undefined);
+	f.model.undo();
+	assert.equal(input.view.authoring.suspended, false);
+	assert.equal(f.controller.findDefinition(f.group, f.model, range), input);
+	assert.equal(f.controller.prepareDefinition(f.group, f.model, range)?.input, input);
+	f.model.pushEditOperations([{ offset: range.start, deleteLength: range.end - range.start, text: '' }]);
+	assert.equal(range.start, range.end);
+	assert.equal(f.controller.findDefinition(f.group, f.model, range), undefined);
+	assert.equal(f.controller.prepareDefinition(f.group, f.model, range), undefined);
+});
+
 test('unresolved scene expressions use source names and distinguish repeated occurrences', t => {
 	const f = fixture(t), resource = f.sources.catalog.resolveResource({ contextId: TEST_CARTRIDGE_CONTEXT_IDS[0], path: 'expression.lua' })!;
 	const model = resolveLuaTextFileModel(editorTextModelService, f.sources.catalog, resource), document = f.documents.get(model);

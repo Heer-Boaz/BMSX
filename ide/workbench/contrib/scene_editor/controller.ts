@@ -35,6 +35,17 @@ export class SceneEditorController {
 			&& input.view.authoring.subjectSpan === undefined && resourceIdentityEquals(input.workingCopy.resource, resource));
 	}
 
+	/** Look up a retained source occurrence without opening a model or producing a view. */
+	public findDefinition(group: EditorGroupView, model: EditorTextModel, range: Readonly<TrackedTextRange>): SceneEditorInput | undefined {
+		const tabs = group.model.tabs;
+		for (let index = 0; index < tabs.length; index++) {
+			const input = tabs[index];
+			if (!(input instanceof SceneEditorInput) || input.workingCopy !== model) continue;
+			const span = input.view.authoring.subjectSpan;
+			if (span !== undefined && span.start !== span.end && span.start === range.start && span.end === range.end) return input;
+		}
+	}
+
 	public openResource(group: EditorGroupView, resource: RuntimeResource, options: EditorTabOpenOptions = {}): void {
 		group.openProducedEditor(() => {
 			const model = resolveLuaTextFileModel(editorTextModelService, this.catalog, resource);
@@ -65,11 +76,7 @@ export class SceneEditorController {
 		if (isCurrent?.() === false || selectionRequest?.isCurrent() === false || model.version !== sourceVersion) return;
 		const scene = document.scenes.find(candidate => luaSourceRangeMatchesTextRange(model.buffer, candidate.range, range));
 		if (scene === undefined) return;
-		const retained = group.model.tabs.find((input): input is SceneEditorInput => {
-			if (!(input instanceof SceneEditorInput) || input.workingCopy !== model) return false;
-			const span = input.view.authoring.subjectSpan;
-			return span !== undefined && span.start !== span.end && span.start === range.start && span.end === range.end;
-		});
+		const retained = this.findDefinition(group, model, range);
 		return { input: retained ?? new SceneEditorInput(model, this.documents, this.catalog, this.createView, { document, sourceVersion, scene }) };
 	}
 
